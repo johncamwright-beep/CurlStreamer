@@ -49,9 +49,22 @@ export default function Scorer({
   const [team, setTeam] = useState<Team>("home");
   const [errors, setErrors] = useState<string[]>([]);
   if (!game) return <main className="p-8">Loading controls…</main>;
+  if (game.status === "closed")
+    return (
+      <main className="mx-auto max-w-lg p-5">
+        <div role="alert" className="panel text-center">
+          <h1 className="text-2xl font-black">This game is closed</h1>
+          <p className="mt-2 text-slate-300">
+            Scoring and audio access have been revoked.
+          </p>
+        </div>
+      </main>
+    );
   const enabled = game.sponsors.filter((s) => s.enabled);
   async function files(list: FileList | null) {
     if (!list) return;
+    const existingSponsors = game?.sponsors;
+    if (!existingSponsors) return;
     const settled = await Promise.allSettled([...list].map(optimize));
     const ok = settled.flatMap((x) =>
       x.status === "fulfilled" ? [x.value] : [],
@@ -61,12 +74,14 @@ export default function Scorer({
         x.status === "rejected" ? [String(x.reason.message)] : [],
       ),
     );
-    await act({ type: "sponsors", sponsors: [...game.sponsors, ...ok] });
+    await act({ type: "sponsors", sponsors: [...existingSponsors, ...ok] });
   }
   function updateSponsors(next: Sponsor[]) {
+    if (!game) return Promise.resolve();
     return act({ type: "sponsors", sponsors: next });
   }
   function move(i: number, d: number) {
+    if (!game) return;
     const n = [...game.sponsors];
     const j = i + d;
     if (j < 0 || j >= n.length) return;

@@ -10,7 +10,7 @@ function Camera({
   connected: boolean;
 }) {
   return (
-    <div className="relative h-full aspect-[9/16] overflow-hidden rounded-2xl border border-white/20 bg-gradient-to-b from-cyan-950 via-slate-700 to-blue-950">
+    <div className="relative aspect-[9/16] w-full max-h-full overflow-hidden rounded-2xl border border-white/20 bg-gradient-to-b from-cyan-950 via-slate-700 to-blue-950">
       <div className="absolute inset-x-[8%] bottom-[4%] aspect-square rounded-full border-[10px] border-blue-500 bg-white/20">
         <div className="absolute inset-[22%] rounded-full border-[10px] border-white">
           <div className="absolute inset-[30%] rounded-full bg-red-500" />
@@ -76,7 +76,7 @@ export function BroadcastCanvas({ game }: { game: GameState }) {
             <p>{game.audioMuted ? "Audio muted" : "Scorer audio live"}</p>
           </div>
         </div>
-        <div className="flex h-full items-center justify-center gap-[2%]">
+        <div className="grid h-full grid-cols-2 items-center gap-[2%]">
           {showHome && (
             <Camera side="HOME" connected={game.connections["camera-home"]} />
           )}{" "}

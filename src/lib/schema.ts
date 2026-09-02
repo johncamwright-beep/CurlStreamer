@@ -1,0 +1,59 @@
+import { z } from "zod";
+export const gameSchema = z.object({
+  eventName: z.string().trim().min(2).max(100),
+  homeName: z.string().trim().min(1).max(50),
+  awayName: z.string().trim().min(1).max(50),
+  homeColor: z.string().regex(/^#[0-9a-fA-F]{6}$/),
+  awayColor: z.string().regex(/^#[0-9a-fA-F]{6}$/),
+  scheduledEnds: z.union([z.literal(8), z.literal(10)]),
+  initialHammer: z.enum(["home", "away"]),
+  youtubeTitle: z.string().trim().min(2).max(100),
+  youtubeVisibility: z.enum(["unlisted", "private", "public"]),
+});
+export const actionSchema = z.discriminatedUnion("type", [
+  z.object({
+    type: z.literal("score"),
+    team: z.enum(["home", "away"]).nullable(),
+    points: z.number().int().min(0).max(8),
+    blank: z.boolean(),
+  }),
+  z.object({ type: z.literal("hammer"), team: z.enum(["home", "away"]) }),
+  z.object({ type: z.literal("undo") }),
+  z.object({
+    type: z.literal("layout"),
+    layout: z.enum(["split", "home", "away"]),
+  }),
+  z.object({ type: z.literal("audio"), muted: z.boolean() }),
+  z.object({ type: z.literal("broadcast"), value: z.enum(["idle", "live"]) }),
+  z.object({ type: z.literal("close-game") }),
+  z.object({
+    type: z.literal("connection"),
+    role: z.enum(["camera-home", "camera-away", "scorer"]),
+    connected: z.boolean(),
+  }),
+  z.object({
+    type: z.literal("sponsor-mode"),
+    active: z.boolean(),
+    style: z.enum(["fullscreen", "overlay"]).optional(),
+    intervalSeconds: z.number().int().min(3).max(10).optional(),
+  }),
+  z.object({
+    type: z.literal("sponsor-nav"),
+    direction: z.union([z.literal(-1), z.literal(1)]).optional(),
+    paused: z.boolean().optional(),
+  }),
+  z.object({
+    type: z.literal("sponsors"),
+    sponsors: z
+      .array(
+        z.object({
+          id: z.string(),
+          name: z.string().max(100),
+          dataUrl: z.string().max(2_000_000),
+          enabled: z.boolean(),
+          rotation: z.number().int(),
+        }),
+      )
+      .max(100),
+  }),
+]);

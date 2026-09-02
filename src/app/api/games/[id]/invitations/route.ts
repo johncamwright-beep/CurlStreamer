@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { getGame } from "@/lib/store";
+import { getGameStore } from "@/lib/store";
 import {
   issueChooserToken,
   issueRoleToken,
@@ -12,7 +12,7 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params;
-  const game = getGame(id);
+  const game = await getGameStore().getGame(id);
   if (!game)
     return NextResponse.json({ error: "Game not found" }, { status: 404 });
   if (game.status === "closed")
@@ -52,5 +52,7 @@ export async function POST(
     parsed.data === "chooser"
       ? await issueChooserToken(id)
       : await issueRoleToken(id, parsed.data);
+  if (parsed.data !== "chooser")
+    await getGameStore().registerInvitation(id, token, parsed.data);
   return NextResponse.json({ token, expiresIn: 1800 });
 }

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
-import { actionSchema } from "@/lib/schema";
-import { getGame, updateGame } from "@/lib/store";
+import { actionSchema, hasSafeSponsorContent } from "@/lib/schema";
+import { getGameStore } from "@/lib/store";
 import { readAccessToken } from "@/lib/tokens";
 export const dynamic = "force-dynamic";
 export async function GET(
@@ -8,7 +8,7 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params;
-  const game = getGame(id);
+  const game = await getGameStore().getGame(id);
   return game
     ? NextResponse.json(game)
     : NextResponse.json({ error: "Game not found" }, { status: 404 });
@@ -37,12 +37,22 @@ export async function PATCH(
       { error: "This access cannot update the game" },
       { status: 403 },
     );
-  const existing = getGame(id);
+  const existing = await getGameStore().getGame(id);
   if (existing?.status === "closed")
     return NextResponse.json({ error: "This game is closed" }, { status: 410 });
   const body = actionSchema.safeParse(await request.json());
   if (!body.success)
     return NextResponse.json({ error: "Invalid update" }, { status: 400 });
+  if (
+    body.data.type === "sponsors" &&
+    body.data.sponsors.some(
+      (sponsor) => !hasSafeSponsorContent(sponsor.dataUrl),
+    )
+  )
+    return NextResponse.json(
+      { error: "Sponsor content is not a supported image" },
+      { status: 400 },
+    );
   if (
     access.purpose === "participant" &&
     access.role !== "scorer" &&
@@ -57,7 +67,7 @@ export async function PATCH(
       { error: "Only an organizer can close a game" },
       { status: 403 },
     );
-  const game = updateGame(id, body.data);
+  const game = await getGameStore().updateGame(id, body.data);
   return game
     ? NextResponse.json(game)
     : NextResponse.json({ error: "Game not found" }, { status: 404 });

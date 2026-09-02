@@ -54,6 +54,17 @@ export default function Camera({
       );
     }
   }
+  if (game?.status === "closed")
+    return (
+      <main className="mx-auto max-w-lg p-5">
+        <div role="alert" className="panel text-center">
+          <h1 className="text-2xl font-black">This game is closed</h1>
+          <p className="mt-2 text-slate-300">
+            Camera access has been revoked. You can safely close this page.
+          </p>
+        </div>
+      </main>
+    );
   return (
     <main className="mx-auto min-h-screen max-w-lg p-3">
       <header className="mb-3 flex items-center justify-between">

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { gameSchema } from "@/lib/schema";
-import { createGame } from "@/lib/store";
+import { getGameStore } from "@/lib/store";
 import { rateLimit } from "@/lib/rate-limit";
 import { issueOrganizerToken } from "@/lib/tokens";
 export async function POST(request: Request) {
@@ -20,7 +20,7 @@ export async function POST(request: Request) {
       },
       { status: 400 },
     );
-  const game = createGame(body.data);
+  const game = await getGameStore().createGame(body.data);
   return NextResponse.json(
     { ...game, organizerToken: await issueOrganizerToken(game.id) },
     { status: 201 },

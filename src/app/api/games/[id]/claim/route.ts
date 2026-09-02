@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { claimRole } from "@/lib/store";
+import { getGameStore } from "@/lib/store";
 import { issueParticipantToken, readAccessToken } from "@/lib/tokens";
 import { rateLimit } from "@/lib/rate-limit";
 const schema = z.object({ token: z.string(), claimant: z.string().uuid() });
@@ -21,7 +21,12 @@ export async function POST(
     const claims = await readAccessToken(body.token);
     if (claims.gameId !== id || claims.purpose !== "invitation" || !claims.role)
       throw new Error();
-    const result = claimRole(id, claims.role, body.claimant);
+    const result = await getGameStore().claimRole(
+      id,
+      claims.role,
+      body.claimant,
+      body.token,
+    );
     return result.error
       ? NextResponse.json(result, { status: 409 })
       : NextResponse.json({

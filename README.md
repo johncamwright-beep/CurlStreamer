@@ -10,12 +10,13 @@ npm install
 npm run dev
 ```
 
-Open `http://localhost:3000`, create a game, and use the role links. Open scorer and broadcast pages in separate windows to see updates. State is held in the Next.js process and resets when it restarts.
+Open `http://localhost:3000`, create a game, and use the role links. Open scorer and broadcast pages in separate browser contexts to see polling-based updates. Without Supabase variables, mock state uses an explicitly local, host-temporary JSON fallback. When all three Supabase variables are present, server routes use the database-backed game store instead.
 
 ## What is real vs mocked
 
-- **Implemented, pending dependency-backed verification in this environment:** validated creation; 30-minute invitation exchange for a six-hour device session; close-game revocation; event-based scoring/Undo; hammer rules; responsive camera capture preview (video only); sponsor optimization/management; server-anchored carousel; and full-screen/overlay composition.
-- **Mock-only:** organizer identity, in-process state/claims/rate limits, polling plus `BroadcastChannel` refresh hints, browser image processing, simulated participants/audio/broadcast state, and CSS camera sources in the composition.
+- **Implemented in the mock slice:** validated creation; 30-minute invitation exchange for a six-hour device session; close-game revocation; event-based scoring/Undo; hammer rules; responsive camera capture preview (video only); sponsor optimization/management; server-anchored carousel; and full-screen/overlay composition.
+- **Mock-only:** organizer identity, the no-configuration temporary-file fallback, in-process rate limits, polling plus `BroadcastChannel` refresh hints, browser image processing, simulated media/broadcast state, and CSS camera sources in the composition.
+- **Supabase-backed:** games, current state, append-only score events, hashed invitations, atomic role claims, participant connection status, and closure/revocation. Database access uses the server-only secret key; the publishable key is configuration readiness metadata until organizer authentication is implemented.
 - **Scaffolded, not implemented:** Supabase repository/RLS, LiveKit publication and Egress, external DJI audio diagnostics, private sponsor storage, and YouTube RTMP start/stop. Provider stubs fail closed.
 - **Next credentials:** LiveKit Cloud URL/key/secret, Supabase project URL/anon/service key, a 32+ byte token secret, and YouTube RTMP URL/key. Never prefix server secrets with `NEXT_PUBLIC_`.
 
@@ -23,7 +24,7 @@ Open `http://localhost:3000`, create a game, and use the role links. Open scorer
 
 `npm run format:check`, `npm run typecheck`, `npm test`, `npm run build`, and `npm run test:e2e`. See the rink/device plans before production use.
 
-Deploy behind HTTPS (required for camera/wake lock), replace the in-memory store with the Supabase repository, require Supabase organizer sessions, implement distributed rate limiting, and configure LiveKit before pilot use.
+Deploy behind HTTPS (required for camera/wake lock), apply the Supabase migration, require Supabase organizer sessions, implement distributed rate limiting, and configure LiveKit before pilot use.
 
 ## Access lifecycle
 

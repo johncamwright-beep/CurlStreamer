@@ -57,3 +57,23 @@ export const actionSchema = z.discriminatedUnion("type", [
       .max(100),
   }),
 ]);
+
+export function hasSafeSponsorContent(dataUrl: string) {
+  if (dataUrl === "/sponsors/community.svg" || dataUrl === "/sponsors/rock.svg")
+    return true;
+  const match = dataUrl.match(
+    /^data:(image\/(?:jpeg|png|webp));base64,([A-Za-z0-9+/]+={0,2})$/,
+  );
+  if (!match) return false;
+  const bytes = Buffer.from(match[2], "base64");
+  if (match[1] === "image/jpeg")
+    return bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff;
+  if (match[1] === "image/png")
+    return bytes
+      .subarray(0, 8)
+      .equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]));
+  return (
+    bytes.subarray(0, 4).toString("ascii") === "RIFF" &&
+    bytes.subarray(8, 12).toString("ascii") === "WEBP"
+  );
+}

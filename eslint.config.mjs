@@ -9,6 +9,7 @@ export default [
   {
     ignores: [
       ".next/**",
+      "next-env.d.ts",
       "node_modules/**",
       "playwright-report/**",
       "test-results/**",

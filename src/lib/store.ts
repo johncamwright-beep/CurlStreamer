@@ -75,7 +75,7 @@ export function createGame(config: GameConfig) {
       style: "fullscreen",
       intervalSeconds: 4,
       startedAt: null,
-      offset: 0,
+      rotationOffset: 0,
       paused: false,
       mutedPrevious: false,
       muteDuring: true,
@@ -160,7 +160,7 @@ export function updateGame(id: string, action: z.infer<typeof actionSchema>) {
       if (action.style) m.style = action.style;
       if (action.intervalSeconds) m.intervalSeconds = action.intervalSeconds;
       m.startedAt = action.active ? now : null;
-      m.offset = 0;
+      m.rotationOffset = 0;
       m.paused = false;
       if (action.active && m.muteDuring) {
         m.mutedPrevious = game.audioMuted;
@@ -169,7 +169,7 @@ export function updateGame(id: string, action: z.infer<typeof actionSchema>) {
         game.audioMuted = m.mutedPrevious;
     }
     if (action.type === "sponsor-nav") {
-      if (action.direction) game.sponsorMode.offset += action.direction;
+      if (action.direction) game.sponsorMode.rotationOffset += action.direction;
       if (action.paused !== undefined) game.sponsorMode.paused = action.paused;
       game.sponsorMode.startedAt = now;
     }

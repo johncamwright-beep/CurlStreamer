@@ -4,6 +4,7 @@ import Link from "next/link";
 import { use, useEffect, useState } from "react";
 import { useGame } from "@/components/GameSync";
 import type { Role } from "@/lib/types";
+import { cameraDisplayStatus } from "@/lib/camera-status";
 const roles: [Role, string][] = [
   ["camera-home", "Camera — Home End"],
   ["camera-away", "Camera — Away End"],
@@ -19,6 +20,26 @@ export default function GameLobby({
   const [links, setLinks] = useState<Record<string, string>>({});
   const [qr, setQr] = useState("");
   const [chooserUrl, setChooserUrl] = useState("");
+  const [disconnecting, setDisconnecting] = useState<Role>();
+  async function disconnectCamera(role: "camera-home" | "camera-away") {
+    const side = role === "camera-home" ? "Home" : "Away";
+    if (!confirm(`Disconnect the ${side} camera?`)) return;
+    setDisconnecting(role);
+    try {
+      const token = localStorage.getItem(`curlcast-access-${id}`);
+      const response = await fetch(`/api/games/${id}/disconnect-camera`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          ...(token ? { authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({ role }),
+      });
+      if (!response.ok) throw new Error("Camera could not be disconnected.");
+    } finally {
+      setDisconnecting(undefined);
+    }
+  }
   useEffect(() => {
     if (!game) return;
     const organizerToken = localStorage.getItem(`curlcast-access-${id}`);
@@ -85,20 +106,41 @@ export default function GameLobby({
           </h2>
           <div className="grid gap-3">
             {roles.map(([role, label]) => (
-              <a
+              <div
                 key={role}
-                href={links[role] || "#"}
                 className="btn-secondary flex items-center justify-between"
               >
-                <span>{label}</span>
-                <span
-                  className={
-                    game.claims[role] ? "text-amber-300" : "text-emerald-300"
-                  }
-                >
-                  {game.claims[role] ? "Claimed" : "Available"}
-                </span>
-              </a>
+                <a href={links[role] || "#"} className="min-h-11 flex-1 py-2">
+                  <span>{label}</span>
+                  <span className="ml-3 text-cyan-200">
+                    {role === "scorer"
+                      ? game.claims[role]
+                        ? "Claimed"
+                        : "Available"
+                      : cameraDisplayStatus(game, role)}
+                  </span>
+                  {role !== "scorer" && game.cameraHealth?.[role] && (
+                    <small className="block text-slate-400">
+                      {game.cameraHealth[role]?.diagnostic
+                        ? `${game.cameraHealth[role]?.diagnostic} · `
+                        : ""}
+                      Updated{" "}
+                      {new Date(
+                        game.cameraHealth[role]!.updatedAt,
+                      ).toLocaleTimeString()}
+                    </small>
+                  )}
+                </a>
+                {role !== "scorer" && game.claims[role] && (
+                  <button
+                    className="min-h-11 rounded-lg border border-red-700 px-3 text-red-200"
+                    disabled={disconnecting === role}
+                    onClick={() => void disconnectCamera(role)}
+                  >
+                    Disconnect Camera
+                  </button>
+                )}
+              </div>
             ))}
           </div>
           <div className="mt-5 flex flex-wrap gap-3">

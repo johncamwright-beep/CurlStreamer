@@ -1,10 +1,11 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { decodeJwt } from "jose";
 import {
   issueLiveKitToken,
   liveKitIdentity,
   liveKitMetadata,
   liveKitVideoGrant,
+  removeCameraParticipant,
 } from "./livekit";
 
 describe("LiveKit grants", () => {
@@ -54,5 +55,24 @@ describe("LiveKit grants", () => {
     expect(JSON.parse(liveKitMetadata("organizer"))).toEqual({
       cameraRole: null,
     });
+  });
+
+  it("removes only the game-scoped camera participant and treats missing as success", async () => {
+    process.env.LIVEKIT_URL = "wss://live.example.test";
+    process.env.LIVEKIT_API_KEY = "test-key";
+    process.env.LIVEKIT_API_SECRET = "super-secret-value";
+    const request = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(new Response("", { status: 404 }));
+    await expect(
+      removeCameraParticipant("game-1", "camera-away"),
+    ).resolves.toBeUndefined();
+    const [, init] = request.mock.calls[0];
+    expect(JSON.parse(String(init?.body))).toEqual({
+      room: "game-game-1",
+      identity: "game-1:camera-away",
+    });
+    expect(String(init?.headers)).not.toContain("super-secret-value");
+    request.mockRestore();
   });
 });

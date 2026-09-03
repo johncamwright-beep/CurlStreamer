@@ -43,6 +43,7 @@ export default function Camera({
   const disconnected = useRef(true);
   const wakeLock = useRef<OptionalScreenWakeLock | undefined>(undefined);
   const mounted = useRef(true);
+  const removedByOrganizer = useRef(false);
   const [state, setState] = useState<ConnectionState>("idle");
   const [landscape, setLandscape] = useState(false);
   const [error, setError] = useState("");
@@ -52,6 +53,7 @@ export default function Camera({
   const [connectionStatus, setConnectionStatus] = useState("");
   const [warning, setWarning] = useState("");
   const [battery, setBattery] = useState<string>();
+  const [previewReady, setPreviewReady] = useState(false);
   const transition = (event: ConnectionEvent) =>
     setState((current) => nextConnectionState(current, event));
 
@@ -120,14 +122,23 @@ export default function Camera({
     transition("disconnect");
     setCapture("");
     setSource("");
+    setPreviewReady(false);
     if (manual) setConfirmation("Camera disconnected safely");
-    await act({ type: "connection", role, connected: false }).catch(() => {});
+    await act({
+      type: "camera-health",
+      role,
+      phase: "disconnected",
+      ...(removedByOrganizer.current
+        ? { diagnostic: "Disconnected by organizer" }
+        : {}),
+    }).catch(() => {});
   }
 
   async function connect() {
     if (!connectionGate.current.enter()) return;
     const thisAttempt = ++attempt.current;
     disconnected.current = false;
+    removedByOrganizer.current = false;
     setError("");
     setCapture("");
     setSource("");
@@ -135,6 +146,11 @@ export default function Camera({
     setWarning("");
     setConnectionStatus("Waiting for camera permission");
     transition("connect");
+    void act({
+      type: "camera-health",
+      role,
+      phase: state === "live" ? "reconnecting" : "connecting",
+    }).catch(() => {});
     let stage = "camera acquisition";
     let acquired = false;
     try {
@@ -192,9 +208,24 @@ export default function Camera({
         url: string;
         token: string;
       };
-      nextRoom.on(RoomEvent.Disconnected, () => {
+      nextRoom.on(RoomEvent.Reconnecting, () => {
+        if (mounted.current)
+          void act({
+            type: "camera-health",
+            role,
+            phase: "reconnecting",
+          }).catch(() => {});
+      });
+      nextRoom.on(RoomEvent.Disconnected, (reason?: number) => {
         if (!mounted.current) return;
-        void disconnectCamera(false);
+        removedByOrganizer.current = reason === 4;
+        void disconnectCamera(false).then(() => {
+          if (!mounted.current) return;
+          if (removedByOrganizer.current) {
+            setConfirmation("Disconnected by organizer.");
+            setConnectionStatus("Reconnect manually when you are ready.");
+          }
+        });
       });
       if (thisAttempt !== attempt.current) {
         await disconnectCamera(false);
@@ -224,11 +255,8 @@ export default function Camera({
         await disconnectCamera(false);
         return;
       }
-      await act({ type: "connection", role, connected: true });
+      await act({ type: "camera-health", role, phase: "live" });
       if (thisAttempt !== attempt.current) {
-        await act({ type: "connection", role, connected: false }).catch(
-          () => {},
-        );
         await disconnectCamera(false);
         return;
       }
@@ -240,6 +268,13 @@ export default function Camera({
         (message) => mounted.current && setWarning(message),
       );
       wakeLock.current.start();
+      const heartbeat = window.setInterval(() => {
+        if (!disconnected.current)
+          void act({ type: "camera-health", role, phase: "live" }).catch(
+            () => {},
+          );
+      }, 30_000);
+      nextRoom.once(RoomEvent.Disconnected, () => clearInterval(heartbeat));
     } catch (cause) {
       const name =
         typeof cause === "object" && cause && "name" in cause
@@ -253,6 +288,12 @@ export default function Camera({
       transition(denied ? "permission-denied" : "disconnect");
       setConnectionStatus(denied ? "Permission denied" : "");
       if (mounted.current) setError(message);
+      void act({
+        type: "camera-health",
+        role,
+        phase: denied ? "attention" : "disconnected",
+        diagnostic: denied ? "Camera permission denied" : "Connection failed",
+      }).catch(() => {});
     } finally {
       if (thisAttempt === attempt.current) connectionGate.current.leave();
     }
@@ -297,17 +338,28 @@ export default function Camera({
         </div>
       )}
       <div className="portrait-camera-panel mx-auto h-[min(70vh,calc((100vw-1.5rem)*16/9))] max-w-full rounded-2xl border-4 border-slate-600 bg-gradient-to-b from-slate-700 to-blue-950">
-        <PortraitVideo ref={video} muted autoPlay onSourceDetails={setSource} />
-        <div
-          aria-hidden
-          className="pointer-events-none absolute inset-x-[12%] bottom-[5%] aspect-square rounded-full border-2 border-red-400/70"
-        >
-          <div className="absolute inset-[25%] rounded-full border-2 border-white/70" />
-        </div>
-        <div
-          aria-hidden
-          className="pointer-events-none absolute left-1/2 top-0 h-full border-l border-dashed border-white/40"
+        <PortraitVideo
+          ref={video}
+          muted
+          autoPlay
+          onPlaying={() => setPreviewReady(true)}
+          onEmptied={() => setPreviewReady(false)}
+          onSourceDetails={setSource}
         />
+        {!previewReady && (
+          <div
+            aria-hidden
+            className="pointer-events-none absolute inset-x-[12%] bottom-[5%] aspect-square rounded-full border-2 border-red-400/70"
+          >
+            <div className="absolute inset-[25%] rounded-full border-2 border-white/70" />
+          </div>
+        )}
+        {!previewReady && (
+          <div
+            aria-hidden
+            className="pointer-events-none absolute left-1/2 top-0 h-full border-l border-dashed border-white/40"
+          />
+        )}
         <div className="absolute inset-x-3 top-3 flex justify-between text-xs">
           <span>{navigator.onLine ? "Network online" : "Network offline"}</span>
           {battery && <span>Battery {battery}</span>}

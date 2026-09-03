@@ -39,7 +39,7 @@ describe("camera connection lifecycle", () => {
 
   it("marks and persists the camera live before starting optional wake lock", () => {
     const persisted = page.indexOf(
-      'await act({ type: "connection", role, connected: true })',
+      'await act({ type: "camera-health", role, phase: "live" })',
     );
     const published = page.indexOf('transition("published")');
     const wakeStart = page.indexOf("wakeLock.current.start()");
@@ -59,9 +59,16 @@ describe("camera connection lifecycle", () => {
     expect(page).toContain("currentTrack?.stop()");
     expect(page).toContain("currentRoom?.disconnect()");
     expect(page).toContain("await wakeLock.current?.release()");
-    expect(page).toContain("connected: false");
+    expect(page).toContain('phase: "disconnected"');
     expect(
       page.match(/thisAttempt !== attempt\.current/g)?.length,
     ).toBeGreaterThanOrEqual(4);
+  });
+
+  it("cleans up and requires manual reconnect after organizer removal", () => {
+    expect(page).toContain("reason === 4");
+    expect(page).toContain("Disconnected by organizer.");
+    expect(page).toContain("Reconnect manually when you are ready.");
+    expect(page).not.toContain("RoomEvent.Disconnected, connect");
   });
 });

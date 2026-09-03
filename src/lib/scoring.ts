@@ -7,7 +7,7 @@ export function activeEvents(events: ScoreEvent[]) {
   return events.filter((e) => e.type !== "undo" && !undone.has(e.id));
 }
 export function deriveScore(game: Pick<GameState, "config" | "scoreEvents">) {
-  let hammer: Team = game.config.initialHammer;
+  let hammer: Team | null = game.config.initialHammer ?? null;
   const ends: EndScore[] = [];
   for (const event of activeEvents(game.scoreEvents)) {
     if (event.type === "hammer") hammer = event.team;

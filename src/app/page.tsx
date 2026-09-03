@@ -16,7 +16,6 @@ export default function Home() {
       homeColor: fd.get("homeColor"),
       awayColor: fd.get("awayColor"),
       scheduledEnds: Number(fd.get("scheduledEnds")),
-      initialHammer: fd.get("initialHammer"),
       youtubeTitle: fd.get("youtubeTitle"),
       youtubeVisibility: fd.get("youtubeVisibility"),
     };
@@ -114,16 +113,6 @@ export default function Home() {
           >
             <option>8</option>
             <option>10</option>
-          </select>
-        </label>
-        <label>
-          Initial hammer
-          <select
-            name="initialHammer"
-            className="mt-1 w-full rounded-lg bg-slate-800 p-3"
-          >
-            <option value="home">Home</option>
-            <option value="away">Away</option>
           </select>
         </label>
         <label>

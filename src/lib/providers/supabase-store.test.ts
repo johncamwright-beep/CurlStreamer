@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { deriveScore } from "../scoring";
 import type { GameConfig, GameState } from "../types";
 
 const mocks = vi.hoisted(() => ({
@@ -33,7 +34,7 @@ const config: GameConfig = {
 
 const storedGame = (): GameState => ({
   id: "11111111-1111-4111-8111-111111111111",
-  config,
+  config: { ...config },
   createdAt: 1,
   scoreEvents: [],
   layout: "split",
@@ -149,6 +150,51 @@ describe("Supabase score-event persistence", () => {
     },
   );
 
+  it.each(["home", "away"] as const)(
+    "appends a %s hammer selection without changing score or end",
+    async (team) => {
+      const game = storedGame();
+      delete game.config.initialHammer;
+      mocks.maybeSingle.mockResolvedValue({
+        data: { state: game, version: 40 },
+        error: null,
+      });
+
+      const result = await updateGame(game.id, { type: "hammer", team });
+
+      expect(result!.scoreEvents).toHaveLength(1);
+      expect(result!.scoreEvents[0]).toMatchObject({ type: "hammer", team });
+      expect(deriveScore(result!).currentEnd).toBe(1);
+      expect(deriveScore(result!).totals).toEqual({ home: 0, away: 0 });
+      expect(mocks.rpc).toHaveBeenCalledWith(
+        "append_score_event",
+        expect.objectContaining({
+          p_expected_version: 40,
+          p_event_type: "hammer",
+        }),
+      );
+    },
+  );
+
+  it("blocks scoring before hammer is persisted", async () => {
+    const game = storedGame();
+    delete game.config.initialHammer;
+    mocks.maybeSingle.mockResolvedValue({
+      data: { state: game, version: 39 },
+      error: null,
+    });
+
+    await expect(
+      updateGame(game.id, {
+        type: "score",
+        team: "home",
+        points: 1,
+        blank: false,
+      }),
+    ).rejects.toThrow("Hammer must be selected before scoring");
+    expect(mocks.rpc).not.toHaveBeenCalled();
+  });
+
   it("appends Undo without deleting its target", async () => {
     const game = storedGame();
     game.scoreEvents.push({
@@ -199,6 +245,22 @@ describe("Supabase score-event persistence", () => {
         points: 1,
         blank: false,
       }),
+    ).rejects.toThrow("Score update conflict");
+  });
+
+  it("reports a persistence failure without returning false success", async () => {
+    const game = storedGame();
+    mocks.maybeSingle.mockResolvedValue({
+      data: { state: game, version: 44 },
+      error: null,
+    });
+    mocks.rpc.mockResolvedValue({
+      error: { code: "XX000", message: "storage unavailable" },
+    });
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+    await expect(
+      updateGame(game.id, { type: "hammer", team: "away" }),
     ).rejects.toThrow("Supabase score update failed");
   });
 });

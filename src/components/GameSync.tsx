@@ -30,12 +30,18 @@ export function useGame(id: string) {
         },
         body: JSON.stringify(action),
       });
-      if (!r.ok) throw new Error("That update could not be saved.");
+      if (!r.ok) {
+        const body = (await r.json().catch(() => null)) as {
+          error?: string;
+        } | null;
+        await refresh();
+        throw new Error(body?.error ?? "That update could not be saved.");
+      }
       const next = await r.json();
       setGame(next);
       new BroadcastChannel(`curlcast-${id}`).postMessage("update");
     },
-    [id],
+    [id, refresh],
   );
   return { game, error, act, refresh };
 }

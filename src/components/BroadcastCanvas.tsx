@@ -13,7 +13,7 @@ function Camera({
   role: "camera-home" | "camera-away";
 }) {
   return (
-    <div className="relative aspect-[9/16] w-full max-h-full overflow-hidden rounded-2xl border border-white/20 bg-gradient-to-b from-cyan-950 via-slate-700 to-blue-950">
+    <div className="portrait-camera-panel mx-auto h-full max-w-full rounded-2xl border border-white/20 bg-gradient-to-b from-cyan-950 via-slate-700 to-blue-950">
       <div className="absolute inset-x-[8%] bottom-[4%] aspect-square rounded-full border-[10px] border-blue-500 bg-white/20">
         <div className="absolute inset-[22%] rounded-full border-[10px] border-white">
           <div className="absolute inset-[30%] rounded-full bg-red-500" />

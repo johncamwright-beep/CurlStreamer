@@ -13,6 +13,7 @@ import {
   publishedCameraTracks,
   isRoleCameraPublication,
 } from "@/lib/providers/livekit-client";
+import { PortraitVideo } from "./PortraitVideo";
 
 export function LiveKitCameraFeed({
   gameId,
@@ -116,13 +117,7 @@ export function LiveKitCameraFeed({
   }, [gameId, role]);
   return (
     <>
-      <video
-        ref={video}
-        autoPlay
-        playsInline
-        muted
-        className="safe-video h-full w-full"
-      />
+      <PortraitVideo ref={video} autoPlay muted />
       {status !== "live" && (
         <div className="absolute inset-0 grid place-content-center bg-slate-950/80 text-center">
           <strong className="text-2xl">

@@ -1,26 +1,41 @@
 import {
+  LocalVideoTrack,
   Track,
   type LocalParticipant,
-  type LocalVideoTrack,
   type RemoteParticipant,
   type RemoteTrack,
   type RemoteTrackPublication,
-  type CreateLocalTracksOptions,
-  type VideoCaptureOptions,
 } from "livekit-client";
 
 export type CameraRole = "camera-home" | "camera-away";
 
-export const portraitCameraOptions: VideoCaptureOptions = {
-  facingMode: "environment",
-  resolution: { width: 720, height: 1280, frameRate: 30 },
-  frameRate: 30,
+export const portraitMediaConstraints: MediaStreamConstraints = {
+  audio: false,
+  video: {
+    facingMode: { ideal: "environment" },
+    width: { ideal: 720 },
+    height: { ideal: 1280 },
+    aspectRatio: { ideal: 9 / 16 },
+    frameRate: { ideal: 30 },
+  },
 };
 
-export const portraitMediaOptions: CreateLocalTracksOptions = {
-  audio: false,
-  video: portraitCameraOptions,
-};
+/** Capture once, then give LiveKit the exact browser track used by preview. */
+export async function acquirePortraitCamera(
+  mediaDevices: Pick<MediaDevices, "getUserMedia">,
+) {
+  const stream = await mediaDevices.getUserMedia(portraitMediaConstraints);
+  const mediaTrack = stream.getVideoTracks()[0];
+  if (!mediaTrack)
+    throw new DOMException("No video track returned", "NotFoundError");
+  return new LocalVideoTrack(mediaTrack);
+}
+
+export function sourcePresentation(width: number, height: number) {
+  return width > height
+    ? ({ fit: "cover", description: "cropped landscape fallback" } as const)
+    : ({ fit: "contain", description: "portrait source" } as const);
+}
 
 export class SingleFlightGate {
   private active = false;

@@ -49,3 +49,9 @@ button {
   object-fit: contain;
   object-position: center;
 }
+
+/* Some iOS browsers report landscape frames despite portrait constraints. */
+.portrait-camera-video--landscape {
+  object-fit: cover;
+  object-position: center;
+}

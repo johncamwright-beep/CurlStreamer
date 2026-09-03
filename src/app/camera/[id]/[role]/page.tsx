@@ -1,15 +1,15 @@
 "use client";
 import { use, useEffect, useRef, useState } from "react";
-import { Room, RoomEvent, Track, createLocalTracks } from "livekit-client";
+import { Room, RoomEvent, Track } from "livekit-client";
 import type { LocalVideoTrack } from "livekit-client";
 import { useGame } from "@/components/GameSync";
 import { PortraitVideo } from "@/components/PortraitVideo";
 import {
+  acquirePortraitCamera,
   cameraCapabilityError,
   cameraPermissionGuidance,
   disposeCameraResources,
   isPermissionError,
-  portraitMediaOptions,
   SingleFlightGate,
 } from "@/lib/providers/livekit-client";
 import {
@@ -37,19 +37,28 @@ export default function Camera({
   const room = useRef<Room | undefined>(undefined);
   const cameraTrack = useRef<LocalVideoTrack | undefined>(undefined);
   const connectionGate = useRef(new SingleFlightGate());
+  const attempt = useRef(0);
+  const cleanupFlight = useRef<Promise<void> | undefined>(undefined);
+  const disconnected = useRef(true);
+  const wakeLock = useRef<WakeLockSentinel | undefined>(undefined);
   const mounted = useRef(true);
   const [state, setState] = useState<ConnectionState>("idle");
   const [landscape, setLandscape] = useState(false);
   const [error, setError] = useState("");
   const [capture, setCapture] = useState("");
+  const [source, setSource] = useState("");
+  const [confirmation, setConfirmation] = useState("");
   const [battery, setBattery] = useState<string>();
   const transition = (event: ConnectionEvent) =>
     setState((current) => nextConnectionState(current, event));
 
   useEffect(() => {
+    mounted.current = true;
     const update = () => setLandscape(innerWidth > innerHeight);
+    const close = () => void disconnectCamera(false);
     update();
     addEventListener("resize", update);
+    addEventListener("pagehide", close);
     const nav = navigator as Navigator & {
       getBattery?: () => Promise<{ level: number }>;
     };
@@ -59,38 +68,97 @@ export default function Camera({
     return () => {
       mounted.current = false;
       removeEventListener("resize", update);
-      const currentRoom = room.current;
-      const currentTrack = cameraTrack.current;
-      cameraTrack.current = undefined;
-      void disposeCameraResources(
-        currentRoom?.localParticipant,
-        currentTrack,
-      ).finally(() => currentRoom?.disconnect());
+      removeEventListener("pagehide", close);
+      close();
     };
   }, []);
 
+  async function disconnectCamera(manual = true) {
+    ++attempt.current;
+    if (disconnected.current && !cleanupFlight.current) {
+      connectionGate.current.leave();
+      if (mounted.current && manual) {
+        transition("disconnect");
+        setConfirmation("Camera disconnected safely");
+      }
+      return;
+    }
+    disconnected.current = true;
+    if (cleanupFlight.current) {
+      await cleanupFlight.current;
+    } else {
+      const currentRoom = room.current;
+      const currentTrack = cameraTrack.current;
+      cameraTrack.current = undefined;
+      // Stopping synchronously makes the camera indicator go out immediately.
+      currentTrack?.detach();
+      currentTrack?.stop();
+      cleanupFlight.current = (async () => {
+        if (currentTrack) {
+          try {
+            await currentRoom?.localParticipant.unpublishTrack(currentTrack);
+          } catch {
+            // Departure still proceeds if the publication has already gone.
+          }
+        }
+        currentRoom?.disconnect();
+        try {
+          await wakeLock.current?.release();
+        } finally {
+          wakeLock.current = undefined;
+        }
+      })().finally(() => {
+        cleanupFlight.current = undefined;
+      });
+      await cleanupFlight.current;
+    }
+    connectionGate.current.leave();
+    if (!mounted.current) return;
+    transition("disconnect");
+    setCapture("");
+    setSource("");
+    if (manual) setConfirmation("Camera disconnected safely");
+    await act({ type: "connection", role, connected: false }).catch(() => {});
+  }
+
   async function connect() {
     if (!connectionGate.current.enter()) return;
+    const thisAttempt = ++attempt.current;
+    disconnected.current = false;
     setError("");
     setCapture("");
+    setSource("");
+    setConfirmation("");
     transition("connect");
+    let stage = "camera acquisition";
+    let acquired = false;
     try {
       const capabilityError = cameraCapabilityError(
         navigator,
         window.isSecureContext,
       );
       if (capabilityError) throw new Error(`Camera error: ${capabilityError}`);
-      const nextRoom =
-        room.current ?? new Room({ adaptiveStream: true, dynacast: true });
-      room.current = nextRoom;
-      nextRoom.removeAllListeners();
-      await disposeCameraResources(
-        nextRoom.localParticipant,
-        cameraTrack.current,
+      // This call is deliberately made in the click stack, before any await or
+      // token/LiveKit work, which is required by iOS Chrome's user activation.
+      const acquisition = acquirePortraitCamera(navigator.mediaDevices);
+      const track = await acquisition;
+      acquired = true;
+      if (thisAttempt !== attempt.current) {
+        await disposeCameraResources(undefined, track);
+        return;
+      }
+      cameraTrack.current = track;
+      const settings = track.mediaStreamTrack.getSettings();
+      setCapture(
+        `${settings.width ?? "unknown"}×${settings.height ?? "unknown"} · ${settings.frameRate ?? "unknown"} fps · ${settings.facingMode ?? "unknown camera"}`,
       );
-      cameraTrack.current = undefined;
-      nextRoom.disconnect();
+      if (video.current) track.attach(video.current);
 
+      stage = "room preparation";
+      const nextRoom = new Room({ adaptiveStream: true, dynacast: true });
+      room.current = nextRoom;
+
+      stage = "token fetching";
       const access = localStorage.getItem(`curlcast-access-${id}`);
       let response: Response;
       try {
@@ -111,39 +179,23 @@ export default function Camera({
       };
       nextRoom.on(RoomEvent.Disconnected, () => {
         if (!mounted.current) return;
-        transition("disconnect");
-        void act({ type: "connection", role, connected: false }).catch(
-          () => {},
-        );
+        void disconnectCamera(false);
       });
+      if (thisAttempt !== attempt.current) {
+        await disconnectCamera(false);
+        return;
+      }
+      stage = "LiveKit connection";
       try {
         await nextRoom.connect(credentials.url, credentials.token);
       } catch {
         throw new Error("Connection error: could not join the LiveKit room.");
       }
-      let track: LocalVideoTrack;
-      try {
-        const tracks = await createLocalTracks(portraitMediaOptions);
-        const videoTrack = tracks.find(
-          (candidate): candidate is LocalVideoTrack =>
-            candidate.kind === Track.Kind.Video,
-        );
-        if (!videoTrack) throw new Error("No camera track returned");
-        track = videoTrack;
-      } catch (cause) {
-        if (isPermissionError(cause)) {
-          throw new Error(
-            `Permission error: camera access was denied. ${cameraPermissionGuidance(navigator.userAgent)} Audio is never requested.`,
-          );
-        }
-        throw new Error("Camera error: the rear camera could not be started.");
+      if (thisAttempt !== attempt.current) {
+        await disconnectCamera(false);
+        return;
       }
-      cameraTrack.current = track;
-      const settings = track.mediaStreamTrack.getSettings();
-      setCapture(
-        `${settings.width ?? "unknown"}×${settings.height ?? "unknown"} · ${settings.frameRate ?? "unknown"} fps · ${settings.facingMode ?? "unknown camera"}`,
-      );
-      if (video.current) track.attach(video.current);
+      stage = "track publication";
       try {
         await nextRoom.localParticipant.publishTrack(track, {
           source: Track.Source.Camera,
@@ -153,33 +205,43 @@ export default function Camera({
           "Publication error: the camera track could not be published.",
         );
       }
-      await (
+      if (thisAttempt !== attempt.current) {
+        await disconnectCamera(false);
+        return;
+      }
+      stage = "wake lock";
+      wakeLock.current = (await (
         navigator as Navigator & {
-          wakeLock?: { request: (type: "screen") => Promise<unknown> };
+          wakeLock?: { request: (type: "screen") => Promise<WakeLockSentinel> };
         }
-      ).wakeLock?.request("screen");
-      transition("published");
+      ).wakeLock?.request("screen")) as WakeLockSentinel | undefined;
+      if (thisAttempt !== attempt.current) {
+        await disconnectCamera(false);
+        return;
+      }
       await act({ type: "connection", role, connected: true });
+      if (thisAttempt !== attempt.current) {
+        await act({ type: "connection", role, connected: false }).catch(
+          () => {},
+        );
+        await disconnectCamera(false);
+        return;
+      }
+      transition("published");
     } catch (cause) {
-      const currentRoom = room.current;
-      await disposeCameraResources(
-        currentRoom?.localParticipant,
-        cameraTrack.current,
-      );
-      cameraTrack.current = undefined;
-      currentRoom?.disconnect();
-      const message =
-        cause instanceof Error
-          ? cause.message
-          : "Connection error: could not connect to live video.";
-      transition(
-        message.startsWith("Permission error:")
-          ? "permission-denied"
-          : "disconnect",
-      );
+      const name =
+        typeof cause === "object" && cause && "name" in cause
+          ? String(cause.name).replace(/[^a-zA-Z0-9_-]/g, "") || "Error"
+          : "Error";
+      const denied = !acquired && isPermissionError(cause);
+      const message = denied
+        ? `Permission error (${name}) at ${stage}: camera access was denied. ${cameraPermissionGuidance(navigator.userAgent)} Audio is never requested.`
+        : `${cause instanceof Error ? cause.message : "Camera connection failed"} (${name}) at ${stage}.`;
+      await disconnectCamera(false);
+      transition(denied ? "permission-denied" : "disconnect");
       if (mounted.current) setError(message);
     } finally {
-      connectionGate.current.leave();
+      if (thisAttempt === attempt.current) connectionGate.current.leave();
     }
   }
   if (game?.status === "closed")
@@ -222,7 +284,7 @@ export default function Camera({
         </div>
       )}
       <div className="portrait-camera-panel mx-auto h-[min(70vh,calc((100vw-1.5rem)*16/9))] max-w-full rounded-2xl border-4 border-slate-600 bg-gradient-to-b from-slate-700 to-blue-950">
-        <PortraitVideo ref={video} muted autoPlay />
+        <PortraitVideo ref={video} muted autoPlay onSourceDetails={setSource} />
         <div
           aria-hidden
           className="pointer-events-none absolute inset-x-[12%] bottom-[5%] aspect-square rounded-full border-2 border-red-400/70"
@@ -248,12 +310,25 @@ export default function Camera({
           onClick={connect}
           className="btn w-full text-xl"
         >
-          {state === "idle"
-            ? "Connect Camera"
-            : state === "connecting"
-              ? "Connecting…"
-              : "Retry Connection"}
+          {state === "connecting"
+            ? "Connecting…"
+            : state === "permission-denied"
+              ? "Retry Connection"
+              : "Connect Camera"}
         </button>
+      )}
+      {(state === "connecting" || state === "live") && (
+        <button
+          onClick={() => void disconnectCamera()}
+          className="btn-secondary mt-3 min-h-11 w-full text-xl"
+        >
+          Disconnect Camera
+        </button>
+      )}
+      {confirmation && (
+        <p role="status" className="mt-3 text-center text-emerald-300">
+          {confirmation}
+        </p>
       )}
       {error && (
         <p role="alert" className="mt-3 rounded-xl bg-red-950 p-4 text-red-200">
@@ -266,6 +341,11 @@ export default function Camera({
       {capture && (
         <p className="mt-1 text-center text-xs text-slate-300">
           Actual capture: {capture}
+        </p>
+      )}
+      {source && (
+        <p className="mt-1 text-center text-xs text-slate-300">
+          Video element: {source}
         </p>
       )}
     </main>

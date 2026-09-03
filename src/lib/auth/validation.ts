@@ -13,6 +13,14 @@ export const signupSchema = z
     message: "Passwords do not match.",
   });
 export const loginSchema = z.object({ email, password: z.string().min(1) });
+export const firstTeamSchema = z.object({
+  teamName: z
+    .string()
+    .trim()
+    .min(1, "Enter your team name.")
+    .max(100, "Team name must be 100 characters or fewer.")
+    .transform((value) => value.replace(/\s+/g, " ")),
+});
 
 export function approvedRedirect(value: string | null) {
   if (!value || !value.startsWith("/") || value.startsWith("//"))

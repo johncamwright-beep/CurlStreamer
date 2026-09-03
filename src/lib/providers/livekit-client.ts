@@ -38,9 +38,33 @@ export class SingleFlightGate {
 
 export function isPermissionError(cause: unknown) {
   return (
-    cause instanceof DOMException &&
+    typeof cause === "object" &&
+    cause !== null &&
+    "name" in cause &&
     (cause.name === "NotAllowedError" || cause.name === "SecurityError")
   );
+}
+
+export function cameraCapabilityError(
+  browser: Pick<Navigator, "mediaDevices">,
+  secureContext: boolean,
+) {
+  if (!secureContext)
+    return "Camera access requires a secure HTTPS page. Open the secure camera link, then retry.";
+  if (!browser.mediaDevices?.getUserMedia)
+    return "This browser does not provide camera capture on this page. Update the browser and open the secure camera link directly.";
+  return undefined;
+}
+
+export function cameraPermissionGuidance(userAgent: string) {
+  const ios = /iPad|iPhone|iPod/.test(userAgent);
+  if (ios && /CriOS/.test(userAgent))
+    return "On iPhone, open Settings > Apps > Chrome > Camera and allow access. Return to Chrome, reload this page if needed, then tap Retry Connection.";
+  if (ios)
+    return "On iPhone, open Settings > Apps > Safari > Camera and allow access (or use Safari Page Settings). Return here, then tap Retry Connection.";
+  if (/Android/.test(userAgent) && /Chrome\//.test(userAgent))
+    return "In Chrome, open this site's Page info > Permissions > Camera and allow it. If blocked by Android, use Settings > Apps > Chrome > Permissions > Camera. Return here, then tap Retry Connection.";
+  return "Allow Camera in this browser's site permissions and in system privacy settings. Return here, reload if needed, then tap Retry Connection.";
 }
 
 export function participantCameraRole(

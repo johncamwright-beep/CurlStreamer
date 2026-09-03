@@ -2,6 +2,8 @@ import { describe, expect, it, vi } from "vitest";
 import { Track } from "livekit-client";
 import {
   SingleFlightGate,
+  cameraCapabilityError,
+  cameraPermissionGuidance,
   disposeCameraResources,
   isPermissionError,
   isRoleCameraPublication,
@@ -40,6 +42,29 @@ describe("LiveKit camera client", () => {
     expect(
       isPermissionError(new DOMException("busy", "NotReadableError")),
     ).toBe(false);
+  });
+
+  it("detects camera support by capability rather than browser name", () => {
+    const supported = {
+      mediaDevices: { getUserMedia: vi.fn() },
+    } as unknown as Pick<Navigator, "mediaDevices">;
+    expect(cameraCapabilityError(supported, true)).toBeUndefined();
+    expect(cameraCapabilityError(supported, false)).toContain("HTTPS");
+    expect(
+      cameraCapabilityError({ mediaDevices: undefined } as never, true),
+    ).toContain("does not provide camera capture");
+  });
+
+  it("provides permission recovery for iOS Chrome, Safari, and Android Chrome", () => {
+    expect(cameraPermissionGuidance("iPhone CriOS/140.0")).toContain(
+      "Apps > Chrome > Camera",
+    );
+    expect(
+      cameraPermissionGuidance("iPhone Version/18 Mobile Safari"),
+    ).toContain("Apps > Safari > Camera");
+    expect(cameraPermissionGuidance("Android 15 Chrome/140.0")).toContain(
+      "Apps > Chrome > Permissions > Camera",
+    );
   });
 
   it("unpublishes, detaches, and stops an old track before retry", async () => {

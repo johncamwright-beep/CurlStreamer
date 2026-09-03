@@ -3,7 +3,10 @@ import { use, useEffect, useRef, useState } from "react";
 import { Room, RoomEvent, Track, createLocalTracks } from "livekit-client";
 import type { LocalVideoTrack } from "livekit-client";
 import { useGame } from "@/components/GameSync";
+import { PortraitVideo } from "@/components/PortraitVideo";
 import {
+  cameraCapabilityError,
+  cameraPermissionGuidance,
   disposeCameraResources,
   isPermissionError,
   portraitMediaOptions,
@@ -72,6 +75,11 @@ export default function Camera({
     setCapture("");
     transition("connect");
     try {
+      const capabilityError = cameraCapabilityError(
+        navigator,
+        window.isSecureContext,
+      );
+      if (capabilityError) throw new Error(`Camera error: ${capabilityError}`);
       const nextRoom =
         room.current ?? new Room({ adaptiveStream: true, dynacast: true });
       room.current = nextRoom;
@@ -125,7 +133,7 @@ export default function Camera({
       } catch (cause) {
         if (isPermissionError(cause)) {
           throw new Error(
-            "Permission error: camera access was denied. Allow Camera in browser settings, then retry. Audio is never requested.",
+            `Permission error: camera access was denied. ${cameraPermissionGuidance(navigator.userAgent)} Audio is never requested.`,
           );
         }
         throw new Error("Camera error: the rear camera could not be started.");
@@ -213,14 +221,8 @@ export default function Camera({
           ↻ Rotate and mount this phone vertically.
         </div>
       )}
-      <div className="relative mx-auto aspect-[9/16] max-h-[70vh] overflow-hidden rounded-2xl border-4 border-slate-600 bg-gradient-to-b from-slate-700 to-blue-950">
-        <video
-          ref={video}
-          muted
-          playsInline
-          autoPlay
-          className="safe-video h-full w-full"
-        />
+      <div className="portrait-camera-panel mx-auto h-[min(70vh,calc((100vw-1.5rem)*16/9))] max-w-full rounded-2xl border-4 border-slate-600 bg-gradient-to-b from-slate-700 to-blue-950">
+        <PortraitVideo ref={video} muted autoPlay />
         <div
           aria-hidden
           className="pointer-events-none absolute inset-x-[12%] bottom-[5%] aspect-square rounded-full border-2 border-red-400/70"

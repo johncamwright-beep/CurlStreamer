@@ -1,4 +1,4 @@
-type AccessClaims = { purpose?: unknown; gameId?: unknown };
+type AccessClaims = { purpose?: unknown; gameId?: unknown; role?: unknown };
 
 function claims(token: string | null): AccessClaims | undefined {
   if (!token) return undefined;
@@ -21,6 +21,24 @@ export function hasOrganizerAccess(
   ].some((token) => {
     const value = claims(token);
     return value?.purpose === "organizer" && value.gameId === id;
+  });
+}
+
+export function hasScoringAccess(
+  storage: Pick<Storage, "getItem">,
+  id: string,
+) {
+  return [
+    storage.getItem(`curlcast-organizer-access-${id}`),
+    storage.getItem(`curlcast-participant-access-${id}`),
+    storage.getItem(`curlcast-access-${id}`),
+  ].some((token) => {
+    const value = claims(token);
+    return (
+      value?.gameId === id &&
+      (value.purpose === "organizer" ||
+        (value.purpose === "participant" && value.role === "scorer"))
+    );
   });
 }
 

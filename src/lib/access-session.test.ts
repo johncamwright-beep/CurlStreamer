@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   hasOrganizerAccess,
+  hasScoringAccess,
   preserveAndStoreParticipantAccess,
 } from "./access-session";
 
@@ -18,6 +19,42 @@ function storage(initial: Record<string, string> = {}) {
 }
 
 describe("browser access sessions", () => {
+  it("recognizes only same-game organizer and scorer sessions as scoring access", () => {
+    const organizer = token({ purpose: "organizer", gameId: "game-1" });
+    const scorer = token({
+      purpose: "participant",
+      gameId: "game-1",
+      role: "scorer",
+    });
+    const camera = token({
+      purpose: "participant",
+      gameId: "game-1",
+      role: "camera-home",
+    });
+
+    expect(
+      hasScoringAccess(
+        storage({ "curlcast-access-game-1": organizer }),
+        "game-1",
+      ),
+    ).toBe(true);
+    expect(
+      hasScoringAccess(
+        storage({ "curlcast-participant-access-game-1": scorer }),
+        "game-1",
+      ),
+    ).toBe(true);
+    expect(
+      hasScoringAccess(storage({ "curlcast-access-game-1": camera }), "game-1"),
+    ).toBe(false);
+    expect(
+      hasScoringAccess(
+        storage({ "curlcast-access-game-2": organizer }),
+        "game-2",
+      ),
+    ).toBe(false);
+  });
+
   it("preserves an organizer session when a participant role is claimed", () => {
     const organizer = token({ purpose: "organizer", gameId: "game-1" });
     const scorer = token({ purpose: "participant", gameId: "game-1" });

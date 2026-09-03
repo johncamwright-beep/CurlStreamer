@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { decodeJwt } from "jose";
-import { issueLiveKitToken, liveKitVideoGrant } from "./livekit";
+import {
+  issueLiveKitToken,
+  liveKitIdentity,
+  liveKitMetadata,
+  liveKitVideoGrant,
+} from "./livekit";
 
 describe("LiveKit grants", () => {
   it.each(["camera-home", "camera-away"] as const)(
@@ -33,6 +38,21 @@ describe("LiveKit grants", () => {
     process.env.LIVEKIT_API_SECRET = "super-secret-value";
     const result = await issueLiveKitToken("game-1", "camera-home");
     expect(JSON.stringify(result)).not.toContain("super-secret-value");
-    expect(decodeJwt(result.token).iss).toBe("test-key");
+    const claims = decodeJwt(result.token);
+    expect(claims.iss).toBe("test-key");
+    expect(claims.sub).toBe(liveKitIdentity("game-1", "camera-home"));
+    expect(claims.metadata).toBe(liveKitMetadata("camera-home"));
+  });
+
+  it("uses one stable identity per game role and trusted role metadata", () => {
+    expect(liveKitIdentity("game-1", "camera-home")).toBe(
+      liveKitIdentity("game-1", "camera-home"),
+    );
+    expect(JSON.parse(liveKitMetadata("camera-away"))).toEqual({
+      cameraRole: "camera-away",
+    });
+    expect(JSON.parse(liveKitMetadata("organizer"))).toEqual({
+      cameraRole: null,
+    });
   });
 });

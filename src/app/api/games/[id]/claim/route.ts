@@ -21,7 +21,7 @@ export async function POST(
     const claims = await readAccessToken(body.token);
     if (claims.gameId !== id || claims.purpose !== "invitation" || !claims.role)
       throw new Error();
-    const result = claimRole(id, claims.role, body.claimant);
+    const result = await claimRole(id, claims.role, body.claimant);
     return result.error
       ? NextResponse.json(result, { status: 409 })
       : NextResponse.json({

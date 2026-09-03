@@ -47,3 +47,6 @@ revoke all on function public.create_game(uuid, jsonb, jsonb) from public;
 revoke all on function public.create_game(uuid, jsonb, jsonb) from anon;
 revoke all on function public.create_game(uuid, jsonb, jsonb) from authenticated;
 grant execute on function public.create_game(uuid, jsonb, jsonb) to service_role;
+
+-- Ensure PostgREST discovers the newly installed RPC without waiting for a restart.
+notify pgrst, 'reload schema';

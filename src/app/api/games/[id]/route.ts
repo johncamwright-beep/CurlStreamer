@@ -56,7 +56,10 @@ export async function PATCH(
   if (
     access.purpose === "participant" &&
     access.role !== "scorer" &&
-    !(body.data.type === "connection" && body.data.role === access.role)
+    !(
+      (body.data.type === "connection" || body.data.type === "camera-health") &&
+      body.data.role === access.role
+    )
   )
     return NextResponse.json(
       { error: "This role cannot make that update" },

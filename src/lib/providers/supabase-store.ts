@@ -218,6 +218,15 @@ export async function updateGame(
   }
   if (action.type === "connection")
     game.connections[action.role] = action.connected;
+  if (action.type === "camera-health") {
+    game.cameraHealth ??= {};
+    game.cameraHealth[action.role] = {
+      phase: action.phase,
+      updatedAt: now,
+      ...(action.diagnostic ? { diagnostic: action.diagnostic } : {}),
+    };
+    game.connections[action.role] = action.phase === "live";
+  }
   if (action.type === "sponsors") game.sponsors = action.sponsors;
   if (action.type === "sponsor-mode") {
     const mode = game.sponsorMode;

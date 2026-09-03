@@ -18,9 +18,11 @@ import { PortraitVideo } from "./PortraitVideo";
 export function LiveKitCameraFeed({
   gameId,
   role,
+  showPlaceholderGuides = false,
 }: {
   gameId: string;
   role: "camera-home" | "camera-away";
+  showPlaceholderGuides?: boolean;
 }) {
   const video = useRef<HTMLVideoElement>(null);
   const [status, setStatus] = useState<"connecting" | "live" | "disconnected">(
@@ -120,6 +122,20 @@ export function LiveKitCameraFeed({
       <PortraitVideo ref={video} autoPlay muted />
       {status !== "live" && (
         <div className="absolute inset-0 grid place-content-center bg-slate-950/80 text-center">
+          {showPlaceholderGuides && (
+            <div
+              data-testid="camera-placeholder-guides"
+              aria-hidden
+              className="absolute inset-0"
+            >
+              <div className="absolute inset-x-[8%] bottom-[4%] aspect-square rounded-full border-[10px] border-blue-500 bg-white/20">
+                <div className="absolute inset-[22%] rounded-full border-[10px] border-white">
+                  <div className="absolute inset-[30%] rounded-full bg-red-500" />
+                </div>
+              </div>
+              <div className="absolute left-1/2 top-0 h-full border-l-2 border-dashed border-white/20" />
+            </div>
+          )}
           <strong className="text-2xl">
             {status === "connecting"
               ? "Connecting to camera…"

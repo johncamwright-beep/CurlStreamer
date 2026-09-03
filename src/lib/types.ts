@@ -41,6 +41,7 @@ export interface GameState {
   status: "active" | "closed";
   audioMuted: boolean;
   connections: Record<Role, boolean>;
+  cameraHealth?: Partial<Record<"camera-home" | "camera-away", CameraHealth>>;
   claims: Partial<Record<Role, string>>;
   sponsors: Sponsor[];
   sponsorMode: {
@@ -53,4 +54,12 @@ export interface GameState {
     mutedPrevious: boolean;
     muteDuring: boolean;
   };
+}
+
+export type CameraHealthPhase =
+  "connecting" | "live" | "reconnecting" | "disconnected" | "attention";
+export interface CameraHealth {
+  phase: CameraHealthPhase;
+  updatedAt: number;
+  diagnostic?: string;
 }

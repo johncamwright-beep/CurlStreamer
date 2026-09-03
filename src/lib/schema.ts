@@ -32,6 +32,18 @@ export const actionSchema = z.discriminatedUnion("type", [
     connected: z.boolean(),
   }),
   z.object({
+    type: z.literal("camera-health"),
+    role: z.enum(["camera-home", "camera-away"]),
+    phase: z.enum([
+      "connecting",
+      "live",
+      "reconnecting",
+      "disconnected",
+      "attention",
+    ]),
+    diagnostic: z.string().trim().max(160).optional(),
+  }),
+  z.object({
     type: z.literal("sponsor-mode"),
     active: z.boolean(),
     style: z.enum(["fullscreen", "overlay"]).optional(),

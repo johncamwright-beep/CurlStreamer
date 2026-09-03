@@ -14,16 +14,10 @@ function Camera({
 }) {
   return (
     <div className="portrait-camera-panel mx-auto h-full max-w-full rounded-2xl border border-white/20 bg-gradient-to-b from-cyan-950 via-slate-700 to-blue-950">
-      <div className="absolute inset-x-[8%] bottom-[4%] aspect-square rounded-full border-[10px] border-blue-500 bg-white/20">
-        <div className="absolute inset-[22%] rounded-full border-[10px] border-white">
-          <div className="absolute inset-[30%] rounded-full bg-red-500" />
-        </div>
-      </div>
-      <div className="absolute left-1/2 top-0 h-full border-l-2 border-dashed border-white/20" />
       <span className="absolute left-4 top-4 rounded bg-slate-950/70 px-3 py-2 font-bold">
         {side} END
       </span>
-      <LiveKitCameraFeed gameId={gameId} role={role} />
+      <LiveKitCameraFeed gameId={gameId} role={role} showPlaceholderGuides />
     </div>
   );
 }

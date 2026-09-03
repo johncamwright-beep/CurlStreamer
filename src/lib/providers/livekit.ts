@@ -54,3 +54,44 @@ export async function issueLiveKitToken(gameId: string, access: LiveKitAccess) {
     .sign(new TextEncoder().encode(secret));
   return { url, token };
 }
+
+function liveKitHttpUrl(url: string) {
+  return url.replace(/^wss:/, "https:").replace(/^ws:/, "http:");
+}
+
+/** Server-only administrative removal; a missing participant is already disconnected. */
+export async function removeCameraParticipant(
+  gameId: string,
+  role: "camera-home" | "camera-away",
+) {
+  const url = process.env.LIVEKIT_URL;
+  const key = process.env.LIVEKIT_API_KEY;
+  const secret = process.env.LIVEKIT_API_SECRET;
+  if (!url || !key || !secret)
+    throw new Error("LiveKit server configuration is incomplete");
+  const token = await new SignJWT({
+    video: { room: `game-${gameId}`, roomAdmin: true },
+  })
+    .setProtectedHeader({ alg: "HS256", typ: "JWT" })
+    .setIssuer(key)
+    .setSubject("curlcast-organizer")
+    .setIssuedAt()
+    .setExpirationTime("1m")
+    .sign(new TextEncoder().encode(secret));
+  const response = await fetch(
+    `${liveKitHttpUrl(url)}/twirp/livekit.RoomService/RemoveParticipant`,
+    {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${token}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        room: `game-${gameId}`,
+        identity: liveKitIdentity(gameId, role),
+      }),
+    },
+  );
+  if (response.ok || response.status === 404) return;
+  throw new Error(`LiveKit participant removal failed (${response.status})`);
+}

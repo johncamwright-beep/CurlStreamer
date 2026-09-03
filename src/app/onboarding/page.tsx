@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { getAccountContext } from "@/lib/auth/account";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { FirstTeamForm } from "./FirstTeamForm";
+import { AccountServiceUnavailable } from "@/components/AccountServiceUnavailable";
 
 export default async function OnboardingPage() {
   const supabase = await createServerSupabaseClient();
@@ -10,7 +11,9 @@ export default async function OnboardingPage() {
     data: { user },
   } = await supabase.auth.getUser();
   if (!user?.email_confirmed_at) redirect("/login");
-  const account = await getAccountContext(user);
+  const result = await getAccountContext(user);
+  if (!result.ok) return <AccountServiceUnavailable />;
+  const account = result.account;
   if (account.profile.status !== "active") return <AccessDenied />;
   if (account.membership) redirect("/dashboard");
   return (

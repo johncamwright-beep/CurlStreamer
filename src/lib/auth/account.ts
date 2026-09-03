@@ -12,7 +12,23 @@ export type AccountContext = {
   };
 };
 
-export async function getAccountContext(user: User): Promise<AccountContext> {
+export type AccountContextResult =
+  { ok: true; account: AccountContext } | { ok: false };
+
+function logAccountReadFailure(operation: string, error: unknown) {
+  const databaseError = error as { code?: unknown; message?: unknown } | null;
+  const code =
+    typeof databaseError?.code === "string" ? databaseError.code : "unknown";
+  const message =
+    typeof databaseError?.message === "string"
+      ? databaseError.message.replace(/[\r\n\t]/g, " ").slice(0, 160)
+      : "unavailable";
+  console.error("Account service read failed", { operation, code, message });
+}
+
+export async function getAccountContext(
+  user: User,
+): Promise<AccountContextResult> {
   await ensureOwnProfile(user);
   const db = createAdminSupabaseClient();
   const { data: profile, error: profileError } = await db
@@ -20,7 +36,10 @@ export async function getAccountContext(user: User): Promise<AccountContext> {
     .select("display_name,status")
     .eq("user_id", user.id)
     .single();
-  if (profileError || !profile) throw new Error("Account could not be loaded");
+  if (profileError || !profile) {
+    logAccountReadFailure("load_profile", profileError);
+    return { ok: false };
+  }
 
   const { data: memberships, error: membershipError } = await db
     .from("team_memberships")
@@ -29,21 +48,27 @@ export async function getAccountContext(user: User): Promise<AccountContext> {
     .eq("status", "active")
     .order("created_at")
     .limit(1);
-  if (membershipError) throw new Error("Team membership could not be loaded");
+  if (membershipError) {
+    logAccountReadFailure("load_membership", membershipError);
+    return { ok: false };
+  }
   const membership = memberships?.[0];
   const organization = membership?.organizations as unknown as {
     name: string;
   } | null;
   return {
-    profile,
-    membership:
-      membership && organization
-        ? {
-            organization_id: membership.organization_id,
-            role: membership.role,
-            teamName: organization.name,
-          }
-        : null,
+    ok: true,
+    account: {
+      profile,
+      membership:
+        membership && organization
+          ? {
+              organization_id: membership.organization_id,
+              role: membership.role,
+              teamName: organization.name,
+            }
+          : null,
+    },
   };
 }
 

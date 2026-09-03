@@ -63,14 +63,14 @@ describe("1920x1080 broadcast video layout", () => {
       /grid-template-columns: minmax\(0, 73fr\) minmax\(0, 25fr\)/,
     );
     expect(css).toMatch(
-      /\[data-camera-count="2"\][\s\S]*grid-template-columns: repeat\(2, minmax\(0, 1fr\)\)/,
+      /\[data-camera-count="2"\][\s\S]*grid-template-columns: repeat\(2, max-content\)/,
     );
   });
 
   it("keeps every panel exactly 9:16 and safely inside the program", () => {
     expect(css).toMatch(/\.portrait-camera-panel[\s\S]*aspect-ratio: 9 \/ 16/);
     expect(css).toMatch(/\.portrait-camera-panel[\s\S]*overflow: hidden/);
-    expect(css).toMatch(/\.broadcast-camera-panel \{\s*height: 92%/);
+    expect(css).toMatch(/\.broadcast-camera-panel \{\s*height: 100%/);
     expect(css).not.toMatch(/\.broadcast-camera-panel[^}]*\bwidth:/);
     expect(css).not.toMatch(/\.broadcast-camera-panel[^}]*max-width:/);
   });
@@ -87,9 +87,16 @@ describe("1920x1080 broadcast video layout", () => {
     );
   });
 
-  it("contains camera pixels without a crop or stretch fallback", () => {
+  it("centres a portrait crop for landscape fill and contains full frames", () => {
     expect(css).toMatch(/\.portrait-camera-video[\s\S]*object-fit: contain/);
-    expect(css).not.toContain("object-fit: cover");
-    expect(css).not.toContain("portrait-camera-video--landscape");
+    expect(css).toMatch(
+      /data-source-orientation="landscape"\]\[data-framing="fill"\][\s\S]*object-fit: cover/,
+    );
+    expect(css).toMatch(/data-framing="contain"\][\s\S]*object-fit: contain/);
+  });
+
+  it("uses a minimal divider and constrains overlay sponsors to half the deck", () => {
+    expect(css).toMatch(/data-camera-count="2"[\s\S]*gap: 2px/);
+    expect(css).toMatch(/\.sponsor-deck-overlay[\s\S]*inset: 25%/);
   });
 });

@@ -19,10 +19,12 @@ export function LiveKitCameraFeed({
   gameId,
   role,
   showPlaceholderGuides = false,
+  framing = "fill",
 }: {
   gameId: string;
   role: "camera-home" | "camera-away";
   showPlaceholderGuides?: boolean;
+  framing?: "fill" | "contain";
 }) {
   const video = useRef<HTMLVideoElement>(null);
   const [status, setStatus] = useState<"connecting" | "live" | "disconnected">(
@@ -30,6 +32,7 @@ export function LiveKitCameraFeed({
   );
   const [error, setError] = useState("");
   const [source, setSource] = useState("");
+  const [playable, setPlayable] = useState(false);
   useEffect(() => {
     const room = new Room({ adaptiveStream: true });
     let mounted = true;
@@ -44,7 +47,6 @@ export function LiveKitCameraFeed({
         video.current
       ) {
         track.attach(video.current);
-        setStatus("live");
       }
     };
     room.on(RoomEvent.TrackSubscribed, attach);
@@ -55,7 +57,10 @@ export function LiveKitCameraFeed({
     ) => {
       if (!isRoleCameraPublication(role, participant, publication)) return;
       track.detach();
-      if (mounted) setStatus("disconnected");
+      if (mounted) {
+        setPlayable(false);
+        setStatus("disconnected");
+      }
     };
     const disconnected = () => mounted && setStatus("disconnected");
     const subscriptionFailed = () => {
@@ -120,14 +125,20 @@ export function LiveKitCameraFeed({
   }, [gameId, role]);
   return (
     <>
-      <PortraitVideo ref={video} autoPlay muted onSourceDetails={setSource} />
-      {status === "live" && source && (
-        <span className="absolute bottom-2 left-2 rounded bg-slate-950/70 px-2 py-1 text-xs text-white">
-          Remote video: {source}
-        </span>
-      )}
-      {status !== "live" && (
-        <div className="absolute inset-0 grid place-content-center bg-slate-950/80 text-center">
+      <PortraitVideo
+        ref={video}
+        autoPlay
+        muted
+        framing={framing}
+        onPlaying={() => {
+          setPlayable(true);
+          setStatus("live");
+        }}
+        onEmptied={() => setPlayable(false)}
+        onSourceDetails={setSource}
+      />
+      {!playable && (
+        <div className="camera-placeholder absolute inset-0 grid place-content-center bg-slate-950/80 text-center">
           {showPlaceholderGuides && (
             <div
               data-testid="camera-placeholder-guides"
@@ -142,13 +153,15 @@ export function LiveKitCameraFeed({
               <div className="absolute left-1/2 top-0 h-full border-l-2 border-dashed border-white/20" />
             </div>
           )}
-          <strong className="text-2xl">
-            {status === "connecting"
-              ? "Connecting to camera…"
-              : "Camera disconnected"}
-          </strong>
-          <span className="text-slate-300">The broadcast stays live</span>
-          {error && <span className="mt-2 text-red-200">{error}</span>}
+          <div className="camera-placeholder-status relative flex flex-col">
+            <strong className="text-2xl">
+              {status === "connecting"
+                ? "Connecting to camera…"
+                : "Camera disconnected"}
+            </strong>
+            <span className="text-slate-300">The broadcast stays live</span>
+            {error && <span className="mt-2 text-red-200">{error}</span>}
+          </div>
         </div>
       )}
     </>

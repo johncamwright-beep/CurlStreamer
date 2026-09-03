@@ -233,8 +233,8 @@ export default function Scorer({
                 }
                 className="rounded-lg bg-slate-800 p-3"
               >
-                <option value="fullscreen">Full-screen break</option>
-                <option value="overlay">Sponsor overlay</option>
+                <option value="fullscreen">Sponsors Sidebar</option>
+                <option value="overlay">Sponsors Overlay</option>
               </select>
               <label className="rounded-lg bg-slate-800 px-3">
                 Seconds{" "}

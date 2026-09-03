@@ -8,6 +8,7 @@ import { sourcePresentation } from "@/lib/providers/livekit-client";
 
 type Props = VideoHTMLAttributes<HTMLVideoElement> & {
   onSourceDetails?: (details: string) => void;
+  framing?: "fill" | "contain";
 };
 
 function assignRef(
@@ -20,7 +21,13 @@ function assignRef(
 
 export const PortraitVideo = forwardRef<HTMLVideoElement, Props>(
   function PortraitVideo(
-    { className = "", onLoadedMetadata, onSourceDetails, ...props },
+    {
+      className = "",
+      onLoadedMetadata,
+      onSourceDetails,
+      framing = "fill",
+      ...props
+    },
     ref,
   ) {
     const [landscapeSource, setLandscapeSource] = useState(false);
@@ -42,6 +49,7 @@ export const PortraitVideo = forwardRef<HTMLVideoElement, Props>(
           onLoadedMetadata?.(event);
         }}
         data-source-orientation={landscapeSource ? "landscape" : "portrait"}
+        data-framing={framing}
         className={`portrait-camera-video ${className}`.trim()}
       />
     );

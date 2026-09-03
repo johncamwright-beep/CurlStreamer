@@ -57,7 +57,9 @@ export async function PATCH(
     access.purpose === "participant" &&
     access.role !== "scorer" &&
     !(
-      (body.data.type === "connection" || body.data.type === "camera-health") &&
+      (body.data.type === "connection" ||
+        body.data.type === "camera-health" ||
+        body.data.type === "camera-framing") &&
       body.data.role === access.role
     )
   )

@@ -1,18 +1,24 @@
 "use client";
 import { use, useEffect, useRef, useState } from "react";
 import { Room, RoomEvent, Track } from "livekit-client";
-import type { LocalVideoTrack } from "livekit-client";
 import { useGame } from "@/components/GameSync";
 import { PortraitVideo } from "@/components/PortraitVideo";
 import {
   acquireVerifiedPortraitCamera,
   cameraCapabilityError,
   cameraPermissionGuidance,
+  clampZoom,
   deviceIsPortrait,
   disposeCameraResources,
+  hardwareZoomRange,
+  identifiableRearLenses,
   isPermissionError,
+  verifyPortraitTrack,
   SingleFlightGate,
+  type RearLens,
+  type ZoomRange,
 } from "@/lib/providers/livekit-client";
+import { LocalVideoTrack } from "livekit-client";
 import { OptionalScreenWakeLock } from "@/lib/providers/screen-wake-lock";
 import {
   nextConnectionState,
@@ -55,11 +61,19 @@ export default function Camera({
   const [warning, setWarning] = useState("");
   const [battery, setBattery] = useState<string>();
   const [previewReady, setPreviewReady] = useState(false);
+  const preferenceKey = `curlcast-camera-framing-${role}`;
+  const [framing, setFraming] = useState<"fill" | "contain">("fill");
+  const [zoomRange, setZoomRange] = useState<ZoomRange>();
+  const [zoom, setZoom] = useState<number>();
+  const [lenses, setLenses] = useState<RearLens[]>([]);
+  const [lens, setLens] = useState<RearLens["key"]>();
   const transition = (event: ConnectionEvent) =>
     setState((current) => nextConnectionState(current, event));
 
   useEffect(() => {
     mounted.current = true;
+    const saved = localStorage.getItem(preferenceKey);
+    if (saved === "fill" || saved === "contain") setFraming(saved);
     const update = () => setLandscape(innerWidth > innerHeight);
     const close = () => void disconnectCamera(false);
     update();
@@ -178,6 +192,35 @@ export default function Camera({
       cameraTrack.current = track;
       setWarning(report.warning ?? "");
       const settings = track.mediaStreamTrack.getSettings();
+      const range = hardwareZoomRange(track.mediaStreamTrack);
+      setZoomRange(range);
+      if (range) {
+        const remembered = Number(
+          localStorage.getItem(`curlcast-camera-zoom-${role}`),
+        );
+        const initial =
+          Number.isFinite(remembered) && remembered > 0
+            ? clampZoom(remembered, range)
+            : range.min;
+        await track.mediaStreamTrack.applyConstraints({
+          advanced: [{ zoom: initial } as MediaTrackConstraintSet],
+        });
+        setZoom(track.mediaStreamTrack.getSettings().zoom ?? initial);
+      }
+      // Labels are exposed only after permission; retain IDs in memory only.
+      const discovered = identifiableRearLenses(
+        await navigator.mediaDevices.enumerateDevices(),
+      );
+      setLenses(discovered.length > 1 ? discovered : []);
+      const rememberedLens = localStorage.getItem(
+        `curlcast-camera-lens-${role}`,
+      );
+      setLens(
+        (rememberedLens === "wide" || rememberedLens === "standard") &&
+          discovered.some((item) => item.key === rememberedLens)
+          ? rememberedLens
+          : discovered[0]?.key,
+      );
       setCapture(
         `${settings.width ?? "unknown"}×${settings.height ?? "unknown"} · ${settings.frameRate ?? "unknown"} fps · ${settings.facingMode ?? "unknown camera"}`,
       );
@@ -296,6 +339,84 @@ export default function Camera({
       if (thisAttempt === attempt.current) connectionGate.current.leave();
     }
   }
+  async function updateZoom(next: number) {
+    const active = cameraTrack.current;
+    if (!active || !zoomRange) return;
+    const value = clampZoom(next, zoomRange);
+    try {
+      await active.mediaStreamTrack.applyConstraints({
+        advanced: [{ zoom: value } as MediaTrackConstraintSet],
+      });
+      const reported = active.mediaStreamTrack.getSettings().zoom ?? value;
+      setZoom(reported);
+      localStorage.setItem(`curlcast-camera-zoom-${role}`, String(reported));
+    } catch {
+      setError(
+        "Zoom error: this camera rejected the requested hardware setting.",
+      );
+    }
+  }
+  async function replaceLens(key: RearLens["key"]) {
+    const selected = lenses.find((item) => item.key === key);
+    const currentRoom = room.current;
+    const previous = cameraTrack.current;
+    if (!selected || !currentRoom || !previous || !video.current) return;
+    setError("");
+    let replacement: LocalVideoTrack | undefined;
+    let replacementMediaTrack: MediaStreamTrack | undefined;
+    let previousStopped = false;
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: false,
+        video: {
+          deviceId: { exact: selected.deviceId },
+          width: { ideal: 720 },
+          height: { ideal: 1280 },
+        },
+      });
+      const raw = stream.getVideoTracks()[0];
+      if (!raw) throw new Error();
+      replacementMediaTrack = raw;
+      video.current.srcObject = stream;
+      await verifyPortraitTrack(
+        raw,
+        video.current,
+        deviceIsPortrait(screen.orientation, innerWidth, innerHeight),
+      );
+      replacement = new LocalVideoTrack(raw);
+      previous.detach();
+      await currentRoom.localParticipant.unpublishTrack(previous);
+      previous.stop();
+      previousStopped = true;
+      replacement.attach(video.current);
+      await currentRoom.localParticipant.publishTrack(replacement, {
+        source: Track.Source.Camera,
+      });
+      cameraTrack.current = replacement;
+      setLens(key);
+      localStorage.setItem(`curlcast-camera-lens-${role}`, key);
+      const range = hardwareZoomRange(raw);
+      setZoomRange(range);
+      setZoom(range?.min);
+    } catch {
+      replacementMediaTrack?.stop();
+      replacement?.detach();
+      replacement?.stop();
+      if (previousStopped) {
+        cameraTrack.current = undefined;
+        transition("disconnect");
+        void act({
+          type: "camera-health",
+          role,
+          phase: "disconnected",
+          diagnostic: "Lens replacement failed",
+        }).catch(() => {});
+      }
+      setError(
+        "Lens replacement error: the selected rear camera could not be published.",
+      );
+    }
+  }
   if (game?.status === "closed")
     return (
       <main className="mx-auto max-w-lg p-5">
@@ -343,6 +464,7 @@ export default function Camera({
           onPlaying={() => setPreviewReady(true)}
           onEmptied={() => setPreviewReady(false)}
           onSourceDetails={setSource}
+          framing={framing}
         />
         {!previewReady && (
           <div
@@ -363,6 +485,105 @@ export default function Camera({
           {battery && <span>Battery {battery}</span>}
         </div>
       </div>
+      {previewReady && source.includes("landscape") && framing === "fill" && (
+        <p className="mt-2 text-center text-sm font-semibold text-amber-200">
+          Portrait crop active — frame using this preview.
+        </p>
+      )}
+      {previewReady && (
+        <section
+          className="panel mt-3 space-y-3"
+          aria-label="Camera framing controls"
+        >
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              className={framing === "fill" ? "btn" : "btn-secondary"}
+              onClick={() => {
+                setFraming("fill");
+                localStorage.setItem(preferenceKey, "fill");
+                void act({ type: "camera-framing", role, mode: "fill" });
+              }}
+            >
+              Fill portrait
+            </button>
+            <button
+              className={framing === "contain" ? "btn" : "btn-secondary"}
+              onClick={() => {
+                setFraming("contain");
+                localStorage.setItem(preferenceKey, "contain");
+                void act({ type: "camera-framing", role, mode: "contain" });
+              }}
+            >
+              Show full frame
+            </button>
+          </div>
+          {zoomRange && zoom !== undefined ? (
+            <div>
+              <label className="block text-sm font-bold">
+                Hardware zoom: {zoom.toFixed(1)}×
+              </label>
+              <div className="grid grid-cols-[44px_1fr_44px_auto] items-center gap-2">
+                <button
+                  className="btn-secondary"
+                  aria-label="Zoom out"
+                  onClick={() => void updateZoom(zoom - zoomRange.step)}
+                >
+                  −
+                </button>
+                <input
+                  aria-label="Hardware zoom"
+                  type="range"
+                  min={zoomRange.min}
+                  max={zoomRange.max}
+                  step={zoomRange.step}
+                  value={zoom}
+                  onChange={(event) =>
+                    void updateZoom(Number(event.target.value))
+                  }
+                />
+                <button
+                  className="btn-secondary"
+                  aria-label="Zoom in"
+                  onClick={() => void updateZoom(zoom + zoomRange.step)}
+                >
+                  +
+                </button>
+                <button
+                  className="btn-secondary"
+                  onClick={() => void updateZoom(zoomRange.min)}
+                >
+                  Reset
+                </button>
+              </div>
+            </div>
+          ) : (
+            lenses.length < 2 && (
+              <p className="text-sm text-slate-300">
+                This camera is already at its widest browser-accessible view.
+                Use Show full frame if the rings do not fit.
+              </p>
+            )
+          )}
+          {lenses.length > 1 && (
+            <label className="block font-bold">
+              Lens
+              <select
+                className="ml-2 rounded-lg bg-slate-800 px-3"
+                value={lens}
+                onChange={(event) =>
+                  void replaceLens(event.target.value as RearLens["key"])
+                }
+              >
+                {lenses.map((item) => (
+                  <option key={item.key} value={item.key}>
+                    {item.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
+        </section>
+      )}
       <p className="my-3 text-center text-sm text-slate-300">
         Keep the house inside the rings and the sheet aligned to the centre
         guide. Do not lock this phone or leave this page.

@@ -7,10 +7,12 @@ function Camera({
   side,
   gameId,
   role,
+  framing,
 }: {
   side: "HOME" | "AWAY";
   gameId: string;
   role: "camera-home" | "camera-away";
+  framing: "fill" | "contain";
 }) {
   return (
     <div
@@ -20,7 +22,12 @@ function Camera({
       <span className="absolute left-4 top-4 rounded bg-slate-950/70 px-3 py-2 font-bold">
         {side} END
       </span>
-      <LiveKitCameraFeed gameId={gameId} role={role} showPlaceholderGuides />
+      <LiveKitCameraFeed
+        gameId={gameId}
+        role={role}
+        framing={framing}
+        showPlaceholderGuides
+      />
     </div>
   );
 }
@@ -57,10 +64,30 @@ export function BroadcastCanvas({ game }: { game: GameState }) {
           className="broadcast-camera-deck"
         >
           {showHome && (
-            <Camera side="HOME" gameId={game.id} role="camera-home" />
+            <Camera
+              side="HOME"
+              gameId={game.id}
+              role="camera-home"
+              framing={game.cameraFraming?.["camera-home"] ?? "fill"}
+            />
           )}
           {showAway && (
-            <Camera side="AWAY" gameId={game.id} role="camera-away" />
+            <Camera
+              side="AWAY"
+              gameId={game.id}
+              role="camera-away"
+              framing={game.cameraFraming?.["camera-away"] ?? "fill"}
+            />
+          )}
+          {m.active && m.style === "overlay" && sponsor && (
+            <div data-testid="sponsor-overlay" className="sponsor-deck-overlay">
+              <img
+                src={sponsor.dataUrl}
+                alt={sponsor.name}
+                className="safe-video"
+                style={{ transform: `rotate(${sponsor.rotation}deg)` }}
+              />
+            </div>
           )}
         </div>
         <aside
@@ -74,10 +101,13 @@ export function BroadcastCanvas({ game }: { game: GameState }) {
             <h1 className="mt-[.5cqw] text-[1.6cqw] font-black leading-tight">
               {game.config.eventName}
             </h1>
+            <Scoreboard game={game} compact />
           </div>
-          <Scoreboard game={game} compact />
-          {m.active && m.style === "overlay" && sponsor && (
-            <div className="rounded-2xl bg-white p-[1cqw]">
+          {m.active && m.style === "fullscreen" && sponsor && (
+            <div
+              data-testid="sponsor-sidebar"
+              className="rounded-2xl bg-white p-[1cqw]"
+            >
               <p className="mb-2 text-center text-[.8cqw] font-bold text-slate-700">
                 PRESENTED BY
               </p>
@@ -101,22 +131,6 @@ export function BroadcastCanvas({ game }: { game: GameState }) {
           </div>
         </aside>
       </div>
-      {m.active && m.style === "fullscreen" && sponsor && (
-        <div className="absolute inset-0 z-20 grid place-content-center bg-[radial-gradient(circle,#f8fafc,#cbd5e1)] p-[8%] transition-opacity">
-          <img
-            src={sponsor.dataUrl}
-            alt={sponsor.name}
-            className="safe-video h-[60vh] max-h-[650px] w-[70vw] max-w-[1300px]"
-            style={{ transform: `rotate(${sponsor.rotation}deg)` }}
-          />
-          <div className="absolute bottom-[3%] left-[3%] rounded-xl bg-slate-950/90 p-[1cqw]">
-            <Scoreboard game={game} compact />
-          </div>
-          <span className="absolute right-[3%] top-[3%] rounded-full bg-slate-950 px-[1cqw] py-[.5cqw] text-[1cqw] font-bold">
-            SPONSOR BREAK
-          </span>
-        </div>
-      )}
     </div>
   );
 }

@@ -20,7 +20,7 @@ export async function POST(request: Request) {
       },
       { status: 400 },
     );
-  const game = createGame(body.data);
+  const game = await createGame(body.data);
   return NextResponse.json(
     { ...game, organizerToken: await issueOrganizerToken(game.id) },
     { status: 201 },

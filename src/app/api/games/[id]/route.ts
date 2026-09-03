@@ -8,7 +8,7 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params;
-  const game = getGame(id);
+  const game = await getGame(id);
   return game
     ? NextResponse.json(game)
     : NextResponse.json({ error: "Game not found" }, { status: 404 });
@@ -37,7 +37,7 @@ export async function PATCH(
       { error: "This access cannot update the game" },
       { status: 403 },
     );
-  const existing = getGame(id);
+  const existing = await getGame(id);
   if (existing?.status === "closed")
     return NextResponse.json({ error: "This game is closed" }, { status: 410 });
   const body = actionSchema.safeParse(await request.json());
@@ -67,7 +67,7 @@ export async function PATCH(
       { error: "Only an organizer can close a game" },
       { status: 403 },
     );
-  const game = updateGame(id, body.data);
+  const game = await updateGame(id, body.data);
   return game
     ? NextResponse.json(game)
     : NextResponse.json({ error: "Game not found" }, { status: 404 });

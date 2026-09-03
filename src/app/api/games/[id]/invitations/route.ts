@@ -12,7 +12,7 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params;
-  const game = getGame(id);
+  const game = await getGame(id);
   if (!game)
     return NextResponse.json({ error: "Game not found" }, { status: 404 });
   if (game.status === "closed")

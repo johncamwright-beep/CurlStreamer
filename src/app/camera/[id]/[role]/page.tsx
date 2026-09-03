@@ -5,7 +5,7 @@ import type { LocalVideoTrack } from "livekit-client";
 import { useGame } from "@/components/GameSync";
 import { PortraitVideo } from "@/components/PortraitVideo";
 import {
-  acquirePortraitCamera,
+  acquirePortraitCameraWithPermissionRecovery,
   cameraCapabilityError,
   cameraPermissionGuidance,
   disposeCameraResources,
@@ -48,6 +48,7 @@ export default function Camera({
   const [capture, setCapture] = useState("");
   const [source, setSource] = useState("");
   const [confirmation, setConfirmation] = useState("");
+  const [connectionStatus, setConnectionStatus] = useState("");
   const [battery, setBattery] = useState<string>();
   const transition = (event: ConnectionEvent) =>
     setState((current) => nextConnectionState(current, event));
@@ -58,7 +59,7 @@ export default function Camera({
     const close = () => void disconnectCamera(false);
     update();
     addEventListener("resize", update);
-    addEventListener("pagehide", close);
+    addEventListener("beforeunload", close);
     const nav = navigator as Navigator & {
       getBattery?: () => Promise<{ level: number }>;
     };
@@ -68,7 +69,7 @@ export default function Camera({
     return () => {
       mounted.current = false;
       removeEventListener("resize", update);
-      removeEventListener("pagehide", close);
+      removeEventListener("beforeunload", close);
       close();
     };
   }, []);
@@ -129,6 +130,7 @@ export default function Camera({
     setCapture("");
     setSource("");
     setConfirmation("");
+    setConnectionStatus("Waiting for camera permission");
     transition("connect");
     let stage = "camera acquisition";
     let acquired = false;
@@ -140,7 +142,17 @@ export default function Camera({
       if (capabilityError) throw new Error(`Camera error: ${capabilityError}`);
       // This call is deliberately made in the click stack, before any await or
       // token/LiveKit work, which is required by iOS Chrome's user activation.
-      const acquisition = acquirePortraitCamera(navigator.mediaDevices);
+      const acquisition = acquirePortraitCameraWithPermissionRecovery(
+        navigator.mediaDevices,
+        navigator.permissions,
+        (status) =>
+          mounted.current &&
+          setConnectionStatus(
+            status === "waiting"
+              ? "Waiting for camera permission"
+              : "Starting camera",
+          ),
+      );
       const track = await acquisition;
       acquired = true;
       if (thisAttempt !== attempt.current) {
@@ -228,6 +240,7 @@ export default function Camera({
         return;
       }
       transition("published");
+      setConnectionStatus("");
     } catch (cause) {
       const name =
         typeof cause === "object" && cause && "name" in cause
@@ -239,6 +252,7 @@ export default function Camera({
         : `${cause instanceof Error ? cause.message : "Camera connection failed"} (${name}) at ${stage}.`;
       await disconnectCamera(false);
       transition(denied ? "permission-denied" : "disconnect");
+      setConnectionStatus(denied ? "Permission denied" : "");
       if (mounted.current) setError(message);
     } finally {
       if (thisAttempt === attempt.current) connectionGate.current.leave();
@@ -324,6 +338,11 @@ export default function Camera({
         >
           Disconnect Camera
         </button>
+      )}
+      {connectionStatus && (
+        <p role="status" className="mt-3 text-center text-slate-200">
+          {connectionStatus}
+        </p>
       )}
       {confirmation && (
         <p role="status" className="mt-3 text-center text-emerald-300">

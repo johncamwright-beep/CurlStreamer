@@ -9,15 +9,25 @@ const page = readFileSync(
 describe("camera connection lifecycle", () => {
   it("starts the one camera acquisition before token fetching and LiveKit", () => {
     const acquisition = page.indexOf(
-      "acquirePortraitCamera(navigator.mediaDevices)",
+      "acquirePortraitCameraWithPermissionRecovery(",
     );
     expect(acquisition).toBeGreaterThan(0);
     expect(
       page.indexOf("fetch(`/api/games/${id}/livekit-token`"),
     ).toBeGreaterThan(acquisition);
     expect(page.indexOf("await nextRoom.connect")).toBeGreaterThan(acquisition);
-    expect(page.match(/acquirePortraitCamera\(/g)).toHaveLength(1);
+    expect(
+      page.match(/acquirePortraitCameraWithPermissionRecovery\(/g),
+    ).toHaveLength(1);
     expect(page).not.toContain("createLocalTracks");
+  });
+
+  it("does not clean up when a browser permission sheet hides the page", () => {
+    expect(page).not.toContain('addEventListener("visibilitychange"');
+    expect(page).not.toContain('addEventListener("pagehide"');
+    expect(page).not.toContain('addEventListener("blur"');
+    expect(page).toContain('addEventListener("beforeunload", close)');
+    expect(page).toContain("return () => {");
   });
 
   it("guards repeated taps and only calls a denial an acquisition failure", () => {

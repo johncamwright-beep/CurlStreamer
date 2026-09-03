@@ -37,6 +37,18 @@ describe("camera connection lifecycle", () => {
     );
   });
 
+  it("marks and persists the camera live before starting optional wake lock", () => {
+    const persisted = page.indexOf(
+      'await act({ type: "connection", role, connected: true })',
+    );
+    const published = page.indexOf('transition("published")');
+    const wakeStart = page.indexOf("wakeLock.current.start()");
+    expect(persisted).toBeGreaterThan(0);
+    expect(published).toBeGreaterThan(persisted);
+    expect(wakeStart).toBeGreaterThan(published);
+    expect(page).not.toContain('stage = "wake lock"');
+  });
+
   it("offers idempotent cancellation and blocks stale publication work", () => {
     expect(page).toContain("Disconnect Camera");
     expect(page).toContain("if (cleanupFlight.current)");

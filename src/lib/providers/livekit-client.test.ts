@@ -2,9 +2,10 @@ import { describe, expect, it, vi } from "vitest";
 import { Track } from "livekit-client";
 import {
   SingleFlightGate,
-  recoverCameraPermission,
+  acquireVerifiedPortraitCamera,
   cameraCapabilityError,
   cameraPermissionGuidance,
+  deviceIsPortrait,
   disposeCameraResources,
   isPermissionError,
   isRoleCameraPublication,
@@ -12,6 +13,8 @@ import {
   portraitMediaConstraints,
   publishedCameraTracks,
   sourcePresentation,
+  supportedPortraitConstraints,
+  verifyPortraitTrack,
 } from "./livekit-client";
 
 describe("LiveKit camera client", () => {
@@ -34,6 +37,14 @@ describe("LiveKit camera client", () => {
         frameRate: { ideal: 30 },
       },
     });
+  });
+
+  it("uses device orientation before the viewport fallback", () => {
+    expect(deviceIsPortrait({ type: "portrait-primary" }, 900, 500)).toBe(true);
+    expect(deviceIsPortrait({ type: "landscape-primary" }, 500, 900)).toBe(
+      false,
+    );
+    expect(deviceIsPortrait(undefined, 500, 900)).toBe(true);
   });
 
   it("contains every source and letterboxes landscape video", () => {
@@ -80,43 +91,91 @@ describe("LiveKit camera client", () => {
     );
   });
 
-  it("retries once when Chrome reports denial after permission became granted", async () => {
-    const camera = { id: "camera" };
-    const acquire = vi
-      .fn<() => Promise<typeof camera>>()
-      .mockRejectedValueOnce(new DOMException("stale", "NotAllowedError"))
-      .mockResolvedValueOnce(camera);
-    const query = vi.fn().mockResolvedValue({ state: "granted" });
-    const statuses: string[] = [];
+  it("makes exactly one acquisition call per attempt", async () => {
+    const getUserMedia = vi
+      .fn()
+      .mockResolvedValue({ getVideoTracks: () => [] });
     await expect(
-      recoverCameraPermission(acquire, { query } as never, (status) =>
-        statuses.push(status),
+      acquireVerifiedPortraitCamera(
+        { getUserMedia } as never,
+        {} as HTMLVideoElement,
+        true,
       ),
-    ).resolves.toBe(camera);
-    expect(acquire).toHaveBeenCalledTimes(2);
-    expect(statuses).toEqual(["waiting", "starting"]);
+    ).rejects.toMatchObject({ name: "NotFoundError" });
+    expect(getUserMedia).toHaveBeenCalledOnce();
   });
 
-  it("does not loop when the single permission recovery also fails", async () => {
-    const denied = new DOMException("denied", "NotAllowedError");
-    const acquire = vi.fn().mockRejectedValue(denied);
-    await expect(
-      recoverCameraPermission(acquire, {
-        query: vi.fn().mockResolvedValue({ state: "granted" }),
-      } as never),
-    ).rejects.toBe(denied);
-    expect(acquire).toHaveBeenCalledTimes(2);
+  it("builds supported native portrait constraints", () => {
+    expect(
+      supportedPortraitConstraints({
+        width: { min: 320, max: 1920 },
+        height: { min: 240, max: 1920 },
+        aspectRatio: { min: 0.5, max: 2 },
+      }),
+    ).toMatchObject({
+      width: { ideal: 720, max: 720 },
+      height: { ideal: 1280, min: 1280 },
+      aspectRatio: { exact: 9 / 16 },
+    });
   });
 
-  it("preserves a genuine denied permission without retrying", async () => {
-    const denied = new DOMException("denied", "NotAllowedError");
-    const acquire = vi.fn().mockRejectedValue(denied);
-    await expect(
-      recoverCameraPermission(acquire, {
-        query: vi.fn().mockResolvedValue({ state: "denied" }),
-      } as never),
-    ).rejects.toBe(denied);
-    expect(acquire).toHaveBeenCalledOnce();
+  it("applies portrait constraints to the same landscape track and verifies metadata", async () => {
+    let settings = { width: 1280, height: 720 };
+    const video = {
+      readyState: 1,
+      videoWidth: 1280,
+      videoHeight: 720,
+      requestVideoFrameCallback(callback: () => void) {
+        this.videoWidth = 720;
+        this.videoHeight = 1280;
+        callback();
+        return 1;
+      },
+    };
+    const track = {
+      getSettings: vi.fn(() => settings),
+      getCapabilities: vi.fn(() => ({
+        width: { min: 320, max: 1920 },
+        height: { min: 240, max: 1920 },
+        aspectRatio: { min: 0.5, max: 2 },
+      })),
+      applyConstraints: vi.fn(async () => {
+        settings = { width: 720, height: 1280 };
+      }),
+    };
+    const report = await verifyPortraitTrack(
+      track as never,
+      video as never,
+      true,
+    );
+    expect(track.applyConstraints).toHaveBeenCalledOnce();
+    expect(report).toMatchObject({
+      trackWidth: 720,
+      trackHeight: 1280,
+      videoWidth: 720,
+      videoHeight: 1280,
+      portrait: true,
+      constraintsApplied: true,
+    });
+  });
+
+  it("accurately warns when landscape frames cannot become portrait", async () => {
+    const track = {
+      getSettings: () => ({ width: 1920, height: 1080 }),
+      getCapabilities: () => ({
+        width: { min: 320, max: 1920 },
+        height: { min: 240, max: 1080 },
+      }),
+      applyConstraints: vi.fn(),
+    };
+    const report = await verifyPortraitTrack(
+      track as never,
+      { readyState: 1, videoWidth: 1920, videoHeight: 1080 } as never,
+      true,
+    );
+    expect(track.applyConstraints).not.toHaveBeenCalled();
+    expect(report.portrait).toBe(false);
+    expect(report.warning).toContain("complete landscape video");
   });
 
   it("unpublishes, detaches, and stops an old track before retry", async () => {

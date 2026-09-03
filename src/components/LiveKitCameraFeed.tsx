@@ -29,6 +29,7 @@ export function LiveKitCameraFeed({
     "connecting",
   );
   const [error, setError] = useState("");
+  const [source, setSource] = useState("");
   useEffect(() => {
     const room = new Room({ adaptiveStream: true });
     let mounted = true;
@@ -119,7 +120,12 @@ export function LiveKitCameraFeed({
   }, [gameId, role]);
   return (
     <>
-      <PortraitVideo ref={video} autoPlay muted />
+      <PortraitVideo ref={video} autoPlay muted onSourceDetails={setSource} />
+      {status === "live" && source && (
+        <span className="absolute bottom-2 left-2 rounded bg-slate-950/70 px-2 py-1 text-xs text-white">
+          Remote video: {source}
+        </span>
+      )}
       {status !== "live" && (
         <div className="absolute inset-0 grid place-content-center bg-slate-950/80 text-center">
           {showPlaceholderGuides && (

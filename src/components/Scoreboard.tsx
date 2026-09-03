@@ -4,13 +4,18 @@ import type { GameState } from "@/lib/types";
 export function Scoreboard({
   game,
   compact = false,
+  broadcast = false,
 }: {
   game: GameState;
   compact?: boolean;
+  broadcast?: boolean;
 }) {
   const s = deriveScore(game);
   return (
-    <div className={compact ? "rounded-xl bg-slate-950/90 p-3" : "panel"}>
+    <div
+      data-testid={broadcast ? "broadcast-scoreboard" : undefined}
+      className={`${compact ? "rounded-xl bg-slate-950/90 p-3" : "panel"} ${broadcast ? "broadcast-scoreboard" : ""}`}
+    >
       <div className="flex items-center justify-between">
         <span className="text-xs font-bold tracking-widest text-cyan-300">
           END {s.currentEnd}
@@ -25,7 +30,9 @@ export function Scoreboard({
               t === "home" ? game.config.homeColor : game.config.awayColor,
           }}
         >
-          <strong className={compact ? "text-lg" : "text-2xl"}>
+          <strong
+            className={`${compact ? "text-lg" : "text-2xl"} min-w-0 truncate`}
+          >
             {t === "home" ? game.config.homeName : game.config.awayName}
           </strong>
           <span className="flex items-center gap-2">

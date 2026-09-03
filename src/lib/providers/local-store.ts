@@ -176,11 +176,6 @@ export function updateGame(id: string, action: z.infer<typeof actionSchema>) {
       m.startedAt = action.active ? now : null;
       m.rotationOffset = 0;
       m.paused = false;
-      if (action.active && m.muteDuring) {
-        m.mutedPrevious = game.audioMuted;
-        game.audioMuted = true;
-      } else if (!action.active && m.muteDuring)
-        game.audioMuted = m.mutedPrevious;
     }
     if (action.type === "sponsor-nav") {
       if (action.direction) game.sponsorMode.rotationOffset += action.direction;

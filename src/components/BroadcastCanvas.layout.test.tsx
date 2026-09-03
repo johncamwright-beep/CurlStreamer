@@ -52,7 +52,7 @@ const css = fs.readFileSync(
 );
 
 describe("1920x1080 broadcast video layout", () => {
-  it("allocates the dominant 73% program region to two equal cameras", () => {
+  it("aligns two equal cameras near the left safe edge with a larger rail", () => {
     const markup = renderToStaticMarkup(
       <BroadcastCanvas game={game("split")} />,
     );
@@ -60,10 +60,14 @@ describe("1920x1080 broadcast video layout", () => {
     expect(markup).toContain('data-camera-count="2"');
     expect(markup.match(/broadcast-camera-panel/g)).toHaveLength(2);
     expect(css).toMatch(
-      /grid-template-columns: minmax\(0, 73fr\) minmax\(0, 25fr\)/,
+      /grid-template-columns: minmax\(0, 63\.8fr\) minmax\(0, 36\.2fr\)/,
     );
+    expect(css).toMatch(/\.broadcast-program-layout[\s\S]*gap: 12px/);
     expect(css).toMatch(
       /\[data-camera-count="2"\][\s\S]*grid-template-columns: repeat\(2, max-content\)/,
+    );
+    expect(css).toMatch(
+      /\[data-camera-count="2"\][\s\S]*justify-content: start/,
     );
   });
 
@@ -98,5 +102,14 @@ describe("1920x1080 broadcast video layout", () => {
   it("uses a minimal divider and constrains overlay sponsors to half the deck", () => {
     expect(css).toMatch(/data-camera-count="2"[\s\S]*gap: 2px/);
     expect(css).toMatch(/\.sponsor-deck-overlay[\s\S]*inset: 25%/);
+  });
+
+  it("gives the rail readable scoring and aspect-preserving sponsor space", () => {
+    expect(css).toMatch(/\.broadcast-scoreboard[\s\S]*padding: 20px/);
+    expect(css).toMatch(
+      /\.broadcast-scoreboard > div:not\(:first-child\) > strong[\s\S]*font-size: 36px/,
+    );
+    expect(css).toMatch(/\.sponsor-sidebar[\s\S]*height: 370px/);
+    expect(css).toMatch(/\.safe-video \{\s*object-fit: contain/);
   });
 });

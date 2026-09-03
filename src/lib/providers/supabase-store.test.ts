@@ -5,6 +5,7 @@ import type { GameConfig, GameState } from "../types";
 const mocks = vi.hoisted(() => ({
   rpc: vi.fn(),
   maybeSingle: vi.fn(),
+  updateEq: vi.fn(),
 }));
 
 vi.mock("@supabase/supabase-js", () => ({
@@ -14,6 +15,7 @@ vi.mock("@supabase/supabase-js", () => ({
       select: () => ({
         eq: () => ({ maybeSingle: mocks.maybeSingle }),
       }),
+      update: () => ({ eq: mocks.updateEq }),
     }),
   }),
 }));
@@ -60,6 +62,7 @@ describe("Supabase game creation", () => {
   beforeEach(() => {
     mocks.rpc.mockReset();
     mocks.maybeSingle.mockReset();
+    mocks.updateEq.mockReset().mockResolvedValue({ error: null });
     vi.restoreAllMocks();
   });
 
@@ -101,6 +104,7 @@ describe("Supabase score-event persistence", () => {
   beforeEach(() => {
     mocks.rpc.mockReset().mockResolvedValue({ error: null });
     mocks.maybeSingle.mockReset();
+    mocks.updateEq.mockReset().mockResolvedValue({ error: null });
   });
 
   it.each([
@@ -263,4 +267,29 @@ describe("Supabase score-event persistence", () => {
       updateGame(game.id, { type: "hammer", team: "away" }),
     ).rejects.toThrow("Supabase score update failed");
   });
+
+  it.each([
+    { active: true, style: "overlay" as const },
+    { active: false, style: "overlay" as const },
+    { active: true, style: "fullscreen" as const },
+  ])(
+    "preserves manual audio for rapid sponsor mode change %#",
+    async ({ active, style }) => {
+      const game = storedGame();
+      game.audioMuted = false;
+      mocks.maybeSingle.mockResolvedValue({
+        data: { state: game, version: 45 },
+        error: null,
+      });
+
+      const result = await updateGame(game.id, {
+        type: "sponsor-mode",
+        active,
+        style,
+      });
+
+      expect(result!.audioMuted).toBe(false);
+      expect(result!.sponsorMode).toMatchObject({ active, style });
+    },
+  );
 });

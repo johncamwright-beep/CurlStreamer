@@ -243,11 +243,6 @@ export async function updateGame(
     mode.startedAt = action.active ? now : null;
     mode.rotationOffset = 0;
     mode.paused = false;
-    if (action.active && mode.muteDuring) {
-      mode.mutedPrevious = game.audioMuted;
-      game.audioMuted = true;
-    } else if (!action.active && mode.muteDuring)
-      game.audioMuted = mode.mutedPrevious;
   }
   if (action.type === "sponsor-nav") {
     if (action.direction) game.sponsorMode.rotationOffset += action.direction;

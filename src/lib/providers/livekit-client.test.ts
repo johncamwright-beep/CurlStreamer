@@ -8,9 +8,9 @@ import {
   isPermissionError,
   isRoleCameraPublication,
   participantCameraRole,
-  portraitCameraOptions,
-  portraitMediaOptions,
+  portraitMediaConstraints,
   publishedCameraTracks,
+  sourcePresentation,
 } from "./livekit-client";
 
 describe("LiveKit camera client", () => {
@@ -23,14 +23,26 @@ describe("LiveKit camera client", () => {
   });
 
   it("requests a rear-facing 720x1280 30 fps portrait track", () => {
-    expect(portraitCameraOptions).toEqual({
-      facingMode: "environment",
-      resolution: { width: 720, height: 1280, frameRate: 30 },
-      frameRate: 30,
-    });
-    expect(portraitMediaOptions).toEqual({
+    expect(portraitMediaConstraints).toEqual({
       audio: false,
-      video: portraitCameraOptions,
+      video: {
+        facingMode: { ideal: "environment" },
+        width: { ideal: 720 },
+        height: { ideal: 1280 },
+        aspectRatio: { ideal: 9 / 16 },
+        frameRate: { ideal: 30 },
+      },
+    });
+  });
+
+  it("contains portrait sources and uses a centered crop only for landscape", () => {
+    expect(sourcePresentation(720, 1280)).toEqual({
+      fit: "contain",
+      description: "portrait source",
+    });
+    expect(sourcePresentation(1920, 1080)).toEqual({
+      fit: "cover",
+      description: "cropped landscape fallback",
     });
   });
 

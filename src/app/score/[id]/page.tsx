@@ -6,6 +6,7 @@ import { Scoreboard } from "@/components/Scoreboard";
 import { GameSetupNavigation } from "@/components/GameSetupNavigation";
 import { deriveScore } from "@/lib/scoring";
 import type { Sponsor, Team } from "@/lib/types";
+import { hasVisibleSponsorOverlay } from "@/lib/sponsor-audio";
 async function optimize(file: File): Promise<Sponsor> {
   if (!["image/jpeg", "image/png", "image/webp"].includes(file.type))
     throw new Error(`${file.name}: use JPEG, PNG or WebP.`);
@@ -313,7 +314,7 @@ export default function Scorer({
                 onChange={(e) =>
                   act({
                     type: "sponsor-mode",
-                    active: false,
+                    active: game.sponsorMode.active,
                     style: e.target.value,
                   })
                 }
@@ -381,9 +382,10 @@ export default function Scorer({
                 </button>
               </div>
             )}
-            {game.sponsorMode.active && game.audioMuted && (
+            {hasVisibleSponsorOverlay(game) && (
               <p className="mt-2 font-bold text-amber-300">
-                Player audio is muted for privacy.
+                Sponsor Overlay is temporarily muting scorer audio. A manual
+                mute will remain in place after it closes.
               </p>
             )}
           </div>

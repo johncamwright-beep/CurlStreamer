@@ -64,23 +64,56 @@ button {
 }
 .broadcast-program-layout {
   display: grid;
-  grid-template-columns: minmax(0, 73fr) minmax(0, 25fr);
-  gap: 2%;
+  grid-template-columns: minmax(0, 63.8fr) minmax(0, 36.2fr);
+  gap: 12px;
 }
 .broadcast-camera-deck {
   position: relative;
   display: grid;
   min-width: 0;
   min-height: 0;
-  place-items: center;
+  place-items: center start;
 }
 .broadcast-camera-deck[data-camera-count="2"] {
   grid-template-columns: repeat(2, max-content);
-  justify-content: center;
+  justify-content: start;
   gap: 2px;
 }
 .broadcast-camera-panel {
   height: 100%;
+}
+.broadcast-information-rail {
+  padding: 24px;
+}
+.broadcast-scoreboard {
+  margin-top: 16px;
+  padding: 20px;
+}
+.broadcast-scoreboard > div:first-child span {
+  font-size: 24px;
+}
+.broadcast-scoreboard > div:not(:first-child) {
+  margin-top: 18px;
+  gap: 18px;
+  padding-left: 16px;
+}
+.broadcast-scoreboard > div:not(:first-child) > strong {
+  font-size: 36px;
+  line-height: 1.1;
+}
+.broadcast-scoreboard > div:not(:first-child) > span strong {
+  font-size: 48px;
+}
+.broadcast-scoreboard svg {
+  width: 32px;
+  height: 32px;
+}
+.sponsor-sidebar {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  height: 370px;
+  margin-top: 18px;
+  overflow: hidden;
 }
 .broadcast-camera-deck[data-camera-count="1"] .broadcast-camera-panel {
   height: 100%;
@@ -133,7 +166,9 @@ button {
 }
 .broadcast-operator-navigation {
   position: fixed;
-  top: max(0.75rem, env(safe-area-inset-top));
-  left: max(0.75rem, env(safe-area-inset-left));
+  right: max(0.75rem, env(safe-area-inset-right));
+  bottom: max(0.75rem, env(safe-area-inset-bottom));
   z-index: 100;
+  min-height: 44px;
+  box-shadow: 0 8px 24px rgb(0 0 0 / 55%);
 }

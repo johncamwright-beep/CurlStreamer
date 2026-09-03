@@ -3,6 +3,7 @@ import React, { useEffect, useState } from "react";
 import { Scoreboard } from "./Scoreboard";
 import type { GameState } from "@/lib/types";
 import { LiveKitCameraFeed } from "./LiveKitCameraFeed";
+import { isScorerAudioEffectivelyMuted } from "@/lib/sponsor-audio";
 function Camera({
   side,
   gameId,
@@ -48,6 +49,10 @@ export function BroadcastCanvas({ game }: { game: GameState }) {
       sponsors.length
     : 0;
   const sponsor = sponsors[idx];
+  const visibleSponsorOverlay = Boolean(
+    m.active && m.style === "overlay" && sponsor,
+  );
+  const effectiveMute = isScorerAudioEffectivelyMuted(game);
   const showHome = game.layout !== "away",
     showAway = game.layout !== "home";
   const cameraCount = showHome && showAway ? 2 : 1;
@@ -79,7 +84,7 @@ export function BroadcastCanvas({ game }: { game: GameState }) {
               framing={game.cameraFraming?.["camera-away"] ?? "fill"}
             />
           )}
-          {m.active && m.style === "overlay" && sponsor && (
+          {visibleSponsorOverlay && sponsor && (
             <div data-testid="sponsor-overlay" className="sponsor-deck-overlay">
               <img
                 src={sponsor.dataUrl}
@@ -92,21 +97,21 @@ export function BroadcastCanvas({ game }: { game: GameState }) {
         </div>
         <aside
           data-testid="program-side-rail"
-          className="flex min-w-0 flex-col justify-between rounded-2xl border border-white/10 bg-slate-950/45 p-[1.2cqw]"
+          className="broadcast-information-rail flex min-w-0 flex-col rounded-2xl border border-white/10 bg-slate-950/45"
         >
           <div>
-            <p className="text-[1.2cqw] font-bold tracking-[.25em] text-cyan-300">
+            <p className="text-[1.25cqw] font-bold tracking-[.25em] text-cyan-300">
               CURLCAST
             </p>
-            <h1 className="mt-[.5cqw] text-[1.6cqw] font-black leading-tight">
+            <h1 className="mt-[.45cqw] truncate text-[1.75cqw] font-black leading-tight">
               {game.config.eventName}
             </h1>
-            <Scoreboard game={game} compact />
+            <Scoreboard game={game} compact broadcast />
           </div>
           {m.active && m.style === "fullscreen" && sponsor && (
             <div
               data-testid="sponsor-sidebar"
-              className="rounded-2xl bg-white p-[1cqw]"
+              className="sponsor-sidebar rounded-2xl bg-white p-[1cqw]"
             >
               <p className="mb-2 text-center text-[.8cqw] font-bold text-slate-700">
                 PRESENTED BY
@@ -114,12 +119,15 @@ export function BroadcastCanvas({ game }: { game: GameState }) {
               <img
                 src={sponsor.dataUrl}
                 alt={sponsor.name}
-                className="safe-video h-[8cqw] w-full"
+                className="safe-video h-full w-full"
                 style={{ transform: `rotate(${sponsor.rotation}deg)` }}
               />
             </div>
           )}
-          <div className="text-[1cqw]" aria-label="Program status">
+          <div
+            className="mt-auto pt-[.6cqw] text-[.9cqw] leading-tight"
+            aria-label="Program status"
+          >
             <span
               className={
                 game.broadcast === "live" ? "text-red-300" : "text-slate-300"
@@ -127,7 +135,7 @@ export function BroadcastCanvas({ game }: { game: GameState }) {
             >
               ● {game.broadcast.toUpperCase()}
             </span>
-            <p>{game.audioMuted ? "Audio muted" : "Scorer audio live"}</p>
+            <p>{effectiveMute ? "Audio muted" : "Scorer audio live"}</p>
           </div>
         </aside>
       </div>

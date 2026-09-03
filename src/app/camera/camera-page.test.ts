@@ -8,17 +8,13 @@ const page = readFileSync(
 
 describe("camera connection lifecycle", () => {
   it("starts the one camera acquisition before token fetching and LiveKit", () => {
-    const acquisition = page.indexOf(
-      "acquirePortraitCameraWithPermissionRecovery(",
-    );
+    const acquisition = page.indexOf("acquireVerifiedPortraitCamera(");
     expect(acquisition).toBeGreaterThan(0);
     expect(
       page.indexOf("fetch(`/api/games/${id}/livekit-token`"),
     ).toBeGreaterThan(acquisition);
     expect(page.indexOf("await nextRoom.connect")).toBeGreaterThan(acquisition);
-    expect(
-      page.match(/acquirePortraitCameraWithPermissionRecovery\(/g),
-    ).toHaveLength(1);
+    expect(page.match(/acquireVerifiedPortraitCamera\(/g)).toHaveLength(1);
     expect(page).not.toContain("createLocalTracks");
   });
 

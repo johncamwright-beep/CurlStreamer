@@ -5,9 +5,10 @@ import type { LocalVideoTrack } from "livekit-client";
 import { useGame } from "@/components/GameSync";
 import { PortraitVideo } from "@/components/PortraitVideo";
 import {
-  acquirePortraitCameraWithPermissionRecovery,
+  acquireVerifiedPortraitCamera,
   cameraCapabilityError,
   cameraPermissionGuidance,
+  deviceIsPortrait,
   disposeCameraResources,
   isPermissionError,
   SingleFlightGate,
@@ -161,24 +162,21 @@ export default function Camera({
       if (capabilityError) throw new Error(`Camera error: ${capabilityError}`);
       // This call is deliberately made in the click stack, before any await or
       // token/LiveKit work, which is required by iOS Chrome's user activation.
-      const acquisition = acquirePortraitCameraWithPermissionRecovery(
+      if (!video.current) throw new Error("Camera preview is unavailable.");
+      const acquisition = acquireVerifiedPortraitCamera(
         navigator.mediaDevices,
-        navigator.permissions,
-        (status) =>
-          mounted.current &&
-          setConnectionStatus(
-            status === "waiting"
-              ? "Waiting for camera permission"
-              : "Starting camera",
-          ),
+        video.current,
+        deviceIsPortrait(screen.orientation, innerWidth, innerHeight),
       );
-      const track = await acquisition;
+      const { track, report } = await acquisition;
       acquired = true;
+      setConnectionStatus("Starting camera");
       if (thisAttempt !== attempt.current) {
         await disposeCameraResources(undefined, track);
         return;
       }
       cameraTrack.current = track;
+      setWarning(report.warning ?? "");
       const settings = track.mediaStreamTrack.getSettings();
       setCapture(
         `${settings.width ?? "unknown"}×${settings.height ?? "unknown"} · ${settings.frameRate ?? "unknown"} fps · ${settings.facingMode ?? "unknown camera"}`,

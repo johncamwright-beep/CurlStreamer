@@ -1,6 +1,4 @@
-export function publicSupabaseConfig(environment = process.env) {
-  const url = environment.NEXT_PUBLIC_SUPABASE_URL;
-  const key = environment.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
+export function publicSupabaseConfig(url?: string, key?: string) {
   if (!url)
     throw new Error("Missing environment variable: NEXT_PUBLIC_SUPABASE_URL");
   if (!key)

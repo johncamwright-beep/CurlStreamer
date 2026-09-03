@@ -5,12 +5,20 @@ import { createBrowserSupabaseClient } from "@/lib/supabase/browser";
 export function AccountNavigation() {
   const [loggedIn, setLoggedIn] = useState(false);
   useEffect(() => {
-    const client = createBrowserSupabaseClient();
-    client.auth.getUser().then(({ data }) => setLoggedIn(Boolean(data.user)));
-    const { data } = client.auth.onAuthStateChange((_event, session) =>
-      setLoggedIn(Boolean(session?.user)),
-    );
-    return () => data.subscription.unsubscribe();
+    try {
+      const client = createBrowserSupabaseClient();
+      void client.auth
+        .getUser()
+        .then(({ data }) => setLoggedIn(Boolean(data.user)))
+        .catch(() => setLoggedIn(false));
+      const { data } = client.auth.onAuthStateChange((_event, session) =>
+        setLoggedIn(Boolean(session?.user)),
+      );
+      return () => data.subscription.unsubscribe();
+    } catch {
+      // Authentication navigation is optional on the game-creation page.
+      setLoggedIn(false);
+    }
   }, []);
   return (
     <Link

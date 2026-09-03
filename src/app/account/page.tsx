@@ -3,13 +3,16 @@ import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { getAccountContext, readableTeamRole } from "@/lib/auth/account";
 import Link from "next/link";
 import { signOut } from "./actions";
+import { AccountServiceUnavailable } from "@/components/AccountServiceUnavailable";
 export default async function AccountPage() {
   const supabase = await createServerSupabaseClient();
   const {
     data: { user },
   } = await supabase.auth.getUser();
   if (!user?.email_confirmed_at) redirect("/login");
-  const account = await getAccountContext(user);
+  const result = await getAccountContext(user);
+  if (!result.ok) return <AccountServiceUnavailable />;
+  const account = result.account;
   return (
     <main className="mx-auto min-h-screen max-w-xl p-5 md:py-12">
       <section className="panel grid gap-4">

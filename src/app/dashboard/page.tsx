@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { getAccountContext, readableTeamRole } from "@/lib/auth/account";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { signOut } from "@/app/account/actions";
+import { AccountServiceUnavailable } from "@/components/AccountServiceUnavailable";
 
 export default async function DashboardPage() {
   const supabase = await createServerSupabaseClient();
@@ -10,7 +11,9 @@ export default async function DashboardPage() {
     data: { user },
   } = await supabase.auth.getUser();
   if (!user?.email_confirmed_at) redirect("/login");
-  const account = await getAccountContext(user);
+  const result = await getAccountContext(user);
+  if (!result.ok) return <AccountServiceUnavailable />;
+  const account = result.account;
   if (account.profile.status !== "active") {
     return (
       <main className="mx-auto min-h-screen max-w-xl p-5 md:py-12">

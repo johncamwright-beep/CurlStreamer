@@ -21,12 +21,26 @@ function supabase() {
 
 function databaseError(
   operation: string,
-  error: { message: string } | null,
+  error: { code?: string; message: string } | null,
 ): never {
-  console.error(
-    `Supabase ${operation} failed:`,
-    error?.message ?? "unknown error",
-  );
+  const secrets = [
+    process.env.SUPABASE_SECRET_KEY,
+    process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY,
+  ].filter((value): value is string => Boolean(value));
+  let message = error?.message ?? "unknown error";
+  for (const secret of secrets)
+    message = message.replaceAll(secret, "[redacted]");
+  message = message
+    .replace(
+      /\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b/g,
+      "[redacted]",
+    )
+    .replace(/(postgres(?:ql)?:\/\/)[^\s@]+@/gi, "$1[redacted]@")
+    .slice(0, 500);
+  console.error(`Supabase ${operation} failed`, {
+    code: error?.code ?? "unknown",
+    message,
+  });
   throw new Error(`Supabase ${operation} failed`);
 }
 
@@ -73,29 +87,14 @@ function initialState(id: string, config: GameConfig): GameState {
 
 export async function createGame(config: GameConfig) {
   const db = supabase();
-  const { data: membership, error: membershipError } = await db
-    .from("organizer_users")
-    .select("organization_id,user_id")
-    .limit(1)
-    .maybeSingle();
-  if (membershipError) databaseError("organization lookup", membershipError);
-  if (!membership)
-    throw new Error("Supabase has no organizer organization configured");
-
   const id = randomUUID();
   const game = initialState(id, config);
-  const { error: gameError } = await db.from("games").insert({
-    id,
-    organization_id: membership.organization_id,
-    created_by: membership.user_id,
-    config,
-    status: "active",
+  const { error } = await db.rpc("create_game", {
+    p_game_id: id,
+    p_config: config,
+    p_state: game,
   });
-  if (gameError) databaseError("game creation", gameError);
-  const { error: stateError } = await db
-    .from("game_states")
-    .insert({ game_id: id, state: game });
-  if (stateError) databaseError("game state creation", stateError);
+  if (error) databaseError("game creation", error);
   return game;
 }
 

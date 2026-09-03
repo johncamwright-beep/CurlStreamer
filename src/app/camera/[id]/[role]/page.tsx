@@ -12,6 +12,7 @@ import {
   isPermissionError,
   SingleFlightGate,
 } from "@/lib/providers/livekit-client";
+import { OptionalScreenWakeLock } from "@/lib/providers/screen-wake-lock";
 import {
   nextConnectionState,
   type ConnectionState,
@@ -40,7 +41,7 @@ export default function Camera({
   const attempt = useRef(0);
   const cleanupFlight = useRef<Promise<void> | undefined>(undefined);
   const disconnected = useRef(true);
-  const wakeLock = useRef<WakeLockSentinel | undefined>(undefined);
+  const wakeLock = useRef<OptionalScreenWakeLock | undefined>(undefined);
   const mounted = useRef(true);
   const [state, setState] = useState<ConnectionState>("idle");
   const [landscape, setLandscape] = useState(false);
@@ -49,6 +50,7 @@ export default function Camera({
   const [source, setSource] = useState("");
   const [confirmation, setConfirmation] = useState("");
   const [connectionStatus, setConnectionStatus] = useState("");
+  const [warning, setWarning] = useState("");
   const [battery, setBattery] = useState<string>();
   const transition = (event: ConnectionEvent) =>
     setState((current) => nextConnectionState(current, event));
@@ -130,6 +132,7 @@ export default function Camera({
     setCapture("");
     setSource("");
     setConfirmation("");
+    setWarning("");
     setConnectionStatus("Waiting for camera permission");
     transition("connect");
     let stage = "camera acquisition";
@@ -221,16 +224,6 @@ export default function Camera({
         await disconnectCamera(false);
         return;
       }
-      stage = "wake lock";
-      wakeLock.current = (await (
-        navigator as Navigator & {
-          wakeLock?: { request: (type: "screen") => Promise<WakeLockSentinel> };
-        }
-      ).wakeLock?.request("screen")) as WakeLockSentinel | undefined;
-      if (thisAttempt !== attempt.current) {
-        await disconnectCamera(false);
-        return;
-      }
       await act({ type: "connection", role, connected: true });
       if (thisAttempt !== attempt.current) {
         await act({ type: "connection", role, connected: false }).catch(
@@ -241,6 +234,12 @@ export default function Camera({
       }
       transition("published");
       setConnectionStatus("");
+      wakeLock.current = new OptionalScreenWakeLock(
+        navigator,
+        document,
+        (message) => mounted.current && setWarning(message),
+      );
+      wakeLock.current.start();
     } catch (cause) {
       const name =
         typeof cause === "object" && cause && "name" in cause
@@ -347,6 +346,14 @@ export default function Camera({
       {confirmation && (
         <p role="status" className="mt-3 text-center text-emerald-300">
           {confirmation}
+        </p>
+      )}
+      {warning && (
+        <p
+          role="status"
+          className="mt-3 rounded-xl bg-amber-950 p-4 text-amber-200"
+        >
+          {warning}
         </p>
       )}
       {error && (

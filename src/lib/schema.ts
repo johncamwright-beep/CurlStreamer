@@ -6,7 +6,6 @@ export const gameSchema = z.object({
   homeColor: z.string().regex(/^#[0-9a-fA-F]{6}$/),
   awayColor: z.string().regex(/^#[0-9a-fA-F]{6}$/),
   scheduledEnds: z.union([z.literal(8), z.literal(10)]),
-  initialHammer: z.enum(["home", "away"]),
   youtubeTitle: z.string().trim().min(2).max(100),
   youtubeVisibility: z.enum(["unlisted", "private", "public"]),
 });

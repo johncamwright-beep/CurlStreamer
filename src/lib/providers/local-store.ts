@@ -109,6 +109,7 @@ export function updateGame(id: string, action: z.infer<typeof actionSchema>) {
     const now = Date.now();
     if (action.type === "score") {
       const s = deriveScore(game);
+      if (!s.hammer) throw new Error("Hammer must be selected before scoring");
       game.scoreEvents.push({
         id: randomUUID(),
         at: now,

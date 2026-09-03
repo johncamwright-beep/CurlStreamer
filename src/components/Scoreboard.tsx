@@ -1,3 +1,4 @@
+import React from "react";
 import { deriveScore } from "@/lib/scoring";
 import type { GameState } from "@/lib/types";
 export function Scoreboard({
@@ -14,7 +15,6 @@ export function Scoreboard({
         <span className="text-xs font-bold tracking-widest text-cyan-300">
           END {s.currentEnd}
         </span>
-        <span className="text-xs">HAMMER · {s.hammer.toUpperCase()}</span>
       </div>
       {(["home", "away"] as const).map((t) => (
         <div
@@ -28,9 +28,28 @@ export function Scoreboard({
           <strong className={compact ? "text-lg" : "text-2xl"}>
             {t === "home" ? game.config.homeName : game.config.awayName}
           </strong>
-          <strong className={compact ? "text-2xl" : "text-4xl"}>
-            {s.totals[t]}
-          </strong>
+          <span className="flex items-center gap-2">
+            {s.hammer === t && (
+              <svg
+                viewBox="0 0 32 32"
+                aria-label={`${t === "home" ? game.config.homeName : game.config.awayName} has hammer`}
+                role="img"
+                className={compact ? "h-5 w-5" : "h-7 w-7"}
+              >
+                <path
+                  d="M7 5h5v9l12 12-4 4L8 18H2v-5h5V5Zm4 11 11 11"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth="3"
+                />
+              </svg>
+            )}
+            <strong className={compact ? "text-2xl" : "text-4xl"}>
+              {s.totals[t]}
+            </strong>
+          </span>
         </div>
       ))}
       {!compact && (

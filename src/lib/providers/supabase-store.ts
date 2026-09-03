@@ -155,6 +155,7 @@ async function saveScoreEvent(
     p_actor: "server",
     p_state: game,
   });
+  if (error?.code === "40001") throw new Error("Score update conflict");
   if (error) databaseError("score update", error);
 }
 
@@ -169,6 +170,8 @@ export async function updateGame(
   let scoreEvent: GameState["scoreEvents"][number] | undefined;
   if (action.type === "score") {
     const score = deriveScore(game);
+    if (!score.hammer)
+      throw new Error("Hammer must be selected before scoring");
     scoreEvent = {
       id: randomUUID(),
       at: now,

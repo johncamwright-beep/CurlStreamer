@@ -11,7 +11,8 @@ export interface GameConfig {
   homeColor: string;
   awayColor: string;
   scheduledEnds: 8 | 10;
-  initialHammer: Team;
+  /** Present on games created before hammer was selected on the scoring page. */
+  initialHammer?: Team;
   youtubeTitle: string;
   youtubeVisibility: "unlisted" | "private" | "public";
 }

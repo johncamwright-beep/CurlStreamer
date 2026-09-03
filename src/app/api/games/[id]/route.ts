@@ -72,7 +72,23 @@ export async function PATCH(
       { error: "Only an organizer can close a game" },
       { status: 403 },
     );
-  const game = await updateGame(id, body.data);
+  let game;
+  try {
+    game = await updateGame(id, body.data);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "";
+    if (message.includes("Hammer must be selected"))
+      return NextResponse.json({ error: message }, { status: 409 });
+    if (message.includes("Score update conflict"))
+      return NextResponse.json(
+        { error: "The game changed before this update was saved. Try again." },
+        { status: 409 },
+      );
+    return NextResponse.json(
+      { error: "That update could not be saved." },
+      { status: 500 },
+    );
+  }
   return game
     ? NextResponse.json(game)
     : NextResponse.json({ error: "Game not found" }, { status: 404 });

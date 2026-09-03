@@ -4,6 +4,7 @@ import { use, useState } from "react";
 import { useGame } from "@/components/GameSync";
 import { Scoreboard } from "@/components/Scoreboard";
 import { GameSetupNavigation } from "@/components/GameSetupNavigation";
+import { deriveScore } from "@/lib/scoring";
 import type { Sponsor, Team } from "@/lib/types";
 async function optimize(file: File): Promise<Sponsor> {
   if (!["image/jpeg", "image/png", "image/webp"].includes(file.type))
@@ -49,6 +50,9 @@ export default function Scorer({
   const [points, setPoints] = useState(1);
   const [team, setTeam] = useState<Team>("home");
   const [errors, setErrors] = useState<string[]>([]);
+  const [hammerBusy, setHammerBusy] = useState(false);
+  const [hammerError, setHammerError] = useState("");
+  const [correctingHammer, setCorrectingHammer] = useState(false);
   if (!game) return <main className="p-8">Loading controls…</main>;
   if (game.status === "closed")
     return (
@@ -62,6 +66,21 @@ export default function Scorer({
       </main>
     );
   const enabled = game.sponsors.filter((s) => s.enabled);
+  const score = deriveScore(game);
+  async function saveHammer(next: Team) {
+    setHammerBusy(true);
+    setHammerError("");
+    try {
+      await act({ type: "hammer", team: next });
+      setCorrectingHammer(false);
+    } catch (error) {
+      setHammerError(
+        error instanceof Error ? error.message : "Hammer could not be saved.",
+      );
+    } finally {
+      setHammerBusy(false);
+    }
+  }
   async function files(list: FileList | null) {
     if (!list) return;
     const existingSponsors = game?.sponsors;
@@ -106,65 +125,132 @@ export default function Scorer({
       <div className="grid gap-4 lg:grid-cols-2">
         <section className="space-y-4">
           <Scoreboard game={game} />
-          <div className="panel">
-            <h2 className="text-xl font-bold">Record this end</h2>
-            <div className="my-3 grid grid-cols-2 gap-2">
-              <button
-                onClick={() => setTeam("home")}
-                className={team === "home" ? "btn" : "btn-secondary"}
-              >
-                {game.config.homeName}
-              </button>
-              <button
-                onClick={() => setTeam("away")}
-                className={team === "away" ? "btn" : "btn-secondary"}
-              >
-                {game.config.awayName}
-              </button>
-            </div>
-            <label>
-              Points
-              <select
-                value={points}
-                onChange={(e) => setPoints(+e.target.value)}
-                className="ml-3 rounded-lg bg-slate-800 px-4"
-              >
-                {[1, 2, 3, 4, 5, 6, 7, 8].map((n) => (
-                  <option key={n}>{n}</option>
+          {!score.hammer ? (
+            <div className="panel" aria-labelledby="initial-hammer-heading">
+              <h2 id="initial-hammer-heading" className="text-xl font-bold">
+                Who has hammer in End 1?
+              </h2>
+              <div className="mt-4 grid grid-cols-2 gap-3">
+                {(["home", "away"] as const).map((side) => (
+                  <button
+                    key={side}
+                    disabled={hammerBusy}
+                    className="min-h-14 rounded-lg border-2 px-4 py-3 text-lg font-bold disabled:opacity-50"
+                    style={{
+                      borderColor:
+                        side === "home"
+                          ? game.config.homeColor
+                          : game.config.awayColor,
+                    }}
+                    onClick={() => saveHammer(side)}
+                  >
+                    {side === "home"
+                      ? game.config.homeName
+                      : game.config.awayName}
+                  </button>
                 ))}
-              </select>
-            </label>
-            <div className="mt-3 grid grid-cols-2 gap-2">
-              <button
-                className="btn"
-                onClick={() =>
-                  act({ type: "score", team, points, blank: false })
-                }
-              >
-                Save {points} point{points > 1 ? "s" : ""}
-              </button>
-              <button
-                className="btn-secondary"
-                onClick={() =>
-                  act({ type: "score", team: null, points: 0, blank: true })
-                }
-              >
-                Blank end
-              </button>
-              <button
-                className="btn-secondary"
-                onClick={() => act({ type: "undo" })}
-              >
-                ↶ Undo
-              </button>
-              <button
-                className="btn-secondary"
-                onClick={() => act({ type: "hammer", team })}
-              >
-                Set hammer: {team}
-              </button>
+              </div>
+              {hammerError && (
+                <p role="alert" className="mt-3 text-red-300">
+                  {hammerError}
+                </p>
+              )}
             </div>
-          </div>
+          ) : (
+            <div className="panel">
+              <h2 className="text-xl font-bold">Record this end</h2>
+              <div className="my-3 grid grid-cols-2 gap-2">
+                <button
+                  onClick={() => setTeam("home")}
+                  className={team === "home" ? "btn" : "btn-secondary"}
+                >
+                  {game.config.homeName}
+                </button>
+                <button
+                  onClick={() => setTeam("away")}
+                  className={team === "away" ? "btn" : "btn-secondary"}
+                >
+                  {game.config.awayName}
+                </button>
+              </div>
+              <label>
+                Points
+                <select
+                  value={points}
+                  onChange={(e) => setPoints(+e.target.value)}
+                  className="ml-3 rounded-lg bg-slate-800 px-4"
+                >
+                  {[1, 2, 3, 4, 5, 6, 7, 8].map((n) => (
+                    <option key={n}>{n}</option>
+                  ))}
+                </select>
+              </label>
+              <div className="mt-3 grid grid-cols-2 gap-2">
+                <button
+                  className="btn"
+                  onClick={() =>
+                    act({ type: "score", team, points, blank: false })
+                  }
+                >
+                  Save {points} point{points > 1 ? "s" : ""}
+                </button>
+                <button
+                  className="btn-secondary"
+                  onClick={() =>
+                    act({ type: "score", team: null, points: 0, blank: true })
+                  }
+                >
+                  Blank end
+                </button>
+                <button
+                  className="btn-secondary"
+                  onClick={() => act({ type: "undo" })}
+                >
+                  ↶ Undo
+                </button>
+                <button
+                  className="btn-secondary"
+                  onClick={() => setCorrectingHammer(true)}
+                >
+                  Correct Hammer
+                </button>
+              </div>
+              {correctingHammer && (
+                <div
+                  className="mt-4 rounded-lg border border-slate-600 p-3"
+                  role="group"
+                  aria-labelledby="correct-hammer-heading"
+                >
+                  <h3 id="correct-hammer-heading" className="font-bold">
+                    Confirm which team has hammer
+                  </h3>
+                  <p className="mt-1 text-sm text-slate-300">
+                    This correction does not change the score or end.
+                  </p>
+                  <div className="mt-3 grid grid-cols-2 gap-2">
+                    {(["home", "away"] as const).map((side) => (
+                      <button
+                        key={side}
+                        disabled={hammerBusy}
+                        className="btn-secondary"
+                        onClick={() => saveHammer(side)}
+                      >
+                        Confirm{" "}
+                        {side === "home"
+                          ? game.config.homeName
+                          : game.config.awayName}
+                      </button>
+                    ))}
+                  </div>
+                  {hammerError && (
+                    <p role="alert" className="mt-3 text-red-300">
+                      {hammerError}
+                    </p>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
           <div className="panel">
             <h2 className="font-bold">Program controls</h2>
             <div className="my-3 grid grid-cols-3 gap-2">

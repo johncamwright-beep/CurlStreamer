@@ -1,6 +1,7 @@
 "use client";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { AccountNavigation } from "@/components/AccountNavigation";
 export default function Home() {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
@@ -36,6 +37,9 @@ export default function Home() {
   return (
     <main className="mx-auto min-h-screen max-w-3xl p-5 md:py-12">
       <header className="mb-8">
+        <nav className="mb-3 flex justify-end">
+          <AccountNavigation />
+        </nav>
         <p className="font-bold tracking-widest text-cyan-300">
           CURLCAST · MOCK MODE
         </p>

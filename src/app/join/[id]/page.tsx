@@ -2,6 +2,7 @@
 import { use, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useGame } from "@/components/GameSync";
+import { preserveAndStoreParticipantAccess } from "@/lib/access-session";
 import type { Role } from "@/lib/types";
 const roles: [Role, string, string][] = [
   ["camera-home", "Camera — Home End", "Video only"],
@@ -48,7 +49,7 @@ export default function Join({ params }: { params: Promise<{ id: string }> }) {
       return;
     }
     const result = await r.json();
-    localStorage.setItem(`curlcast-access-${id}`, result.sessionToken);
+    preserveAndStoreParticipantAccess(localStorage, id, result.sessionToken);
     router.push(role === "scorer" ? `/score/${id}` : `/camera/${id}/${role}`);
   }
   const direct = search.get("token");

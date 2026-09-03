@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { Track } from "livekit-client";
 import {
   SingleFlightGate,
+  recoverCameraPermission,
   cameraCapabilityError,
   cameraPermissionGuidance,
   disposeCameraResources,
@@ -77,6 +78,45 @@ describe("LiveKit camera client", () => {
     expect(cameraPermissionGuidance("Android 15 Chrome/140.0")).toContain(
       "Apps > Chrome > Permissions > Camera",
     );
+  });
+
+  it("retries once when Chrome reports denial after permission became granted", async () => {
+    const camera = { id: "camera" };
+    const acquire = vi
+      .fn<() => Promise<typeof camera>>()
+      .mockRejectedValueOnce(new DOMException("stale", "NotAllowedError"))
+      .mockResolvedValueOnce(camera);
+    const query = vi.fn().mockResolvedValue({ state: "granted" });
+    const statuses: string[] = [];
+    await expect(
+      recoverCameraPermission(acquire, { query } as never, (status) =>
+        statuses.push(status),
+      ),
+    ).resolves.toBe(camera);
+    expect(acquire).toHaveBeenCalledTimes(2);
+    expect(statuses).toEqual(["waiting", "starting"]);
+  });
+
+  it("does not loop when the single permission recovery also fails", async () => {
+    const denied = new DOMException("denied", "NotAllowedError");
+    const acquire = vi.fn().mockRejectedValue(denied);
+    await expect(
+      recoverCameraPermission(acquire, {
+        query: vi.fn().mockResolvedValue({ state: "granted" }),
+      } as never),
+    ).rejects.toBe(denied);
+    expect(acquire).toHaveBeenCalledTimes(2);
+  });
+
+  it("preserves a genuine denied permission without retrying", async () => {
+    const denied = new DOMException("denied", "NotAllowedError");
+    const acquire = vi.fn().mockRejectedValue(denied);
+    await expect(
+      recoverCameraPermission(acquire, {
+        query: vi.fn().mockResolvedValue({ state: "denied" }),
+      } as never),
+    ).rejects.toBe(denied);
+    expect(acquire).toHaveBeenCalledOnce();
   });
 
   it("unpublishes, detaches, and stops an old track before retry", async () => {

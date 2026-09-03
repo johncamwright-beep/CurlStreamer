@@ -3,6 +3,7 @@ import Link from "next/link";
 import { use, useState } from "react";
 import { useGame } from "@/components/GameSync";
 import { Scoreboard } from "@/components/Scoreboard";
+import { GameSetupNavigation } from "@/components/GameSetupNavigation";
 import type { Sponsor, Team } from "@/lib/types";
 async function optimize(file: File): Promise<Sponsor> {
   if (!["image/jpeg", "image/png", "image/webp"].includes(file.type))
@@ -90,6 +91,9 @@ export default function Scorer({
   }
   return (
     <main className="mx-auto max-w-6xl p-4">
+      <div className="mb-3">
+        <GameSetupNavigation id={id} />
+      </div>
       <header className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <div>
           <p className="text-cyan-300">SCORER · MOCK MODE</p>

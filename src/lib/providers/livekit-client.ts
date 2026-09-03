@@ -31,6 +31,48 @@ export async function acquirePortraitCamera(
   return new LocalVideoTrack(mediaTrack);
 }
 
+type CameraPermissionQuery = Pick<Permissions, "query"> | undefined;
+
+/** Recover once from iOS Chrome's stale NotAllowedError after an Allow. */
+export async function acquirePortraitCameraWithPermissionRecovery(
+  mediaDevices: Pick<MediaDevices, "getUserMedia">,
+  permissions: CameraPermissionQuery,
+  onStatus: (status: "waiting" | "starting") => void = () => {},
+) {
+  return recoverCameraPermission(
+    () => acquirePortraitCamera(mediaDevices),
+    permissions,
+    onStatus,
+  );
+}
+
+export async function recoverCameraPermission<T>(
+  acquire: () => Promise<T>,
+  permissions: CameraPermissionQuery,
+  onStatus: (status: "waiting" | "starting") => void = () => {},
+) {
+  onStatus("waiting");
+  try {
+    const track = await acquire();
+    onStatus("starting");
+    return track;
+  } catch (cause) {
+    if (!isPermissionError(cause) || !permissions) throw cause;
+    let permission: PermissionStatus;
+    try {
+      permission = await permissions.query({
+        name: "camera",
+      } as PermissionDescriptor);
+    } catch {
+      throw cause;
+    }
+    if (permission.state !== "granted") throw cause;
+    // Deliberately no loop: this is the sole automatic recovery attempt.
+    onStatus("starting");
+    return acquire();
+  }
+}
+
 export function sourcePresentation(width: number, height: number) {
   return width > height
     ? ({ fit: "cover", description: "cropped landscape fallback" } as const)

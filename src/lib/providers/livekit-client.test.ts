@@ -36,14 +36,14 @@ describe("LiveKit camera client", () => {
     });
   });
 
-  it("contains portrait sources and uses a centered crop only for landscape", () => {
+  it("contains every source and letterboxes landscape video", () => {
     expect(sourcePresentation(720, 1280)).toEqual({
       fit: "contain",
       description: "portrait source",
     });
     expect(sourcePresentation(1920, 1080)).toEqual({
-      fit: "cover",
-      description: "cropped landscape fallback",
+      fit: "contain",
+      description: "landscape source · letterboxed",
     });
   });
 

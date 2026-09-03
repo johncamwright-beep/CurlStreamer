@@ -337,7 +337,7 @@ export default function Camera({
           ↻ Rotate and mount this phone vertically.
         </div>
       )}
-      <div className="portrait-camera-panel mx-auto h-[min(70vh,calc((100vw-1.5rem)*16/9))] max-w-full rounded-2xl border-4 border-slate-600 bg-gradient-to-b from-slate-700 to-blue-950">
+      <div className="portrait-camera-panel camera-preview-panel mx-auto rounded-2xl border-4 border-slate-600 bg-gradient-to-b from-slate-700 to-blue-950">
         <PortraitVideo
           ref={video}
           muted

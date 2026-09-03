@@ -1,6 +1,21 @@
 "use client";
 import { use, useEffect, useRef, useState } from "react";
+import { Room, RoomEvent, Track, createLocalVideoTrack } from "livekit-client";
 import { useGame } from "@/components/GameSync";
+import {
+  nextConnectionState,
+  type ConnectionState,
+  type ConnectionEvent,
+} from "@/lib/livekit-state";
+
+const labels: Record<ConnectionState, string> = {
+  idle: "Not connected",
+  connecting: "Connecting…",
+  live: "● Live",
+  disconnected: "Disconnected",
+  "permission-denied": "Permission denied",
+};
+
 export default function Camera({
   params,
 }: {
@@ -9,10 +24,14 @@ export default function Camera({
   const { id, role } = use(params);
   const { game, act } = useGame(id);
   const video = useRef<HTMLVideoElement>(null);
-  const [connected, setConnected] = useState(false);
+  const room = useRef<Room | undefined>(undefined);
+  const [state, setState] = useState<ConnectionState>("idle");
   const [landscape, setLandscape] = useState(false);
   const [error, setError] = useState("");
   const [battery, setBattery] = useState<string>();
+  const transition = (event: ConnectionEvent) =>
+    setState((current) => nextConnectionState(current, event));
+
   useEffect(() => {
     const update = () => setLandscape(innerWidth > innerHeight);
     update();
@@ -23,34 +42,62 @@ export default function Camera({
     void nav
       .getBattery?.()
       .then((b) => setBattery(`${Math.round(b.level * 100)}%`));
-    return () => removeEventListener("resize", update);
+    return () => {
+      removeEventListener("resize", update);
+      room.current?.disconnect();
+    };
   }, []);
+
   async function connect() {
+    setError("");
+    transition("connect");
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio: false,
-        video: {
-          facingMode: { ideal: "environment" },
-          width: { ideal: 720 },
-          height: { ideal: 1280 },
-          aspectRatio: { ideal: 9 / 16 },
-          frameRate: { ideal: 30, max: 30 },
-        },
+      room.current?.disconnect();
+      const access = localStorage.getItem(`curlcast-access-${id}`);
+      const response = await fetch(`/api/games/${id}/livekit-token`, {
+        method: "POST",
+        headers: access ? { authorization: `Bearer ${access}` } : {},
       });
-      if (video.current) {
-        video.current.srcObject = stream;
-        await video.current.play();
-      }
+      if (!response.ok) throw new Error((await response.json()).error);
+      const credentials = (await response.json()) as {
+        url: string;
+        token: string;
+      };
+      const nextRoom = new Room({ adaptiveStream: true, dynacast: true });
+      room.current = nextRoom;
+      nextRoom.on(RoomEvent.Disconnected, () => {
+        transition("disconnect");
+        void act({ type: "connection", role, connected: false }).catch(
+          () => {},
+        );
+      });
+      await nextRoom.connect(credentials.url, credentials.token);
+      const track = await createLocalVideoTrack({
+        facingMode: "environment",
+        resolution: { width: 720, height: 1280, frameRate: 30 },
+      });
+      if (video.current) track.attach(video.current);
+      await nextRoom.localParticipant.publishTrack(track, {
+        source: Track.Source.Camera,
+      });
       await (
         navigator as Navigator & {
           wakeLock?: { request: (type: "screen") => Promise<unknown> };
         }
       ).wakeLock?.request("screen");
-      setConnected(true);
+      transition("published");
       await act({ type: "connection", role, connected: true });
-    } catch {
+    } catch (cause) {
+      room.current?.disconnect();
+      const denied =
+        cause instanceof DOMException && cause.name === "NotAllowedError";
+      transition(denied ? "permission-denied" : "disconnect");
       setError(
-        "Camera permission is needed. Open browser settings, allow Camera, then try again. No audio is requested.",
+        denied
+          ? "Camera permission is needed. Open browser settings, allow Camera, then retry. Audio is never requested."
+          : cause instanceof Error
+            ? cause.message
+            : "Could not connect to live video. Check the network and retry.",
       );
     }
   }
@@ -75,13 +122,14 @@ export default function Camera({
           <h1 className="text-2xl font-black">Portrait camera</h1>
         </div>
         <span
+          aria-live="polite"
           className={
-            connected
+            state === "live"
               ? "rounded-full bg-emerald-500 px-3 py-2 font-bold"
               : "rounded-full bg-slate-700 px-3 py-2"
           }
         >
-          {connected ? "● Connected" : "Not connected"}
+          {labels[state]}
         </span>
       </header>
       {landscape && (
@@ -97,6 +145,7 @@ export default function Camera({
           ref={video}
           muted
           playsInline
+          autoPlay
           className="safe-video h-full w-full"
         />
         <div
@@ -118,9 +167,17 @@ export default function Camera({
         Keep the house inside the rings and the sheet aligned to the centre
         guide. Do not lock this phone or leave this page.
       </p>
-      {!connected && (
-        <button onClick={connect} className="btn w-full text-xl">
-          Connect Camera
+      {state !== "live" && (
+        <button
+          disabled={state === "connecting"}
+          onClick={connect}
+          className="btn w-full text-xl"
+        >
+          {state === "idle"
+            ? "Connect Camera"
+            : state === "connecting"
+              ? "Connecting…"
+              : "Retry Connection"}
         </button>
       )}
       {error && (
@@ -129,8 +186,7 @@ export default function Camera({
         </p>
       )}
       <p className="mt-3 text-center text-xs text-slate-400">
-        Requests rear 720×1280 · 30 fps · video only. LiveKit publishing begins
-        in Milestone 4.
+        Rear camera · approximately 720×1280 · 30 fps · audio disabled
       </p>
     </main>
   );

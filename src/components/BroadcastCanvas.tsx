@@ -2,12 +2,15 @@
 import { useEffect, useState } from "react";
 import { Scoreboard } from "./Scoreboard";
 import type { GameState } from "@/lib/types";
+import { LiveKitCameraFeed } from "./LiveKitCameraFeed";
 function Camera({
   side,
-  connected,
+  gameId,
+  role,
 }: {
   side: "HOME" | "AWAY";
-  connected: boolean;
+  gameId: string;
+  role: "camera-home" | "camera-away";
 }) {
   return (
     <div className="relative aspect-[9/16] w-full max-h-full overflow-hidden rounded-2xl border border-white/20 bg-gradient-to-b from-cyan-950 via-slate-700 to-blue-950">
@@ -20,12 +23,7 @@ function Camera({
       <span className="absolute left-4 top-4 rounded bg-slate-950/70 px-3 py-2 font-bold">
         {side} END
       </span>
-      {!connected && (
-        <div className="absolute inset-0 grid place-content-center bg-slate-950/80 text-center">
-          <strong className="text-2xl">Camera joining soon</strong>
-          <span className="text-slate-300">The broadcast stays live</span>
-        </div>
-      )}
+      <LiveKitCameraFeed gameId={gameId} role={role} />
     </div>
   );
 }
@@ -78,10 +76,10 @@ export function BroadcastCanvas({ game }: { game: GameState }) {
         </div>
         <div className="grid h-full grid-cols-2 items-center gap-[2%]">
           {showHome && (
-            <Camera side="HOME" connected={game.connections["camera-home"]} />
+            <Camera side="HOME" gameId={game.id} role="camera-home" />
           )}{" "}
           {showAway && (
-            <Camera side="AWAY" connected={game.connections["camera-away"]} />
+            <Camera side="AWAY" gameId={game.id} role="camera-away" />
           )}
         </div>
         <div className="flex flex-col justify-between">

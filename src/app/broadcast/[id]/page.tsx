@@ -14,7 +14,7 @@ export default function Broadcast({
     <main className="min-h-screen bg-black p-2">
       <BroadcastCanvas game={game} />
       <p className="p-2 text-center text-sm text-slate-400">
-        Mock composition · designed at 1920×1080 · camera sources remain mounted
+        Live composition · designed at 1920×1080 · camera sources remain mounted
         and connected under sponsor breaks.
       </p>
     </main>

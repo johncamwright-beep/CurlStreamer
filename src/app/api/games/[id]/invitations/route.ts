@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getGame } from "@/lib/store";
+import { participantUrl } from "@/lib/participant-links";
 import {
   issueChooserToken,
   issueRoleToken,
@@ -52,5 +53,10 @@ export async function POST(
     parsed.data === "chooser"
       ? await issueChooserToken(id)
       : await issueRoleToken(id, parsed.data);
-  return NextResponse.json({ token, expiresIn: 1800 });
+  const parameter = parsed.data === "chooser" ? "chooser" : "token";
+  const url = participantUrl(
+    request,
+    `/join/${encodeURIComponent(id)}?${parameter}=${encodeURIComponent(token)}`,
+  );
+  return NextResponse.json({ token, url, expiresIn: 1800 });
 }

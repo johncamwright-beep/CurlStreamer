@@ -8,6 +8,7 @@ describe("PortraitVideo", () => {
     const markup = renderToStaticMarkup(<PortraitVideo autoPlay muted />);
     expect(markup).toContain("playsInline");
     expect(markup).toContain('class="portrait-camera-video"');
+    expect(markup).not.toContain("portrait-camera-video--landscape");
     expect(markup).toContain("autoPlay");
     expect(markup).toContain("muted");
   });

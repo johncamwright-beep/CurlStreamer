@@ -75,7 +75,10 @@ export async function recoverCameraPermission<T>(
 
 export function sourcePresentation(width: number, height: number) {
   return width > height
-    ? ({ fit: "cover", description: "cropped landscape fallback" } as const)
+    ? ({
+        fit: "contain",
+        description: "landscape source · letterboxed",
+      } as const)
     : ({ fit: "contain", description: "portrait source" } as const);
 }
 

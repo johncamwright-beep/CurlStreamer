@@ -35,14 +35,14 @@ export const PortraitVideo = forwardRef<HTMLVideoElement, Props>(
             element.videoWidth,
             element.videoHeight,
           );
-          setLandscapeSource(presentation.fit === "cover");
+          setLandscapeSource(element.videoWidth > element.videoHeight);
           onSourceDetails?.(
             `${element.videoWidth}×${element.videoHeight} · ${presentation.description}`,
           );
           onLoadedMetadata?.(event);
         }}
         data-source-orientation={landscapeSource ? "landscape" : "portrait"}
-        className={`portrait-camera-video ${landscapeSource ? "portrait-camera-video--landscape" : ""} ${className}`.trim()}
+        className={`portrait-camera-video ${className}`.trim()}
       />
     );
   },

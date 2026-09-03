@@ -49,9 +49,27 @@ button {
   object-fit: contain;
   object-position: center;
 }
-
-/* Some iOS browsers report landscape frames despite portrait constraints. */
-.portrait-camera-video--landscape {
-  object-fit: cover;
-  object-position: center;
+.broadcast-program-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 73fr) minmax(0, 25fr);
+  gap: 2%;
+}
+.broadcast-camera-deck {
+  display: grid;
+  min-width: 0;
+  min-height: 0;
+  place-items: center;
+}
+.broadcast-camera-deck[data-camera-count="2"] {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 2%;
+}
+.broadcast-camera-panel {
+  height: 92%;
+}
+.broadcast-camera-deck[data-camera-count="1"] .broadcast-camera-panel {
+  height: 100%;
+}
+.camera-preview-panel {
+  height: min(70vh, calc((100vw - 1.5rem) * 16 / 9));
 }

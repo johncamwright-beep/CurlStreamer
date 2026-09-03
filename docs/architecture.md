@@ -2,7 +2,7 @@
 
 ## Vertical slice
 
-The App Router serves organizer, join, camera, scorer, and fixed-aspect program pages. Route handlers validate commands with Zod. With complete Supabase configuration, a server-only repository stores games, state, invitations, claims, connections, closure, and append-only score events. Database functions lock games and use optimistic state versions for concurrency-safe claims and scoring. Without Supabase variables, an explicitly local JSON fallback in the operating system temporary directory preserves credential-free mock mode. Clients poll and use `BroadcastChannel` only as a low-latency refresh hint.
+The App Router serves organizer, join, camera, scorer, and fixed-aspect program pages. Route handlers validate commands with Zod. With complete Supabase configuration, a server-only repository stores games, state, invitations, claims, connections, closure, and append-only score events, including compensating Undo events. Database functions lock games and use optimistic state versions for concurrency-safe claims and scoring. Without Supabase variables, an explicitly local JSON file in the operating system temporary directory preserves credential-free mock mode; a lock directory serializes mutations so separate Next.js workers and browser contexts see the same state. Clients poll and use `BroadcastChannel` only as a low-latency refresh hint. Sponsor timing derives from the server-stamped `startedAt`, interval, and offset—not a scorer-local index.
 
 The 1920×1080 canvas places two equal-height 9:16 sources in a central safe area with `object-fit: contain`; purpose-built side rails carry score, state, warnings, and sponsors. Full-screen sponsor mode overlays rather than unmounting camera sources.
 
@@ -29,4 +29,4 @@ The fallback state is host-local and resets when its temporary file is removed. 
 | Mock broadcast start/stop only writes a flag                             | Must be replaced during LiveKit integration | Idempotent session commands and Egress reconciliation                                        |
 | CSS camera simulations do not prove media orientation metadata           | Requires physical-device testing            | iOS/Android publish-subscribe and Web Egress matrix                                          |
 
-The mock implementation is useful only as a UX/state-model demonstrator. It is not safe for horizontal scaling or a public production deployment.
+The fallback implementation is useful only as a UX/state-model demonstrator. It is not safe for horizontal scaling or a public production deployment.

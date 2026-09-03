@@ -99,13 +99,19 @@ export async function createGame(config: GameConfig) {
 }
 
 export async function getGame(id: string) {
+  const record = await getGameRecord(id);
+  return record?.state;
+}
+
+async function getGameRecord(id: string) {
   const { data, error } = await supabase()
     .from("game_states")
-    .select("state")
+    .select("state, version")
     .eq("game_id", id)
     .maybeSingle();
   if (error) databaseError("game lookup", error);
-  return data?.state as GameState | undefined;
+  if (!data) return undefined;
+  return { state: data.state as GameState, version: data.version as number };
 }
 
 export async function claimRole(
@@ -135,16 +141,35 @@ async function save(game: GameState) {
   if (error) databaseError("game update", error);
 }
 
+async function saveScoreEvent(
+  game: GameState,
+  expectedVersion: number,
+  event: GameState["scoreEvents"][number],
+) {
+  const { error } = await supabase().rpc("append_score_event", {
+    p_game_id: game.id,
+    p_expected_version: expectedVersion,
+    p_event_id: event.id,
+    p_event_type: event.type,
+    p_payload: event,
+    p_actor: "server",
+    p_state: game,
+  });
+  if (error) databaseError("score update", error);
+}
+
 export async function updateGame(
   id: string,
   action: z.infer<typeof actionSchema>,
 ) {
-  const game = await getGame(id);
-  if (!game) return undefined;
+  const record = await getGameRecord(id);
+  if (!record) return undefined;
+  const game = record.state;
   const now = Date.now();
+  let scoreEvent: GameState["scoreEvents"][number] | undefined;
   if (action.type === "score") {
     const score = deriveScore(game);
-    game.scoreEvents.push({
+    scoreEvent = {
       id: randomUUID(),
       at: now,
       type: "end",
@@ -154,24 +179,29 @@ export async function updateGame(
         points: action.points,
         blank: action.blank,
       },
-    });
+    };
+    game.scoreEvents.push(scoreEvent);
   }
-  if (action.type === "hammer")
-    game.scoreEvents.push({
+  if (action.type === "hammer") {
+    scoreEvent = {
       id: randomUUID(),
       at: now,
       type: "hammer",
       team: action.team,
-    });
+    };
+    game.scoreEvents.push(scoreEvent);
+  }
   if (action.type === "undo") {
     const target = activeEvents(game.scoreEvents).at(-1);
-    if (target)
-      game.scoreEvents.push({
+    if (target) {
+      scoreEvent = {
         id: randomUUID(),
         at: now,
         type: "undo",
         targetId: target.id,
-      });
+      };
+      game.scoreEvents.push(scoreEvent);
+    }
   }
   if (action.type === "layout") game.layout = action.layout;
   if (action.type === "audio") game.audioMuted = action.muted;
@@ -208,6 +238,7 @@ export async function updateGame(
     if (action.paused !== undefined) game.sponsorMode.paused = action.paused;
     game.sponsorMode.startedAt = now;
   }
-  await save(game);
+  if (scoreEvent) await saveScoreEvent(game, record.version, scoreEvent);
+  else await save(game);
   return game;
 }

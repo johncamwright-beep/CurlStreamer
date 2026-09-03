@@ -33,11 +33,8 @@ export default function GameLobby({
           },
           body: JSON.stringify({ role }),
         });
-        const { token } = await r.json();
-        return [
-          role,
-          `${location.origin}/join/${id}?token=${encodeURIComponent(token)}`,
-        ] as const;
+        const { url } = await r.json();
+        return [role, url] as const;
       }),
     ).then(async (pairs) => {
       const next = Object.fromEntries(pairs);
@@ -51,7 +48,7 @@ export default function GameLobby({
         body: JSON.stringify({ role: "chooser" }),
       });
       const chooser = await chooserResponse.json();
-      const url = `${location.origin}/join/${id}?chooser=${encodeURIComponent(chooser.token)}`;
+      const url = chooser.url;
       setChooserUrl(url);
       setQr(await QRCode.toDataURL(url));
     });

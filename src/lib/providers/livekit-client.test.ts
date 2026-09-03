@@ -6,9 +6,12 @@ import {
   cameraCapabilityError,
   cameraPermissionGuidance,
   deviceIsPortrait,
+  clampZoom,
   disposeCameraResources,
   isPermissionError,
   isRoleCameraPublication,
+  hardwareZoomRange,
+  identifiableRearLenses,
   participantCameraRole,
   portraitMediaConstraints,
   publishedCameraTracks,
@@ -39,6 +42,31 @@ describe("LiveKit camera client", () => {
     });
   });
 
+  it("derives hardware zoom bounds and safely clamps remembered values", () => {
+    const track = {
+      getCapabilities: () => ({ zoom: { min: 0.5, max: 3, step: 0.5 } }),
+    } as unknown as MediaStreamTrack;
+    const range = hardwareZoomRange(track)!;
+    expect(range).toEqual({ min: 0.5, max: 3, step: 0.5 });
+    expect(clampZoom(10, range)).toBe(3);
+    expect(clampZoom(0.1, range)).toBe(0.5);
+  });
+
+  it("only exposes reliably identified rear lens labels", () => {
+    const device = (label: string, deviceId: string) =>
+      ({ kind: "videoinput", label, deviceId }) as MediaDeviceInfo;
+    expect(
+      identifiableRearLenses([
+        device("Back Ultra Wide 0.5x", "secret-a"),
+        device("Back Camera", "secret-b"),
+        device("Camera 3", "secret-c"),
+      ]).map(({ key, label }) => ({ key, label })),
+    ).toEqual([
+      { key: "wide", label: "Wide" },
+      { key: "standard", label: "Standard" },
+    ]);
+  });
+
   it("uses device orientation before the viewport fallback", () => {
     expect(deviceIsPortrait({ type: "portrait-primary" }, 900, 500)).toBe(true);
     expect(deviceIsPortrait({ type: "landscape-primary" }, 500, 900)).toBe(
@@ -47,14 +75,14 @@ describe("LiveKit camera client", () => {
     expect(deviceIsPortrait(undefined, 500, 900)).toBe(true);
   });
 
-  it("contains every source and letterboxes landscape video", () => {
+  it("contains portrait sources and intentionally crops landscape video", () => {
     expect(sourcePresentation(720, 1280)).toEqual({
       fit: "contain",
       description: "portrait source",
     });
     expect(sourcePresentation(1920, 1080)).toEqual({
-      fit: "contain",
-      description: "landscape source · letterboxed",
+      fit: "cover",
+      description: "landscape source · centred Portrait Crop",
     });
   });
 
@@ -175,7 +203,7 @@ describe("LiveKit camera client", () => {
     );
     expect(track.applyConstraints).not.toHaveBeenCalled();
     expect(report.portrait).toBe(false);
-    expect(report.warning).toContain("complete landscape video");
+    expect(report.warning).toContain("Portrait Crop is active");
   });
 
   it("unpublishes, detaches, and stops an old track before retry", async () => {

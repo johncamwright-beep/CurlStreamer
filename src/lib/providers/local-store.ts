@@ -139,6 +139,10 @@ export function updateGame(id: string, action: z.infer<typeof actionSchema>) {
         });
     }
     if (action.type === "layout") game.layout = action.layout;
+    if (action.type === "camera-framing") {
+      game.cameraFraming ??= {};
+      game.cameraFraming[action.role] = action.mode;
+    }
     if (action.type === "audio") game.audioMuted = action.muted;
     if (action.type === "broadcast") game.broadcast = action.value;
     if (action.type === "close-game") {

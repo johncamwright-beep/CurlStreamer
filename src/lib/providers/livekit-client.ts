@@ -139,7 +139,7 @@ export async function verifyPortraitTrack(
     ...(!portrait
       ? {
           warning:
-            "This browser cannot provide portrait camera frames. The complete landscape video will be published and letterboxed.",
+            "This browser provides landscape camera frames. Portrait Crop is active; Show full frame is available.",
         }
       : {}),
   };
@@ -168,10 +168,57 @@ export async function acquireVerifiedPortraitCamera(
 export function sourcePresentation(width: number, height: number) {
   return width > height
     ? ({
-        fit: "contain",
-        description: "landscape source · letterboxed",
+        fit: "cover",
+        description: "landscape source · centred Portrait Crop",
       } as const)
     : ({ fit: "contain", description: "portrait source" } as const);
+}
+
+export type ZoomRange = { min: number; max: number; step: number };
+
+export function hardwareZoomRange(
+  track: MediaStreamTrack,
+): ZoomRange | undefined {
+  const zoom = (
+    track.getCapabilities?.() as MediaTrackCapabilities & {
+      zoom?: { min?: number; max?: number; step?: number };
+    }
+  ).zoom;
+  if (zoom?.min === undefined || zoom.max === undefined || zoom.max <= zoom.min)
+    return;
+  return { min: zoom.min, max: zoom.max, step: zoom.step || 0.1 };
+}
+
+export function clampZoom(value: number, range: ZoomRange) {
+  const clamped = Math.min(range.max, Math.max(range.min, value));
+  return Math.round(clamped / range.step) * range.step;
+}
+
+export type RearLens = {
+  key: "wide" | "standard";
+  label: "Wide" | "Standard";
+  deviceId: string;
+};
+
+/** Device identifiers stay in memory and never cross the provider boundary. */
+export function identifiableRearLenses(devices: MediaDeviceInfo[]): RearLens[] {
+  const result: RearLens[] = [];
+  for (const device of devices) {
+    if (device.kind !== "videoinput") continue;
+    const label = device.label.toLowerCase();
+    const key = /ultra.?wide|0\.5x/.test(label)
+      ? "wide"
+      : /back|rear|environment/.test(label) && !/tele|zoom/.test(label)
+        ? "standard"
+        : undefined;
+    if (key && !result.some((lens) => lens.key === key))
+      result.push({
+        key,
+        label: key === "wide" ? "Wide" : "Standard",
+        deviceId: device.deviceId,
+      });
+  }
+  return result.sort((a) => (a.key === "wide" ? -1 : 1));
 }
 
 export class SingleFlightGate {

@@ -24,6 +24,11 @@ export const actionSchema = z.discriminatedUnion("type", [
     layout: z.enum(["split", "home", "away"]),
   }),
   z.object({ type: z.literal("audio"), muted: z.boolean() }),
+  z.object({
+    type: z.literal("camera-framing"),
+    role: z.enum(["camera-home", "camera-away"]),
+    mode: z.enum(["fill", "contain"]),
+  }),
   z.object({ type: z.literal("broadcast"), value: z.enum(["idle", "live"]) }),
   z.object({ type: z.literal("close-game") }),
   z.object({

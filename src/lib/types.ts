@@ -2,6 +2,7 @@ export type Team = "home" | "away";
 export type Role = "camera-home" | "camera-away" | "scorer";
 export type Layout = "split" | "home" | "away";
 export type SponsorStyle = "fullscreen" | "overlay";
+export type CameraFraming = "fill" | "contain";
 
 export interface GameConfig {
   eventName: string;
@@ -42,6 +43,7 @@ export interface GameState {
   audioMuted: boolean;
   connections: Record<Role, boolean>;
   cameraHealth?: Partial<Record<"camera-home" | "camera-away", CameraHealth>>;
+  cameraFraming?: Partial<Record<"camera-home" | "camera-away", CameraFraming>>;
   claims: Partial<Record<Role, string>>;
   sponsors: Sponsor[];
   sponsorMode: {

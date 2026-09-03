@@ -3,6 +3,16 @@ import { SignJWT } from "jose";
 
 export type LiveKitAccess = "camera-home" | "camera-away" | "organizer";
 
+export function liveKitIdentity(gameId: string, access: LiveKitAccess) {
+  return `${gameId}:${access}`;
+}
+
+export function liveKitMetadata(access: LiveKitAccess) {
+  return JSON.stringify({
+    cameraRole: access === "organizer" ? null : access,
+  });
+}
+
 export function liveKitVideoGrant(gameId: string, access: LiveKitAccess) {
   const camera = access !== "organizer";
   return {
@@ -23,11 +33,17 @@ export async function issueLiveKitToken(gameId: string, access: LiveKitAccess) {
   if (!url || !key || !secret)
     throw new Error("LiveKit server configuration is incomplete");
 
+  // Camera identities are stable so a reconnect replaces, rather than adds, a
+  // publisher. Broadcast consumers remain unique because a page currently has
+  // one subscriber Room for each displayed role.
   const identity =
     access === "organizer"
       ? `broadcast-${crypto.randomUUID()}`
-      : `${access}-${crypto.randomUUID()}`;
-  const token = await new SignJWT({ video: liveKitVideoGrant(gameId, access) })
+      : liveKitIdentity(gameId, access);
+  const token = await new SignJWT({
+    video: liveKitVideoGrant(gameId, access),
+    metadata: liveKitMetadata(access),
+  })
     .setProtectedHeader({ alg: "HS256", typ: "JWT" })
     .setIssuer(key)
     .setSubject(identity)

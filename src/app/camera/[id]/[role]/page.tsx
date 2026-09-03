@@ -1,7 +1,14 @@
 "use client";
 import { use, useEffect, useRef, useState } from "react";
-import { Room, RoomEvent, Track, createLocalVideoTrack } from "livekit-client";
+import { Room, RoomEvent, Track, createLocalTracks } from "livekit-client";
+import type { LocalVideoTrack } from "livekit-client";
 import { useGame } from "@/components/GameSync";
+import {
+  disposeCameraResources,
+  isPermissionError,
+  portraitMediaOptions,
+  SingleFlightGate,
+} from "@/lib/providers/livekit-client";
 import {
   nextConnectionState,
   type ConnectionState,
@@ -25,9 +32,13 @@ export default function Camera({
   const { game, act } = useGame(id);
   const video = useRef<HTMLVideoElement>(null);
   const room = useRef<Room | undefined>(undefined);
+  const cameraTrack = useRef<LocalVideoTrack | undefined>(undefined);
+  const connectionGate = useRef(new SingleFlightGate());
+  const mounted = useRef(true);
   const [state, setState] = useState<ConnectionState>("idle");
   const [landscape, setLandscape] = useState(false);
   const [error, setError] = useState("");
+  const [capture, setCapture] = useState("");
   const [battery, setBattery] = useState<string>();
   const transition = (event: ConnectionEvent) =>
     setState((current) => nextConnectionState(current, event));
@@ -43,43 +54,97 @@ export default function Camera({
       .getBattery?.()
       .then((b) => setBattery(`${Math.round(b.level * 100)}%`));
     return () => {
+      mounted.current = false;
       removeEventListener("resize", update);
-      room.current?.disconnect();
+      const currentRoom = room.current;
+      const currentTrack = cameraTrack.current;
+      cameraTrack.current = undefined;
+      void disposeCameraResources(
+        currentRoom?.localParticipant,
+        currentTrack,
+      ).finally(() => currentRoom?.disconnect());
     };
   }, []);
 
   async function connect() {
+    if (!connectionGate.current.enter()) return;
     setError("");
+    setCapture("");
     transition("connect");
     try {
-      room.current?.disconnect();
+      const nextRoom =
+        room.current ?? new Room({ adaptiveStream: true, dynacast: true });
+      room.current = nextRoom;
+      nextRoom.removeAllListeners();
+      await disposeCameraResources(
+        nextRoom.localParticipant,
+        cameraTrack.current,
+      );
+      cameraTrack.current = undefined;
+      nextRoom.disconnect();
+
       const access = localStorage.getItem(`curlcast-access-${id}`);
-      const response = await fetch(`/api/games/${id}/livekit-token`, {
-        method: "POST",
-        headers: access ? { authorization: `Bearer ${access}` } : {},
-      });
-      if (!response.ok) throw new Error((await response.json()).error);
+      let response: Response;
+      try {
+        response = await fetch(`/api/games/${id}/livekit-token`, {
+          method: "POST",
+          headers: access ? { authorization: `Bearer ${access}` } : {},
+        });
+      } catch {
+        throw new Error("Token error: unable to reach the credential service.");
+      }
+      if (!response.ok)
+        throw new Error(
+          `Token error: access unavailable (${response.status}).`,
+        );
       const credentials = (await response.json()) as {
         url: string;
         token: string;
       };
-      const nextRoom = new Room({ adaptiveStream: true, dynacast: true });
-      room.current = nextRoom;
       nextRoom.on(RoomEvent.Disconnected, () => {
+        if (!mounted.current) return;
         transition("disconnect");
         void act({ type: "connection", role, connected: false }).catch(
           () => {},
         );
       });
-      await nextRoom.connect(credentials.url, credentials.token);
-      const track = await createLocalVideoTrack({
-        facingMode: "environment",
-        resolution: { width: 720, height: 1280, frameRate: 30 },
-      });
+      try {
+        await nextRoom.connect(credentials.url, credentials.token);
+      } catch {
+        throw new Error("Connection error: could not join the LiveKit room.");
+      }
+      let track: LocalVideoTrack;
+      try {
+        const tracks = await createLocalTracks(portraitMediaOptions);
+        const videoTrack = tracks.find(
+          (candidate): candidate is LocalVideoTrack =>
+            candidate.kind === Track.Kind.Video,
+        );
+        if (!videoTrack) throw new Error("No camera track returned");
+        track = videoTrack;
+      } catch (cause) {
+        if (isPermissionError(cause)) {
+          throw new Error(
+            "Permission error: camera access was denied. Allow Camera in browser settings, then retry. Audio is never requested.",
+          );
+        }
+        throw new Error("Camera error: the rear camera could not be started.");
+      }
+      cameraTrack.current = track;
+      const settings = track.mediaStreamTrack.getSettings();
+      setCapture(
+        `${settings.width ?? "unknown"}×${settings.height ?? "unknown"} · ${settings.frameRate ?? "unknown"} fps · ${settings.facingMode ?? "unknown camera"}`,
+      );
       if (video.current) track.attach(video.current);
-      await nextRoom.localParticipant.publishTrack(track, {
-        source: Track.Source.Camera,
-      });
+      try {
+        await nextRoom.localParticipant.publishTrack(track, {
+          source: Track.Source.Camera,
+        });
+      } catch {
+        throw new Error(
+          "Publication error: the camera track could not be published.",
+        );
+      }
       await (
         navigator as Navigator & {
           wakeLock?: { request: (type: "screen") => Promise<unknown> };
@@ -88,17 +153,25 @@ export default function Camera({
       transition("published");
       await act({ type: "connection", role, connected: true });
     } catch (cause) {
-      room.current?.disconnect();
-      const denied =
-        cause instanceof DOMException && cause.name === "NotAllowedError";
-      transition(denied ? "permission-denied" : "disconnect");
-      setError(
-        denied
-          ? "Camera permission is needed. Open browser settings, allow Camera, then retry. Audio is never requested."
-          : cause instanceof Error
-            ? cause.message
-            : "Could not connect to live video. Check the network and retry.",
+      const currentRoom = room.current;
+      await disposeCameraResources(
+        currentRoom?.localParticipant,
+        cameraTrack.current,
       );
+      cameraTrack.current = undefined;
+      currentRoom?.disconnect();
+      const message =
+        cause instanceof Error
+          ? cause.message
+          : "Connection error: could not connect to live video.";
+      transition(
+        message.startsWith("Permission error:")
+          ? "permission-denied"
+          : "disconnect",
+      );
+      if (mounted.current) setError(message);
+    } finally {
+      connectionGate.current.leave();
     }
   }
   if (game?.status === "closed")
@@ -186,8 +259,13 @@ export default function Camera({
         </p>
       )}
       <p className="mt-3 text-center text-xs text-slate-400">
-        Rear camera · approximately 720×1280 · 30 fps · audio disabled
+        Requested: rear camera · 720×1280 (9:16) · 30 fps · audio disabled
       </p>
+      {capture && (
+        <p className="mt-1 text-center text-xs text-slate-300">
+          Actual capture: {capture}
+        </p>
+      )}
     </main>
   );
 }

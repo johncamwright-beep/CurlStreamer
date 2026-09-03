@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getAccountContext } from "@/lib/auth/account";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
@@ -25,9 +26,9 @@ function AccessDenied() {
       <section className="panel grid gap-4">
         <h1 className="text-3xl font-black">Account access denied</h1>
         <p>This account is not currently active.</p>
-        <a className="min-h-11 py-3 text-cyan-300" href="/">
+        <Link className="min-h-11 py-3 text-cyan-300" href="/">
           Return to CurlStreamer
-        </a>
+        </Link>
       </section>
     </main>
   );

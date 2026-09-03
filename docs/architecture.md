@@ -2,7 +2,7 @@
 
 ## Vertical slice
 
-The App Router serves organizer, join, camera, scorer, and fixed-aspect program pages. Route handlers validate commands with Zod. A development-only JSON file in the operating system temporary directory is the mock authority; a lock directory serializes mutations so separate Next.js workers and browser contexts see the same state. Clients poll it and use `BroadcastChannel` only as a low-latency refresh hint. Score history is append-only, including compensating Undo events. Sponsor timing derives from the server-stamped `startedAt`, interval, and offset—not a scorer-local index.
+The App Router serves organizer, join, camera, scorer, and fixed-aspect program pages. Route handlers validate commands with Zod. A development-only JSON file in the operating system temporary directory is the mock authority; a lock directory serializes mutations so separate Next.js workers and browser contexts see the same state. Clients poll it and use `BroadcastChannel` only as a low-latency refresh hint. Score history is append-only, including compensating Undo events. Sponsor timing derives from the server-stamped `startedAt`, interval, and rotation offset—not a scorer-local index.
 
 The 1920×1080 canvas places two equal-height 9:16 sources in a central safe area with `object-fit: contain`; purpose-built side rails carry score, state, warnings, and sponsors. Full-screen sponsor mode overlays rather than unmounting camera sources.
 

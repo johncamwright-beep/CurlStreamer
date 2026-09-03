@@ -48,7 +48,7 @@ export interface GameState {
     style: SponsorStyle;
     intervalSeconds: number;
     startedAt: number | null;
-    offset: number;
+    rotationOffset: number;
     paused: boolean;
     mutedPrevious: boolean;
     muteDuring: boolean;

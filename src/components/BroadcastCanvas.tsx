@@ -42,7 +42,7 @@ export function BroadcastCanvas({ game }: { game: GameState }) {
       ? Math.floor((Date.now() - m.startedAt) / (m.intervalSeconds * 1000))
       : 0;
   const idx = sponsors.length
-    ? (((m.offset + elapsed) % sponsors.length) + sponsors.length) %
+    ? (((m.rotationOffset + elapsed) % sponsors.length) + sponsors.length) %
       sponsors.length
     : 0;
   const sponsor = sponsors[idx];

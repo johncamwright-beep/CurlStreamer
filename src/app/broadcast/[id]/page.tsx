@@ -2,6 +2,17 @@
 import { use, useEffect, useState } from "react";
 import { useGame } from "@/components/GameSync";
 import { BroadcastCanvas } from "@/components/BroadcastCanvas";
+import { BroadcastOperatorNavigation } from "@/components/BroadcastOperatorNavigation";
+
+const PROGRAM_WIDTH = 1920;
+const PROGRAM_HEIGHT = 1080;
+
+function availableViewport() {
+  return {
+    width: window.visualViewport?.width ?? window.innerWidth,
+    height: window.visualViewport?.height ?? window.innerHeight,
+  };
+}
 export default function Broadcast({
   params,
 }: {
@@ -9,21 +20,50 @@ export default function Broadcast({
 }) {
   const { id } = use(params);
   const { game } = useGame(id);
-  const [scale, setScale] = useState(1);
+  const [scale, setScale] = useState<number>();
   useEffect(() => {
-    const fit = () => setScale(Math.min(innerWidth / 1920, innerHeight / 1080));
+    const fit = () => {
+      const viewport = availableViewport();
+      setScale(
+        Math.min(
+          viewport.width / PROGRAM_WIDTH,
+          viewport.height / PROGRAM_HEIGHT,
+        ),
+      );
+    };
     fit();
-    addEventListener("resize", fit);
-    return () => removeEventListener("resize", fit);
+    window.addEventListener("resize", fit);
+    window.addEventListener("orientationchange", fit);
+    window.visualViewport?.addEventListener("resize", fit);
+    return () => {
+      window.removeEventListener("resize", fit);
+      window.removeEventListener("orientationchange", fit);
+      window.visualViewport?.removeEventListener("resize", fit);
+    };
   }, []);
   if (!game) return <main className="p-8">Loading 1920×1080 program…</main>;
   return (
     <main className="broadcast-viewport">
+      <BroadcastOperatorNavigation id={id} />
       <div
-        className="broadcast-fixed-canvas"
-        style={{ transform: `scale(${scale})` }}
+        data-testid="broadcast-visible-wrapper"
+        className="broadcast-visible-wrapper"
+        style={
+          scale === undefined
+            ? { visibility: "hidden" }
+            : {
+                width: PROGRAM_WIDTH * scale,
+                height: PROGRAM_HEIGHT * scale,
+              }
+        }
       >
-        <BroadcastCanvas game={game} />
+        <div
+          data-testid="broadcast-fixed-canvas"
+          className="broadcast-fixed-canvas"
+          style={{ transform: `scale(${scale ?? 1})` }}
+        >
+          <BroadcastCanvas game={game} />
+        </div>
       </div>
     </main>
   );

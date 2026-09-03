@@ -112,16 +112,28 @@ button {
   height: 100%;
 }
 .broadcast-viewport {
-  width: 100vw;
-  height: 100dvh;
+  position: fixed;
+  inset: 0;
   overflow: hidden;
   display: grid;
   place-items: center;
   background: #000;
 }
+.broadcast-visible-wrapper {
+  position: relative;
+  overflow: hidden;
+  flex: none;
+}
 .broadcast-fixed-canvas {
+  position: absolute;
+  inset: 0 auto auto 0;
   width: 1920px;
   height: 1080px;
-  transform-origin: center;
-  flex: none;
+  transform-origin: top left;
+}
+.broadcast-operator-navigation {
+  position: fixed;
+  top: max(0.75rem, env(safe-area-inset-top));
+  left: max(0.75rem, env(safe-area-inset-left));
+  z-index: 100;
 }

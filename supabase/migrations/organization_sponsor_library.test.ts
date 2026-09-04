@@ -55,6 +55,18 @@ describe("organization sponsor library migration", () => {
     expect(sql).toContain('set "position"=s."position"+1000000');
   });
 
+  it("computes the server path before the IF condition", () => {
+    expect(sql).toMatch(/v_expected_path text;/);
+    expect(sql).toMatch(
+      /v_expected_path\s*:=\s*v_org::text[\s\S]*?case p_mime/,
+    );
+    expect(sql).toMatch(/if p_path\s*<>\s*v_expected_path then/);
+    expect(sql).not.toMatch(/if p_path[^;]*case p_mime/i);
+    expect(sql).toMatch(
+      /when 'image\/jpeg' then '\.jpg'[\s\S]*when 'image\/png' then '\.png'[\s\S]*when 'image\/webp' then '\.webp'[\s\S]*else '\.invalid'/,
+    );
+  });
+
   it("resolves token games through a narrow definer boundary", () => {
     expect(sql).toContain("list_game_organization_sponsors");
     expect(sql).toMatch(

@@ -55,9 +55,22 @@ language sql security definer set search_path='' stable as $$
 $$;
 
 create function public.create_organization_sponsor(p_user_id uuid,p_id uuid,p_name text,p_alt text,p_path text,p_mime text,p_size bigint) returns uuid
-language plpgsql security definer set search_path='' as $$ declare v_org uuid:=public.sponsor_team(p_user_id,true); v_position integer; begin
+language plpgsql security definer set search_path='' as $$
+declare
+ v_org uuid:=public.sponsor_team(p_user_id,true);
+ v_position integer;
+ v_expected_path text;
+begin
  perform pg_advisory_xact_lock(hashtextextended(v_org::text,13));
- if p_path<>v_org::text||'/'||p_id::text||case p_mime when 'image/jpeg' then '.jpg' when 'image/png' then '.png' when 'image/webp' then '.webp' else '.invalid' end then raise exception 'invalid server path' using errcode='22023'; end if;
+ v_expected_path:=v_org::text||'/'||p_id::text||case p_mime
+  when 'image/jpeg' then '.jpg'
+  when 'image/png' then '.png'
+  when 'image/webp' then '.webp'
+  else '.invalid'
+ end;
+ if p_path<>v_expected_path then
+  raise exception 'invalid server path' using errcode='22023';
+ end if;
  select coalesce(max(s."position")+1,0) into v_position from public.organization_sponsors s where s.organization_id=v_org;
  insert into public.organization_sponsors(id,organization_id,display_name,alt_text,storage_path,mime_type,byte_size,"position",created_by,updated_by) values(p_id,v_org,btrim(p_name),btrim(p_alt),p_path,p_mime,p_size,v_position,p_user_id,p_user_id);
  insert into public.audit_events(actor_user_id,organization_id,action,subject_type,subject_identifier,metadata) values(p_user_id,v_org,'sponsor.created','sponsor',p_id::text,jsonb_build_object('display_name',left(btrim(p_name),100)));

@@ -7,6 +7,8 @@ import type { Role } from "@/lib/types";
 import { cameraDisplayStatus } from "@/lib/camera-status";
 import { AppNavigation } from "@/components/AppNavigation";
 import { canonicalTitleFromConfig } from "@/lib/game-title";
+import { gameCapabilities } from "@/lib/current-game";
+import { hasOrganizerAccess } from "@/lib/access-session";
 const roles: [Role, string][] = [
   ["camera-home", "Camera 1"],
   ["camera-away", "Camera 2"],
@@ -18,7 +20,7 @@ export default function GameLobby({
   params: Promise<{ id: string }>;
 }) {
   const { id } = use(params);
-  const { game, error, act, accountOperator } = useGame(id);
+  const { game, error, act, accountOperator, accountRole } = useGame(id);
   const [links, setLinks] = useState<Record<string, string>>({});
   const [qr, setQr] = useState("");
   const [chooserUrl, setChooserUrl] = useState("");
@@ -86,7 +88,18 @@ export default function GameLobby({
   return (
     <main className="mx-auto max-w-5xl p-5">
       <div className="mb-4">
-        <AppNavigation gameId={id} />
+        <AppNavigation
+          gameContext={{
+            id,
+            title,
+            scheduledLabel: "Schedule not set",
+            capabilities: gameCapabilities(
+              accountRole ||
+                (hasOrganizerAccess(localStorage, id) ? "organizer" : "scorer"),
+              game.config.awayName === "Opponent TBD",
+            ),
+          }}
+        />
       </div>
       <p className="text-cyan-300">GAME CONTROL</p>
       <h1 className="text-4xl font-black">{title}</h1>

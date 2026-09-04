@@ -3,7 +3,6 @@ import { redirect } from "next/navigation";
 import { getAccountContext, readableTeamRole } from "@/lib/auth/account";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { AccountServiceUnavailable } from "@/components/AccountServiceUnavailable";
-import { listDeletedTeamGames } from "@/lib/team-games";
 import { TeamGameLinks } from "@/components/TeamGameLinks";
 import { AppNavigation } from "@/components/AppNavigation";
 import { GameDeletionControl } from "@/components/GameDeletionControl";
@@ -13,8 +12,13 @@ import {
 } from "@/lib/team-hierarchy-data";
 import { formatScheduledStart } from "@/lib/team-hierarchy";
 import { formatCanonicalGameTitle } from "@/lib/game-title";
+import { groupGames, type GamesTab } from "@/lib/game-hub";
 
-export default async function DashboardPage() {
+export default async function GamesPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ tab?: string }>;
+}) {
   const {
     data: { user },
   } = await (await createServerSupabaseClient()).auth.getUser();
@@ -25,8 +29,7 @@ export default async function DashboardPage() {
   ]);
   if (!result.ok) return <AccountServiceUnavailable />;
   if (!hierarchy.ok) return <AccountServiceUnavailable />;
-  const context = result;
-  if (context.account.profile.status !== "active")
+  if (result.account.profile.status !== "active")
     return (
       <main className="mx-auto max-w-xl p-5">
         <section className="panel" role="alert">
@@ -35,268 +38,214 @@ export default async function DashboardPage() {
         </section>
       </main>
     );
-  const membership = context.account.membership;
+  const membership = result.account.membership;
   if (!membership) redirect("/onboarding");
-  const canSchedule = membership.role !== "viewer";
   const administrator = ["owner", "team_admin"].includes(membership.role);
-  const deleted = administrator ? await listDeletedTeamGames(user) : null;
-  const active = hierarchy.seasons.find((season) => season.status === "active");
-  const events = active
-    ? hierarchy.events.filter((event) => event.seasonId === active.id)
-    : [];
-  const upcoming = hierarchy.games
-    .filter(
-      (game) =>
-        game.scheduledStart &&
-        game.seasonId === active?.id &&
-        new Date(game.scheduledStart).getTime() >= Date.now(),
-    )
-    .slice(0, 5);
-  const singleGames = active
-    ? hierarchy.games.filter(
-        (game) => game.seasonId === active.id && !game.eventId,
-      )
-    : [];
-  const legacy = hierarchy.games.filter((game) => !game.seasonId);
+  const active = hierarchy.seasons.find((s) => s.status === "active");
+  const activeGames = hierarchy.games.filter((g) => g.seasonId === active?.id);
+  const events = hierarchy.events.filter((e) => e.seasonId === active?.id);
+  const groups = groupGames(activeGames, events);
+  const requested = (await searchParams).tab;
+  const tab: GamesTab =
+    requested === "single" || requested === "past" ? requested : "events";
   return (
-    <main className="mx-auto min-h-screen max-w-5xl p-5 md:py-12">
+    <main className="mx-auto min-h-screen max-w-5xl p-5 md:py-10">
       <div className="mb-4">
         <AppNavigation signedIn />
       </div>
-      <header className="panel mb-5">
-        <p className="text-cyan-300">TEAM DASHBOARD</p>
-        <h1 className="text-3xl font-black">{membership.teamName}</h1>
-        <p>
-          {context.account.profile.display_name} ·{" "}
+      <header className="mb-6">
+        <p className="text-sm font-bold uppercase tracking-widest text-cyan-300">
+          {membership.teamName}
+        </p>
+        <h1 className="text-4xl font-black">Games</h1>
+        <p className="text-slate-400">
+          {result.account.profile.display_name} ·{" "}
           {readableTeamRole(membership.role)}
         </p>
       </header>
-      <section className="panel mb-5">
-        <div className="flex flex-wrap items-center justify-between gap-3">
+      <section className="mb-8" aria-labelledby="next-up">
+        <div className="mb-3 flex items-end justify-between">
           <div>
-            <p className="text-slate-400">Current season</p>
-            <h2 className="text-2xl font-bold">
-              {active?.name ?? "No active season"}
+            <p className="text-sm font-bold uppercase tracking-widest text-cyan-300">
+              Schedule
+            </p>
+            <h2 id="next-up" className="text-2xl font-bold">
+              Next up
             </h2>
-            {active && (
-              <p>
-                {active.startDate} – {active.endDate}
-              </p>
-            )}
           </div>
-          <Link className="btn-secondary" href="/seasons">
-            Manage seasons &amp; events
-          </Link>
+          {membership.role !== "viewer" && (
+            <Link className="btn-secondary" href="/games/new">
+              Schedule a game
+            </Link>
+          )}
         </div>
-        {!active && canSchedule && (
-          <Link
-            className="mt-3 inline-block min-h-11 py-3 text-cyan-300"
-            href="/seasons"
-          >
-            Create a season first
-          </Link>
-        )}
-      </section>
-      {active && (
-        <>
-          <section className="mb-5 grid gap-3">
-            <h2 className="text-2xl font-bold">Upcoming games</h2>
-            {upcoming.length ? (
-              <ol className="grid gap-2">
-                {upcoming.map((game) => {
-                  const event = events.find((item) => item.id === game.eventId);
-                  const title = scheduledGameTitle(game);
-                  return (
-                    <li className="rounded-lg bg-slate-800 p-4" key={game.id}>
-                      <Link
-                        className="font-bold text-cyan-300"
-                        href={`#game-${game.id}`}
-                      >
-                        {title}
-                      </Link>
-                      <p>
-                        {formatScheduledStart(
-                          game.scheduledStart!,
-                          event?.timezone ?? game.timezone ?? "UTC",
-                        )}{" "}
-                        · {event?.name ?? "Single Game"}
-                      </p>
-                    </li>
-                  );
-                })}
-              </ol>
-            ) : (
-              <p className="panel">No upcoming games in the current season.</p>
-            )}
-          </section>
-          <section className="mb-5 grid gap-3">
-            <h2 className="text-2xl font-bold">Single Games</h2>
-            {singleGames.length ? (
-              singleGames.map((game) => (
-                <GameCard
-                  key={game.id}
-                  game={game}
-                  timezone={game.timezone ?? "UTC"}
-                  role={membership.role}
-                />
-              ))
-            ) : (
-              <p className="panel">No single games in this season.</p>
-            )}
-          </section>
-          <section className="mb-5 grid gap-4">
-            <h2 className="text-2xl font-bold">Events in {active.name}</h2>
-            {events.length ? (
-              events.map((event) => {
-                const games = hierarchy.games.filter(
-                  (game) => game.eventId === event.id,
-                );
-                return (
-                  <article className="panel" key={event.id}>
-                    <header>
-                      <span className="text-sm uppercase text-cyan-300">
-                        {event.eventType}
-                        {event.archivedAt ? " · Archived" : ""}
-                      </span>
-                      <h3 className="text-xl font-bold">
-                        <Link href={`/events/${event.id}`}>{event.name}</Link>
-                      </h3>
-                      <p>
-                        {event.startDate} – {event.endDate}
-                      </p>
-                      <p className="text-slate-300">
-                        {[event.location, event.timezone]
-                          .filter(Boolean)
-                          .join(" · ")}
-                      </p>
-                    </header>
-                    <div className="mt-4 grid gap-3">
-                      {games.length ? (
-                        games.map((game) => (
-                          <GameCard
-                            key={game.id}
-                            game={game}
-                            timezone={event.timezone}
-                            role={membership.role}
-                          />
-                        ))
-                      ) : (
-                        <p>
-                          No games scheduled.{" "}
-                          {canSchedule && (
-                            <Link
-                              className="text-cyan-300"
-                              href={`/games/new?eventId=${event.id}`}
-                            >
-                              Add a game
-                            </Link>
-                          )}
-                        </p>
-                      )}
-                    </div>
-                  </article>
-                );
-              })
-            ) : (
-              <div className="panel">
-                <p>No events in the current season.</p>
-                {canSchedule && (
-                  <Link
-                    className="inline-block min-h-11 py-3 text-cyan-300"
-                    href={`/seasons/${active.id}`}
-                  >
-                    Create an event first
-                  </Link>
-                )}
-              </div>
-            )}
-          </section>
-        </>
-      )}
-      <section className="mb-5 grid gap-3">
-        <h2 className="text-2xl font-bold">Legacy / Unassigned Games</h2>
-        {legacy.length ? (
-          legacy.map((game) => (
-            <GameCard key={game.id} game={game} role={membership.role} />
-          ))
-        ) : (
-          <p className="panel">No unassigned games.</p>
-        )}
-      </section>
-      {administrator && deleted?.ok && deleted.games.length > 0 && (
-        <section className="grid gap-3">
-          <h2 className="text-2xl font-bold">Recently Deleted</h2>
-          {deleted.games.map((game) => (
-            <article className="panel" key={game.game_id}>
-              <h3 className="font-bold">
-                {formatCanonicalGameTitle({
-                  structured: false,
-                  legacyTitle: game.event_name,
-                  homeName: game.home_name,
-                  awayName: game.away_name,
-                })}
-              </h3>
-              <GameDeletionControl
-                restore
-                gameId={game.game_id}
-                title={formatCanonicalGameTitle({
-                  structured: false,
-                  legacyTitle: game.event_name,
-                  homeName: game.home_name,
-                  awayName: game.away_name,
-                })}
-                matchup=""
+        {groups.nextUp.length ? (
+          <ol className="panel divide-y divide-slate-700 !p-0">
+            {groups.nextUp.map((game) => (
+              <GameRow
+                key={game.id}
+                game={game}
+                events={events}
+                role={membership.role}
+                administrator={administrator}
               />
-            </article>
-          ))}
-        </section>
+            ))}
+          </ol>
+        ) : (
+          <p className="panel text-slate-300">No upcoming games scheduled.</p>
+        )}
+      </section>
+      <section aria-labelledby="browse-games">
+        <h2 id="browse-games" className="text-2xl font-bold">
+          Browse games
+        </h2>
+        <nav className="games-tabs mt-3" aria-label="Browse games">
+          <Tab href="/dashboard?tab=events" active={tab === "events"}>
+            Events
+          </Tab>
+          <Tab href="/dashboard?tab=single" active={tab === "single"}>
+            Single games
+          </Tab>
+          <Tab href="/dashboard?tab=past" active={tab === "past"}>
+            Past games
+          </Tab>
+        </nav>
+        <div className="mt-4 grid gap-3">
+          {tab === "events"
+            ? groups.eventSummaries.map(({ event, gameCount, nextGame }) => (
+                <Link
+                  key={event.id}
+                  className="panel block hover:border-cyan-500"
+                  href={`/events/${event.id}`}
+                >
+                  <h3 className="text-lg font-bold text-cyan-300">
+                    {event.name}
+                  </h3>
+                  <p>
+                    {event.startDate} – {event.endDate}
+                  </p>
+                  <p className="text-sm text-slate-400">
+                    {gameCount} {gameCount === 1 ? "game" : "games"} ·{" "}
+                    {nextGame?.scheduledStart
+                      ? `Next: ${formatScheduledStart(nextGame.scheduledStart, event.timezone)}`
+                      : "No upcoming games"}
+                  </p>
+                </Link>
+              ))
+            : tab === "single"
+              ? groups.singleGames.map((game) => (
+                  <GameRow
+                    key={game.id}
+                    game={game}
+                    events={events}
+                    role={membership.role}
+                    administrator={administrator}
+                  />
+                ))
+              : groups.past.map((game) => (
+                  <GameRow
+                    key={game.id}
+                    game={game}
+                    events={events}
+                    role={membership.role}
+                    administrator={administrator}
+                  />
+                ))}
+          {((tab === "events" && !groups.eventSummaries.length) ||
+            (tab === "single" && !groups.singleGames.length) ||
+            (tab === "past" && !groups.past.length)) && (
+            <p className="panel text-slate-400">No games to show here.</p>
+          )}
+        </div>
+      </section>
+      {administrator && (
+        <footer className="mt-10 border-t border-slate-800 pt-4">
+          <Link
+            className="inline-flex min-h-11 items-center text-sm text-slate-400 hover:text-cyan-300"
+            href="/dashboard/trash"
+          >
+            Recently deleted games
+          </Link>
+        </footer>
       )}
     </main>
   );
 }
-
-function GameCard({
-  game,
-  timezone,
-  role,
+function Tab({
+  href,
+  active,
+  children,
 }: {
-  game: ScheduledGameRecord;
-  timezone?: string;
-  role: string;
+  href: string;
+  active: boolean;
+  children: React.ReactNode;
 }) {
-  const administrator = ["owner", "team_admin"].includes(role);
-  const title = scheduledGameTitle(game);
   return (
-    <article
-      id={`game-${game.id}`}
-      className="rounded-lg border border-slate-700 p-4"
+    <Link
+      className="games-tab"
+      href={href}
+      aria-current={active ? "page" : undefined}
     >
-      <h4 className="font-bold">{title}</h4>
-      {game.gameNumber && game.eventId && (
-        <p className="text-sm text-slate-400">Game {game.gameNumber}</p>
-      )}
-      <p className="text-sm text-slate-300">
-        {game.scheduledStart && timezone
-          ? formatScheduledStart(game.scheduledStart, timezone)
-          : new Intl.DateTimeFormat("en", { dateStyle: "medium" }).format(
-              new Date(game.createdAt),
-            )}{" "}
-        · {game.status}
-      </p>
-      {role !== "viewer" && <TeamGameLinks gameId={game.id} title={title} />}{" "}
-      {administrator && (
-        <GameDeletionControl gameId={game.id} title={title} matchup="" />
-      )}
-    </article>
+      {children}
+    </Link>
   );
 }
-
-function scheduledGameTitle(game: ScheduledGameRecord) {
-  return formatCanonicalGameTitle({
+function GameRow({
+  game,
+  events,
+  role,
+  administrator,
+}: {
+  game: ScheduledGameRecord;
+  events: { id: string; name: string; timezone: string }[];
+  role: string;
+  administrator: boolean;
+}) {
+  const event = events.find((e) => e.id === game.eventId);
+  const title = formatCanonicalGameTitle({
     structured: Boolean(game.seasonId),
     legacyTitle: game.config.eventName,
     homeName: game.config.homeName,
     awayName: game.opponentId ? game.config.awayName : null,
-    eventName: game.eventId ? game.config.eventName : null,
+    eventName: event?.name,
   });
+  const timezone = event?.timezone ?? game.timezone ?? "UTC";
+  const scheduledLabel = game.scheduledStart
+    ? formatScheduledStart(game.scheduledStart, timezone)
+    : "Schedule not set";
+  return (
+    <li className="list-none p-4">
+      <div className="flex flex-wrap justify-between gap-3">
+        <div>
+          <h3 className="font-bold">{title}</h3>
+          <p className="text-sm text-slate-300">{scheduledLabel}</p>
+          <p className="text-sm text-slate-500">
+            {event?.name ?? "Single Game"}
+          </p>
+        </div>
+        {role !== "viewer" && (
+          <TeamGameLinks
+            gameId={game.id}
+            title={title}
+            scheduledLabel={scheduledLabel}
+            role={role}
+            opponentTbd={!game.opponentId}
+          />
+        )}
+      </div>
+      {administrator && (
+        <details className="mt-2">
+          <summary className="inline-flex min-h-11 cursor-pointer items-center text-sm text-slate-400">
+            More actions
+          </summary>
+          <div className="flex flex-wrap gap-2">
+            <Link className="btn-secondary" href={`/games/${game.id}/edit`}>
+              Edit schedule
+            </Link>
+            <GameDeletionControl gameId={game.id} title={title} matchup="" />
+          </div>
+        </details>
+      )}
+    </li>
+  );
 }

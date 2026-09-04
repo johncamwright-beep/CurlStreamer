@@ -24,8 +24,8 @@ describe("first-team account pages", () => {
     expect(dashboard).not.toContain(
       "Account-based control from another device is coming next",
     );
-    expect(dashboard).toContain("Recently Deleted");
-    expect(dashboard).toContain("Legacy / Unassigned Games");
+    expect(dashboard).toContain("Recently deleted games");
+    expect(dashboard).not.toContain("Legacy / Unassigned Games");
   });
 
   it("keeps a route back to the application throughout onboarding", () => {

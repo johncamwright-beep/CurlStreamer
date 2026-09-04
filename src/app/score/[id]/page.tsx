@@ -9,6 +9,8 @@ import type { Sponsor, Team } from "@/lib/types";
 import { hasVisibleSponsorOverlay } from "@/lib/sponsor-audio";
 import { AppNavigation } from "@/components/AppNavigation";
 import { canonicalTitleFromConfig } from "@/lib/game-title";
+import { gameCapabilities } from "@/lib/current-game";
+import { hasOrganizerAccess } from "@/lib/access-session";
 async function optimize(file: File): Promise<Sponsor> {
   if (!["image/jpeg", "image/png", "image/webp"].includes(file.type))
     throw new Error(`${file.name}: use JPEG, PNG or WebP.`);
@@ -49,7 +51,7 @@ export default function Scorer({
   params: Promise<{ id: string }>;
 }) {
   const { id } = use(params);
-  const { game, error, act, accountOperator } = useGame(id);
+  const { game, error, act, accountOperator, accountRole } = useGame(id);
   const [points, setPoints] = useState(1);
   const [team, setTeam] = useState<Team>("home");
   const [errors, setErrors] = useState<string[]>([]);
@@ -67,7 +69,20 @@ export default function Scorer({
     return (
       <main className="mx-auto max-w-xl p-5">
         <div className="mb-4">
-          <AppNavigation gameId={id} />
+          <AppNavigation
+            gameContext={{
+              id,
+              title: canonicalTitleFromConfig(game.config),
+              scheduledLabel: "Schedule not set",
+              capabilities: gameCapabilities(
+                accountRole ||
+                  (hasOrganizerAccess(localStorage, id)
+                    ? "organizer"
+                    : "scorer"),
+                game.config.awayName === "Opponent TBD",
+              ),
+            }}
+          />
         </div>
         <section className="panel" role="alert">
           <h1 className="text-3xl font-black">
@@ -87,7 +102,20 @@ export default function Scorer({
     return (
       <main className="mx-auto max-w-lg p-5">
         <div className="mb-3">
-          <AppNavigation gameId={id} />
+          <AppNavigation
+            gameContext={{
+              id,
+              title: canonicalTitleFromConfig(game.config),
+              scheduledLabel: "Schedule not set",
+              capabilities: gameCapabilities(
+                accountRole ||
+                  (hasOrganizerAccess(localStorage, id)
+                    ? "organizer"
+                    : "scorer"),
+                game.config.awayName === "Opponent TBD",
+              ),
+            }}
+          />
         </div>
         <div role="alert" className="panel text-center">
           <h1 className="text-2xl font-black">This game is closed</h1>
@@ -144,7 +172,18 @@ export default function Scorer({
   return (
     <main className="mx-auto max-w-6xl p-4">
       <div className="mb-3">
-        <AppNavigation gameId={id} />
+        <AppNavigation
+          gameContext={{
+            id,
+            title: canonicalTitleFromConfig(game.config),
+            scheduledLabel: "Schedule not set",
+            capabilities: gameCapabilities(
+              accountRole ||
+                (hasOrganizerAccess(localStorage, id) ? "organizer" : "scorer"),
+              game.config.awayName === "Opponent TBD",
+            ),
+          }}
+        />
       </div>
       <div className="mb-3">
         <GameSetupNavigation id={id} accountOperator={accountOperator} />

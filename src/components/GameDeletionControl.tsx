@@ -1,6 +1,7 @@
 "use client";
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { clearCurrentGame, readCurrentGame } from "@/lib/current-game";
 
 export function GameDeletionControl({
   gameId,
@@ -32,6 +33,9 @@ export function GameDeletionControl({
       );
       setBusy(false);
       return;
+    }
+    if (!restore && readCurrentGame(localStorage)?.id === gameId) {
+      clearCurrentGame(localStorage);
     }
     dialog.current?.close();
     router.refresh();

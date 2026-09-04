@@ -4,18 +4,30 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useId, useRef, useState } from "react";
 import { signOut } from "@/app/account/actions";
-import { hasOrganizerAccess, hasScoringAccess } from "@/lib/access-session";
+import { AppIcon, type AppIconName } from "@/components/AppIcon";
+import {
+  CURRENT_GAME_EVENT,
+  readCurrentGame,
+  selectCurrentGame,
+  type CurrentGameSelection,
+} from "@/lib/current-game";
 import { createBrowserSupabaseClient } from "@/lib/supabase/browser";
 
-type GameAccess = "organizer" | "scorer" | "none";
+type NavLink = { href: string; label: string; icon: AppIconName };
+const plan: NavLink[] = [
+  { href: "/dashboard", label: "Games", icon: "game" },
+  { href: "/games/new", label: "Schedule a game", icon: "calendar" },
+  { href: "/seasons", label: "Seasons & events", icon: "list" },
+  { href: "/opponents", label: "Opponents", icon: "opponent" },
+];
 
 export function AppNavigation({
   signedIn: knownSignedIn,
-  gameId,
+  gameContext,
   className = "",
 }: {
   signedIn?: boolean;
-  gameId?: string;
+  gameContext?: CurrentGameSelection;
   className?: string;
 }) {
   const pathname = usePathname();
@@ -24,13 +36,10 @@ export function AppNavigation({
   const panel = useRef<HTMLElement>(null);
   const [open, setOpen] = useState(false);
   const [signedIn, setSignedIn] = useState(knownSignedIn ?? false);
-  const [gameAccess, setGameAccess] = useState<GameAccess>("none");
+  const [current, setCurrent] = useState<CurrentGameSelection | null>(null);
 
   useEffect(() => {
-    if (knownSignedIn !== undefined) {
-      setSignedIn(knownSignedIn);
-      return;
-    }
+    if (knownSignedIn !== undefined) return setSignedIn(knownSignedIn);
     try {
       const client = createBrowserSupabaseClient();
       void client.auth
@@ -42,17 +51,36 @@ export function AppNavigation({
       );
       return () => data.subscription.unsubscribe();
     } catch {
-      // Account navigation is optional; anonymous game creation must stay usable.
       setSignedIn(false);
     }
   }, [knownSignedIn]);
 
   useEffect(() => {
-    if (!gameId) return setGameAccess("none");
-    if (hasOrganizerAccess(localStorage, gameId)) setGameAccess("organizer");
-    else if (hasScoringAccess(localStorage, gameId)) setGameAccess("scorer");
-    else setGameAccess("none");
-  }, [gameId]);
+    const update = (event?: Event) => {
+      const sameTab = event as CustomEvent<CurrentGameSelection | null>;
+      setCurrent(
+        event?.type === CURRENT_GAME_EVENT
+          ? sameTab.detail
+          : readCurrentGame(localStorage),
+      );
+    };
+    if (gameContext) {
+      const persisted = readCurrentGame(localStorage);
+      const synchronized =
+        persisted?.id === gameContext.id &&
+        gameContext.scheduledLabel === "Schedule not set"
+          ? { ...gameContext, scheduledLabel: persisted.scheduledLabel }
+          : gameContext;
+      selectCurrentGame(localStorage, synchronized);
+      setCurrent(synchronized);
+    } else update();
+    addEventListener("storage", update);
+    addEventListener(CURRENT_GAME_EVENT, update);
+    return () => {
+      removeEventListener("storage", update);
+      removeEventListener(CURRENT_GAME_EVENT, update);
+    };
+  }, [gameContext, pathname]);
 
   useEffect(() => {
     if (!open) return;
@@ -61,17 +89,14 @@ export function AppNavigation({
     document.body.style.overflow = "hidden";
     panel.current?.querySelector<HTMLElement>("a, button")?.focus();
     const keydown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        setOpen(false);
-        return;
-      }
+      if (event.key === "Escape") return setOpen(false);
       if (event.key !== "Tab" || !panel.current) return;
       const controls = [
         ...panel.current.querySelectorAll<HTMLElement>("a, button"),
       ];
       if (!controls.length) return;
-      const first = controls[0];
-      const last = controls.at(-1)!;
+      const first = controls[0],
+        last = controls.at(-1)!;
       if (event.shiftKey && document.activeElement === first) {
         event.preventDefault();
         last.focus();
@@ -88,30 +113,71 @@ export function AppNavigation({
     };
   }, [open]);
 
-  const links = [
-    { href: "/", label: "CurlStreamer Home" },
-    ...(signedIn
-      ? [
-          { href: "/dashboard", label: "Dashboard" },
-          { href: "/seasons", label: "Seasons & Events" },
-          { href: "/opponents", label: "Opponents" },
-          { href: "/games/new", label: "Schedule a Game" },
-          { href: "/account", label: "Account" },
-        ]
-      : [{ href: "/login", label: "Sign In" }]),
-    ...(gameId && gameAccess === "organizer"
-      ? [
-          { href: `/games/${gameId}`, label: "Game Control" },
-          { href: `/score/${gameId}`, label: "Scoring" },
-          { href: `/broadcast/${gameId}`, label: "Broadcast" },
-        ]
-      : gameId && gameAccess === "scorer"
-        ? [
-            { href: `/score/${gameId}`, label: "Scoring" },
-            { href: `/broadcast/${gameId}`, label: "Broadcast" },
-          ]
-        : []),
-  ];
+  const gameLinks: NavLink[] = current
+    ? [
+        ...(current.capabilities.control
+          ? [
+              {
+                href: `/games/${current.id}`,
+                label: "Game control",
+                icon: "control" as const,
+              },
+            ]
+          : []),
+        ...(current.capabilities.assignOpponent
+          ? [
+              {
+                href: `/games/${current.id}/edit`,
+                label: "Assign opponent",
+                icon: "opponent" as const,
+              },
+            ]
+          : current.capabilities.scoring
+            ? [
+                {
+                  href: `/score/${current.id}`,
+                  label: "Scoring",
+                  icon: "score" as const,
+                },
+              ]
+            : []),
+        ...(current.capabilities.broadcast
+          ? [
+              {
+                href: `/broadcast/${current.id}`,
+                label: "Broadcast",
+                icon: "broadcast" as const,
+              },
+            ]
+          : []),
+        ...(current.capabilities.editSchedule
+          ? [
+              {
+                href: `/games/${current.id}/edit`,
+                label: "Edit schedule",
+                icon: "edit" as const,
+              },
+            ]
+          : []),
+      ]
+    : [];
+  const renderLinks = (links: NavLink[]) =>
+    links.map(({ href, label, icon }) => {
+      const currentRoute = pathname === href;
+      return (
+        <li key={`${href}-${label}`}>
+          <Link
+            className="app-navigation-link"
+            href={href}
+            aria-current={currentRoute ? "page" : undefined}
+            onClick={() => setOpen(false)}
+          >
+            <AppIcon name={icon} />
+            <span>{label}</span>
+          </Link>
+        </li>
+      );
+    });
 
   return (
     <div className={`app-navigation ${className}`} data-testid="app-navigation">
@@ -122,64 +188,92 @@ export function AppNavigation({
         aria-label={open ? "Close navigation menu" : "Open navigation menu"}
         aria-expanded={open}
         aria-controls={panelId}
-        onClick={() => setOpen((value) => !value)}
+        onClick={() => setOpen((v) => !v)}
       >
         <span aria-hidden="true">☰</span>
         <span className="sr-only">Menu</span>
       </button>
       {open && (
-        <>
+        <button
+          type="button"
+          className="app-navigation-backdrop"
+          aria-label="Close navigation menu"
+          onClick={() => setOpen(false)}
+        />
+      )}
+      <nav
+        ref={panel}
+        id={panelId}
+        className={`app-navigation-panel ${open ? "is-open" : ""}`}
+        aria-label="CurlStreamer navigation"
+        aria-hidden={!open}
+        inert={!open ? true : undefined}
+      >
+        <div className="app-navigation-brand">
+          <strong>CurlCast</strong>
           <button
             type="button"
-            className="app-navigation-backdrop"
+            className="app-navigation-close"
             aria-label="Close navigation menu"
             onClick={() => setOpen(false)}
-          />
-          <nav
-            ref={panel}
-            id={panelId}
-            className="app-navigation-panel"
-            aria-label="CurlStreamer navigation"
           >
-            <div className="mb-4 flex items-center justify-between gap-4">
-              <strong className="text-xl">CurlStreamer</strong>
-              <button
-                type="button"
-                className="app-navigation-close"
-                aria-label="Close navigation menu"
-                onClick={() => setOpen(false)}
-              >
-                ×
-              </button>
-            </div>
-            <ul className="grid gap-2">
-              {links.map(({ href, label }) => {
-                const route = href.split("#")[0];
-                const current = pathname === route && !href.includes("#");
-                return (
-                  <li key={`${href}-${label}`}>
-                    <Link
-                      className="app-navigation-link"
-                      href={href}
-                      aria-current={current ? "page" : undefined}
-                      onClick={() => setOpen(false)}
-                    >
-                      {label}
-                    </Link>
-                  </li>
-                );
-              })}
-            </ul>
-            {signedIn && (
-              <form action={signOut} className="mt-2">
+            ×
+          </button>
+        </div>
+        {signedIn ? (
+          <>
+            <section>
+              <h2 className="app-navigation-heading">Plan &amp; Schedule</h2>
+              <ul>{renderLinks(plan)}</ul>
+            </section>
+            <section className="app-navigation-current">
+              <h2 className="app-navigation-heading">Current Game</h2>
+              {current ? (
+                <>
+                  <strong className="block px-3 text-sm">
+                    {current.title}
+                  </strong>
+                  <span className="block px-3 pb-2 text-xs text-slate-400">
+                    {current.scheduledLabel}
+                  </span>
+                  <ul>{renderLinks(gameLinks)}</ul>
+                </>
+              ) : (
+                <div className="px-3 text-sm text-slate-400">
+                  <p>No game selected</p>
+                  <Link
+                    className="inline-flex min-h-11 items-center text-cyan-300"
+                    href="/dashboard"
+                    onClick={() => setOpen(false)}
+                  >
+                    Choose a game
+                  </Link>
+                </div>
+              )}
+            </section>
+            <section className="app-navigation-account">
+              <h2 className="app-navigation-heading">Account</h2>
+              <ul>
+                {renderLinks([
+                  { href: "/account", label: "Account", icon: "account" },
+                ])}
+              </ul>
+              <form action={signOut}>
                 <button className="app-navigation-link w-full text-left">
-                  Sign Out
+                  <AppIcon name="logout" />
+                  Sign out
                 </button>
               </form>
-            )}
-          </nav>
-        </>
-      )}
+            </section>
+          </>
+        ) : (
+          <ul>
+            {renderLinks([
+              { href: "/login", label: "Sign in", icon: "account" },
+            ])}
+          </ul>
+        )}
+      </nav>
     </div>
   );
 }

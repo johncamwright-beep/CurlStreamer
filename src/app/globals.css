@@ -84,6 +84,7 @@ body {
 html,
 body {
   max-width: 100%;
+  overflow-x: clip;
 }
 button,
 input,
@@ -239,4 +240,70 @@ button {
   z-index: 100;
   min-height: 44px;
   box-shadow: 0 8px 24px rgb(0 0 0 / 55%);
+}
+.app-icon {
+  width: 18px;
+  height: 18px;
+  flex: none;
+}
+.app-navigation-brand {
+  display: flex;
+  min-height: 44px;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.5rem;
+  font-size: 1.15rem;
+}
+.app-navigation-heading {
+  margin: 0.8rem 0.75rem 0.35rem;
+  color: rgb(148 163 184);
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+.app-navigation-panel ul {
+  display: grid;
+  gap: 2px;
+}
+.app-navigation-link {
+  gap: 0.7rem;
+}
+.app-navigation-current {
+  border-top: 1px solid rgb(51 65 85);
+  margin-top: 0.65rem;
+  padding-top: 0.15rem;
+}
+.app-navigation-account {
+  border-top: 1px solid rgb(51 65 85);
+  margin-top: auto;
+  padding-top: 0.15rem;
+}
+.app-navigation-panel {
+  display: flex;
+  flex-direction: column;
+  transform: translateX(-105%);
+  transition: transform 0.2s ease;
+}
+.app-navigation-panel.is-open {
+  transform: translateX(0);
+}
+.games-tabs {
+  display: flex;
+  gap: 0.25rem;
+  overflow-x: auto;
+  border-bottom: 1px solid rgb(51 65 85);
+}
+.games-tab {
+  display: inline-flex;
+  min-height: 44px;
+  align-items: center;
+  padding: 0.5rem 0.9rem;
+  color: rgb(148 163 184);
+  white-space: nowrap;
+}
+.games-tab[aria-current="page"] {
+  border-bottom: 2px solid rgb(34 211 238);
+  color: rgb(103 232 249);
+  font-weight: 700;
 }

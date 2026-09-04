@@ -29,10 +29,16 @@ export function DecodedSponsorImage({
   sponsors,
   desiredIndex,
   className,
+  width,
+  height,
+  onDimensions,
 }: {
   sponsors: Sponsor[];
   desiredIndex: number;
   className?: string;
+  width?: number;
+  height?: number;
+  onDimensions?: (width: number, height: number) => void;
 }) {
   const [displayed, setDisplayed] = useState<Sponsor>();
   const decoded = useRef(new Set<string>());
@@ -84,6 +90,14 @@ export function DecodedSponsorImage({
       src={displayed.dataUrl}
       alt={displayed.altText ?? displayed.name}
       className={className}
+      width={width || undefined}
+      height={height || undefined}
+      onLoad={(event) =>
+        onDimensions?.(
+          event.currentTarget.naturalWidth,
+          event.currentTarget.naturalHeight,
+        )
+      }
       style={{ transform: `rotate(${displayed.rotation}deg)` }}
     />
   );

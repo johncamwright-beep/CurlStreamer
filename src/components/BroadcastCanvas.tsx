@@ -5,7 +5,7 @@ import type { GameState } from "@/lib/types";
 import { formatBroadcastRailTitle } from "@/lib/game-title";
 import { LiveKitCameraFeed } from "./LiveKitCameraFeed";
 import { isScorerAudioEffectivelyMuted } from "@/lib/sponsor-audio";
-import { DecodedSponsorImage } from "./DecodedSponsorImage";
+import { SponsorFrame } from "./SponsorFrame";
 function Camera({
   side,
   gameId,
@@ -93,13 +93,11 @@ export function BroadcastCanvas({ game }: { game: GameState }) {
             />
           )}
           {visibleSponsorOverlay && sponsor && (
-            <div data-testid="sponsor-overlay" className="sponsor-deck-overlay">
-              <DecodedSponsorImage
-                sponsors={sponsors}
-                desiredIndex={idx}
-                className="sponsor-adaptive-image"
-              />
-            </div>
+            <SponsorFrame
+              sponsors={sponsors}
+              desiredIndex={idx}
+              mode="overlay"
+            />
           )}
         </div>
         <aside
@@ -116,19 +114,11 @@ export function BroadcastCanvas({ game }: { game: GameState }) {
             <Scoreboard game={game} compact broadcast />
           </div>
           {m.active && m.style === "fullscreen" && sponsor && (
-            <div
-              data-testid="sponsor-sidebar"
-              className="sponsor-sidebar rounded-2xl bg-white"
-            >
-              <p className="mb-2 text-center text-[.8cqw] font-bold text-slate-700">
-                PRESENTED BY
-              </p>
-              <DecodedSponsorImage
-                sponsors={sponsors}
-                desiredIndex={idx}
-                className="sponsor-adaptive-image"
-              />
-            </div>
+            <SponsorFrame
+              sponsors={sponsors}
+              desiredIndex={idx}
+              mode="sidebar"
+            />
           )}
           <div
             className="mt-auto pt-[.6cqw] text-[.9cqw] leading-tight"

@@ -177,13 +177,15 @@ button {
   width: 32px;
   height: 32px;
 }
-.sponsor-sidebar {
-  display: flex;
-  flex-direction: column;
-  max-height: 370px;
+.sponsor-frame-bounds {
+  display: grid;
+  min-width: 0;
+  min-height: 0;
+  place-items: center;
+}
+.sponsor-frame-bounds-sidebar {
+  flex: 1 1 auto;
   margin-top: 18px;
-  overflow: hidden;
-  padding: 14px;
 }
 .broadcast-camera-deck[data-camera-count="1"] .broadcast-camera-panel {
   height: 100%;
@@ -200,22 +202,38 @@ button {
 .camera-placeholder-status {
   z-index: 2;
 }
-.sponsor-deck-overlay {
+.sponsor-frame-bounds-overlay {
   position: absolute;
   inset: 12.5%;
   z-index: 30;
-  display: grid;
-  place-items: center;
+  pointer-events: none;
+}
+.sponsor-fitted-frame {
+  display: flex;
+  max-width: 100%;
+  max-height: 100%;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
   border-radius: 1rem;
   background: #fff;
-  padding: 2%;
-  overflow: hidden;
+  padding: 14px;
 }
-.sponsor-adaptive-image {
+.sponsor-frame-label {
+  height: 26px;
+  flex: none;
+  color: rgb(51 65 85);
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 18px;
+  text-align: center;
+}
+.sponsor-fitted-image {
   display: block;
-  width: 100%;
-  height: auto;
+  max-width: 100%;
   max-height: 100%;
+  flex: none;
   object-fit: contain;
 }
 .broadcast-viewport {

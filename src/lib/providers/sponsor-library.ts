@@ -6,6 +6,8 @@ import type { LibrarySponsor, Sponsor } from "@/lib/types";
 
 const BUCKET = "organization-sponsors";
 const SIGNED_URL_SECONDS = 12 * 60 * 60;
+// Keep multipart requests below Vercel's 4.5 MB function payload boundary.
+const MAX_UPLOAD_BYTES = 4 * 1024 * 1024;
 type SponsorRow = {
   id: string;
   display_name: string;
@@ -73,8 +75,8 @@ export type ValidImage = { bytes: Uint8Array; mime: string; extension: string };
 export function validateSponsorImage(file: File): Promise<ValidImage> {
   return file.arrayBuffer().then((buffer) => {
     const bytes = new Uint8Array(buffer);
-    if (!bytes.length || bytes.length > 12 * 1024 * 1024)
-      throw new Error("Images must be no larger than 12 MB.");
+    if (!bytes.length || bytes.length > MAX_UPLOAD_BYTES)
+      throw new Error(`${file.name}: images must be no larger than 4 MB.`);
     const jpeg = bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff;
     const png =
       bytes.length >= 8 &&
@@ -90,8 +92,18 @@ export function validateSponsorImage(file: File): Promise<ValidImage> {
         : webp
           ? ["image/webp", "webp"]
           : null;
-    if (!detected || file.type !== detected[0])
-      throw new Error("Only genuine JPEG, PNG, and WebP images are supported.");
+    const acceptedBrowserTypes: Record<string, string[]> = {
+      "image/jpeg": ["", "image/jpeg", "image/jpg", "image/pjpeg"],
+      "image/png": ["", "image/png", "image/x-png"],
+      "image/webp": ["", "image/webp"],
+    };
+    if (
+      !detected ||
+      !acceptedBrowserTypes[detected[0]].includes(file.type.toLowerCase())
+    )
+      throw new Error(
+        `${file.name}: file contents are not a supported JPEG, PNG, or WebP image.`,
+      );
     return { bytes, mime: detected[0], extension: detected[1] };
   });
 }

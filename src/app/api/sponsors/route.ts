@@ -83,8 +83,8 @@ export async function POST(request: Request) {
       .min(1)
       .max(20)
       .parse(JSON.parse(String(form.get("metadata"))));
-    if (files.length !== metadata.length)
-      throw new Error("Invalid upload batch");
+    if (files.length !== 1 || metadata.length !== 1)
+      throw new Error("Upload exactly one sponsor image per request");
     const sponsors = await createSponsors(
       auth.user,
       auth.team.organizationId,

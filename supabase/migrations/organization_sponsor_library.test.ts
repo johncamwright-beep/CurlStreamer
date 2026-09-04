@@ -30,9 +30,18 @@ describe("organization sponsor library migration", () => {
   it("enforces private constrained storage and deterministic active ordering", () => {
     expect(sql).toMatch(/false,\s*12582912/);
     expect(sql).toMatch(/'image\/jpeg',\s*'image\/png',\s*'image\/webp'/);
-    expect(sql).toMatch(/order by s\.position,\s*s\.id/g);
+    expect(sql).toMatch(/order by s\."position",\s*s\.id/g);
     expect(sql).toMatch(/role in \('owner',\s*'team_admin'\)/);
     expect(sql).toContain("exactly one active team required");
+  });
+
+  it("quotes the position output contract and qualifies every column reference", () => {
+    expect(sql).not.toMatch(/returns table\([^)]*\bposition integer/i);
+    expect(sql.match(/"position" integer/g)).toHaveLength(4);
+    expect(sql).not.toMatch(/\b(max|set|by)\s*\(?(position)\b/i);
+    expect(sql).not.toMatch(/\belse\s+position\b/i);
+    expect(sql).toContain('max(s."position")');
+    expect(sql).toContain('set "position"=s."position"+1000000');
   });
 
   it("resolves token games through a narrow definer boundary", () => {

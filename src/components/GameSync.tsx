@@ -1,17 +1,25 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
 import type { GameState } from "@/lib/types";
+import { clearCurrentGame, readCurrentGame } from "@/lib/current-game";
 export function useGame(id: string) {
   const [game, setGame] = useState<GameState>();
   const [error, setError] = useState("");
   const [accountOperator, setAccountOperator] = useState(false);
+  const [accountRole, setAccountRole] = useState("");
   const refresh = useCallback(async () => {
     const r = await fetch(`/api/games/${id}`, { cache: "no-store" });
     if (r.ok) {
       setGame(await r.json());
       setAccountOperator(r.headers.get("x-curlcast-operator") === "true");
+      setAccountRole(r.headers.get("x-curlcast-account-role") ?? "");
       setError("");
     } else {
+      if (
+        [401, 404, 410].includes(r.status) &&
+        readCurrentGame(localStorage)?.id === id
+      )
+        clearCurrentGame(localStorage);
       const body = await r.json().catch(() => null);
       setError(body?.error ?? "Game is unavailable.");
     }
@@ -50,5 +58,5 @@ export function useGame(id: string) {
     },
     [id, refresh],
   );
-  return { game, error, act, refresh, accountOperator };
+  return { game, error, act, refresh, accountOperator, accountRole };
 }

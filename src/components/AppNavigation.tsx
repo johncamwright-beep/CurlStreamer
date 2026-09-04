@@ -5,10 +5,10 @@ import { usePathname } from "next/navigation";
 import { useEffect, useId, useRef, useState } from "react";
 import { signOut } from "@/app/account/actions";
 import { AppIcon, type AppIconName } from "@/components/AppIcon";
-import { hasOrganizerAccess, hasScoringAccess } from "@/lib/access-session";
 import {
+  CURRENT_GAME_EVENT,
   readCurrentGame,
-  CURRENT_GAME_KEY,
+  selectCurrentGame,
   type CurrentGameSelection,
 } from "@/lib/current-game";
 import { createBrowserSupabaseClient } from "@/lib/supabase/browser";
@@ -23,11 +23,11 @@ const plan: NavLink[] = [
 
 export function AppNavigation({
   signedIn: knownSignedIn,
-  gameId,
+  gameContext,
   className = "",
 }: {
   signedIn?: boolean;
-  gameId?: string;
+  gameContext?: CurrentGameSelection;
   className?: string;
 }) {
   const pathname = usePathname();
@@ -56,29 +56,31 @@ export function AppNavigation({
   }, [knownSignedIn]);
 
   useEffect(() => {
-    const update = () => {
-      let selected = readCurrentGame(localStorage);
-      if (gameId) {
-        const access = hasOrganizerAccess(localStorage, gameId)
-          ? "organizer"
-          : hasScoringAccess(localStorage, gameId)
-            ? "scorer"
-            : null;
-        if (!access && selected?.id === gameId) {
-          localStorage.removeItem(CURRENT_GAME_KEY);
-          selected = null;
-        }
-      }
-      setCurrent(selected);
+    const update = (event?: Event) => {
+      const sameTab = event as CustomEvent<CurrentGameSelection | null>;
+      setCurrent(
+        event?.type === CURRENT_GAME_EVENT
+          ? sameTab.detail
+          : readCurrentGame(localStorage),
+      );
     };
-    update();
+    if (gameContext) {
+      const persisted = readCurrentGame(localStorage);
+      const synchronized =
+        persisted?.id === gameContext.id &&
+        gameContext.scheduledLabel === "Schedule not set"
+          ? { ...gameContext, scheduledLabel: persisted.scheduledLabel }
+          : gameContext;
+      selectCurrentGame(localStorage, synchronized);
+      setCurrent(synchronized);
+    } else update();
     addEventListener("storage", update);
-    addEventListener("curlcast-current-game", update);
+    addEventListener(CURRENT_GAME_EVENT, update);
     return () => {
       removeEventListener("storage", update);
-      removeEventListener("curlcast-current-game", update);
+      removeEventListener(CURRENT_GAME_EVENT, update);
     };
-  }, [gameId, pathname]);
+  }, [gameContext, pathname]);
 
   useEffect(() => {
     if (!open) return;
@@ -113,7 +115,7 @@ export function AppNavigation({
 
   const gameLinks: NavLink[] = current
     ? [
-        ...(current.access === "organizer"
+        ...(current.capabilities.control
           ? [
               {
                 href: `/games/${current.id}`,
@@ -122,13 +124,33 @@ export function AppNavigation({
               },
             ]
           : []),
-        { href: `/score/${current.id}`, label: "Scoring", icon: "score" },
-        {
-          href: `/broadcast/${current.id}`,
-          label: "Broadcast",
-          icon: "broadcast",
-        },
-        ...(current.access === "organizer"
+        ...(current.capabilities.assignOpponent
+          ? [
+              {
+                href: `/games/${current.id}/edit`,
+                label: "Assign opponent",
+                icon: "opponent" as const,
+              },
+            ]
+          : current.capabilities.scoring
+            ? [
+                {
+                  href: `/score/${current.id}`,
+                  label: "Scoring",
+                  icon: "score" as const,
+                },
+              ]
+            : []),
+        ...(current.capabilities.broadcast
+          ? [
+              {
+                href: `/broadcast/${current.id}`,
+                label: "Broadcast",
+                icon: "broadcast" as const,
+              },
+            ]
+          : []),
+        ...(current.capabilities.editSchedule
           ? [
               {
                 href: `/games/${current.id}/edit`,
@@ -143,7 +165,7 @@ export function AppNavigation({
     links.map(({ href, label, icon }) => {
       const currentRoute = pathname === href;
       return (
-        <li key={href}>
+        <li key={`${href}-${label}`}>
           <Link
             className="app-navigation-link"
             href={href}
@@ -184,6 +206,8 @@ export function AppNavigation({
         id={panelId}
         className={`app-navigation-panel ${open ? "is-open" : ""}`}
         aria-label="CurlStreamer navigation"
+        aria-hidden={!open}
+        inert={!open ? true : undefined}
       >
         <div className="app-navigation-brand">
           <strong>CurlCast</strong>
@@ -220,6 +244,7 @@ export function AppNavigation({
                   <Link
                     className="inline-flex min-h-11 items-center text-cyan-300"
                     href="/dashboard"
+                    onClick={() => setOpen(false)}
                   >
                     Choose a game
                   </Link>

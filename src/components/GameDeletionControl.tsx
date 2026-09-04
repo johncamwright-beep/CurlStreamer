@@ -1,7 +1,7 @@
 "use client";
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { CURRENT_GAME_KEY, readCurrentGame } from "@/lib/current-game";
+import { clearCurrentGame, readCurrentGame } from "@/lib/current-game";
 
 export function GameDeletionControl({
   gameId,
@@ -35,8 +35,7 @@ export function GameDeletionControl({
       return;
     }
     if (!restore && readCurrentGame(localStorage)?.id === gameId) {
-      localStorage.removeItem(CURRENT_GAME_KEY);
-      dispatchEvent(new Event("curlcast-current-game"));
+      clearCurrentGame(localStorage);
     }
     dialog.current?.close();
     router.refresh();

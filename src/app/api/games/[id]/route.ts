@@ -25,7 +25,12 @@ export async function GET(
     ? NextResponse.json(game, {
         headers: {
           "x-curlcast-operator": authorization.ok ? "true" : "false",
-          "access-control-expose-headers": "x-curlcast-operator",
+          "x-curlcast-account-role":
+            authorization.ok && authorization.via === "account"
+              ? authorization.role
+              : "",
+          "access-control-expose-headers":
+            "x-curlcast-operator, x-curlcast-account-role",
         },
       })
     : NextResponse.json({ error: "Game not found" }, { status: 404 });

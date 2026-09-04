@@ -6,6 +6,8 @@ import { loadTeamHierarchyData } from "@/lib/team-hierarchy-data";
 import { listOpponents } from "@/lib/team-hierarchy-service";
 import { GameCreationForm } from "../../new/GameCreationForm";
 import { formatCanonicalGameTitle } from "@/lib/game-title";
+import { formatScheduledStart } from "@/lib/team-hierarchy";
+import { gameCapabilities } from "@/lib/current-game";
 
 export default async function EditGamePage({
   params,
@@ -25,10 +27,28 @@ export default async function EditGamePage({
   if (data.role === "viewer") redirect("/dashboard");
   const game = data.games.find((item) => item.id === id);
   if (!game?.seasonId) notFound();
+  const title = formatCanonicalGameTitle({
+    homeName: game.config.homeName,
+    awayName: game.opponentId ? game.config.awayName : null,
+    eventName: game.eventId ? game.config.eventName : null,
+  });
   return (
     <main className="mx-auto min-h-screen max-w-3xl p-5 md:py-12">
       <div className="mb-4">
-        <AppNavigation signedIn gameId={game.id} />
+        <AppNavigation
+          signedIn
+          gameContext={{
+            id: game.id,
+            title,
+            scheduledLabel: game.scheduledStart
+              ? formatScheduledStart(
+                  game.scheduledStart,
+                  game.timezone ?? "UTC",
+                )
+              : "Schedule not set",
+            capabilities: gameCapabilities(data.role, !game.opponentId),
+          }}
+        />
       </div>
       <GameCreationForm
         teamName={data.teamName}
@@ -37,11 +57,7 @@ export default async function EditGamePage({
         opponents={opponents.value as never[]}
         games={data.games}
         editing={game}
-        editingTitle={formatCanonicalGameTitle({
-          homeName: game.config.homeName,
-          awayName: game.opponentId ? game.config.awayName : null,
-          eventName: game.eventId ? game.config.eventName : null,
-        })}
+        editingTitle={title}
       />
     </main>
   );

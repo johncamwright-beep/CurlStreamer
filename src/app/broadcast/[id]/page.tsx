@@ -4,7 +4,9 @@ import { useGame } from "@/components/GameSync";
 import { BroadcastCanvas } from "@/components/BroadcastCanvas";
 import { BroadcastOperatorNavigation } from "@/components/BroadcastOperatorNavigation";
 import { AppNavigation } from "@/components/AppNavigation";
-import { hasScoringAccess } from "@/lib/access-session";
+import { hasOrganizerAccess, hasScoringAccess } from "@/lib/access-session";
+import { canonicalTitleFromConfig } from "@/lib/game-title";
+import { gameCapabilities } from "@/lib/current-game";
 
 const PROGRAM_WIDTH = 1920;
 const PROGRAM_HEIGHT = 1080;
@@ -21,7 +23,7 @@ export default function Broadcast({
   params: Promise<{ id: string }>;
 }) {
   const { id } = use(params);
-  const { game, error, accountOperator } = useGame(id);
+  const { game, error, accountOperator, accountRole } = useGame(id);
   const [scale, setScale] = useState<number>();
   const [operator, setOperator] = useState(false);
   useEffect(() => setOperator(hasScoringAccess(localStorage, id)), [id]);
@@ -56,7 +58,19 @@ export default function Broadcast({
     <main className="broadcast-viewport">
       <BroadcastOperatorNavigation id={id} accountOperator={accountOperator} />
       {(operator || accountOperator) && (
-        <AppNavigation className="broadcast-app-navigation" gameId={id} />
+        <AppNavigation
+          className="broadcast-app-navigation"
+          gameContext={{
+            id,
+            title: canonicalTitleFromConfig(game.config),
+            scheduledLabel: "Schedule not set",
+            capabilities: gameCapabilities(
+              accountRole ||
+                (hasOrganizerAccess(localStorage, id) ? "organizer" : "scorer"),
+              game.config.awayName === "Opponent TBD",
+            ),
+          }}
+        />
       )}
       <div
         data-testid="broadcast-visible-wrapper"

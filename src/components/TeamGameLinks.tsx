@@ -15,15 +15,19 @@ export function TeamGameLinks({
   role?: string;
   opponentTbd?: boolean;
 }) {
-  const access = ["owner", "team_admin"].includes(role)
-    ? "organizer"
-    : "scorer";
+  const administrator = ["owner", "team_admin"].includes(role);
   const select = () =>
     selectCurrentGame(localStorage, {
       id: gameId,
       title,
       scheduledLabel,
-      access,
+      capabilities: {
+        control: administrator,
+        scoring: !opponentTbd,
+        broadcast: true,
+        editSchedule: administrator,
+        assignOpponent: opponentTbd && administrator,
+      },
     });
   return (
     <div className="mt-3 flex flex-wrap gap-2">
@@ -35,7 +39,7 @@ export function TeamGameLinks({
       >
         Open Game
       </Link>
-      {["owner", "team_admin"].includes(role) && (
+      {administrator && (
         <Link
           className="min-h-11 rounded-lg bg-slate-700 px-3 py-3"
           href={`/games/${gameId}/edit`}
@@ -45,14 +49,16 @@ export function TeamGameLinks({
           Edit Schedule
         </Link>
       )}
-      <Link
-        className="min-h-11 rounded-lg bg-slate-700 px-3 py-3"
-        href={opponentTbd ? `/games/${gameId}/edit` : `/score/${gameId}`}
-        aria-label={`${opponentTbd ? "Assign Opponent" : "Scoring"}: ${title}`}
-        onClick={select}
-      >
-        {opponentTbd ? "Assign Opponent" : "Scoring"}
-      </Link>
+      {(!opponentTbd || administrator) && (
+        <Link
+          className="min-h-11 rounded-lg bg-slate-700 px-3 py-3"
+          href={opponentTbd ? `/games/${gameId}/edit` : `/score/${gameId}`}
+          aria-label={`${opponentTbd ? "Assign Opponent" : "Scoring"}: ${title}`}
+          onClick={select}
+        >
+          {opponentTbd ? "Assign Opponent" : "Scoring"}
+        </Link>
+      )}
       <Link
         className="min-h-11 rounded-lg bg-slate-700 px-3 py-3"
         href={`/broadcast/${gameId}`}

@@ -84,6 +84,7 @@ body {
 html,
 body {
   max-width: 100%;
+  overflow-x: clip;
 }
 button,
 input,
@@ -278,34 +279,14 @@ button {
   margin-top: auto;
   padding-top: 0.15rem;
 }
-@media (min-width: 1024px) {
-  .app-navigation-trigger,
-  .app-navigation-backdrop,
-  .app-navigation-close {
-    display: none;
-  }
-  .app-navigation {
-    position: fixed;
-    inset: 0 auto 0 0;
-    width: 240px;
-    height: auto;
-  }
-  .app-navigation-panel {
-    display: flex;
-    width: 240px;
-    flex-direction: column;
-    box-shadow: none;
-    transform: none;
-  }
+.app-navigation-panel {
+  display: flex;
+  flex-direction: column;
+  transform: translateX(-105%);
+  transition: transform 0.2s ease;
 }
-@media (max-width: 1023px) {
-  .app-navigation-panel {
-    transform: translateX(-105%);
-    transition: transform 0.2s ease;
-  }
-  .app-navigation-panel.is-open {
-    transform: translateX(0);
-  }
+.app-navigation-panel.is-open {
+  transform: translateX(0);
 }
 .games-tabs {
   display: flex;

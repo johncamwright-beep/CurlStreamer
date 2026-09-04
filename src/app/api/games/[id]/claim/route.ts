@@ -3,6 +3,7 @@ import { z } from "zod";
 import { claimRole } from "@/lib/store";
 import { issueParticipantToken, readAccessToken } from "@/lib/tokens";
 import { rateLimit } from "@/lib/rate-limit";
+import { authorizeGame } from "@/lib/game-authorization";
 const schema = z.object({ token: z.string(), claimant: z.string().uuid() });
 export async function POST(
   request: Request,
@@ -21,6 +22,26 @@ export async function POST(
     const claims = await readAccessToken(body.token);
     if (claims.gameId !== id || claims.purpose !== "invitation" || !claims.role)
       throw new Error();
+    const authorization = await authorizeGame(
+      new Request(request.url, {
+        headers: { authorization: `Bearer ${body.token}` },
+      }),
+      id,
+      {
+        accountRoles: [],
+        tokenAllowed: (access) => access.purpose === "invitation",
+      },
+    );
+    if (!authorization.ok)
+      return NextResponse.json(
+        {
+          error:
+            authorization.reason === "deleted"
+              ? "This game is unavailable."
+              : "This link is invalid or expired.",
+        },
+        { status: authorization.reason === "deleted" ? 410 : 401 },
+      );
     const result = await claimRole(id, claims.role, body.claimant);
     return result.error
       ? NextResponse.json(result, { status: 409 })

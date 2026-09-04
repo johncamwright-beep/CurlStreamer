@@ -2,7 +2,11 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { removeCameraParticipant } from "@/lib/providers/livekit";
 import { getGame, updateGame } from "@/lib/store";
-import { readAccessToken } from "@/lib/tokens";
+import {
+  authorizeGame,
+  operatorRoles,
+  authorizationError,
+} from "@/lib/game-authorization";
 
 const requestSchema = z.object({
   role: z.enum(["camera-home", "camera-away"]),
@@ -13,28 +17,17 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params;
-  const bearer = request.headers
-    .get("authorization")
-    ?.match(/^Bearer (.+)$/)?.[1];
-  if (!bearer)
+  const authorization = await authorizeGame(request, id, {
+    accountRoles: operatorRoles,
+    tokenAllowed: (access) => access.purpose === "organizer",
+  });
+  if (!authorization.ok) {
+    const failure = authorizationError(authorization);
     return NextResponse.json(
-      { error: "Organizer access required" },
-      { status: 401 },
-    );
-  let access;
-  try {
-    access = await readAccessToken(bearer);
-  } catch {
-    return NextResponse.json(
-      { error: "Organizer access expired" },
-      { status: 401 },
+      { error: failure.error },
+      { status: failure.status },
     );
   }
-  if (access.purpose !== "organizer" || access.gameId !== id)
-    return NextResponse.json(
-      { error: "Organizer access required for this game" },
-      { status: 403 },
-    );
   const parsed = requestSchema.safeParse(await request.json());
   if (!parsed.success)
     return NextResponse.json({ error: "Invalid camera role" }, { status: 400 });

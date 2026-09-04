@@ -4,12 +4,18 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { hasScoringAccess } from "@/lib/access-session";
 
-export function BroadcastOperatorNavigation({ id }: { id: string }) {
+export function BroadcastOperatorNavigation({
+  id,
+  accountOperator = false,
+}: {
+  id: string;
+  accountOperator?: boolean;
+}) {
   const [authorized, setAuthorized] = useState(false);
 
   useEffect(() => setAuthorized(hasScoringAccess(localStorage, id)), [id]);
 
-  if (!authorized) return null;
+  if (!authorized && !accountOperator) return null;
   return (
     <Link
       data-testid="back-to-scoring"

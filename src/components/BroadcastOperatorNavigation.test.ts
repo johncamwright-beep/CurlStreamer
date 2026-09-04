@@ -17,7 +17,9 @@ const css = readFileSync(
 describe("Back to Scoring", () => {
   it("is authorized, deterministic, outside the fixed program, and lower-right", () => {
     expect(navigation).toContain("hasScoringAccess(localStorage, id)");
-    expect(navigation).toContain("if (!authorized) return null");
+    expect(navigation).toContain(
+      "if (!authorized && !accountOperator) return null",
+    );
     expect(navigation).toContain("href={`/score/${id}`}");
     expect(page.indexOf("<BroadcastOperatorNavigation")).toBeLessThan(
       page.indexOf('data-testid="broadcast-visible-wrapper"'),

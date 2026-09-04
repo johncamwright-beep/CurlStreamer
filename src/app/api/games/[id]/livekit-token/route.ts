@@ -1,8 +1,12 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getGame } from "@/lib/store";
-import { readAccessToken } from "@/lib/tokens";
 import { issueLiveKitToken, type LiveKitAccess } from "@/lib/providers/livekit";
+import {
+  authorizeGame,
+  operatorRoles,
+  authorizationError,
+} from "@/lib/game-authorization";
 
 export const dynamic = "force-dynamic";
 const paramsSchema = z.object({ id: z.string().min(1).max(100) });
@@ -14,29 +18,25 @@ export async function POST(
   const parsed = paramsSchema.safeParse(await context.params);
   if (!parsed.success)
     return NextResponse.json({ error: "Invalid game" }, { status: 400 });
-  const bearer = request.headers
-    .get("authorization")
-    ?.match(/^Bearer (.+)$/)?.[1];
-  if (!bearer)
-    return NextResponse.json(
-      { error: "Game access is required" },
-      { status: 401 },
-    );
-
-  let access;
-  try {
-    access = await readAccessToken(bearer);
-  } catch {
-    return NextResponse.json({ error: "Game access expired" }, { status: 401 });
-  }
   const { id } = parsed.data;
-  if (access.gameId !== id || access.purpose === "invitation")
-    return NextResponse.json({ error: "Access denied" }, { status: 403 });
+  const authorization = await authorizeGame(request, id, {
+    accountRoles: operatorRoles,
+    tokenAllowed: (access) => access.purpose !== "invitation",
+  });
+  if (!authorization.ok) {
+    const failure = authorizationError(authorization);
+    return NextResponse.json(
+      { error: failure.error },
+      { status: failure.status },
+    );
+  }
   const role: LiveKitAccess | undefined =
-    access.purpose === "organizer"
+    authorization.via === "account" ||
+    authorization.access.purpose === "organizer"
       ? "organizer"
-      : access.role === "camera-home" || access.role === "camera-away"
-        ? access.role
+      : authorization.access.role === "camera-home" ||
+          authorization.access.role === "camera-away"
+        ? authorization.access.role
         : undefined;
   if (!role)
     return NextResponse.json({ error: "Access denied" }, { status: 403 });

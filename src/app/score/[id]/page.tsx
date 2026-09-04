@@ -48,13 +48,19 @@ export default function Scorer({
   params: Promise<{ id: string }>;
 }) {
   const { id } = use(params);
-  const { game, act } = useGame(id);
+  const { game, error, act, accountOperator } = useGame(id);
   const [points, setPoints] = useState(1);
   const [team, setTeam] = useState<Team>("home");
   const [errors, setErrors] = useState<string[]>([]);
   const [hammerBusy, setHammerBusy] = useState(false);
   const [hammerError, setHammerError] = useState("");
   const [correctingHammer, setCorrectingHammer] = useState(false);
+  if (error)
+    return (
+      <main role="alert" className="p-8">
+        {error}
+      </main>
+    );
   if (!game) return <main className="p-8">Loading controls…</main>;
   if (game.status === "closed")
     return (
@@ -119,7 +125,7 @@ export default function Scorer({
         <AppNavigation gameId={id} />
       </div>
       <div className="mb-3">
-        <GameSetupNavigation id={id} />
+        <GameSetupNavigation id={id} accountOperator={accountOperator} />
       </div>
       <header className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <div>

@@ -1,53 +1,39 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { getGame } from "@/lib/store";
 import { participantUrl } from "@/lib/participant-links";
+import { issueChooserToken, issueRoleToken } from "@/lib/tokens";
 import {
-  issueChooserToken,
-  issueRoleToken,
-  readAccessToken,
-} from "@/lib/tokens";
+  authorizeGame,
+  operatorRoles,
+  authorizationError,
+} from "@/lib/game-authorization";
 const roleSchema = z.enum(["camera-home", "camera-away", "scorer", "chooser"]);
 export async function POST(
   request: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params;
-  const game = await getGame(id);
-  if (!game)
-    return NextResponse.json({ error: "Game not found" }, { status: 404 });
-  if (game.status === "closed")
-    return NextResponse.json({ error: "This game is closed" }, { status: 410 });
-  const bearer = request.headers
-    .get("authorization")
-    ?.match(/^Bearer (.+)$/)?.[1];
-  if (!bearer)
+  const authorization = await authorizeGame(request, id, {
+    accountRoles: operatorRoles,
+    tokenAllowed: (access) =>
+      access.purpose === "organizer" ||
+      (access.purpose === "invitation" && !access.role),
+  });
+  if (!authorization.ok) {
+    const failure = authorizationError(authorization);
     return NextResponse.json(
-      { error: "Invitation access is required" },
-      { status: 401 },
-    );
-  let access;
-  try {
-    access = await readAccessToken(bearer);
-  } catch {
-    return NextResponse.json(
-      { error: "Invitation access expired" },
-      { status: 401 },
+      { error: failure.error },
+      { status: failure.status },
     );
   }
-  const canInvite =
-    access.gameId === id &&
-    (access.purpose === "organizer" ||
-      (access.purpose === "invitation" && !access.role));
-  if (!canInvite)
-    return NextResponse.json(
-      { error: "Not authorized to invite this role" },
-      { status: 403 },
-    );
   const parsed = roleSchema.safeParse((await request.json()).role);
   if (!parsed.success)
     return NextResponse.json({ error: "Invalid role" }, { status: 400 });
-  if (parsed.data === "chooser" && access.purpose !== "organizer")
+  if (
+    parsed.data === "chooser" &&
+    authorization.via === "token" &&
+    authorization.access.purpose !== "organizer"
+  )
     return NextResponse.json({ error: "Not authorized" }, { status: 403 });
   const token =
     parsed.data === "chooser"

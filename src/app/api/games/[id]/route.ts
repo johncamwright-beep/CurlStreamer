@@ -1,16 +1,33 @@
 import { NextResponse } from "next/server";
 import { actionSchema, hasSafeSponsorContent } from "@/lib/schema";
 import { getGame, updateGame } from "@/lib/store";
-import { readAccessToken } from "@/lib/tokens";
+import {
+  authorizationError,
+  authorizeGame,
+  operatorRoles,
+} from "@/lib/game-authorization";
 export const dynamic = "force-dynamic";
 export async function GET(
-  _: Request,
+  request: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params;
+  const authorization = await authorizeGame(request, id, {
+    accountRoles: operatorRoles,
+    tokenAllowed: () => true,
+  });
+  if (!authorization.ok && authorization.reason === "deleted")
+    return NextResponse.json(authorizationError(authorization), {
+      status: 410,
+    });
   const game = await getGame(id);
   return game
-    ? NextResponse.json(game)
+    ? NextResponse.json(game, {
+        headers: {
+          "x-curlcast-operator": authorization.ok ? "true" : "false",
+          "access-control-expose-headers": "x-curlcast-operator",
+        },
+      })
     : NextResponse.json({ error: "Game not found" }, { status: 404 });
 }
 export async function PATCH(
@@ -18,25 +35,17 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params;
-  const bearer = request.headers
-    .get("authorization")
-    ?.match(/^Bearer (.+)$/)?.[1];
-  if (!bearer)
+  const authorization = await authorizeGame(request, id, {
+    accountRoles: operatorRoles,
+    tokenAllowed: (access) => access.purpose !== "invitation",
+  });
+  if (!authorization.ok) {
+    const failure = authorizationError(authorization);
     return NextResponse.json(
-      { error: "Game access is required" },
-      { status: 401 },
+      { error: failure.error },
+      { status: failure.status },
     );
-  let access;
-  try {
-    access = await readAccessToken(bearer);
-  } catch {
-    return NextResponse.json({ error: "Game access expired" }, { status: 401 });
   }
-  if (access.gameId !== id || access.purpose === "invitation")
-    return NextResponse.json(
-      { error: "This access cannot update the game" },
-      { status: 403 },
-    );
   const existing = await getGame(id);
   if (existing?.status === "closed")
     return NextResponse.json({ error: "This game is closed" }, { status: 410 });
@@ -54,20 +63,25 @@ export async function PATCH(
       { status: 400 },
     );
   if (
-    access.purpose === "participant" &&
-    access.role !== "scorer" &&
+    authorization.via === "token" &&
+    authorization.access.purpose === "participant" &&
+    authorization.access.role !== "scorer" &&
     !(
       (body.data.type === "connection" ||
         body.data.type === "camera-health" ||
         body.data.type === "camera-framing") &&
-      body.data.role === access.role
+      body.data.role === authorization.access.role
     )
   )
     return NextResponse.json(
       { error: "This role cannot make that update" },
       { status: 403 },
     );
-  if (body.data.type === "close-game" && access.purpose !== "organizer")
+  if (
+    body.data.type === "close-game" &&
+    authorization.via === "token" &&
+    authorization.access.purpose !== "organizer"
+  )
     return NextResponse.json(
       { error: "Only an organizer can close a game" },
       { status: 403 },

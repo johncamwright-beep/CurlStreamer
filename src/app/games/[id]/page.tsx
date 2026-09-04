@@ -7,8 +7,8 @@ import type { Role } from "@/lib/types";
 import { cameraDisplayStatus } from "@/lib/camera-status";
 import { AppNavigation } from "@/components/AppNavigation";
 const roles: [Role, string][] = [
-  ["camera-home", "Camera — Home End"],
-  ["camera-away", "Camera — Away End"],
+  ["camera-home", "Camera 1"],
+  ["camera-away", "Camera 2"],
   ["scorer", "Scorekeeper + Audio"],
 ];
 export default function GameLobby({
@@ -23,8 +23,8 @@ export default function GameLobby({
   const [chooserUrl, setChooserUrl] = useState("");
   const [disconnecting, setDisconnecting] = useState<Role>();
   async function disconnectCamera(role: "camera-home" | "camera-away") {
-    const side = role === "camera-home" ? "Home" : "Away";
-    if (!confirm(`Disconnect the ${side} camera?`)) return;
+    const camera = role === "camera-home" ? "Camera 1" : "Camera 2";
+    if (!confirm(`Disconnect ${camera}?`)) return;
     setDisconnecting(role);
     try {
       const token = localStorage.getItem(`curlcast-access-${id}`);

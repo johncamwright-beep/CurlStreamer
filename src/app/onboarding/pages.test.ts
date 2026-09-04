@@ -19,13 +19,13 @@ describe("first-team account pages", () => {
     expect(dashboard).toContain('redirect("/login")');
     expect(dashboard).toContain('redirect("/onboarding")');
     expect(dashboard).toContain("Account access denied");
-    expect(dashboard).toContain("listTeamGames(user)");
+    expect(dashboard).toContain("loadTeamHierarchyData(user)");
     expect(dashboard).toContain("TeamGameLinks");
     expect(dashboard).not.toContain(
       "Account-based control from another device is coming next",
     );
     expect(dashboard).toContain("Recently Deleted");
-    expect(dashboard).not.toMatch(/\.from\(["']games["']\)/);
+    expect(dashboard).toContain("Legacy / Unassigned Games");
   });
 
   it("keeps a route back to the application throughout onboarding", () => {

@@ -30,7 +30,11 @@ describe("shared application navigation", () => {
     expect(navigation).toContain('{ href: "/account", label: "My Account" }');
     expect(navigation).toContain('{ href: "/login", label: "Sign In" }');
     expect(navigation).toContain("{signedIn && (");
-    expect(navigation).not.toMatch(/Seasons|Events|Administration|YouTube/);
+    expect(navigation).toContain(
+      '{ href: "/seasons", label: "Seasons & Events" }',
+    );
+    expect(navigation).toContain('{ href: "/opponents", label: "Opponents" }');
+    expect(navigation).not.toMatch(/Administration|YouTube/);
     expect(home).not.toContain("AppNavigation");
     expect(home).toContain('<AuthForm mode="login" action={login} />');
     expect(navigation).toContain("createBrowserSupabaseClient");

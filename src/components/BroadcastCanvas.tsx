@@ -10,7 +10,7 @@ function Camera({
   role,
   framing,
 }: {
-  side: "HOME" | "AWAY";
+  side: "CAMERA 1" | "CAMERA 2";
   gameId: string;
   role: "camera-home" | "camera-away";
   framing: "fill" | "contain";
@@ -21,7 +21,7 @@ function Camera({
       className="portrait-camera-panel broadcast-camera-panel rounded-2xl border border-white/20 bg-gradient-to-b from-cyan-950 via-slate-700 to-blue-950"
     >
       <span className="absolute left-4 top-4 rounded bg-slate-950/70 px-3 py-2 font-bold">
-        {side} END
+        {side}
       </span>
       <LiveKitCameraFeed
         gameId={gameId}
@@ -70,7 +70,7 @@ export function BroadcastCanvas({ game }: { game: GameState }) {
         >
           {showHome && (
             <Camera
-              side="HOME"
+              side="CAMERA 1"
               gameId={game.id}
               role="camera-home"
               framing={game.cameraFraming?.["camera-home"] ?? "fill"}
@@ -78,7 +78,7 @@ export function BroadcastCanvas({ game }: { game: GameState }) {
           )}
           {showAway && (
             <Camera
-              side="AWAY"
+              side="CAMERA 2"
               gameId={game.id}
               role="camera-away"
               framing={game.cameraFraming?.["camera-away"] ?? "fill"}

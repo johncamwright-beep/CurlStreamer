@@ -433,7 +433,7 @@ export default function Camera({
       <header className="mb-3 flex items-center justify-between">
         <div>
           <p className="text-cyan-300">
-            {role === "camera-home" ? "HOME END" : "AWAY END"}
+            {role === "camera-home" ? "CAMERA 1" : "CAMERA 2"}
           </p>
           <h1 className="text-2xl font-black">Portrait camera</h1>
         </div>

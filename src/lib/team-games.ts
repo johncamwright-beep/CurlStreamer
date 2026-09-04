@@ -62,7 +62,7 @@ export async function loadActiveTeam(
   };
 }
 
-function initialState(id: string, config: GameConfig): GameState {
+export function initialGameState(id: string, config: GameConfig): GameState {
   return {
     id,
     config,
@@ -111,7 +111,7 @@ export async function createAuthenticatedTeamGame(
   if (lookup.kind !== "ready") return lookup;
   if (lookup.team.role === "viewer") return { kind: "forbidden" as const };
   const id = randomUUID();
-  const game = initialState(id, config);
+  const game = initialGameState(id, config);
   const { error } = await createAdminSupabaseClient().rpc("create_team_game", {
     p_user_id: user.id,
     p_organization_id: lookup.team.organizationId,

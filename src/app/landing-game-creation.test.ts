@@ -27,8 +27,9 @@ describe("account-based landing and game creation", () => {
     expect(page).toContain('redirect("/onboarding")');
     expect(page).toContain('team.kind === "inactive"');
     expect(page).toContain('team.kind === "unavailable"');
-    expect(page).toContain('team.team.role === "viewer"');
-    expect(form).toContain('fetch("/api/games"');
-    expect(form).toContain("localStorage.setItem(`curlcast-access-${game.id}`");
+    expect(page).toContain('data.role === "viewer"');
+    expect(form).toContain('fetch("/api/team-schedule"');
+    expect(form).toContain("localStorage.setItem(");
+    expect(form).toContain("`curlcast-access-${body.game.id}`");
   });
 });

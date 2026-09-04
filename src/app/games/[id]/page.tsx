@@ -152,6 +152,20 @@ export default function GameLobby({
         }
       />
       <section className="panel mt-5">
+        <div className="mb-5 flex min-h-11 flex-wrap items-center justify-between gap-3">
+          <div>
+            <h2 className="text-xl font-bold">Active Sponsor Library</h2>
+            <p className="text-slate-300">
+              {game.sponsors.filter((sponsor) => sponsor.enabled).length} images
+              available for display and rotation.
+            </p>
+          </div>
+          {accountOperator && (
+            <Link className="btn-secondary" href="/sponsors">
+              Manage Sponsors
+            </Link>
+          )}
+        </div>
         <h2 className="text-xl font-bold">Game actions</h2>
         <div className="mt-3 flex flex-wrap gap-3">
           {accountOperator && (

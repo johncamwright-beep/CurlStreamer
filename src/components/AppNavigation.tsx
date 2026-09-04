@@ -19,6 +19,7 @@ const plan: NavLink[] = [
   { href: "/games/new", label: "Schedule a game", icon: "calendar" },
   { href: "/seasons", label: "Seasons & events", icon: "list" },
   { href: "/opponents", label: "Opponents", icon: "opponent" },
+  { href: "/sponsors", label: "Sponsors", icon: "sponsor" },
 ];
 
 export function AppNavigation({

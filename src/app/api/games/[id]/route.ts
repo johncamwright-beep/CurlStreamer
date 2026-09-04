@@ -6,6 +6,7 @@ import {
   authorizeGame,
   operatorRoles,
 } from "@/lib/game-authorization";
+import { gameLibrarySponsors } from "@/lib/providers/sponsor-library";
 export const dynamic = "force-dynamic";
 export async function GET(
   request: Request,
@@ -21,6 +22,23 @@ export async function GET(
       status: 410,
     });
   const game = await getGame(id);
+  if (game && authorization.ok) {
+    try {
+      const sponsors = await gameLibrarySponsors(
+        id,
+        authorization.via === "account"
+          ? authorization.organizationId
+          : undefined,
+      );
+      // An empty library intentionally retains legacy per-game sponsor state.
+      if (sponsors.length) game.sponsors = sponsors;
+    } catch {
+      return NextResponse.json(
+        { error: "Sponsor library is temporarily unavailable" },
+        { status: 503 },
+      );
+    }
+  }
   return game
     ? NextResponse.json(game, {
         headers: {

@@ -89,8 +89,8 @@ export function BroadcastCanvas({ game }: { game: GameState }) {
             <div data-testid="sponsor-overlay" className="sponsor-deck-overlay">
               <img
                 src={sponsor.dataUrl}
-                alt={sponsor.name}
-                className="safe-video"
+                alt={(sponsor as { altText?: string }).altText ?? sponsor.name}
+                className="safe-video aspect-square object-contain p-[1cqw]"
                 style={{ transform: `rotate(${sponsor.rotation}deg)` }}
               />
             </div>
@@ -119,8 +119,8 @@ export function BroadcastCanvas({ game }: { game: GameState }) {
               </p>
               <img
                 src={sponsor.dataUrl}
-                alt={sponsor.name}
-                className="safe-video h-full w-full"
+                alt={(sponsor as { altText?: string }).altText ?? sponsor.name}
+                className="safe-video aspect-square h-full w-full object-contain"
                 style={{ transform: `rotate(${sponsor.rotation}deg)` }}
               />
             </div>

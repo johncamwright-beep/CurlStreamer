@@ -3,6 +3,7 @@ export type AppIconName =
   | "game"
   | "list"
   | "opponent"
+  | "sponsor"
   | "control"
   | "score"
   | "broadcast"
@@ -36,6 +37,13 @@ export function AppIcon({ name }: { name: AppIconName }) {
       <>
         <circle cx="9" cy="8" r="4" />
         <path d="M2 21a7 7 0 0 1 14 0M17 8h5M19.5 5.5v5" />
+      </>
+    ),
+    sponsor: (
+      <>
+        <rect x="3" y="4" width="18" height="16" rx="2" />
+        <circle cx="9" cy="10" r="2" />
+        <path d="m5 18 5-5 3 3 2-2 4 4" />
       </>
     ),
     control: (

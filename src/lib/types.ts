@@ -32,6 +32,15 @@ export interface Sponsor {
   dataUrl: string;
   enabled: boolean;
   rotation: number;
+  altText?: string;
+}
+export interface LibrarySponsor {
+  id: string;
+  name: string;
+  altText: string;
+  imageUrl: string;
+  archived: boolean;
+  position: number;
 }
 export interface GameState {
   id: string;

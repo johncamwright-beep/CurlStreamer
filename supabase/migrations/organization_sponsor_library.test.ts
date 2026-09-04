@@ -27,6 +27,17 @@ describe("organization sponsor library migration", () => {
       );
   });
 
+  it("terminates every PL/pgSQL block with END followed by a semicolon", () => {
+    const blocks = [
+      ...sql.matchAll(
+        /create function[\s\S]*?language plpgsql[\s\S]*?as \$\$([\s\S]*?)\$\$;/gi,
+      ),
+    ];
+    expect(blocks).toHaveLength(8);
+    for (const [, body] of blocks) expect(body.trim()).toMatch(/end;$/i);
+    expect(sql).not.toMatch(/end\s+\$\$;/i);
+  });
+
   it("enforces private constrained storage and deterministic active ordering", () => {
     expect(sql).toMatch(/false,\s*12582912/);
     expect(sql).toMatch(/'image\/jpeg',\s*'image\/png',\s*'image\/webp'/);

@@ -38,15 +38,14 @@ const request = (extra = {}) =>
 
 describe("POST /api/games team ownership", () => {
   beforeEach(() => vi.clearAllMocks());
-  it("preserves anonymous legacy creation and organizer token", async () => {
+  it("rejects anonymous creation without invoking the legacy provider", async () => {
     mocks.getUser.mockResolvedValue({ data: { user: null }, error: null });
     mocks.createLegacy.mockResolvedValue({ id: "legacy-game", config });
     const response = await POST(request());
-    expect(mocks.createLegacy).toHaveBeenCalledWith(config);
-    expect(await response.json()).toMatchObject({
-      id: "legacy-game",
-      organizerToken: "organizer-token",
-    });
+    expect(response.status).toBe(401);
+    expect(mocks.createLegacy).not.toHaveBeenCalled();
+    expect(mocks.createTeam).not.toHaveBeenCalled();
+    expect(mocks.issueToken).not.toHaveBeenCalled();
   });
   it.each(["owner", "team_admin", "scorer"])(
     "creates for a signed-in %s",

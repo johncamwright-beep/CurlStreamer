@@ -25,15 +25,15 @@ describe("shared application navigation", () => {
       '{ href: "/dashboard", label: "Team Dashboard" }',
     );
     expect(navigation).toContain(
-      '{ href: "/#create-game", label: "Create a Game" }',
+      '{ href: "/games/new", label: "Create a Game" }',
     );
     expect(navigation).toContain('{ href: "/account", label: "My Account" }');
     expect(navigation).toContain('{ href: "/login", label: "Sign In" }');
     expect(navigation).toContain("{signedIn && (");
     expect(navigation).not.toMatch(/Seasons|Events|Administration|YouTube/);
-    expect(home).toContain("<AppNavigation />");
+    expect(home).not.toContain("AppNavigation");
+    expect(home).toContain('<AuthForm mode="login" action={login} />');
     expect(navigation).toContain("createBrowserSupabaseClient");
-    expect(navigation).toContain("anonymous game creation must stay usable");
   });
 
   it("derives deterministic game links from existing token access helpers", () => {

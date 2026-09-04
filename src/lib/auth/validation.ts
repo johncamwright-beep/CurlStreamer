@@ -22,16 +22,16 @@ export const firstTeamSchema = z.object({
     .transform((value) => value.replace(/\s+/g, " ")),
 });
 
-export function approvedRedirect(value: string | null) {
+export function approvedRedirect(value: string | null, fallback = "/account") {
   if (!value || !value.startsWith("/") || value.startsWith("//"))
-    return "/account";
+    return fallback;
   try {
     const url = new URL(value, "https://local.invalid");
     return url.origin === "https://local.invalid"
       ? url.pathname + url.search
-      : "/account";
+      : fallback;
   } catch {
-    return "/account";
+    return fallback;
   }
 }
 

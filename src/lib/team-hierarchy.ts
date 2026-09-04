@@ -88,3 +88,61 @@ export type HierarchyFailure =
   | { kind: "validation"; issues: z.core.$ZodIssue[] }
   | { kind: "conflict" }
   | { kind: "service" };
+
+/** Convert an intended wall-clock time in an IANA zone to its UTC instant. */
+export function localDateTimeToUtc(
+  date: string,
+  time: string,
+  timezone: string,
+) {
+  if (!z.iso.date().safeParse(date).success || !/^\d{2}:\d{2}$/.test(time))
+    return null;
+  if (!isIanaTimezone(timezone)) return null;
+  const [year, month, day] = date.split("-").map(Number);
+  const [hour, minute] = time.split(":").map(Number);
+  if (hour > 23 || minute > 59) return null;
+  const intended = Date.UTC(year, month - 1, day, hour, minute);
+  const partsFor = (instant: number) =>
+    Object.fromEntries(
+      new Intl.DateTimeFormat("en-CA", {
+        timeZone: timezone,
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+        hourCycle: "h23",
+      })
+        .formatToParts(new Date(instant))
+        .filter((part) => part.type !== "literal")
+        .map((part) => [part.type, Number(part.value)]),
+    );
+  let instant = intended;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const p = partsFor(instant);
+    const represented = Date.UTC(p.year, p.month - 1, p.day, p.hour, p.minute);
+    instant += intended - represented;
+  }
+  const p = partsFor(instant);
+  if (
+    p.year !== year ||
+    p.month !== month ||
+    p.day !== day ||
+    p.hour !== hour ||
+    p.minute !== minute
+  )
+    return null; // rejects nonexistent DST wall times
+  return new Date(instant).toISOString();
+}
+
+export function formatScheduledStart(instant: string, timezone: string) {
+  return new Intl.DateTimeFormat("en", {
+    timeZone: timezone,
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    timeZoneName: "short",
+  }).format(new Date(instant));
+}

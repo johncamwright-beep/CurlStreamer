@@ -170,6 +170,8 @@ export const restoreOpponent = (user: User, opponentId: string) =>
   setOpponentArchived(user, opponentId, false);
 export const listTeamHierarchy = (user: User) =>
   rpc<unknown>("list_team_hierarchy", { p_user_id: user.id });
+export const listTeamHierarchyGames = (user: User) =>
+  rpc<unknown[]>("list_team_hierarchy_games", { p_user_id: user.id });
 
 export async function createScheduledTeamGame(
   user: User,

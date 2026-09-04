@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   eventInputSchema,
   isIanaTimezone,
+  localDateTimeToUtc,
+  formatScheduledStart,
   normalizeOpponentName,
   scheduledGameInputSchema,
   seasonInputSchema,
@@ -79,5 +81,23 @@ describe("team hierarchy validation", () => {
         scheduledStart: "tomorrow",
       }).success,
     ).toBe(false);
+  });
+
+  it("converts an event wall-clock time to UTC and displays it in that zone", () => {
+    const instant = localDateTimeToUtc(
+      "2026-12-05",
+      "19:30",
+      "America/Toronto",
+    );
+    expect(instant).toBe("2026-12-06T00:30:00.000Z");
+    expect(formatScheduledStart(instant!, "America/Toronto")).toMatch(
+      /Dec 5, 2026.*7:30.*EST/,
+    );
+  });
+
+  it("rejects a nonexistent daylight-saving wall-clock time", () => {
+    expect(
+      localDateTimeToUtc("2026-03-08", "02:30", "America/Toronto"),
+    ).toBeNull();
   });
 });

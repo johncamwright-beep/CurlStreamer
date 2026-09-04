@@ -93,6 +93,8 @@ export function AppNavigation({
     ...(signedIn
       ? [
           { href: "/dashboard", label: "Team Dashboard" },
+          { href: "/seasons", label: "Seasons & Events" },
+          { href: "/opponents", label: "Opponents" },
           { href: "/games/new", label: "Create a Game" },
           { href: "/account", label: "My Account" },
         ]

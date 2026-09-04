@@ -5,8 +5,8 @@ import { useGame } from "@/components/GameSync";
 import { preserveAndStoreParticipantAccess } from "@/lib/access-session";
 import type { Role } from "@/lib/types";
 const roles: [Role, string, string][] = [
-  ["camera-home", "Camera — Home End", "Video only"],
-  ["camera-away", "Camera — Away End", "Video only"],
+  ["camera-home", "Camera 1", "Video only"],
+  ["camera-away", "Camera 2", "Video only"],
   ["scorer", "Scorekeeper + Audio", "Audio only"],
 ];
 export default function Join({ params }: { params: Promise<{ id: string }> }) {

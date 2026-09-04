@@ -68,7 +68,7 @@ export default async function DashboardPage() {
               <p>No games have been created for this team yet.</p>
               <Link
                 className="inline-block min-h-11 py-3 text-cyan-300"
-                href="/"
+                href="/games/new"
               >
                 Create a game
               </Link>
@@ -97,7 +97,7 @@ export default async function DashboardPage() {
             setup, scoring, and Broadcast links appear only on the browser that
             created the game.
           </p>
-          <Link className="btn text-center" href="/">
+          <Link className="btn text-center" href="/games/new">
             Create a game
           </Link>
         </div>

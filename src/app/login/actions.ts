@@ -1,6 +1,6 @@
 "use server";
 import { redirect } from "next/navigation";
-import { loginSchema } from "@/lib/auth/validation";
+import { approvedRedirect, loginSchema } from "@/lib/auth/validation";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import type { AuthFormState } from "@/app/signup/actions";
 
@@ -13,5 +13,7 @@ export async function login(
   const supabase = await createServerSupabaseClient();
   const { error } = await supabase.auth.signInWithPassword(parsed.data);
   if (error) return { message: "Invalid email or password." };
-  redirect("/account");
+  redirect(
+    approvedRedirect(formData.get("next")?.toString() ?? null, "/dashboard"),
+  );
 }

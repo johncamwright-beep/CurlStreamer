@@ -2,23 +2,22 @@
 import { useActionState } from "react";
 import Link from "next/link";
 import type { AuthFormState } from "@/app/signup/actions";
-import { AppNavigation } from "@/components/AppNavigation";
 
 export function AuthForm({
   mode,
   action,
+  returnTo,
 }: {
   mode: "signup" | "login";
   action: (state: AuthFormState, data: FormData) => Promise<AuthFormState>;
+  returnTo?: string;
 }) {
   const [state, formAction, pending] = useActionState(action, {});
   const field = (name: string) => state.errors?.[name]?.[0];
   return (
     <main className="mx-auto min-h-screen max-w-md p-5 md:py-12">
-      <div className="mb-4">
-        <AppNavigation signedIn={false} />
-      </div>
       <form action={formAction} className="panel grid gap-4" noValidate>
+        <p className="font-bold tracking-widest text-cyan-300">CURLSTREAMER</p>
         <h1 className="text-3xl font-black">
           {mode === "signup" ? "Create account" : "Sign in"}
         </h1>
@@ -94,6 +93,9 @@ export function AuthForm({
               ? "Create account"
               : "Sign in"}
         </button>
+        {mode === "login" && returnTo && (
+          <input type="hidden" name="next" value={returnTo} />
+        )}
         {state.message && (
           <p
             role="status"
@@ -104,11 +106,9 @@ export function AuthForm({
         )}
         <Link
           className="min-h-11 py-3 text-cyan-300"
-          href={mode === "signup" ? "/login" : "/signup"}
+          href={mode === "signup" ? "/" : "/signup"}
         >
-          {mode === "signup"
-            ? "Already have an account? Sign in"
-            : "Create an account"}
+          {mode === "signup" ? "Return to Sign In" : "Create Account"}
         </Link>
       </form>
     </main>

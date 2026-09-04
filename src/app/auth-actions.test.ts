@@ -65,9 +65,21 @@ describe("account actions", () => {
   it("redirects successful login and sign out", async () => {
     mocks.signIn.mockResolvedValue({ error: null });
     await expect(login({}, loginData())).rejects.toThrow("NEXT_REDIRECT");
-    expect(mocks.redirect).toHaveBeenCalledWith("/account");
+    expect(mocks.redirect).toHaveBeenCalledWith("/dashboard");
     mocks.signOut.mockResolvedValue({ error: null });
     await expect(signOut()).rejects.toThrow("NEXT_REDIRECT");
     expect(mocks.signOut).toHaveBeenCalledOnce();
+  });
+  it("honors safe login returns and rejects external destinations", async () => {
+    mocks.signIn.mockResolvedValue({ error: null });
+    const safe = loginData();
+    safe.set("next", "/games/new?from=login");
+    await expect(login({}, safe)).rejects.toThrow("NEXT_REDIRECT");
+    expect(mocks.redirect).toHaveBeenLastCalledWith("/games/new?from=login");
+
+    const unsafe = loginData();
+    unsafe.set("next", "//attacker.example/path");
+    await expect(login({}, unsafe)).rejects.toThrow("NEXT_REDIRECT");
+    expect(mocks.redirect).toHaveBeenLastCalledWith("/dashboard");
   });
 });

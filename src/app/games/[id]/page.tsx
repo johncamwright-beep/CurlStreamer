@@ -1,7 +1,6 @@
 "use client";
-import QRCode from "qrcode";
 import Link from "next/link";
-import { use, useEffect, useState } from "react";
+import { use, useState } from "react";
 import { useGame } from "@/components/GameSync";
 import type { Role } from "@/lib/types";
 import { cameraDisplayStatus } from "@/lib/camera-status";
@@ -9,11 +8,7 @@ import { AppNavigation } from "@/components/AppNavigation";
 import { canonicalTitleFromConfig } from "@/lib/game-title";
 import { gameCapabilities } from "@/lib/current-game";
 import { hasOrganizerAccess } from "@/lib/access-session";
-const roles: [Role, string][] = [
-  ["camera-home", "Camera 1"],
-  ["camera-away", "Camera 2"],
-  ["scorer", "Scorekeeper + Audio"],
-];
+import { GameInvitations } from "@/components/GameInvitations";
 export default function GameLobby({
   params,
 }: {
@@ -21,9 +16,6 @@ export default function GameLobby({
 }) {
   const { id } = use(params);
   const { game, error, act, accountOperator, accountRole } = useGame(id);
-  const [links, setLinks] = useState<Record<string, string>>({});
-  const [qr, setQr] = useState("");
-  const [chooserUrl, setChooserUrl] = useState("");
   const [disconnecting, setDisconnecting] = useState<Role>();
   async function disconnectCamera(role: "camera-home" | "camera-away") {
     const camera = role === "camera-home" ? "Camera 1" : "Camera 2";
@@ -44,44 +36,6 @@ export default function GameLobby({
       setDisconnecting(undefined);
     }
   }
-  useEffect(() => {
-    if (!game) return;
-    const organizerToken = localStorage.getItem(`curlcast-access-${id}`);
-    if (!organizerToken && !accountOperator) return;
-    void Promise.all(
-      roles.map(async ([role]) => {
-        const r = await fetch(`/api/games/${id}/invitations`, {
-          method: "POST",
-          headers: {
-            "content-type": "application/json",
-            ...(organizerToken
-              ? { authorization: `Bearer ${organizerToken}` }
-              : {}),
-          },
-          body: JSON.stringify({ role }),
-        });
-        const { url } = await r.json();
-        return [role, url] as const;
-      }),
-    ).then(async (pairs) => {
-      const next = Object.fromEntries(pairs);
-      setLinks(next);
-      const chooserResponse = await fetch(`/api/games/${id}/invitations`, {
-        method: "POST",
-        headers: {
-          "content-type": "application/json",
-          ...(organizerToken
-            ? { authorization: `Bearer ${organizerToken}` }
-            : {}),
-        },
-        body: JSON.stringify({ role: "chooser" }),
-      });
-      const chooser = await chooserResponse.json();
-      const url = chooser.url;
-      setChooserUrl(url);
-      setQr(await QRCode.toDataURL(url));
-    });
-  }, [game?.id, id, accountOperator]);
   if (error) return <main className="p-8">{error}</main>;
   if (!game) return <main className="p-8">Loading game…</main>;
   const title = canonicalTitleFromConfig(game.config);
@@ -107,42 +61,28 @@ export default function GameLobby({
         {game.config.homeName} vs {game.config.awayName} ·{" "}
         {game.config.scheduledEnds} ends
       </p>
-      <div className="mt-6 grid gap-5 md:grid-cols-[240px_1fr]">
-        <section className="panel text-center">
-          <h2 className="font-bold">Open role chooser</h2>
-          {qr ? (
-            <img
-              src={qr}
-              alt="QR code for role chooser"
-              className="mx-auto my-3 rounded-lg"
-            />
-          ) : (
-            <div className="h-52" />
-          )}
-          <Link className="text-cyan-300 underline" href={chooserUrl || "#"}>
-            Role chooser
-          </Link>
-        </section>
+      <GameInvitations
+        id={id}
+        enabled={accountOperator || hasOrganizerAccess(localStorage, id)}
+        claims={game.claims}
+      />
+      <div className="mt-5">
         <section className="panel">
-          <h2 className="mb-4 text-xl font-bold">
-            Direct, 30-minute invitation links
-          </h2>
+          <h2 className="mb-3 text-xl font-bold">Camera connections</h2>
           <div className="grid gap-3">
-            {roles.map(([role, label]) => (
+            {(["camera-home", "camera-away"] as const).map((role) => (
               <div
                 key={role}
-                className="btn-secondary flex items-center justify-between"
+                className="btn-secondary flex min-h-11 items-center justify-between gap-3"
               >
-                <a href={links[role] || "#"} className="min-h-11 flex-1 py-2">
-                  <span>{label}</span>
+                <div>
+                  <strong>
+                    {role === "camera-home" ? "Camera 1" : "Camera 2"}
+                  </strong>
                   <span className="ml-3 text-cyan-200">
-                    {role === "scorer"
-                      ? game.claims[role]
-                        ? "Claimed"
-                        : "Available"
-                      : cameraDisplayStatus(game, role)}
+                    {cameraDisplayStatus(game, role)}
                   </span>
-                  {role !== "scorer" && game.cameraHealth?.[role] && (
+                  {game.cameraHealth?.[role] && (
                     <small className="block text-slate-400">
                       {game.cameraHealth[role]?.diagnostic
                         ? `${game.cameraHealth[role]?.diagnostic} · `
@@ -153,8 +93,8 @@ export default function GameLobby({
                       ).toLocaleTimeString()}
                     </small>
                   )}
-                </a>
-                {role !== "scorer" && game.claims[role] && (
+                </div>
+                {game.claims[role] && (
                   <button
                     className="min-h-11 rounded-lg border border-red-700 px-3 text-red-200"
                     disabled={disconnecting === role}

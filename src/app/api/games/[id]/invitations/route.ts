@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { participantUrl } from "@/lib/participant-links";
 import { issueChooserToken, issueRoleToken } from "@/lib/tokens";
+import { getGame } from "@/lib/store";
 import {
   authorizeGame,
   operatorRoles,
@@ -29,12 +30,17 @@ export async function POST(
   const parsed = roleSchema.safeParse((await request.json()).role);
   if (!parsed.success)
     return NextResponse.json({ error: "Invalid role" }, { status: 400 });
-  if (
-    parsed.data === "chooser" &&
+  const chooserExchange =
     authorization.via === "token" &&
-    authorization.access.purpose !== "organizer"
-  )
+    authorization.access.purpose === "invitation" &&
+    !authorization.access.role;
+  if (parsed.data === "chooser" && chooserExchange)
     return NextResponse.json({ error: "Not authorized" }, { status: 403 });
+  const game = await getGame(id);
+  if (!game)
+    return NextResponse.json({ error: "Game not found" }, { status: 404 });
+  if (game.status !== "active")
+    return NextResponse.json({ error: "This game is closed" }, { status: 410 });
   const token =
     parsed.data === "chooser"
       ? await issueChooserToken(id)
@@ -44,5 +50,9 @@ export async function POST(
     request,
     `/join/${encodeURIComponent(id)}?${parameter}=${encodeURIComponent(token)}`,
   );
-  return NextResponse.json({ token, url, expiresIn: 1800 });
+  const expiresAt = new Date(Date.now() + 1_800_000).toISOString();
+  return NextResponse.json(
+    { token, url, expiresIn: 1800, expiresAt },
+    { headers: { "cache-control": "no-store" } },
+  );
 }

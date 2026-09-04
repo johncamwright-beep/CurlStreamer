@@ -16,10 +16,13 @@ export default function Join({ params }: { params: Promise<{ id: string }> }) {
   const router = useRouter();
   const [links, setLinks] = useState<Record<string, string>>({});
   const [error, setError] = useState("");
+  const [retry, setRetry] = useState(0);
   useEffect(() => {
     if (search.get("token")) return;
     const chooser = search.get("chooser");
     if (!chooser) return;
+    setError("");
+    setLinks({});
     void Promise.all(
       roles.map(async ([role]) => {
         const r = await fetch(`/api/games/${id}/invitations`, {
@@ -30,10 +33,21 @@ export default function Join({ params }: { params: Promise<{ id: string }> }) {
           },
           body: JSON.stringify({ role }),
         });
-        return [role, (await r.json()).token];
+        const result = await r.json().catch(() => null);
+        if (!r.ok || !result?.token)
+          throw new Error(result?.error || "This invitation is unavailable.");
+        return [role, result.token];
       }),
-    ).then((x) => setLinks(Object.fromEntries(x)));
-  }, [id, search]);
+    )
+      .then((x) => setLinks(Object.fromEntries(x)))
+      .catch((cause) =>
+        setError(
+          cause instanceof Error
+            ? cause.message
+            : "This invitation is unavailable.",
+        ),
+      );
+  }, [id, search, retry]);
   async function claim(role: Role, token?: string) {
     const claimant =
       localStorage.getItem("curlcast-device") || crypto.randomUUID();
@@ -106,9 +120,19 @@ export default function Join({ params }: { params: Promise<{ id: string }> }) {
         ))}
       </div>
       {error && (
-        <p role="alert" className="mt-3 text-amber-300">
-          {error}
-        </p>
+        <div className="mt-3">
+          <p role="alert" className="text-amber-300">
+            {error}
+          </p>
+          {search.get("chooser") && (
+            <button
+              className="btn-secondary mt-3 w-full"
+              onClick={() => setRetry((value) => value + 1)}
+            >
+              Retry invitation
+            </button>
+          )}
+        </div>
       )}
     </main>
   );

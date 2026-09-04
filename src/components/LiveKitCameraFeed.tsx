@@ -73,10 +73,13 @@ export function LiveKitCameraFeed({
     void (async () => {
       try {
         const access = localStorage.getItem(`curlcast-access-${gameId}`);
-        const response = await fetch(`/api/games/${gameId}/livekit-token`, {
-          method: "POST",
-          headers: access ? { authorization: `Bearer ${access}` } : {},
-        });
+        const response = await fetch(
+          `/api/games/${gameId}/livekit-token${access ? "" : "?view=broadcast"}`,
+          {
+            method: "POST",
+            headers: access ? { authorization: `Bearer ${access}` } : {},
+          },
+        );
         if (!response.ok)
           throw new Error(
             `Token error: broadcast access unavailable (${response.status}).`,

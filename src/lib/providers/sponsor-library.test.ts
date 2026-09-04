@@ -47,23 +47,27 @@ describe("sponsor image validation", () => {
 });
 
 describe("anonymous Broadcast sponsors", () => {
+  const sponsorRow = (overrides = {}) => ({
+    id: "internal-id",
+    display_name: "Club sponsor",
+    alt_text: "Club sponsor logo",
+    storage_path: "organization/private/logo.png",
+    position: 0,
+    ...overrides,
+  });
+
   beforeEach(() => {
     vi.resetAllMocks();
     vi.stubEnv("NODE_ENV", "production");
   });
-  afterEach(() => vi.unstubAllEnvs());
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllEnvs();
+  });
 
   it("returns public metadata with a five-minute signed URL and no storage path", async () => {
     mocks.rpc.mockResolvedValue({
-      data: [
-        {
-          id: "internal-id",
-          display_name: "Club sponsor",
-          alt_text: "Club sponsor logo",
-          storage_path: "organization/private/logo.png",
-          position: 0,
-        },
-      ],
+      data: [sponsorRow()],
       error: null,
     });
     mocks.createSignedUrl.mockResolvedValue({
@@ -92,5 +96,127 @@ describe("anonymous Broadcast sponsors", () => {
       "organization/private/logo.png",
       300,
     );
+  });
+
+  it("reuses stable signed URLs across repeated one-second polls", async () => {
+    mocks.rpc.mockResolvedValue({ data: [sponsorRow()], error: null });
+    mocks.createSignedUrl
+      .mockResolvedValueOnce({
+        data: { signedUrl: "https://storage.example/signed/stable" },
+        error: null,
+      })
+      .mockResolvedValueOnce({
+        data: { signedUrl: "https://storage.example/signed/unexpected" },
+        error: null,
+      });
+
+    const first = await gameBroadcastSponsors("stable-game");
+    const second = await gameBroadcastSponsors("stable-game");
+    expect(second).toEqual(first);
+    expect(second[0].dataUrl).toBe("https://storage.example/signed/stable");
+    expect(mocks.rpc).toHaveBeenCalledTimes(2);
+    expect(mocks.createSignedUrl).toHaveBeenCalledTimes(1);
+  });
+
+  it("refreshes a stable sponsor after the cache expires before its URL", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-01-01T00:00:00Z"));
+    mocks.rpc.mockResolvedValue({ data: [sponsorRow()], error: null });
+    mocks.createSignedUrl
+      .mockResolvedValueOnce({
+        data: { signedUrl: "https://storage.example/signed/first" },
+        error: null,
+      })
+      .mockResolvedValueOnce({
+        data: { signedUrl: "https://storage.example/signed/refreshed" },
+        error: null,
+      });
+
+    await gameBroadcastSponsors("expiring-game");
+    vi.advanceTimersByTime(4 * 60 * 1000 + 1);
+    const refreshed = await gameBroadcastSponsors("expiring-game");
+    expect(refreshed[0].dataUrl).toBe(
+      "https://storage.example/signed/refreshed",
+    );
+    expect(mocks.createSignedUrl).toHaveBeenCalledTimes(2);
+  });
+
+  it("refreshes immediately when a sponsor asset is replaced", async () => {
+    mocks.rpc
+      .mockResolvedValueOnce({ data: [sponsorRow()], error: null })
+      .mockResolvedValueOnce({
+        data: [sponsorRow({ storage_path: "organization/private/new.png" })],
+        error: null,
+      });
+    mocks.createSignedUrl
+      .mockResolvedValueOnce({
+        data: { signedUrl: "https://storage.example/signed/old" },
+        error: null,
+      })
+      .mockResolvedValueOnce({
+        data: { signedUrl: "https://storage.example/signed/new" },
+        error: null,
+      });
+
+    await gameBroadcastSponsors("replacement-game");
+    const replaced = await gameBroadcastSponsors("replacement-game");
+    expect(replaced[0].dataUrl).toBe("https://storage.example/signed/new");
+    expect(mocks.createSignedUrl).toHaveBeenLastCalledWith(
+      "organization/private/new.png",
+      300,
+    );
+  });
+
+  it("refreshes ordered output and removes archived sponsors", async () => {
+    const first = sponsorRow({ id: "first", position: 0 });
+    const second = sponsorRow({
+      id: "second",
+      storage_path: "organization/private/second.png",
+      position: 1,
+    });
+    mocks.rpc
+      .mockResolvedValueOnce({ data: [first, second], error: null })
+      .mockResolvedValueOnce({
+        data: [
+          { ...second, position: 0 },
+          { ...first, position: 1 },
+        ],
+        error: null,
+      })
+      .mockResolvedValueOnce({
+        data: [{ ...second, position: 0 }],
+        error: null,
+      });
+    mocks.createSignedUrl.mockImplementation(async (path: string) => ({
+      data: { signedUrl: `https://storage.example/signed/${path}` },
+      error: null,
+    }));
+
+    await gameBroadcastSponsors("order-archive-game");
+    const reordered = await gameBroadcastSponsors("order-archive-game");
+    expect(reordered.map((sponsor) => sponsor.id)).toEqual(["second", "first"]);
+    const archived = await gameBroadcastSponsors("order-archive-game");
+    expect(archived.map((sponsor) => sponsor.id)).toEqual(["second"]);
+    expect(mocks.createSignedUrl).toHaveBeenCalledTimes(5);
+  });
+
+  it("does not cache signing failures", async () => {
+    mocks.rpc.mockResolvedValue({ data: [sponsorRow()], error: null });
+    mocks.createSignedUrl
+      .mockResolvedValueOnce({ data: null, error: { message: "private" } })
+      .mockResolvedValueOnce({
+        data: { signedUrl: "https://storage.example/signed/recovered" },
+        error: null,
+      });
+
+    await expect(gameBroadcastSponsors("failed-game")).rejects.toThrow(
+      "Sponsor preview unavailable",
+    );
+    await expect(gameBroadcastSponsors("failed-game")).resolves.toEqual([
+      expect.objectContaining({
+        dataUrl: "https://storage.example/signed/recovered",
+      }),
+    ]);
+    expect(mocks.createSignedUrl).toHaveBeenCalledTimes(2);
   });
 });

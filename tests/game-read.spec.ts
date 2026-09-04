@@ -6,6 +6,7 @@ test("anonymous Broadcast requests the public view and removes the program on de
   page,
 }) => {
   let closed = false;
+  let credentialRequests = 0;
   await page.route(
     `**/api/games/${testGameId}?view=broadcast`,
     async (route) => {
@@ -19,11 +20,28 @@ test("anonymous Broadcast requests the public view and removes the program on de
       });
     },
   );
+  await page.route(
+    `**/api/games/${testGameId}/livekit-token?view=broadcast`,
+    async (route) => {
+      credentialRequests += 1;
+      expect(route.request().method()).toBe("POST");
+      expect(route.request().headers().authorization).toBeUndefined();
+      await route.fulfill({
+        headers: { "cache-control": "no-store" },
+        json: {
+          url: "wss://live.example.invalid",
+          token: "subscriber-only-viewer-token",
+        },
+      });
+    },
+  );
   await page.goto(`/broadcast/${testGameId}`);
   await expect(page.getByTestId("broadcast-canvas")).toBeVisible();
+  await expect.poll(() => credentialRequests).toBe(2);
   await expect(page.getByText("END 2")).toBeVisible();
   await expect(page.getByRole("img", { name: "Community" })).toBeVisible();
   await expect(page.getByTestId("back-to-scoring")).toHaveCount(0);
+  await expect(page.getByRole("link", { name: "Scoring" })).toHaveCount(0);
   closed = true;
   await expect(page.locator("main[role='alert']")).toHaveText(
     "This game is closed",

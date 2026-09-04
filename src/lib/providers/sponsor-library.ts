@@ -7,6 +7,7 @@ import type { LibrarySponsor, Sponsor } from "@/lib/types";
 const BUCKET = "organization-sponsors";
 const SIGNED_URL_SECONDS = 12 * 60 * 60;
 const PUBLIC_BROADCAST_URL_SECONDS = 5 * 60;
+const PUBLIC_BROADCAST_CACHE_MS = 4 * 60 * 1000;
 // Keep multipart requests below Vercel's 4.5 MB function payload boundary.
 const MAX_UPLOAD_BYTES = 4 * 1024 * 1024;
 type SponsorRow = {
@@ -17,6 +18,25 @@ type SponsorRow = {
   position: number;
   archived_at?: string | null;
 };
+type BroadcastSponsorCacheEntry = {
+  stateKey: string;
+  expiresAt: number;
+  sponsors: Sponsor[];
+};
+const broadcastSponsorCache = new Map<string, BroadcastSponsorCacheEntry>();
+
+function broadcastSponsorStateKey(rows: SponsorRow[]) {
+  return JSON.stringify(
+    rows.map((row) => [
+      row.id,
+      row.display_name,
+      row.alt_text,
+      row.storage_path,
+      row.position,
+      row.archived_at ?? null,
+    ]),
+  );
+}
 
 async function present(
   rows: SponsorRow[],
@@ -85,18 +105,27 @@ export async function gameBroadcastSponsors(
     { p_game_id: gameId },
   );
   if (error) throw new Error("Sponsor library unavailable");
-  const sponsors = await present(
-    (data ?? []) as SponsorRow[],
-    PUBLIC_BROADCAST_URL_SECONDS,
+  const rows = (data ?? []) as SponsorRow[];
+  const stateKey = broadcastSponsorStateKey(rows);
+  const cached = broadcastSponsorCache.get(gameId);
+  if (cached && cached.stateKey === stateKey && cached.expiresAt > Date.now())
+    return cached.sponsors;
+  const sponsors = (await present(rows, PUBLIC_BROADCAST_URL_SECONDS)).map(
+    (sponsor) => ({
+      id: sponsor.id,
+      name: sponsor.name,
+      altText: sponsor.altText,
+      dataUrl: sponsor.imageUrl,
+      enabled: true,
+      rotation: 0,
+    }),
   );
-  return sponsors.map((sponsor) => ({
-    id: sponsor.id,
-    name: sponsor.name,
-    altText: sponsor.altText,
-    dataUrl: sponsor.imageUrl,
-    enabled: true,
-    rotation: 0,
-  }));
+  broadcastSponsorCache.set(gameId, {
+    stateKey,
+    expiresAt: Date.now() + PUBLIC_BROADCAST_CACHE_MS,
+    sponsors,
+  });
+  return sponsors;
 }
 
 export type ValidImage = { bytes: Uint8Array; mime: string; extension: string };

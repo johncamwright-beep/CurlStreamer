@@ -63,11 +63,11 @@ export function broadcastGame(
     broadcast: game.broadcast,
     audioMuted: game.audioMuted,
     cameraFraming: {
-      "camera-home": game.cameraFraming?.["camera-home"] ?? "fill",
-      "camera-away": game.cameraFraming?.["camera-away"] ?? "fill",
+      "camera-home": game.cameraFraming?.["camera-home"] ?? "contain",
+      "camera-away": game.cameraFraming?.["camera-away"] ?? "contain",
     },
-    // Only already embedded image content or bundled demo art is public.
-    // Never forward signed URLs, private storage paths, or disabled assets.
+    // Public Broadcast may receive short-lived signed render URLs or bundled
+    // demo art, but never underlying private storage paths or disabled assets.
     sponsors: sponsorSource
       .filter((sponsor) => sponsor.enabled)
       .map((s, index) => ({

@@ -160,6 +160,7 @@ describe("GET /api/games/[id] over HTTP", () => {
   });
   it("returns exactly the public Broadcast allowlist, even with unexpected stored fields", async () => {
     anonymous();
+    delete game.cameraFraming;
     Object.assign(game, {
       credentials: "private",
       organizationId: "private",

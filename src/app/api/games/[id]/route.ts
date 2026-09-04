@@ -1,28 +1,94 @@
 import { NextResponse } from "next/server";
+import { z } from "zod";
+import { readGame } from "@/lib/providers/game-read";
+import { broadcastGame, joinGame } from "@/lib/game-projection";
 import { actionSchema, hasSafeSponsorContent } from "@/lib/schema";
 import { getGame, updateGame } from "@/lib/store";
 import {
   authorizationError,
   authorizeGame,
   operatorRoles,
+  type GameAuthorization,
 } from "@/lib/game-authorization";
-import { gameLibrarySponsors } from "@/lib/providers/sponsor-library";
+import {
+  gameBroadcastSponsors,
+  gameLibrarySponsors,
+} from "@/lib/providers/sponsor-library";
 export const dynamic = "force-dynamic";
+const readParams = z.object({ id: z.string().regex(/^[a-zA-Z0-9-]{1,64}$/) });
+const readView = z.enum(["broadcast", "join"]).optional();
+
+function gameResponse(body: unknown, init: ResponseInit = {}) {
+  const headers = new Headers(init.headers);
+  headers.set("cache-control", "no-store");
+  headers.set("vary", "Cookie, Authorization");
+  return NextResponse.json(body, { ...init, headers });
+}
+
+function readFailure(
+  reason: Extract<GameAuthorization, { ok: false }>["reason"],
+) {
+  const failure = authorizationError({ ok: false, reason });
+  return gameResponse(
+    {
+      error: failure.error,
+      ...(reason === "released" ? { code: "camera_assignment_released" } : {}),
+    },
+    { status: failure.status },
+  );
+}
+
 export async function GET(
   request: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  const { id } = await params;
+  const parsed = readParams.safeParse(await params);
+  const view = readView.safeParse(
+    new URL(request.url).searchParams.get("view") ?? undefined,
+  );
+  if (!parsed.success || !view.success)
+    return gameResponse({ error: "Invalid game request" }, { status: 400 });
+  const { id } = parsed.data;
   const authorization = await authorizeGame(request, id, {
     accountRoles: operatorRoles,
-    tokenAllowed: () => true,
+    tokenAllowed: (access) =>
+      access.purpose !== "invitation" || view.data === "join",
   });
-  if (!authorization.ok && authorization.reason === "deleted")
-    return NextResponse.json(authorizationError(authorization), {
-      status: 410,
-    });
-  const game = await getGame(id);
-  if (game && authorization.ok) {
+  const publicBroadcast =
+    !authorization.ok &&
+    authorization.reason === "unauthorized" &&
+    authorization.anonymous &&
+    view.data === "broadcast";
+  if (!authorization.ok && !publicBroadcast)
+    return readFailure(authorization.reason);
+
+  try {
+    const result = await readGame(id);
+    if (result.kind !== "active") return readFailure(result.kind);
+    const game = result.game;
+    // Recheck the current snapshot in case a participant was released during authorization.
+    if (
+      authorization.ok &&
+      authorization.via === "token" &&
+      authorization.access.purpose === "participant"
+    ) {
+      const { role, deviceId } = authorization.access;
+      if (!role || !deviceId || game.claims[role] !== deviceId)
+        return readFailure("released");
+    }
+    if (publicBroadcast) {
+      try {
+        const sponsors = await gameBroadcastSponsors(id);
+        return gameResponse(broadcastGame(game, sponsors));
+      } catch {
+        return gameResponse(
+          { error: "Sponsor library is temporarily unavailable" },
+          { status: 503 },
+        );
+      }
+    }
+    if (view.data === "join") return gameResponse(joinGame(game));
+    if (!authorization.ok) return readFailure("unauthorized");
     try {
       const sponsors = await gameLibrarySponsors(
         id,
@@ -33,25 +99,23 @@ export async function GET(
       // An empty library intentionally retains legacy per-game sponsor state.
       if (sponsors.length) game.sponsors = sponsors;
     } catch {
-      return NextResponse.json(
+      return gameResponse(
         { error: "Sponsor library is temporarily unavailable" },
         { status: 503 },
       );
     }
+    return gameResponse(game, {
+      headers: {
+        "x-curlcast-operator": "true",
+        "x-curlcast-account-role":
+          authorization.via === "account" ? authorization.role : "",
+        "access-control-expose-headers":
+          "x-curlcast-operator, x-curlcast-account-role",
+      },
+    });
+  } catch {
+    return readFailure("unavailable");
   }
-  return game
-    ? NextResponse.json(game, {
-        headers: {
-          "x-curlcast-operator": authorization.ok ? "true" : "false",
-          "x-curlcast-account-role":
-            authorization.ok && authorization.via === "account"
-              ? authorization.role
-              : "",
-          "access-control-expose-headers":
-            "x-curlcast-operator, x-curlcast-account-role",
-        },
-      })
-    : NextResponse.json({ error: "Game not found" }, { status: 404 });
 }
 export async function PATCH(
   request: Request,
@@ -64,24 +128,21 @@ export async function PATCH(
   });
   if (!authorization.ok) {
     const failure = authorizationError(authorization);
-    return NextResponse.json(
-      { error: failure.error },
-      { status: failure.status },
-    );
+    return gameResponse({ error: failure.error }, { status: failure.status });
   }
   const existing = await getGame(id);
   if (existing?.status === "closed")
-    return NextResponse.json({ error: "This game is closed" }, { status: 410 });
+    return gameResponse({ error: "This game is closed" }, { status: 410 });
   const body = actionSchema.safeParse(await request.json());
   if (!body.success)
-    return NextResponse.json({ error: "Invalid update" }, { status: 400 });
+    return gameResponse({ error: "Invalid update" }, { status: 400 });
   if (
     body.data.type === "sponsors" &&
     body.data.sponsors.some(
       (sponsor) => !hasSafeSponsorContent(sponsor.dataUrl),
     )
   )
-    return NextResponse.json(
+    return gameResponse(
       { error: "Sponsor content is not a supported image" },
       { status: 400 },
     );
@@ -96,7 +157,7 @@ export async function PATCH(
       body.data.role === authorization.access.role
     )
   )
-    return NextResponse.json(
+    return gameResponse(
       { error: "This role cannot make that update" },
       { status: 403 },
     );
@@ -105,7 +166,7 @@ export async function PATCH(
     authorization.via === "token" &&
     authorization.access.purpose !== "organizer"
   )
-    return NextResponse.json(
+    return gameResponse(
       { error: "Only an organizer can close a game" },
       { status: 403 },
     );
@@ -115,18 +176,18 @@ export async function PATCH(
   } catch (error) {
     const message = error instanceof Error ? error.message : "";
     if (message.includes("Hammer must be selected"))
-      return NextResponse.json({ error: message }, { status: 409 });
+      return gameResponse({ error: message }, { status: 409 });
     if (message.includes("Score update conflict"))
-      return NextResponse.json(
+      return gameResponse(
         { error: "The game changed before this update was saved. Try again." },
         { status: 409 },
       );
-    return NextResponse.json(
+    return gameResponse(
       { error: "That update could not be saved." },
       { status: 500 },
     );
   }
   return game
-    ? NextResponse.json(game)
-    : NextResponse.json({ error: "Game not found" }, { status: 404 });
+    ? gameResponse(game)
+    : gameResponse({ error: "Game not found" }, { status: 404 });
 }

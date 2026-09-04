@@ -1,7 +1,8 @@
 import "server-only";
 import { SignJWT } from "jose";
 
-export type LiveKitAccess = "camera-home" | "camera-away" | "organizer";
+export type LiveKitAccess =
+  "camera-home" | "camera-away" | "organizer" | "broadcast-viewer";
 
 export class LiveKitConfigurationError extends Error {
   readonly category = "configuration";
@@ -32,12 +33,13 @@ export function liveKitIdentity(gameId: string, access: LiveKitAccess) {
 
 export function liveKitMetadata(access: LiveKitAccess) {
   return JSON.stringify({
-    cameraRole: access === "organizer" ? null : access,
+    cameraRole:
+      access === "camera-home" || access === "camera-away" ? access : null,
   });
 }
 
 export function liveKitVideoGrant(gameId: string, access: LiveKitAccess) {
-  const camera = access !== "organizer";
+  const camera = access === "camera-home" || access === "camera-away";
   return {
     room: `game-${gameId}`,
     roomJoin: true,
@@ -55,10 +57,9 @@ export async function issueLiveKitToken(gameId: string, access: LiveKitAccess) {
   // Camera identities are stable so a reconnect replaces, rather than adds, a
   // publisher. Broadcast consumers remain unique because a page currently has
   // one subscriber Room for each displayed role.
-  const identity =
-    access === "organizer"
-      ? `broadcast-${crypto.randomUUID()}`
-      : liveKitIdentity(gameId, access);
+  const identity = cameraAccess(access)
+    ? liveKitIdentity(gameId, access)
+    : `${access === "broadcast-viewer" ? "viewer" : "broadcast"}-${crypto.randomUUID()}`;
   const token = await new SignJWT({
     video: liveKitVideoGrant(gameId, access),
     metadata: liveKitMetadata(access),
@@ -69,9 +70,15 @@ export async function issueLiveKitToken(gameId: string, access: LiveKitAccess) {
     .setNotBefore("0s")
     .setIssuedAt()
     .setJti(crypto.randomUUID())
-    .setExpirationTime("10m")
+    .setExpirationTime(access === "broadcast-viewer" ? "5m" : "10m")
     .sign(new TextEncoder().encode(secret));
   return { url, token };
+}
+
+function cameraAccess(
+  access: LiveKitAccess,
+): access is "camera-home" | "camera-away" {
+  return access === "camera-home" || access === "camera-away";
 }
 
 function liveKitHttpUrl(url: string) {

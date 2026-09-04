@@ -1,16 +1,17 @@
 import React from "react";
 import { deriveScore } from "@/lib/scoring";
 import type { GameState } from "@/lib/types";
+import type { BroadcastGame } from "@/lib/game-projection";
 export function Scoreboard({
   game,
   compact = false,
   broadcast = false,
 }: {
-  game: GameState;
+  game: GameState | BroadcastGame;
   compact?: boolean;
   broadcast?: boolean;
 }) {
-  const s = deriveScore(game);
+  const s = "score" in game ? { ...game.score, ends: [] } : deriveScore(game);
   return (
     <div
       data-testid={broadcast ? "broadcast-scoreboard" : undefined}

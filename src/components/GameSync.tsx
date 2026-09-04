@@ -1,15 +1,26 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
 import type { GameState } from "@/lib/types";
+import type { BroadcastGame, JoinGame } from "@/lib/game-projection";
 import { clearCurrentGame, readCurrentGame } from "@/lib/current-game";
-export function useGame(id: string) {
-  const [game, setGame] = useState<GameState>();
+type GameView = "broadcast" | "join" | undefined;
+type ViewState<V extends GameView> = V extends "broadcast"
+  ? GameState | BroadcastGame
+  : V extends "join"
+    ? JoinGame
+    : GameState;
+export function useGame<V extends GameView = undefined>(
+  id: string,
+  view?: V,
+  invitation?: string | null,
+) {
+  const [game, setGame] = useState<ViewState<V>>();
   const [error, setError] = useState("");
   const [accountOperator, setAccountOperator] = useState(false);
   const [accountRole, setAccountRole] = useState("");
   const refresh = useCallback(async () => {
-    const token = localStorage.getItem(`curlcast-access-${id}`);
-    const r = await fetch(`/api/games/${id}`, {
+    const token = invitation ?? localStorage.getItem(`curlcast-access-${id}`);
+    const r = await fetch(`/api/games/${id}${view ? `?view=${view}` : ""}`, {
       cache: "no-store",
       headers: token ? { authorization: `Bearer ${token}` } : undefined,
     });
@@ -19,6 +30,9 @@ export function useGame(id: string) {
       setAccountRole(r.headers.get("x-curlcast-account-role") ?? "");
       setError("");
     } else {
+      setGame(undefined);
+      setAccountOperator(false);
+      setAccountRole("");
       if (
         [401, 404, 410].includes(r.status) &&
         readCurrentGame(localStorage)?.id === id
@@ -27,7 +41,7 @@ export function useGame(id: string) {
       const body = await r.json().catch(() => null);
       setError(body?.error ?? "Game is unavailable.");
     }
-  }, [id]);
+  }, [id, view, invitation]);
   useEffect(() => {
     void refresh();
     const timer = setInterval(refresh, 1000);

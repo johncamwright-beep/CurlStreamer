@@ -51,6 +51,41 @@ describe("LiveKit grants", () => {
     });
   });
 
+  it("limits an anonymous Broadcast viewer to game-room subscription only", () => {
+    const grant = liveKitVideoGrant("game-1", "broadcast-viewer");
+    expect(grant).toEqual({
+      room: "game-game-1",
+      roomJoin: true,
+      canPublish: false,
+      canSubscribe: true,
+      canPublishData: false,
+    });
+    expect(grant).not.toHaveProperty("roomAdmin");
+    expect(grant).not.toHaveProperty("roomCreate");
+    expect(grant).not.toHaveProperty("roomList");
+    expect(grant).not.toHaveProperty("roomRecord");
+  });
+
+  it("uses a randomized non-sensitive identity and five-minute viewer expiry", async () => {
+    process.env.NEXT_PUBLIC_LIVEKIT_URL = "wss://live.example.test";
+    process.env.LIVEKIT_API_KEY = "test-key";
+    process.env.LIVEKIT_API_SECRET = "super-secret-value";
+    const first = decodeJwt(
+      (await issueLiveKitToken("private-game-id", "broadcast-viewer")).token,
+    );
+    const second = decodeJwt(
+      (await issueLiveKitToken("private-game-id", "broadcast-viewer")).token,
+    );
+    expect(first.sub).toMatch(/^viewer-[0-9a-f-]+$/);
+    expect(first.sub).not.toContain("private-game-id");
+    expect(second.sub).not.toBe(first.sub);
+    expect(first.exp! - first.iat!).toBe(5 * 60);
+    expect(first.video).toEqual(
+      liveKitVideoGrant("private-game-id", "broadcast-viewer"),
+    );
+    expect(JSON.parse(String(first.metadata))).toEqual({ cameraRole: null });
+  });
+
   it("does not put the API secret in the browser response or claims", async () => {
     process.env.NEXT_PUBLIC_LIVEKIT_URL = "wss://live.example.test";
     process.env.LIVEKIT_API_KEY = "test-key";

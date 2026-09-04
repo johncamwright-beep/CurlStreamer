@@ -25,8 +25,10 @@ export function formatCanonicalGameTitle(parts: GameTitleParts) {
   return `${home} vs ${away}${event ? ` — ${event}` : ""}`;
 }
 
-export function canonicalTitleFromConfig(
-  config: GameConfig,
+export function canonicalTitleFromConfig<
+  T extends Pick<GameConfig, "eventName" | "homeName" | "awayName">,
+>(
+  config: T,
   eventName: string | null = config.eventName === "Single Game"
     ? null
     : config.eventName,

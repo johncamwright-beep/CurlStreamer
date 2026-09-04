@@ -11,6 +11,8 @@ describe("Game invitations", () => {
     );
     expect(markup).toContain("Invitation unavailable.");
     expect(markup).toContain("Retry invitation");
+    expect(markup).toContain("Invite devices");
+    expect(markup).not.toContain("Individual invitation links");
     expect(markup).not.toContain('href="#"');
   });
 

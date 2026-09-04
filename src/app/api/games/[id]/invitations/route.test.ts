@@ -14,8 +14,10 @@ vi.mock("@/lib/game-authorization", () => ({
     error:
       result.reason === "deleted"
         ? "This game has been deleted"
-        : "Game access is required",
-    status: result.reason === "deleted" ? 410 : 401,
+        : result.reason === "closed"
+          ? "This game is closed"
+          : "Game access is required",
+    status: ["deleted", "closed"].includes(result.reason) ? 410 : 401,
   }),
 }));
 vi.mock("@/lib/store", () => ({ getGame: mocks.getGame }));
@@ -112,13 +114,7 @@ describe("game invitations", () => {
       });
       expect(response.status).toBeGreaterThanOrEqual(400);
     }
-    mocks.authorizeGame.mockResolvedValue({
-      ok: true,
-      via: "account",
-      role: "owner",
-      organizationId: "team-1",
-    });
-    mocks.getGame.mockResolvedValue({ status: "closed" });
+    mocks.authorizeGame.mockResolvedValue({ ok: false, reason: "closed" });
     expect(
       (
         await POST(request("chooser"), {

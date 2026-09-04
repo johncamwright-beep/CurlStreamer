@@ -68,21 +68,29 @@ export default function GameLobby({
       />
       <div className="mt-5">
         <section className="panel">
-          <h2 className="mb-3 text-xl font-bold">Camera connections</h2>
+          <h2 className="mb-3 text-xl font-bold">Connected devices</h2>
           <div className="grid gap-3">
-            {(["camera-home", "camera-away"] as const).map((role) => (
+            {(["camera-home", "camera-away", "scorer"] as const).map((role) => (
               <div
                 key={role}
                 className="btn-secondary flex min-h-11 items-center justify-between gap-3"
               >
                 <div>
                   <strong>
-                    {role === "camera-home" ? "Camera 1" : "Camera 2"}
+                    {role === "camera-home"
+                      ? "Camera 1"
+                      : role === "camera-away"
+                        ? "Camera 2"
+                        : "Scorekeeper + Audio"}
                   </strong>
                   <span className="ml-3 text-cyan-200">
-                    {cameraDisplayStatus(game, role)}
+                    {role === "scorer"
+                      ? game.claims.scorer
+                        ? "Claimed"
+                        : "Not connected"
+                      : cameraDisplayStatus(game, role)}
                   </span>
-                  {game.cameraHealth?.[role] && (
+                  {role !== "scorer" && game.cameraHealth?.[role] && (
                     <small className="block text-slate-400">
                       {game.cameraHealth[role]?.diagnostic
                         ? `${game.cameraHealth[role]?.diagnostic} · `
@@ -94,7 +102,7 @@ export default function GameLobby({
                     </small>
                   )}
                 </div>
-                {game.claims[role] && (
+                {role !== "scorer" && game.claims[role] && (
                   <button
                     className="min-h-11 rounded-lg border border-red-700 px-3 text-red-200"
                     disabled={disconnecting === role}
@@ -106,42 +114,45 @@ export default function GameLobby({
               </div>
             ))}
           </div>
-          <div className="mt-5 flex flex-wrap gap-3">
-            {accountOperator && (
-              <Link
-                className="btn-secondary"
-                href={`/games/${id}/edit`}
-                aria-label={`Edit Schedule: ${title}`}
-              >
-                Edit Schedule
-              </Link>
-            )}
-            <Link
-              className="btn"
-              href={`/score/${id}`}
-              aria-label={`Scoring: ${title}`}
-            >
-              Open scoring
-            </Link>
-            <Link
-              className="btn-secondary"
-              href={`/broadcast/${id}`}
-              aria-label={`Broadcast: ${title}`}
-            >
-              Broadcast preview
-            </Link>
-            <button
-              className="btn-secondary border-red-700 text-red-200"
-              onClick={() =>
-                confirm("Close this game and revoke participant access?") &&
-                act({ type: "close-game" })
-              }
-            >
-              Close game
-            </button>
-          </div>
         </section>
       </div>
+      <section className="panel mt-5">
+        <h2 className="text-xl font-bold">Game actions</h2>
+        <div className="mt-3 flex flex-wrap gap-3">
+          {accountOperator && (
+            <Link
+              className="btn-secondary"
+              href={`/games/${id}/edit`}
+              aria-label={`Edit Schedule: ${title}`}
+            >
+              Edit Schedule
+            </Link>
+          )}
+          <Link
+            className="btn"
+            href={`/score/${id}`}
+            aria-label={`Scoring: ${title}`}
+          >
+            Open scoring
+          </Link>
+          <Link
+            className="btn-secondary"
+            href={`/broadcast/${id}`}
+            aria-label={`Broadcast: ${title}`}
+          >
+            Broadcast preview
+          </Link>
+          <button
+            className="btn-secondary border-red-700 text-red-200"
+            onClick={() =>
+              confirm("Close this game and revoke participant access?") &&
+              act({ type: "close-game" })
+            }
+          >
+            Close game
+          </button>
+        </div>
+      </section>
     </main>
   );
 }

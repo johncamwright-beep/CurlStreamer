@@ -2,7 +2,6 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { participantUrl } from "@/lib/participant-links";
 import { issueChooserToken, issueRoleToken } from "@/lib/tokens";
-import { getGame } from "@/lib/store";
 import {
   authorizeGame,
   operatorRoles,
@@ -36,11 +35,6 @@ export async function POST(
     !authorization.access.role;
   if (parsed.data === "chooser" && chooserExchange)
     return NextResponse.json({ error: "Not authorized" }, { status: 403 });
-  const game = await getGame(id);
-  if (!game)
-    return NextResponse.json({ error: "Game not found" }, { status: 404 });
-  if (game.status !== "active")
-    return NextResponse.json({ error: "This game is closed" }, { status: 410 });
   const token =
     parsed.data === "chooser"
       ? await issueChooserToken(id)

@@ -1,7 +1,12 @@
 import "server-only";
-import { createAdminSupabaseClient } from "@/lib/supabase/admin";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
-import { loadActiveTeam, type ActiveTeam } from "@/lib/team-games";
+import {
+  listDeletedTeamGames,
+  listTeamGames,
+  loadActiveTeam,
+  type ActiveTeam,
+} from "@/lib/team-games";
+import { getGame } from "@/lib/store";
 import { readAccessToken } from "@/lib/tokens";
 
 export type GameAccountRole = ActiveTeam["role"];
@@ -9,7 +14,11 @@ export type ExistingAccess = Awaited<ReturnType<typeof readAccessToken>>;
 export type GameAuthorization =
   | { ok: true; via: "account"; role: GameAccountRole; organizationId: string }
   | { ok: true; via: "token"; access: ExistingAccess }
-  | { ok: false; reason: "not-found" | "deleted" | "unauthorized" };
+  | {
+      ok: false;
+      reason:
+        "not-found" | "deleted" | "closed" | "unauthorized" | "unavailable";
+    };
 
 /** One authority for the verified-account OR existing-token decision. */
 export async function authorizeGame(
@@ -20,33 +29,47 @@ export async function authorizeGame(
     tokenAllowed: (access: ExistingAccess) => boolean;
   },
 ): Promise<GameAuthorization> {
-  const { data: game, error } = await createAdminSupabaseClient()
-    .from("games")
-    .select("organization_id,deleted_at")
-    .eq("id", gameId)
-    .maybeSingle();
-  if (error || !game) return { ok: false, reason: "not-found" };
-  if (game.deleted_at) return { ok: false, reason: "deleted" };
-
+  let user;
   try {
     const { data } = await (await createServerSupabaseClient()).auth.getUser();
-    if (data.user && game.organization_id) {
-      const team = await loadActiveTeam(data.user);
+    user = data.user;
+    const accountUser = data.user;
+    if (accountUser) {
+      const team = await loadActiveTeam(accountUser);
+      if (team.kind === "unavailable")
+        return { ok: false, reason: "unavailable" };
       if (
         team.kind === "ready" &&
-        team.team.organizationId === game.organization_id &&
         options.accountRoles.includes(team.team.role)
       ) {
-        return {
-          ok: true,
-          via: "account",
-          role: team.team.role,
-          organizationId: team.team.organizationId,
-        };
+        // Use the existing SECURITY DEFINER account boundary. Direct reads of
+        // `games` are intentionally revoked from every API role.
+        const active = await listTeamGames(accountUser);
+        if (!active.ok) return { ok: false, reason: "unavailable" };
+        const game = active.games.find(
+          (candidate) => candidate.game_id === gameId,
+        );
+        if (game?.game_status === "closed")
+          return { ok: false, reason: "closed" };
+        if (game) {
+          return {
+            ok: true,
+            via: "account",
+            role: team.team.role,
+            organizationId: team.team.organizationId,
+          };
+        }
+        if (["owner", "team_admin"].includes(team.team.role)) {
+          const deleted = await listDeletedTeamGames(accountUser);
+          if (!deleted.ok) return { ok: false, reason: "unavailable" };
+          if (deleted.games.some((candidate) => candidate.game_id === gameId))
+            return { ok: false, reason: "deleted" };
+        }
       }
     }
   } catch {
-    // A missing account session may still use an independently verified token.
+    // An independently signed organizer or participant token does not depend
+    // on the optional account cookie being readable.
   }
 
   const bearer = request.headers
@@ -55,10 +78,23 @@ export async function authorizeGame(
   if (bearer) {
     try {
       const access = await readAccessToken(bearer);
-      if (access.gameId === gameId && options.tokenAllowed(access))
+      if (access.gameId === gameId && options.tokenAllowed(access)) {
+        const game = await getGame(gameId);
+        if (!game) return { ok: false, reason: "not-found" };
+        if (game.status === "closed") return { ok: false, reason: "closed" };
         return { ok: true, via: "token", access };
+      }
     } catch {
       // Return the same public denial for invalid and inappropriate credentials.
+    }
+  }
+  // A same-team miss must not reveal a cross-organization game. A truly
+  // absent state can still be reported accurately to a verified account.
+  if (user) {
+    try {
+      if (!(await getGame(gameId))) return { ok: false, reason: "not-found" };
+    } catch {
+      return { ok: false, reason: "unavailable" };
     }
   }
   return { ok: false, reason: "unauthorized" };
@@ -74,6 +110,10 @@ export function authorizationError(
     };
   if (result.reason === "not-found")
     return { error: "Game not found", status: 404 };
+  if (result.reason === "closed")
+    return { error: "This game is closed", status: 410 };
+  if (result.reason === "unavailable")
+    return { error: "Game service is temporarily unavailable", status: 503 };
   return { error: "Game access is required", status: 401 };
 }
 

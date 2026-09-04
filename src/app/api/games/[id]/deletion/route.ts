@@ -3,6 +3,7 @@ import { z } from "zod";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { createAdminSupabaseClient } from "@/lib/supabase/admin";
 import { loadActiveTeam } from "@/lib/team-games";
+import { updateGame } from "@/lib/store";
 
 const paramsSchema = z.object({ id: z.string().uuid() });
 
@@ -45,6 +46,26 @@ async function change(
       },
       { status: live ? 409 : 503 },
     );
+  }
+  // Revoke any still-live participant credentials as part of deletion. The
+  // recoverable database row remains, but token authorization sees it closed.
+  if (operation === "delete" && changed) {
+    try {
+      const closed = await updateGame(id, { type: "close-game" });
+      if (!closed) throw new Error("missing state");
+    } catch {
+      console.error("Game deletion state revocation failed", {
+        operation: "close_deleted_game",
+        category: "game_state",
+      });
+      return NextResponse.json(
+        {
+          error:
+            "The game was deleted but access revocation could not be confirmed.",
+        },
+        { status: 503 },
+      );
+    }
   }
   return NextResponse.json({ changed: Boolean(changed) });
 }

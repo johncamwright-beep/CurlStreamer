@@ -129,6 +129,25 @@ export async function claimRole(
   return { game };
 }
 
+export async function releaseRole(
+  id: string,
+  role: "camera-home" | "camera-away",
+  expectedClaim?: string,
+) {
+  const record = await getGameRecord(id);
+  if (!record) return { error: "Game not found" };
+  const game = record.state;
+  const current = game.claims[role];
+  if (!current) return { game, released: false };
+  if (expectedClaim && current !== expectedClaim)
+    return { error: "Camera claim changed" };
+  delete game.claims[role];
+  game.connections[role] = false;
+  if (game.cameraHealth) delete game.cameraHealth[role];
+  await save(game);
+  return { game, released: true };
+}
+
 async function save(game: GameState) {
   const { error } = await supabase()
     .from("game_states")

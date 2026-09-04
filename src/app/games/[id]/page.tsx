@@ -1,7 +1,6 @@
 "use client";
-import QRCode from "qrcode";
 import Link from "next/link";
-import { use, useEffect, useState } from "react";
+import { use, useState } from "react";
 import { useGame } from "@/components/GameSync";
 import type { Role } from "@/lib/types";
 import { cameraDisplayStatus } from "@/lib/camera-status";
@@ -9,79 +8,53 @@ import { AppNavigation } from "@/components/AppNavigation";
 import { canonicalTitleFromConfig } from "@/lib/game-title";
 import { gameCapabilities } from "@/lib/current-game";
 import { hasOrganizerAccess } from "@/lib/access-session";
-const roles: [Role, string][] = [
-  ["camera-home", "Camera 1"],
-  ["camera-away", "Camera 2"],
-  ["scorer", "Scorekeeper + Audio"],
-];
+import { GameInvitations } from "@/components/GameInvitations";
 export default function GameLobby({
   params,
 }: {
   params: Promise<{ id: string }>;
 }) {
   const { id } = use(params);
-  const { game, error, act, accountOperator, accountRole } = useGame(id);
-  const [links, setLinks] = useState<Record<string, string>>({});
-  const [qr, setQr] = useState("");
-  const [chooserUrl, setChooserUrl] = useState("");
+  const { game, error, act, refresh, accountOperator, accountRole } =
+    useGame(id);
   const [disconnecting, setDisconnecting] = useState<Role>();
-  async function disconnectCamera(role: "camera-home" | "camera-away") {
+  const [cameraActionError, setCameraActionError] = useState("");
+  async function cameraAction(
+    role: "camera-home" | "camera-away",
+    release: boolean,
+  ) {
     const camera = role === "camera-home" ? "Camera 1" : "Camera 2";
-    if (!confirm(`Disconnect ${camera}?`)) return;
+    if (!confirm(`${release ? "Release" : "Disconnect"} ${camera}?`)) return;
     setDisconnecting(role);
+    setCameraActionError("");
     try {
       const token = localStorage.getItem(`curlcast-access-${id}`);
-      const response = await fetch(`/api/games/${id}/disconnect-camera`, {
-        method: "POST",
-        headers: {
-          "content-type": "application/json",
-          ...(token ? { authorization: `Bearer ${token}` } : {}),
+      const response = await fetch(
+        `/api/games/${id}/${release ? "release-camera" : "disconnect-camera"}`,
+        {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            ...(token ? { authorization: `Bearer ${token}` } : {}),
+          },
+          body: JSON.stringify({ role }),
         },
-        body: JSON.stringify({ role }),
-      });
-      if (!response.ok) throw new Error("Camera could not be disconnected.");
+      );
+      if (!response.ok) {
+        const body = await response.json().catch(() => null);
+        throw new Error(body?.error || "Camera could not be released.");
+      }
+      await refresh();
+    } catch (cause) {
+      setCameraActionError(
+        cause instanceof Error
+          ? cause.message
+          : "Camera could not be released.",
+      );
     } finally {
       setDisconnecting(undefined);
     }
   }
-  useEffect(() => {
-    if (!game) return;
-    const organizerToken = localStorage.getItem(`curlcast-access-${id}`);
-    if (!organizerToken && !accountOperator) return;
-    void Promise.all(
-      roles.map(async ([role]) => {
-        const r = await fetch(`/api/games/${id}/invitations`, {
-          method: "POST",
-          headers: {
-            "content-type": "application/json",
-            ...(organizerToken
-              ? { authorization: `Bearer ${organizerToken}` }
-              : {}),
-          },
-          body: JSON.stringify({ role }),
-        });
-        const { url } = await r.json();
-        return [role, url] as const;
-      }),
-    ).then(async (pairs) => {
-      const next = Object.fromEntries(pairs);
-      setLinks(next);
-      const chooserResponse = await fetch(`/api/games/${id}/invitations`, {
-        method: "POST",
-        headers: {
-          "content-type": "application/json",
-          ...(organizerToken
-            ? { authorization: `Bearer ${organizerToken}` }
-            : {}),
-        },
-        body: JSON.stringify({ role: "chooser" }),
-      });
-      const chooser = await chooserResponse.json();
-      const url = chooser.url;
-      setChooserUrl(url);
-      setQr(await QRCode.toDataURL(url));
-    });
-  }, [game?.id, id, accountOperator]);
   if (error) return <main className="p-8">{error}</main>;
   if (!game) return <main className="p-8">Loading game…</main>;
   const title = canonicalTitleFromConfig(game.config);
@@ -107,101 +80,114 @@ export default function GameLobby({
         {game.config.homeName} vs {game.config.awayName} ·{" "}
         {game.config.scheduledEnds} ends
       </p>
-      <div className="mt-6 grid gap-5 md:grid-cols-[240px_1fr]">
-        <section className="panel text-center">
-          <h2 className="font-bold">Open role chooser</h2>
-          {qr ? (
-            <img
-              src={qr}
-              alt="QR code for role chooser"
-              className="mx-auto my-3 rounded-lg"
-            />
-          ) : (
-            <div className="h-52" />
-          )}
-          <Link className="text-cyan-300 underline" href={chooserUrl || "#"}>
-            Role chooser
-          </Link>
-        </section>
-        <section className="panel">
-          <h2 className="mb-4 text-xl font-bold">
-            Direct, 30-minute invitation links
-          </h2>
-          <div className="grid gap-3">
-            {roles.map(([role, label]) => (
-              <div
-                key={role}
-                className="btn-secondary flex items-center justify-between"
-              >
-                <a href={links[role] || "#"} className="min-h-11 flex-1 py-2">
-                  <span>{label}</span>
-                  <span className="ml-3 text-cyan-200">
-                    {role === "scorer"
-                      ? game.claims[role]
-                        ? "Claimed"
-                        : "Available"
-                      : cameraDisplayStatus(game, role)}
-                  </span>
-                  {role !== "scorer" && game.cameraHealth?.[role] && (
-                    <small className="block text-slate-400">
-                      {game.cameraHealth[role]?.diagnostic
-                        ? `${game.cameraHealth[role]?.diagnostic} · `
-                        : ""}
-                      Updated{" "}
-                      {new Date(
-                        game.cameraHealth[role]!.updatedAt,
-                      ).toLocaleTimeString()}
-                    </small>
-                  )}
-                </a>
-                {role !== "scorer" && game.claims[role] && (
-                  <button
-                    className="min-h-11 rounded-lg border border-red-700 px-3 text-red-200"
-                    disabled={disconnecting === role}
-                    onClick={() => void disconnectCamera(role)}
+      <GameInvitations
+        id={id}
+        enabled={accountOperator || hasOrganizerAccess(localStorage, id)}
+        claims={game.claims}
+        connectedDevices={
+          <section className="panel min-w-0">
+            <h2 className="mb-3 text-xl font-bold">Connected devices</h2>
+            <div className="grid gap-3">
+              {(["camera-home", "camera-away", "scorer"] as const).map(
+                (role) => (
+                  <div
+                    key={role}
+                    className="btn-secondary flex min-h-11 items-center justify-between gap-3"
                   >
-                    Disconnect Camera
-                  </button>
-                )}
-              </div>
-            ))}
-          </div>
-          <div className="mt-5 flex flex-wrap gap-3">
-            {accountOperator && (
-              <Link
-                className="btn-secondary"
-                href={`/games/${id}/edit`}
-                aria-label={`Edit Schedule: ${title}`}
-              >
-                Edit Schedule
-              </Link>
+                    <div className="min-w-0">
+                      <strong>
+                        {role === "camera-home"
+                          ? "Camera 1"
+                          : role === "camera-away"
+                            ? "Camera 2"
+                            : "Scorekeeper + Audio"}
+                      </strong>
+                      <span className="ml-3 text-cyan-200">
+                        {role === "scorer"
+                          ? game.claims.scorer
+                            ? "Claimed"
+                            : "Not connected"
+                          : cameraDisplayStatus(game, role)}
+                      </span>
+                      {role !== "scorer" && game.cameraHealth?.[role] && (
+                        <small className="block overflow-hidden text-ellipsis text-slate-400">
+                          {game.cameraHealth[role]?.diagnostic
+                            ? `${game.cameraHealth[role]?.diagnostic} · `
+                            : ""}
+                          Updated{" "}
+                          {new Date(
+                            game.cameraHealth[role]!.updatedAt,
+                          ).toLocaleTimeString()}
+                        </small>
+                      )}
+                    </div>
+                    {role !== "scorer" && game.claims[role] && (
+                      <button
+                        className="min-h-11 shrink-0 rounded-lg border border-red-700 px-3 text-red-200"
+                        disabled={disconnecting === role}
+                        onClick={() => {
+                          const live = (
+                            ["Connecting", "Live", "Reconnecting"] as string[]
+                          ).includes(cameraDisplayStatus(game, role));
+                          void cameraAction(role, !live);
+                        }}
+                      >
+                        {(
+                          ["Connecting", "Live", "Reconnecting"] as string[]
+                        ).includes(cameraDisplayStatus(game, role))
+                          ? "Disconnect Camera"
+                          : "Release Camera"}
+                      </button>
+                    )}
+                  </div>
+                ),
+              )}
+            </div>
+            {cameraActionError && (
+              <p role="alert" className="mt-3 text-amber-300">
+                {cameraActionError}
+              </p>
             )}
-            <Link
-              className="btn"
-              href={`/score/${id}`}
-              aria-label={`Scoring: ${title}`}
-            >
-              Open scoring
-            </Link>
+          </section>
+        }
+      />
+      <section className="panel mt-5">
+        <h2 className="text-xl font-bold">Game actions</h2>
+        <div className="mt-3 flex flex-wrap gap-3">
+          {accountOperator && (
             <Link
               className="btn-secondary"
-              href={`/broadcast/${id}`}
-              aria-label={`Broadcast: ${title}`}
+              href={`/games/${id}/edit`}
+              aria-label={`Edit Schedule: ${title}`}
             >
-              Broadcast preview
+              Edit Schedule
             </Link>
-            <button
-              className="btn-secondary border-red-700 text-red-200"
-              onClick={() =>
-                confirm("Close this game and revoke participant access?") &&
-                act({ type: "close-game" })
-              }
-            >
-              Close game
-            </button>
-          </div>
-        </section>
-      </div>
+          )}
+          <Link
+            className="btn"
+            href={`/score/${id}`}
+            aria-label={`Scoring: ${title}`}
+          >
+            Open scoring
+          </Link>
+          <Link
+            className="btn-secondary"
+            href={`/broadcast/${id}`}
+            aria-label={`Broadcast: ${title}`}
+          >
+            Broadcast preview
+          </Link>
+          <button
+            className="btn-secondary border-red-700 text-red-200"
+            onClick={() =>
+              confirm("Close this game and revoke participant access?") &&
+              act({ type: "close-game" })
+            }
+          >
+            Close game
+          </button>
+        </div>
+      </section>
     </main>
   );
 }

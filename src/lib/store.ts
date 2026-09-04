@@ -10,4 +10,5 @@ const store =
 export const createGame = store.createGame;
 export const getGame = store.getGame;
 export const claimRole = store.claimRole;
+export const releaseRole = store.releaseRole;
 export const updateGame = store.updateGame;

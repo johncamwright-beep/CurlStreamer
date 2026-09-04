@@ -3,6 +3,29 @@ import { SignJWT } from "jose";
 
 export type LiveKitAccess = "camera-home" | "camera-away" | "organizer";
 
+export class LiveKitConfigurationError extends Error {
+  readonly category = "configuration";
+  constructor(readonly missingVariables: string[]) {
+    super("LiveKit server configuration is incomplete");
+  }
+}
+
+function liveKitConfiguration() {
+  // NEXT_PUBLIC_LIVEKIT_URL is intentionally public and is the deployment
+  // variable documented for clients. The key and secret remain server-only.
+  const url = process.env.NEXT_PUBLIC_LIVEKIT_URL || process.env.LIVEKIT_URL;
+  const key = process.env.LIVEKIT_API_KEY;
+  const secret = process.env.LIVEKIT_API_SECRET;
+  const missingVariables = [
+    !url && "NEXT_PUBLIC_LIVEKIT_URL",
+    !key && "LIVEKIT_API_KEY",
+    !secret && "LIVEKIT_API_SECRET",
+  ].filter((name): name is string => Boolean(name));
+  if (missingVariables.length)
+    throw new LiveKitConfigurationError(missingVariables);
+  return { url: url!, key: key!, secret: secret! };
+}
+
 export function liveKitIdentity(gameId: string, access: LiveKitAccess) {
   return `${gameId}:${access}`;
 }
@@ -27,11 +50,7 @@ export function liveKitVideoGrant(gameId: string, access: LiveKitAccess) {
 
 /** Creates a short-lived room credential. This module must never be imported by a client. */
 export async function issueLiveKitToken(gameId: string, access: LiveKitAccess) {
-  const url = process.env.LIVEKIT_URL;
-  const key = process.env.LIVEKIT_API_KEY;
-  const secret = process.env.LIVEKIT_API_SECRET;
-  if (!url || !key || !secret)
-    throw new Error("LiveKit server configuration is incomplete");
+  const { url, key, secret } = liveKitConfiguration();
 
   // Camera identities are stable so a reconnect replaces, rather than adds, a
   // publisher. Broadcast consumers remain unique because a page currently has
@@ -64,11 +83,7 @@ export async function removeCameraParticipant(
   gameId: string,
   role: "camera-home" | "camera-away",
 ) {
-  const url = process.env.LIVEKIT_URL;
-  const key = process.env.LIVEKIT_API_KEY;
-  const secret = process.env.LIVEKIT_API_SECRET;
-  if (!url || !key || !secret)
-    throw new Error("LiveKit server configuration is incomplete");
+  const { url, key, secret } = liveKitConfiguration();
   const token = await new SignJWT({
     video: { room: `game-${gameId}`, roomAdmin: true },
   })

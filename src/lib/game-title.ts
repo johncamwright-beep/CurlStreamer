@@ -31,10 +31,11 @@ export function canonicalTitleFromConfig(
     ? null
     : config.eventName,
 ) {
+  const canonicalEvent = eventName?.replace(/\s+[—-]\s+Game\s+\d+$/iu, "");
   return formatCanonicalGameTitle({
     homeName: config.homeName,
     awayName: config.awayName,
-    eventName,
+    eventName: canonicalEvent,
   });
 }
 

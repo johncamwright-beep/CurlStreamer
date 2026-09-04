@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  canonicalTitleFromConfig,
   formatCanonicalGameTitle,
   formatYouTubeScheduledTitle,
 } from "./game-title";
@@ -39,6 +40,20 @@ describe("scheduled game titles", () => {
         } as object),
       }),
     ).toBe("Saved Team vs Saved Opponent — Saved Event");
+  });
+  it("removes a legacy game-number suffix from the canonical event title", () => {
+    expect(
+      canonicalTitleFromConfig({
+        homeName: "Team 1",
+        awayName: "Team 2",
+        eventName: "Event Name — Game 2",
+        homeColor: "#000000",
+        awayColor: "#ffffff",
+        scheduledEnds: 8,
+        youtubeTitle: "",
+        youtubeVisibility: "unlisted",
+      }),
+    ).toBe("Team 1 vs Team 2 — Event Name");
   });
   it("preserves meaningful legacy titles", () => {
     expect(

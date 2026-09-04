@@ -7,6 +7,7 @@ import { GameSetupNavigation } from "@/components/GameSetupNavigation";
 import { deriveScore } from "@/lib/scoring";
 import type { Sponsor, Team } from "@/lib/types";
 import { hasVisibleSponsorOverlay } from "@/lib/sponsor-audio";
+import { AppNavigation } from "@/components/AppNavigation";
 async function optimize(file: File): Promise<Sponsor> {
   if (!["image/jpeg", "image/png", "image/webp"].includes(file.type))
     throw new Error(`${file.name}: use JPEG, PNG or WebP.`);
@@ -58,6 +59,9 @@ export default function Scorer({
   if (game.status === "closed")
     return (
       <main className="mx-auto max-w-lg p-5">
+        <div className="mb-3">
+          <AppNavigation gameId={id} />
+        </div>
         <div role="alert" className="panel text-center">
           <h1 className="text-2xl font-black">This game is closed</h1>
           <p className="mt-2 text-slate-300">
@@ -111,6 +115,9 @@ export default function Scorer({
   }
   return (
     <main className="mx-auto max-w-6xl p-4">
+      <div className="mb-3">
+        <AppNavigation gameId={id} />
+      </div>
       <div className="mb-3">
         <GameSetupNavigation id={id} />
       </div>

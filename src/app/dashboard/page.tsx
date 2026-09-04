@@ -6,6 +6,7 @@ import { signOut } from "@/app/account/actions";
 import { AccountServiceUnavailable } from "@/components/AccountServiceUnavailable";
 import { listTeamGames } from "@/lib/team-games";
 import { TeamGameLinks } from "@/components/TeamGameLinks";
+import { AppNavigation } from "@/components/AppNavigation";
 
 export default async function DashboardPage() {
   const supabase = await createServerSupabaseClient();
@@ -19,6 +20,9 @@ export default async function DashboardPage() {
   if (account.profile.status !== "active") {
     return (
       <main className="mx-auto min-h-screen max-w-xl p-5 md:py-12">
+        <div className="mb-4">
+          <AppNavigation signedIn />
+        </div>
         <section className="panel grid gap-4">
           <h1 className="text-3xl font-black">Account access denied</h1>
           <p>This account is not currently active.</p>
@@ -33,6 +37,9 @@ export default async function DashboardPage() {
   const gamesResult = await listTeamGames(user);
   return (
     <main className="mx-auto min-h-screen max-w-xl p-5 md:py-12">
+      <div className="mb-4">
+        <AppNavigation signedIn />
+      </div>
       <section className="panel grid gap-4">
         <h1 className="text-3xl font-black">{account.membership.teamName}</h1>
         <dl>

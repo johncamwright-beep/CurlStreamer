@@ -2,6 +2,7 @@
 import { useActionState } from "react";
 import Link from "next/link";
 import type { AuthFormState } from "@/app/signup/actions";
+import { AppNavigation } from "@/components/AppNavigation";
 
 export function AuthForm({
   mode,
@@ -14,6 +15,9 @@ export function AuthForm({
   const field = (name: string) => state.errors?.[name]?.[0];
   return (
     <main className="mx-auto min-h-screen max-w-md p-5 md:py-12">
+      <div className="mb-4">
+        <AppNavigation signedIn={false} />
+      </div>
       <form action={formAction} className="panel grid gap-4" noValidate>
         <h1 className="text-3xl font-black">
           {mode === "signup" ? "Create account" : "Sign in"}

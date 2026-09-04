@@ -5,6 +5,7 @@ import { use, useEffect, useState } from "react";
 import { useGame } from "@/components/GameSync";
 import type { Role } from "@/lib/types";
 import { cameraDisplayStatus } from "@/lib/camera-status";
+import { AppNavigation } from "@/components/AppNavigation";
 const roles: [Role, string][] = [
   ["camera-home", "Camera — Home End"],
   ["camera-away", "Camera — Away End"],
@@ -78,6 +79,9 @@ export default function GameLobby({
   if (!game) return <main className="p-8">Loading game…</main>;
   return (
     <main className="mx-auto max-w-5xl p-5">
+      <div className="mb-4">
+        <AppNavigation gameId={id} />
+      </div>
       <p className="text-cyan-300">ORGANIZER · MOCK AUTH</p>
       <h1 className="text-4xl font-black">{game.config.eventName}</h1>
       <p className="text-slate-300">

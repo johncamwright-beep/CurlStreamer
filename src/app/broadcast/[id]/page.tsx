@@ -3,6 +3,8 @@ import { use, useEffect, useState } from "react";
 import { useGame } from "@/components/GameSync";
 import { BroadcastCanvas } from "@/components/BroadcastCanvas";
 import { BroadcastOperatorNavigation } from "@/components/BroadcastOperatorNavigation";
+import { AppNavigation } from "@/components/AppNavigation";
+import { hasScoringAccess } from "@/lib/access-session";
 
 const PROGRAM_WIDTH = 1920;
 const PROGRAM_HEIGHT = 1080;
@@ -21,6 +23,8 @@ export default function Broadcast({
   const { id } = use(params);
   const { game } = useGame(id);
   const [scale, setScale] = useState<number>();
+  const [operator, setOperator] = useState(false);
+  useEffect(() => setOperator(hasScoringAccess(localStorage, id)), [id]);
   useEffect(() => {
     const fit = () => {
       const viewport = availableViewport();
@@ -45,6 +49,9 @@ export default function Broadcast({
   return (
     <main className="broadcast-viewport">
       <BroadcastOperatorNavigation id={id} />
+      {operator && (
+        <AppNavigation className="broadcast-app-navigation" gameId={id} />
+      )}
       <div
         data-testid="broadcast-visible-wrapper"
         className="broadcast-visible-wrapper"

@@ -5,6 +5,7 @@ import type { GameState } from "@/lib/types";
 import { formatBroadcastRailTitle } from "@/lib/game-title";
 import { LiveKitCameraFeed } from "./LiveKitCameraFeed";
 import { isScorerAudioEffectivelyMuted } from "@/lib/sponsor-audio";
+import { SponsorFrame } from "./SponsorFrame";
 function Camera({
   side,
   gameId,
@@ -36,9 +37,15 @@ function Camera({
 export function BroadcastCanvas({ game }: { game: GameState }) {
   const [, tick] = useState(0);
   useEffect(() => {
+    if (
+      !game.sponsorMode.active ||
+      game.sponsorMode.paused ||
+      game.sponsors.filter((s) => s.enabled).length <= 1
+    )
+      return;
     const t = setInterval(() => tick((x) => x + 1), 250);
     return () => clearInterval(t);
-  }, []);
+  }, [game.sponsorMode.active, game.sponsorMode.paused, game.sponsors]);
   const sponsors = game.sponsors.filter((s) => s.enabled);
   const m = game.sponsorMode;
   const elapsed =
@@ -86,14 +93,11 @@ export function BroadcastCanvas({ game }: { game: GameState }) {
             />
           )}
           {visibleSponsorOverlay && sponsor && (
-            <div data-testid="sponsor-overlay" className="sponsor-deck-overlay">
-              <img
-                src={sponsor.dataUrl}
-                alt={sponsor.name}
-                className="safe-video"
-                style={{ transform: `rotate(${sponsor.rotation}deg)` }}
-              />
-            </div>
+            <SponsorFrame
+              sponsors={sponsors}
+              desiredIndex={idx}
+              mode="overlay"
+            />
           )}
         </div>
         <aside
@@ -110,20 +114,11 @@ export function BroadcastCanvas({ game }: { game: GameState }) {
             <Scoreboard game={game} compact broadcast />
           </div>
           {m.active && m.style === "fullscreen" && sponsor && (
-            <div
-              data-testid="sponsor-sidebar"
-              className="sponsor-sidebar rounded-2xl bg-white p-[1cqw]"
-            >
-              <p className="mb-2 text-center text-[.8cqw] font-bold text-slate-700">
-                PRESENTED BY
-              </p>
-              <img
-                src={sponsor.dataUrl}
-                alt={sponsor.name}
-                className="safe-video h-full w-full"
-                style={{ transform: `rotate(${sponsor.rotation}deg)` }}
-              />
-            </div>
+            <SponsorFrame
+              sponsors={sponsors}
+              desiredIndex={idx}
+              mode="sidebar"
+            />
           )}
           <div
             className="mt-auto pt-[.6cqw] text-[.9cqw] leading-tight"

@@ -8,7 +8,11 @@ export function useGame(id: string) {
   const [accountOperator, setAccountOperator] = useState(false);
   const [accountRole, setAccountRole] = useState("");
   const refresh = useCallback(async () => {
-    const r = await fetch(`/api/games/${id}`, { cache: "no-store" });
+    const token = localStorage.getItem(`curlcast-access-${id}`);
+    const r = await fetch(`/api/games/${id}`, {
+      cache: "no-store",
+      headers: token ? { authorization: `Bearer ${token}` } : undefined,
+    });
     if (r.ok) {
       setGame(await r.json());
       setAccountOperator(r.headers.get("x-curlcast-operator") === "true");

@@ -7,6 +7,22 @@ import { BroadcastCanvas } from "./BroadcastCanvas";
 vi.mock("./LiveKitCameraFeed", () => ({
   LiveKitCameraFeed: () => React.createElement("video"),
 }));
+vi.mock("./SponsorFrame", () => ({
+  SponsorFrame: ({
+    sponsors,
+    desiredIndex,
+    mode,
+  }: {
+    sponsors: GameState["sponsors"];
+    desiredIndex: number;
+    mode: string;
+  }) =>
+    React.createElement(
+      "div",
+      { "data-testid": `sponsor-${mode}` },
+      React.createElement("img", { src: sponsors[desiredIndex]?.dataUrl }),
+    ),
+}));
 
 const game = {
   id: "sponsor-test",

@@ -99,9 +99,10 @@ describe("1920x1080 broadcast video layout", () => {
     expect(css).toMatch(/data-framing="contain"\][\s\S]*object-fit: contain/);
   });
 
-  it("uses a minimal divider and constrains overlay sponsors to half the deck", () => {
+  it("uses a minimal divider and enlarges overlay sponsors within the safe deck", () => {
     expect(css).toMatch(/data-camera-count="2"[\s\S]*gap: 2px/);
-    expect(css).toMatch(/\.sponsor-deck-overlay[\s\S]*inset: 25%/);
+    expect(css).toMatch(/\.sponsor-frame-bounds-overlay[\s\S]*inset: 12\.5%/);
+    expect(css).toMatch(/\.sponsor-fitted-frame[\s\S]*overflow: hidden/);
   });
 
   it("gives the rail readable scoring and aspect-preserving sponsor space", () => {
@@ -109,7 +110,15 @@ describe("1920x1080 broadcast video layout", () => {
     expect(css).toMatch(
       /\.broadcast-scoreboard > div:not\(:first-child\) > strong[\s\S]*font-size: 36px/,
     );
-    expect(css).toMatch(/\.sponsor-sidebar[\s\S]*height: 370px/);
+    expect(css).toMatch(/\.sponsor-frame-bounds-sidebar[\s\S]*flex: 1 1 auto/);
     expect(css).toMatch(/\.safe-video \{\s*object-fit: contain/);
+  });
+
+  it("uses adaptive sponsor frames for wide, square, and portrait artwork", () => {
+    expect(css).toMatch(/\.sponsor-frame-bounds[\s\S]*min-height: 0/);
+    expect(css).not.toContain("max-height: 370px");
+    expect(css).toMatch(/\.sponsor-fitted-frame[\s\S]*max-width: 100%/);
+    expect(css).toMatch(/\.sponsor-fitted-frame[\s\S]*max-height: 100%/);
+    expect(css).toMatch(/\.sponsor-fitted-image[\s\S]*object-fit: contain/);
   });
 });

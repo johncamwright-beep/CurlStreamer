@@ -6,6 +6,11 @@ import type {
   ScheduledGameRecord,
   SeasonRecord,
 } from "@/lib/team-hierarchy-data";
+import {
+  formatCanonicalGameTitle,
+  formatYouTubeScheduledTitle,
+} from "@/lib/game-title";
+import { localDateTimeToUtc } from "@/lib/team-hierarchy";
 
 type Opponent = { id: string; display_name: string };
 type Dialog = "season" | "event" | null;
@@ -56,10 +61,43 @@ export function GameCreationForm({
   );
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const local = editing?.scheduledStart
+    ? new Date(editing.scheduledStart)
+    : null;
+  const [scheduledDate, setScheduledDate] = useState(
+    local?.toISOString().slice(0, 10) ?? "",
+  );
+  const [scheduledTime, setScheduledTime] = useState(
+    local?.toISOString().slice(11, 16) ?? "",
+  );
+  const [timezone, setTimezone] = useState(editing?.timezone ?? "UTC");
+  const [titleCustomized, setTitleCustomized] = useState(
+    Boolean(editing?.config.youtubeTitle),
+  );
+  const [customTitle, setCustomTitle] = useState(
+    editing?.config.youtubeTitle ?? "",
+  );
   const availableEvents = events.filter(
     (e) => e.seasonId === seasonId && !e.archivedAt,
   );
   const selectedEvent = availableEvents.find((e) => e.id === eventId);
+  const effectiveTimezone = selectedEvent?.timezone ?? timezone;
+  const canonicalTitle = formatCanonicalGameTitle({
+    homeName: teamName,
+    awayName: opponentTbd ? null : opponentSearch,
+    eventName: selectedEvent?.name ?? null,
+  });
+  const scheduledInstant = localDateTimeToUtc(
+    scheduledDate,
+    scheduledTime,
+    effectiveTimezone,
+  );
+  const generatedTitle = formatYouTubeScheduledTitle(
+    canonicalTitle,
+    scheduledInstant,
+    effectiveTimezone,
+  );
+  const youtubeTitle = titleCustomized ? customTitle : generatedTitle;
   const suggested = useMemo(
     () =>
       Math.max(
@@ -196,7 +234,7 @@ export function GameCreationForm({
           homeColor: form.get("homeColor"),
           awayColor: form.get("awayColor"),
           scheduledEnds: Number(form.get("scheduledEnds")),
-          youtubeTitle: form.get("youtubeTitle"),
+          youtubeTitle,
           youtubeVisibility: form.get("youtubeVisibility"),
         },
       });
@@ -212,13 +250,10 @@ export function GameCreationForm({
       setBusy(false);
     }
   }
-  const local = editing?.scheduledStart
-    ? new Date(editing.scheduledStart)
-    : null;
   return (
     <>
       <nav aria-label="Breadcrumb" className="mb-4">
-        <LinkText href="/dashboard">Dashboard</LinkText>
+        <LinkText href="/dashboard">Games</LinkText>
         <span> → {editing ? "Edit Schedule" : "Schedule a Game"}</span>
       </nav>
       <form onSubmit={submit} className="panel grid gap-4 md:grid-cols-2">
@@ -308,7 +343,8 @@ export function GameCreationForm({
             required
             name="scheduledDate"
             type="date"
-            defaultValue={local?.toISOString().slice(0, 10)}
+            value={scheduledDate}
+            onChange={(event) => setScheduledDate(event.target.value)}
             min={selectedEvent?.startDate}
             max={selectedEvent?.endDate}
             className="mt-1 w-full rounded-lg bg-slate-800 p-3"
@@ -320,7 +356,8 @@ export function GameCreationForm({
             required
             name="scheduledTime"
             type="time"
-            defaultValue={local?.toISOString().slice(11, 16)}
+            value={scheduledTime}
+            onChange={(event) => setScheduledTime(event.target.value)}
             className="mt-1 w-full rounded-lg bg-slate-800 p-3"
           />
         </label>
@@ -334,7 +371,8 @@ export function GameCreationForm({
             <input
               required
               name="timezone"
-              defaultValue="UTC"
+              value={timezone}
+              onChange={(event) => setTimezone(event.target.value)}
               placeholder="America/Edmonton"
               className="mt-1 w-full rounded-lg bg-slate-800 p-3"
             />
@@ -400,13 +438,37 @@ export function GameCreationForm({
           </select>
         </label>
         <label className="md:col-span-2">
-          Broadcast title
+          YouTube title
           <input
             required
             name="youtubeTitle"
-            defaultValue={editing?.config.youtubeTitle ?? `${teamName} curling`}
+            value={youtubeTitle}
+            readOnly={!titleCustomized}
+            onChange={(event) => setCustomTitle(event.target.value)}
             className="mt-1 w-full rounded-lg bg-slate-800 p-3"
           />
+          <span className="mt-2 flex flex-wrap gap-3">
+            {!titleCustomized ? (
+              <button
+                type="button"
+                className="min-h-11 text-cyan-300"
+                onClick={() => {
+                  setCustomTitle(generatedTitle);
+                  setTitleCustomized(true);
+                }}
+              >
+                Customize title
+              </button>
+            ) : (
+              <button
+                type="button"
+                className="min-h-11 text-cyan-300"
+                onClick={() => setTitleCustomized(false)}
+              >
+                Reset to generated title
+              </button>
+            )}
+          </span>
         </label>
         <button disabled={busy || !seasonId} className="btn md:col-span-2">
           {busy ? "Saving…" : editing ? "Save schedule" : "Schedule game"}

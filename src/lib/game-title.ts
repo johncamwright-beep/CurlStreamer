@@ -57,7 +57,13 @@ export function formatYouTubeScheduledTitle(
       dateStyle: "medium",
       timeStyle: "short",
     }).format(date);
-    return `${title} — ${formatted} ${timezone}`;
+    const zone = new Intl.DateTimeFormat("en-US", {
+      timeZone: timezone,
+      timeZoneName: "short",
+    })
+      .formatToParts(date)
+      .find((part) => part.type === "timeZoneName")?.value;
+    return `${title} — ${formatted} ${zone ?? timezone}`;
   } catch {
     return title;
   }

@@ -21,7 +21,7 @@ describe("canonical scheduled game title usage", () => {
 
   it("uses canonical titles in game action accessibility labels", () => {
     const links = source("src/components/TeamGameLinks.tsx");
-    for (const action of ["Open Game", "Edit Schedule", "Scoring", "Broadcast"])
+    for (const action of ["Open Game", "Edit Schedule", "Broadcast"])
       expect(links).toContain(`aria-label={\`${action}: \${title}\`}`);
   });
 

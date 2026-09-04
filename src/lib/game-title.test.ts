@@ -57,7 +57,7 @@ describe("scheduled game titles", () => {
         "2026-01-16T02:30:00.000Z",
         "America/Edmonton",
       ),
-    ).toBe("A vs B — Final — Jan 15, 2026, 7:30 PM America/Edmonton");
+    ).toBe("A vs B — Final — Jan 15, 2026, 7:30 PM MST");
     expect(
       formatYouTubeScheduledTitle("A vs B", "invalid", "America/Edmonton"),
     ).toBe("A vs B");

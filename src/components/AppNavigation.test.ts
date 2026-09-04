@@ -21,17 +21,25 @@ const css = readFileSync(
 
 describe("shared application navigation", () => {
   it("shows only existing signed-in or signed-out account destinations", () => {
-    expect(navigation).toContain('{ href: "/dashboard", label: "Dashboard" }');
     expect(navigation).toContain(
-      '{ href: "/games/new", label: "Schedule a Game" }',
+      '{ href: "/dashboard", label: "Games", icon: "game" }',
     );
-    expect(navigation).toContain('{ href: "/account", label: "Account" }');
-    expect(navigation).toContain('{ href: "/login", label: "Sign In" }');
-    expect(navigation).toContain("{signedIn && (");
     expect(navigation).toContain(
-      '{ href: "/seasons", label: "Seasons & Events" }',
+      '{ href: "/games/new", label: "Schedule a game", icon: "calendar" }',
     );
-    expect(navigation).toContain('{ href: "/opponents", label: "Opponents" }');
+    expect(navigation).toContain(
+      '{ href: "/account", label: "Account", icon: "account" }',
+    );
+    expect(navigation).toContain(
+      '{ href: "/login", label: "Sign in", icon: "account" }',
+    );
+    expect(navigation).toContain("{signedIn ? (");
+    expect(navigation).toContain(
+      '{ href: "/seasons", label: "Seasons & events", icon: "list" }',
+    );
+    expect(navigation).toContain(
+      '{ href: "/opponents", label: "Opponents", icon: "opponent" }',
+    );
     expect(navigation).not.toMatch(/Administration|YouTube/);
     expect(home).not.toContain("AppNavigation");
     expect(home).toContain('<AuthForm mode="login" action={login} />');
@@ -40,12 +48,13 @@ describe("shared application navigation", () => {
 
   it("derives deterministic game links from existing token access helpers", () => {
     expect(navigation).toContain("hasOrganizerAccess(localStorage, gameId)");
+    expect(navigation).toContain("readCurrentGame(localStorage)");
     expect(navigation).toContain("hasScoringAccess(localStorage, gameId)");
-    expect(navigation).toContain("href: `/games/${gameId}`");
-    expect(navigation).toContain("href: `/score/${gameId}`");
-    expect(navigation).toContain("href: `/broadcast/${gameId}`");
-    expect(navigation).toContain('gameAccess === "organizer"');
-    expect(navigation).toContain('gameAccess === "scorer"');
+    expect(navigation).toContain("href: `/games/${current.id}`");
+    expect(navigation).toContain("href: `/score/${current.id}`");
+    expect(navigation).toContain("href: `/broadcast/${current.id}`");
+    expect(navigation).toContain('current.access === "organizer"');
+    expect(navigation).toContain('? "scorer"');
   });
 
   it("has accessible disclosure, dismissal, focus trapping, and scroll locking", () => {

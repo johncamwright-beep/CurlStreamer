@@ -1,7 +1,11 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getGame } from "@/lib/store";
-import { issueLiveKitToken, type LiveKitAccess } from "@/lib/providers/livekit";
+import {
+  issueLiveKitToken,
+  LiveKitConfigurationError,
+  type LiveKitAccess,
+} from "@/lib/providers/livekit";
 import {
   authorizeGame,
   operatorRoles,
@@ -47,7 +51,13 @@ export async function POST(
     return NextResponse.json({ error: "This game is closed" }, { status: 410 });
   try {
     return NextResponse.json(await issueLiveKitToken(id, role));
-  } catch {
+  } catch (error) {
+    const configuration = error instanceof LiveKitConfigurationError;
+    console.error("LiveKit credential service failed", {
+      operation: "issue_token",
+      category: configuration ? error.category : "signing",
+      ...(configuration ? { missingVariables: error.missingVariables } : {}),
+    });
     return NextResponse.json(
       { error: "Live video is not configured" },
       { status: 503 },

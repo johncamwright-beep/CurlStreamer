@@ -82,6 +82,43 @@ describe("game authorization lookup", () => {
     });
   });
 
+  it("accepts only the current device-bound participant claim", async () => {
+    mocks.getUser.mockResolvedValue({ data: { user: null } });
+    mocks.readAccessToken.mockResolvedValue({
+      gameId: "scheduled-game",
+      purpose: "participant",
+      role: "camera-home",
+      deviceId: "device-1",
+    });
+    mocks.getGame.mockResolvedValue({
+      status: "active",
+      claims: { "camera-home": "device-1" },
+    });
+    const participantOptions = {
+      ...options,
+      tokenAllowed: (access: { purpose: string }) =>
+        access.purpose === "participant",
+    };
+    await expect(
+      authorizeGame(
+        request("participant"),
+        "scheduled-game",
+        participantOptions,
+      ),
+    ).resolves.toMatchObject({ ok: true, via: "token" });
+    mocks.getGame.mockResolvedValue({
+      status: "active",
+      claims: { "camera-home": "replacement-device" },
+    });
+    await expect(
+      authorizeGame(
+        request("participant"),
+        "scheduled-game",
+        participantOptions,
+      ),
+    ).resolves.toEqual({ ok: false, reason: "unauthorized" });
+  });
+
   it.each([
     ["database failure", { ok: false }, "unavailable", 503],
     [

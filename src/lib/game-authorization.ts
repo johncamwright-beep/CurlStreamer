@@ -82,6 +82,13 @@ export async function authorizeGame(
         const game = await getGame(gameId);
         if (!game) return { ok: false, reason: "not-found" };
         if (game.status === "closed") return { ok: false, reason: "closed" };
+        if (
+          access.purpose === "participant" &&
+          (!access.role ||
+            !access.deviceId ||
+            game.claims[access.role] !== access.deviceId)
+        )
+          return { ok: false, reason: "unauthorized" };
         return { ok: true, via: "token", access };
       }
     } catch {

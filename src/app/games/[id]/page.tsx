@@ -65,57 +65,59 @@ export default function GameLobby({
         id={id}
         enabled={accountOperator || hasOrganizerAccess(localStorage, id)}
         claims={game.claims}
-      />
-      <div className="mt-5">
-        <section className="panel">
-          <h2 className="mb-3 text-xl font-bold">Connected devices</h2>
-          <div className="grid gap-3">
-            {(["camera-home", "camera-away", "scorer"] as const).map((role) => (
-              <div
-                key={role}
-                className="btn-secondary flex min-h-11 items-center justify-between gap-3"
-              >
-                <div>
-                  <strong>
-                    {role === "camera-home"
-                      ? "Camera 1"
-                      : role === "camera-away"
-                        ? "Camera 2"
-                        : "Scorekeeper + Audio"}
-                  </strong>
-                  <span className="ml-3 text-cyan-200">
-                    {role === "scorer"
-                      ? game.claims.scorer
-                        ? "Claimed"
-                        : "Not connected"
-                      : cameraDisplayStatus(game, role)}
-                  </span>
-                  {role !== "scorer" && game.cameraHealth?.[role] && (
-                    <small className="block text-slate-400">
-                      {game.cameraHealth[role]?.diagnostic
-                        ? `${game.cameraHealth[role]?.diagnostic} · `
-                        : ""}
-                      Updated{" "}
-                      {new Date(
-                        game.cameraHealth[role]!.updatedAt,
-                      ).toLocaleTimeString()}
-                    </small>
-                  )}
-                </div>
-                {role !== "scorer" && game.claims[role] && (
-                  <button
-                    className="min-h-11 rounded-lg border border-red-700 px-3 text-red-200"
-                    disabled={disconnecting === role}
-                    onClick={() => void disconnectCamera(role)}
+        connectedDevices={
+          <section className="panel min-w-0">
+            <h2 className="mb-3 text-xl font-bold">Connected devices</h2>
+            <div className="grid gap-3">
+              {(["camera-home", "camera-away", "scorer"] as const).map(
+                (role) => (
+                  <div
+                    key={role}
+                    className="btn-secondary flex min-h-11 items-center justify-between gap-3"
                   >
-                    Disconnect Camera
-                  </button>
-                )}
-              </div>
-            ))}
-          </div>
-        </section>
-      </div>
+                    <div className="min-w-0">
+                      <strong>
+                        {role === "camera-home"
+                          ? "Camera 1"
+                          : role === "camera-away"
+                            ? "Camera 2"
+                            : "Scorekeeper + Audio"}
+                      </strong>
+                      <span className="ml-3 text-cyan-200">
+                        {role === "scorer"
+                          ? game.claims.scorer
+                            ? "Claimed"
+                            : "Not connected"
+                          : cameraDisplayStatus(game, role)}
+                      </span>
+                      {role !== "scorer" && game.cameraHealth?.[role] && (
+                        <small className="block overflow-hidden text-ellipsis text-slate-400">
+                          {game.cameraHealth[role]?.diagnostic
+                            ? `${game.cameraHealth[role]?.diagnostic} · `
+                            : ""}
+                          Updated{" "}
+                          {new Date(
+                            game.cameraHealth[role]!.updatedAt,
+                          ).toLocaleTimeString()}
+                        </small>
+                      )}
+                    </div>
+                    {role !== "scorer" && game.claims[role] && (
+                      <button
+                        className="min-h-11 shrink-0 rounded-lg border border-red-700 px-3 text-red-200"
+                        disabled={disconnecting === role}
+                        onClick={() => void disconnectCamera(role)}
+                      >
+                        Disconnect Camera
+                      </button>
+                    )}
+                  </div>
+                ),
+              )}
+            </div>
+          </section>
+        }
+      />
       <section className="panel mt-5">
         <h2 className="text-xl font-bold">Game actions</h2>
         <div className="mt-3 flex flex-wrap gap-3">

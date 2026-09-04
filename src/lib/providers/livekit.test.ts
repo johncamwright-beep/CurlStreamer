@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { decodeJwt } from "jose";
 import {
   issueLiveKitToken,
+  LiveKitConfigurationError,
   liveKitIdentity,
   liveKitMetadata,
   liveKitVideoGrant,
@@ -9,6 +10,23 @@ import {
 } from "./livekit";
 
 describe("LiveKit grants", () => {
+  it("identifies missing server configuration without exposing values", async () => {
+    delete process.env.NEXT_PUBLIC_LIVEKIT_URL;
+    delete process.env.LIVEKIT_URL;
+    delete process.env.LIVEKIT_API_KEY;
+    delete process.env.LIVEKIT_API_SECRET;
+    await expect(issueLiveKitToken("game-1", "camera-home")).rejects.toEqual(
+      expect.objectContaining<Partial<LiveKitConfigurationError>>({
+        category: "configuration",
+        missingVariables: [
+          "NEXT_PUBLIC_LIVEKIT_URL",
+          "LIVEKIT_API_KEY",
+          "LIVEKIT_API_SECRET",
+        ],
+      }),
+    );
+  });
+
   it.each(["camera-home", "camera-away"] as const)(
     "limits %s to camera-only publishing",
     (role) => {
@@ -34,7 +52,7 @@ describe("LiveKit grants", () => {
   });
 
   it("does not put the API secret in the browser response or claims", async () => {
-    process.env.LIVEKIT_URL = "wss://live.example.test";
+    process.env.NEXT_PUBLIC_LIVEKIT_URL = "wss://live.example.test";
     process.env.LIVEKIT_API_KEY = "test-key";
     process.env.LIVEKIT_API_SECRET = "super-secret-value";
     const result = await issueLiveKitToken("game-1", "camera-home");

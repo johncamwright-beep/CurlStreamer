@@ -7,7 +7,12 @@ import { readFileSync } from "node:fs";
 describe("Game invitations", () => {
   it("shows an accessible recovery state instead of a blank QR or dead link", () => {
     const markup = renderToStaticMarkup(
-      <GameInvitations id="legacy-game" enabled claims={{}} />,
+      <GameInvitations
+        id="legacy-game"
+        enabled
+        claims={{}}
+        connectedDevices={<section>Connected devices</section>}
+      />,
     );
     expect(markup).toContain("Invitation unavailable.");
     expect(markup).toContain("Retry invitation");

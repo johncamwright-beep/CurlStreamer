@@ -38,10 +38,12 @@ export function GameInvitations({
   id,
   enabled,
   claims,
+  connectedDevices,
 }: {
   id: string;
   enabled: boolean;
   claims: Partial<Record<Role, string>>;
+  connectedDevices: React.ReactNode;
 }) {
   const [links, setLinks] = useState<Record<string, string>>({});
   const [chooser, setChooser] = useState<Invitation>();
@@ -95,10 +97,10 @@ export function GameInvitations({
   }, [regenerate]);
 
   return (
-    <section className="panel mt-6" aria-busy={loading}>
-      <h2 className="text-xl font-bold">Invite devices</h2>
-      <div className="mt-3 grid items-start gap-5 md:grid-cols-[288px_1fr]">
-        <div className="text-center">
+    <div className="mt-6 grid gap-5 overflow-hidden md:grid-cols-2">
+      <section className="panel min-w-0" aria-busy={loading}>
+        <h2 className="text-xl font-bold">Invite devices</h2>
+        <div className="mt-3 text-center">
           {qr && chooser ? (
             // The QR library produces a short-lived client-side data URL, not an optimizable asset.
             // eslint-disable-next-line @next/next/no-img-element
@@ -140,31 +142,32 @@ export function GameInvitations({
             {chooser ? "Regenerate invitation" : "Retry invitation"}
           </button>
         </div>
-        {chooser && Object.keys(links).length === invitationRoles.length && (
-          <details className="rounded-lg border border-slate-600 p-3">
-            <summary className="flex min-h-11 cursor-pointer items-center font-bold focus-visible:outline focus-visible:outline-2 focus-visible:outline-cyan-300">
-              Individual invitation links
-            </summary>
-            <p className="mb-3 text-sm text-slate-300">
-              Advanced: each link claims one role and expires after 30 minutes.
-            </p>
-            <div className="grid gap-3">
-              {invitationRoles.map(([role, label]) => (
-                <a
-                  key={role}
-                  href={links[role]}
-                  className="btn-secondary flex min-h-11 items-center justify-between focus-visible:outline focus-visible:outline-2 focus-visible:outline-cyan-300"
-                >
-                  <span>{label}</span>
-                  <span className="ml-3 text-cyan-200">
-                    {claims[role] ? "Claimed" : "Invite"}
-                  </span>
-                </a>
-              ))}
-            </div>
-          </details>
-        )}
-      </div>
-    </section>
+      </section>
+      {connectedDevices}
+      {chooser && Object.keys(links).length === invitationRoles.length && (
+        <details className="panel min-w-0 md:col-span-2">
+          <summary className="flex min-h-11 cursor-pointer items-center font-bold focus-visible:outline focus-visible:outline-2 focus-visible:outline-cyan-300">
+            Individual invitation links
+          </summary>
+          <p className="mb-3 text-sm text-slate-300">
+            Advanced: each link claims one role and expires after 30 minutes.
+          </p>
+          <div className="grid gap-3">
+            {invitationRoles.map(([role, label]) => (
+              <a
+                key={role}
+                href={links[role]}
+                className="btn-secondary flex min-h-11 items-center justify-between focus-visible:outline focus-visible:outline-2 focus-visible:outline-cyan-300"
+              >
+                <span>{label}</span>
+                <span className="ml-3 text-cyan-200">
+                  {claims[role] ? "Claimed" : "Invite"}
+                </span>
+              </a>
+            ))}
+          </div>
+        </details>
+      )}
+    </div>
   );
 }

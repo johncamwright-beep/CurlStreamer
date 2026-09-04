@@ -4,6 +4,7 @@ import { getAccountContext } from "@/lib/auth/account";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { FirstTeamForm } from "./FirstTeamForm";
 import { AccountServiceUnavailable } from "@/components/AccountServiceUnavailable";
+import { AppNavigation } from "@/components/AppNavigation";
 
 export default async function OnboardingPage() {
   const supabase = await createServerSupabaseClient();
@@ -18,6 +19,12 @@ export default async function OnboardingPage() {
   if (account.membership) redirect("/dashboard");
   return (
     <main className="mx-auto min-h-screen max-w-md p-5 md:py-12">
+      <div className="mb-4">
+        <AppNavigation signedIn />
+      </div>
+      <div className="mb-4">
+        <AppNavigation signedIn />
+      </div>
       <FirstTeamForm />
     </main>
   );

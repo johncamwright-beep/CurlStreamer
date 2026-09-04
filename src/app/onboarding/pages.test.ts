@@ -14,13 +14,16 @@ describe("first-team account pages", () => {
     expect(account).toContain("Return to CurlStreamer");
   });
 
-  it("protects and redirects the dashboard without exposing legacy games", () => {
+  it("protects and redirects the dashboard while listing authenticated team games", () => {
     const dashboard = source("../dashboard/page.tsx");
     expect(dashboard).toContain('redirect("/login")');
     expect(dashboard).toContain('redirect("/onboarding")');
     expect(dashboard).toContain("Account access denied");
-    expect(dashboard).toContain("Team game management will be connected next.");
-    expect(dashboard).toContain("Open current game setup");
+    expect(dashboard).toContain("listTeamGames(user)");
+    expect(dashboard).toContain("TeamGameLinks");
+    expect(dashboard).toContain(
+      "Account-based control from another device is coming next",
+    );
     expect(dashboard).not.toMatch(/\.from\(["']games["']\)/);
   });
 

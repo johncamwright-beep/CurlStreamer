@@ -1,9 +1,13 @@
 import Link from "next/link";
 import { signOut } from "@/app/account/actions";
+import { AppNavigation } from "@/components/AppNavigation";
 
 export function AccountServiceUnavailable() {
   return (
     <main className="mx-auto min-h-screen max-w-xl p-5 md:py-12">
+      <div className="mb-4">
+        <AppNavigation signedIn />
+      </div>
       <section className="panel grid gap-4" role="alert" aria-live="polite">
         <h1 className="text-3xl font-black">
           Account services are temporarily unavailable

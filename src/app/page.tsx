@@ -1,7 +1,7 @@
 "use client";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { AccountNavigation } from "@/components/AccountNavigation";
+import { AppNavigation } from "@/components/AppNavigation";
 export default function Home() {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
@@ -37,9 +37,9 @@ export default function Home() {
   return (
     <main className="mx-auto min-h-screen max-w-3xl p-5 md:py-12">
       <header className="mb-8">
-        <nav className="mb-3 flex justify-end">
-          <AccountNavigation />
-        </nav>
+        <div className="mb-3">
+          <AppNavigation />
+        </div>
         <p className="font-bold tracking-widest text-cyan-300">
           CURLCAST · MOCK MODE
         </p>
@@ -53,7 +53,11 @@ export default function Home() {
           shared network.
         </p>
       </header>
-      <form onSubmit={submit} className="panel grid gap-4 md:grid-cols-2">
+      <form
+        id="create-game"
+        onSubmit={submit}
+        className="panel grid gap-4 md:grid-cols-2"
+      >
         <h2 className="text-2xl font-bold md:col-span-2">Create a game</h2>
         <label>
           Event

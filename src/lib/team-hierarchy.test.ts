@@ -27,21 +27,25 @@ describe("team hierarchy validation", () => {
     ).toBe(false);
   });
 
-  it.each(["tournament", "bonspiel", "league", "exhibition", "other"])(
-    "supports %s events",
-    (eventType) => {
-      expect(
-        eventInputSchema.safeParse({
-          seasonId: "d9428888-122b-4f22-93b0-2dd424213a31",
-          name: "Event",
-          eventType,
-          startDate: "2026-10-01",
-          endDate: "2026-10-02",
-          timezone: "America/Phoenix",
-        }).success,
-      ).toBe(true);
-    },
-  );
+  it.each([
+    "tournament",
+    "bonspiel",
+    "league",
+    "playoff",
+    "exhibition",
+    "other",
+  ])("supports %s events", (eventType) => {
+    expect(
+      eventInputSchema.safeParse({
+        seasonId: "d9428888-122b-4f22-93b0-2dd424213a31",
+        name: "Event",
+        eventType,
+        startDate: "2026-10-01",
+        endDate: "2026-10-02",
+        timezone: "America/Phoenix",
+      }).success,
+    ).toBe(true);
+  });
 
   it("rejects invalid event ranges, types, and timezones", () => {
     expect(isIanaTimezone("America/Toronto")).toBe(true);
@@ -64,9 +68,11 @@ describe("team hierarchy validation", () => {
 
   it("requires a positive game number and offset timestamp", () => {
     const base = {
+      seasonId: crypto.randomUUID(),
       eventId: crypto.randomUUID(),
       opponentId: crypto.randomUUID(),
       scheduledStart: "2026-10-01T18:30:00-07:00",
+      timezone: "America/Phoenix",
     };
     expect(
       scheduledGameInputSchema.safeParse({ ...base, gameNumber: 1 }).success,
@@ -81,6 +87,19 @@ describe("team hierarchy validation", () => {
         scheduledStart: "tomorrow",
       }).success,
     ).toBe(false);
+  });
+
+  it("allows a season-only game with a TBD opponent and no game number", () => {
+    expect(
+      scheduledGameInputSchema.safeParse({
+        seasonId: crypto.randomUUID(),
+        eventId: null,
+        opponentId: null,
+        scheduledStart: "2026-10-02T01:30:00.000Z",
+        timezone: "America/Toronto",
+        gameNumber: null,
+      }).success,
+    ).toBe(true);
   });
 
   it("converts an event wall-clock time to UTC and displays it in that zone", () => {

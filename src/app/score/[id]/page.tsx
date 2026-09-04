@@ -62,6 +62,26 @@ export default function Scorer({
       </main>
     );
   if (!game) return <main className="p-8">Loading controls…</main>;
+  if (game.config.awayName === "Opponent TBD")
+    return (
+      <main className="mx-auto max-w-xl p-5">
+        <div className="mb-4">
+          <AppNavigation gameId={id} />
+        </div>
+        <section className="panel" role="alert">
+          <h1 className="text-3xl font-black">
+            Assign opponent before scoring
+          </h1>
+          <p className="mt-3">
+            This game is scheduled with Opponent TBD. Assign the actual opponent
+            before scoring begins.
+          </p>
+          <Link className="btn mt-4 inline-flex" href={`/games/${id}/edit`}>
+            Edit Schedule
+          </Link>
+        </section>
+      </main>
+    );
   if (game.status === "closed")
     return (
       <main className="mx-auto max-w-lg p-5">

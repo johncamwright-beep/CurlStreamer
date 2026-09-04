@@ -12,6 +12,12 @@ export function TeamGameLinks({ gameId }: { gameId: string }) {
       </Link>
       <Link
         className="min-h-11 rounded-lg bg-slate-700 px-3 py-3"
+        href={`/games/${gameId}/edit`}
+      >
+        Edit Schedule
+      </Link>
+      <Link
+        className="min-h-11 rounded-lg bg-slate-700 px-3 py-3"
         href={`/score/${gameId}`}
       >
         Scoring

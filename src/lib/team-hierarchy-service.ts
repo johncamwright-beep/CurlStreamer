@@ -190,9 +190,11 @@ export async function createScheduledTeamGame(
   const created = await rpc<null>("create_scheduled_team_game", {
     p_user_id: user.id,
     p_game_id: state.id,
+    p_season_id: value.seasonId,
     p_event_id: value.eventId,
     p_opponent_id: value.opponentId,
     p_scheduled_start: value.scheduledStart,
+    p_timezone: value.timezone,
     p_game_number: value.gameNumber,
     p_game_label: value.gameLabel ?? "",
     p_config: config,
@@ -203,4 +205,29 @@ export async function createScheduledTeamGame(
     ok: true as const,
     value: { game: state, organizerToken: await issueOrganizerToken(state.id) },
   };
+}
+
+export function updateScheduledTeamGame(
+  user: User,
+  gameId: string,
+  input: ScheduledGameInput,
+) {
+  const parsed = scheduledGameInputSchema.safeParse(input);
+  if (!parsed.success)
+    return Promise.resolve({
+      ok: false as const,
+      kind: "validation" as const,
+      issues: parsed.error.issues,
+    });
+  return rpc<null>("update_scheduled_team_game", {
+    p_user_id: user.id,
+    p_game_id: gameId,
+    p_season_id: parsed.data.seasonId,
+    p_event_id: parsed.data.eventId,
+    p_opponent_id: parsed.data.opponentId,
+    p_scheduled_start: parsed.data.scheduledStart,
+    p_game_number: parsed.data.gameNumber,
+    p_timezone: parsed.data.timezone,
+    p_game_label: parsed.data.gameLabel ?? "",
+  });
 }

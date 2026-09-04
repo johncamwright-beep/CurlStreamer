@@ -21,13 +21,11 @@ const css = readFileSync(
 
 describe("shared application navigation", () => {
   it("shows only existing signed-in or signed-out account destinations", () => {
+    expect(navigation).toContain('{ href: "/dashboard", label: "Dashboard" }');
     expect(navigation).toContain(
-      '{ href: "/dashboard", label: "Team Dashboard" }',
+      '{ href: "/games/new", label: "Schedule a Game" }',
     );
-    expect(navigation).toContain(
-      '{ href: "/games/new", label: "Create a Game" }',
-    );
-    expect(navigation).toContain('{ href: "/account", label: "My Account" }');
+    expect(navigation).toContain('{ href: "/account", label: "Account" }');
     expect(navigation).toContain('{ href: "/login", label: "Sign In" }');
     expect(navigation).toContain("{signedIn && (");
     expect(navigation).toContain(

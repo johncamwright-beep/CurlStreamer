@@ -43,18 +43,20 @@ export default async function DashboardPage() {
   const events = active
     ? hierarchy.events.filter((event) => event.seasonId === active.id)
     : [];
-  const eventIds = new Set(events.map((event) => event.id));
   const upcoming = hierarchy.games
     .filter(
       (game) =>
         game.scheduledStart &&
-        eventIds.has(game.eventId ?? "") &&
+        game.seasonId === active?.id &&
         new Date(game.scheduledStart).getTime() >= Date.now(),
     )
     .slice(0, 5);
-  const legacy = hierarchy.games.filter(
-    (game) => !game.seasonId || !game.eventId,
-  );
+  const singleGames = active
+    ? hierarchy.games.filter(
+        (game) => game.seasonId === active.id && !game.eventId,
+      )
+    : [];
+  const legacy = hierarchy.games.filter((game) => !game.seasonId);
   return (
     <main className="mx-auto min-h-screen max-w-5xl p-5 md:py-12">
       <div className="mb-4">
@@ -101,9 +103,7 @@ export default async function DashboardPage() {
             {upcoming.length ? (
               <ol className="grid gap-2">
                 {upcoming.map((game) => {
-                  const event = events.find(
-                    (item) => item.id === game.eventId,
-                  )!;
+                  const event = events.find((item) => item.id === game.eventId);
                   return (
                     <li className="rounded-lg bg-slate-800 p-4" key={game.id}>
                       <Link
@@ -116,9 +116,9 @@ export default async function DashboardPage() {
                       <p>
                         {formatScheduledStart(
                           game.scheduledStart!,
-                          event.timezone,
+                          event?.timezone ?? game.timezone ?? "UTC",
                         )}{" "}
-                        · {event.name}
+                        · {event?.name ?? "Single Game"}
                       </p>
                     </li>
                   );
@@ -126,6 +126,22 @@ export default async function DashboardPage() {
               </ol>
             ) : (
               <p className="panel">No upcoming games in the current season.</p>
+            )}
+          </section>
+          <section className="mb-5 grid gap-3">
+            <h2 className="text-2xl font-bold">Single Games</h2>
+            {singleGames.length ? (
+              singleGames.map((game) => (
+                <GameCard
+                  key={game.id}
+                  game={game}
+                  teamName={membership.teamName}
+                  timezone={game.timezone ?? "UTC"}
+                  role={membership.role}
+                />
+              ))
+            ) : (
+              <p className="panel">No single games in this season.</p>
             )}
           </section>
           <section className="mb-5 grid gap-4">
@@ -258,7 +274,7 @@ function GameCard({
           (game.gameNumber ? `Game ${game.gameNumber}` : game.config.eventName)}
       </h4>
       <p>
-        {teamName} vs. {game.config.awayName}
+        {teamName} vs. {game.opponentId ? game.config.awayName : "Opponent TBD"}
       </p>
       <p className="text-sm text-slate-300">
         {game.scheduledStart && timezone

@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState } from "react";
 import type { LibrarySponsor } from "@/lib/types";
 import {
   snapshotSponsorFiles,
+  optimizeSponsorFile,
   uploadSponsorFiles,
   type PendingSponsorFile,
 } from "./sponsor-upload";
@@ -93,9 +94,22 @@ export function SponsorLibrary() {
 
   async function replace(sponsor: LibrarySponsor, file?: File) {
     if (!file) return;
+    setMessage(`Optimizing ${file.name}…`);
+    let optimized: File;
+    try {
+      optimized = await optimizeSponsorFile(file);
+    } catch (error) {
+      setMessage(
+        error instanceof Error
+          ? error.message
+          : `${file.name}: optimization failed.`,
+      );
+      return;
+    }
+    setMessage(`Uploading ${file.name}…`);
     const form = new FormData();
     form.set("id", sponsor.id);
-    form.set("file", file);
+    form.set("file", optimized);
     const response = await fetch("/api/sponsors", {
       method: "PUT",
       body: form,
@@ -161,7 +175,7 @@ export function SponsorLibrary() {
           aria-label={`${sponsor.archived ? "Enable" : "Disable"} ${sponsor.name}`}
           onClick={() => void update(sponsor, !sponsor.archived)}
         >
-          {sponsor.archived ? "Disabled" : "Active"}
+          {sponsor.archived ? "Enable" : "Disable"}
         </button>
       )}
       {editable && !sponsor.archived && (

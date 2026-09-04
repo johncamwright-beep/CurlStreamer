@@ -5,6 +5,7 @@ import type { GameState } from "@/lib/types";
 import { formatBroadcastRailTitle } from "@/lib/game-title";
 import { LiveKitCameraFeed } from "./LiveKitCameraFeed";
 import { isScorerAudioEffectivelyMuted } from "@/lib/sponsor-audio";
+import { DecodedSponsorImage } from "./DecodedSponsorImage";
 function Camera({
   side,
   gameId,
@@ -36,9 +37,15 @@ function Camera({
 export function BroadcastCanvas({ game }: { game: GameState }) {
   const [, tick] = useState(0);
   useEffect(() => {
+    if (
+      !game.sponsorMode.active ||
+      game.sponsorMode.paused ||
+      game.sponsors.filter((s) => s.enabled).length <= 1
+    )
+      return;
     const t = setInterval(() => tick((x) => x + 1), 250);
     return () => clearInterval(t);
-  }, []);
+  }, [game.sponsorMode.active, game.sponsorMode.paused, game.sponsors]);
   const sponsors = game.sponsors.filter((s) => s.enabled);
   const m = game.sponsorMode;
   const elapsed =
@@ -87,11 +94,10 @@ export function BroadcastCanvas({ game }: { game: GameState }) {
           )}
           {visibleSponsorOverlay && sponsor && (
             <div data-testid="sponsor-overlay" className="sponsor-deck-overlay">
-              <img
-                src={sponsor.dataUrl}
-                alt={(sponsor as { altText?: string }).altText ?? sponsor.name}
-                className="safe-video aspect-square object-contain p-[1cqw]"
-                style={{ transform: `rotate(${sponsor.rotation}deg)` }}
+              <DecodedSponsorImage
+                sponsors={sponsors}
+                desiredIndex={idx}
+                className="sponsor-adaptive-image"
               />
             </div>
           )}
@@ -112,16 +118,15 @@ export function BroadcastCanvas({ game }: { game: GameState }) {
           {m.active && m.style === "fullscreen" && sponsor && (
             <div
               data-testid="sponsor-sidebar"
-              className="sponsor-sidebar rounded-2xl bg-white p-[1cqw]"
+              className="sponsor-sidebar rounded-2xl bg-white"
             >
               <p className="mb-2 text-center text-[.8cqw] font-bold text-slate-700">
                 PRESENTED BY
               </p>
-              <img
-                src={sponsor.dataUrl}
-                alt={(sponsor as { altText?: string }).altText ?? sponsor.name}
-                className="safe-video aspect-square h-full w-full object-contain"
-                style={{ transform: `rotate(${sponsor.rotation}deg)` }}
+              <DecodedSponsorImage
+                sponsors={sponsors}
+                desiredIndex={idx}
+                className="sponsor-adaptive-image"
               />
             </div>
           )}

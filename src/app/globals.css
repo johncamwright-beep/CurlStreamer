@@ -178,11 +178,12 @@ button {
   height: 32px;
 }
 .sponsor-sidebar {
-  display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
-  height: 370px;
+  display: flex;
+  flex-direction: column;
+  max-height: 370px;
   margin-top: 18px;
   overflow: hidden;
+  padding: 14px;
 }
 .broadcast-camera-deck[data-camera-count="1"] .broadcast-camera-panel {
   height: 100%;
@@ -201,17 +202,21 @@ button {
 }
 .sponsor-deck-overlay {
   position: absolute;
-  inset: 25%;
+  inset: 12.5%;
   z-index: 30;
   display: grid;
   place-items: center;
   border-radius: 1rem;
-  background: rgb(255 255 255 / 82%);
+  background: #fff;
   padding: 2%;
+  overflow: hidden;
 }
-.sponsor-deck-overlay img {
+.sponsor-adaptive-image {
+  display: block;
   width: 100%;
-  height: 100%;
+  height: auto;
+  max-height: 100%;
+  object-fit: contain;
 }
 .broadcast-viewport {
   position: fixed;

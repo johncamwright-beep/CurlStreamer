@@ -11,7 +11,7 @@ describe("sponsor management separation", () => {
     expect(library).toContain("<details");
     expect(library).toContain("disabled={index === 0}");
     expect(library).toContain("disabled={index === active.length - 1}");
-    expect(library).toContain('sponsor.archived ? "Enable" : "Disable"');
+    expect(library).toContain('{sponsor.archived ? "Enable" : "Disable"}');
   });
 
   it("keeps only carousel operations on scoring control", () => {

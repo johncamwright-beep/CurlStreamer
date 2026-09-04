@@ -21,7 +21,7 @@ export default function Broadcast({
   params: Promise<{ id: string }>;
 }) {
   const { id } = use(params);
-  const { game } = useGame(id);
+  const { game, error, accountOperator } = useGame(id);
   const [scale, setScale] = useState<number>();
   const [operator, setOperator] = useState(false);
   useEffect(() => setOperator(hasScoringAccess(localStorage, id)), [id]);
@@ -45,11 +45,17 @@ export default function Broadcast({
       window.visualViewport?.removeEventListener("resize", fit);
     };
   }, []);
+  if (error)
+    return (
+      <main role="alert" className="p-8">
+        {error}
+      </main>
+    );
   if (!game) return <main className="p-8">Loading 1920×1080 program…</main>;
   return (
     <main className="broadcast-viewport">
-      <BroadcastOperatorNavigation id={id} />
-      {operator && (
+      <BroadcastOperatorNavigation id={id} accountOperator={accountOperator} />
+      {(operator || accountOperator) && (
         <AppNavigation className="broadcast-app-navigation" gameId={id} />
       )}
       <div

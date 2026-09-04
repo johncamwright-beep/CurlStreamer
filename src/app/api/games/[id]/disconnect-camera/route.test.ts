@@ -1,12 +1,16 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
-  readAccessToken: vi.fn(),
+  authorizeGame: vi.fn(),
   removeCameraParticipant: vi.fn(),
   getGame: vi.fn(),
   updateGame: vi.fn(),
 }));
-vi.mock("@/lib/tokens", () => ({ readAccessToken: mocks.readAccessToken }));
+vi.mock("@/lib/game-authorization", () => ({
+  operatorRoles: ["owner", "team_admin", "scorer"],
+  authorizeGame: mocks.authorizeGame,
+  authorizationError: () => ({ error: "Game access is required", status: 403 }),
+}));
 vi.mock("@/lib/providers/livekit", () => ({
   removeCameraParticipant: mocks.removeCameraParticipant,
 }));
@@ -31,22 +35,26 @@ function request(role = "camera-home", token = "token") {
 describe("organizer camera disconnect route", () => {
   beforeEach(() => {
     vi.resetAllMocks();
+    mocks.authorizeGame.mockResolvedValue({
+      ok: true,
+      via: "token",
+      access: { purpose: "organizer", gameId: "game-1" },
+    });
     mocks.getGame.mockResolvedValue({ claims: { "camera-home": "claimed" } });
   });
 
   it("requires organizer authorization for the same game", async () => {
-    mocks.readAccessToken.mockResolvedValue({
-      purpose: "participant",
-      gameId: "game-1",
-      role: "camera-home",
+    mocks.authorizeGame.mockResolvedValue({
+      ok: false,
+      reason: "unauthorized",
     });
     expect(
       (await POST(request(), { params: Promise.resolve({ id: "game-1" }) }))
         .status,
     ).toBe(403);
-    mocks.readAccessToken.mockResolvedValue({
-      purpose: "organizer",
-      gameId: "another-game",
+    mocks.authorizeGame.mockResolvedValue({
+      ok: false,
+      reason: "unauthorized",
     });
     expect(
       (await POST(request(), { params: Promise.resolve({ id: "game-1" }) }))
@@ -56,10 +64,6 @@ describe("organizer camera disconnect route", () => {
   });
 
   it("rejects an incorrect or unclaimed role", async () => {
-    mocks.readAccessToken.mockResolvedValue({
-      purpose: "organizer",
-      gameId: "game-1",
-    });
     expect(
       (
         await POST(request("scorer"), {
@@ -78,10 +82,6 @@ describe("organizer camera disconnect route", () => {
   });
 
   it("removes the selected participant and persists disconnected", async () => {
-    mocks.readAccessToken.mockResolvedValue({
-      purpose: "organizer",
-      gameId: "game-1",
-    });
     const response = await POST(request(), {
       params: Promise.resolve({ id: "game-1" }),
     });

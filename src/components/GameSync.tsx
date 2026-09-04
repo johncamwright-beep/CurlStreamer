@@ -4,10 +4,17 @@ import type { GameState } from "@/lib/types";
 export function useGame(id: string) {
   const [game, setGame] = useState<GameState>();
   const [error, setError] = useState("");
+  const [accountOperator, setAccountOperator] = useState(false);
   const refresh = useCallback(async () => {
     const r = await fetch(`/api/games/${id}`, { cache: "no-store" });
-    if (r.ok) setGame(await r.json());
-    else setError("Game is unavailable.");
+    if (r.ok) {
+      setGame(await r.json());
+      setAccountOperator(r.headers.get("x-curlcast-operator") === "true");
+      setError("");
+    } else {
+      const body = await r.json().catch(() => null);
+      setError(body?.error ?? "Game is unavailable.");
+    }
   }, [id]);
   useEffect(() => {
     void refresh();
@@ -43,5 +50,5 @@ export function useGame(id: string) {
     },
     [id, refresh],
   );
-  return { game, error, act, refresh };
+  return { game, error, act, refresh, accountOperator };
 }

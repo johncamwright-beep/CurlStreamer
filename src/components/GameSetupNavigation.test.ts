@@ -16,7 +16,9 @@ const broadcast = readFileSync(
 
 describe("setup navigation", () => {
   it("uses deterministic authorized and safe destinations", () => {
-    expect(navigation).toContain("organizer ? `/games/${id}` : `/join/${id}`");
+    expect(navigation).toContain(
+      "organizer || accountOperator ? `/games/${id}` : `/join/${id}`",
+    );
     expect(navigation).toContain("Back to Game Setup");
     expect(navigation).toContain("Exit Scoring");
     expect(navigation).not.toContain("router.back");

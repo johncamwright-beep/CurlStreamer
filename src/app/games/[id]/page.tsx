@@ -17,7 +17,7 @@ export default function GameLobby({
   params: Promise<{ id: string }>;
 }) {
   const { id } = use(params);
-  const { game, error, act } = useGame(id);
+  const { game, error, act, accountOperator } = useGame(id);
   const [links, setLinks] = useState<Record<string, string>>({});
   const [qr, setQr] = useState("");
   const [chooserUrl, setChooserUrl] = useState("");
@@ -44,14 +44,16 @@ export default function GameLobby({
   useEffect(() => {
     if (!game) return;
     const organizerToken = localStorage.getItem(`curlcast-access-${id}`);
-    if (!organizerToken) return;
+    if (!organizerToken && !accountOperator) return;
     void Promise.all(
       roles.map(async ([role]) => {
         const r = await fetch(`/api/games/${id}/invitations`, {
           method: "POST",
           headers: {
             "content-type": "application/json",
-            authorization: `Bearer ${organizerToken}`,
+            ...(organizerToken
+              ? { authorization: `Bearer ${organizerToken}` }
+              : {}),
           },
           body: JSON.stringify({ role }),
         });
@@ -65,7 +67,9 @@ export default function GameLobby({
         method: "POST",
         headers: {
           "content-type": "application/json",
-          authorization: `Bearer ${organizerToken}`,
+          ...(organizerToken
+            ? { authorization: `Bearer ${organizerToken}` }
+            : {}),
         },
         body: JSON.stringify({ role: "chooser" }),
       });
@@ -74,7 +78,7 @@ export default function GameLobby({
       setChooserUrl(url);
       setQr(await QRCode.toDataURL(url));
     });
-  }, [game?.id, id]);
+  }, [game?.id, id, accountOperator]);
   if (error) return <main className="p-8">{error}</main>;
   if (!game) return <main className="p-8">Loading game…</main>;
   return (
@@ -82,7 +86,7 @@ export default function GameLobby({
       <div className="mb-4">
         <AppNavigation gameId={id} />
       </div>
-      <p className="text-cyan-300">ORGANIZER · MOCK AUTH</p>
+      <p className="text-cyan-300">GAME SETUP</p>
       <h1 className="text-4xl font-black">{game.config.eventName}</h1>
       <p className="text-slate-300">
         {game.config.homeName} vs {game.config.awayName} ·{" "}

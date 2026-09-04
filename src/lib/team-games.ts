@@ -16,6 +16,7 @@ export type TeamGameSummary = {
   away_name: string;
   created_at: string;
   game_status: string;
+  deleted_at?: string;
 };
 
 function safeDiagnostic(operation: string, error: unknown) {
@@ -134,6 +135,18 @@ export async function listTeamGames(user: User) {
   );
   if (error) {
     safeDiagnostic("list", error);
+    return { ok: false as const };
+  }
+  return { ok: true as const, games: (data ?? []) as TeamGameSummary[] };
+}
+
+export async function listDeletedTeamGames(user: User) {
+  const { data, error } = await createAdminSupabaseClient().rpc(
+    "list_deleted_team_games",
+    { p_user_id: user.id },
+  );
+  if (error) {
+    safeDiagnostic("list_deleted", error);
     return { ok: false as const };
   }
   return { ok: true as const, games: (data ?? []) as TeamGameSummary[] };

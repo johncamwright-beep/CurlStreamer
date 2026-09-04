@@ -33,6 +33,7 @@ export type ScheduledGameRecord = {
   eventId: string | null;
   opponentId: string | null;
   scheduledStart: string | null;
+  timezone: string | null;
   gameNumber: number | null;
   gameLabel: string | null;
   createdAt: string;
@@ -93,6 +94,7 @@ export async function loadTeamHierarchyData(user: User) {
         eventId: g.event_id as string | null,
         opponentId: g.opponent_id as string | null,
         scheduledStart: g.scheduled_start as string | null,
+        timezone: g.schedule_timezone as string | null,
         gameNumber: g.game_number as number | null,
         gameLabel: g.game_label as string | null,
         createdAt: g.created_at as string,

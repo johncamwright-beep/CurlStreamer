@@ -5,6 +5,7 @@ export const eventTypes = [
   "tournament",
   "bonspiel",
   "league",
+  "playoff",
   "exhibition",
   "other",
 ] as const;
@@ -48,10 +49,12 @@ export const eventInputSchema = z
 
 export const opponentInputSchema = z.object({ displayName: trimmedName(100) });
 export const scheduledGameInputSchema = z.object({
-  eventId: z.uuid(),
-  opponentId: z.uuid(),
+  seasonId: z.uuid(),
+  eventId: z.uuid().nullable(),
+  opponentId: z.uuid().nullable(),
   scheduledStart: z.iso.datetime({ offset: true }),
-  gameNumber: z.number().int().positive(),
+  timezone: z.string().trim().min(1).max(100).refine(isIanaTimezone),
+  gameNumber: z.number().int().positive().nullable(),
   gameLabel: z.string().trim().min(1).max(100).optional(),
 });
 

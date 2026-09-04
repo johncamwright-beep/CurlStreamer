@@ -86,7 +86,7 @@ export default function GameLobby({
       <div className="mb-4">
         <AppNavigation gameId={id} />
       </div>
-      <p className="text-cyan-300">GAME SETUP</p>
+      <p className="text-cyan-300">GAME CONTROL</p>
       <h1 className="text-4xl font-black">{game.config.eventName}</h1>
       <p className="text-slate-300">
         {game.config.homeName} vs {game.config.awayName} ·{" "}
@@ -152,6 +152,11 @@ export default function GameLobby({
             ))}
           </div>
           <div className="mt-5 flex flex-wrap gap-3">
+            {accountOperator && (
+              <Link className="btn-secondary" href={`/games/${id}/edit`}>
+                Edit Schedule
+              </Link>
+            )}
             <Link className="btn" href={`/score/${id}`}>
               Open scoring
             </Link>

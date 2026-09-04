@@ -14,6 +14,7 @@ import {
   setCurrentSeason,
   updateEvent,
   listOpponents,
+  updateScheduledTeamGame,
 } from "@/lib/team-hierarchy-service";
 import {
   eventInputSchema,
@@ -47,19 +48,23 @@ const requestSchema = z.discriminatedUnion("operation", [
   }),
   z
     .object({
-      operation: z.literal("createGame"),
-      eventId: id,
+      operation: z.enum(["createGame", "updateGame"]),
+      gameId: id.optional(),
+      seasonId: id,
+      eventId: id.nullable(),
       opponentId: id.optional(),
       opponentName: z.string().trim().min(1).max(100).optional(),
       scheduledDate: z.iso.date(),
       scheduledTime: z.string().regex(/^\d{2}:\d{2}$/),
       timezone: z.string().min(1).max(100),
-      gameNumber: z.number().int().positive(),
+      gameNumber: z.number().int().positive().nullable(),
       gameLabel: z.string().trim().max(100).optional(),
       config: gameSchema,
     })
     .refine(
-      (value) => Boolean(value.opponentId) !== Boolean(value.opponentName),
+      (value) =>
+        !(value.opponentId && value.opponentName) &&
+        (value.operation === "createGame" || Boolean(value.gameId)),
       {
         message: "Select an opponent or add a new one.",
       },
@@ -121,23 +126,34 @@ export async function POST(request: Request) {
     case "restoreOpponent":
       result = await restoreOpponent(user, body.opponentId);
       break;
-    case "createGame": {
+    case "createGame":
+    case "updateGame": {
       const hierarchy = await loadTeamHierarchyData(user);
       if (!hierarchy.ok) return hierarchyFailure({ kind: "service" });
-      const selectedEvent = hierarchy.events.find(
-        (event) =>
-          event.id === body.eventId &&
-          !event.archivedAt &&
-          hierarchy.seasons.some(
-            (season) =>
-              season.id === event.seasonId && season.status === "active",
-          ),
+      const selectedSeason = hierarchy.seasons.find(
+        (season) => season.id === body.seasonId && season.status !== "archived",
       );
-      if (!selectedEvent) return hierarchyFailure({ kind: "authorization" });
+      const selectedEvent = body.eventId
+        ? hierarchy.events.find(
+            (event) =>
+              event.id === body.eventId &&
+              !event.archivedAt &&
+              hierarchy.seasons.some(
+                (season) =>
+                  season.id === event.seasonId && season.status !== "archived",
+              ),
+          )
+        : undefined;
+      if (
+        !selectedSeason ||
+        (body.eventId &&
+          (!selectedEvent || selectedEvent.seasonId !== body.seasonId))
+      )
+        return hierarchyFailure({ kind: "authorization" });
       const scheduledStart = localDateTimeToUtc(
         body.scheduledDate,
         body.scheduledTime,
-        selectedEvent.timezone,
+        selectedEvent?.timezone ?? body.timezone,
       );
       if (!scheduledStart)
         return NextResponse.json(
@@ -148,7 +164,7 @@ export async function POST(request: Request) {
         );
       let opponentId = body.opponentId;
       let opponentName = body.opponentName;
-      if (!opponentId) {
+      if (!opponentId && body.opponentName) {
         const opponent = await findOrCreateOpponent(user, {
           displayName: body.opponentName!,
         });
@@ -157,7 +173,7 @@ export async function POST(request: Request) {
           ?.opponent_id;
         opponentName = (opponent.value as { display_name: string }[])[0]
           ?.display_name;
-      } else {
+      } else if (opponentId) {
         const opponents = await listOpponents(user);
         if (!opponents.ok) return hierarchyFailure(opponents);
         const selected = (
@@ -166,20 +182,34 @@ export async function POST(request: Request) {
         if (!selected) return hierarchyFailure({ kind: "authorization" });
         opponentName = selected.display_name;
       }
+      if (body.operation === "updateGame") {
+        result = await updateScheduledTeamGame(user, body.gameId!, {
+          seasonId: body.seasonId,
+          eventId: body.eventId,
+          opponentId: opponentId ?? null,
+          scheduledStart,
+          timezone: selectedEvent?.timezone ?? body.timezone,
+          gameNumber: body.eventId ? body.gameNumber : null,
+          gameLabel: body.gameLabel || undefined,
+        });
+        break;
+      }
       const gameId = randomUUID();
       const config = {
         ...body.config,
         homeName: hierarchy.teamName,
-        awayName: opponentName!,
+        awayName: opponentName ?? "Opponent TBD",
       };
       const state = initialGameState(gameId, config);
       result = await createScheduledTeamGame(
         user,
         {
+          seasonId: body.seasonId,
           eventId: body.eventId,
-          opponentId: opponentId!,
+          opponentId: opponentId ?? null,
           scheduledStart,
-          gameNumber: body.gameNumber,
+          timezone: selectedEvent?.timezone ?? body.timezone,
+          gameNumber: body.eventId ? body.gameNumber : null,
           gameLabel: body.gameLabel || undefined,
         },
         config,

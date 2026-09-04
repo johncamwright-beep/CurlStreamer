@@ -92,16 +92,16 @@ export function AppNavigation({
     { href: "/", label: "CurlStreamer Home" },
     ...(signedIn
       ? [
-          { href: "/dashboard", label: "Team Dashboard" },
+          { href: "/dashboard", label: "Dashboard" },
           { href: "/seasons", label: "Seasons & Events" },
           { href: "/opponents", label: "Opponents" },
-          { href: "/games/new", label: "Create a Game" },
-          { href: "/account", label: "My Account" },
+          { href: "/games/new", label: "Schedule a Game" },
+          { href: "/account", label: "Account" },
         ]
       : [{ href: "/login", label: "Sign In" }]),
     ...(gameId && gameAccess === "organizer"
       ? [
-          { href: `/games/${gameId}`, label: "Game Setup" },
+          { href: `/games/${gameId}`, label: "Game Control" },
           { href: `/score/${gameId}`, label: "Scoring" },
           { href: `/broadcast/${gameId}`, label: "Broadcast" },
         ]

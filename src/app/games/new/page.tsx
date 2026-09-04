@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { notFound, redirect } from "next/navigation";
+import { redirect } from "next/navigation";
 import { AccountServiceUnavailable } from "@/components/AccountServiceUnavailable";
 import { AppNavigation } from "@/components/AppNavigation";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
@@ -31,38 +31,12 @@ export default async function NewGamePage({
   if (!data.ok || !opponents.ok) return <AccountServiceUnavailable />;
   if (data.role === "viewer")
     return <Denied>Viewers cannot schedule games for this team.</Denied>;
-  const active = data.seasons.find((season) => season.status === "active");
   const selected = (await searchParams).eventId;
-  if (selected && !data.events.some((event) => event.id === selected))
-    notFound();
-  if (!active)
-    return (
-      <Denied>
-        <strong>Create a season first.</strong>
-        <Link className="btn mt-4 block text-center" href="/seasons">
-          Create a season
-        </Link>
-      </Denied>
-    );
-  const events = data.events.filter(
-    (event) => event.seasonId === active.id && !event.archivedAt,
-  );
-  if (!events.length)
-    return (
-      <Denied>
-        <strong>Create an event first.</strong>
-        <Link
-          className="btn mt-4 block text-center"
-          href={`/seasons/${active.id}`}
-        >
-          Create an event
-        </Link>
-      </Denied>
-    );
   const preselected =
-    selected && events.some((event) => event.id === selected)
+    selected &&
+    data.events.some((event) => event.id === selected && !event.archivedAt)
       ? selected
-      : events[0].id;
+      : undefined;
   return (
     <main className="mx-auto min-h-screen max-w-3xl p-5 md:py-12">
       <div className="mb-4">
@@ -70,8 +44,8 @@ export default async function NewGamePage({
       </div>
       <GameCreationForm
         teamName={data.teamName}
-        season={active}
-        events={events}
+        seasons={data.seasons}
+        events={data.events}
         opponents={opponents.value as never[]}
         games={data.games}
         preselectedEventId={preselected}

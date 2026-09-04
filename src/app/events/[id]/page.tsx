@@ -6,6 +6,7 @@ import { TeamGameLinks } from "@/components/TeamGameLinks";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { loadTeamHierarchyData } from "@/lib/team-hierarchy-data";
 import { formatScheduledStart } from "@/lib/team-hierarchy";
+import { formatCanonicalGameTitle } from "@/lib/game-title";
 
 export default async function EventPage({
   params,
@@ -77,23 +78,32 @@ export default async function EventPage({
             )}
           </div>
         ) : (
-          games.map((game) => (
-            <article className="panel" key={game.id}>
-              <h3 className="font-bold">
-                {game.gameLabel || `Game ${game.gameNumber}`}
-              </h3>
-              <p>
-                {data.teamName} vs. {game.config.awayName}
-              </p>
-              {game.scheduledStart && (
-                <p className="text-slate-300">
-                  {formatScheduledStart(game.scheduledStart, event.timezone)} ·{" "}
-                  {game.status}
-                </p>
-              )}
-              {data.role !== "viewer" && <TeamGameLinks gameId={game.id} />}
-            </article>
-          ))
+          games.map((game) => {
+            const title = formatCanonicalGameTitle({
+              homeName: game.config.homeName,
+              awayName: game.opponentId ? game.config.awayName : null,
+              eventName: game.config.eventName,
+            });
+            return (
+              <article className="panel" key={game.id}>
+                <h3 className="font-bold">{title}</h3>
+                {game.gameNumber && (
+                  <p className="text-sm text-slate-400">
+                    Game {game.gameNumber}
+                  </p>
+                )}
+                {game.scheduledStart && (
+                  <p className="text-slate-300">
+                    {formatScheduledStart(game.scheduledStart, event.timezone)}{" "}
+                    · {game.status}
+                  </p>
+                )}
+                {data.role !== "viewer" && (
+                  <TeamGameLinks gameId={game.id} title={title} />
+                )}
+              </article>
+            );
+          })
         )}
       </section>
     </main>

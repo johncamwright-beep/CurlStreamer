@@ -55,7 +55,6 @@ export const scheduledGameInputSchema = z.object({
   scheduledStart: z.iso.datetime({ offset: true }),
   timezone: z.string().trim().min(1).max(100).refine(isIanaTimezone),
   gameNumber: z.number().int().positive().nullable(),
-  gameLabel: z.string().trim().min(1).max(100).optional(),
 });
 
 export function normalizeOpponentName(value: string) {

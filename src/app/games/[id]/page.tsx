@@ -6,6 +6,7 @@ import { useGame } from "@/components/GameSync";
 import type { Role } from "@/lib/types";
 import { cameraDisplayStatus } from "@/lib/camera-status";
 import { AppNavigation } from "@/components/AppNavigation";
+import { canonicalTitleFromConfig } from "@/lib/game-title";
 const roles: [Role, string][] = [
   ["camera-home", "Camera 1"],
   ["camera-away", "Camera 2"],
@@ -81,13 +82,14 @@ export default function GameLobby({
   }, [game?.id, id, accountOperator]);
   if (error) return <main className="p-8">{error}</main>;
   if (!game) return <main className="p-8">Loading game…</main>;
+  const title = canonicalTitleFromConfig(game.config);
   return (
     <main className="mx-auto max-w-5xl p-5">
       <div className="mb-4">
         <AppNavigation gameId={id} />
       </div>
       <p className="text-cyan-300">GAME CONTROL</p>
-      <h1 className="text-4xl font-black">{game.config.eventName}</h1>
+      <h1 className="text-4xl font-black">{title}</h1>
       <p className="text-slate-300">
         {game.config.homeName} vs {game.config.awayName} ·{" "}
         {game.config.scheduledEnds} ends
@@ -153,14 +155,26 @@ export default function GameLobby({
           </div>
           <div className="mt-5 flex flex-wrap gap-3">
             {accountOperator && (
-              <Link className="btn-secondary" href={`/games/${id}/edit`}>
+              <Link
+                className="btn-secondary"
+                href={`/games/${id}/edit`}
+                aria-label={`Edit Schedule: ${title}`}
+              >
                 Edit Schedule
               </Link>
             )}
-            <Link className="btn" href={`/score/${id}`}>
+            <Link
+              className="btn"
+              href={`/score/${id}`}
+              aria-label={`Scoring: ${title}`}
+            >
               Open scoring
             </Link>
-            <Link className="btn-secondary" href={`/broadcast/${id}`}>
+            <Link
+              className="btn-secondary"
+              href={`/broadcast/${id}`}
+              aria-label={`Broadcast: ${title}`}
+            >
               Broadcast preview
             </Link>
             <button

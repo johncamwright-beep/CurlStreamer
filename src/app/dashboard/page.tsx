@@ -12,6 +12,7 @@ import {
   type ScheduledGameRecord,
 } from "@/lib/team-hierarchy-data";
 import { formatScheduledStart } from "@/lib/team-hierarchy";
+import { formatCanonicalGameTitle } from "@/lib/game-title";
 
 export default async function DashboardPage() {
   const {
@@ -104,14 +105,14 @@ export default async function DashboardPage() {
               <ol className="grid gap-2">
                 {upcoming.map((game) => {
                   const event = events.find((item) => item.id === game.eventId);
+                  const title = scheduledGameTitle(game);
                   return (
                     <li className="rounded-lg bg-slate-800 p-4" key={game.id}>
                       <Link
                         className="font-bold text-cyan-300"
                         href={`#game-${game.id}`}
                       >
-                        {game.gameLabel || `Game ${game.gameNumber}`} ·{" "}
-                        {game.config.awayName}
+                        {title}
                       </Link>
                       <p>
                         {formatScheduledStart(
@@ -135,7 +136,6 @@ export default async function DashboardPage() {
                 <GameCard
                   key={game.id}
                   game={game}
-                  teamName={membership.teamName}
                   timezone={game.timezone ?? "UTC"}
                   role={membership.role}
                 />
@@ -176,7 +176,6 @@ export default async function DashboardPage() {
                           <GameCard
                             key={game.id}
                             game={game}
-                            teamName={membership.teamName}
                             timezone={event.timezone}
                             role={membership.role}
                           />
@@ -218,12 +217,7 @@ export default async function DashboardPage() {
         <h2 className="text-2xl font-bold">Legacy / Unassigned Games</h2>
         {legacy.length ? (
           legacy.map((game) => (
-            <GameCard
-              key={game.id}
-              game={game}
-              teamName={membership.teamName}
-              role={membership.role}
-            />
+            <GameCard key={game.id} game={game} role={membership.role} />
           ))
         ) : (
           <p className="panel">No unassigned games.</p>
@@ -234,15 +228,24 @@ export default async function DashboardPage() {
           <h2 className="text-2xl font-bold">Recently Deleted</h2>
           {deleted.games.map((game) => (
             <article className="panel" key={game.game_id}>
-              <h3 className="font-bold">{game.event_name}</h3>
-              <p>
-                {game.home_name} vs. {game.away_name}
-              </p>
+              <h3 className="font-bold">
+                {formatCanonicalGameTitle({
+                  structured: false,
+                  legacyTitle: game.event_name,
+                  homeName: game.home_name,
+                  awayName: game.away_name,
+                })}
+              </h3>
               <GameDeletionControl
                 restore
                 gameId={game.game_id}
-                title={game.event_name}
-                matchup={`${game.home_name} vs. ${game.away_name}`}
+                title={formatCanonicalGameTitle({
+                  structured: false,
+                  legacyTitle: game.event_name,
+                  homeName: game.home_name,
+                  awayName: game.away_name,
+                })}
+                matchup=""
               />
             </article>
           ))}
@@ -254,28 +257,24 @@ export default async function DashboardPage() {
 
 function GameCard({
   game,
-  teamName,
   timezone,
   role,
 }: {
   game: ScheduledGameRecord;
-  teamName: string;
   timezone?: string;
   role: string;
 }) {
   const administrator = ["owner", "team_admin"].includes(role);
+  const title = scheduledGameTitle(game);
   return (
     <article
       id={`game-${game.id}`}
       className="rounded-lg border border-slate-700 p-4"
     >
-      <h4 className="font-bold">
-        {game.gameLabel ||
-          (game.gameNumber ? `Game ${game.gameNumber}` : game.config.eventName)}
-      </h4>
-      <p>
-        {teamName} vs. {game.opponentId ? game.config.awayName : "Opponent TBD"}
-      </p>
+      <h4 className="font-bold">{title}</h4>
+      {game.gameNumber && game.eventId && (
+        <p className="text-sm text-slate-400">Game {game.gameNumber}</p>
+      )}
       <p className="text-sm text-slate-300">
         {game.scheduledStart && timezone
           ? formatScheduledStart(game.scheduledStart, timezone)
@@ -284,14 +283,20 @@ function GameCard({
             )}{" "}
         · {game.status}
       </p>
-      {role !== "viewer" && <TeamGameLinks gameId={game.id} />}{" "}
+      {role !== "viewer" && <TeamGameLinks gameId={game.id} title={title} />}{" "}
       {administrator && (
-        <GameDeletionControl
-          gameId={game.id}
-          title={game.gameLabel || game.config.eventName}
-          matchup={`${teamName} vs. ${game.config.awayName}`}
-        />
+        <GameDeletionControl gameId={game.id} title={title} matchup="" />
       )}
     </article>
   );
+}
+
+function scheduledGameTitle(game: ScheduledGameRecord) {
+  return formatCanonicalGameTitle({
+    structured: Boolean(game.seasonId),
+    legacyTitle: game.config.eventName,
+    homeName: game.config.homeName,
+    awayName: game.opponentId ? game.config.awayName : null,
+    eventName: game.eventId ? game.config.eventName : null,
+  });
 }

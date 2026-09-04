@@ -196,7 +196,7 @@ export async function createScheduledTeamGame(
     p_scheduled_start: value.scheduledStart,
     p_timezone: value.timezone,
     p_game_number: value.gameNumber,
-    p_game_label: value.gameLabel ?? "",
+    p_game_label: "",
     p_config: config,
     p_state: state,
   });
@@ -211,6 +211,7 @@ export function updateScheduledTeamGame(
   user: User,
   gameId: string,
   input: ScheduledGameInput,
+  configSnapshot?: GameConfig,
 ) {
   const parsed = scheduledGameInputSchema.safeParse(input);
   if (!parsed.success)
@@ -228,6 +229,31 @@ export function updateScheduledTeamGame(
     p_scheduled_start: parsed.data.scheduledStart,
     p_game_number: parsed.data.gameNumber,
     p_timezone: parsed.data.timezone,
-    p_game_label: parsed.data.gameLabel ?? "",
+    p_game_label: "",
+  }).then(async (updated) => {
+    if (!updated.ok || !configSnapshot) return updated;
+    const database = createAdminSupabaseClient();
+    const gameUpdate = await database
+      .from("games")
+      .update({ config: configSnapshot })
+      .eq("id", gameId);
+    const current = await database
+      .from("game_states")
+      .select("state")
+      .eq("game_id", gameId)
+      .single();
+    if (gameUpdate.error || current.error)
+      return failure(
+        gameUpdate.error ?? current.error!,
+        "restore_scheduled_game_snapshots",
+      );
+    const state = current.data.state as GameState;
+    const stateUpdate = await database
+      .from("game_states")
+      .update({ state: { ...state, config: configSnapshot } })
+      .eq("game_id", gameId);
+    return stateUpdate.error
+      ? failure(stateUpdate.error, "restore_scheduled_game_state_snapshots")
+      : updated;
   });
 }

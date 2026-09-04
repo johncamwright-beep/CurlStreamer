@@ -17,6 +17,7 @@ export function GameCreationForm({
   games,
   preselectedEventId,
   editing,
+  editingTitle,
 }: {
   teamName: string;
   seasons: SeasonRecord[];
@@ -25,6 +26,7 @@ export function GameCreationForm({
   games: ScheduledGameRecord[];
   preselectedEventId?: string;
   editing?: ScheduledGameRecord;
+  editingTitle?: string;
 }) {
   const router = useRouter();
   const current =
@@ -170,7 +172,6 @@ export function GameCreationForm({
     setError("");
     const form = new FormData(e.currentTarget);
     const date = String(form.get("scheduledDate"));
-    const label = String(form.get("gameLabel") ?? "").trim();
     const gameNumber = eventId ? Number(form.get("gameNumber")) : null;
     const opponentName = opponentSearch.trim().replace(/\s+/g, " ");
     try {
@@ -188,13 +189,8 @@ export function GameCreationForm({
         scheduledTime: form.get("scheduledTime"),
         timezone: selectedEvent?.timezone ?? form.get("timezone"),
         gameNumber,
-        gameLabel: label || undefined,
         config: {
-          eventName:
-            label ||
-            (eventId
-              ? `${selectedEvent?.name} — Game ${gameNumber}`
-              : `${opponentTbd ? "Opponent TBD" : opponentName} — ${date}`),
+          eventName: selectedEvent?.name ?? "Single Game",
           homeName: teamName,
           awayName: opponentTbd ? "Opponent TBD" : opponentName,
           homeColor: form.get("homeColor"),
@@ -227,7 +223,7 @@ export function GameCreationForm({
       </nav>
       <form onSubmit={submit} className="panel grid gap-4 md:grid-cols-2">
         <h1 className="text-3xl font-black md:col-span-2">
-          {editing ? "Edit Schedule" : "Schedule a Game"}
+          {editing ? `Edit Schedule — ${editingTitle}` : "Schedule a Game"}
         </h1>
         <label>
           Season
@@ -362,14 +358,6 @@ export function GameCreationForm({
             />
           </label>
         )}
-        <label>
-          Game label (optional)
-          <input
-            name="gameLabel"
-            defaultValue={editing?.gameLabel ?? ""}
-            className="mt-1 w-full rounded-lg bg-slate-800 p-3"
-          />
-        </label>
         <label>
           Team 1 colour
           <input

@@ -8,6 +8,7 @@ import { deriveScore } from "@/lib/scoring";
 import type { Sponsor, Team } from "@/lib/types";
 import { hasVisibleSponsorOverlay } from "@/lib/sponsor-audio";
 import { AppNavigation } from "@/components/AppNavigation";
+import { canonicalTitleFromConfig } from "@/lib/game-title";
 async function optimize(file: File): Promise<Sponsor> {
   if (!["image/jpeg", "image/png", "image/webp"].includes(file.type))
     throw new Error(`${file.name}: use JPEG, PNG or WebP.`);
@@ -97,6 +98,7 @@ export default function Scorer({
       </main>
     );
   const enabled = game.sponsors.filter((s) => s.enabled);
+  const title = canonicalTitleFromConfig(game.config);
   const score = deriveScore(game);
   async function saveHammer(next: Team) {
     setHammerBusy(true);
@@ -150,9 +152,13 @@ export default function Scorer({
       <header className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <div>
           <p className="text-cyan-300">SCORER · MOCK MODE</p>
-          <h1 className="text-3xl font-black">{game.config.eventName}</h1>
+          <h1 className="text-3xl font-black">{title}</h1>
         </div>
-        <Link className="btn-secondary" href={`/broadcast/${id}`}>
+        <Link
+          className="btn-secondary"
+          href={`/broadcast/${id}`}
+          aria-label={`Broadcast: ${title}`}
+        >
           Open program preview
         </Link>
       </header>

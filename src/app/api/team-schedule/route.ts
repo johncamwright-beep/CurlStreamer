@@ -58,7 +58,6 @@ const requestSchema = z.discriminatedUnion("operation", [
       scheduledTime: z.string().regex(/^\d{2}:\d{2}$/),
       timezone: z.string().min(1).max(100),
       gameNumber: z.number().int().positive().nullable(),
-      gameLabel: z.string().trim().max(100).optional(),
       config: gameSchema,
     })
     .refine(
@@ -183,20 +182,41 @@ export async function POST(request: Request) {
         opponentName = selected.display_name;
       }
       if (body.operation === "updateGame") {
-        result = await updateScheduledTeamGame(user, body.gameId!, {
-          seasonId: body.seasonId,
-          eventId: body.eventId,
-          opponentId: opponentId ?? null,
-          scheduledStart,
-          timezone: selectedEvent?.timezone ?? body.timezone,
-          gameNumber: body.eventId ? body.gameNumber : null,
-          gameLabel: body.gameLabel || undefined,
-        });
+        const existing = hierarchy.games.find(
+          (game) => game.id === body.gameId,
+        );
+        if (!existing) return hierarchyFailure({ kind: "authorization" });
+        const snapshotConfig = {
+          ...existing.config,
+          eventName:
+            existing.eventId === body.eventId
+              ? existing.config.eventName
+              : (selectedEvent?.name ?? "Single Game"),
+          homeName: existing.config.homeName,
+          awayName:
+            existing.opponentId === (opponentId ?? null)
+              ? existing.config.awayName
+              : (opponentName ?? "Opponent TBD"),
+        };
+        result = await updateScheduledTeamGame(
+          user,
+          body.gameId!,
+          {
+            seasonId: body.seasonId,
+            eventId: body.eventId,
+            opponentId: opponentId ?? null,
+            scheduledStart,
+            timezone: selectedEvent?.timezone ?? body.timezone,
+            gameNumber: body.eventId ? body.gameNumber : null,
+          },
+          snapshotConfig,
+        );
         break;
       }
       const gameId = randomUUID();
       const config = {
         ...body.config,
+        eventName: selectedEvent?.name ?? "Single Game",
         homeName: hierarchy.teamName,
         awayName: opponentName ?? "Opponent TBD",
       };
@@ -210,7 +230,6 @@ export async function POST(request: Request) {
           scheduledStart,
           timezone: selectedEvent?.timezone ?? body.timezone,
           gameNumber: body.eventId ? body.gameNumber : null,
-          gameLabel: body.gameLabel || undefined,
         },
         config,
         state,

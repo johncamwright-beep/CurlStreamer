@@ -8,7 +8,7 @@ export type GameAccountRole = ActiveTeam["role"];
 export type ExistingAccess = Awaited<ReturnType<typeof readAccessToken>>;
 export type GameAuthorization =
   | { ok: true; via: "account"; role: GameAccountRole; organizationId: string }
-  | { ok: true; via: "token"; access: ExistingAccess }
+  | { ok: true; via: "token"; access: ExistingAccess; organizationId: string }
   | { ok: false; reason: "not-found" | "deleted" | "unauthorized" };
 
 /** One authority for the verified-account OR existing-token decision. */
@@ -56,7 +56,12 @@ export async function authorizeGame(
     try {
       const access = await readAccessToken(bearer);
       if (access.gameId === gameId && options.tokenAllowed(access))
-        return { ok: true, via: "token", access };
+        return {
+          ok: true,
+          via: "token",
+          access,
+          organizationId: game.organization_id,
+        };
     } catch {
       // Return the same public denial for invalid and inappropriate credentials.
     }

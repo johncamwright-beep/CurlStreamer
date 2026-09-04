@@ -20,7 +20,12 @@ export async function GET(
     return NextResponse.json(authorizationError(authorization), {
       status: 410,
     });
-  const game = await getGame(id);
+  const game = await getGame(
+    id,
+    authorization.ok
+      ? { organizationId: authorization.organizationId }
+      : undefined,
+  );
   return game
     ? NextResponse.json(game, {
         headers: {

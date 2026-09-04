@@ -84,7 +84,7 @@ export function createGame(config: GameConfig) {
   mutate((games) => games.set(id, game));
   return game;
 }
-export function getGame(id: string) {
+export function getGame(id: string, _options?: { organizationId?: string }) {
   return readGames().get(id);
 }
 export function claimRole(

@@ -8,7 +8,8 @@ export type AppIconName =
   | "broadcast"
   | "edit"
   | "account"
-  | "logout";
+  | "logout"
+  | "sponsor";
 
 export function AppIcon({ name }: { name: AppIconName }) {
   const paths: Record<AppIconName, React.ReactNode> = {
@@ -70,6 +71,12 @@ export function AppIcon({ name }: { name: AppIconName }) {
     logout: (
       <>
         <path d="M10 4H4v16h6M14 8l4 4-4 4M8 12h10" />
+      </>
+    ),
+    sponsor: (
+      <>
+        <path d="M4 6h16v12H4z" />
+        <path d="m7 15 3-3 2 2 2-2 3 3M8 9h.01" />
       </>
     ),
   };

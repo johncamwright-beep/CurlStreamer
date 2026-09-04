@@ -60,5 +60,6 @@ describe("Sidebar sponsor rotation", () => {
     expect(second).toContain('src="/two.png"');
     expect(first).not.toContain('data-testid="sponsor-overlay"');
     expect(second).not.toContain('data-testid="sponsor-overlay"');
+    expect(first).toContain('class="sponsor-broadcast-square"');
   });
 });

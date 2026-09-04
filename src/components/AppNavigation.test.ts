@@ -56,6 +56,9 @@ describe("shared application navigation", () => {
     expect(navigation).toContain(
       '{ href: "/opponents", label: "Opponents", icon: "opponent" }',
     );
+    expect(navigation).toContain(
+      '{ href: "/sponsors", label: "Sponsors", icon: "sponsor" }',
+    );
     expect(navigation).not.toMatch(/Administration|YouTube/);
     expect(home).not.toContain("AppNavigation");
     expect(home).toContain('<AuthForm mode="login" action={login} />');

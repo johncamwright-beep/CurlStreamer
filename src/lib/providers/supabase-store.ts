@@ -98,9 +98,19 @@ export async function createGame(config: GameConfig) {
   return game;
 }
 
-export async function getGame(id: string) {
+export async function getGame(
+  id: string,
+  options?: { organizationId?: string },
+) {
   const record = await getGameRecord(id);
-  return record?.state;
+  if (!record) return undefined;
+  if (options?.organizationId) {
+    const { signedSponsors } = await import("./sponsor-library");
+    const organizationSponsors = await signedSponsors(options.organizationId);
+    if (organizationSponsors.length)
+      return { ...record.state, sponsors: organizationSponsors };
+  }
+  return record.state;
 }
 
 async function getGameRecord(id: string) {

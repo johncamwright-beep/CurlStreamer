@@ -87,12 +87,14 @@ export function BroadcastCanvas({ game }: { game: GameState }) {
           )}
           {visibleSponsorOverlay && sponsor && (
             <div data-testid="sponsor-overlay" className="sponsor-deck-overlay">
-              <img
-                src={sponsor.dataUrl}
-                alt={sponsor.name}
-                className="safe-video"
-                style={{ transform: `rotate(${sponsor.rotation}deg)` }}
-              />
+              <div className="sponsor-broadcast-square">
+                <img
+                  src={sponsor.dataUrl}
+                  alt={sponsor.name}
+                  className="safe-video"
+                  style={{ transform: `rotate(${sponsor.rotation}deg)` }}
+                />
+              </div>
             </div>
           )}
         </div>
@@ -117,12 +119,14 @@ export function BroadcastCanvas({ game }: { game: GameState }) {
               <p className="mb-2 text-center text-[.8cqw] font-bold text-slate-700">
                 PRESENTED BY
               </p>
-              <img
-                src={sponsor.dataUrl}
-                alt={sponsor.name}
-                className="safe-video h-full w-full"
-                style={{ transform: `rotate(${sponsor.rotation}deg)` }}
-              />
+              <div className="sponsor-broadcast-square">
+                <img
+                  src={sponsor.dataUrl}
+                  alt={sponsor.name}
+                  className="safe-video h-full w-full"
+                  style={{ transform: `rotate(${sponsor.rotation}deg)` }}
+                />
+              </div>
             </div>
           )}
           <div

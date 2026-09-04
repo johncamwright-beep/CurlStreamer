@@ -29,6 +29,8 @@ export type ScoreEvent =
 export interface Sponsor {
   id: string;
   name: string;
+  /** Optional management label; name remains the accessible image text. */
+  displayName?: string;
   dataUrl: string;
   enabled: boolean;
   rotation: number;

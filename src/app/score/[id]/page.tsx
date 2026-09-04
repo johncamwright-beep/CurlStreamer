@@ -5,46 +5,12 @@ import { useGame } from "@/components/GameSync";
 import { Scoreboard } from "@/components/Scoreboard";
 import { GameSetupNavigation } from "@/components/GameSetupNavigation";
 import { deriveScore } from "@/lib/scoring";
-import type { Sponsor, Team } from "@/lib/types";
+import type { Team } from "@/lib/types";
 import { hasVisibleSponsorOverlay } from "@/lib/sponsor-audio";
 import { AppNavigation } from "@/components/AppNavigation";
 import { canonicalTitleFromConfig } from "@/lib/game-title";
 import { gameCapabilities } from "@/lib/current-game";
 import { hasOrganizerAccess } from "@/lib/access-session";
-async function optimize(file: File): Promise<Sponsor> {
-  if (!["image/jpeg", "image/png", "image/webp"].includes(file.type))
-    throw new Error(`${file.name}: use JPEG, PNG or WebP.`);
-  if (file.size > 12 * 1024 * 1024)
-    throw new Error(`${file.name}: larger than 12 MB.`);
-  const signature = new Uint8Array(await file.slice(0, 12).arrayBuffer());
-  const isJpeg =
-    signature[0] === 0xff && signature[1] === 0xd8 && signature[2] === 0xff;
-  const isPng = signature.slice(0, 8).join(",") === "137,80,78,71,13,10,26,10";
-  const ascii = String.fromCharCode(...signature);
-  const isWebp = ascii.startsWith("RIFF") && ascii.slice(8, 12) === "WEBP";
-  if (
-    (file.type === "image/jpeg" && !isJpeg) ||
-    (file.type === "image/png" && !isPng) ||
-    (file.type === "image/webp" && !isWebp)
-  )
-    throw new Error(`${file.name}: file contents do not match its image type.`);
-  const bmp = await createImageBitmap(file);
-  const scale = Math.min(1, 1600 / bmp.width, 900 / bmp.height);
-  const c = document.createElement("canvas");
-  c.width = Math.round(bmp.width * scale);
-  c.height = Math.round(bmp.height * scale);
-  c.getContext("2d")!.drawImage(bmp, 0, 0, c.width, c.height);
-  return {
-    id: crypto.randomUUID(),
-    name: file.name.replace(/[^\w .-]/g, ""),
-    dataUrl: c.toDataURL(
-      file.type === "image/png" ? "image/png" : "image/webp",
-      0.86,
-    ),
-    enabled: true,
-    rotation: 0,
-  };
-}
 export default function Scorer({
   params,
 }: {
@@ -54,7 +20,6 @@ export default function Scorer({
   const { game, error, act, accountOperator, accountRole } = useGame(id);
   const [points, setPoints] = useState(1);
   const [team, setTeam] = useState<Team>("home");
-  const [errors, setErrors] = useState<string[]>([]);
   const [hammerBusy, setHammerBusy] = useState(false);
   const [hammerError, setHammerError] = useState("");
   const [correctingHammer, setCorrectingHammer] = useState(false);
@@ -141,33 +106,6 @@ export default function Scorer({
     } finally {
       setHammerBusy(false);
     }
-  }
-  async function files(list: FileList | null) {
-    if (!list) return;
-    const existingSponsors = game?.sponsors;
-    if (!existingSponsors) return;
-    const settled = await Promise.allSettled([...list].map(optimize));
-    const ok = settled.flatMap((x) =>
-      x.status === "fulfilled" ? [x.value] : [],
-    );
-    setErrors(
-      settled.flatMap((x) =>
-        x.status === "rejected" ? [String(x.reason.message)] : [],
-      ),
-    );
-    await act({ type: "sponsors", sponsors: [...existingSponsors, ...ok] });
-  }
-  function updateSponsors(next: Sponsor[]) {
-    if (!game) return Promise.resolve();
-    return act({ type: "sponsors", sponsors: next });
-  }
-  function move(i: number, d: number) {
-    if (!game) return;
-    const n = [...game.sponsors];
-    const j = i + d;
-    if (j < 0 || j >= n.length) return;
-    [n[i], n[j]] = [n[j], n[i]];
-    void updateSponsors(n);
   }
   return (
     <main className="mx-auto max-w-6xl p-4">
@@ -468,81 +406,36 @@ export default function Scorer({
             )}
           </div>
           <div className="panel">
-            <div className="flex items-center justify-between">
-              <h2 className="text-xl font-bold">Sponsor images</h2>
-              <label className="btn cursor-pointer">
-                Add Sponsor Images
-                <input
-                  className="sr-only"
-                  type="file"
-                  accept="image/jpeg,image/png,image/webp"
-                  multiple
-                  onChange={(e) => files(e.target.files)}
-                />
-              </label>
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <h2 className="text-xl font-bold">Active sponsor library</h2>
+                <p className="mt-1 text-sm text-slate-400">
+                  Sponsors are shared by every game for this team.
+                </p>
+              </div>
+              {accountOperator && accountRole !== "scorer" && (
+                <Link className="btn-secondary" href="/sponsors">
+                  Manage sponsors
+                </Link>
+              )}
             </div>
-            {errors.map((e) => (
-              <p role="alert" className="mt-2 text-red-300" key={e}>
-                {e}
+            {!game.sponsors.length ? (
+              <p className="mt-4 rounded-lg bg-slate-800 p-3 text-slate-300">
+                No active team sponsors. Historical game sponsors remain
+                available as a legacy fallback.
               </p>
-            ))}
-            <div className="mt-4 space-y-2">
-              {game.sponsors.map((s, i) => (
-                <div
-                  className="flex items-center gap-2 rounded-xl bg-slate-800 p-2"
-                  key={s.id}
-                >
-                  <div className="h-16 w-24 rounded bg-white/10 p-1">
-                    <img
-                      src={s.dataUrl}
-                      alt=""
-                      className="safe-video h-full w-full"
-                      style={{ transform: `rotate(${s.rotation}deg)` }}
-                    />
+            ) : (
+              <div className="mt-4 grid grid-cols-3 gap-3">
+                {game.sponsors.map((s) => (
+                  <div
+                    className="aspect-square rounded-xl bg-white p-2 sponsor-square"
+                    key={s.id}
+                  >
+                    <img src={s.dataUrl} alt={s.name} />
                   </div>
-                  <span className="min-w-0 flex-1 truncate">{s.name}</span>
-                  <button
-                    aria-label={`Move ${s.name} up`}
-                    onClick={() => move(i, -1)}
-                  >
-                    ↑
-                  </button>
-                  <button
-                    aria-label={`Move ${s.name} down`}
-                    onClick={() => move(i, 1)}
-                  >
-                    ↓
-                  </button>
-                  <button
-                    aria-label={`Rotate ${s.name}`}
-                    onClick={() => {
-                      const n = [...game.sponsors];
-                      n[i] = { ...s, rotation: (s.rotation + 90) % 360 };
-                      void updateSponsors(n);
-                    }}
-                  >
-                    ↻
-                  </button>
-                  <button
-                    onClick={() => {
-                      const n = [...game.sponsors];
-                      n[i] = { ...s, enabled: !s.enabled };
-                      void updateSponsors(n);
-                    }}
-                  >
-                    {s.enabled ? "On" : "Off"}
-                  </button>
-                  <button
-                    aria-label={`Remove ${s.name}`}
-                    onClick={() =>
-                      updateSponsors(game.sponsors.filter((x) => x.id !== s.id))
-                    }
-                  >
-                    ×
-                  </button>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            )}
           </div>
         </section>
       </div>

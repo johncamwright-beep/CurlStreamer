@@ -2,6 +2,7 @@
 import React, { useEffect, useState } from "react";
 import { Scoreboard } from "./Scoreboard";
 import type { GameState } from "@/lib/types";
+import type { BroadcastGame } from "@/lib/game-projection";
 import { formatBroadcastRailTitle } from "@/lib/game-title";
 import { LiveKitCameraFeed } from "./LiveKitCameraFeed";
 import { isScorerAudioEffectivelyMuted } from "@/lib/sponsor-audio";
@@ -34,7 +35,7 @@ function Camera({
     </div>
   );
 }
-export function BroadcastCanvas({ game }: { game: GameState }) {
+export function BroadcastCanvas({ game }: { game: GameState | BroadcastGame }) {
   const [, tick] = useState(0);
   useEffect(() => {
     if (

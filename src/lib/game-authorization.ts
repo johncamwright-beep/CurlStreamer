@@ -1,4 +1,5 @@
 import "server-only";
+import { isAuthSessionMissingError } from "@supabase/supabase-js";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import {
   listDeletedTeamGames,
@@ -23,6 +24,8 @@ export type GameAuthorization =
         | "released"
         | "unauthorized"
         | "unavailable";
+      /** Only a successfully checked, credential-free request may read Broadcast. */
+      anonymous?: true;
     };
 
 /** One authority for the verified-account OR existing-token decision. */
@@ -35,9 +38,15 @@ export async function authorizeGame(
   },
 ): Promise<GameAuthorization> {
   let user;
+  let anonymous = false;
+  let accountUnavailable = false;
   try {
-    const { data } = await (await createServerSupabaseClient()).auth.getUser();
+    const { data, error } = await (
+      await createServerSupabaseClient()
+    ).auth.getUser();
     user = data.user;
+    anonymous = !user && (!error || isAuthSessionMissingError(error));
+    accountUnavailable = Boolean(error && !isAuthSessionMissingError(error));
     const accountUser = data.user;
     if (accountUser) {
       const team = await loadActiveTeam(accountUser);
@@ -75,15 +84,21 @@ export async function authorizeGame(
   } catch {
     // An independently signed organizer or participant token does not depend
     // on the optional account cookie being readable.
+    accountUnavailable = true;
   }
 
   const bearer = request.headers
     .get("authorization")
     ?.match(/^Bearer (.+)$/)?.[1];
   if (bearer) {
+    let access;
     try {
-      const access = await readAccessToken(bearer);
-      if (access.gameId === gameId && options.tokenAllowed(access)) {
+      access = await readAccessToken(bearer);
+    } catch {
+      // Invalid credentials must not be downgraded to an anonymous read.
+    }
+    if (access?.gameId === gameId && options.tokenAllowed(access)) {
+      try {
         const game = await getGame(gameId);
         if (!game) return { ok: false, reason: "not-found" };
         if (game.status === "closed") return { ok: false, reason: "closed" };
@@ -95,11 +110,12 @@ export async function authorizeGame(
         )
           return { ok: false, reason: "released" };
         return { ok: true, via: "token", access };
+      } catch {
+        return { ok: false, reason: "unavailable" };
       }
-    } catch {
-      // Return the same public denial for invalid and inappropriate credentials.
     }
   }
+  if (accountUnavailable) return { ok: false, reason: "unavailable" };
   // A same-team miss must not reveal a cross-organization game. A truly
   // absent state can still be reported accurately to a verified account.
   if (user) {
@@ -109,7 +125,13 @@ export async function authorizeGame(
       return { ok: false, reason: "unavailable" };
     }
   }
-  return { ok: false, reason: "unauthorized" };
+  return {
+    ok: false,
+    reason: "unauthorized",
+    ...(anonymous && !request.headers.has("authorization")
+      ? { anonymous: true as const }
+      : {}),
+  };
 }
 
 export function authorizationError(

@@ -1,5 +1,13 @@
-import { describe, expect, it } from "vitest";
-import { validateSponsorImage } from "./sponsor-library";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+const mocks = vi.hoisted(() => ({ rpc: vi.fn(), createSignedUrl: vi.fn() }));
+vi.mock("@/lib/supabase/admin", () => ({
+  createAdminSupabaseClient: () => ({
+    rpc: mocks.rpc,
+    storage: { from: () => ({ createSignedUrl: mocks.createSignedUrl }) },
+  }),
+}));
+import { gameBroadcastSponsors, validateSponsorImage } from "./sponsor-library";
 
 describe("sponsor image validation", () => {
   it("accepts a matching PNG signature", async () => {
@@ -35,5 +43,54 @@ describe("sponsor image validation", () => {
       type: "image/png",
     });
     await expect(validateSponsorImage(file)).rejects.toThrow("4 MB");
+  });
+});
+
+describe("anonymous Broadcast sponsors", () => {
+  beforeEach(() => {
+    vi.resetAllMocks();
+    vi.stubEnv("NODE_ENV", "production");
+  });
+  afterEach(() => vi.unstubAllEnvs());
+
+  it("returns public metadata with a five-minute signed URL and no storage path", async () => {
+    mocks.rpc.mockResolvedValue({
+      data: [
+        {
+          id: "internal-id",
+          display_name: "Club sponsor",
+          alt_text: "Club sponsor logo",
+          storage_path: "organization/private/logo.png",
+          position: 0,
+        },
+      ],
+      error: null,
+    });
+    mocks.createSignedUrl.mockResolvedValue({
+      data: {
+        signedUrl:
+          "https://storage.example/object/sign/logo.png?token=short-lived",
+      },
+      error: null,
+    });
+
+    await expect(gameBroadcastSponsors("game-1")).resolves.toEqual([
+      {
+        id: "internal-id",
+        name: "Club sponsor",
+        altText: "Club sponsor logo",
+        dataUrl:
+          "https://storage.example/object/sign/logo.png?token=short-lived",
+        enabled: true,
+        rotation: 0,
+      },
+    ]);
+    expect(mocks.rpc).toHaveBeenCalledWith("list_game_organization_sponsors", {
+      p_game_id: "game-1",
+    });
+    expect(mocks.createSignedUrl).toHaveBeenCalledWith(
+      "organization/private/logo.png",
+      300,
+    );
   });
 });

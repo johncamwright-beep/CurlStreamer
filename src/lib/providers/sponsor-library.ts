@@ -6,6 +6,7 @@ import type { LibrarySponsor, Sponsor } from "@/lib/types";
 
 const BUCKET = "organization-sponsors";
 const SIGNED_URL_SECONDS = 12 * 60 * 60;
+const PUBLIC_BROADCAST_URL_SECONDS = 5 * 60;
 // Keep multipart requests below Vercel's 4.5 MB function payload boundary.
 const MAX_UPLOAD_BYTES = 4 * 1024 * 1024;
 type SponsorRow = {
@@ -17,13 +18,16 @@ type SponsorRow = {
   archived_at?: string | null;
 };
 
-async function present(rows: SponsorRow[]): Promise<LibrarySponsor[]> {
+async function present(
+  rows: SponsorRow[],
+  signedUrlSeconds = SIGNED_URL_SECONDS,
+): Promise<LibrarySponsor[]> {
   const db = createAdminSupabaseClient();
   return Promise.all(
     rows.map(async (row) => {
       const { data, error } = await db.storage
         .from(BUCKET)
-        .createSignedUrl(row.storage_path, SIGNED_URL_SECONDS);
+        .createSignedUrl(row.storage_path, signedUrlSeconds);
       if (error || !data?.signedUrl)
         throw new Error("Sponsor preview unavailable");
       return {
@@ -66,6 +70,30 @@ export async function gameLibrarySponsors(
     name: s.name,
     altText: s.altText,
     dataUrl: s.imageUrl,
+    enabled: true,
+    rotation: 0,
+  }));
+}
+
+/** Public Broadcast receives renderable URLs, never the underlying storage path. */
+export async function gameBroadcastSponsors(
+  gameId: string,
+): Promise<Sponsor[]> {
+  if (process.env.NODE_ENV !== "production") return [];
+  const { data, error } = await createAdminSupabaseClient().rpc(
+    "list_game_organization_sponsors",
+    { p_game_id: gameId },
+  );
+  if (error) throw new Error("Sponsor library unavailable");
+  const sponsors = await present(
+    (data ?? []) as SponsorRow[],
+    PUBLIC_BROADCAST_URL_SECONDS,
+  );
+  return sponsors.map((sponsor) => ({
+    id: sponsor.id,
+    name: sponsor.name,
+    altText: sponsor.altText,
+    dataUrl: sponsor.imageUrl,
     enabled: true,
     rotation: 0,
   }));

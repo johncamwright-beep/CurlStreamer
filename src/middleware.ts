@@ -4,16 +4,17 @@ import { publicSupabaseConfig } from "@/lib/supabase/config";
 
 export async function middleware(request: NextRequest) {
   let response = NextResponse.next({ request });
-  const { url, key } = publicSupabaseConfig();
+  const { url, key } = publicSupabaseConfig(
+    process.env.NEXT_PUBLIC_SUPABASE_URL,
+    process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY,
+  );
   const supabase = createServerClient(url, key, {
     cookies: {
       getAll: () => request.cookies.getAll(),
       setAll(values) {
         values.forEach(({ name, value }) => request.cookies.set(name, value));
         const replacement = NextResponse.next({ request });
-        response.headers.forEach((value, name) =>
-          replacement.headers.set(name, value),
-        );
+        // Keep the newly generated request-cookie overrides after refresh.
         values.forEach(({ name, value, options }) =>
           replacement.cookies.set(name, value, options),
         );

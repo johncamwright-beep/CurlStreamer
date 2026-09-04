@@ -23,7 +23,10 @@ export default function Broadcast({
   params: Promise<{ id: string }>;
 }) {
   const { id } = use(params);
-  const { game, error, accountOperator, accountRole } = useGame(id);
+  const { game, error, accountOperator, accountRole } = useGame(
+    id,
+    "broadcast",
+  );
   const [scale, setScale] = useState<number>();
   const [operator, setOperator] = useState(false);
   useEffect(() => setOperator(hasScoringAccess(localStorage, id)), [id]);

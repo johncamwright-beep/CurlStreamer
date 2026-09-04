@@ -1,6 +1,7 @@
 import type { GameState } from "./types";
+import type { BroadcastGame } from "./game-projection";
 
-export function hasVisibleSponsorOverlay(game: GameState) {
+export function hasVisibleSponsorOverlay(game: GameState | BroadcastGame) {
   return (
     game.sponsorMode.active &&
     game.sponsorMode.style === "overlay" &&
@@ -8,7 +9,7 @@ export function hasVisibleSponsorOverlay(game: GameState) {
   );
 }
 
-export function isScorerAudioEffectivelyMuted(game: GameState) {
+export function isScorerAudioEffectivelyMuted(game: GameState | BroadcastGame) {
   const manualMute = game.audioMuted;
   const visibleSponsorOverlay = hasVisibleSponsorOverlay(game);
 

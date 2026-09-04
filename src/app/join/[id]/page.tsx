@@ -11,8 +11,12 @@ const roles: [Role, string, string][] = [
 ];
 export default function Join({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
-  const { game } = useGame(id);
   const search = useSearchParams();
+  const { game } = useGame(
+    id,
+    "join",
+    search.get("chooser") ?? search.get("token"),
+  );
   const router = useRouter();
   const [links, setLinks] = useState<Record<string, string>>({});
   const [error, setError] = useState("");
@@ -108,13 +112,13 @@ export default function Join({ params }: { params: Promise<{ id: string }> }) {
         {roles.map(([role, label, note]) => (
           <button
             key={role}
-            disabled={!links[role] || !!game?.claims[role]}
+            disabled={!links[role] || !!game?.claimedRoles[role]}
             onClick={() => claim(role)}
             className="panel text-left disabled:opacity-40"
           >
             <strong className="text-lg">{label}</strong>
             <span className="block text-slate-400">
-              {game?.claims[role] ? "Already claimed" : note}
+              {game?.claimedRoles[role] ? "Already claimed" : note}
             </span>
           </button>
         ))}

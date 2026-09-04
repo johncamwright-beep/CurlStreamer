@@ -1,7 +1,11 @@
 import "server-only";
 import type { User } from "@supabase/supabase-js";
 import { getAccountContext } from "@/lib/auth/account";
-import { createAdminSupabaseClient } from "@/lib/supabase/admin";
+import {
+  listEvents,
+  listSeasons,
+  listTeamHierarchyGames,
+} from "@/lib/team-hierarchy-service";
 import type { EventType, SeasonStatus } from "@/lib/team-hierarchy";
 import type { GameConfig } from "@/lib/types";
 
@@ -40,34 +44,16 @@ export async function loadTeamHierarchyData(user: User) {
   const context = await getAccountContext(user);
   if (!context.ok || !context.account.membership) return { ok: false as const };
   const { membership } = context.account;
-  const db = createAdminSupabaseClient();
   const [seasons, events, games] = await Promise.all([
-    db
-      .from("seasons")
-      .select("id,name,start_date,end_date,status")
-      .eq("organization_id", membership.organization_id)
-      .order("start_date", { ascending: false }),
-    db
-      .from("events")
-      .select(
-        "id,season_id,name,event_type,start_date,end_date,location,timezone,archived_at",
-      )
-      .eq("organization_id", membership.organization_id)
-      .order("start_date"),
-    db
-      .from("games")
-      .select(
-        "id,season_id,event_id,opponent_id,scheduled_start,game_number,game_label,created_at,status,config,game_states(state)",
-      )
-      .eq("organization_id", membership.organization_id)
-      .is("deleted_at", null)
-      .order("scheduled_start", { ascending: true, nullsFirst: false }),
+    listSeasons(user),
+    listEvents(user),
+    listTeamHierarchyGames(user),
   ]);
-  if (seasons.error || events.error || games.error) {
+  if (!seasons.ok || !events.ok || !games.ok) {
     console.error("Hierarchy view unavailable", {
-      seasons: seasons.error?.code,
-      events: events.error?.code,
-      games: games.error?.code,
+      seasons: seasons.ok ? undefined : seasons.kind,
+      events: events.ok ? undefined : events.kind,
+      games: games.ok ? undefined : games.kind,
     });
     return { ok: false as const };
   }
@@ -75,40 +61,42 @@ export async function loadTeamHierarchyData(user: User) {
     ok: true as const,
     teamName: membership.teamName,
     role: membership.role,
-    seasons: (seasons.data ?? []).map((s) => ({
-      id: s.id,
-      name: s.name,
-      startDate: s.start_date,
-      endDate: s.end_date,
-      status: s.status,
-    })) as SeasonRecord[],
-    events: (events.data ?? []).map((e) => ({
-      id: e.id,
-      seasonId: e.season_id,
-      name: e.name,
-      eventType: e.event_type,
-      startDate: e.start_date,
-      endDate: e.end_date,
-      location: e.location,
-      timezone: e.timezone,
-      archivedAt: e.archived_at,
-    })) as EventRecord[],
-    games: (games.data ?? []).map((g) => {
-      const joined = g.game_states as unknown as
-        | { state?: { status?: string } }
-        | { state?: { status?: string } }[]
-        | null;
-      const state = Array.isArray(joined) ? joined[0]?.state : joined?.state;
+    seasons: seasons.value.map((value) => {
+      const s = value as Record<string, string>;
       return {
-        id: g.id,
-        seasonId: g.season_id,
-        eventId: g.event_id,
-        opponentId: g.opponent_id,
-        scheduledStart: g.scheduled_start,
-        gameNumber: g.game_number,
-        gameLabel: g.game_label,
-        createdAt: g.created_at,
-        status: state?.status ?? g.status,
+        id: s.id,
+        name: s.name,
+        startDate: s.start_date,
+        endDate: s.end_date,
+        status: s.status,
+      };
+    }) as SeasonRecord[],
+    events: events.value.map((value) => {
+      const e = value as Record<string, string | null>;
+      return {
+        id: e.id,
+        seasonId: e.season_id,
+        name: e.name,
+        eventType: e.event_type,
+        startDate: e.start_date,
+        endDate: e.end_date,
+        location: e.location,
+        timezone: e.timezone,
+        archivedAt: e.archived_at,
+      };
+    }) as EventRecord[],
+    games: games.value.map((value) => {
+      const g = value as Record<string, unknown>;
+      return {
+        id: g.id as string,
+        seasonId: g.season_id as string | null,
+        eventId: g.event_id as string | null,
+        opponentId: g.opponent_id as string | null,
+        scheduledStart: g.scheduled_start as string | null,
+        gameNumber: g.game_number as number | null,
+        gameLabel: g.game_label as string | null,
+        createdAt: g.created_at as string,
+        status: g.game_status as string,
         config: g.config as unknown as GameConfig,
       };
     }) as ScheduledGameRecord[],

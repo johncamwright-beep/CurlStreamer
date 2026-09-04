@@ -5,6 +5,7 @@ import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { loadTeamHierarchyData } from "@/lib/team-hierarchy-data";
 import { listOpponents } from "@/lib/team-hierarchy-service";
 import { GameCreationForm } from "../../new/GameCreationForm";
+import { formatCanonicalGameTitle } from "@/lib/game-title";
 
 export default async function EditGamePage({
   params,
@@ -36,6 +37,11 @@ export default async function EditGamePage({
         opponents={opponents.value as never[]}
         games={data.games}
         editing={game}
+        editingTitle={formatCanonicalGameTitle({
+          homeName: game.config.homeName,
+          awayName: game.opponentId ? game.config.awayName : null,
+          eventName: game.eventId ? game.config.eventName : null,
+        })}
       />
     </main>
   );

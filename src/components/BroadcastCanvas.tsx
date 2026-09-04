@@ -2,6 +2,7 @@
 import React, { useEffect, useState } from "react";
 import { Scoreboard } from "./Scoreboard";
 import type { GameState } from "@/lib/types";
+import { formatBroadcastRailTitle } from "@/lib/game-title";
 import { LiveKitCameraFeed } from "./LiveKitCameraFeed";
 import { isScorerAudioEffectivelyMuted } from "@/lib/sponsor-audio";
 function Camera({
@@ -104,7 +105,7 @@ export function BroadcastCanvas({ game }: { game: GameState }) {
               CURLCAST
             </p>
             <h1 className="mt-[.45cqw] truncate text-[1.75cqw] font-black leading-tight">
-              {game.config.eventName}
+              {formatBroadcastRailTitle(game.config.eventName)}
             </h1>
             <Scoreboard game={game} compact broadcast />
           </div>

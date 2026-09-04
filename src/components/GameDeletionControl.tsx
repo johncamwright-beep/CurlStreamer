@@ -53,7 +53,7 @@ export function GameDeletionControl({
         <h2 id={`game-change-${gameId}`} className="text-xl font-bold">
           {label}: {title}
         </h2>
-        <p className="mt-2">{matchup}</p>
+        {matchup && <p className="mt-2">{matchup}</p>}
         <p className="mt-3 text-slate-300">
           {restore
             ? "This game will return to the team dashboard with its configuration and scoring history intact."

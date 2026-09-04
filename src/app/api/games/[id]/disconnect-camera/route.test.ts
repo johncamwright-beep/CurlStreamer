@@ -1,10 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-
 const mocks = vi.hoisted(() => ({
   authorizeGame: vi.fn(),
   removeCameraParticipant: vi.fn(),
   getGame: vi.fn(),
-  releaseRole: vi.fn(),
+  updateGame: vi.fn(),
 }));
 vi.mock("@/lib/game-authorization", () => ({
   operatorRoles: ["owner", "team_admin", "scorer"],
@@ -16,74 +15,31 @@ vi.mock("@/lib/providers/livekit", () => ({
 }));
 vi.mock("@/lib/store", () => ({
   getGame: mocks.getGame,
-  releaseRole: mocks.releaseRole,
+  updateGame: mocks.updateGame,
 }));
-
 import { POST } from "./route";
-
-function request(role = "camera-home", token = "token") {
-  return new Request("http://test/api/games/game-1/disconnect-camera", {
+const request = () =>
+  new Request("http://test/api/games/game-1/disconnect-camera", {
     method: "POST",
-    headers: {
-      authorization: `Bearer ${token}`,
-      "content-type": "application/json",
-    },
-    body: JSON.stringify({ role }),
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ role: "camera-home" }),
   });
-}
-
-describe("organizer camera disconnect route", () => {
+describe("temporary organizer camera disconnect", () => {
   beforeEach(() => {
     vi.resetAllMocks();
     mocks.authorizeGame.mockResolvedValue({
       ok: true,
-      via: "token",
-      access: { purpose: "organizer", gameId: "game-1" },
+      via: "account",
+      role: "owner",
+      organizationId: "team-1",
     });
-    mocks.getGame.mockResolvedValue({ claims: { "camera-home": "claimed" } });
-    mocks.releaseRole.mockResolvedValue({
-      released: true,
-      game: { claims: {} },
+    mocks.getGame.mockResolvedValue({ claims: { "camera-home": "device-1" } });
+    mocks.updateGame.mockResolvedValue({
+      claims: { "camera-home": "device-1" },
+      cameraHealth: { "camera-home": { phase: "disconnected" } },
     });
   });
-
-  it("requires organizer authorization for the same game", async () => {
-    mocks.authorizeGame.mockResolvedValue({
-      ok: false,
-      reason: "unauthorized",
-    });
-    expect(
-      (await POST(request(), { params: Promise.resolve({ id: "game-1" }) }))
-        .status,
-    ).toBe(403);
-    mocks.authorizeGame.mockResolvedValue({
-      ok: false,
-      reason: "unauthorized",
-    });
-    expect(
-      (await POST(request(), { params: Promise.resolve({ id: "game-1" }) }))
-        .status,
-    ).toBe(403);
-    expect(mocks.removeCameraParticipant).not.toHaveBeenCalled();
-  });
-
-  it("rejects an incorrect role and treats an unclaimed role idempotently", async () => {
-    expect(
-      (
-        await POST(request("scorer"), {
-          params: Promise.resolve({ id: "game-1" }),
-        })
-      ).status,
-    ).toBe(400);
-    const unclaimed = await POST(request("camera-away"), {
-      params: Promise.resolve({ id: "game-1" }),
-    });
-    expect(unclaimed.status).toBe(200);
-    expect(await unclaimed.json()).toMatchObject({ released: false });
-    expect(mocks.removeCameraParticipant).not.toHaveBeenCalled();
-  });
-
-  it("removes the selected participant and clears the device claim", async () => {
+  it("removes LiveKit participation but retains the reserved claim", async () => {
     const response = await POST(request(), {
       params: Promise.resolve({ id: "game-1" }),
     });
@@ -92,31 +48,27 @@ describe("organizer camera disconnect route", () => {
       "game-1",
       "camera-home",
     );
-    expect(mocks.releaseRole).toHaveBeenCalledWith(
+    expect(mocks.updateGame).toHaveBeenCalledWith(
       "game-1",
-      "camera-home",
-      "claimed",
+      expect.objectContaining({ type: "camera-health", phase: "disconnected" }),
     );
+    expect((await response.json()).game.claims["camera-home"]).toBe("device-1");
   });
-
-  it("releases an offline claim when LiveKit reports participant not found", async () => {
-    mocks.removeCameraParticipant.mockResolvedValue(undefined);
+  it("is idempotent when already unclaimed", async () => {
+    mocks.getGame.mockResolvedValue({ claims: {} });
     expect(
       (await POST(request(), { params: Promise.resolve({ id: "game-1" }) }))
         .status,
     ).toBe(200);
-    expect(mocks.releaseRole).toHaveBeenCalledOnce();
+    expect(mocks.removeCameraParticipant).not.toHaveBeenCalled();
   });
-
-  it("does not clear a live claim when LiveKit removal fails", async () => {
-    mocks.removeCameraParticipant.mockRejectedValue(
-      new Error("service failed"),
-    );
+  it("does not report success on a genuine LiveKit failure", async () => {
+    mocks.removeCameraParticipant.mockRejectedValue(new Error("service"));
     vi.spyOn(console, "error").mockImplementation(() => undefined);
     expect(
       (await POST(request(), { params: Promise.resolve({ id: "game-1" }) }))
         .status,
     ).toBe(503);
-    expect(mocks.releaseRole).not.toHaveBeenCalled();
+    expect(mocks.updateGame).not.toHaveBeenCalled();
   });
 });

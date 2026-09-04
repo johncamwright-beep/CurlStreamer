@@ -17,7 +17,12 @@ export type GameAuthorization =
   | {
       ok: false;
       reason:
-        "not-found" | "deleted" | "closed" | "unauthorized" | "unavailable";
+        | "not-found"
+        | "deleted"
+        | "closed"
+        | "released"
+        | "unauthorized"
+        | "unavailable";
     };
 
 /** One authority for the verified-account OR existing-token decision. */
@@ -88,7 +93,7 @@ export async function authorizeGame(
             !access.deviceId ||
             game.claims[access.role] !== access.deviceId)
         )
-          return { ok: false, reason: "unauthorized" };
+          return { ok: false, reason: "released" };
         return { ok: true, via: "token", access };
       }
     } catch {
@@ -121,6 +126,8 @@ export function authorizationError(
     return { error: "This game is closed", status: 410 };
   if (result.reason === "unavailable")
     return { error: "Game service is temporarily unavailable", status: 503 };
+  if (result.reason === "released")
+    return { error: "This camera assignment has been released", status: 401 };
   return { error: "Game access is required", status: 401 };
 }
 

@@ -19,21 +19,27 @@ export default function GameLobby({
     useGame(id);
   const [disconnecting, setDisconnecting] = useState<Role>();
   const [cameraActionError, setCameraActionError] = useState("");
-  async function disconnectCamera(role: "camera-home" | "camera-away") {
+  async function cameraAction(
+    role: "camera-home" | "camera-away",
+    release: boolean,
+  ) {
     const camera = role === "camera-home" ? "Camera 1" : "Camera 2";
-    if (!confirm(`Disconnect ${camera}?`)) return;
+    if (!confirm(`${release ? "Release" : "Disconnect"} ${camera}?`)) return;
     setDisconnecting(role);
     setCameraActionError("");
     try {
       const token = localStorage.getItem(`curlcast-access-${id}`);
-      const response = await fetch(`/api/games/${id}/disconnect-camera`, {
-        method: "POST",
-        headers: {
-          "content-type": "application/json",
-          ...(token ? { authorization: `Bearer ${token}` } : {}),
+      const response = await fetch(
+        `/api/games/${id}/${release ? "release-camera" : "disconnect-camera"}`,
+        {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            ...(token ? { authorization: `Bearer ${token}` } : {}),
+          },
+          body: JSON.stringify({ role }),
         },
-        body: JSON.stringify({ role }),
-      });
+      );
       if (!response.ok) {
         const body = await response.json().catch(() => null);
         throw new Error(body?.error || "Camera could not be released.");
@@ -119,7 +125,12 @@ export default function GameLobby({
                       <button
                         className="min-h-11 shrink-0 rounded-lg border border-red-700 px-3 text-red-200"
                         disabled={disconnecting === role}
-                        onClick={() => void disconnectCamera(role)}
+                        onClick={() => {
+                          const live = (
+                            ["Connecting", "Live", "Reconnecting"] as string[]
+                          ).includes(cameraDisplayStatus(game, role));
+                          void cameraAction(role, !live);
+                        }}
                       >
                         {(
                           ["Connecting", "Live", "Reconnecting"] as string[]

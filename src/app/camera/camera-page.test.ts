@@ -67,4 +67,13 @@ describe("camera connection lifecycle", () => {
     expect(page).toContain("Reconnect manually when you are ready.");
     expect(page).not.toContain("RoomEvent.Disconnected, connect");
   });
+
+  it("replaces Connect with rescan guidance after an assignment is released", () => {
+    expect(page).toContain('failure?.code === "camera_assignment_released"');
+    expect(page).toContain("This camera assignment has been released.");
+    expect(page).toContain(
+      "Scan the game QR code to connect this device again.",
+    );
+    expect(page).toContain("assignmentReleased ? (");
+  });
 });

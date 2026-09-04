@@ -30,7 +30,12 @@ export async function POST(
   if (!authorization.ok) {
     const failure = authorizationError(authorization);
     return NextResponse.json(
-      { error: failure.error },
+      {
+        error: failure.error,
+        ...(authorization.reason === "released"
+          ? { code: "camera_assignment_released" }
+          : {}),
+      },
       { status: failure.status },
     );
   }

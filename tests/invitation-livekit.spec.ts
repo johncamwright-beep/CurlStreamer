@@ -92,6 +92,12 @@ test("scheduled-game chooser claims Camera 1 and requests LiveKit as the device"
     await context.route(
       "**/api/games/scheduled-game/disconnect-camera",
       async (route) => {
+        await route.fulfill({ json: { disconnected: true } });
+      },
+    );
+    await context.route(
+      "**/api/games/scheduled-game/release-camera",
+      async (route) => {
         claimed = false;
         participantCredential = "";
         await route.fulfill({ json: { disconnected: true, released: true } });

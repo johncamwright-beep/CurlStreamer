@@ -61,6 +61,7 @@ export default function Camera({
   const [warning, setWarning] = useState("");
   const [battery, setBattery] = useState<string>();
   const [previewReady, setPreviewReady] = useState(false);
+  const [assignmentReleased, setAssignmentReleased] = useState(false);
   const preferenceKey = `curlcast-camera-framing-${role}`;
   const [framing, setFraming] = useState<"fill" | "contain">("fill");
   const [zoomRange, setZoomRange] = useState<ZoomRange>();
@@ -155,6 +156,7 @@ export default function Camera({
     disconnected.current = false;
     removedByOrganizer.current = false;
     setError("");
+    setAssignmentReleased(false);
     setCapture("");
     setSource("");
     setConfirmation("");
@@ -241,10 +243,20 @@ export default function Camera({
       } catch {
         throw new Error("Token error: unable to reach the credential service.");
       }
-      if (!response.ok)
+      if (!response.ok) {
+        const failure = (await response.json().catch(() => null)) as {
+          code?: string;
+        } | null;
+        if (failure?.code === "camera_assignment_released") {
+          setAssignmentReleased(true);
+          throw new Error(
+            "This camera assignment has been released. Scan the game QR code to connect this device again.",
+          );
+        }
         throw new Error(
           `Token error: access unavailable (${response.status}).`,
         );
+      }
       const credentials = (await response.json()) as {
         url: string;
         token: string;
@@ -588,7 +600,14 @@ export default function Camera({
         Keep the house inside the rings and the sheet aligned to the centre
         guide. Do not lock this phone or leave this page.
       </p>
-      {state !== "live" && (
+      {assignmentReleased ? (
+        <div className="panel" role="alert">
+          <strong>Camera assignment released</strong>
+          <p className="mt-2">
+            Scan the game QR code to connect this device again.
+          </p>
+        </div>
+      ) : state !== "live" ? (
         <button
           disabled={state === "connecting"}
           onClick={connect}
@@ -600,7 +619,7 @@ export default function Camera({
               ? "Retry Connection"
               : "Connect Camera"}
         </button>
-      )}
+      ) : null}
       {(state === "connecting" || state === "live") && (
         <button
           onClick={() => void disconnectCamera()}

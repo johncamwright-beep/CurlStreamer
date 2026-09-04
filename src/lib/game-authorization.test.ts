@@ -116,7 +116,7 @@ describe("game authorization lookup", () => {
         "scheduled-game",
         participantOptions,
       ),
-    ).resolves.toEqual({ ok: false, reason: "unauthorized" });
+    ).resolves.toEqual({ ok: false, reason: "released" });
   });
 
   it.each([

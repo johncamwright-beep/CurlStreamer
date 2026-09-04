@@ -6,6 +6,7 @@ test("scheduled-game chooser claims Camera 1 and requests LiveKit as the device"
 }) => {
   let claimed = false;
   let participantCredential = "";
+  let claimNumber = 0;
   const game = () => ({
     id: "scheduled-game",
     createdAt: Date.now(),
@@ -64,7 +65,7 @@ test("scheduled-game chooser claims Camera 1 and requests LiveKit as the device"
     );
     await context.route("**/api/games/scheduled-game/claim", async (route) => {
       claimed = true;
-      participantCredential = "device-bound-camera-session";
+      participantCredential = `device-bound-camera-session-${++claimNumber}`;
       await route.fulfill({
         json: { role: "camera-home", sessionToken: participantCredential },
       });
@@ -72,16 +73,28 @@ test("scheduled-game chooser claims Camera 1 and requests LiveKit as the device"
     await context.route(
       "**/api/games/scheduled-game/livekit-token",
       async (route) => {
-        expect(route.request().headers().authorization).toBe(
-          `Bearer ${participantCredential}`,
-        );
         expect(route.request().headers().cookie).toBeUndefined();
+        if (
+          route.request().headers().authorization !==
+          `Bearer ${participantCredential}`
+        ) {
+          await route.fulfill({ status: 401, json: { error: "unauthorized" } });
+          return;
+        }
         await route.fulfill({
           json: {
             url: "wss://live.example",
             token: "publish-only-camera-token",
           },
         });
+      },
+    );
+    await context.route(
+      "**/api/games/scheduled-game/disconnect-camera",
+      async (route) => {
+        claimed = false;
+        participantCredential = "";
+        await route.fulfill({ json: { disconnected: true, released: true } });
       },
     );
   };
@@ -117,5 +130,26 @@ test("scheduled-game chooser claims Camera 1 and requests LiveKit as the device"
     token: "publish-only-camera-token",
   });
   await expect(page.getByText("Claimed but offline")).toBeVisible();
+  const releasedCredential = participantCredential;
+  page.once("dialog", (dialog) => void dialog.accept());
+  await page.getByRole("button", { name: "Release Camera" }).click();
+  await expect(page.getByText("Unclaimed").first()).toBeVisible();
+  const rejected = await camera.evaluate(async (credential) => {
+    const response = await fetch("/api/games/scheduled-game/livekit-token", {
+      method: "POST",
+      headers: { authorization: `Bearer ${credential}` },
+    });
+    return response.status;
+  }, releasedCredential);
+  expect(rejected).toBe(401);
+
+  const replacement = await browser.newContext();
+  await installRoutes(replacement, false);
+  const replacementCamera = await replacement.newPage();
+  await replacementCamera.goto(chooserUrl!);
+  await replacementCamera.getByRole("button", { name: /Camera 1/ }).click();
+  expect(participantCredential).toBe("device-bound-camera-session-2");
+  await expect(page.getByText("Claimed but offline")).toBeVisible();
+  await replacement.close();
   await participant.close();
 });

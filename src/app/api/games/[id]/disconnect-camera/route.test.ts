@@ -4,7 +4,7 @@ const mocks = vi.hoisted(() => ({
   authorizeGame: vi.fn(),
   removeCameraParticipant: vi.fn(),
   getGame: vi.fn(),
-  updateGame: vi.fn(),
+  releaseRole: vi.fn(),
 }));
 vi.mock("@/lib/game-authorization", () => ({
   operatorRoles: ["owner", "team_admin", "scorer"],
@@ -16,7 +16,7 @@ vi.mock("@/lib/providers/livekit", () => ({
 }));
 vi.mock("@/lib/store", () => ({
   getGame: mocks.getGame,
-  updateGame: mocks.updateGame,
+  releaseRole: mocks.releaseRole,
 }));
 
 import { POST } from "./route";
@@ -41,6 +41,10 @@ describe("organizer camera disconnect route", () => {
       access: { purpose: "organizer", gameId: "game-1" },
     });
     mocks.getGame.mockResolvedValue({ claims: { "camera-home": "claimed" } });
+    mocks.releaseRole.mockResolvedValue({
+      released: true,
+      game: { claims: {} },
+    });
   });
 
   it("requires organizer authorization for the same game", async () => {
@@ -63,7 +67,7 @@ describe("organizer camera disconnect route", () => {
     expect(mocks.removeCameraParticipant).not.toHaveBeenCalled();
   });
 
-  it("rejects an incorrect or unclaimed role", async () => {
+  it("rejects an incorrect role and treats an unclaimed role idempotently", async () => {
     expect(
       (
         await POST(request("scorer"), {
@@ -71,17 +75,15 @@ describe("organizer camera disconnect route", () => {
         })
       ).status,
     ).toBe(400);
-    expect(
-      (
-        await POST(request("camera-away"), {
-          params: Promise.resolve({ id: "game-1" }),
-        })
-      ).status,
-    ).toBe(409);
+    const unclaimed = await POST(request("camera-away"), {
+      params: Promise.resolve({ id: "game-1" }),
+    });
+    expect(unclaimed.status).toBe(200);
+    expect(await unclaimed.json()).toMatchObject({ released: false });
     expect(mocks.removeCameraParticipant).not.toHaveBeenCalled();
   });
 
-  it("removes the selected participant and persists disconnected", async () => {
+  it("removes the selected participant and clears the device claim", async () => {
     const response = await POST(request(), {
       params: Promise.resolve({ id: "game-1" }),
     });
@@ -90,9 +92,31 @@ describe("organizer camera disconnect route", () => {
       "game-1",
       "camera-home",
     );
-    expect(mocks.updateGame).toHaveBeenCalledWith(
+    expect(mocks.releaseRole).toHaveBeenCalledWith(
       "game-1",
-      expect.objectContaining({ role: "camera-home", phase: "disconnected" }),
+      "camera-home",
+      "claimed",
     );
+  });
+
+  it("releases an offline claim when LiveKit reports participant not found", async () => {
+    mocks.removeCameraParticipant.mockResolvedValue(undefined);
+    expect(
+      (await POST(request(), { params: Promise.resolve({ id: "game-1" }) }))
+        .status,
+    ).toBe(200);
+    expect(mocks.releaseRole).toHaveBeenCalledOnce();
+  });
+
+  it("does not clear a live claim when LiveKit removal fails", async () => {
+    mocks.removeCameraParticipant.mockRejectedValue(
+      new Error("service failed"),
+    );
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+    expect(
+      (await POST(request(), { params: Promise.resolve({ id: "game-1" }) }))
+        .status,
+    ).toBe(503);
+    expect(mocks.releaseRole).not.toHaveBeenCalled();
   });
 });

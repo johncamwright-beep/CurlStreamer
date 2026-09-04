@@ -15,12 +15,15 @@ export default function GameLobby({
   params: Promise<{ id: string }>;
 }) {
   const { id } = use(params);
-  const { game, error, act, accountOperator, accountRole } = useGame(id);
+  const { game, error, act, refresh, accountOperator, accountRole } =
+    useGame(id);
   const [disconnecting, setDisconnecting] = useState<Role>();
+  const [cameraActionError, setCameraActionError] = useState("");
   async function disconnectCamera(role: "camera-home" | "camera-away") {
     const camera = role === "camera-home" ? "Camera 1" : "Camera 2";
     if (!confirm(`Disconnect ${camera}?`)) return;
     setDisconnecting(role);
+    setCameraActionError("");
     try {
       const token = localStorage.getItem(`curlcast-access-${id}`);
       const response = await fetch(`/api/games/${id}/disconnect-camera`, {
@@ -31,7 +34,17 @@ export default function GameLobby({
         },
         body: JSON.stringify({ role }),
       });
-      if (!response.ok) throw new Error("Camera could not be disconnected.");
+      if (!response.ok) {
+        const body = await response.json().catch(() => null);
+        throw new Error(body?.error || "Camera could not be released.");
+      }
+      await refresh();
+    } catch (cause) {
+      setCameraActionError(
+        cause instanceof Error
+          ? cause.message
+          : "Camera could not be released.",
+      );
     } finally {
       setDisconnecting(undefined);
     }
@@ -108,13 +121,22 @@ export default function GameLobby({
                         disabled={disconnecting === role}
                         onClick={() => void disconnectCamera(role)}
                       >
-                        Disconnect Camera
+                        {(
+                          ["Connecting", "Live", "Reconnecting"] as string[]
+                        ).includes(cameraDisplayStatus(game, role))
+                          ? "Disconnect Camera"
+                          : "Release Camera"}
                       </button>
                     )}
                   </div>
                 ),
               )}
             </div>
+            {cameraActionError && (
+              <p role="alert" className="mt-3 text-amber-300">
+                {cameraActionError}
+              </p>
+            )}
           </section>
         }
       />

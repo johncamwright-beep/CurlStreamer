@@ -102,6 +102,24 @@ export function claimRole(
     return { game };
   });
 }
+export function releaseRole(
+  id: string,
+  role: "camera-home" | "camera-away",
+  expectedClaim?: string,
+) {
+  return mutate((games) => {
+    const game = games.get(id);
+    if (!game) return { error: "Game not found" };
+    const current = game.claims[role];
+    if (!current) return { game, released: false };
+    if (expectedClaim && current !== expectedClaim)
+      return { error: "Camera claim changed" };
+    delete game.claims[role];
+    game.connections[role] = false;
+    if (game.cameraHealth) delete game.cameraHealth[role];
+    return { game, released: true };
+  });
+}
 export function updateGame(id: string, action: z.infer<typeof actionSchema>) {
   return mutate((games) => {
     const game = games.get(id);

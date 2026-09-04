@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { removeCameraParticipant } from "@/lib/providers/livekit";
-import { getGame, updateGame } from "@/lib/store";
+import { getGame, releaseRole } from "@/lib/store";
 import {
   authorizeGame,
   operatorRoles,
@@ -34,17 +34,30 @@ export async function POST(
   const game = await getGame(id);
   if (!game)
     return NextResponse.json({ error: "Game not found" }, { status: 404 });
-  if (!game.claims[parsed.data.role])
+  const claim = game.claims[parsed.data.role];
+  if (!claim)
+    return NextResponse.json({ disconnected: true, released: false, game });
+  try {
+    await removeCameraParticipant(id, parsed.data.role);
+  } catch {
+    console.error("Camera release failed", {
+      operation: "remove_livekit_participant",
+      category: "livekit_service",
+    });
     return NextResponse.json(
-      { error: "That camera role is not claimed" },
+      { error: "The live camera could not be disconnected." },
+      { status: 503 },
+    );
+  }
+  const released = await releaseRole(id, parsed.data.role, claim);
+  if (released.error)
+    return NextResponse.json(
+      { error: "The camera claim changed before it could be released." },
       { status: 409 },
     );
-  await removeCameraParticipant(id, parsed.data.role);
-  await updateGame(id, {
-    type: "camera-health",
-    role: parsed.data.role,
-    phase: "disconnected",
-    diagnostic: "Disconnected by organizer",
+  return NextResponse.json({
+    disconnected: true,
+    released: true,
+    game: released.game,
   });
-  return NextResponse.json({ disconnected: true });
 }

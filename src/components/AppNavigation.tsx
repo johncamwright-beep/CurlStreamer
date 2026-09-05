@@ -155,7 +155,7 @@ export function AppNavigation({
           ? [
               {
                 href: `/games/${current.id}/edit`,
-                label: "Edit schedule",
+                label: "Edit game",
                 icon: "edit" as const,
               },
             ]

@@ -64,9 +64,13 @@ export function GameCreationForm({
   const [eventId, setEventId] = useState<string>(
     editing?.eventId ?? preselected?.id ?? "",
   );
+  const [opponentChoice, setOpponentChoice] = useState(
+    editing?.opponentId ?? (opponents.length ? "" : "__new"),
+  );
   const [opponentSearch, setOpponentSearch] = useState(
     editing?.opponentId
-      ? (opponents.find((o) => o.id === editing.opponentId)?.display_name ?? "")
+      ? (opponents.find((o) => o.id === editing.opponentId)?.display_name ??
+          editing.config.awayName)
       : "",
   );
   const [opponentTbd, setOpponentTbd] = useState(
@@ -250,9 +254,11 @@ export function GameCreationForm({
         eventId: eventId || null,
         ...(opponentTbd
           ? {}
-          : matching
-            ? { opponentId: matching.id }
-            : { opponentName }),
+          : opponentChoice && opponentChoice !== "__new"
+            ? { opponentId: opponentChoice }
+            : matching
+              ? { opponentId: matching.id }
+              : { opponentName }),
         scheduledDate: date,
         scheduledTime: form.get("scheduledTime"),
         timezone: selectedEvent?.timezone ?? form.get("timezone"),
@@ -285,11 +291,11 @@ export function GameCreationForm({
     <>
       <nav aria-label="Breadcrumb" className="setup-breadcrumb">
         <LinkText href="/dashboard">← Games</LinkText>
-        <span>{editing ? "Edit schedule" : "New game"}</span>
+        <span>{editing ? "Edit game" : "New game"}</span>
       </nav>
       <header className="setup-heading">
         <p className="setup-eyebrow">Match preparation</p>
-        <h1>{editing ? "Edit schedule" : "Schedule a game"}</h1>
+        <h1>{editing ? "Edit game" : "Schedule a game"}</h1>
         <p>
           {editing
             ? editingTitle
@@ -367,21 +373,52 @@ export function GameCreationForm({
               </label>
               <div>
                 <label htmlFor="setup-opponent">Team 2 — Opponent</label>
-                <input
+                <select
                   id="setup-opponent"
                   disabled={opponentTbd}
                   required={!opponentTbd}
-                  list="opponents"
-                  value={opponentSearch}
-                  onChange={(e) => setOpponentSearch(e.target.value)}
-                  placeholder="Search or add a new opponent"
-                  className="mt-1 w-full rounded-lg bg-slate-800 p-3"
-                />
-                <datalist id="opponents">
+                  value={opponentChoice}
+                  onChange={(e) => {
+                    const choice = e.target.value;
+                    setOpponentChoice(choice);
+                    setOpponentSearch(
+                      opponents.find((o) => o.id === choice)?.display_name ??
+                        (choice === editing?.opponentId
+                          ? editing.config.awayName
+                          : ""),
+                    );
+                  }}
+                  className="mt-1 min-h-11 w-full rounded-lg bg-slate-800 p-3"
+                >
+                  <option value="" disabled>
+                    Choose an opponent
+                  </option>
+                  {editing?.opponentId &&
+                    !opponents.some((o) => o.id === editing.opponentId) && (
+                      <option value={editing.opponentId}>
+                        {editing.config.awayName} (current opponent)
+                      </option>
+                    )}
                   {opponents.map((o) => (
-                    <option key={o.id} value={o.display_name} />
+                    <option key={o.id} value={o.id}>
+                      {o.display_name}
+                    </option>
                   ))}
-                </datalist>
+                  <option value="__new">Add new opponent…</option>
+                </select>
+                {opponentChoice === "__new" && (
+                  <label className="mt-3 block">
+                    New opponent name
+                    <input
+                      disabled={opponentTbd}
+                      required={!opponentTbd}
+                      value={opponentSearch}
+                      onChange={(e) => setOpponentSearch(e.target.value)}
+                      placeholder="Enter the team name"
+                      className="mt-1 w-full rounded-lg bg-slate-800 p-3"
+                    />
+                  </label>
+                )}
                 <label className="setup-checkbox">
                   <input
                     className="h-6 w-6"
@@ -392,8 +429,8 @@ export function GameCreationForm({
                   Opponent TBD
                 </label>
                 <p className="setup-help">
-                  Choose a saved opponent or enter a new name. You can assign an
-                  unknown opponent later.
+                  Choose a saved team or select “Add new opponent”. You can
+                  assign an unknown opponent later.
                 </p>
               </div>
             </div>
@@ -668,7 +705,7 @@ export function GameCreationForm({
             disabled={busy || !seasonId || !scheduledInstant}
             className="btn md:col-span-2"
           >
-            {busy ? "Saving…" : editing ? "Save schedule" : "Schedule game"}
+            {busy ? "Saving…" : editing ? "Save changes" : "Schedule game"}
           </button>
           {error && (
             <p role="alert" className="text-red-300 md:col-span-2">
@@ -677,7 +714,7 @@ export function GameCreationForm({
           )}
           <p className="setup-help">
             {editing
-              ? "Your changes update this game’s schedule and settings."
+              ? "Your changes update this game’s teams, schedule and settings."
               : "Next: invite cameras and open the game controls."}
           </p>
         </aside>

@@ -81,7 +81,7 @@ describe("shared application navigation", () => {
     expect(gameLinks).toContain("selectCurrentGame(localStorage");
     for (const action of [
       "Open Game",
-      "Edit Schedule",
+      "Edit game",
       "Assign Opponent",
       "Scoring",
       "Broadcast",

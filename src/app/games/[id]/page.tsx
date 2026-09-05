@@ -197,9 +197,9 @@ export default function GameLobby({
             <Link
               className="btn-secondary"
               href={`/games/${id}/edit`}
-              aria-label={`Edit Schedule: ${title}`}
+              aria-label={`Edit game: ${title}`}
             >
-              Edit Schedule
+              Edit game
             </Link>
           )}
           <Link

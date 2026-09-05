@@ -2,11 +2,12 @@
 import Link from "next/link";
 import { use, useEffect, useRef, useState } from "react";
 import { useGame } from "@/components/GameSync";
-import { Scoreboard } from "@/components/Scoreboard";
+import { ScoringSummary } from "@/components/ScoringSummary";
+import { ScoringProgramControls } from "@/components/ScoringProgramControls";
+import "./scoring.css";
 import { GameSetupNavigation } from "@/components/GameSetupNavigation";
 import { activeEvents, deriveScore, type ScoringAction } from "@/lib/scoring";
 import type { Team } from "@/lib/types";
-import { hasVisibleSponsorOverlay } from "@/lib/sponsor-audio";
 import { AppNavigation } from "@/components/AppNavigation";
 import { canonicalTitleFromConfig } from "@/lib/game-title";
 import { gameCapabilities } from "@/lib/current-game";
@@ -24,8 +25,15 @@ export default function Scorer({
   params: Promise<{ id: string }>;
 }) {
   const { id } = use(params);
-  const { game, completion, error, act, accountOperator, accountRole } =
-    useGame(id);
+  const {
+    game,
+    completion,
+    error,
+    act,
+    refresh,
+    accountOperator,
+    accountRole,
+  } = useGame(id);
   const [points, setPoints] = useState(1);
   const [team, setTeam] = useState<Team>("home");
   const scoringFlight = useRef(false);
@@ -56,8 +64,23 @@ export default function Scorer({
     );
   if (error)
     return (
-      <main role="alert" className="p-8">
-        {error}
+      <main className="scoring-workspace mx-auto max-w-xl">
+        <AppNavigation />
+        <section className="scoring-card mt-5" role="alert">
+          <h1 className="text-xl font-bold">Scoring unavailable</h1>
+          <p className="mt-3 text-slate-300">{error}</p>
+          <div className="mt-5 flex flex-wrap gap-3">
+            <button className="btn" onClick={() => void refresh()}>
+              Try again
+            </button>
+            <Link
+              className="btn-secondary inline-flex min-h-11 items-center"
+              href="/dashboard"
+            >
+              Back to games
+            </Link>
+          </div>
+        </section>
       </main>
     );
   if (!game) return <main className="p-8">Loading controls…</main>;
@@ -121,7 +144,6 @@ export default function Scorer({
         </div>
       </main>
     );
-  const enabled = game.sponsors.filter((s) => s.enabled);
   const title = canonicalTitleFromConfig(game.config);
   const score = deriveScore(game);
   const undoTarget = activeEvents(game.scoreEvents).at(-1);
@@ -169,8 +191,8 @@ export default function Scorer({
     });
   }
   return (
-    <main className="mx-auto max-w-6xl p-4">
-      <div className="mb-3">
+    <main className="scoring-workspace mx-auto max-w-6xl">
+      <div className="scoring-navigation">
         <AppNavigation
           gameContext={{
             id,
@@ -183,28 +205,35 @@ export default function Scorer({
             ),
           }}
         />
-      </div>
-      <div className="mb-3">
         <GameSetupNavigation id={id} accountOperator={accountOperator} />
       </div>
-      <header className="mb-4 flex flex-wrap items-center justify-between gap-3">
+      <header className="scoring-page-heading">
         <div>
-          <p className="text-cyan-300">SCORER · MOCK MODE</p>
-          <h1 className="text-3xl font-black">{title}</h1>
+          <p className="scoring-eyebrow">Match control</p>
+          <h1>Scoring</h1>
+          <p className="scoring-match-title">{title}</p>
         </div>
-        <Link
-          className="btn-secondary"
-          href={`/broadcast/${id}`}
-          aria-label={`Broadcast: ${title}`}
-        >
-          Open program preview
-        </Link>
+        <div className="scoring-page-actions">
+          <Link
+            className="btn-secondary"
+            href={`/broadcast/${id}`}
+            aria-label={`Broadcast: ${title}`}
+          >
+            Open program preview
+          </Link>
+          <a className="btn-secondary" href="#program-controls">
+            Broadcast controls ↓
+          </a>
+        </div>
       </header>
-      <div className="grid gap-4 lg:grid-cols-2">
-        <section className="space-y-4">
-          <Scoreboard game={game} />
+      <div className="scoring-columns">
+        <div className="scoring-main">
+          <ScoringSummary game={game} />
           {!score.hammer ? (
-            <div className="panel" aria-labelledby="initial-hammer-heading">
+            <section
+              className="scoring-card scoring-entry"
+              aria-labelledby="initial-hammer-heading"
+            >
               <h2 id="initial-hammer-heading" className="text-xl font-bold">
                 Who has hammer in End 1?
               </h2>
@@ -228,39 +257,61 @@ export default function Scorer({
                   </button>
                 ))}
               </div>
-            </div>
+            </section>
           ) : (
-            <div className="panel">
-              <h2 className="text-xl font-bold">Record this end</h2>
-              <div className="my-3 grid grid-cols-2 gap-2">
+            <section
+              className="scoring-card scoring-entry"
+              aria-labelledby="record-end-heading"
+            >
+              <div className="scoring-section-heading">
+                <h2 id="record-end-heading">Record End {score.currentEnd}</h2>
+                <span className="scoring-eyebrow">Score entry</span>
+              </div>
+              <p className="scoring-field-label">Which team scored?</p>
+              <div
+                className="scoring-team-picker"
+                role="group"
+                aria-label="Scoring team"
+              >
                 <button
                   disabled={scoringLocked}
                   onClick={() => setTeam("home")}
-                  className={team === "home" ? "btn" : "btn-secondary"}
+                  aria-pressed={team === "home"}
+                  className="scoring-team-choice"
                 >
                   {game.config.homeName}
                 </button>
                 <button
                   disabled={scoringLocked}
                   onClick={() => setTeam("away")}
-                  className={team === "away" ? "btn" : "btn-secondary"}
+                  aria-pressed={team === "away"}
+                  className="scoring-team-choice"
                 >
                   {game.config.awayName}
                 </button>
               </div>
-              <label>
-                Points
-                <select
-                  disabled={scoringLocked}
-                  value={points}
-                  onChange={(e) => setPoints(+e.target.value)}
-                  className="ml-3 rounded-lg bg-slate-800 px-4"
-                >
-                  {[1, 2, 3, 4, 5, 6, 7, 8].map((n) => (
-                    <option key={n}>{n}</option>
-                  ))}
-                </select>
-              </label>
+              <p className="scoring-field-label">Points scored</p>
+              <div
+                className="scoring-points"
+                role="group"
+                aria-label="Points scored"
+              >
+                {[1, 2, 3, 4, 5, 6, 7, 8].map((value) => (
+                  <button
+                    key={value}
+                    disabled={scoringLocked}
+                    aria-pressed={points === value}
+                    aria-label={`${value} point${value === 1 ? "" : "s"}`}
+                    onClick={() => setPoints(value)}
+                  >
+                    {value}
+                  </button>
+                ))}
+              </div>
+              <p className="scoring-save-preview">
+                {game.config[`${team}Name`]} · {points} point
+                {points === 1 ? "" : "s"}
+              </p>
               <div className="mt-3 grid grid-cols-2 gap-2">
                 <button
                   disabled={scoringLocked}
@@ -309,12 +360,13 @@ export default function Scorer({
                     })
                   }
                 >
-                  ↶ Undo last scoring change
+                  Undo last scoring change
                 </button>
                 <button
                   disabled={scoringLocked}
                   className="btn-secondary"
-                  onClick={() => setCorrectingHammer(true)}
+                  aria-expanded={correctingHammer}
+                  onClick={() => setCorrectingHammer(!correctingHammer)}
                 >
                   Correct Hammer
                 </button>
@@ -355,15 +407,23 @@ export default function Scorer({
                   </div>
                 </div>
               )}
-            </div>
+            </section>
           )}
           {scoringBusy && (
-            <p role="status" className="panel text-cyan-200">
+            <p
+              role="status"
+              aria-label="Scoring update"
+              className="scoring-feedback"
+            >
               Saving scoring change…
             </p>
           )}
           {scoringError && (
-            <div role="alert" className="panel border-red-400 text-red-200">
+            <div
+              role="alert"
+              aria-label="Scoring error"
+              className="scoring-feedback scoring-feedback-error"
+            >
               <p>{scoringError}</p>
               <p className="mt-2 text-sm">
                 Retry will safely repeat this same scoring change.
@@ -390,68 +450,17 @@ export default function Scorer({
             </div>
           )}
           {scoringNotice && (
-            <p role="status" className="panel text-emerald-200">
+            <p
+              role="status"
+              aria-label="Scoring update"
+              className="scoring-feedback scoring-feedback-success"
+            >
               {scoringNotice}
             </p>
           )}
-        </section>
-        <section className="space-y-4">
-          {canEndGame && <BroadcastControl gameId={id} enabled />}
-          <div className="panel">
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
-                Program controls
-              </p>
-              <h2 className="text-xl font-bold">Camera layout &amp; audio</h2>
-            </div>
-            <div
-              className="my-4 grid grid-cols-1 gap-2 min-[360px]:grid-cols-3"
-              role="group"
-              aria-label="Program camera layout"
-            >
-              {(["split", "home", "away"] as const).map((x) => (
-                <button
-                  className={game.layout === x ? "btn" : "btn-secondary"}
-                  onClick={() => act({ type: "layout", layout: x })}
-                  key={x}
-                  aria-pressed={game.layout === x}
-                >
-                  {x === "split"
-                    ? "Both cameras"
-                    : x === "home"
-                      ? "Camera 1"
-                      : "Camera 2"}
-                </button>
-              ))}
-            </div>
-            <div className="rounded-xl border border-slate-700 bg-slate-950/50 p-3">
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                <div>
-                  <p className="font-semibold">Demo audio controls</p>
-                  <p className="mt-1 text-sm text-slate-300" role="status">
-                    {game.audioMuted
-                      ? "Demo audio is muted"
-                      : "Demo audio is on"}
-                  </p>
-                </div>
-                <button
-                  onClick={() =>
-                    act({ type: "audio", muted: !game.audioMuted })
-                  }
-                  className="btn-secondary min-h-11 shrink-0"
-                >
-                  {game.audioMuted ? "Turn demo audio on" : "Mute demo audio"}
-                </button>
-              </div>
-              <p className="mt-3 text-sm leading-6 text-amber-100">
-                These controls are simulated and do not control sound on your
-                YouTube stream.
-              </p>
-            </div>
-          </div>
           {canEndGame && (
-            <div className="panel">
-              <h2 className="font-bold">Game lifecycle</h2>
+            <div className="scoring-card scoring-finish">
+              <h2 className="font-bold">Finish the game</h2>
               <p className="mb-3 mt-2 text-sm text-slate-300">
                 Review and confirm the saved final score before ending the game.
               </p>
@@ -468,108 +477,16 @@ export default function Scorer({
               />
             </div>
           )}
-          <div className="panel">
-            <div className="flex justify-between">
-              <div>
-                <h2 className="text-xl font-bold">Sponsor carousel</h2>
-                <p className="text-sm text-slate-300">
-                  {enabled.length} active organization sponsor
-                  {enabled.length === 1 ? "" : "s"}
-                </p>
-              </div>
-              <span
-                className={
-                  game.sponsorMode.active
-                    ? "text-emerald-300"
-                    : "text-slate-400"
-                }
-              >
-                {game.sponsorMode.active ? "● LIVE" : "Off"}
-              </span>
-            </div>
-            <div className="my-3 grid grid-cols-2 gap-2">
-              <select
-                value={game.sponsorMode.style}
-                onChange={(e) =>
-                  act({
-                    type: "sponsor-mode",
-                    active: game.sponsorMode.active,
-                    style: e.target.value,
-                  })
-                }
-                className="rounded-lg bg-slate-800 p-3"
-              >
-                <option value="fullscreen">Sponsors Sidebar</option>
-                <option value="overlay">Sponsors Overlay</option>
-              </select>
-              <label className="rounded-lg bg-slate-800 px-3">
-                Seconds{" "}
-                <input
-                  type="number"
-                  min="3"
-                  max="10"
-                  value={game.sponsorMode.intervalSeconds}
-                  onChange={(e) =>
-                    act({
-                      type: "sponsor-mode",
-                      active: false,
-                      intervalSeconds: +e.target.value,
-                    })
-                  }
-                  className="w-12 bg-transparent"
-                />
-              </label>
-            </div>
-            <button
-              disabled={!enabled.length}
-              onClick={() =>
-                act({ type: "sponsor-mode", active: !game.sponsorMode.active })
-              }
-              className="btn w-full text-lg"
-            >
-              {game.sponsorMode.active ? "Stop carousel" : "Start carousel"}
-            </button>
-            {!enabled.length && (
-              <p className="mt-2 text-amber-200">
-                No active organization sponsors are available. Manage sponsors
-                from Plan &amp; Schedule.
-              </p>
-            )}
-            {game.sponsorMode.active && (
-              <div className="mt-3 grid grid-cols-3 gap-2">
-                <button
-                  className="btn-secondary"
-                  onClick={() => act({ type: "sponsor-nav", direction: -1 })}
-                >
-                  Previous
-                </button>
-                <button
-                  className="btn-secondary"
-                  onClick={() =>
-                    act({
-                      type: "sponsor-nav",
-                      paused: !game.sponsorMode.paused,
-                    })
-                  }
-                >
-                  {game.sponsorMode.paused ? "Resume" : "Pause"}
-                </button>
-                <button
-                  className="btn-secondary"
-                  onClick={() => act({ type: "sponsor-nav", direction: 1 })}
-                >
-                  Next
-                </button>
-              </div>
-            )}
-            {hasVisibleSponsorOverlay(game) && (
-              <p className="mt-2 font-bold text-amber-300">
-                Sponsor Overlay is temporarily muting scorer audio. A manual
-                mute will remain in place after it closes.
-              </p>
-            )}
-          </div>
-        </section>
+        </div>
+        <aside
+          id="program-controls"
+          tabIndex={-1}
+          className="scoring-sidebar"
+          aria-label="Broadcast and program controls"
+        >
+          {canEndGame && <BroadcastControl gameId={id} enabled />}
+          <ScoringProgramControls game={game} act={act} />
+        </aside>
       </div>
     </main>
   );

@@ -3,7 +3,10 @@ import { describe, expect, it } from "vitest";
 
 describe("sponsor management separation", () => {
   const library = readFileSync("src/app/sponsors/SponsorLibrary.tsx", "utf8");
-  const control = readFileSync("src/app/score/[id]/page.tsx", "utf8");
+  const control = readFileSync(
+    "src/components/ScoringProgramControls.tsx",
+    "utf8",
+  );
 
   it("uses compact active rows and a collapsed disabled section", () => {
     expect(library).toContain("h-20 w-20");
@@ -15,11 +18,11 @@ describe("sponsor management separation", () => {
   });
 
   it("keeps only carousel operations on scoring control", () => {
-    expect(control).toContain("Sponsor carousel");
+    expect(control).toContain("Carousel settings");
     expect(control).toContain("Start carousel");
     expect(control).toContain("Stop carousel");
-    expect(control).toContain("Sponsors Sidebar");
-    expect(control).toContain("Sponsors Overlay");
+    expect(control).toContain(">Sidebar</option>");
+    expect(control).toContain(">Overlay</option>");
     expect(control).not.toContain("Add Sponsor Images");
     expect(control).not.toContain("Sponsor images</h2>");
   });

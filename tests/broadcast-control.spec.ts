@@ -163,7 +163,9 @@ test("eligibility guidance remains usable at 320px", async ({
     page.getByRole("button", { name: "Retry broadcast" }),
   ).toHaveCount(1);
   await expect(page.getByText("MICROPHONES LIVE")).toHaveCount(0);
-  await expect(page.getByText("Demo audio controls")).toBeVisible();
+  await expect(
+    page.getByRole("region", { name: "Audio", exact: true }),
+  ).toBeVisible();
   await expect(
     page.getByRole("button", { name: "Mute demo audio" }),
   ).not.toHaveAttribute("aria-pressed");

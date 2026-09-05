@@ -8,12 +8,14 @@ export function TeamGameLinks({
   scheduledLabel = "Schedule not set",
   role = "scorer",
   opponentTbd = false,
+  compact = false,
 }: {
   gameId: string;
   title: string;
   scheduledLabel?: string;
   role?: string;
   opponentTbd?: boolean;
+  compact?: boolean;
 }) {
   const administrator = ["owner", "team_admin"].includes(role);
   const select = () =>
@@ -39,7 +41,7 @@ export function TeamGameLinks({
       >
         Open Game
       </Link>
-      {administrator && (
+      {administrator && !compact && (
         <Link
           className="min-h-11 rounded-lg bg-slate-700 px-3 py-3"
           href={`/games/${gameId}/edit`}
@@ -59,14 +61,16 @@ export function TeamGameLinks({
           {opponentTbd ? "Assign Opponent" : "Scoring"}
         </Link>
       )}
-      <Link
-        className="min-h-11 rounded-lg bg-slate-700 px-3 py-3"
-        href={`/broadcast/${gameId}`}
-        aria-label={`Broadcast: ${title}`}
-        onClick={select}
-      >
-        Broadcast
-      </Link>
+      {!compact && (
+        <Link
+          className="min-h-11 rounded-lg bg-slate-700 px-3 py-3"
+          href={`/broadcast/${gameId}`}
+          aria-label={`Broadcast: ${title}`}
+          onClick={select}
+        >
+          Broadcast
+        </Link>
+      )}
     </div>
   );
 }

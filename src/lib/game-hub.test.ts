@@ -40,6 +40,29 @@ const event: EventRecord = {
   archivedAt: null,
 };
 describe("games hub grouping", () => {
+  it("keeps unfinished and closed games distinct from reported broadcasts and final results", () => {
+    const groups = groupGames(
+      [
+        game("live", "2026-08-01T00:00:00Z"),
+        game("unfinished", "2026-08-01T00:00:00Z"),
+        { ...game("unscheduled", ""), scheduledStart: null },
+        { ...game("closed-future", "2026-10-01T00:00:00Z"), status: "closed" },
+        { ...game("completed", "2026-10-01T00:00:00Z"), status: "completed" },
+        game("scheduled", "2026-10-02T00:00:00Z"),
+      ],
+      [],
+      Date.parse("2026-09-01T00:00:00Z"),
+      new Set(["live", "completed"]),
+    );
+    expect(groups.broadcasting.map((g) => g.id)).toEqual(["live"]);
+    expect(groups.upcoming.map((g) => g.id)).toEqual(["scheduled"]);
+    expect(groups.unfinished.map((g) => g.id)).toEqual([
+      "unfinished",
+      "unscheduled",
+    ]);
+    expect(groups.completed.map((g) => g.id)).toEqual(["completed"]);
+    expect(groups.closed.map((g) => g.id)).toEqual(["closed-future"]);
+  });
   it("orders next games and separates events, season single games, and history", () => {
     const completedEarly = {
       ...game("completed-early", "2026-09-04T00:00:00Z", "event"),

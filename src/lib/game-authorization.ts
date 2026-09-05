@@ -63,7 +63,7 @@ export async function authorizeGame(
         const game = active.games.find(
           (candidate) => candidate.game_id === gameId,
         );
-        if (game?.game_status === "closed")
+        if (["closed", "completed"].includes(game?.game_status ?? ""))
           return { ok: false, reason: "closed" };
         if (game) {
           return {
@@ -101,7 +101,8 @@ export async function authorizeGame(
       try {
         const game = await getGame(gameId);
         if (!game) return { ok: false, reason: "not-found" };
-        if (game.status === "closed") return { ok: false, reason: "closed" };
+        if (["closed", "completed"].includes(game.status))
+          return { ok: false, reason: "closed" };
         if (
           access.purpose === "participant" &&
           (!access.role ||

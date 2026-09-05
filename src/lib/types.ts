@@ -49,7 +49,7 @@ export interface GameState {
   scoreEvents: ScoreEvent[];
   layout: Layout;
   broadcast: "idle" | "live";
-  status: "active" | "closed";
+  status: "active" | "closed" | "completed";
   audioMuted: boolean;
   connections: Record<Role, boolean>;
   cameraHealth?: Partial<Record<"camera-home" | "camera-away", CameraHealth>>;

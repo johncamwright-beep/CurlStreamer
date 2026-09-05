@@ -121,7 +121,7 @@ export async function claimRole(
 ) {
   const game = await getGame(id);
   if (!game) return { error: "Game not found" };
-  if (game.status === "closed") return { error: "This game is closed." };
+  if (game.status !== "active") return { error: "This game is closed." };
   if (game.claims[role] && game.claims[role] !== claimant)
     return { error: "This role is already in use." };
   game.claims[role] = claimant;
@@ -185,6 +185,10 @@ export async function updateGame(
   const record = await getGameRecord(id);
   if (!record) return undefined;
   const game = record.state;
+  if (game.status === "completed") {
+    if (action.type === "close-game") return game;
+    throw new Error("This game is completed");
+  }
   const now = Date.now();
   let scoreEvent: GameState["scoreEvents"][number] | undefined;
   if (action.type === "score") {

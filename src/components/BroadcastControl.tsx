@@ -31,7 +31,7 @@ function failureMessage(code?: string) {
   if (accessErrors.has(code ?? ""))
     return "The saved YouTube connection no longer has the required access. Reconnect it in YouTube settings.";
   if (code === "youtube_quota_exceeded")
-    return "YouTube API capacity is temporarily exhausted. Wait a little, then retry.";
+    return "YouTube's daily API quota is exhausted. Wait for the quota to reset or request a quota increase before retrying.";
   if (code === "youtube_provider_rejected")
     return "YouTube rejected the request. Review the connected channel in YouTube Studio, then retry.";
   if (code === "broadcast_provider_ended")

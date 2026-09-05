@@ -439,7 +439,6 @@ export default function Scorer({
                     act({ type: "audio", muted: !game.audioMuted })
                   }
                   className="btn-secondary min-h-11 shrink-0"
-                  aria-pressed={!game.audioMuted}
                 >
                   {game.audioMuted ? "Turn demo audio on" : "Mute demo audio"}
                 </button>

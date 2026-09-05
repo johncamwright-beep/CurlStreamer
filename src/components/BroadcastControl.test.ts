@@ -40,13 +40,15 @@ describe("BroadcastControl state model", () => {
       statusMessage: expect.stringContaining("required access"),
       supportLink: "settings",
     });
-    expect(
-      broadcastControlView({
-        desiredState: "live",
-        status: "failed",
-        lastErrorCode: "youtube_quota_exceeded",
-      }).statusMessage,
-    ).toContain("capacity");
+    const quotaMessage = broadcastControlView({
+      desiredState: "live",
+      status: "failed",
+      lastErrorCode: "youtube_quota_exceeded",
+    }).statusMessage;
+    expect(quotaMessage).toContain("daily API quota");
+    expect(quotaMessage).toContain("quota to reset");
+    expect(quotaMessage).toContain("quota increase");
+    expect(quotaMessage).not.toContain("a little");
     expect(
       broadcastControlView({
         desiredState: "live",

@@ -164,6 +164,9 @@ test("eligibility guidance remains usable at 320px", async ({
   ).toHaveCount(1);
   await expect(page.getByText("MICROPHONES LIVE")).toHaveCount(0);
   await expect(page.getByText("Demo audio controls")).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Mute demo audio" }),
+  ).not.toHaveAttribute("aria-pressed");
   await page.screenshot({
     path: testInfo.outputPath("youtube-panel-320px.png"),
     fullPage: true,

@@ -25,10 +25,12 @@ export function RockColourSelector({
   name,
   label,
   defaultValue,
+  onValueChange,
 }: {
   name: string;
   label: string;
   defaultValue: string;
+  onValueChange?: (value: string) => void;
 }) {
   const id = useId();
   const initialValue = validColour(defaultValue, customFallback);
@@ -54,6 +56,7 @@ export function RockColourSelector({
     const colour = validColour(next, customValue);
     setCustomValue(colour);
     setValue(colour);
+    onValueChange?.(colour);
     setMode("custom");
   }
 
@@ -88,6 +91,7 @@ export function RockColourSelector({
                 onChange={() => {
                   setMode("preset");
                   setValue(preset.value);
+                  onValueChange?.(preset.value);
                 }}
               />
               {selected && (
@@ -118,6 +122,7 @@ export function RockColourSelector({
             onChange={() => {
               setMode("custom");
               setValue(customValue);
+              onValueChange?.(customValue);
             }}
           />
           Custom

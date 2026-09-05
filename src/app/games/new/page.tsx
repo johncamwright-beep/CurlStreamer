@@ -1,3 +1,4 @@
+import "./setup.css";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { AccountServiceUnavailable } from "@/components/AccountServiceUnavailable";
@@ -38,7 +39,7 @@ export default async function NewGamePage({
       ? selected
       : undefined;
   return (
-    <main className="mx-auto min-h-screen max-w-3xl p-5 md:py-12">
+    <main className="game-setup-page">
       <div className="mb-4">
         <AppNavigation signedIn />
       </div>

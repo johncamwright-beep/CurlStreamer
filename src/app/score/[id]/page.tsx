@@ -394,34 +394,60 @@ export default function Scorer({
               {scoringNotice}
             </p>
           )}
+        </section>
+        <section className="space-y-4">
+          {canEndGame && <BroadcastControl gameId={id} enabled />}
           <div className="panel">
-            <h2 className="font-bold">Program controls</h2>
-            <div className="my-3 grid grid-cols-3 gap-2">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
+                Program controls
+              </p>
+              <h2 className="text-xl font-bold">Camera layout &amp; audio</h2>
+            </div>
+            <div
+              className="my-4 grid grid-cols-1 gap-2 min-[360px]:grid-cols-3"
+              role="group"
+              aria-label="Program camera layout"
+            >
               {(["split", "home", "away"] as const).map((x) => (
                 <button
                   className={game.layout === x ? "btn" : "btn-secondary"}
                   onClick={() => act({ type: "layout", layout: x })}
                   key={x}
+                  aria-pressed={game.layout === x}
                 >
-                  {x}
+                  {x === "split"
+                    ? "Both cameras"
+                    : x === "home"
+                      ? "Camera 1"
+                      : "Camera 2"}
                 </button>
               ))}
             </div>
-            <div className="flex gap-2">
-              <button
-                onClick={() => act({ type: "audio", muted: !game.audioMuted })}
-                className={
-                  game.audioMuted ? "btn-secondary flex-1" : "btn flex-1"
-                }
-              >
-                {game.audioMuted ? "Audio muted" : "MICROPHONES LIVE"}
-              </button>
-              <BroadcastControl gameId={id} enabled={canEndGame} />
+            <div className="rounded-xl border border-slate-700 bg-slate-950/50 p-3">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <p className="font-semibold">Demo audio controls</p>
+                  <p className="mt-1 text-sm text-slate-300" role="status">
+                    {game.audioMuted
+                      ? "Demo audio is muted"
+                      : "Demo audio is on"}
+                  </p>
+                </div>
+                <button
+                  onClick={() =>
+                    act({ type: "audio", muted: !game.audioMuted })
+                  }
+                  className="btn-secondary min-h-11 shrink-0"
+                >
+                  {game.audioMuted ? "Turn demo audio on" : "Mute demo audio"}
+                </button>
+              </div>
+              <p className="mt-3 text-sm leading-6 text-amber-100">
+                These controls are simulated and do not control sound on your
+                YouTube stream.
+              </p>
             </div>
-            <p className="mt-2 text-sm text-amber-200">
-              External USB audio is simulated. Never assume the phone microphone
-              is safe.
-            </p>
           </div>
           {canEndGame && (
             <div className="panel">
@@ -442,8 +468,6 @@ export default function Scorer({
               />
             </div>
           )}
-        </section>
-        <section className="space-y-4">
           <div className="panel">
             <div className="flex justify-between">
               <div>

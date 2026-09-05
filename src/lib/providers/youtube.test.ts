@@ -84,21 +84,33 @@ describe("YouTube provider boundary", () => {
       .fn<typeof fetch>()
       .mockResolvedValue(new Response(JSON.stringify(body), { status }));
     await expect(loadOwnedYouTubeChannel("access", fetcher)).rejects.toThrow(
-      "youtube_provider_unavailable",
+      "youtube_quota_exceeded",
     );
   });
 
-  it("treats a non-quota channel authorization failure as reconnect-required", async () => {
+  it.each([
+    ["liveStreamingNotEnabled", "youtube_live_streaming_not_enabled"],
+    ["livePermissionBlocked", "youtube_live_permission_blocked"],
+    ["insufficientPermissions", "youtube_scope_missing"],
+    ["insufficientLivePermissions", "youtube_scope_missing"],
+    ["forbidden", "youtube_provider_rejected"],
+  ])("classifies allowlisted 403 reason %s", async (reason, expected) => {
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response(JSON.stringify({ error: { errors: [{ reason }] } }), {
+        status: 403,
+      }),
+    );
+    await expect(loadOwnedYouTubeChannel("access", fetcher)).rejects.toThrow(
+      expected,
+    );
+  });
+
+  it("does not turn an unknown 403 into reconnect guidance", async () => {
     const fetcher = vi
       .fn<typeof fetch>()
-      .mockResolvedValue(
-        new Response(
-          JSON.stringify({ error: { errors: [{ reason: "forbidden" }] } }),
-          { status: 403 },
-        ),
-      );
+      .mockResolvedValue(new Response("{}", { status: 403 }));
     await expect(loadOwnedYouTubeChannel("access", fetcher)).rejects.toThrow(
-      "youtube_reconnect_required",
+      "youtube_provider_rejected",
     );
   });
 });

@@ -104,10 +104,11 @@ export async function youtubeGoogleRequest(
       cache: "no-store",
     });
     if (!response.ok) {
-      if (response.status >= 500 || response.status === 429)
+      if (response.status >= 500)
         throw new Error("youtube_provider_unavailable");
       const codes = await boundedGoogleErrorCodes(response);
       if (
+        response.status === 429 ||
         codes.some((code) =>
           [
             "quotaExceeded",
@@ -118,14 +119,25 @@ export async function youtubeGoogleRequest(
           ].includes(code),
         )
       )
-        throw new Error("youtube_provider_unavailable");
+        throw new Error("youtube_quota_exceeded");
       if (codes.includes("liveStreamingNotEnabled"))
         throw new Error("youtube_live_streaming_not_enabled");
+      if (codes.includes("livePermissionBlocked"))
+        throw new Error("youtube_live_permission_blocked");
       if (
         codes.includes("invalid_grant") ||
-        (authorizationFailure && [401, 403].includes(response.status))
+        (authorizationFailure && response.status === 401)
       )
         throw new Error("youtube_reconnect_required");
+      if (
+        authorizationFailure &&
+        codes.some((code) =>
+          ["insufficientPermissions", "insufficientLivePermissions"].includes(
+            code,
+          ),
+        )
+      )
+        throw new Error("youtube_scope_missing");
       throw new Error("youtube_provider_rejected");
     }
     return response.status === 204 ? null : response.json();
@@ -137,6 +149,9 @@ export async function youtubeGoogleRequest(
         "youtube_provider_unavailable",
         "youtube_reconnect_required",
         "youtube_live_streaming_not_enabled",
+        "youtube_live_permission_blocked",
+        "youtube_scope_missing",
+        "youtube_quota_exceeded",
       ].includes(error.message)
     )
       throw error;

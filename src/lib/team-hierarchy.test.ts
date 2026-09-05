@@ -5,6 +5,7 @@ import {
   localDateTimeToUtc,
   formatScheduledStart,
   normalizeOpponentName,
+  scheduledStartToLocalInput,
   scheduledGameInputSchema,
   seasonInputSchema,
 } from "./team-hierarchy";
@@ -114,9 +115,45 @@ describe("team hierarchy validation", () => {
     );
   });
 
+  it("uses the selected zone in winter and summer regardless of the host zone", () => {
+    const originalTimezone = process.env.TZ;
+    process.env.TZ = "Asia/Tokyo";
+    try {
+      expect(localDateTimeToUtc("2026-01-15", "19:30", "America/Toronto")).toBe(
+        "2026-01-16T00:30:00.000Z",
+      );
+      expect(localDateTimeToUtc("2026-07-15", "19:30", "America/Toronto")).toBe(
+        "2026-07-15T23:30:00.000Z",
+      );
+    } finally {
+      if (originalTimezone === undefined) delete process.env.TZ;
+      else process.env.TZ = originalTimezone;
+    }
+  });
+
+  it("formats stored instants into selected-zone inputs across a UTC date boundary", () => {
+    expect(
+      scheduledStartToLocalInput("2026-07-11T03:30:00.000Z", "America/Toronto"),
+    ).toEqual({ date: "2026-07-10", time: "23:30" });
+  });
+
   it("rejects a nonexistent daylight-saving wall-clock time", () => {
     expect(
       localDateTimeToUtc("2026-03-08", "02:30", "America/Toronto"),
     ).toBeNull();
+  });
+
+  it("uses the earlier fall-back occurrence for new input and preserves an unchanged edit", () => {
+    expect(localDateTimeToUtc("2026-11-01", "01:30", "America/Toronto")).toBe(
+      "2026-11-01T05:30:00.000Z",
+    );
+    expect(
+      localDateTimeToUtc(
+        "2026-11-01",
+        "01:30",
+        "America/Toronto",
+        "2026-11-01T06:30:00.000Z",
+      ),
+    ).toBe("2026-11-01T06:30:00.000Z");
   });
 });

@@ -149,10 +149,18 @@ export async function POST(request: Request) {
           (!selectedEvent || selectedEvent.seasonId !== body.seasonId))
       )
         return hierarchyFailure({ kind: "authorization" });
+      const existingGame =
+        body.operation === "updateGame"
+          ? hierarchy.games.find((game) => game.id === body.gameId)
+          : undefined;
+      if (body.operation === "updateGame" && !existingGame)
+        return hierarchyFailure({ kind: "authorization" });
+      const effectiveTimezone = selectedEvent?.timezone ?? body.timezone;
       const scheduledStart = localDateTimeToUtc(
         body.scheduledDate,
         body.scheduledTime,
-        selectedEvent?.timezone ?? body.timezone,
+        effectiveTimezone,
+        existingGame?.scheduledStart,
       );
       if (!scheduledStart)
         return NextResponse.json(
@@ -182,10 +190,7 @@ export async function POST(request: Request) {
         opponentName = selected.display_name;
       }
       if (body.operation === "updateGame") {
-        const existing = hierarchy.games.find(
-          (game) => game.id === body.gameId,
-        );
-        if (!existing) return hierarchyFailure({ kind: "authorization" });
+        const existing = existingGame!;
         const snapshotConfig = {
           ...existing.config,
           eventName:
@@ -206,7 +211,7 @@ export async function POST(request: Request) {
             eventId: body.eventId,
             opponentId: opponentId ?? null,
             scheduledStart,
-            timezone: selectedEvent?.timezone ?? body.timezone,
+            timezone: effectiveTimezone,
             gameNumber: body.eventId ? body.gameNumber : null,
           },
           snapshotConfig,
@@ -228,7 +233,7 @@ export async function POST(request: Request) {
           eventId: body.eventId,
           opponentId: opponentId ?? null,
           scheduledStart,
-          timezone: selectedEvent?.timezone ?? body.timezone,
+          timezone: effectiveTimezone,
           gameNumber: body.eventId ? body.gameNumber : null,
         },
         config,

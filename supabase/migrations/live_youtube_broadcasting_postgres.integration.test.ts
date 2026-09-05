@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { spawn, spawnSync } from "node:child_process";
 import { describe, expect, it } from "vitest";
+import { parseBroadcastSession } from "../../src/lib/broadcast-session";
 
 const connection = process.env.CURLCAST_DISPOSABLE_DATABASE_URL;
 const parsed = connection ? new URL(connection) : undefined;
@@ -261,11 +262,35 @@ describe.skipIf(!enabled)(
         generation: claimed.generation,
       });
 
+      const checkpoint = JSON.parse(
+        psql(
+          `select public.record_game_broadcast_operation(
+          '${gameId}',${claimed.generation},'${token}','preparing',null,null,null,
+          null,null,'youtube-broadcast-create',true,'intent')`,
+          true,
+        ).stdout,
+      );
+      expect(checkpoint.uncertainSince).toMatch(/[+-]\d{2}:\d{2}$/);
+      expect(parseBroadcastSession(checkpoint)).toMatchObject({
+        providerStep: "youtube-broadcast-create",
+        youtubeBroadcastCreateState: "intent",
+      });
+      const uncertainClaim = JSON.parse(
+        psql(
+          `select public.claim_game_broadcast_operation('${gameId}','${owner}',false,'live','${randomUUID()}')`,
+          true,
+        ).stdout,
+      );
+      expect(parseBroadcastSession(uncertainClaim)).toMatchObject({
+        action: "wait",
+        uncertainSince: checkpoint.uncertainSince,
+      });
+
       expect(
         psql(
           `select public.record_game_broadcast_operation(
           '${gameId}',${claimed.generation},'${token}','preparing','youtube-id',null,null,
-          'https://www.youtube.com/watch?v=abcdefghi',null,'youtube-broadcast-ready',false)->>'status'`,
+          'https://www.youtube.com/watch?v=abcdefghi',null,'youtube-broadcast-ready',false,'ready')->>'status'`,
           true,
         ).stdout,
       ).toBe("preparing");

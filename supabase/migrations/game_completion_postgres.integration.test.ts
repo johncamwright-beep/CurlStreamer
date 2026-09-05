@@ -228,7 +228,100 @@ function scoreEvent(
   };
 }
 
+function sqlJson(value: string | object) {
+  const json = typeof value === "string" ? value : JSON.stringify(value);
+  return `'${json.replaceAll("'", "''")}'::jsonb`;
+}
+
+function stateWithEvent(state: string, event: ReturnType<typeof scoreEvent>) {
+  const next = JSON.parse(state) as { scoreEvents: unknown[] };
+  next.scoreEvents.push(event.payload);
+  return next;
+}
+
 describe.skipIf(!enabled)("game completion PostgreSQL transactions", () => {
+  it("keeps state writers service-role only while preserving both schedule signatures", () => {
+    expect(
+      psql(`select
+        has_function_privilege('service_role','public.write_game_state(uuid,bigint,jsonb)','execute'),
+        has_function_privilege('authenticated','public.write_game_state(uuid,bigint,jsonb)','execute'),
+        has_function_privilege('service_role','public.update_scheduled_team_game(uuid,uuid,uuid,uuid,uuid,timestamptz,text,integer,text)','execute'),
+        has_function_privilege('service_role','public.update_scheduled_team_game(uuid,uuid,uuid,uuid,uuid,timestamptz,text,integer,text,jsonb)','execute'),
+        has_function_privilege('authenticated','public.update_scheduled_team_game(uuid,uuid,uuid,uuid,uuid,timestamptz,text,integer,text,jsonb)','execute')`)
+        .stdout,
+    ).toBe("t|f|t|t|f");
+  });
+
+  it("preserves supplied historical names for schedule-only edits and accepts changed-opponent snapshots", () => {
+    const organizationId = randomUUID();
+    const creatorId = randomUUID();
+    const administratorId = randomUUID();
+    const gameId = randomUUID();
+    const seasonId = randomUUID();
+    const eventId = randomUUID();
+    const oldOpponentId = randomUUID();
+    const newOpponentId = randomUUID();
+    const historicalConfig = {
+      eventName: "Saved Event Name",
+      homeName: "Saved Home Name",
+      awayName: "Saved Opponent Name",
+      homeColor: "#111111",
+      awayColor: "#eeeeee",
+      scheduledEnds: 8,
+      youtubeTitle: "Saved title",
+      youtubeVisibility: "unlisted",
+    };
+    expect(
+      psql(`${fixture(gameId, organizationId, creatorId)}
+        ${account(administratorId, organizationId)}
+        insert into public.seasons(id,organization_id,name,start_date,end_date,status,created_by)
+        values ('${seasonId}','${organizationId}','Name preservation','2026-01-01','2026-12-31','active','${administratorId}');
+        insert into public.events(id,organization_id,season_id,name,event_type,start_date,end_date,timezone,created_by)
+        values ('${eventId}','${organizationId}','${seasonId}','Current Library Event','league','2026-09-01','2026-09-30','America/Toronto','${administratorId}');
+        insert into public.opponents(id,organization_id,display_name,created_by) values
+          ('${oldOpponentId}','${organizationId}','Current Library Opponent','${administratorId}'),
+          ('${newOpponentId}','${organizationId}','Replacement Opponent','${administratorId}');
+        update public.games set season_id='${seasonId}',event_id='${eventId}',
+          opponent_id='${oldOpponentId}',scheduled_start='2026-09-05T18:00:00Z',
+          schedule_timezone='America/Toronto',game_number=1,config=${sqlJson(historicalConfig)}
+          where id='${gameId}';
+        update public.game_states set state=jsonb_set(state,'{config}',${sqlJson(historicalConfig)},true)
+          where game_id='${gameId}';`).ok,
+    ).toBe(true);
+
+    const beforeVersion = psql(
+      `select version from public.game_states where game_id='${gameId}'`,
+    ).stdout;
+    expect(
+      psqlAsServiceRole(`select public.update_scheduled_team_game(
+        '${administratorId}','${gameId}','${seasonId}','${eventId}','${oldOpponentId}',
+        '2026-09-05T20:00:00Z','America/Toronto',1,'',${sqlJson(historicalConfig)});`),
+    ).toMatchObject({ ok: true });
+    expect(
+      psql(`select g.config=${sqlJson(historicalConfig)},
+        gs.state->'config'=${sqlJson(historicalConfig)},
+        g.config->>'eventName',g.config->>'awayName',gs.version>${beforeVersion}
+        from public.games g join public.game_states gs on gs.game_id=g.id
+        where g.id='${gameId}'`).stdout,
+    ).toBe("t|t|Saved Event Name|Saved Opponent Name|t");
+
+    const changedOpponentConfig = {
+      ...historicalConfig,
+      awayName: "Replacement Opponent",
+    };
+    expect(
+      psqlAsServiceRole(`select public.update_scheduled_team_game(
+        '${administratorId}','${gameId}','${seasonId}','${eventId}','${newOpponentId}',
+        '2026-09-05T20:00:00Z','America/Toronto',1,'',${sqlJson(changedOpponentConfig)});`),
+    ).toMatchObject({ ok: true });
+    expect(
+      psql(`select g.opponent_id='${newOpponentId}',
+        g.config=gs.state->'config',g.config->>'eventName',g.config->>'awayName'
+        from public.games g join public.game_states gs on gs.game_id=g.id
+        where g.id='${gameId}'`).stdout,
+    ).toBe("t|t|Saved Event Name|Replacement Opponent");
+  });
+
   it("executes account authorization and authoritative result derivation", () => {
     const organizationId = randomUUID();
     const otherOrganizationId = randomUUID();
@@ -372,10 +465,19 @@ describe.skipIf(!enabled)("game completion PostgreSQL transactions", () => {
         `select review_id from public.review_game_completion('${gameId}','${reviewId}',null,true)`,
       ).ok,
     ).toBe(true);
+    const version = psql(
+      `select version from public.game_states where game_id='${gameId}'`,
+    ).stdout;
+    const state = psql(
+      `select state from public.game_states where game_id='${gameId}'`,
+    ).stdout;
+    const writerState = JSON.parse(state) as {
+      claims: Record<string, string>;
+    };
+    writerState.claims["camera-home"] = "writer-first";
     const writer = heldTransaction(
-      `update public.game_states set
-        state=jsonb_set(state,'{claims,camera-home}','"writer-first"'::jsonb,true)
-        where game_id='${gameId}';`,
+      `select public.write_game_state(
+        '${gameId}',${version},${sqlJson(writerState)});`,
       `writer_${randomUUID().replaceAll("-", "")}`,
       true,
     );
@@ -414,9 +516,15 @@ describe.skipIf(!enabled)("game completion PostgreSQL transactions", () => {
     await first.ready;
     const staleApp = `stale_${randomUUID().replaceAll("-", "")}`;
     const retryApp = `retry_${randomUUID().replaceAll("-", "")}`;
+    const staleVersion = psql(
+      `select version from public.game_states where game_id='${gameId}'`,
+    ).stdout;
+    const staleState = psql(
+      `select state from public.game_states where game_id='${gameId}'`,
+    ).stdout;
     const stale = psqlAsync(
-      `update public.game_states set state=jsonb_set(state,'{broadcast}','"live"'::jsonb,true)
-       where game_id='${gameId}'`,
+      `select public.write_game_state(
+        '${gameId}',${staleVersion},${sqlJson(staleState)});`,
       staleApp,
     );
     const retry = psqlAsync(
@@ -433,7 +541,7 @@ describe.skipIf(!enabled)("game completion PostgreSQL transactions", () => {
     });
     const staleResult = await stale;
     expect(staleResult.ok).toBe(false);
-    expect(staleResult.stderr).toContain("completed_game_terminal");
+    expect(staleResult.stderr).toContain("stale game state");
     expect(await retry).toMatchObject({
       ok: true,
       stdout: `${completionId}|${reviewId}`,
@@ -443,6 +551,18 @@ describe.skipIf(!enabled)("game completion PostgreSQL transactions", () => {
         where action='game.completed' and subject_identifier='${gameId}'`)
         .stdout,
     ).toBe("1");
+    const completedVersion = psql(
+      `select version from public.game_states where game_id='${gameId}'`,
+    ).stdout;
+    const completedState = psql(
+      `select state from public.game_states where game_id='${gameId}'`,
+    ).stdout;
+    const terminalWrite = psqlAsServiceRole(
+      `select public.write_game_state(
+        '${gameId}',${completedVersion},${sqlJson(completedState)});`,
+    );
+    expect(terminalWrite.ok).toBe(false);
+    expect(terminalWrite.stderr).toContain("completed_game_terminal");
   }, 15_000);
 
   it("serializes ordinary state writes racing append_score_event in both orderings", async () => {
@@ -456,17 +576,23 @@ describe.skipIf(!enabled)("game completion PostgreSQL transactions", () => {
     const state = psql(
       `select state from public.game_states where game_id='${writerFirstGame}'`,
     ).stdout;
+    const heartbeatState = JSON.parse(state) as {
+      connections: Record<string, boolean>;
+    };
+    heartbeatState.connections["camera-home"] = false;
     const writer = heldTransaction(
-      `update public.game_states set version=version+1 where game_id='${writerFirstGame}';`,
+      `select public.write_game_state(
+        '${writerFirstGame}',${version},${sqlJson(heartbeatState)});`,
       `state_${randomUUID().replaceAll("-", "")}`,
       true,
     );
     await writer.ready;
     const appendApp = `append_${randomUUID().replaceAll("-", "")}`;
     const event = scoreEvent(writerFirstGame, "home", 1, 1);
+    const scoredState = stateWithEvent(state, event);
     const append = psqlAsync(
       `select public.append_score_event('${writerFirstGame}',${version},'${event.id}',
-        'end','${JSON.stringify(event.payload)}','integration','${state.replaceAll("'", "''")}')`,
+        'end',${sqlJson(event.payload)},'integration',${sqlJson(scoredState)})`,
       appendApp,
     );
     waitUntilBlocked(appendApp);
@@ -476,10 +602,11 @@ describe.skipIf(!enabled)("game completion PostgreSQL transactions", () => {
     expect(conflicted.ok).toBe(false);
     expect(conflicted.stderr).toContain("stale game state");
     expect(
-      psql(
-        `select count(*) from public.score_events where game_id='${writerFirstGame}'`,
-      ).stdout,
-    ).toBe("0");
+      psql(`select count(*),
+        (select state#>>'{connections,camera-home}' from public.game_states where game_id='${writerFirstGame}'),
+        (select version>${version} from public.game_states where game_id='${writerFirstGame}')
+        from public.score_events where game_id='${writerFirstGame}'`).stdout,
+    ).toBe("0|false|t");
 
     const appendFirstGame = randomUUID();
     expect(psql(fixture(appendFirstGame, randomUUID(), randomUUID())).ok).toBe(
@@ -492,27 +619,126 @@ describe.skipIf(!enabled)("game completion PostgreSQL transactions", () => {
       `select state from public.game_states where game_id='${appendFirstGame}'`,
     ).stdout;
     const appendEvent = scoreEvent(appendFirstGame, "away", 1, 1);
+    const appendScoredState = stateWithEvent(appendState, appendEvent);
     const heldAppend = heldTransaction(
       `select public.append_score_event('${appendFirstGame}',${appendVersion},'${appendEvent.id}',
-        'end','${JSON.stringify(appendEvent.payload)}','integration','${appendState.replaceAll("'", "''")}');`,
+        'end',${sqlJson(appendEvent.payload)},'integration',${sqlJson(appendScoredState)});`,
       `held_append_${randomUUID().replaceAll("-", "")}`,
       true,
     );
     await heldAppend.ready;
+    const staleHeartbeat = JSON.parse(appendState) as {
+      connections: Record<string, boolean>;
+    };
+    staleHeartbeat.connections["camera-home"] = false;
     const ordinaryApp = `ordinary_${randomUUID().replaceAll("-", "")}`;
     const ordinary = psqlAsync(
-      `update public.game_states set version=version+1 where game_id='${appendFirstGame}'`,
+      `select public.write_game_state(
+        '${appendFirstGame}',${appendVersion},${sqlJson(staleHeartbeat)})`,
       ordinaryApp,
     );
     waitUntilBlocked(ordinaryApp);
     heldAppend.release();
     expect(await heldAppend.result).toMatchObject({ ok: true });
-    expect(await ordinary).toMatchObject({ ok: true });
+    const staleOrdinary = await ordinary;
+    expect(staleOrdinary.ok).toBe(false);
+    expect(staleOrdinary.stderr).toContain("stale game state");
     expect(
-      psql(
-        `select count(*) from public.score_events where game_id='${appendFirstGame}'`,
-      ).stdout,
-    ).toBe("1");
+      psql(`select count(*),
+        (select jsonb_array_length(state->'scoreEvents') from public.game_states where game_id='${appendFirstGame}'),
+        (select state#>>'{connections,camera-home}' from public.game_states where game_id='${appendFirstGame}'),
+        (select version>${appendVersion} from public.game_states where game_id='${appendFirstGame}')
+        from public.score_events where game_id='${appendFirstGame}'`).stdout,
+    ).toBe("1|1|true|t");
+  }, 20_000);
+
+  it("rejects competing claims and prevents stale writers from restoring a released claim", async () => {
+    const gameId = randomUUID();
+    expect(psql(fixture(gameId, randomUUID(), randomUUID())).ok).toBe(true);
+    const version = psql(
+      `select version from public.game_states where game_id='${gameId}'`,
+    ).stdout;
+    const state = psql(
+      `select state from public.game_states where game_id='${gameId}'`,
+    ).stdout;
+    const firstClaim = JSON.parse(state) as {
+      claims: Record<string, string>;
+    };
+    const competingClaim = JSON.parse(state) as typeof firstClaim;
+    firstClaim.claims["camera-away"] = "claim-one";
+    competingClaim.claims["camera-away"] = "claim-two";
+
+    const heldClaim = heldTransaction(
+      `select public.write_game_state(
+        '${gameId}',${version},${sqlJson(firstClaim)});`,
+      `held_claim_${randomUUID().replaceAll("-", "")}`,
+      true,
+    );
+    await heldClaim.ready;
+    const competingApp = `competing_claim_${randomUUID().replaceAll("-", "")}`;
+    const competing = psqlAsync(
+      `select public.write_game_state(
+        '${gameId}',${version},${sqlJson(competingClaim)});`,
+      competingApp,
+    );
+    waitUntilBlocked(competingApp);
+    heldClaim.release();
+    expect(await heldClaim.result).toMatchObject({ ok: true });
+    const rejectedClaim = await competing;
+    expect(rejectedClaim.ok).toBe(false);
+    expect(rejectedClaim.stderr).toContain("stale game state");
+    expect(
+      psql(`select state#>>'{claims,camera-away}',version>${version}
+        from public.game_states where game_id='${gameId}'`).stdout,
+    ).toBe("claim-one|t");
+
+    const releaseVersion = psql(
+      `select version from public.game_states where game_id='${gameId}'`,
+    ).stdout;
+    const claimedState = psql(
+      `select state from public.game_states where game_id='${gameId}'`,
+    ).stdout;
+    const releasedState = JSON.parse(claimedState) as {
+      claims: Record<string, string>;
+      connections: Record<string, boolean>;
+    };
+    delete releasedState.claims["camera-away"];
+    releasedState.connections["camera-away"] = false;
+    const staleHeartbeat = JSON.parse(claimedState) as {
+      cameraHealth?: Record<string, unknown>;
+      connections: Record<string, boolean>;
+    };
+    staleHeartbeat.cameraHealth ??= {};
+    staleHeartbeat.cameraHealth["camera-away"] = {
+      phase: "live",
+      updatedAt: 2,
+    };
+    staleHeartbeat.connections["camera-away"] = true;
+
+    const heldRelease = heldTransaction(
+      `select public.write_game_state(
+        '${gameId}',${releaseVersion},${sqlJson(releasedState)});`,
+      `held_release_${randomUUID().replaceAll("-", "")}`,
+      true,
+    );
+    await heldRelease.ready;
+    const staleHeartbeatApp = `stale_heartbeat_${randomUUID().replaceAll("-", "")}`;
+    const heartbeat = psqlAsync(
+      `select public.write_game_state(
+        '${gameId}',${releaseVersion},${sqlJson(staleHeartbeat)});`,
+      staleHeartbeatApp,
+    );
+    waitUntilBlocked(staleHeartbeatApp);
+    heldRelease.release();
+    expect(await heldRelease.result).toMatchObject({ ok: true });
+    const rejectedHeartbeat = await heartbeat;
+    expect(rejectedHeartbeat.ok).toBe(false);
+    expect(rejectedHeartbeat.stderr).toContain("stale game state");
+    expect(
+      psql(`select not(state#>'{claims}' ? 'camera-away'),
+        state#>>'{connections,camera-away}'
+        from public.game_states where game_id='${gameId}'`).stdout,
+    ).toBe("t|false");
   }, 20_000);
 
   it("serializes schedule revision writes with append_score_event in both orderings", async () => {
@@ -528,9 +754,20 @@ describe.skipIf(!enabled)("game completion PostgreSQL transactions", () => {
         values ('${seasonId}','${organizationId}','Test season','2026-01-01','2026-12-31','active','${administratorId}');`)
         .ok,
     ).toBe(true);
+    const scheduledConfig = {
+      eventName: "Snapshot event name",
+      homeName: "Configured home",
+      awayName: "Snapshot opponent name",
+      homeColor: "#123456",
+      awayColor: "#abcdef",
+      scheduledEnds: 10,
+      youtubeTitle: "Updated broadcast title",
+      youtubeVisibility: "unlisted",
+    };
     const scheduleSql = `select public.update_scheduled_team_game(
       '${administratorId}','${gameId}','${seasonId}',null,null,
-      '2026-09-05T18:00:00Z','America/Toronto',null,'Integration schedule');`;
+      '2026-09-05T18:00:00Z','America/Toronto',null,'Integration schedule',
+      ${sqlJson(scheduledConfig)});`;
 
     const schedule = heldTransaction(
       scheduleSql,
@@ -545,16 +782,27 @@ describe.skipIf(!enabled)("game completion PostgreSQL transactions", () => {
       `select state from public.game_states where game_id='${gameId}'`,
     ).stdout;
     const event = scoreEvent(gameId, "home", 1, 1);
+    const scoredState = stateWithEvent(state, event);
     const appendApp = `schedule_waiting_append_${randomUUID().replaceAll("-", "")}`;
     const append = psqlAsync(
       `select public.append_score_event('${gameId}',${version},'${event.id}',
-        'end','${JSON.stringify(event.payload)}','integration','${state.replaceAll("'", "''")}')`,
+        'end',${sqlJson(event.payload)},'integration',${sqlJson(scoredState)})`,
       appendApp,
     );
     waitUntilBlocked(appendApp);
     schedule.release();
     expect(await schedule.result).toMatchObject({ ok: true });
-    expect(await append).toMatchObject({ ok: true });
+    const staleAppend = await append;
+    expect(staleAppend.ok).toBe(false);
+    expect(staleAppend.stderr).toContain("stale game state");
+    expect(
+      psql(`select count(se.id),g.config=gs.state->'config',
+        gs.state#>>'{config,homeName}',gs.state#>>'{config,eventName}',
+        gs.version>${version}
+        from public.games g join public.game_states gs on gs.game_id=g.id
+        left join public.score_events se on se.game_id=g.id
+        where g.id='${gameId}' group by g.config,gs.state,gs.version`).stdout,
+    ).toBe("0|t|Configured home|Snapshot event name|t");
 
     const nextVersion = psql(
       `select version from public.game_states where game_id='${gameId}'`,
@@ -563,9 +811,10 @@ describe.skipIf(!enabled)("game completion PostgreSQL transactions", () => {
       `select state from public.game_states where game_id='${gameId}'`,
     ).stdout;
     const nextEvent = scoreEvent(gameId, "away", 1, 2);
+    const nextScoredState = stateWithEvent(nextState, nextEvent);
     const heldAppend = heldTransaction(
       `select public.append_score_event('${gameId}',${nextVersion},'${nextEvent.id}',
-        'end','${JSON.stringify(nextEvent.payload)}','integration','${nextState.replaceAll("'", "''")}');`,
+        'end',${sqlJson(nextEvent.payload)},'integration',${sqlJson(nextScoredState)});`,
       `schedule_held_append_${randomUUID().replaceAll("-", "")}`,
       true,
     );
@@ -577,9 +826,24 @@ describe.skipIf(!enabled)("game completion PostgreSQL transactions", () => {
     expect(await heldAppend.result).toMatchObject({ ok: true });
     expect(await waitingSchedule).toMatchObject({ ok: true });
     expect(
-      psql(`select count(*) from public.score_events where game_id='${gameId}'`)
-        .stdout,
-    ).toBe("2");
+      psql(`select count(*),
+        (select jsonb_array_length(state->'scoreEvents') from public.game_states where game_id='${gameId}'),
+        (select version>${nextVersion} from public.game_states where game_id='${gameId}')
+        from public.score_events where game_id='${gameId}'`).stdout,
+    ).toBe("1|1|t");
+
+    const legacyVersion = psql(
+      `select version from public.game_states where game_id='${gameId}'`,
+    ).stdout;
+    expect(
+      psqlAsServiceRole(`select public.update_scheduled_team_game(
+        '${administratorId}','${gameId}','${seasonId}',null,null,
+        '2026-09-05T19:00:00Z','America/Toronto',null,'Legacy caller');`),
+    ).toMatchObject({ ok: true });
+    expect(
+      psql(`select version>${legacyVersion},state#>>'{config,eventName}'
+        from public.game_states where game_id='${gameId}'`).stdout,
+    ).toBe("t|Legacy caller");
   }, 20_000);
 
   it("persists safe End Game summaries, watch links, cleanup attempts, and schedule results", () => {

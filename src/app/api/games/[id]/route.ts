@@ -14,6 +14,7 @@ import {
   gameBroadcastSponsors,
   gameLibrarySponsors,
 } from "@/lib/providers/sponsor-library";
+import { isGameStateConflictError } from "@/lib/game-state-conflict";
 export const dynamic = "force-dynamic";
 const readParams = z.object({ id: z.string().regex(/^[a-zA-Z0-9-]{1,64}$/) });
 const readView = z.enum(["broadcast", "join"]).optional();
@@ -215,7 +216,10 @@ export async function PATCH(
     const message = error instanceof Error ? error.message : "";
     if (message.includes("Hammer must be selected"))
       return gameResponse({ error: message }, { status: 409 });
-    if (message.includes("Score update conflict"))
+    if (
+      message.includes("Score update conflict") ||
+      isGameStateConflictError(error)
+    )
       return gameResponse(
         { error: "The game changed before this update was saved. Try again." },
         { status: 409 },

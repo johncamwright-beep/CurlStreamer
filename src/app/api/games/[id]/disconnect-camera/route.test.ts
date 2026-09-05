@@ -18,6 +18,7 @@ vi.mock("@/lib/store", () => ({
   updateGame: mocks.updateGame,
 }));
 import { POST } from "./route";
+import { GameStateConflictError } from "@/lib/game-state-conflict";
 const request = () =>
   new Request("http://test/api/games/game-1/disconnect-camera", {
     method: "POST",
@@ -70,5 +71,16 @@ describe("temporary organizer camera disconnect", () => {
         .status,
     ).toBe(503);
     expect(mocks.updateGame).not.toHaveBeenCalled();
+  });
+  it("returns a useful conflict when camera state loses a version race", async () => {
+    mocks.updateGame.mockRejectedValue(new GameStateConflictError());
+    const response = await POST(request(), {
+      params: Promise.resolve({ id: "game-1" }),
+    });
+
+    expect(response.status).toBe(409);
+    expect(await response.json()).toEqual({
+      error: "The game changed before the camera state was saved. Try again.",
+    });
   });
 });

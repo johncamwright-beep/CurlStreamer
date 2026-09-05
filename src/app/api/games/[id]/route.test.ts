@@ -25,6 +25,7 @@ const mocks = vi.hoisted(() => ({
   readGame: vi.fn(),
   gameBroadcastSponsors: vi.fn(),
   gameLibrarySponsors: vi.fn(),
+  updateGame: vi.fn(),
 }));
 vi.mock("@/lib/supabase/server", () => ({
   createServerSupabaseClient: async () => ({
@@ -36,13 +37,17 @@ vi.mock("@/lib/team-games", () => ({
   listTeamGames: mocks.listTeamGames,
   listDeletedTeamGames: mocks.listDeletedTeamGames,
 }));
-vi.mock("@/lib/store", () => ({ getGame: mocks.getGame, updateGame: vi.fn() }));
+vi.mock("@/lib/store", () => ({
+  getGame: mocks.getGame,
+  updateGame: mocks.updateGame,
+}));
 vi.mock("@/lib/providers/game-read", () => ({ readGame: mocks.readGame }));
 vi.mock("@/lib/providers/sponsor-library", () => ({
   gameBroadcastSponsors: mocks.gameBroadcastSponsors,
   gameLibrarySponsors: mocks.gameLibrarySponsors,
 }));
 import { GET, PATCH } from "./route";
+import { GameStateConflictError } from "@/lib/game-state-conflict";
 
 // Real loopback HTTP transport, route, authorization and signed tokens.
 // Only external account, persistence, and sponsor providers are replaced.
@@ -109,6 +114,7 @@ describe("GET /api/games/[id] over HTTP", () => {
     mocks.readGame.mockImplementation(async () => ({ kind: "active", game }));
     mocks.gameBroadcastSponsors.mockResolvedValue([]);
     mocks.gameLibrarySponsors.mockResolvedValue([]);
+    mocks.updateGame.mockResolvedValue(game);
   });
   function anonymous() {
     mocks.getUser.mockResolvedValue({
@@ -586,5 +592,26 @@ describe("GET /api/games/[id] over HTTP", () => {
     );
     expect(response.status).toBe(401);
     expect(response.headers.get("cache-control")).toBe("no-store");
+  });
+
+  it("returns 409 when an ordinary state write loses its version race", async () => {
+    anonymous();
+    mocks.updateGame.mockRejectedValue(new GameStateConflictError());
+    const response = await PATCH(
+      new Request(`${origin}/api/games/${testGameId}`, {
+        method: "PATCH",
+        headers: {
+          authorization: `Bearer ${await issueOrganizerToken(testGameId)}`,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({ type: "layout", layout: "home" }),
+      }),
+      { params: Promise.resolve({ id: testGameId }) },
+    );
+
+    expect(response.status).toBe(409);
+    expect(await response.json()).toEqual({
+      error: "The game changed before this update was saved. Try again.",
+    });
   });
 });

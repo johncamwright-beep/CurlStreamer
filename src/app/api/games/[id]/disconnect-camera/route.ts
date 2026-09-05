@@ -7,6 +7,7 @@ import {
   operatorRoles,
   authorizationError,
 } from "@/lib/game-authorization";
+import { isGameStateConflictError } from "@/lib/game-state-conflict";
 
 const requestSchema = z.object({
   role: z.enum(["camera-home", "camera-away"]),
@@ -48,12 +49,25 @@ export async function POST(
       { status: 503 },
     );
   }
-  const disconnected = await updateGame(id, {
-    type: "camera-health",
-    role: parsed.data.role,
-    phase: "disconnected",
-    diagnostic: "Disconnected by organizer",
-  });
+  let disconnected;
+  try {
+    disconnected = await updateGame(id, {
+      type: "camera-health",
+      role: parsed.data.role,
+      phase: "disconnected",
+      diagnostic: "Disconnected by organizer",
+    });
+  } catch (error) {
+    if (isGameStateConflictError(error))
+      return NextResponse.json(
+        {
+          error:
+            "The game changed before the camera state was saved. Try again.",
+        },
+        { status: 409 },
+      );
+    throw error;
+  }
   return NextResponse.json({
     disconnected: true,
     game: disconnected,

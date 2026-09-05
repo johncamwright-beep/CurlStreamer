@@ -146,6 +146,16 @@ async def main(config_path, url, output):
             assert (
                 stopped.status_code == 200 and stopped.json()["state"] == "stopped"
             ), "Stop not confirmed"
+            report_response = await client.get("/api/report")
+            assert report_response.status_code == 200, "Report download failed"
+            report = report_response.json()
+            assert report["summary"]["state"] == "stopped"
+            assert report["samples"], "No recorded metrics"
+            for key in ("home", "away", "subscriber"):
+                assert config[key] not in report_response.text, "Credential in report"
+            (Path(output) / "camera-test-report.json").write_text(
+                json.dumps(report, indent=2)
+            )
 
 
 if __name__ == "__main__":

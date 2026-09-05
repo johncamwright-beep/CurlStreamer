@@ -129,6 +129,17 @@ def create_app(config=None):
             else {"state": "idle", "cameras": {}, "previewReady": False}
         )
 
+    @app.get("/api/report")
+    async def report():
+        if not processor:
+            raise HTTPException(404, "No test report in this session.")
+        return JSONResponse(
+            processor.report(),
+            headers={
+                "Content-Disposition": 'attachment; filename="camera-test-report.json"'
+            },
+        )
+
     @app.post("/api/score")
     async def score(body: Score):
         if not processor or processor.state not in ("starting", "running"):

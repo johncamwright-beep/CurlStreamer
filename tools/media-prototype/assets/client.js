@@ -63,6 +63,7 @@ async function refresh() {
   el("start").disabled = active;
   el("stop").disabled = !active;
   el("profile").disabled = active;
+  el("report").hidden = !status.runId;
   if (status.profile) el("profile").value = status.profile;
   el("progress").textContent = active
     ? `${status.profile} · ${status.elapsed}s of ${status.limitSeconds}s · ${status.frames || 0} encoded frames`

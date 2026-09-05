@@ -154,3 +154,9 @@ select {
   font: inherit;
   padding: 10px;
 }
+#report {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  color: #a7dfeb;
+}

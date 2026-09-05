@@ -172,6 +172,9 @@ class Processor:
         self.deadline_seconds = 600
         self.score = "Team Red 0 - 0 Team Blue"
         self.finished_frames = None
+        self.finished_at = None
+        self.samples = []
+        self.run_id = self.folder.name
 
     def update_score(self, home, away):
         self.score = f"Team Red {home} - {away} Team Blue"
@@ -183,6 +186,7 @@ class Processor:
     def status(self):
         now = time.monotonic()
         frames = self.finished_frames
+        values = {}
         try:
             values = dict(
                 line.split("=", 1)
@@ -193,12 +197,21 @@ class Processor:
         except (OSError, ValueError):
             pass
         return {
+            "runId": self.run_id,
             "state": self.state,
             "error": self.error,
             "frames": frames,
             "profile": self.profile,
             "targetFps": self.fps,
-            "elapsed": round(now - self.started) if self.started else 0,
+            "elapsed": (
+                round((self.finished_at or now) - self.started) if self.started else 0
+            ),
+            "encoderDroppedFrames": (
+                int(values["drop_frames"]) if "drop_frames" in values else None
+            ),
+            "encoderDuplicatedFrames": (
+                int(values["dup_frames"]) if "dup_frames" in values else None
+            ),
             "limitSeconds": self.deadline_seconds,
             "score": self.score,
             "cameras": {
@@ -263,8 +276,46 @@ class Processor:
         finally:
             writer.close()
 
-    async def run(self, synthetic=False, seconds=600):
-        self.deadline_seconds = min(max(seconds, 5), 600)
+    def record_sample(self):
+        """Allowlisted metrics only: never config, provider exceptions or encoder logs."""
+        import psutil
+
+        sample = self.status()
+        sample["sampledAt"] = time.time()
+        processes = [psutil.Process()]
+        if self.process and self.process.returncode is None:
+            with contextlib.suppress(psutil.Error):
+                processes.append(psutil.Process(self.process.pid))
+        sample["memoryBytes"] = 0
+        for process in processes:
+            with contextlib.suppress(psutil.Error):
+                sample["memoryBytes"] += process.memory_info().rss
+        if self.samples:
+            previous = self.samples[-1]
+            elapsed = sample["sampledAt"] - previous["sampledAt"]
+            sample["encodedFps"] = (
+                round(
+                    ((sample["frames"] or 0) - (previous["frames"] or 0)) / elapsed, 2
+                )
+                if elapsed > 0
+                else None
+            )
+        else:
+            sample["encodedFps"] = None
+        self.samples.append(sample)
+        with (self.folder / "samples.jsonl").open("a", encoding="utf-8") as handle:
+            handle.write(json.dumps(sample) + "\n")
+        print("PROTOTYPE_METRIC " + json.dumps(sample), flush=True)
+        return sample
+
+    def report(self):
+        return {"summary": self.status(), "samples": self.samples}
+
+    async def run(self, synthetic=False, seconds=600, *, max_seconds=600):
+        # Only the separate, server-side endurance runner raises this ceiling.
+        if not 5 <= seconds <= max_seconds <= 9300:
+            raise ValueError("invalid_test_duration")
+        self.deadline_seconds = seconds
         self.state = "starting"
         self.started = time.monotonic()
         self.update_score(0, 0)
@@ -311,6 +362,7 @@ class Processor:
                     self.room.connect(self.config["url"], self.config["subscriber"]), 20
                 )
             self.state = "running"
+            next_sample = 0
             while (
                 not self.stop_event.is_set()
                 and time.monotonic() - self.started < self.deadline_seconds
@@ -322,6 +374,9 @@ class Processor:
                 for task in self.tasks:
                     if task.done() and not task.cancelled() and task.exception():
                         raise RuntimeError("camera_pipeline_failed")
+                if time.monotonic() >= next_sample:
+                    self.record_sample()
+                    next_sample = time.monotonic() + 10
                 await asyncio.sleep(0.25)
             self.state = "stopping"
         except asyncio.CancelledError:
@@ -350,11 +405,13 @@ class Processor:
                     await self.process.wait()
             log.close()
             self.latest.clear()
+            self.finished_at = time.monotonic()
             if self.state != "failed":
                 self.state = "stopped"
             (self.folder / "result.json").write_text(
-                json.dumps(self.status(), indent=2)
+                json.dumps(self.report(), indent=2)
             )
+            print("PROTOTYPE_RESULT " + json.dumps(self.status()), flush=True)
 
     async def synthetic(self):
         frame = 0

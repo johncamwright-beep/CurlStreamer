@@ -13,7 +13,7 @@ A 60 fps output cannot add motion detail missing from a 30 fps camera.
 
 ## Architecture and measurement boundary
 
-- The LiveKit Python SDK decodes camera frames on CPU. Pillow rotates and contains
+- The LiveKit Python SDK supplies decoded camera frames. Pillow rotates and contains
   each frame without cropping, using a bounded latest-frame slot per camera.
 - FFmpeg uploads normalized frames, uses CUDA composition and NVENC H.264 encoding,
   and produces a short rolling HLS preview. Its AAC track is silence.
@@ -95,3 +95,59 @@ Before production use, add durable session ownership and cancellation, per-camer
 authorization and token revocation, worker lifecycle independent of preview HTTP,
 safe real audio, authenticated game-state updates, RTMPS/YouTube lifecycle and
 cleanup, operational telemetry, and representative long-running load tests.
+
+## Recorded diagnostics and unattended endurance
+
+Every ten seconds the processor writes an allowlisted metric to `samples.jsonl`
+and the Modal function log: received camera rates, encoded rate, FFmpeg drop/dup
+counters, elapsed time, and combined processor/encoder memory. `result.json`
+contains the final summary and samples. No tokens, destination keys, or raw
+provider errors enter these reports. Encoded output rate is not unique camera
+motion rate: the latest-frame feeder can repeat input images without incrementing
+FFmpeg's duplicate counter. Compare input and output rates separately.
+
+The phone lab offers a report download for its current session; download it before
+the container scales down. Its files remain ephemeral. Structured Modal logs
+outlive the container subject to the workspace's log retention, and the CLI runner
+saves its final allowlisted ZIP locally. This is not permanent product analytics.
+
+For the separate CLI-only test, create a fresh room and the same three narrowly
+scoped tokens, with enough lifetime for the run plus three minutes. Save them as
+`PROTOTYPE_CONFIG` in a separate Modal secret, `curlstreamer-endurance`. This app
+has no browser endpoint, no production credentials and no microphone or YouTube
+output. First run a 90-second preflight, then explicitly request 9,000 seconds:
+
+```sh
+modal run tools/media-prototype/modal_endurance.py --seconds 90 --output /private/work/preflight.zip
+modal run --detach tools/media-prototype/modal_endurance.py --seconds 9000 --output /private/work/endurance.zip
+```
+
+The synthetic camera publisher uses its own four-core CPU container; its cost is
+test-generation overhead, not the per-game processor cost. The receiver uses one
+L4, four cores and 16 GiB. Both have hard deadlines and no retries. Camera 1
+disconnects for 15 seconds early in the test and about every 15 minutes thereafter;
+scores change throughout. The report checks elapsed duration, shutdown, both
+feeds, observed recovery, score changes and sampled output pacing (54 fps minimum,
+90% of target, after startup). A pass is not a zero-frame-loss claim, proof of
+phone endurance, real-audio validation, YouTube delivery or multi-game capacity.
+
+## Output adapter preparation
+
+`youtube_output.py` is a server-only, currently unwired packet-copy relay. It takes
+the already encoded HLS program and sends H264/AAC in FLV without a second encode.
+Only validated YouTube RTMPS destinations are accepted by its public class. Obtain
+the URL from YouTube's `rtmpsIngestionAddress` API field; do not rewrite an RTMP
+hostname by guesswork. Raw FFmpeg errors and command lines must never be logged.
+The caller must poll status, stop failed/stalled relays, and coordinate processor
+and broadcast shutdown. `sending` does not mean YouTube has confirmed `live`.
+
+The isolated loopback smoke test exercises packet copy and decoding without
+creating a broadcast, using credentials, or contacting YouTube:
+
+```sh
+modal run tools/media-prototype/modal_output_smoke.py --output /private/work/output-smoke.json
+```
+
+The relay adds the rolling HLS delay. Native direct muxing may be preferable once
+the pipeline is integrated. Real RTMPS/TLS delivery, authenticated app controls,
+YouTube lifecycle reconciliation and real audio remain required before release.

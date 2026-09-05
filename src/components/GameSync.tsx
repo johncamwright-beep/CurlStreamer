@@ -5,6 +5,7 @@ import type { BroadcastGame, JoinGame } from "@/lib/game-projection";
 import { clearCurrentGameIfMatching } from "@/lib/current-game";
 import type { SafeGameCompletion } from "@/lib/game-completion";
 import { GameRefreshGate } from "@/lib/game-refresh-gate";
+import { fetchGameWithSelectedAccess } from "@/lib/media-access-client";
 type GameView = "broadcast" | "join" | undefined;
 export type GameLifecycle = "active" | "completed" | "closed" | "deleted";
 type ViewState<V extends GameView> = V extends "broadcast"
@@ -26,13 +27,9 @@ export function useGame<V extends GameView = undefined>(
   const refreshGate = useRef(new GameRefreshGate());
   const refresh = useCallback(async () => {
     const ticket = refreshGate.current.start();
-    const token = invitation ?? localStorage.getItem(`curlcast-access-${id}`);
     let r: Response;
     try {
-      r = await fetch(`/api/games/${id}${view ? `?view=${view}` : ""}`, {
-        cache: "no-store",
-        headers: token ? { authorization: `Bearer ${token}` } : undefined,
-      });
+      r = await fetchGameWithSelectedAccess(id, view, invitation, localStorage);
     } catch {
       if (!refreshGate.current.accept(ticket)) return;
       setError("Game service is temporarily unavailable.");

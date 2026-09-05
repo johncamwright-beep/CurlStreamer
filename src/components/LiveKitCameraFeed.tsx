@@ -14,6 +14,7 @@ import {
   isRoleCameraPublication,
 } from "@/lib/providers/livekit-client";
 import { PortraitVideo } from "./PortraitVideo";
+import { fetchLiveKitSubscriberCredentials } from "@/lib/media-access-client";
 
 export function LiveKitCameraFeed({
   gameId,
@@ -72,13 +73,9 @@ export function LiveKitCameraFeed({
     room.on(RoomEvent.Disconnected, disconnected);
     void (async () => {
       try {
-        const access = localStorage.getItem(`curlcast-access-${gameId}`);
-        const response = await fetch(
-          `/api/games/${gameId}/livekit-token${access ? "" : "?view=broadcast"}`,
-          {
-            method: "POST",
-            headers: access ? { authorization: `Bearer ${access}` } : {},
-          },
+        const response = await fetchLiveKitSubscriberCredentials(
+          gameId,
+          localStorage,
         );
         if (!response.ok)
           throw new Error(

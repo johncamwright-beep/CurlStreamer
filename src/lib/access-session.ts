@@ -1,4 +1,9 @@
-type AccessClaims = { purpose?: unknown; gameId?: unknown; role?: unknown };
+type AccessClaims = {
+  purpose?: unknown;
+  gameId?: unknown;
+  role?: unknown;
+  exp?: unknown;
+};
 
 function claims(token: string | null): AccessClaims | undefined {
   if (!token) return undefined;
@@ -9,6 +14,69 @@ function claims(token: string | null): AccessClaims | undefined {
   } catch {
     return undefined;
   }
+}
+
+function currentClaims(token: string | null) {
+  const value = claims(token);
+  if (value && (typeof value.exp !== "number" || value.exp > Date.now() / 1000))
+    return value;
+}
+
+function firstToken(
+  tokens: Array<string | null>,
+  accepts: (value: AccessClaims) => boolean,
+) {
+  return tokens.find((token) => {
+    const value = currentClaims(token);
+    return Boolean(value && accepts(value));
+  });
+}
+
+export function gameAccessToken(storage: Pick<Storage, "getItem">, id: string) {
+  return firstToken(
+    [
+      storage.getItem(`curlcast-access-${id}`),
+      storage.getItem(`curlcast-organizer-access-${id}`),
+      storage.getItem(`curlcast-participant-access-${id}`),
+    ],
+    (value) =>
+      value.gameId === id &&
+      (value.purpose === "organizer" || value.purpose === "participant"),
+  );
+}
+
+export function cameraPublishAccessToken(
+  storage: Pick<Storage, "getItem">,
+  id: string,
+  role: "camera-home" | "camera-away",
+) {
+  return firstToken(
+    [
+      storage.getItem(`curlcast-participant-access-${id}`),
+      storage.getItem(`curlcast-access-${id}`),
+    ],
+    (value) =>
+      value.gameId === id &&
+      value.purpose === "participant" &&
+      value.role === role,
+  );
+}
+
+export function previewSubscribeAccessToken(
+  storage: Pick<Storage, "getItem">,
+  id: string,
+) {
+  return firstToken(
+    [
+      storage.getItem(`curlcast-organizer-access-${id}`),
+      storage.getItem(`curlcast-participant-access-${id}`),
+      storage.getItem(`curlcast-access-${id}`),
+    ],
+    (value) =>
+      value.gameId === id &&
+      (value.purpose === "organizer" ||
+        (value.purpose === "participant" && value.role === "scorer")),
+  );
 }
 
 export function hasOrganizerAccess(
@@ -22,31 +90,20 @@ export function organizerAccessToken(
   storage: Pick<Storage, "getItem">,
   id: string,
 ) {
-  return [
-    storage.getItem(`curlcast-organizer-access-${id}`),
-    storage.getItem(`curlcast-access-${id}`),
-  ].find((token) => {
-    const value = claims(token);
-    return value?.purpose === "organizer" && value.gameId === id;
-  });
+  return firstToken(
+    [
+      storage.getItem(`curlcast-organizer-access-${id}`),
+      storage.getItem(`curlcast-access-${id}`),
+    ],
+    (value) => value.purpose === "organizer" && value.gameId === id,
+  );
 }
 
 export function hasScoringAccess(
   storage: Pick<Storage, "getItem">,
   id: string,
 ) {
-  return [
-    storage.getItem(`curlcast-organizer-access-${id}`),
-    storage.getItem(`curlcast-participant-access-${id}`),
-    storage.getItem(`curlcast-access-${id}`),
-  ].some((token) => {
-    const value = claims(token);
-    return (
-      value?.gameId === id &&
-      (value.purpose === "organizer" ||
-        (value.purpose === "participant" && value.role === "scorer"))
-    );
-  });
+  return Boolean(previewSubscribeAccessToken(storage, id));
 }
 
 export function canManageCompletion(

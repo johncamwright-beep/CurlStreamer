@@ -149,6 +149,81 @@ describe("game authorization lookup", () => {
     ).resolves.toEqual({ ok: false, reason: "released" });
   });
 
+  it("lets a signed-in account present a device-bound camera token when accounts are not a substitute", async () => {
+    mocks.readAccessToken.mockResolvedValue({
+      gameId: "scheduled-game",
+      purpose: "participant",
+      role: "camera-home",
+      deviceId: "device-1",
+    });
+    mocks.getGame.mockResolvedValue({
+      status: "active",
+      claims: { "camera-home": "device-1" },
+    });
+
+    await expect(
+      authorizeGame(request("camera"), "scheduled-game", {
+        accountRoles: [],
+        tokenAllowed: (access) =>
+          access.purpose === "participant" && access.role === "camera-home",
+      }),
+    ).resolves.toMatchObject({
+      ok: true,
+      via: "token",
+      access: { role: "camera-home", deviceId: "device-1" },
+    });
+  });
+
+  it.each([
+    [
+      "wrong role",
+      {
+        gameId: "scheduled-game",
+        purpose: "participant",
+        role: "scorer",
+        deviceId: "device-1",
+      },
+      { status: "active", claims: { "camera-home": "device-1" } },
+      "unauthorized",
+    ],
+    [
+      "cross-game token",
+      {
+        gameId: "other-game",
+        purpose: "participant",
+        role: "camera-home",
+        deviceId: "device-1",
+      },
+      { status: "active", claims: { "camera-home": "device-1" } },
+      "unauthorized",
+    ],
+    [
+      "released device",
+      {
+        gameId: "scheduled-game",
+        purpose: "participant",
+        role: "camera-home",
+        deviceId: "old-device",
+      },
+      { status: "active", claims: { "camera-home": "new-device" } },
+      "released",
+    ],
+  ] as const)(
+    "rejects camera-publish authority for a %s",
+    async (_label, access, game, reason) => {
+      mocks.readAccessToken.mockResolvedValue(access);
+      mocks.getGame.mockResolvedValue(game);
+      await expect(
+        authorizeGame(request("camera"), "scheduled-game", {
+          accountRoles: [],
+          tokenAllowed: (candidate) =>
+            candidate.purpose === "participant" &&
+            ["camera-home", "camera-away"].includes(candidate.role ?? ""),
+        }),
+      ).resolves.toEqual({ ok: false, reason });
+    },
+  );
+
   it.each([
     ["database failure", { ok: false }, "unavailable", 503],
     [

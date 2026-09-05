@@ -2,7 +2,12 @@ import "server-only";
 import { SignJWT } from "jose";
 
 export type LiveKitAccess =
-  "camera-home" | "camera-away" | "organizer" | "broadcast-viewer";
+  | "camera-home"
+  | "camera-away"
+  | "organizer"
+  | "broadcast-viewer"
+  | "preview-subscriber"
+  | "public-viewer";
 
 export class LiveKitConfigurationError extends Error {
   readonly category = "configuration";
@@ -59,7 +64,7 @@ export async function issueLiveKitToken(gameId: string, access: LiveKitAccess) {
   // one subscriber Room for each displayed role.
   const identity = cameraAccess(access)
     ? liveKitIdentity(gameId, access)
-    : `${access === "broadcast-viewer" ? "viewer" : "broadcast"}-${crypto.randomUUID()}`;
+    : `${["broadcast-viewer", "public-viewer"].includes(access) ? "viewer" : "preview"}-${crypto.randomUUID()}`;
   const token = await new SignJWT({
     video: liveKitVideoGrant(gameId, access),
     metadata: liveKitMetadata(access),
@@ -70,7 +75,9 @@ export async function issueLiveKitToken(gameId: string, access: LiveKitAccess) {
     .setNotBefore("0s")
     .setIssuedAt()
     .setJti(crypto.randomUUID())
-    .setExpirationTime(access === "broadcast-viewer" ? "5m" : "10m")
+    .setExpirationTime(
+      ["broadcast-viewer", "public-viewer"].includes(access) ? "5m" : "10m",
+    )
     .sign(new TextEncoder().encode(secret));
   return { url, token };
 }

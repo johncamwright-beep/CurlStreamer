@@ -35,6 +35,7 @@ export async function authorizeGame(
   options: {
     accountRoles: readonly GameAccountRole[];
     tokenAllowed: (access: ExistingAccess) => boolean;
+    allowCompletedAccount?: boolean;
   },
 ): Promise<GameAuthorization> {
   let user;
@@ -63,7 +64,9 @@ export async function authorizeGame(
         const game = active.games.find(
           (candidate) => candidate.game_id === gameId,
         );
-        if (["closed", "completed"].includes(game?.game_status ?? ""))
+        if (game?.game_status === "closed")
+          return { ok: false, reason: "closed" };
+        if (game?.game_status === "completed" && !options.allowCompletedAccount)
           return { ok: false, reason: "closed" };
         if (game) {
           return {

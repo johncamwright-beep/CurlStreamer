@@ -2,7 +2,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { GameState } from "@/lib/types";
 import type { BroadcastGame, JoinGame } from "@/lib/game-projection";
-import { clearCurrentGame, readCurrentGame } from "@/lib/current-game";
+import { clearCurrentGameIfMatching } from "@/lib/current-game";
 import type { SafeGameCompletion } from "@/lib/game-completion";
 import { GameRefreshGate } from "@/lib/game-refresh-gate";
 type GameView = "broadcast" | "join" | undefined;
@@ -44,6 +44,7 @@ export function useGame<V extends GameView = undefined>(
         body?.status === "completed" ? "completed" : "active";
       if (!refreshGate.current.accept(ticket, nextLifecycle)) return;
       if (nextLifecycle === "completed") {
+        clearCurrentGameIfMatching(localStorage, id);
         setGame(undefined);
         setCompletion(body as SafeGameCompletion);
         setLifecycle("completed");
@@ -67,11 +68,8 @@ export function useGame<V extends GameView = undefined>(
       setAccountOperator(false);
       setAccountRole("");
       if (nextLifecycle) setLifecycle(nextLifecycle);
-      if (
-        [401, 404, 410].includes(r.status) &&
-        readCurrentGame(localStorage)?.id === id
-      )
-        clearCurrentGame(localStorage);
+      if ([401, 404, 410].includes(r.status))
+        clearCurrentGameIfMatching(localStorage, id);
       setError(body?.error ?? "Game is unavailable.");
     }
   }, [id, view, invitation]);

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   CURRENT_GAME_KEY,
   clearCurrentGame,
+  clearCurrentGameIfMatching,
   gameCapabilities,
   readCurrentGame,
   selectCurrentGame,
@@ -40,6 +41,17 @@ describe("device-local current game", () => {
     expect(readCurrentGame(storage)?.title).toContain("two");
     clearCurrentGame(storage);
     expect(readCurrentGame(storage)).toBeNull();
+  });
+  it("clears only a matching completed game without touching account state", () => {
+    const storage = new MemoryStorage();
+    storage.setItem("curlcast-account-session", "signed-in");
+    selectCurrentGame(storage, selection("one"));
+
+    expect(clearCurrentGameIfMatching(storage, "two")).toBe(false);
+    expect(readCurrentGame(storage)).toEqual(selection("one"));
+    expect(clearCurrentGameIfMatching(storage, "one")).toBe(true);
+    expect(readCurrentGame(storage)).toBeNull();
+    expect(storage.getItem("curlcast-account-session")).toBe("signed-in");
   });
   it("rejects malformed persisted capabilities", () => {
     const storage = new MemoryStorage();

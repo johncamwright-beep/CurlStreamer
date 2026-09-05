@@ -49,6 +49,13 @@ export function hasScoringAccess(
   });
 }
 
+export function canManageCompletion(
+  accountRole: string,
+  hasOrganizerToken: boolean,
+) {
+  return hasOrganizerToken || ["owner", "team_admin"].includes(accountRole);
+}
+
 export function preserveAndStoreParticipantAccess(
   storage: Pick<Storage, "getItem" | "setItem">,
   id: string,

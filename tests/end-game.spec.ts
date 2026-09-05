@@ -144,6 +144,75 @@ test("completed Broadcast keeps the result in the fixed program canvas", async (
   );
 });
 
+for (const [role, managesCleanup] of [
+  ["owner", true],
+  ["team_admin", true],
+  ["scorer", false],
+  ["viewer", false],
+] as const) {
+  test(`completed lobby gives ${role} the correct cleanup controls after reload`, async ({
+    page,
+  }) => {
+    let cleanupRequests = 0;
+    await page.route(`**/api/games/${testGameId}`, (route) =>
+      route.fulfill({
+        json: completedFixture(),
+        headers: {
+          "x-curlcast-operator": String(role !== "viewer"),
+          "x-curlcast-account-role": role,
+        },
+      }),
+    );
+    await page.route(`**/api/games/${testGameId}/completion`, (route) => {
+      cleanupRequests += 1;
+      return route.fulfill({
+        json: { status: "failed", attempts: 1, lastError: "provider timeout" },
+      });
+    });
+
+    await page.goto(`/games/${testGameId}`);
+    await expect(
+      page.getByRole("heading", { name: "Home 3 – 2 Visitors" }),
+    ).toBeVisible();
+    if (managesCleanup) {
+      await expect(
+        page.getByRole("button", { name: "Retry live video shutdown" }),
+      ).toBeVisible();
+      expect(cleanupRequests).toBeGreaterThan(0);
+    } else {
+      await expect(
+        page.getByRole("button", { name: "Retry live video shutdown" }),
+      ).toHaveCount(0);
+      expect(cleanupRequests).toBe(0);
+    }
+  });
+}
+
+test("completed lobby preserves organizer cleanup controls after reload", async ({
+  page,
+}) => {
+  const organizer = `header.${Buffer.from(
+    JSON.stringify({ purpose: "organizer", gameId: testGameId }),
+  ).toString("base64url")}.signature`;
+  await page.addInitScript(
+    ({ id, token }) => localStorage.setItem(`curlcast-access-${id}`, token),
+    { id: testGameId, token: organizer },
+  );
+  await page.route(`**/api/games/${testGameId}`, (route) =>
+    route.fulfill({ json: completedFixture() }),
+  );
+  await page.route(`**/api/games/${testGameId}/completion`, (route) =>
+    route.fulfill({
+      json: { status: "failed", attempts: 1, lastError: "provider timeout" },
+    }),
+  );
+
+  await page.goto(`/games/${testGameId}`);
+  await expect(
+    page.getByRole("button", { name: "Retry live video shutdown" }),
+  ).toBeVisible();
+});
+
 test("an authoritative terminal poll stops local camera capture", async ({
   page,
 }) => {

@@ -1,13 +1,13 @@
 "use client";
 import Link from "next/link";
-import { use, useState } from "react";
+import { use, useEffect, useState } from "react";
 import { useGame } from "@/components/GameSync";
 import type { Role } from "@/lib/types";
 import { cameraDisplayStatus } from "@/lib/camera-status";
 import { AppNavigation } from "@/components/AppNavigation";
 import { canonicalTitleFromConfig } from "@/lib/game-title";
 import { gameCapabilities } from "@/lib/current-game";
-import { hasOrganizerAccess } from "@/lib/access-session";
+import { canManageCompletion, hasOrganizerAccess } from "@/lib/access-session";
 import { GameInvitations } from "@/components/GameInvitations";
 import { EndGameControl } from "@/components/EndGameControl";
 import { CompletedGameSummary } from "@/components/CompletedGameSummary";
@@ -25,8 +25,13 @@ export default function GameLobby({
     useGame(id);
   const [finished, setFinished] = useState<SafeGameCompletion>();
   const [finishedCleanup, setFinishedCleanup] = useState<CompletionCleanup>();
+  const [organizerAccess, setOrganizerAccess] = useState(false);
   const [disconnecting, setDisconnecting] = useState<Role>();
   const [cameraActionError, setCameraActionError] = useState("");
+  useEffect(
+    () => setOrganizerAccess(hasOrganizerAccess(localStorage, id)),
+    [id],
+  );
   async function cameraAction(
     role: "camera-home" | "camera-away",
     release: boolean,
@@ -70,7 +75,7 @@ export default function GameLobby({
         <CompletedGameSummary
           gameId={id}
           completion={completed}
-          cleanupControls
+          cleanupControls={canManageCompletion(accountRole, organizerAccess)}
           initialCleanup={finishedCleanup}
         />
       </main>
@@ -87,8 +92,7 @@ export default function GameLobby({
             title,
             scheduledLabel: "Schedule not set",
             capabilities: gameCapabilities(
-              accountRole ||
-                (hasOrganizerAccess(localStorage, id) ? "organizer" : "scorer"),
+              accountRole || (organizerAccess ? "organizer" : "scorer"),
               game.config.awayName === "Opponent TBD",
             ),
           }}
@@ -102,7 +106,7 @@ export default function GameLobby({
       </p>
       <GameInvitations
         id={id}
-        enabled={accountOperator || hasOrganizerAccess(localStorage, id)}
+        enabled={accountOperator || organizerAccess}
         claims={game.claims}
         connectedDevices={
           <section className="panel min-w-0">
@@ -216,8 +220,7 @@ export default function GameLobby({
             homeName={game.config.homeName}
             awayName={game.config.awayName}
             enabled={
-              ["owner", "team_admin"].includes(accountRole) ||
-              hasOrganizerAccess(localStorage, id)
+              ["owner", "team_admin"].includes(accountRole) || organizerAccess
             }
             onCompleted={(value, cleanup) => {
               setFinished(value);

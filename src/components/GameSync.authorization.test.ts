@@ -10,4 +10,12 @@ describe("useGame authorization forwarding", () => {
       source.indexOf('cache: "no-store"'),
     );
   });
+
+  it("clears a matching device-local game after a completed response", () => {
+    const source = readFileSync("src/components/GameSync.tsx", "utf8");
+    expect(source).toContain("clearCurrentGameIfMatching(localStorage, id)");
+    expect(source.indexOf('nextLifecycle === "completed"')).toBeLessThan(
+      source.indexOf("clearCurrentGameIfMatching(localStorage, id)"),
+    );
+  });
 });

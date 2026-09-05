@@ -61,11 +61,8 @@ export function ScoringSummary({ game }: { game: GameState }) {
               {(["home", "away"] as const).map((side) => (
                 <tr key={side}>
                   <th scope="row">
-                    <span className="sr-only">
+                    <span className="scoring-history-team">
                       {game.config[`${side}Name`]}
-                    </span>
-                    <span aria-hidden="true">
-                      {side === "home" ? "Home" : "Away"}
                     </span>
                   </th>
                   {Array.from({ length: endCount }, (_, i) => {

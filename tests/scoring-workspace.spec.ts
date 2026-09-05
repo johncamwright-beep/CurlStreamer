@@ -120,6 +120,14 @@ test("narrow scoring keeps end history scrollable and controls at least 44px", a
   expect(sizes.width).toBeLessThanOrEqual(sizes.viewport);
   expect(sizes.pageWidth).toBeLessThanOrEqual(sizes.viewport);
   expect(sizes.oversized).toEqual([]);
+  const clippedCards = await page
+    .locator(".scoring-card")
+    .evaluateAll((cards) =>
+      cards
+        .filter((card) => card.getBoundingClientRect().right > innerWidth)
+        .map((card) => card.querySelector("h2")?.textContent),
+    );
+  expect(clippedCards).toEqual([]);
   await page.screenshot({
     path: info.outputPath(`scoring-narrow-${info.project.name}.png`),
     fullPage: true,

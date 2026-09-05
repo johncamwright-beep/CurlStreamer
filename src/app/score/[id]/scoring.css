@@ -68,6 +68,7 @@
 .scoring-main,
 .scoring-sidebar {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   min-width: 0;
   gap: 18px;
 }
@@ -164,6 +165,11 @@
 }
 .scoring-history td {
   color: #edf4fc;
+}
+.scoring-history-team {
+  display: block;
+  width: 112px;
+  overflow-wrap: anywhere;
 }
 .scoring-field-label {
   margin: 16px 0 8px;

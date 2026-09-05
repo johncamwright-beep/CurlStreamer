@@ -25,6 +25,13 @@ const game = (n, away, extra = {}) => ({
   ...extra,
 });
 export function dashboardResponse(url) {
+  if (url.pathname.endsWith("/rpc/list_opponents"))
+    return [
+      {
+        id: "77777777-7777-4777-8777-777777777777",
+        display_name: "Team Wright",
+      },
+    ];
   if (url.pathname.endsWith("/rpc/list_seasons"))
     return [
       {

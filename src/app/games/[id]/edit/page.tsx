@@ -1,3 +1,4 @@
+import "../../new/setup.css";
 import { notFound, redirect } from "next/navigation";
 import { AppNavigation } from "@/components/AppNavigation";
 import { AccountServiceUnavailable } from "@/components/AccountServiceUnavailable";
@@ -33,7 +34,7 @@ export default async function EditGamePage({
     eventName: game.eventId ? game.config.eventName : null,
   });
   return (
-    <main className="mx-auto min-h-screen max-w-3xl p-5 md:py-12">
+    <main className="game-setup-page">
       <div className="mb-4">
         <AppNavigation
           signedIn

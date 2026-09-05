@@ -5,7 +5,11 @@ const node = JSON.stringify(process.execPath);
 
 export default defineConfig({
   testDir: "./tests",
-  testMatch: ["youtube-settings.spec.ts", "dashboard.spec.ts"],
+  testMatch: [
+    "youtube-settings.spec.ts",
+    "dashboard.spec.ts",
+    "game-setup.spec.ts",
+  ],
   fullyParallel: false,
   webServer: [
     {

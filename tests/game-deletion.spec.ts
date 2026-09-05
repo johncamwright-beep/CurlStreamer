@@ -20,13 +20,14 @@ test.beforeAll(async () => {
         (globalThis as any).React = React;
         const parameters = new URLSearchParams(location.search);
         const restore = parameters.get("mode") === "restore";
+        const cleanupStatus = parameters.get("cleanup") || "failed";
         createRoot(document.getElementById("root")!).render(
           <GameDeletionControl
             gameId="${gameId}"
             title="Browser deletion fixture"
             matchup="Home vs Away"
             restore={restore}
-            cleanupStatus={restore ? "failed" : undefined}
+            cleanupStatus={restore ? cleanupStatus as "failed" | "complete" : undefined}
             cleanupAttempts={restore ? 1 : undefined}
             cleanupLastError={restore ? "mock provider unavailable" : undefined}
           />,
@@ -76,6 +77,15 @@ test("committed deletion clears device state and cleanup remains retryable after
     requests.push(route.request().method());
     if (route.request().method() === "POST") {
       await route.fulfill({ json: { changed: true } });
+      return;
+    }
+    if (route.request().method() === "PATCH") {
+      deleteAttempts += 1;
+      await route.fulfill({
+        json: {
+          cleanup: { status: "complete", attempts: 2, lastError: null },
+        },
+      });
       return;
     }
     deleteAttempts += 1;
@@ -138,9 +148,14 @@ test("committed deletion clears device state and cleanup remains retryable after
   await page.getByRole("button", { name: "Retry video cleanup" }).click();
   await expect.poll(() => deleteAttempts).toBe(2);
 
+  await page.goto("/__game_deletion_harness?mode=restore&cleanup=complete");
+  await page.addScriptTag({ content: browserBundle });
+  await expect(
+    page.getByRole("button", { name: "Retry video cleanup" }),
+  ).toHaveCount(0);
   await page.getByRole("button", { name: "Restore Game" }).click();
   await page.getByRole("button", { name: "Confirm Restore Game" }).click();
-  await expect.poll(() => requests).toEqual(["DELETE", "DELETE", "POST"]);
+  await expect.poll(() => requests).toEqual(["DELETE", "PATCH", "POST"]);
 });
 
 test("a retry network error resets the busy control", async ({ page }) => {
@@ -158,4 +173,53 @@ test("a retry network error resets the busy control", async ({ page }) => {
   await retry.click();
   await expect(page.getByRole("alert")).toContainText("Check your connection");
   await expect(retry).toBeEnabled();
+});
+
+test("a stale trash retry after restore never issues a deletion", async ({
+  page,
+}) => {
+  await page.route("**/__game_deletion_harness**", (route) =>
+    route.fulfill({
+      contentType: "text/html",
+      body: '<main id="root"></main>',
+    }),
+  );
+  const methods: string[] = [];
+  await page.route(`**/api/games/${gameId}/deletion`, async (route) => {
+    methods.push(route.request().method());
+    await route.fulfill({
+      status: 409,
+      json: { error: "This game is no longer deleted." },
+    });
+  });
+
+  await page.goto("/__game_deletion_harness?mode=restore");
+  await page.addScriptTag({ content: browserBundle });
+  await page.getByRole("button", { name: "Retry video cleanup" }).click();
+
+  await expect(page.getByRole("alert")).toHaveText(
+    "This game is no longer deleted.",
+  );
+  await expect.poll(() => methods).toEqual(["PATCH"]);
+});
+
+test("restore remains available while cleanup is failed", async ({ page }) => {
+  await page.route("**/__game_deletion_harness**", (route) =>
+    route.fulfill({
+      contentType: "text/html",
+      body: '<main id="root"></main>',
+    }),
+  );
+  const methods: string[] = [];
+  await page.route(`**/api/games/${gameId}/deletion`, async (route) => {
+    methods.push(route.request().method());
+    await route.fulfill({ json: { changed: true } });
+  });
+
+  await page.goto("/__game_deletion_harness?mode=restore");
+  await page.addScriptTag({ content: browserBundle });
+  await page.getByRole("button", { name: "Restore Game" }).click();
+  await page.getByRole("button", { name: "Confirm Restore Game" }).click();
+
+  await expect.poll(() => methods).toEqual(["POST"]);
 });

@@ -115,7 +115,13 @@ begin
 
   insert into public.game_deletion_cleanup(game_id, provider, status, requested_at)
   values (p_game_id, 'livekit', 'pending', v_deleted_at)
-  on conflict (game_id) do nothing;
+  on conflict (game_id) do update
+  set status = 'pending',
+      attempts = 0,
+      requested_at = excluded.requested_at,
+      last_attempted_at = null,
+      completed_at = null,
+      last_error = null;
 
   insert into public.audit_events(
     actor_user_id, organization_id, action,
@@ -287,7 +293,8 @@ begin
     select c.status, c.attempts, c.last_error
     from public.game_deletion_cleanup c
     join public.games g on g.id = c.game_id
-    where c.game_id = p_game_id and g.organization_id = v_org;
+    where c.game_id = p_game_id and g.organization_id = v_org
+      and g.deleted_at is not null;
 end;
 $$;
 
@@ -329,12 +336,14 @@ begin
     and exists (
       select 1 from public.games g
       where g.id = c.game_id and g.organization_id = v_org
+        and g.deleted_at is not null
     );
   return query
     select c.status, c.attempts, c.last_error
     from public.game_deletion_cleanup c
     join public.games g on g.id = c.game_id
-    where c.game_id = p_game_id and g.organization_id = v_org;
+    where c.game_id = p_game_id and g.organization_id = v_org
+      and g.deleted_at is not null;
 end;
 $$;
 

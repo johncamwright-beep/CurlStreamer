@@ -20,11 +20,11 @@ vi.mock("@/lib/providers/livekit", () => ({
   terminateGameLiveKit: mocks.terminateGameLiveKit,
 }));
 
-import { DELETE, POST } from "./route";
+import { DELETE, PATCH, POST } from "./route";
 
 const gameId = "11111111-1111-4111-8111-111111111111";
 const userId = "22222222-2222-4222-8222-222222222222";
-const request = (method: "DELETE" | "POST") =>
+const request = (method: "DELETE" | "PATCH" | "POST") =>
   new Request(`http://test/api/games/${gameId}/deletion`, { method });
 const context = { params: Promise.resolve({ id: gameId }) };
 
@@ -174,6 +174,41 @@ describe("atomic game deletion route", () => {
     expect(mocks.terminateGameLiveKit).not.toHaveBeenCalled();
   });
 
+  it("retries cleanup without invoking the deletion mutation", async () => {
+    const response = await PATCH(request("PATCH"), context);
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({
+      cleanup: { status: "complete", attempts: 1, lastError: null },
+    });
+    expect(mocks.terminateGameLiveKit).toHaveBeenCalledWith(gameId);
+    expect(mocks.rpc.mock.calls.map(([operation]) => operation)).toEqual([
+      "get_game_deletion_cleanup",
+      "record_game_deletion_cleanup",
+    ]);
+    expect(mocks.rpc).not.toHaveBeenCalledWith(
+      "soft_delete_team_game",
+      expect.anything(),
+    );
+  });
+
+  it("cannot re-delete a game restored after a stale trash page loaded", async () => {
+    mocks.rpc.mockResolvedValueOnce({ data: [], error: null });
+
+    const response = await PATCH(request("PATCH"), context);
+
+    expect(response.status).toBe(409);
+    expect(await response.json()).toEqual({
+      error: "This game is no longer deleted.",
+    });
+    expect(mocks.rpc).toHaveBeenCalledOnce();
+    expect(mocks.rpc).toHaveBeenCalledWith("get_game_deletion_cleanup", {
+      p_user_id: userId,
+      p_game_id: gameId,
+    });
+    expect(mocks.terminateGameLiveKit).not.toHaveBeenCalled();
+  });
+
   it("preserves the live-session conflict without claiming cleanup", async () => {
     mocks.rpc.mockResolvedValueOnce({
       data: null,
@@ -209,5 +244,16 @@ describe("atomic game deletion route", () => {
 
     expect((await DELETE(request("DELETE"), context)).status).toBe(403);
     expect(mocks.rpc).not.toHaveBeenCalled();
+  });
+
+  it("applies the owner/team-admin boundary to cleanup-only retry", async () => {
+    mocks.loadActiveTeam.mockResolvedValue({
+      kind: "ready",
+      team: { organizationId: "team-1", role: "scorer" },
+    });
+
+    expect((await PATCH(request("PATCH"), context)).status).toBe(403);
+    expect(mocks.rpc).not.toHaveBeenCalled();
+    expect(mocks.terminateGameLiveKit).not.toHaveBeenCalled();
   });
 });

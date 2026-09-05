@@ -61,7 +61,7 @@ export function GameDeletionControl({
     setCleanupError("");
     try {
       const response = await fetch(`/api/games/${gameId}/deletion`, {
-        method: "DELETE",
+        method: "PATCH",
       });
       const body = (await response.json().catch(() => null)) as {
         deletionCommitted?: boolean;

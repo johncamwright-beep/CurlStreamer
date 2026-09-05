@@ -82,14 +82,15 @@ async function change(
     p_game_id: parsed.data.id,
   });
   if (error) {
-    const live = error.code === "55000";
+    const lifecycleConflict = error.code === "55000";
     return NextResponse.json(
       {
-        error: live
-          ? "Stop the live session before deleting this game."
-          : `The game could not be ${operation === "delete" ? "deleted" : "restored"}.`,
+        error:
+          lifecycleConflict && operation === "delete"
+            ? "Stop the live session before deleting this game."
+            : `The game could not be ${operation === "delete" ? "deleted" : "restored"}.`,
       },
-      { status: live ? 409 : 503 },
+      { status: lifecycleConflict ? 409 : 503 },
     );
   }
   if (operation === "delete") {
@@ -139,6 +140,52 @@ async function change(
   return NextResponse.json({ changed: Boolean(changed) });
 }
 
+async function retryCleanup(id: string) {
+  const parsed = paramsSchema.safeParse({ id });
+  if (!parsed.success)
+    return NextResponse.json({ error: "Invalid game" }, { status: 400 });
+  const { data } = await (await createServerSupabaseClient()).auth.getUser();
+  if (!data.user)
+    return NextResponse.json(
+      { error: "Sign in is required." },
+      { status: 401 },
+    );
+  const team = await loadActiveTeam(data.user);
+  if (
+    team.kind !== "ready" ||
+    !["owner", "team_admin"].includes(team.team.role)
+  )
+    return NextResponse.json(
+      { error: "Team administrator access is required." },
+      { status: 403 },
+    );
+
+  const cleanup = await cleanupDeletedGame(
+    createAdminSupabaseClient(),
+    data.user.id,
+    parsed.data.id,
+  );
+  if (cleanup.kind === "not-found")
+    return NextResponse.json(
+      { error: "This game is no longer deleted." },
+      { status: 409 },
+    );
+  if (cleanup.kind === "unavailable")
+    return NextResponse.json(
+      { error: "Live video cleanup could not be confirmed." },
+      { status: 503 },
+    );
+  if (cleanup.cleanup.status !== "complete")
+    return NextResponse.json(
+      {
+        error: "Live video cleanup needs to be retried.",
+        cleanup: cleanup.cleanup,
+      },
+      { status: 503 },
+    );
+  return NextResponse.json({ cleanup: cleanup.cleanup });
+}
+
 export async function DELETE(
   request: Request,
   { params }: { params: Promise<{ id: string }> },
@@ -151,4 +198,11 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> },
 ) {
   return change(request, (await params).id, "restore");
+}
+
+export async function PATCH(
+  _request: Request,
+  { params }: { params: Promise<{ id: string }> },
+) {
+  return retryCleanup((await params).id);
 }

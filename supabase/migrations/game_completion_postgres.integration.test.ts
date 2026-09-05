@@ -338,6 +338,15 @@ describe.skipIf(!enabled)("game completion PostgreSQL transactions", () => {
       psql(`select count(*) from public.audit_events where action='game.restored'
         and subject_identifier='${gameId}'`).stdout,
     ).toBe("1");
+    expect(
+      psqlAsServiceRole(`select count(*) from
+        public.get_game_deletion_cleanup('${administrator}','${gameId}')`)
+        .stdout,
+    ).toBe("0");
+    expect(
+      psql(`select count(*) from public.audit_events where action='game.deleted'
+        and subject_identifier='${gameId}'`).stdout,
+    ).toBe("1");
   });
 
   it("repairs a legacy partial deletion before restore makes it visible", () => {
@@ -349,7 +358,9 @@ describe.skipIf(!enabled)("game completion PostgreSQL transactions", () => {
       psql(`${fixture(gameId, organizationId, creatorId)}
         ${account(administratorId, organizationId)}
         update public.games set deleted_at=now(),deleted_by_user_id='${administratorId}'
-          where id='${gameId}';`).ok,
+          where id='${gameId}';
+        insert into public.game_deletion_cleanup(game_id,provider,status,requested_at)
+          values ('${gameId}','livekit','pending',now());`).ok,
     ).toBe(true);
     const legacyVersion = psql(
       `select version from public.game_states where game_id='${gameId}'`,
@@ -960,6 +971,11 @@ describe.skipIf(!enabled)("game completion PostgreSQL transactions", () => {
       from public.game_states gs join public.game_completions c on c.game_id=gs.game_id
       where gs.game_id='${completeFirstGame}'`).stdout;
     expect(
+      psqlAsServiceRole(`select status from public.record_game_deletion_cleanup(
+        '${completeFirstAdministrator}','${completeFirstGame}',true,null)`)
+        .stdout,
+    ).toBe("complete");
+    expect(
       psqlAsServiceRole(
         `select public.restore_team_game('${completeFirstAdministrator}','${completeFirstGame}')`,
       ),
@@ -1026,6 +1042,10 @@ describe.skipIf(!enabled)("game completion PostgreSQL transactions", () => {
         `select public.soft_delete_team_game('${restoreFirstOwner}','${restoreFirstGame}')`,
       ).stdout,
     ).toBe("t");
+    expect(
+      psqlAsServiceRole(`select status from public.record_game_deletion_cleanup(
+        '${restoreFirstOwner}','${restoreFirstGame}',true,null)`).stdout,
+    ).toBe("complete");
     const heldRestore = heldTransaction(
       `select public.restore_team_game('${restoreFirstAdministrator}','${restoreFirstGame}');`,
       `held_restore_${randomUUID().replaceAll("-", "")}`,
@@ -1044,13 +1064,15 @@ describe.skipIf(!enabled)("game completion PostgreSQL transactions", () => {
     expect(
       psql(`select g.deleted_at is not null,g.deleted_by_user_id='${restoreFirstAdministrator}',
         gs.state->>'status',gs.state->'claims'='{}'::jsonb,
+        (select status from public.game_deletion_cleanup
+          where game_id='${restoreFirstGame}'),
         (select count(*) from public.audit_events where action='game.deleted'
           and subject_identifier='${restoreFirstGame}'),
         (select count(*) from public.audit_events where action='game.restored'
           and subject_identifier='${restoreFirstGame}')
         from public.games g join public.game_states gs on gs.game_id=g.id
         where g.id='${restoreFirstGame}'`).stdout,
-    ).toBe("t|t|closed|t|2|1");
+    ).toBe("t|t|closed|t|pending|2|1");
   }, 20_000);
 
   it("rejects competing claims and prevents stale writers from restoring a released claim", async () => {

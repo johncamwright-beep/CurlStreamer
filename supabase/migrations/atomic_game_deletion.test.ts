@@ -55,6 +55,10 @@ describe("atomic game deletion migration", () => {
     expect(sql).toContain("left join public.game_deletion_cleanup c");
     expect(sql).toContain("status in ('pending', 'failed', 'complete')");
     expect(sql).toContain("c.status <> 'complete'");
+    expect(sql).toContain(
+      "on conflict (game_id) do update set status = 'pending'",
+    );
+    expect(sql).toContain("and g.deleted_at is not null");
     expect(sql).toContain("from public, anon, authenticated, service_role");
     expect(sql).toContain("to service_role");
     expect(sql).not.toContain("to authenticated");

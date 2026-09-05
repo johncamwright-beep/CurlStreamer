@@ -10,7 +10,10 @@ import {
   formatCanonicalGameTitle,
   formatYouTubeScheduledTitle,
 } from "@/lib/game-title";
-import { localDateTimeToUtc } from "@/lib/team-hierarchy";
+import {
+  localDateTimeToUtc,
+  scheduledStartToLocalInput,
+} from "@/lib/team-hierarchy";
 
 type Opponent = { id: string; display_name: string };
 type Dialog = "season" | "event" | null;
@@ -40,6 +43,17 @@ export function GameCreationForm({
   const preselected = initialEvents.find(
     (e) => e.id === preselectedEventId && !e.archivedAt,
   );
+  const editingEvent = initialEvents.find(
+    (event) => event.id === editing?.eventId && !event.archivedAt,
+  );
+  const initialTimezone =
+    editingEvent?.timezone ??
+    editing?.timezone ??
+    preselected?.timezone ??
+    "UTC";
+  const initialSchedule = editing?.scheduledStart
+    ? scheduledStartToLocalInput(editing.scheduledStart, initialTimezone)
+    : null;
   const [seasons, setSeasons] = useState(initialSeasons);
   const [events, setEvents] = useState(initialEvents);
   const [seasonId, setSeasonId] = useState(
@@ -61,14 +75,11 @@ export function GameCreationForm({
   );
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const local = editing?.scheduledStart
-    ? new Date(editing.scheduledStart)
-    : null;
   const [scheduledDate, setScheduledDate] = useState(
-    local?.toISOString().slice(0, 10) ?? "",
+    initialSchedule?.date ?? "",
   );
   const [scheduledTime, setScheduledTime] = useState(
-    local?.toISOString().slice(11, 16) ?? "",
+    initialSchedule?.time ?? "",
   );
   const [timezone, setTimezone] = useState(editing?.timezone ?? "UTC");
   const [titleCustomized, setTitleCustomized] = useState(
@@ -91,6 +102,10 @@ export function GameCreationForm({
     scheduledDate,
     scheduledTime,
     effectiveTimezone,
+    editing?.scheduledStart,
+  );
+  const invalidSchedule = Boolean(
+    scheduledDate && scheduledTime && !scheduledInstant,
   );
   const generatedTitle = formatYouTubeScheduledTitle(
     canonicalTitle,
@@ -338,7 +353,7 @@ export function GameCreationForm({
           </span>
         </label>
         <label>
-          Scheduled date
+          Scheduled date ({effectiveTimezone})
           <input
             required
             name="scheduledDate"
@@ -351,7 +366,7 @@ export function GameCreationForm({
           />
         </label>
         <label>
-          Scheduled time
+          Scheduled time ({effectiveTimezone})
           <input
             required
             name="scheduledTime"
@@ -377,6 +392,17 @@ export function GameCreationForm({
               className="mt-1 w-full rounded-lg bg-slate-800 p-3"
             />
           </label>
+        )}
+        <p className="text-sm text-slate-300 md:col-span-2">
+          Times are entered in <strong>{effectiveTimezone}</strong>. An
+          unchanged edit keeps its existing instant; a newly entered time that
+          repeats when clocks fall back uses the earlier occurrence.
+        </p>
+        {invalidSchedule && (
+          <p role="alert" className="text-red-300 md:col-span-2">
+            That local date and time is not valid in {effectiveTimezone}. Times
+            skipped when clocks move forward cannot be scheduled.
+          </p>
         )}
         {eventId && (
           <label>
@@ -470,7 +496,10 @@ export function GameCreationForm({
             )}
           </span>
         </label>
-        <button disabled={busy || !seasonId} className="btn md:col-span-2">
+        <button
+          disabled={busy || !seasonId || !scheduledInstant}
+          className="btn md:col-span-2"
+        >
           {busy ? "Saving…" : editing ? "Save schedule" : "Schedule game"}
         </button>
         {error && (

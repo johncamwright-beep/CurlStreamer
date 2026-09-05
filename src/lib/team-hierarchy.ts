@@ -91,11 +91,67 @@ export type HierarchyFailure =
   | { kind: "conflict" }
   | { kind: "service" };
 
+type ZonedDateTimeParts = {
+  year: number;
+  month: number;
+  day: number;
+  hour: number;
+  minute: number;
+};
+
+function zonedDateTimeFormatter(timezone: string) {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: timezone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  });
+}
+
+function zonedDateTimeParts(
+  formatter: Intl.DateTimeFormat,
+  instant: number,
+): ZonedDateTimeParts {
+  return Object.fromEntries(
+    formatter
+      .formatToParts(new Date(instant))
+      .filter((part) => part.type !== "literal")
+      .map((part) => [part.type, Number(part.value)]),
+  ) as ZonedDateTimeParts;
+}
+
+function sameWallTime(parts: ZonedDateTimeParts, expected: ZonedDateTimeParts) {
+  return (
+    parts.year === expected.year &&
+    parts.month === expected.month &&
+    parts.day === expected.day &&
+    parts.hour === expected.hour &&
+    parts.minute === expected.minute
+  );
+}
+
+/** Format a stored instant for date/time inputs in the explicitly selected zone. */
+export function scheduledStartToLocalInput(instant: string, timezone: string) {
+  if (!isIanaTimezone(timezone)) return null;
+  const timestamp = new Date(instant).getTime();
+  if (!Number.isFinite(timestamp)) return null;
+  const parts = zonedDateTimeParts(zonedDateTimeFormatter(timezone), timestamp);
+  const pad = (value: number) => String(value).padStart(2, "0");
+  return {
+    date: `${parts.year}-${pad(parts.month)}-${pad(parts.day)}`,
+    time: `${pad(parts.hour)}:${pad(parts.minute)}`,
+  };
+}
+
 /** Convert an intended wall-clock time in an IANA zone to its UTC instant. */
 export function localDateTimeToUtc(
   date: string,
   time: string,
   timezone: string,
+  preferredInstant?: string | null,
 ) {
   if (!z.iso.date().safeParse(date).success || !/^\d{2}:\d{2}$/.test(time))
     return null;
@@ -103,38 +159,41 @@ export function localDateTimeToUtc(
   const [year, month, day] = date.split("-").map(Number);
   const [hour, minute] = time.split(":").map(Number);
   if (hour > 23 || minute > 59) return null;
+  const expected = { year, month, day, hour, minute };
   const intended = Date.UTC(year, month - 1, day, hour, minute);
-  const partsFor = (instant: number) =>
-    Object.fromEntries(
-      new Intl.DateTimeFormat("en-CA", {
-        timeZone: timezone,
-        year: "numeric",
-        month: "2-digit",
-        day: "2-digit",
-        hour: "2-digit",
-        minute: "2-digit",
-        hourCycle: "h23",
-      })
-        .formatToParts(new Date(instant))
-        .filter((part) => part.type !== "literal")
-        .map((part) => [part.type, Number(part.value)]),
-    );
-  let instant = intended;
-  for (let attempt = 0; attempt < 3; attempt += 1) {
-    const p = partsFor(instant);
-    const represented = Date.UTC(p.year, p.month - 1, p.day, p.hour, p.minute);
-    instant += intended - represented;
+  const formatter = zonedDateTimeFormatter(timezone);
+
+  if (preferredInstant) {
+    const preferredTimestamp = new Date(preferredInstant).getTime();
+    if (
+      Number.isFinite(preferredTimestamp) &&
+      sameWallTime(zonedDateTimeParts(formatter, preferredTimestamp), expected)
+    )
+      return new Date(preferredTimestamp).toISOString();
   }
-  const p = partsFor(instant);
-  if (
-    p.year !== year ||
-    p.month !== month ||
-    p.day !== day ||
-    p.hour !== hour ||
-    p.minute !== minute
-  )
-    return null; // rejects nonexistent DST wall times
-  return new Date(instant).toISOString();
+
+  const offsets = new Set<number>();
+  for (const hours of [-36, -24, -12, 0, 12, 24, 36]) {
+    const sample = intended + hours * 60 * 60 * 1000;
+    const represented = zonedDateTimeParts(formatter, sample);
+    offsets.add(
+      Date.UTC(
+        represented.year,
+        represented.month - 1,
+        represented.day,
+        represented.hour,
+        represented.minute,
+      ) - sample,
+    );
+  }
+  const candidates = [...offsets]
+    .map((offset) => intended - offset)
+    .filter((candidate) =>
+      sameWallTime(zonedDateTimeParts(formatter, candidate), expected),
+    );
+  if (!candidates.length) return null; // rejects nonexistent DST wall times
+  // A new ambiguous fall-back input consistently chooses the earlier instant.
+  return new Date(Math.min(...candidates)).toISOString();
 }
 
 export function formatScheduledStart(instant: string, timezone: string) {

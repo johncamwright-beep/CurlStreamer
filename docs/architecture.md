@@ -6,6 +6,8 @@ The App Router serves organizer, join, camera, scorer, and fixed-aspect program 
 
 The 1920×1080 canvas places two equal-height 9:16 sources in a central safe area with `object-fit: contain`; purpose-built side rails carry score, state, warnings, and sponsors. Full-screen sponsor mode overlays rather than unmounting camera sources.
 
+Game schedules store UTC instants while date/time controls display wall time in the selected IANA timezone. An event's timezone takes precedence over a submitted game timezone. Nonexistent spring-forward wall times are rejected. A newly entered ambiguous fall-back time consistently uses the earlier occurrence; submitting an unchanged edit preserves its original instant, including the later occurrence.
+
 ## Production boundary
 
 Replace `store.ts` with a Supabase repository and Realtime channel. Supabase RLS scopes every record to organization membership. Server routes mint least-privilege LiveKit tokens: home/away publish one video track and no audio; scorer publishes audio and no video; viewers subscribe only. Web Egress loads the composition and `StreamingProvider` supplies a server-only RTMP target. The schema is in `supabase/migrations`.

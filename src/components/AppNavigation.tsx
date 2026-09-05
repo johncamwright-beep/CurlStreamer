@@ -257,6 +257,11 @@ export function AppNavigation({
               <ul>
                 {renderLinks([
                   { href: "/account", label: "Account", icon: "account" },
+                  {
+                    href: "/settings/youtube",
+                    label: "YouTube Settings",
+                    icon: "broadcast",
+                  },
                 ])}
               </ul>
               <form action={signOut}>

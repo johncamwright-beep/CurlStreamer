@@ -10,7 +10,7 @@
     "format:check": "prettier --check .",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test && playwright test --config playwright.youtube.config.ts"
   },
   "dependencies": {
     "@livekit/components-react": "^2.9.14",

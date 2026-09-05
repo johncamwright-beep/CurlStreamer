@@ -38,7 +38,11 @@ export async function POST(
   const claim = game.claims[parsed.data.role];
   if (!claim) return NextResponse.json({ disconnected: true, game });
   try {
-    await removeCameraParticipant(id, parsed.data.role);
+    await removeCameraParticipant(
+      id,
+      parsed.data.role,
+      game.claimGenerations?.[parsed.data.role],
+    );
   } catch {
     console.error("Camera disconnect failed", {
       operation: "remove_livekit_participant",
@@ -59,7 +63,11 @@ export async function POST(
         phase: "disconnected",
         diagnostic: "Disconnected by organizer",
       },
-      claim,
+      {
+        role: parsed.data.role,
+        claim,
+        generation: game.claimGenerations?.[parsed.data.role],
+      },
     );
   } catch (error) {
     if (isGameStateConflictError(error))

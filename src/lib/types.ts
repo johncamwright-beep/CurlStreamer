@@ -1,5 +1,11 @@
 export type Team = "home" | "away";
 export type Role = "camera-home" | "camera-away" | "scorer";
+export type ParticipantAuthority = {
+  role: Role;
+  claim: string;
+  /** Absent only for a generation-zero credential issued before migration 0019. */
+  generation?: number;
+};
 export type Layout = "split" | "home" | "away";
 export type SponsorStyle = "fullscreen" | "overlay";
 export type CameraFraming = "fill" | "contain";
@@ -55,6 +61,8 @@ export interface GameState {
   cameraHealth?: Partial<Record<"camera-home" | "camera-away", CameraHealth>>;
   cameraFraming?: Partial<Record<"camera-home" | "camera-away", CameraFraming>>;
   claims: Partial<Record<Role, string>>;
+  /** Opaque server-issued authority epochs; absent means legacy generation 0. */
+  claimGenerations?: Partial<Record<Role, number>>;
   sponsors: Sponsor[];
   sponsorMode: {
     active: boolean;

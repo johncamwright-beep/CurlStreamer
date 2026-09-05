@@ -53,10 +53,11 @@ export default function GameLobby({
           body: JSON.stringify({ role }),
         },
       );
+      const body = await response.json().catch(() => null);
       if (!response.ok) {
-        const body = await response.json().catch(() => null);
         throw new Error(body?.error || "Camera could not be released.");
       }
+      if (body?.warning) setCameraActionError(body.warning);
       await refresh();
     } catch (cause) {
       setCameraActionError(

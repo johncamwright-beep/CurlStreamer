@@ -4,12 +4,15 @@ const mocks = vi.hoisted(() => ({
   authorizeGame: vi.fn(),
   getGame: vi.fn(),
   readGame: vi.fn(),
+  participantAccessMatches: vi.fn(),
+  listCameraIdentityGenerations: vi.fn(),
   issueLiveKitToken: vi.fn(),
   terminateGameLiveKit: vi.fn(),
 }));
 vi.mock("@/lib/game-authorization", () => ({
   operatorRoles: ["owner", "team_admin", "scorer"],
   authorizeGame: mocks.authorizeGame,
+  participantAccessMatches: mocks.participantAccessMatches,
   authorizationError: (result: { reason: string }) => ({
     error:
       result.reason === "not-found"
@@ -31,7 +34,10 @@ vi.mock("@/lib/game-authorization", () => ({
             : 401,
   }),
 }));
-vi.mock("@/lib/store", () => ({ getGame: mocks.getGame }));
+vi.mock("@/lib/store", () => ({
+  getGame: mocks.getGame,
+  listCameraIdentityGenerations: mocks.listCameraIdentityGenerations,
+}));
 vi.mock("@/lib/providers/game-read", () => ({ readGame: mocks.readGame }));
 vi.mock("@/lib/providers/livekit", () => ({
   issueLiveKitToken: mocks.issueLiveKitToken,
@@ -69,12 +75,17 @@ describe("camera LiveKit token route", () => {
         gameId: "scheduled-game",
         role: "camera-home",
         deviceId: "device-1",
+        assignmentGeneration: 3,
       },
     });
     mocks.getGame.mockResolvedValue({ status: "active" });
     mocks.readGame.mockResolvedValue({
       kind: "active",
       game: { status: "active" },
+    });
+    mocks.participantAccessMatches.mockReturnValue(true);
+    mocks.listCameraIdentityGenerations.mockResolvedValue({
+      "camera-home": [3],
     });
     mocks.issueLiveKitToken.mockResolvedValue({
       url: "wss://live.example",
@@ -103,6 +114,7 @@ describe("camera LiveKit token route", () => {
     expect(mocks.issueLiveKitToken).toHaveBeenCalledWith(
       "scheduled-game",
       "camera-home",
+      3,
     );
   });
 
@@ -135,6 +147,7 @@ describe("camera LiveKit token route", () => {
     expect(mocks.issueLiveKitToken).toHaveBeenCalledWith(
       "scheduled-game",
       "camera-home",
+      3,
     );
   });
 
@@ -226,8 +239,23 @@ describe("camera LiveKit token route", () => {
     });
     expect(response.status).toBe(410);
     expect(mocks.issueLiveKitToken).toHaveBeenCalledOnce();
-    expect(mocks.terminateGameLiveKit).toHaveBeenCalledWith("scheduled-game");
+    expect(mocks.terminateGameLiveKit).toHaveBeenCalledWith("scheduled-game", {
+      "camera-home": [3],
+    });
     expect(await response.json()).not.toHaveProperty("token");
+  });
+
+  it("does not return a token when release wins the signing race", async () => {
+    mocks.participantAccessMatches.mockReturnValue(false);
+    const response = await POST(cameraRequest(), {
+      params: Promise.resolve({ id: "scheduled-game" }),
+    });
+    expect(response.status).toBe(401);
+    expect(mocks.issueLiveKitToken).toHaveBeenCalledOnce();
+    expect(await response.json()).toEqual({
+      error: "released",
+      code: "camera_assignment_released",
+    });
   });
 
   it("denies an already-completed game before signing", async () => {

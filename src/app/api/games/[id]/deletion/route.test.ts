@@ -5,6 +5,7 @@ const mocks = vi.hoisted(() => ({
   loadActiveTeam: vi.fn(),
   rpc: vi.fn(),
   terminateGameLiveKit: vi.fn(),
+  listCameraIdentityGenerations: vi.fn(),
 }));
 
 vi.mock("@/lib/supabase/server", () => ({
@@ -18,6 +19,9 @@ vi.mock("@/lib/supabase/admin", () => ({
 vi.mock("@/lib/team-games", () => ({ loadActiveTeam: mocks.loadActiveTeam }));
 vi.mock("@/lib/providers/livekit", () => ({
   terminateGameLiveKit: mocks.terminateGameLiveKit,
+}));
+vi.mock("@/lib/store", () => ({
+  listCameraIdentityGenerations: mocks.listCameraIdentityGenerations,
 }));
 
 import { DELETE, PATCH, POST } from "./route";
@@ -37,6 +41,10 @@ describe("atomic game deletion route", () => {
       team: { organizationId: "team-1", role: "owner" },
     });
     mocks.terminateGameLiveKit.mockResolvedValue(undefined);
+    mocks.listCameraIdentityGenerations.mockResolvedValue({
+      "camera-home": [1, 3],
+      "camera-away": [2],
+    });
     mocks.rpc.mockImplementation(async (operation: string) => {
       if (operation === "soft_delete_team_game")
         return { data: true, error: null };
@@ -62,7 +70,10 @@ describe("atomic game deletion route", () => {
       deletionCommitted: true,
       cleanup: { status: "complete", attempts: 1, lastError: null },
     });
-    expect(mocks.terminateGameLiveKit).toHaveBeenCalledWith(gameId);
+    expect(mocks.terminateGameLiveKit).toHaveBeenCalledWith(gameId, {
+      "camera-home": [1, 3],
+      "camera-away": [2],
+    });
     expect(mocks.rpc.mock.calls.map(([operation]) => operation)).toEqual([
       "soft_delete_team_game",
       "get_game_deletion_cleanup",
@@ -181,7 +192,10 @@ describe("atomic game deletion route", () => {
     expect(await response.json()).toEqual({
       cleanup: { status: "complete", attempts: 1, lastError: null },
     });
-    expect(mocks.terminateGameLiveKit).toHaveBeenCalledWith(gameId);
+    expect(mocks.terminateGameLiveKit).toHaveBeenCalledWith(gameId, {
+      "camera-home": [1, 3],
+      "camera-away": [2],
+    });
     expect(mocks.rpc.mock.calls.map(([operation]) => operation)).toEqual([
       "get_game_deletion_cleanup",
       "record_game_deletion_cleanup",

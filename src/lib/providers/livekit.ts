@@ -32,8 +32,16 @@ function liveKitConfiguration() {
   return { url: url!, key: key!, secret: secret! };
 }
 
-export function liveKitIdentity(gameId: string, access: LiveKitAccess) {
-  return `${gameId}:${access}`;
+export function liveKitIdentity(
+  gameId: string,
+  access: LiveKitAccess,
+  assignmentGeneration?: number,
+) {
+  const generation =
+    cameraAccess(access) && assignmentGeneration && assignmentGeneration > 0
+      ? `:g${assignmentGeneration}`
+      : "";
+  return `${gameId}:${access}${generation}`;
 }
 
 export function liveKitMetadata(access: LiveKitAccess) {
@@ -56,14 +64,18 @@ export function liveKitVideoGrant(gameId: string, access: LiveKitAccess) {
 }
 
 /** Creates a short-lived room credential. This module must never be imported by a client. */
-export async function issueLiveKitToken(gameId: string, access: LiveKitAccess) {
+export async function issueLiveKitToken(
+  gameId: string,
+  access: LiveKitAccess,
+  assignmentGeneration?: number,
+) {
   const { url, key, secret } = liveKitConfiguration();
 
   // Camera identities are stable so a reconnect replaces, rather than adds, a
   // publisher. Broadcast consumers remain unique because a page currently has
   // one subscriber Room for each displayed role.
   const identity = cameraAccess(access)
-    ? liveKitIdentity(gameId, access)
+    ? liveKitIdentity(gameId, access, assignmentGeneration)
     : `${["broadcast-viewer", "public-viewer"].includes(access) ? "viewer" : "preview"}-${crypto.randomUUID()}`;
   const token = await new SignJWT({
     video: liveKitVideoGrant(gameId, access),
@@ -130,32 +142,50 @@ async function roomServiceRequest(
 export async function removeCameraParticipant(
   gameId: string,
   role: "camera-home" | "camera-away",
+  assignmentGeneration?: number,
 ) {
   await roomServiceRequest("RemoveParticipant", gameId, {
     room: `game-${gameId}`,
-    identity: liveKitIdentity(gameId, role),
+    identity: liveKitIdentity(gameId, role, assignmentGeneration),
   });
 }
 
-/** Disconnects the room and asks LiveKit to revoke both stable camera identities. */
-export async function terminateGameLiveKit(gameId: string) {
-  const removals = await Promise.allSettled([
-    removeCameraParticipant(gameId, "camera-home"),
-    removeCameraParticipant(gameId, "camera-away"),
-  ]);
-  // Wait for stable-identity removal before deleting the room; on LiveKit
-  // Cloud this is the operation that revokes prior tokens for those identities.
-  const deletion = await Promise.allSettled([
-    roomServiceRequest("DeleteRoom", gameId, {
-      room: `game-${gameId}`,
-    }),
-  ]);
-  const operations = [...removals, ...deletion];
-  const failed = operations
-    .map((result, index) => (result.status === "rejected" ? index : -1))
-    .filter((index) => index >= 0);
-  if (failed.length)
+export type CameraIdentityGenerations = Partial<
+  Record<"camera-home" | "camera-away", readonly number[]>
+>;
+
+/** Disconnects the room and asks LiveKit to revoke every recorded camera identity. */
+export async function terminateGameLiveKit(
+  gameId: string,
+  generations: CameraIdentityGenerations = {},
+) {
+  const identities = (["camera-home", "camera-away"] as const).flatMap(
+    (role) => [
+      liveKitIdentity(gameId, role),
+      ...[...new Set(generations[role] ?? [])]
+        .filter((generation) => generation > 0)
+        .map((generation) => liveKitIdentity(gameId, role, generation)),
+    ],
+  );
+  const removals = await Promise.allSettled(
+    identities.map((identity) =>
+      roomServiceRequest("RemoveParticipant", gameId, {
+        room: `game-${gameId}`,
+        identity,
+      }),
+    ),
+  );
+  // Wait for explicit identity removal before deleting the room. LiveKit Cloud
+  // documents identity removal as token revocation; DeleteRoom alone is only
+  // room teardown and is not treated as token-revocation evidence.
+  const failedRemovals = removals.filter(
+    (result) => result.status === "rejected",
+  ).length;
+  if (failedRemovals)
     throw new Error(
-      `LiveKit cleanup was not confirmed for ${failed.length} operation${failed.length === 1 ? "" : "s"}`,
+      `LiveKit cleanup was not confirmed for ${failedRemovals} identity operation${failedRemovals === 1 ? "" : "s"}`,
     );
+  await roomServiceRequest("DeleteRoom", gameId, {
+    room: `game-${gameId}`,
+  });
 }

@@ -143,6 +143,17 @@ describe("LiveKit grants", () => {
     });
   });
 
+  it("uses generation-specific camera identities after explicit release", async () => {
+    process.env.NEXT_PUBLIC_LIVEKIT_URL = "wss://live.example.test";
+    process.env.LIVEKIT_API_KEY = "test-key";
+    process.env.LIVEKIT_API_SECRET = "super-secret-value";
+    const claims = decodeJwt(
+      (await issueLiveKitToken("game-1", "camera-home", 4)).token,
+    );
+    expect(claims.sub).toBe("game-1:camera-home:g4");
+    expect(liveKitIdentity("game-1", "camera-home", 3)).not.toBe(claims.sub);
+  });
+
   it("removes only the game-scoped camera participant and treats missing as success", async () => {
     process.env.LIVEKIT_URL = "wss://live.example.test";
     process.env.LIVEKIT_API_KEY = "test-key";
@@ -151,26 +162,29 @@ describe("LiveKit grants", () => {
       .spyOn(globalThis, "fetch")
       .mockResolvedValue(new Response("", { status: 404 }));
     await expect(
-      removeCameraParticipant("game-1", "camera-away"),
+      removeCameraParticipant("game-1", "camera-away", 4),
     ).resolves.toBeUndefined();
     const [, init] = request.mock.calls[0];
     expect(JSON.parse(String(init?.body))).toEqual({
       room: "game-game-1",
-      identity: "game-1:camera-away",
+      identity: "game-1:camera-away:g4",
     });
     expect(String(init?.headers)).not.toContain("super-secret-value");
     request.mockRestore();
   });
 
-  it("revokes stable camera identities and deletes the room with operation-specific grants", async () => {
+  it("revokes legacy and recorded generation identities before deleting the room", async () => {
     process.env.LIVEKIT_URL = "wss://live.example.test";
     process.env.LIVEKIT_API_KEY = "test-key";
     process.env.LIVEKIT_API_SECRET = "super-secret-value";
     const request = vi
       .spyOn(globalThis, "fetch")
       .mockResolvedValue(new Response("", { status: 200 }));
-    await terminateGameLiveKit("game-1");
-    expect(request).toHaveBeenCalledTimes(3);
+    await terminateGameLiveKit("game-1", {
+      "camera-home": [1, 3, 3],
+      "camera-away": [2],
+    });
+    expect(request).toHaveBeenCalledTimes(6);
     const calls = request.mock.calls.map(([url, init]) => ({
       url: String(url),
       body: JSON.parse(String(init?.body)),
@@ -183,11 +197,14 @@ describe("LiveKit grants", () => {
     }));
     expect(
       calls.filter((call) => call.url.endsWith("RemoveParticipant")),
-    ).toHaveLength(2);
+    ).toHaveLength(5);
     expect(calls.map((call) => call.body)).toEqual(
       expect.arrayContaining([
         { room: "game-game-1", identity: "game-1:camera-home" },
+        { room: "game-game-1", identity: "game-1:camera-home:g1" },
+        { room: "game-game-1", identity: "game-1:camera-home:g3" },
         { room: "game-game-1", identity: "game-1:camera-away" },
+        { room: "game-game-1", identity: "game-1:camera-away:g2" },
         { room: "game-game-1" },
       ]),
     );
@@ -199,6 +216,43 @@ describe("LiveKit grants", () => {
         room: "game-game-1",
         roomAdmin: true,
       });
+    request.mockRestore();
+  });
+
+  it("treats every missing identity and an already-deleted room as a successful retry", async () => {
+    process.env.LIVEKIT_URL = "wss://live.example.test";
+    process.env.LIVEKIT_API_KEY = "test-key";
+    process.env.LIVEKIT_API_SECRET = "super-secret-value";
+    const request = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(new Response("", { status: 404 }));
+    await expect(
+      terminateGameLiveKit("game-1", {
+        "camera-home": [4],
+        "camera-away": [6],
+      }),
+    ).resolves.toBeUndefined();
+    expect(request).toHaveBeenCalledTimes(5);
+    request.mockRestore();
+  });
+
+  it("does not delete the room when explicit identity revocation is unconfirmed", async () => {
+    process.env.LIVEKIT_URL = "wss://live.example.test";
+    process.env.LIVEKIT_API_KEY = "test-key";
+    process.env.LIVEKIT_API_SECRET = "super-secret-value";
+    const request = vi.spyOn(globalThis, "fetch").mockImplementation((url) =>
+      Promise.resolve(
+        new Response("", {
+          status: String(url).endsWith("RemoveParticipant") ? 503 : 200,
+        }),
+      ),
+    );
+    await expect(
+      terminateGameLiveKit("game-1", { "camera-home": [4] }),
+    ).rejects.toThrow("identity operation");
+    expect(
+      request.mock.calls.some(([url]) => String(url).endsWith("DeleteRoom")),
+    ).toBe(false);
     request.mockRestore();
   });
 });

@@ -4,6 +4,7 @@ import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { createAdminSupabaseClient } from "@/lib/supabase/admin";
 import { loadActiveTeam } from "@/lib/team-games";
 import { terminateGameLiveKit } from "@/lib/providers/livekit";
+import { listCameraIdentityGenerations } from "@/lib/store";
 
 const paramsSchema = z.object({ id: z.string().uuid() });
 
@@ -37,7 +38,8 @@ async function cleanupDeletedGame(
 
   let providerError: string | undefined;
   try {
-    await terminateGameLiveKit(gameId);
+    const generations = await listCameraIdentityGenerations(gameId);
+    await terminateGameLiveKit(gameId, generations);
   } catch {
     providerError = "LiveKit room shutdown was not confirmed";
   }

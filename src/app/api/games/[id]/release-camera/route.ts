@@ -37,27 +37,40 @@ export async function POST(
   const claim = game.claims[parsed.data.role];
   if (!claim)
     return NextResponse.json({ disconnected: true, released: false, game });
-  try {
-    await removeCameraParticipant(id, parsed.data.role);
-  } catch {
-    console.error("Camera release failed", {
-      operation: "remove_livekit_participant",
-      category: "livekit_service",
-    });
-    return NextResponse.json(
-      { error: "The live camera could not be disconnected." },
-      { status: 503 },
-    );
-  }
-  const released = await releaseRole(id, parsed.data.role, claim);
+  const generation = game.claimGenerations?.[parsed.data.role] ?? 0;
+  const released = await releaseRole(id, parsed.data.role, claim, generation);
   if (released.error)
     return NextResponse.json(
       { error: "The camera claim changed before it could be released." },
       { status: 409 },
     );
-  return NextResponse.json({
-    disconnected: true,
-    released: true,
-    game: released.game,
-  });
+  try {
+    await removeCameraParticipant(
+      id,
+      parsed.data.role,
+      released.releasedGeneration,
+    );
+    return NextResponse.json({
+      disconnected: true,
+      released: true,
+      providerCleanup: { status: "complete" },
+      game: released.game,
+    });
+  } catch {
+    console.error("Camera release cleanup failed", {
+      operation: "remove_livekit_participant",
+      category: "livekit_service",
+    });
+    return NextResponse.json(
+      {
+        disconnected: false,
+        released: true,
+        providerCleanup: { status: "failed" },
+        warning:
+          "The assignment was released, but provider disconnection was not confirmed.",
+        game: released.game,
+      },
+      { status: 202 },
+    );
+  }
 }

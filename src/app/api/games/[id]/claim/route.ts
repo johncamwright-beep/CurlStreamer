@@ -20,7 +20,13 @@ export async function POST(
       );
     const body = schema.parse(await request.json());
     const claims = await readAccessToken(body.token);
-    if (claims.gameId !== id || claims.purpose !== "invitation" || !claims.role)
+    if (
+      claims.gameId !== id ||
+      claims.purpose !== "invitation" ||
+      !claims.role ||
+      !claims.jti ||
+      !claims.exp
+    )
       throw new Error();
     const authorization = await authorizeGame(
       new Request(request.url, {
@@ -42,7 +48,11 @@ export async function POST(
         },
         { status: authorization.reason === "deleted" ? 410 : 401 },
       );
-    const result = await claimRole(id, claims.role, body.claimant);
+    const result = await claimRole(id, claims.role, body.claimant, {
+      id: claims.jti,
+      expectedGeneration: claims.assignmentGeneration,
+      expiresAt: new Date(claims.exp * 1000).toISOString(),
+    });
     return result.error
       ? NextResponse.json(result, { status: 409 })
       : NextResponse.json({
@@ -51,6 +61,7 @@ export async function POST(
             id,
             claims.role,
             body.claimant,
+            result.generation,
           ),
           expiresIn: 21_600,
         });

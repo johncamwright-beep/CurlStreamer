@@ -104,7 +104,15 @@ test("scheduled-game chooser claims Camera 1 and requests LiveKit as the device"
       async (route) => {
         claimed = false;
         participantCredential = "";
-        await route.fulfill({ json: { disconnected: true, released: true } });
+        await route.fulfill({
+          status: 202,
+          json: {
+            disconnected: true,
+            released: true,
+            warning:
+              "Camera access was released, but provider cleanup could not be confirmed.",
+          },
+        });
       },
     );
   };
@@ -144,6 +152,9 @@ test("scheduled-game chooser claims Camera 1 and requests LiveKit as the device"
   page.once("dialog", (dialog) => void dialog.accept());
   await page.getByRole("button", { name: "Release Camera" }).click();
   await expect(page.getByText("Unclaimed").first()).toBeVisible();
+  await expect(
+    page.getByRole("alert").filter({ hasText: "provider cleanup" }),
+  ).toBeVisible();
   const rejected = await camera.evaluate(async (credential) => {
     const response = await fetch("/api/games/scheduled-game/livekit-token", {
       method: "POST",
@@ -162,4 +173,53 @@ test("scheduled-game chooser claims Camera 1 and requests LiveKit as the device"
   await expect(page.getByText("Claimed but offline")).toBeVisible();
   await replacement.close();
   await participant.close();
+});
+
+test("a released role's old direct invitation shows stale-link feedback", async ({
+  page,
+}) => {
+  const payload = Buffer.from(
+    JSON.stringify({ purpose: "invitation", role: "camera-home" }),
+  ).toString("base64url");
+  const staleToken = `header.${payload}.signature`;
+  let submittedClaimant = "";
+  await page.route("**/api/games/released-game**", async (route) => {
+    if (
+      route.request().method() === "POST" &&
+      new URL(route.request().url()).pathname.endsWith("/claim")
+    ) {
+      const body = await route.request().postDataJSON();
+      submittedClaimant = body.claimant;
+      await route.fulfill({
+        status: 409,
+        json: {
+          error: "This invitation is stale or has already been used.",
+        },
+      });
+      return;
+    }
+    await route.fulfill({
+      json: {
+        id: "released-game",
+        status: "active",
+        config: { eventName: "Released camera" },
+        claimedRoles: {},
+      },
+    });
+  });
+  await page.goto(`/join/released-game?token=${staleToken}`);
+  await page.evaluate(() =>
+    localStorage.setItem(
+      "curlcast-device",
+      "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+    ),
+  );
+  await page.getByRole("button", { name: "Claim this role" }).click();
+  await expect(
+    page.getByText("This invitation is stale or has already been used.", {
+      exact: true,
+    }),
+  ).toBeVisible();
+  expect(submittedClaimant).toBe("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa");
+  await expect(page).toHaveURL(/\/join\/released-game/);
 });

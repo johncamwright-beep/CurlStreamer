@@ -48,11 +48,12 @@ describe("temporary organizer camera disconnect", () => {
     expect(mocks.removeCameraParticipant).toHaveBeenCalledWith(
       "game-1",
       "camera-home",
+      undefined,
     );
     expect(mocks.updateGame).toHaveBeenCalledWith(
       "game-1",
       expect.objectContaining({ type: "camera-health", phase: "disconnected" }),
-      "device-1",
+      { role: "camera-home", claim: "device-1", generation: undefined },
     );
     expect((await response.json()).game.claims["camera-home"]).toBe("device-1");
   });

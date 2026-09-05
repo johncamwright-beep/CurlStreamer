@@ -149,6 +149,29 @@ describe("game authorization lookup", () => {
     ).resolves.toEqual({ ok: false, reason: "released" });
   });
 
+  it("rejects an old participant generation after the same device reclaims", async () => {
+    mocks.getUser.mockResolvedValue({ data: { user: null } });
+    mocks.readAccessToken.mockResolvedValue({
+      gameId: "scheduled-game",
+      purpose: "participant",
+      role: "camera-home",
+      deviceId: "device-1",
+      assignmentGeneration: 2,
+    });
+    mocks.getGame.mockResolvedValue({
+      status: "active",
+      claims: { "camera-home": "device-1" },
+      claimGenerations: { "camera-home": 3 },
+    });
+
+    await expect(
+      authorizeGame(request("participant"), "scheduled-game", {
+        ...options,
+        tokenAllowed: (access) => access.purpose === "participant",
+      }),
+    ).resolves.toEqual({ ok: false, reason: "released" });
+  });
+
   it("lets a signed-in account present a device-bound camera token when accounts are not a substitute", async () => {
     mocks.readAccessToken.mockResolvedValue({
       gameId: "scheduled-game",

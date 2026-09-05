@@ -159,6 +159,7 @@ describe("GET /api/games/[id] over HTTP", () => {
     expect(response.headers.has("x-curlcast-account-role")).toBe(false);
     expect(response.headers.has("x-curlcast-operator")).toBe(false);
     expect(mocks.gameLibrarySponsors).not.toHaveBeenCalled();
+    expect(mocks.gameBroadcastSponsors).not.toHaveBeenCalled();
   }
 
   it.each(["", "broadcast", "join"])(
@@ -566,16 +567,44 @@ describe("GET /api/games/[id] over HTTP", () => {
     const response = await request("", await issueOrganizerToken(testGameId));
     expect(response.status).toBe(200);
   });
-  it("reports sponsor service failure for an authorized read", async () => {
+  it("keeps an authorized read available without unverifiable sponsors", async () => {
     anonymous();
     mocks.gameLibrarySponsors.mockRejectedValue(
       new Error("private provider details"),
     );
     const response = await request("", await issueOrganizerToken(testGameId));
-    expect(response.status).toBe(503);
+    expect(response.status).toBe(200);
     expect(await response.json()).toEqual({
-      error: "Sponsor library is temporarily unavailable",
+      ...game,
+      sponsors: [],
     });
+    expect(game.sponsors).not.toHaveLength(0);
+    expect(response.headers.get("x-curlcast-operator")).toBe("true");
+  });
+  it("keeps public Broadcast safe and available when sponsor lookup fails", async () => {
+    anonymous();
+    Object.assign(game, { credentials: "private-state" });
+    Object.assign(game.sponsors[0], {
+      storage_path: "private/sponsor/path",
+      token: "private-token",
+    });
+    mocks.gameBroadcastSponsors.mockRejectedValue(
+      new Error("private provider details"),
+    );
+
+    const response = await request("broadcast");
+    const body = await response.json();
+    expect(response.status).toBe(200);
+    expect(body).toMatchObject({
+      id: testGameId,
+      score: { hammer: "away", totals: { home: 2, away: 0 }, currentEnd: 2 },
+      cameraFraming: { "camera-home": "contain", "camera-away": "contain" },
+      sponsors: [],
+    });
+    expect(JSON.stringify(body)).not.toMatch(
+      /private-state|private\/sponsor\/path|private-token/,
+    );
+    expect(response.headers.has("x-curlcast-operator")).toBe(false);
   });
   it("validates the view and route id before provider access", async () => {
     expect((await request("unknown")).status).toBe(400);

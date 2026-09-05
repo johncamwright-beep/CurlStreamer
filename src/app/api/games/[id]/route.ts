@@ -120,14 +120,14 @@ export async function GET(
         const sponsors = await gameBroadcastSponsors(id);
         return gameResponse(broadcastGame(game, sponsors));
       } catch {
-        return gameResponse(
-          { error: "Sponsor library is temporarily unavailable" },
-          { status: 503 },
-        );
+        // Sponsor enrichment is optional. Do not fall back to stored sponsor
+        // metadata when the organization-scoped lookup cannot be verified.
+        return gameResponse(broadcastGame({ ...game, sponsors: [] }));
       }
     }
     if (view.data === "join") return gameResponse(joinGame(game));
     if (!authorization.ok) return readFailure("unauthorized");
+    let responseGame = game;
     try {
       const sponsors = await gameLibrarySponsors(
         id,
@@ -136,14 +136,13 @@ export async function GET(
           : undefined,
       );
       // An empty library intentionally retains legacy per-game sponsor state.
-      if (sponsors.length) game.sponsors = sponsors;
+      if (sponsors.length) responseGame = { ...game, sponsors };
     } catch {
-      return gameResponse(
-        { error: "Sponsor library is temporarily unavailable" },
-        { status: 503 },
-      );
+      // Preserve the authorized state read, but omit ads whose organization
+      // membership and signed render URLs could not be verified.
+      responseGame = { ...game, sponsors: [] };
     }
-    return gameResponse(game, {
+    return gameResponse(responseGame, {
       headers: {
         "x-curlcast-operator": "true",
         "x-curlcast-account-role":

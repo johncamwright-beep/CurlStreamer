@@ -7,7 +7,11 @@ vi.mock("@/lib/supabase/admin", () => ({
     storage: { from: () => ({ createSignedUrl: mocks.createSignedUrl }) },
   }),
 }));
-import { gameBroadcastSponsors, validateSponsorImage } from "./sponsor-library";
+import {
+  gameBroadcastSponsors,
+  gameLibrarySponsors,
+  validateSponsorImage,
+} from "./sponsor-library";
 
 describe("sponsor image validation", () => {
   it("accepts a matching PNG signature", async () => {
@@ -198,6 +202,90 @@ describe("anonymous Broadcast sponsors", () => {
     const archived = await gameBroadcastSponsors("order-archive-game");
     expect(archived.map((sponsor) => sponsor.id)).toEqual(["second"]);
     expect(mocks.createSignedUrl).toHaveBeenCalledTimes(5);
+  });
+
+  it("omits an archived row without signing its storage path", async () => {
+    mocks.rpc.mockResolvedValue({
+      data: [
+        sponsorRow({ id: "active" }),
+        sponsorRow({ id: "archived", archived_at: "2026-01-01T00:00:00Z" }),
+      ],
+      error: null,
+    });
+    mocks.createSignedUrl.mockResolvedValue({
+      data: { signedUrl: "https://storage.example/signed/active" },
+      error: null,
+    });
+
+    await expect(gameBroadcastSponsors("archived-row-game")).resolves.toEqual([
+      expect.objectContaining({ id: "active" }),
+    ]);
+    expect(mocks.createSignedUrl).toHaveBeenCalledTimes(1);
+    expect(mocks.createSignedUrl).toHaveBeenCalledWith(
+      "organization/private/logo.png",
+      300,
+    );
+  });
+
+  it("serves healthy images and retries a broken signer until it recovers", async () => {
+    const healthy = sponsorRow({ id: "healthy" });
+    const recovering = sponsorRow({
+      id: "recovering",
+      storage_path: "organization/private/recovering.png",
+      position: 1,
+    });
+    mocks.rpc.mockResolvedValue({ data: [healthy, recovering], error: null });
+    mocks.createSignedUrl
+      .mockResolvedValueOnce({
+        data: { signedUrl: "https://storage.example/signed/healthy-first" },
+        error: null,
+      })
+      .mockResolvedValueOnce({ data: null, error: { message: "private" } })
+      .mockResolvedValueOnce({
+        data: { signedUrl: "https://storage.example/signed/healthy-second" },
+        error: null,
+      })
+      .mockResolvedValueOnce({
+        data: { signedUrl: "https://storage.example/signed/recovered" },
+        error: null,
+      });
+
+    const partial = await gameBroadcastSponsors("partial-signing-game");
+    expect(partial.map((sponsor) => sponsor.id)).toEqual(["healthy"]);
+    const recovered = await gameBroadcastSponsors("partial-signing-game");
+    expect(recovered.map((sponsor) => sponsor.id)).toEqual([
+      "healthy",
+      "recovering",
+    ]);
+    await gameBroadcastSponsors("partial-signing-game");
+    expect(mocks.createSignedUrl).toHaveBeenCalledTimes(4);
+  });
+
+  it("keeps healthy private-game images when one signer fails", async () => {
+    mocks.rpc.mockResolvedValue({
+      data: [
+        sponsorRow({ id: "healthy" }),
+        sponsorRow({
+          id: "broken",
+          storage_path: "organization/private/broken.png",
+          position: 1,
+        }),
+      ],
+      error: null,
+    });
+    mocks.createSignedUrl
+      .mockResolvedValueOnce({
+        data: { signedUrl: "https://storage.example/signed/healthy" },
+        error: null,
+      })
+      .mockResolvedValueOnce({ data: null, error: { message: "private" } });
+
+    await expect(gameLibrarySponsors("private-game")).resolves.toEqual([
+      expect.objectContaining({
+        id: "healthy",
+        dataUrl: "https://storage.example/signed/healthy",
+      }),
+    ]);
   });
 
   it("does not cache signing failures", async () => {

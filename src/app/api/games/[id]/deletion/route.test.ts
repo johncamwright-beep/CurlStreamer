@@ -6,6 +6,8 @@ const mocks = vi.hoisted(() => ({
   rpc: vi.fn(),
   terminateGameLiveKit: vi.fn(),
   listCameraIdentityGenerations: vi.fn(),
+  verifiedCompletionAccount: vi.fn(),
+  stopGameBroadcast: vi.fn(),
 }));
 
 vi.mock("@/lib/supabase/server", () => ({
@@ -22,6 +24,12 @@ vi.mock("@/lib/providers/livekit", () => ({
 }));
 vi.mock("@/lib/store", () => ({
   listCameraIdentityGenerations: mocks.listCameraIdentityGenerations,
+}));
+vi.mock("@/lib/game-completion", () => ({
+  verifiedCompletionAccount: mocks.verifiedCompletionAccount,
+}));
+vi.mock("@/lib/broadcast-session", () => ({
+  stopGameBroadcast: mocks.stopGameBroadcast,
 }));
 
 import { DELETE, PATCH, POST } from "./route";
@@ -44,6 +52,14 @@ describe("atomic game deletion route", () => {
     mocks.listCameraIdentityGenerations.mockResolvedValue({
       "camera-home": [1, 3],
       "camera-away": [2],
+    });
+    mocks.verifiedCompletionAccount.mockResolvedValue({
+      ok: true,
+      value: { kind: "account", userId },
+    });
+    mocks.stopGameBroadcast.mockResolvedValue({
+      desiredState: "stopped",
+      status: "stopped",
     });
     mocks.rpc.mockImplementation(async (operation: string) => {
       if (operation === "soft_delete_team_game")
@@ -73,6 +89,10 @@ describe("atomic game deletion route", () => {
     expect(mocks.terminateGameLiveKit).toHaveBeenCalledWith(gameId, {
       "camera-home": [1, 3],
       "camera-away": [2],
+    });
+    expect(mocks.stopGameBroadcast).toHaveBeenCalledWith(gameId, {
+      kind: "account",
+      userId,
     });
     expect(mocks.rpc.mock.calls.map(([operation]) => operation)).toEqual([
       "soft_delete_team_game",

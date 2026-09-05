@@ -5,6 +5,11 @@ import { createAdminSupabaseClient } from "@/lib/supabase/admin";
 import { loadActiveTeam } from "@/lib/team-games";
 import { terminateGameLiveKit } from "@/lib/providers/livekit";
 import { listCameraIdentityGenerations } from "@/lib/store";
+import { stopGameBroadcast } from "@/lib/broadcast-session";
+import {
+  verifiedCompletionAccount,
+  type CompletionCredential,
+} from "@/lib/game-completion";
 
 const paramsSchema = z.object({ id: z.string().uuid() });
 
@@ -26,6 +31,7 @@ async function cleanupDeletedGame(
   database: ReturnType<typeof createAdminSupabaseClient>,
   userId: string,
   gameId: string,
+  authority: CompletionCredential,
 ) {
   const parameters = { p_user_id: userId, p_game_id: gameId };
   const current = await database.rpc("get_game_deletion_cleanup", parameters);
@@ -36,13 +42,21 @@ async function cleanupDeletedGame(
   if (cleanup.status === "complete")
     return { kind: "recorded" as const, cleanup };
 
-  let providerError: string | undefined;
+  const providerErrors: string[] = [];
+  try {
+    const broadcast = await stopGameBroadcast(gameId, authority);
+    if (!["idle", "stopped"].includes(broadcast.status))
+      throw new Error("not stopped");
+  } catch {
+    providerErrors.push("YouTube broadcast shutdown was not confirmed");
+  }
   try {
     const generations = await listCameraIdentityGenerations(gameId);
     await terminateGameLiveKit(gameId, generations);
   } catch {
-    providerError = "LiveKit room shutdown was not confirmed";
+    providerErrors.push("LiveKit room shutdown was not confirmed");
   }
+  const providerError = providerErrors.join("; ") || undefined;
   const recorded = await database.rpc("record_game_deletion_cleanup", {
     ...parameters,
     p_succeeded: !providerError,
@@ -76,6 +90,12 @@ async function change(
       { error: "Team administrator access is required." },
       { status: 403 },
     );
+  const verified = await verifiedCompletionAccount();
+  if (!verified.ok)
+    return NextResponse.json(
+      { error: "A verified account is required." },
+      { status: 403 },
+    );
   const rpc =
     operation === "delete" ? "soft_delete_team_game" : "restore_team_game";
   const database = createAdminSupabaseClient();
@@ -96,7 +116,12 @@ async function change(
     );
   }
   if (operation === "delete") {
-    const cleanup = await cleanupDeletedGame(database, data.user.id, id);
+    const cleanup = await cleanupDeletedGame(
+      database,
+      data.user.id,
+      id,
+      verified.value,
+    );
     if (cleanup.kind === "not-found" && !changed)
       return NextResponse.json(
         { error: "The deleted game could not be found." },
@@ -161,11 +186,18 @@ async function retryCleanup(id: string) {
       { error: "Team administrator access is required." },
       { status: 403 },
     );
+  const verified = await verifiedCompletionAccount();
+  if (!verified.ok)
+    return NextResponse.json(
+      { error: "A verified account is required." },
+      { status: 403 },
+    );
 
   const cleanup = await cleanupDeletedGame(
     createAdminSupabaseClient(),
     data.user.id,
     parsed.data.id,
+    verified.value,
   );
   if (cleanup.kind === "not-found")
     return NextResponse.json(

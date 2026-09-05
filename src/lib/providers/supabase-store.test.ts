@@ -268,6 +268,35 @@ describe("Supabase score-event persistence", () => {
     ).rejects.toThrow("Supabase score update failed");
   });
 
+  it("keeps deletion's legacy Close Game retry harmless after completion", async () => {
+    const game = storedGame();
+    game.status = "completed";
+    mocks.maybeSingle.mockResolvedValue({
+      data: { state: game, version: 46 },
+      error: null,
+    });
+
+    await expect(updateGame(game.id, { type: "close-game" })).resolves.toBe(
+      game,
+    );
+    expect(mocks.rpc).not.toHaveBeenCalled();
+    expect(mocks.updateEq).not.toHaveBeenCalled();
+  });
+
+  it("rejects non-idempotent provider writes to a completed state", async () => {
+    const game = storedGame();
+    game.status = "completed";
+    mocks.maybeSingle.mockResolvedValue({
+      data: { state: game, version: 47 },
+      error: null,
+    });
+
+    await expect(
+      updateGame(game.id, { type: "broadcast", value: "live" }),
+    ).rejects.toThrow("This game is completed");
+    expect(mocks.updateEq).not.toHaveBeenCalled();
+  });
+
   it.each([
     { active: true, style: "overlay" as const },
     { active: false, style: "overlay" as const },

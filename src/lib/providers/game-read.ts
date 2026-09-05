@@ -14,7 +14,7 @@ export async function readGame(id: string): Promise<GameRead> {
     const { getGame } = await import("./local-store");
     const game = getGame(id);
     if (!game) return { kind: "not-found" };
-    return game.status === "closed"
+    return game.status === "closed" || game.status === "completed"
       ? { kind: "closed" }
       : { kind: "active", game };
   }

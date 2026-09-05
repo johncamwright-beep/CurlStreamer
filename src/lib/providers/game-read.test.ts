@@ -76,6 +76,8 @@ describe("game read provider lifecycle boundary", () => {
     expect(await readGame("deadbeef")).toEqual({ kind: "active", game });
     mocks.getGame.mockReturnValue({ ...game, status: "closed" });
     expect(await readGame("deadbeef")).toEqual({ kind: "closed" });
+    mocks.getGame.mockReturnValue({ ...game, status: "completed" });
+    expect(await readGame("deadbeef")).toEqual({ kind: "closed" });
     mocks.getGame.mockReturnValue(undefined);
     expect(await readGame("deadbeef")).toEqual({ kind: "not-found" });
     expect(mocks.rpc).not.toHaveBeenCalled();

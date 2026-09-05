@@ -95,7 +95,7 @@ export function claimRole(
   return mutate((games) => {
     const game = games.get(id);
     if (!game) return { error: "Game not found" };
-    if (game.status === "closed") return { error: "This game is closed." };
+    if (game.status !== "active") return { error: "This game is closed." };
     if (game.claims[role] && game.claims[role] !== claimant)
       return { error: "This role is already in use." };
     game.claims[role] = claimant;
@@ -124,6 +124,10 @@ export function updateGame(id: string, action: z.infer<typeof actionSchema>) {
   return mutate((games) => {
     const game = games.get(id);
     if (!game) return;
+    if (game.status === "completed") {
+      if (action.type === "close-game") return game;
+      throw new Error("This game is completed");
+    }
     const now = Date.now();
     if (action.type === "score") {
       const s = deriveScore(game);

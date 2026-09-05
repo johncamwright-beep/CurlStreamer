@@ -28,7 +28,7 @@ async function actionFrom(route: Route) {
 
 test("an owner starts a broadcast from idle and stops the live stream", async ({
   page,
-}) => {
+}, testInfo) => {
   await mockScoringPage(page);
   let state: BroadcastState = { desiredState: "stopped", status: "idle" };
   const actions: string[] = [];
@@ -51,12 +51,14 @@ test("an owner starts a broadcast from idle and stops the live stream", async ({
   });
 
   await page.goto(`/score/${testGameId}`);
-  await page.getByRole("button", { name: "Start Broadcast" }).click();
+  await page.getByRole("button", { name: "Start broadcast" }).click();
   await expect(
-    page.getByText("Live on the saved team YouTube channel."),
+    page.getByText(
+      "Video is being sent to the connected team YouTube channel.",
+    ),
   ).toBeVisible();
   const youtubeLink = page.getByRole("link", {
-    name: "Open YouTube broadcast",
+    name: "Watch on YouTube",
   });
   await expect(youtubeLink).toHaveAttribute(
     "href",
@@ -67,11 +69,15 @@ test("an owner starts a broadcast from idle and stops the live stream", async ({
       (element) => element.getBoundingClientRect().height,
     ),
   ).toBeGreaterThanOrEqual(44);
+  await page.screenshot({
+    path: testInfo.outputPath(`youtube-panel-${testInfo.project.name}.png`),
+    fullPage: true,
+  });
 
   page.once("dialog", (dialog) => dialog.accept());
-  await page.getByRole("button", { name: "Stop Broadcast" }).click();
+  await page.getByRole("button", { name: "End broadcast" }).click();
   await expect(
-    page.getByRole("button", { name: "Broadcast stopped" }),
+    page.getByRole("button", { name: "Broadcast ended" }),
   ).toBeDisabled();
   expect(actions).toEqual(["start", "stop"]);
 });
@@ -103,17 +109,125 @@ test("an owner stops preparation and retries a failed Stop", async ({
   });
 
   await page.goto(`/score/${testGameId}`);
-  await page.getByRole("button", { name: "Start Broadcast" }).click();
+  await page.getByRole("button", { name: "Start broadcast" }).click();
   await expect(
-    page.getByRole("button", { name: "Stop preparation" }),
+    page.getByRole("button", { name: "Cancel broadcast setup" }),
   ).toBeVisible();
-  await page.getByRole("button", { name: "Stop preparation" }).click();
+  page.once("dialog", (dialog) => dialog.accept());
+  await page.getByRole("button", { name: "Cancel broadcast setup" }).click();
   await expect(
-    page.getByText("Broadcast failed.", { exact: false }),
+    page.getByText("The last attempt did not finish cleanly.", {
+      exact: false,
+    }),
   ).toBeVisible();
-  await page.getByRole("button", { name: "Retry Stop" }).click();
+  const youtubePanel = page.getByRole("region", {
+    name: "YouTube broadcast",
+  });
+  await expect(youtubePanel.getByRole("button")).toHaveCount(1);
+  page.once("dialog", (dialog) => dialog.accept());
+  await page.getByRole("button", { name: "Retry stop" }).click();
   await expect(
-    page.getByRole("button", { name: "Broadcast stopped" }),
+    page.getByRole("button", { name: "Broadcast ended" }),
   ).toBeDisabled();
   expect(stopAttempts).toBe(2);
+});
+
+test("eligibility guidance remains usable at 320px", async ({
+  page,
+}, testInfo) => {
+  test.skip(
+    testInfo.project.name === "mobile",
+    "One 320px visual is sufficient",
+  );
+  await page.setViewportSize({ width: 320, height: 800 });
+  await mockScoringPage(page);
+  await page.route(`**/api/games/${testGameId}/broadcast`, (route) =>
+    route.fulfill({
+      json: {
+        desiredState: "live",
+        status: "failed",
+        lastErrorCode: "youtube_live_streaming_not_enabled",
+      },
+    }),
+  );
+
+  await page.goto(`/score/${testGameId}`);
+  await expect(page.getByText("Needs attention")).toBeVisible();
+  await expect(
+    page.getByText("up to 24 hours", { exact: false }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("link", { name: "Review YouTube feature eligibility" }),
+  ).toHaveAttribute("href", "https://www.youtube.com/features");
+  await expect(
+    page.getByRole("button", { name: "Retry broadcast" }),
+  ).toHaveCount(1);
+  await expect(page.getByText("MICROPHONES LIVE")).toHaveCount(0);
+  await expect(page.getByText("Demo audio controls")).toBeVisible();
+  await page.screenshot({
+    path: testInfo.outputPath("youtube-panel-320px.png"),
+    fullPage: true,
+  });
+});
+
+test("a failed live poll removes the verified Live claim until retry", async ({
+  page,
+}, testInfo) => {
+  test.skip(
+    testInfo.project.name === "mobile",
+    "Covered once as a state recovery flow",
+  );
+  await page.clock.install();
+  await mockScoringPage(page);
+  let reads = 0;
+  await page.route(`**/api/games/${testGameId}/broadcast`, async (route) => {
+    if (route.request().method() === "POST") {
+      await route.fulfill({
+        status: 503,
+        json: { error: "The stop response was not confirmed." },
+      });
+      return;
+    }
+    reads += 1;
+    if (reads === 2) {
+      await route.fulfill({
+        status: 503,
+        json: { error: "Broadcast status could not be refreshed." },
+      });
+      return;
+    }
+    await route.fulfill({
+      json: {
+        desiredState: "live",
+        status: "live",
+        watchUrl: "https://www.youtube.com/watch?v=abcdefghijk",
+      },
+    });
+  });
+
+  await page.goto(`/score/${testGameId}`);
+  await expect(page.getByText("Live", { exact: true })).toBeVisible();
+  await page.clock.fastForward(15_000);
+  await expect(page.getByText("Status unavailable")).toBeVisible();
+  await expect(
+    page.getByText("Last confirmed live", { exact: false }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "End broadcast" }),
+  ).toBeEnabled();
+  await page.getByRole("button", { name: "Retry status" }).click();
+  await expect(page.getByText("Live", { exact: true })).toBeVisible();
+  expect(reads).toBe(3);
+  page.once("dialog", (dialog) => dialog.accept());
+  await page.getByRole("button", { name: "End broadcast" }).click();
+  await expect(page.getByText("Status unavailable")).toBeVisible();
+  await expect(
+    page.getByText("Could not confirm broadcast status."),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Retry status" }),
+  ).toBeEnabled();
+  await expect(
+    page.getByRole("button", { name: "End broadcast" }),
+  ).toBeEnabled();
 });

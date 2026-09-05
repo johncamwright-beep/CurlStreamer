@@ -32,6 +32,11 @@ Stopping is final for that game. Completion and deletion advance the database
 generation first, then independently attempt YouTube/Egress cleanup and room
 teardown; a cleanup failure never changes the immutable result.
 
+`Take a break` / `Resume` remains a separate delivery slice. It requires a
+holding screen in the program output plus verified muting of outgoing audio;
+YouTube does not provide a paused broadcast lifecycle state. The scoring UI
+must not offer a pause control until both pieces are implemented and tested.
+
 ## Disposable PostgreSQL verification
 
 Use only a loopback database whose name contains `test` or `disposable`. Apply

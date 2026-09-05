@@ -26,6 +26,13 @@ requests that wait behind completion re-evaluate the locked completed row and
 are rejected. Migration `0017` adds optimistic concurrency to the current
 application without changing that lock order.
 
+Only absolute `camera-health` and `connection` updates are retried after a CAS
+conflict. Each retry reloads the latest state and requires the role's claim to
+match the participant identity or organizer-observed claim captured when the
+operation began. A release or reassignment therefore stops the retry instead
+of letting a heartbeat revive the camera. Scoring, Undo, and other operator
+intent are never automatically rebased.
+
 Deploy migration `0017` before the application version that calls
 `write_game_state` or the config-snapshot schedule overload. The deployed
 nine-argument schedule signature remains executable and now advances the same

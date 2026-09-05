@@ -614,4 +614,35 @@ describe("GET /api/games/[id] over HTTP", () => {
       error: "The game changed before this update was saved. Try again.",
     });
   });
+
+  it("binds participant camera updates to the verified device claim", async () => {
+    anonymous();
+    const claimant = game.claims["camera-home"]!;
+    const response = await PATCH(
+      new Request(`${origin}/api/games/${testGameId}`, {
+        method: "PATCH",
+        headers: {
+          authorization: `Bearer ${await issueParticipantToken(
+            testGameId,
+            "camera-home",
+            claimant,
+          )}`,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          type: "camera-health",
+          role: "camera-home",
+          phase: "live",
+        }),
+      }),
+      { params: Promise.resolve({ id: testGameId }) },
+    );
+
+    expect(response.status).toBe(200);
+    expect(mocks.updateGame).toHaveBeenCalledWith(
+      testGameId,
+      { type: "camera-health", role: "camera-home", phase: "live" },
+      claimant,
+    );
+  });
 });

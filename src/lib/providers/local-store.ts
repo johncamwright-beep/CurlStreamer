@@ -6,6 +6,7 @@ import type { GameConfig, GameState } from "../types";
 import type { z } from "zod";
 import type { actionSchema } from "../schema";
 import { activeEvents, deriveScore } from "../scoring";
+import { GameStateConflictError } from "../game-state-conflict";
 
 // Development-only persistence lets separate Next.js workers/browser contexts
 // share one mock authority. It is intentionally outside the repository.
@@ -120,7 +121,11 @@ export function releaseRole(
     return { game, released: true };
   });
 }
-export function updateGame(id: string, action: z.infer<typeof actionSchema>) {
+export function updateGame(
+  id: string,
+  action: z.infer<typeof actionSchema>,
+  expectedClaim?: string,
+) {
   return mutate((games) => {
     const game = games.get(id);
     if (!game) return;
@@ -128,6 +133,12 @@ export function updateGame(id: string, action: z.infer<typeof actionSchema>) {
       if (action.type === "close-game") return game;
       throw new Error("This game is completed");
     }
+    if (
+      (action.type === "camera-health" || action.type === "connection") &&
+      expectedClaim !== undefined &&
+      game.claims[action.role] !== expectedClaim
+    )
+      throw new GameStateConflictError("Camera assignment changed");
     const now = Date.now();
     if (action.type === "score") {
       const s = deriveScore(game);

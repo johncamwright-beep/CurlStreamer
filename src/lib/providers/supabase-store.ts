@@ -198,17 +198,7 @@ async function saveScoreEvent(
   if (error) databaseError("score update", error);
 }
 
-export async function updateGame(
-  id: string,
-  action: z.infer<typeof actionSchema>,
-) {
-  const record = await getGameRecord(id);
-  if (!record) return undefined;
-  const game = record.state;
-  if (game.status === "completed") {
-    if (action.type === "close-game") return game;
-    throw new Error("This game is completed");
-  }
+function applyAction(game: GameState, action: z.infer<typeof actionSchema>) {
   const now = Date.now();
   let scoreEvent: GameState["scoreEvents"][number] | undefined;
   if (action.type === "score") {
@@ -292,7 +282,51 @@ export async function updateGame(
     if (action.paused !== undefined) game.sponsorMode.paused = action.paused;
     game.sponsorMode.startedAt = now;
   }
-  if (scoreEvent) await saveScoreEvent(game, record.version, scoreEvent);
-  else await save(game, record.version);
-  return game;
+  return scoreEvent;
+}
+
+export async function updateGame(
+  id: string,
+  action: z.infer<typeof actionSchema>,
+  expectedClaim?: string,
+) {
+  const retryable =
+    action.type === "camera-health" || action.type === "connection";
+  const attempts = retryable ? 3 : 1;
+  let capturedClaim = expectedClaim;
+  let claimCaptured = expectedClaim !== undefined;
+
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    const record = await getGameRecord(id);
+    if (!record) return undefined;
+    const game = record.state;
+    if (game.status === "completed") {
+      if (action.type === "close-game") return game;
+      throw new Error("This game is completed");
+    }
+    if (retryable) {
+      const currentClaim = game.claims[action.role];
+      if (!claimCaptured) {
+        capturedClaim = currentClaim;
+        claimCaptured = true;
+      }
+      if (currentClaim !== capturedClaim)
+        throw new GameStateConflictError("Camera assignment changed");
+    }
+
+    const scoreEvent = applyAction(game, action);
+    try {
+      if (scoreEvent) await saveScoreEvent(game, record.version, scoreEvent);
+      else await save(game, record.version);
+      return game;
+    } catch (error) {
+      if (
+        !retryable ||
+        !isGameStateConflictError(error) ||
+        attempt === attempts - 1
+      )
+        throw error;
+    }
+  }
+  throw new GameStateConflictError();
 }

@@ -51,12 +51,16 @@ export async function POST(
   }
   let disconnected;
   try {
-    disconnected = await updateGame(id, {
-      type: "camera-health",
-      role: parsed.data.role,
-      phase: "disconnected",
-      diagnostic: "Disconnected by organizer",
-    });
+    disconnected = await updateGame(
+      id,
+      {
+        type: "camera-health",
+        role: parsed.data.role,
+        phase: "disconnected",
+        diagnostic: "Disconnected by organizer",
+      },
+      claim,
+    );
   } catch (error) {
     if (isGameStateConflictError(error))
       return NextResponse.json(

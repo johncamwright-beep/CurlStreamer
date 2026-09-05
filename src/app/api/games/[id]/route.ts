@@ -211,7 +211,12 @@ export async function PATCH(
     );
   let game;
   try {
-    game = await updateGame(id, body.data);
+    const expectedClaim =
+      authorization.via === "token" &&
+      authorization.access.purpose === "participant"
+        ? authorization.access.deviceId
+        : undefined;
+    game = await updateGame(id, body.data, expectedClaim);
   } catch (error) {
     const message = error instanceof Error ? error.message : "";
     if (message.includes("Hammer must be selected"))

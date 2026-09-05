@@ -91,7 +91,7 @@ export function createYouTubeAuthorizationUrl(
   return url;
 }
 
-async function googleRequest(
+export async function youtubeGoogleRequest(
   url: string,
   init: RequestInit,
   fetcher: typeof fetch,
@@ -119,6 +119,8 @@ async function googleRequest(
         )
       )
         throw new Error("youtube_provider_unavailable");
+      if (codes.includes("liveStreamingNotEnabled"))
+        throw new Error("youtube_live_streaming_not_enabled");
       if (
         codes.includes("invalid_grant") ||
         (authorizationFailure && [401, 403].includes(response.status))
@@ -126,7 +128,7 @@ async function googleRequest(
         throw new Error("youtube_reconnect_required");
       throw new Error("youtube_provider_rejected");
     }
-    return response.json();
+    return response.status === 204 ? null : response.json();
   } catch (error) {
     if (
       error instanceof Error &&
@@ -134,6 +136,7 @@ async function googleRequest(
         "youtube_provider_rejected",
         "youtube_provider_unavailable",
         "youtube_reconnect_required",
+        "youtube_live_streaming_not_enabled",
       ].includes(error.message)
     )
       throw error;
@@ -187,7 +190,7 @@ export async function exchangeYouTubeCode(
   configuration = youtubeConfiguration(),
 ) {
   const value = tokenSchema.parse(
-    await googleRequest(
+    await youtubeGoogleRequest(
       "https://oauth2.googleapis.com/token",
       {
         method: "POST",
@@ -216,7 +219,7 @@ export async function refreshYouTubeAccessToken(
   configuration = youtubeConfiguration(),
 ) {
   return tokenSchema.parse(
-    await googleRequest(
+    await youtubeGoogleRequest(
       "https://oauth2.googleapis.com/token",
       {
         method: "POST",
@@ -244,7 +247,7 @@ export async function loadOwnedYouTubeChannel(
     mine: "true",
   }).toString();
   const value = channelsSchema.parse(
-    await googleRequest(
+    await youtubeGoogleRequest(
       url.toString(),
       { headers: { authorization: `Bearer ${accessToken}` } },
       fetcher,

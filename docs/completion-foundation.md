@@ -16,6 +16,7 @@ does not create a completion, snapshot, or completion audit.
 | `update_scheduled_team_game`                                                                                                      | Schedule/config columns on `games`, mirrored config in `game_states`, state version, audit | Both deployed and config-snapshot signatures lock `game_states` before `games`, commit both config representations together, and advance the state version. The snapshot overload changes only `state.config`, so concurrent score and heartbeat fields are preserved.                                                                                                                                                                                                                                                                             |
 | `soft_delete_team_game` and `restore_team_game`                                                                                   | Retained state/version, deletion metadata, deletion cleanup status, audit                  | Both lock state then game. Deletion closes non-completed state, clears claims/media, advances the shared version, writes metadata and one audit atomically, and records LiveKit cleanup only as pending. Repeated deletion and restore also repair a legacy partially deleted active state; completed state and frozen results remain unchanged.                                                                                                                                                                                                   |
 | Completion transaction                                                                                                            | `game_states`, `games`, one `game_completions` row, one cleanup row, one audit             | Locks `game_states` and then `games`, re-authorizes, validates the immutable review, clears runtime state, freezes the result, and records LiveKit cleanup only as pending. Concurrent/repeated authorized calls return the first completion and its stored review identity.                                                                                                                                                                                                                                                                       |
+| YouTube Start/Stop claim and provider checkpoint                                                                                  | `game_states`, `games`, `broadcast_sessions`                                               | Migration `0021` locks `game_states`, then `games`, then the durable broadcast session. Short transactions claim a generation/token or compare-and-set provider evidence; no database lock is held during YouTube or LiveKit calls. Completion/deletion fence an in-flight Start by advancing the generation before cleanup.                                                                                                                                                                                                                       |
 
 `game_states` is the canonical first lock for every operation that also needs a
 `games` lock: review, completion, scoring, schedule editing, deletion, and
@@ -105,12 +106,13 @@ cleanup; if cleanup begins first, restore still exposes only the already-closed
 terminal state and the final cleanup write cannot update a restored game.
 Repeating DELETE retains its normal delete semantics.
 
-The legacy `camera_assignments`, `broadcast_sessions`,
-`sponsor_display_sessions`, `sponsor_display_settings`, and `game_sponsors`
-tables have no application writer in this baseline. Current claims, camera
-health, broadcast, sponsor display, and simulated audio state all live in
-`game_states.state`. Completion does not mark any dormant provider-session row
-as stopped; it creates the separate pending LiveKit cleanup record instead.
+The legacy `camera_assignments`, `sponsor_display_sessions`,
+`sponsor_display_settings`, and `game_sponsors` tables have no application
+writer in this baseline. Migration `0021` activates `broadcast_sessions` as a
+service-only provider-operation journal. The user-visible broadcast flag is
+still mirrored into `game_states.state` only after provider evidence reaches
+live or stopped. Completion also creates the separate pending cleanup record;
+provider cleanup is retried without changing the frozen result.
 
 ## Result and authorization contract
 

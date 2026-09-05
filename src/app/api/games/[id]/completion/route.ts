@@ -10,6 +10,7 @@ import {
   type CompletionCredential,
 } from "@/lib/game-completion";
 import { terminateGameLiveKit } from "@/lib/providers/livekit";
+import { stopGameBroadcast } from "@/lib/broadcast-session";
 import { listCameraIdentityGenerations } from "@/lib/store";
 import { youtubeWatchUrlSchema } from "@/lib/youtube-watch";
 import { readAccessToken } from "@/lib/tokens";
@@ -75,13 +76,21 @@ async function cleanup(gameId: string, authority: CompletionCredential) {
   const existing = await getCompletionCleanup(gameId, authority);
   if (existing.ok && existing.value.status === "complete")
     return existing.value;
-  let providerError: string | undefined;
+  const providerErrors: string[] = [];
+  try {
+    const broadcast = await stopGameBroadcast(gameId, authority);
+    if (!["idle", "stopped"].includes(broadcast.status))
+      throw new Error("YouTube broadcast shutdown was not confirmed");
+  } catch {
+    providerErrors.push("YouTube broadcast shutdown was not confirmed");
+  }
   try {
     const generations = await listCameraIdentityGenerations(gameId);
     await terminateGameLiveKit(gameId, generations);
   } catch {
-    providerError = "LiveKit room shutdown was not confirmed";
+    providerErrors.push("LiveKit room shutdown was not confirmed");
   }
+  const providerError = providerErrors.join("; ") || undefined;
   const recorded = await recordCompletionCleanup(gameId, authority, {
     succeeded: !providerError,
     error: providerError,

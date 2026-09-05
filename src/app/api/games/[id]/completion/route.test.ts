@@ -28,6 +28,7 @@ const mocks = vi.hoisted(() => ({
   terminate: vi.fn(),
   listGenerations: vi.fn(),
   readToken: vi.fn(),
+  stopBroadcast: vi.fn(),
 }));
 vi.mock("@/lib/game-completion", () => ({
   verifiedCompletionAccount: mocks.verified,
@@ -44,6 +45,9 @@ vi.mock("@/lib/store", () => ({
   listCameraIdentityGenerations: mocks.listGenerations,
 }));
 vi.mock("@/lib/tokens", () => ({ readAccessToken: mocks.readToken }));
+vi.mock("@/lib/broadcast-session", () => ({
+  stopGameBroadcast: mocks.stopBroadcast,
+}));
 
 import { POST } from "./route";
 
@@ -89,6 +93,10 @@ describe("End Game route", () => {
     mocks.listGenerations.mockResolvedValue({
       "camera-home": [1, 3],
       "camera-away": [2],
+    });
+    mocks.stopBroadcast.mockResolvedValue({
+      desiredState: "stopped",
+      status: "stopped",
     });
   });
 
@@ -140,6 +148,7 @@ describe("End Game route", () => {
       "camera-home": [1, 3],
       "camera-away": [2],
     });
+    expect(mocks.stopBroadcast).toHaveBeenCalledWith(gameId, account);
   });
 
   it("does not repeat provider teardown after cleanup is complete", async () => {
@@ -153,6 +162,22 @@ describe("End Game route", () => {
     expect(response.status).toBe(200);
     expect(mocks.terminate).not.toHaveBeenCalled();
     expect(mocks.recordCleanup).not.toHaveBeenCalled();
+  });
+
+  it("still disconnects every camera when YouTube cleanup fails", async () => {
+    mocks.stopBroadcast.mockResolvedValue({
+      desiredState: "stopped",
+      status: "failed",
+    });
+    const response = await POST(request({ action: "complete", reviewId }), {
+      params: Promise.resolve({ id: gameId }),
+    });
+    expect(response.status).toBe(200);
+    expect(mocks.terminate).toHaveBeenCalled();
+    expect(mocks.recordCleanup).toHaveBeenCalledWith(gameId, account, {
+      succeeded: false,
+      error: "YouTube broadcast shutdown was not confirmed",
+    });
   });
 
   it("reports completion as saved when summary retrieval briefly fails", async () => {

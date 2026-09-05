@@ -17,6 +17,7 @@ import type {
   CompletionCleanup,
   SafeGameCompletion,
 } from "@/lib/game-completion";
+import { BroadcastControl } from "@/components/BroadcastControl";
 export default function Scorer({
   params,
 }: {
@@ -415,19 +416,7 @@ export default function Scorer({
               >
                 {game.audioMuted ? "Audio muted" : "MICROPHONES LIVE"}
               </button>
-              <button
-                onClick={() =>
-                  game.broadcast === "live"
-                    ? confirm("Stop the live broadcast?") &&
-                      act({ type: "broadcast", value: "idle" })
-                    : act({ type: "broadcast", value: "live" })
-                }
-                className="btn-secondary flex-1"
-              >
-                {game.broadcast === "live"
-                  ? "Stop Broadcast"
-                  : "Start Broadcast"}
-              </button>
+              <BroadcastControl gameId={id} enabled={canEndGame} />
             </div>
             <p className="mt-2 text-sm text-amber-200">
               External USB audio is simulated. Never assume the phone microphone

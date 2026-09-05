@@ -9,15 +9,44 @@ export const gameSchema = z.object({
   youtubeTitle: z.string().trim().min(2).max(100),
   youtubeVisibility: z.enum(["unlisted", "private", "public"]),
 });
-export const actionSchema = z.discriminatedUnion("type", [
-  z.object({
+const scoringIntent = {
+  intentId: z.uuid(),
+  expectedLastEventId: z.string().min(1).max(100).nullable(),
+  expectedEnd: z.number().int().positive().max(100),
+};
+const scoreActionSchema = z
+  .object({
     type: z.literal("score"),
+    ...scoringIntent,
     team: z.enum(["home", "away"]).nullable(),
     points: z.number().int().min(0).max(8),
     blank: z.boolean(),
+  })
+  .superRefine((value, context) => {
+    if (value.blank && (value.points !== 0 || value.team !== null))
+      context.addIssue({
+        code: "custom",
+        message: "A blank end cannot include points or a scoring team.",
+      });
+    if (!value.blank && (value.points < 1 || value.team === null))
+      context.addIssue({
+        code: "custom",
+        message: "A scored end requires a team and one or more points.",
+      });
+  });
+export const actionSchema = z.discriminatedUnion("type", [
+  scoreActionSchema,
+  z.object({
+    type: z.literal("hammer"),
+    ...scoringIntent,
+    team: z.enum(["home", "away"]),
   }),
-  z.object({ type: z.literal("hammer"), team: z.enum(["home", "away"]) }),
-  z.object({ type: z.literal("undo") }),
+  z.object({
+    type: z.literal("undo"),
+    intentId: z.uuid(),
+    expectedLastEventId: z.string().min(1).max(100).nullable(),
+    expectedTargetId: z.string().min(1).max(100),
+  }),
   z.object({
     type: z.literal("layout"),
     layout: z.enum(["split", "home", "away"]),

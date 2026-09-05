@@ -148,14 +148,30 @@ describe("local-store shared assignment authority", () => {
     expect(() =>
       store.updateGame(
         game.id,
-        { type: "score", team: "home", points: 1, blank: false },
+        {
+          type: "score",
+          intentId: "10000000-0000-4000-8000-000000000010",
+          expectedEnd: 1,
+          expectedLastEventId: null,
+          team: "home",
+          points: 1,
+          blank: false,
+        },
         { role: "scorer", claim: claimant, generation: 0 },
       ),
     ).toThrow("Participant assignment changed");
     expect(
       store.updateGame(
         game.id,
-        { type: "score", team: "home", points: 1, blank: false },
+        {
+          type: "score",
+          intentId: "10000000-0000-4000-8000-000000000011",
+          expectedEnd: 1,
+          expectedLastEventId: null,
+          team: "home",
+          points: 1,
+          blank: false,
+        },
         { role: "scorer", claim: claimant, generation: 1 },
       )?.scoreEvents,
     ).toHaveLength(1);

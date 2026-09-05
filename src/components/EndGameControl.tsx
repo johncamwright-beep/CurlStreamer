@@ -12,12 +12,14 @@ export function EndGameControl({
   homeName,
   awayName,
   enabled,
+  disabled = false,
   onCompleted,
 }: {
   gameId: string;
   homeName: string;
   awayName: string;
   enabled: boolean;
+  disabled?: boolean;
   onCompleted: (
     completion: SafeGameCompletion,
     cleanup: CompletionCleanup,
@@ -89,6 +91,7 @@ export function EndGameControl({
     <div>
       <button
         className="btn-secondary border-red-700 text-red-200"
+        disabled={disabled}
         onClick={() => setOpen(true)}
       >
         End Game
@@ -121,7 +124,11 @@ export function EndGameControl({
                 </span>
               </label>
               <div className="mt-4 flex flex-wrap gap-3">
-                <button className="btn" disabled={busy} onClick={reviewScore}>
+                <button
+                  className="btn"
+                  disabled={busy || disabled}
+                  onClick={reviewScore}
+                >
                   {busy ? "Reviewing…" : "Review final score"}
                 </button>
                 <button
@@ -152,7 +159,7 @@ export function EndGameControl({
               <div className="mt-4 flex flex-wrap gap-3">
                 <button
                   className="btn border-red-700"
-                  disabled={busy}
+                  disabled={busy || disabled}
                   onClick={complete}
                 >
                   {busy ? "Ending…" : "Confirm End Game"}

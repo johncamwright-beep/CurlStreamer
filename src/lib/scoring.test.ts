@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { deriveScore } from "./scoring";
-import type { GameConfig, ScoreEvent } from "./types";
+import { applyScoringAction, deriveScore } from "./scoring";
+import type { GameConfig, GameState, ScoreEvent } from "./types";
 const config: GameConfig = {
   eventName: "Test",
   homeName: "Home",
@@ -74,5 +74,70 @@ describe("curling scoring", () => {
     const state = deriveScore({ config, scoreEvents: events });
     expect(state.hammer).toBe("away");
     expect(state.totals.home).toBe(2);
+  });
+
+  it("rejects a stale final-end intent when the displayed end is capped", () => {
+    const game = {
+      config,
+      scoreEvents: Array.from({ length: 7 }, (_, index) =>
+        end(String(index + 1), "home", 1),
+      ),
+    } as GameState;
+    applyScoringAction(game, {
+      type: "score",
+      intentId: "final-end",
+      expectedEnd: 8,
+      expectedLastEventId: "7",
+      team: "home",
+      points: 1,
+      blank: false,
+    });
+    expect(deriveScore(game).currentEnd).toBe(8);
+
+    expect(() =>
+      applyScoringAction(game, {
+        type: "score",
+        intentId: "stale-final-end",
+        expectedEnd: 8,
+        expectedLastEventId: "7",
+        team: "away",
+        points: 1,
+        blank: false,
+      }),
+    ).toThrow("Scoring history position changed");
+    expect(game.scoreEvents).toHaveLength(8);
+  });
+
+  it("rejects an Undo/re-score ABA intent at the same displayed end", () => {
+    const game = { config, scoreEvents: [end("1", "home", 1)] } as GameState;
+    applyScoringAction(game, {
+      type: "score",
+      intentId: "score-2",
+      expectedEnd: 2,
+      expectedLastEventId: "1",
+      team: "away",
+      points: 1,
+      blank: false,
+    });
+    applyScoringAction(game, {
+      type: "undo",
+      intentId: "undo-2",
+      expectedLastEventId: "score-2",
+      expectedTargetId: "score-2",
+    });
+    expect(deriveScore(game).currentEnd).toBe(2);
+
+    expect(() =>
+      applyScoringAction(game, {
+        type: "score",
+        intentId: "stale-score-2",
+        expectedEnd: 2,
+        expectedLastEventId: "1",
+        team: "home",
+        points: 2,
+        blank: false,
+      }),
+    ).toThrow("Scoring history position changed");
+    expect(game.scoreEvents).toHaveLength(3);
   });
 });

@@ -29,9 +29,30 @@ export interface EndScore {
   blank: boolean;
 }
 export type ScoreEvent =
-  | { id: string; at: number; type: "end"; score: EndScore }
-  | { id: string; at: number; type: "hammer"; team: Team }
-  | { id: string; at: number; type: "undo"; targetId: string };
+  | {
+      id: string;
+      at: number;
+      type: "end";
+      score: EndScore;
+      /** Exact scoring-history position observed when this intent was created. */
+      expectedLastEventId?: string | null;
+    }
+  | {
+      id: string;
+      at: number;
+      type: "hammer";
+      team: Team;
+      /** Present on position-bound scoring intents; absent on legacy events. */
+      expectedEnd?: number;
+      expectedLastEventId?: string | null;
+    }
+  | {
+      id: string;
+      at: number;
+      type: "undo";
+      targetId: string;
+      expectedLastEventId?: string | null;
+    };
 export interface Sponsor {
   id: string;
   name: string;

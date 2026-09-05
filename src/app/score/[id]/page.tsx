@@ -1,17 +1,22 @@
 "use client";
 import Link from "next/link";
-import { use, useState } from "react";
+import { use, useEffect, useRef, useState } from "react";
 import { useGame } from "@/components/GameSync";
 import { Scoreboard } from "@/components/Scoreboard";
 import { GameSetupNavigation } from "@/components/GameSetupNavigation";
-import { deriveScore } from "@/lib/scoring";
+import { activeEvents, deriveScore, type ScoringAction } from "@/lib/scoring";
 import type { Team } from "@/lib/types";
 import { hasVisibleSponsorOverlay } from "@/lib/sponsor-audio";
 import { AppNavigation } from "@/components/AppNavigation";
 import { canonicalTitleFromConfig } from "@/lib/game-title";
 import { gameCapabilities } from "@/lib/current-game";
-import { hasOrganizerAccess } from "@/lib/access-session";
+import { canManageCompletion, hasOrganizerAccess } from "@/lib/access-session";
 import { CompletedGameSummary } from "@/components/CompletedGameSummary";
+import { EndGameControl } from "@/components/EndGameControl";
+import type {
+  CompletionCleanup,
+  SafeGameCompletion,
+} from "@/lib/game-completion";
 export default function Scorer({
   params,
 }: {
@@ -22,13 +27,30 @@ export default function Scorer({
     useGame(id);
   const [points, setPoints] = useState(1);
   const [team, setTeam] = useState<Team>("home");
-  const [hammerBusy, setHammerBusy] = useState(false);
-  const [hammerError, setHammerError] = useState("");
+  const scoringFlight = useRef(false);
+  const [scoringBusy, setScoringBusy] = useState(false);
+  const [scoringError, setScoringError] = useState("");
+  const [scoringNotice, setScoringNotice] = useState("");
+  const [failedAction, setFailedAction] = useState<ScoringAction>();
   const [correctingHammer, setCorrectingHammer] = useState(false);
-  if (completion)
+  const [organizerAccess, setOrganizerAccess] = useState(false);
+  const [finished, setFinished] = useState<SafeGameCompletion>();
+  const [finishedCleanup, setFinishedCleanup] = useState<CompletionCleanup>();
+  useEffect(
+    () => setOrganizerAccess(hasOrganizerAccess(localStorage, id)),
+    [id],
+  );
+  const completed = completion ?? finished;
+  const canEndGame = canManageCompletion(accountRole, organizerAccess);
+  if (completed)
     return (
       <main className="mx-auto max-w-3xl p-5">
-        <CompletedGameSummary gameId={id} completion={completion} />
+        <CompletedGameSummary
+          gameId={id}
+          completion={completed}
+          cleanupControls={canEndGame}
+          initialCleanup={finishedCleanup}
+        />
       </main>
     );
   if (error)
@@ -101,19 +123,49 @@ export default function Scorer({
   const enabled = game.sponsors.filter((s) => s.enabled);
   const title = canonicalTitleFromConfig(game.config);
   const score = deriveScore(game);
-  async function saveHammer(next: Team) {
-    setHammerBusy(true);
-    setHammerError("");
+  const undoTarget = activeEvents(game.scoreEvents).at(-1);
+  const expectedLastEventId = game.scoreEvents.at(-1)?.id ?? null;
+  const scoringLocked = scoringBusy || Boolean(failedAction);
+  function successMessage(action: ScoringAction) {
+    if (action.type === "undo")
+      return "Undo saved. The prior change remains in history and is no longer active.";
+    if (action.type === "hammer") return "Hammer saved.";
+    return `End ${action.expectedEnd} saved.`;
+  }
+  async function runScoringAction(action: ScoringAction) {
+    if (scoringFlight.current) return;
+    scoringFlight.current = true;
+    setScoringBusy(true);
+    setScoringError("");
+    setScoringNotice("");
     try {
-      await act({ type: "hammer", team: next });
-      setCorrectingHammer(false);
+      await act(action);
+      setFailedAction(undefined);
+      setScoringNotice(successMessage(action));
+      if (action.type === "hammer") setCorrectingHammer(false);
     } catch (error) {
-      setHammerError(
-        error instanceof Error ? error.message : "Hammer could not be saved.",
+      setFailedAction(action);
+      setScoringError(
+        error instanceof Error
+          ? error.message
+          : "The scoring change could not be saved.",
       );
     } finally {
-      setHammerBusy(false);
+      scoringFlight.current = false;
+      setScoringBusy(false);
     }
+  }
+  function newIntent() {
+    return crypto.randomUUID();
+  }
+  function saveHammer(next: Team) {
+    return runScoringAction({
+      type: "hammer",
+      team: next,
+      intentId: newIntent(),
+      expectedEnd: score.currentEnd,
+      expectedLastEventId,
+    });
   }
   return (
     <main className="mx-auto max-w-6xl p-4">
@@ -159,7 +211,7 @@ export default function Scorer({
                 {(["home", "away"] as const).map((side) => (
                   <button
                     key={side}
-                    disabled={hammerBusy}
+                    disabled={scoringLocked}
                     className="min-h-14 rounded-lg border-2 px-4 py-3 text-lg font-bold disabled:opacity-50"
                     style={{
                       borderColor:
@@ -175,23 +227,20 @@ export default function Scorer({
                   </button>
                 ))}
               </div>
-              {hammerError && (
-                <p role="alert" className="mt-3 text-red-300">
-                  {hammerError}
-                </p>
-              )}
             </div>
           ) : (
             <div className="panel">
               <h2 className="text-xl font-bold">Record this end</h2>
               <div className="my-3 grid grid-cols-2 gap-2">
                 <button
+                  disabled={scoringLocked}
                   onClick={() => setTeam("home")}
                   className={team === "home" ? "btn" : "btn-secondary"}
                 >
                   {game.config.homeName}
                 </button>
                 <button
+                  disabled={scoringLocked}
                   onClick={() => setTeam("away")}
                   className={team === "away" ? "btn" : "btn-secondary"}
                 >
@@ -201,6 +250,7 @@ export default function Scorer({
               <label>
                 Points
                 <select
+                  disabled={scoringLocked}
                   value={points}
                   onChange={(e) => setPoints(+e.target.value)}
                   className="ml-3 rounded-lg bg-slate-800 px-4"
@@ -212,34 +262,69 @@ export default function Scorer({
               </label>
               <div className="mt-3 grid grid-cols-2 gap-2">
                 <button
+                  disabled={scoringLocked}
                   className="btn"
                   onClick={() =>
-                    act({ type: "score", team, points, blank: false })
+                    runScoringAction({
+                      type: "score",
+                      intentId: newIntent(),
+                      expectedEnd: score.currentEnd,
+                      expectedLastEventId,
+                      team,
+                      points,
+                      blank: false,
+                    })
                   }
                 >
                   Save {points} point{points > 1 ? "s" : ""}
                 </button>
                 <button
+                  disabled={scoringLocked}
                   className="btn-secondary"
                   onClick={() =>
-                    act({ type: "score", team: null, points: 0, blank: true })
+                    runScoringAction({
+                      type: "score",
+                      intentId: newIntent(),
+                      expectedEnd: score.currentEnd,
+                      expectedLastEventId,
+                      team: null,
+                      points: 0,
+                      blank: true,
+                    })
                   }
                 >
                   Blank end
                 </button>
                 <button
+                  disabled={scoringLocked || !undoTarget}
                   className="btn-secondary"
-                  onClick={() => act({ type: "undo" })}
+                  onClick={() =>
+                    undoTarget &&
+                    runScoringAction({
+                      type: "undo",
+                      intentId: newIntent(),
+                      expectedLastEventId,
+                      expectedTargetId: undoTarget.id,
+                    })
+                  }
                 >
-                  ↶ Undo
+                  ↶ Undo last scoring change
                 </button>
                 <button
+                  disabled={scoringLocked}
                   className="btn-secondary"
                   onClick={() => setCorrectingHammer(true)}
                 >
                   Correct Hammer
                 </button>
               </div>
+              <p className="mt-3 text-sm text-slate-300">
+                {undoTarget?.type === "end"
+                  ? `Undo will reverse End ${undoTarget.score.end} while keeping its history.`
+                  : undoTarget?.type === "hammer"
+                    ? "Undo will reverse the latest hammer selection while keeping its history."
+                    : "There is no scoring change to undo."}
+              </p>
               {correctingHammer && (
                 <div
                   className="mt-4 rounded-lg border border-slate-600 p-3"
@@ -256,7 +341,7 @@ export default function Scorer({
                     {(["home", "away"] as const).map((side) => (
                       <button
                         key={side}
-                        disabled={hammerBusy}
+                        disabled={scoringLocked}
                         className="btn-secondary"
                         onClick={() => saveHammer(side)}
                       >
@@ -267,14 +352,46 @@ export default function Scorer({
                       </button>
                     ))}
                   </div>
-                  {hammerError && (
-                    <p role="alert" className="mt-3 text-red-300">
-                      {hammerError}
-                    </p>
-                  )}
                 </div>
               )}
             </div>
+          )}
+          {scoringBusy && (
+            <p role="status" className="panel text-cyan-200">
+              Saving scoring change…
+            </p>
+          )}
+          {scoringError && (
+            <div role="alert" className="panel border-red-400 text-red-200">
+              <p>{scoringError}</p>
+              <p className="mt-2 text-sm">
+                Retry will safely repeat this same scoring change.
+              </p>
+              <div className="mt-3 flex gap-2">
+                <button
+                  disabled={scoringBusy}
+                  className="btn-secondary"
+                  onClick={() => failedAction && runScoringAction(failedAction)}
+                >
+                  {scoringBusy ? "Retrying…" : "Retry same change"}
+                </button>
+                <button
+                  disabled={scoringBusy}
+                  className="btn-secondary"
+                  onClick={() => {
+                    setFailedAction(undefined);
+                    setScoringError("");
+                  }}
+                >
+                  Dismiss
+                </button>
+              </div>
+            </div>
+          )}
+          {scoringNotice && (
+            <p role="status" className="panel text-emerald-200">
+              {scoringNotice}
+            </p>
           )}
           <div className="panel">
             <h2 className="font-bold">Program controls</h2>
@@ -317,6 +434,25 @@ export default function Scorer({
               is safe.
             </p>
           </div>
+          {canEndGame && (
+            <div className="panel">
+              <h2 className="font-bold">Game lifecycle</h2>
+              <p className="mb-3 mt-2 text-sm text-slate-300">
+                Review and confirm the saved final score before ending the game.
+              </p>
+              <EndGameControl
+                gameId={id}
+                homeName={game.config.homeName}
+                awayName={game.config.awayName}
+                enabled
+                disabled={scoringLocked}
+                onCompleted={(value, cleanup) => {
+                  setFinished(value);
+                  setFinishedCleanup(cleanup);
+                }}
+              />
+            </div>
+          )}
         </section>
         <section className="space-y-4">
           <div className="panel">

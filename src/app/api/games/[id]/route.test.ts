@@ -668,6 +668,9 @@ describe("GET /api/games/[id] over HTTP", () => {
         },
         body: JSON.stringify({
           type: "score",
+          intentId: "10000000-0000-4000-8000-000000000012",
+          expectedEnd: 1,
+          expectedLastEventId: null,
           team: "home",
           points: 1,
           blank: false,
@@ -679,8 +682,51 @@ describe("GET /api/games/[id] over HTTP", () => {
     expect(response.status).toBe(200);
     expect(mocks.updateGame).toHaveBeenCalledWith(
       testGameId,
-      { type: "score", team: "home", points: 1, blank: false },
+      {
+        type: "score",
+        intentId: "10000000-0000-4000-8000-000000000012",
+        expectedEnd: 1,
+        expectedLastEventId: null,
+        team: "home",
+        points: 1,
+        blank: false,
+      },
       { role: "scorer", claim: claimant, generation: 5 },
     );
+  });
+
+  it.each([
+    ["blank points", { team: null, points: 2, blank: true }],
+    ["blank team", { team: "home", points: 0, blank: true }],
+    ["score without points", { team: "home", points: 0, blank: false }],
+    ["score without a team", { team: null, points: 1, blank: false }],
+  ])("rejects contradictory scoring payloads: %s", async (_name, score) => {
+    anonymous();
+    const claimant = game.claims.scorer!;
+    const response = await PATCH(
+      new Request(`${origin}/api/games/${testGameId}`, {
+        method: "PATCH",
+        headers: {
+          authorization: `Bearer ${await issueParticipantToken(
+            testGameId,
+            "scorer",
+            claimant,
+          )}`,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          type: "score",
+          intentId: "10000000-0000-4000-8000-000000000018",
+          expectedEnd: 1,
+          expectedLastEventId: null,
+          ...score,
+        }),
+      }),
+      { params: Promise.resolve({ id: testGameId }) },
+    );
+
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({ error: "Invalid update" });
+    expect(mocks.updateGame).not.toHaveBeenCalled();
   });
 });

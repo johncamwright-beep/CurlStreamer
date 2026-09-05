@@ -2,6 +2,7 @@ import React from "react";
 import { deriveScore } from "@/lib/scoring";
 import type { GameState } from "@/lib/types";
 import type { BroadcastGame } from "@/lib/game-projection";
+import { HammerIcon } from "./HammerIcon";
 export function Scoreboard({
   game,
   compact = false,
@@ -38,21 +39,12 @@ export function Scoreboard({
           </strong>
           <span className="flex items-center gap-2">
             {s.hammer === t && (
-              <svg
-                viewBox="0 0 32 32"
-                aria-label={`${t === "home" ? game.config.homeName : game.config.awayName} has hammer`}
-                role="img"
-                className={compact ? "h-5 w-5" : "h-7 w-7"}
-              >
-                <path
-                  d="M7 5h5v9l12 12-4 4L8 18H2v-5h5V5Zm4 11 11 11"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth="3"
-                />
-              </svg>
+              <HammerIcon
+                compact={compact}
+                label={`${
+                  t === "home" ? game.config.homeName : game.config.awayName
+                }: Last stone advantage (Hammer)`}
+              />
             )}
             <strong className={compact ? "text-2xl" : "text-4xl"}>
               {s.totals[t]}

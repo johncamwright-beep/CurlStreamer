@@ -113,12 +113,28 @@ describe("Supabase score-event persistence", () => {
   it.each([
     {
       name: "score",
-      action: { type: "score", team: "home", points: 2, blank: false } as const,
+      action: {
+        type: "score",
+        intentId: "10000000-0000-4000-8000-000000000001",
+        expectedEnd: 1,
+        expectedLastEventId: null,
+        team: "home",
+        points: 2,
+        blank: false,
+      } as const,
       expected: { type: "end", team: "home", points: 2, blank: false },
     },
     {
       name: "blank end",
-      action: { type: "score", team: null, points: 0, blank: true } as const,
+      action: {
+        type: "score",
+        intentId: "10000000-0000-4000-8000-000000000002",
+        expectedEnd: 1,
+        expectedLastEventId: null,
+        team: null,
+        points: 0,
+        blank: true,
+      } as const,
       expected: { type: "end", team: null, points: 0, blank: true },
     },
   ])(
@@ -133,6 +149,7 @@ describe("Supabase score-event persistence", () => {
       const result = await updateGame(game.id, action);
 
       const event = result!.scoreEvents[0];
+      expect(event.id).toBe(action.intentId);
       expect(event).toMatchObject(
         expected.type === "end"
           ? {
@@ -157,6 +174,91 @@ describe("Supabase score-event persistence", () => {
     },
   );
 
+  it("treats a matching persisted intent as an idempotent retry", async () => {
+    const game = storedGame();
+    const intentId = "10000000-0000-4000-8000-000000000014";
+    game.scoreEvents.push({
+      id: intentId,
+      at: 1,
+      type: "end",
+      score: { end: 1, team: "home", points: 2, blank: false },
+    });
+    mocks.maybeSingle.mockResolvedValue({
+      data: { state: game, version: 42 },
+      error: null,
+    });
+
+    await expect(
+      updateGame(game.id, {
+        type: "score",
+        intentId,
+        expectedEnd: 1,
+        expectedLastEventId: null,
+        team: "home",
+        points: 2,
+        blank: false,
+      }),
+    ).resolves.toBe(game);
+    expect(game.scoreEvents).toHaveLength(1);
+    expect(mocks.rpc).not.toHaveBeenCalled();
+  });
+
+  it("rejects a reused intent with different scoring data", async () => {
+    const game = storedGame();
+    const intentId = "10000000-0000-4000-8000-000000000015";
+    game.scoreEvents.push({
+      id: intentId,
+      at: 1,
+      type: "end",
+      score: { end: 1, team: "home", points: 2, blank: false },
+    });
+    mocks.maybeSingle.mockResolvedValue({
+      data: { state: game, version: 43 },
+      error: null,
+    });
+
+    await expect(
+      updateGame(game.id, {
+        type: "score",
+        intentId,
+        expectedEnd: 1,
+        expectedLastEventId: null,
+        team: "away",
+        points: 1,
+        blank: false,
+      }),
+    ).rejects.toThrow("Scoring intent was already used");
+    expect(mocks.rpc).not.toHaveBeenCalled();
+  });
+
+  it("rejects a stale score instead of applying it to the next end", async () => {
+    const game = storedGame();
+    game.scoreEvents.push({
+      id: "20000000-0000-4000-8000-000000000001",
+      at: 1,
+      type: "end",
+      score: { end: 1, team: "home", points: 1, blank: false },
+    });
+    mocks.maybeSingle.mockResolvedValue({
+      data: { state: game, version: 44 },
+      error: null,
+    });
+
+    await expect(
+      updateGame(game.id, {
+        type: "score",
+        intentId: "10000000-0000-4000-8000-000000000016",
+        expectedEnd: 1,
+        expectedLastEventId: null,
+        team: "away",
+        points: 2,
+        blank: false,
+      }),
+    ).rejects.toThrow("Scoring history position changed");
+    expect(game.scoreEvents).toHaveLength(1);
+    expect(mocks.rpc).not.toHaveBeenCalled();
+  });
+
   it.each(["home", "away"] as const)(
     "appends a %s hammer selection without changing score or end",
     async (team) => {
@@ -167,7 +269,13 @@ describe("Supabase score-event persistence", () => {
         error: null,
       });
 
-      const result = await updateGame(game.id, { type: "hammer", team });
+      const result = await updateGame(game.id, {
+        type: "hammer",
+        intentId: "10000000-0000-4000-8000-000000000003",
+        expectedEnd: 1,
+        expectedLastEventId: null,
+        team,
+      });
 
       expect(result!.scoreEvents).toHaveLength(1);
       expect(result!.scoreEvents[0]).toMatchObject({ type: "hammer", team });
@@ -194,6 +302,9 @@ describe("Supabase score-event persistence", () => {
     await expect(
       updateGame(game.id, {
         type: "score",
+        intentId: "10000000-0000-4000-8000-000000000004",
+        expectedEnd: 1,
+        expectedLastEventId: null,
         team: "home",
         points: 1,
         blank: false,
@@ -215,7 +326,12 @@ describe("Supabase score-event persistence", () => {
       error: null,
     });
 
-    const result = await updateGame(game.id, { type: "undo" });
+    const result = await updateGame(game.id, {
+      type: "undo",
+      intentId: "10000000-0000-4000-8000-000000000005",
+      expectedLastEventId: "22222222-2222-4222-8222-222222222222",
+      expectedTargetId: "22222222-2222-4222-8222-222222222222",
+    });
 
     expect(result!.scoreEvents).toHaveLength(2);
     expect(result!.scoreEvents[0]).toMatchObject({ type: "end" });
@@ -234,6 +350,39 @@ describe("Supabase score-event persistence", () => {
     );
   });
 
+  it("rejects Undo after another scoring change becomes the latest target", async () => {
+    const game = storedGame();
+    game.scoreEvents.push(
+      {
+        id: "20000000-0000-4000-8000-000000000002",
+        at: 1,
+        type: "end",
+        score: { end: 1, team: "home", points: 1, blank: false },
+      },
+      {
+        id: "20000000-0000-4000-8000-000000000003",
+        at: 2,
+        type: "hammer",
+        team: "away",
+      },
+    );
+    mocks.maybeSingle.mockResolvedValue({
+      data: { state: game, version: 45 },
+      error: null,
+    });
+
+    await expect(
+      updateGame(game.id, {
+        type: "undo",
+        intentId: "10000000-0000-4000-8000-000000000017",
+        expectedLastEventId: "20000000-0000-4000-8000-000000000003",
+        expectedTargetId: "20000000-0000-4000-8000-000000000002",
+      }),
+    ).rejects.toThrow("Scoring history changed before Undo");
+    expect(game.scoreEvents).toHaveLength(2);
+    expect(mocks.rpc).not.toHaveBeenCalled();
+  });
+
   it("rejects the update when the atomic RPC fails", async () => {
     const game = storedGame();
     mocks.maybeSingle.mockResolvedValue({
@@ -248,6 +397,9 @@ describe("Supabase score-event persistence", () => {
     await expect(
       updateGame(game.id, {
         type: "score",
+        intentId: "10000000-0000-4000-8000-000000000006",
+        expectedEnd: 1,
+        expectedLastEventId: null,
         team: "home",
         points: 1,
         blank: false,
@@ -269,7 +421,13 @@ describe("Supabase score-event persistence", () => {
     vi.spyOn(console, "error").mockImplementation(() => undefined);
 
     await expect(
-      updateGame(game.id, { type: "hammer", team: "away" }),
+      updateGame(game.id, {
+        type: "hammer",
+        intentId: "10000000-0000-4000-8000-000000000007",
+        expectedEnd: 1,
+        expectedLastEventId: null,
+        team: "away",
+      }),
     ).rejects.toThrow("Supabase score update failed");
   });
 
@@ -600,7 +758,15 @@ describe("Supabase score-event persistence", () => {
     await expect(
       updateGame(
         game.id,
-        { type: "score", team: "home", points: 1, blank: false },
+        {
+          type: "score",
+          intentId: "10000000-0000-4000-8000-000000000008",
+          expectedEnd: 1,
+          expectedLastEventId: null,
+          team: "home",
+          points: 1,
+          blank: false,
+        },
         { role: "scorer", claim: claimant, generation: 4 },
       ),
     ).rejects.toThrow("Participant assignment changed");
@@ -620,7 +786,15 @@ describe("Supabase score-event persistence", () => {
     await expect(
       updateGame(
         game.id,
-        { type: "score", team: "home", points: 1, blank: false },
+        {
+          type: "score",
+          intentId: "10000000-0000-4000-8000-000000000009",
+          expectedEnd: 1,
+          expectedLastEventId: null,
+          team: "home",
+          points: 1,
+          blank: false,
+        },
         { role: "scorer", claim: claimant, generation: 6 },
       ),
     ).resolves.toMatchObject({

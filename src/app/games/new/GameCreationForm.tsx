@@ -14,6 +14,7 @@ import {
   localDateTimeToUtc,
   scheduledStartToLocalInput,
 } from "@/lib/team-hierarchy";
+import { RockColourSelector } from "@/components/RockColourSelector";
 
 type Opponent = { id: string; display_name: string };
 type Dialog = "season" | "event" | null;
@@ -422,24 +423,16 @@ export function GameCreationForm({
             />
           </label>
         )}
-        <label>
-          Team 1 colour
-          <input
-            name="homeColor"
-            type="color"
-            defaultValue={editing?.config.homeColor ?? "#ef4444"}
-            className="mt-1 min-h-11 w-full bg-slate-800"
-          />
-        </label>
-        <label>
-          Team 2 colour
-          <input
-            name="awayColor"
-            type="color"
-            defaultValue={editing?.config.awayColor ?? "#2563eb"}
-            className="mt-1 min-h-11 w-full bg-slate-800"
-          />
-        </label>
+        <RockColourSelector
+          name="homeColor"
+          label="Team 1 rock colour"
+          defaultValue={editing?.config.homeColor ?? "#ef4444"}
+        />
+        <RockColourSelector
+          name="awayColor"
+          label="Team 2 rock colour"
+          defaultValue={editing?.config.awayColor ?? "#2563eb"}
+        />
         <label>
           Scheduled ends
           <select

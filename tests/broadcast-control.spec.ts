@@ -55,9 +55,18 @@ test("an owner starts a broadcast from idle and stops the live stream", async ({
   await expect(
     page.getByText("Live on the saved team YouTube channel."),
   ).toBeVisible();
-  await expect(
-    page.getByRole("link", { name: "Open YouTube broadcast" }),
-  ).toHaveAttribute("href", "https://www.youtube.com/watch?v=abcdefghijk");
+  const youtubeLink = page.getByRole("link", {
+    name: "Open YouTube broadcast",
+  });
+  await expect(youtubeLink).toHaveAttribute(
+    "href",
+    "https://www.youtube.com/watch?v=abcdefghijk",
+  );
+  expect(
+    await youtubeLink.evaluate(
+      (element) => element.getBoundingClientRect().height,
+    ),
+  ).toBeGreaterThanOrEqual(44);
 
   page.once("dialog", (dialog) => dialog.accept());
   await page.getByRole("button", { name: "Stop Broadcast" }).click();

@@ -364,6 +364,30 @@ describe.skipIf(!enabled)(
       ).toBe(true);
       expect(
         psql(
+          `select public.record_game_broadcast_operation(
+          '${gameId}',${claim.generation},'${operationToken}','live',null,null,'egress-replay',
+          null,null,'live',false)`,
+          true,
+        ).ok,
+      ).toBe(true);
+      const stopToken = randomUUID();
+      const stop = JSON.parse(
+        psql(
+          `select public.claim_game_broadcast_operation(
+          '${gameId}','${owner}',false,'stopped','${stopToken}')`,
+          true,
+        ).stdout,
+      );
+      expect(
+        psql(
+          `select public.record_game_broadcast_operation(
+          '${gameId}',${stop.generation},'${stopToken}','stopped',null,null,null,
+          null,null,'stopped',false)`,
+          true,
+        ).ok,
+      ).toBe(true);
+      expect(
+        psql(
           `select review_id from public.review_game_completion_with_link(
           '${gameId}','${reviewId}','${owner}',false,'https://youtu.be/manual99')`,
           true,
@@ -381,6 +405,75 @@ describe.skipIf(!enabled)(
           `select youtube_watch_url from public.game_completions where game_id='${gameId}'`,
         ).stdout,
       ).toBe("https://www.youtube.com/watch?v=original1");
+    });
+
+    it("retains the reviewed URL when preparation never reached live", () => {
+      const organizationId = randomUUID();
+      const owner = randomUUID();
+      const gameId = randomUUID();
+      const reviewId = randomUUID();
+      const completionId = randomUUID();
+      const startToken = randomUUID();
+      const seed = psql(`
+        insert into public.organizations(id,name) values ('${organizationId}','Fallback team');
+        ${account(owner, organizationId)}
+        ${game(gameId, organizationId, owner)}
+        insert into public.broadcast_settings(
+          organization_id,provider,encrypted_credentials,channel_id,channel_title,
+          connection_status,connection_version
+        ) values ('${organizationId}','youtube','opaque','channel-a','Club A','connected',1);
+      `);
+      expect(seed.stderr).toBe("");
+      const start = JSON.parse(
+        psql(
+          `select public.claim_game_broadcast_operation(
+          '${gameId}','${owner}',false,'live','${startToken}')`,
+          true,
+        ).stdout,
+      );
+      expect(
+        psql(
+          `select public.record_game_broadcast_operation(
+          '${gameId}',${start.generation},'${startToken}','preparing','deleted-video',null,null,
+          'https://www.youtube.com/watch?v=deleted01',null,'youtube-broadcast-ready',false)`,
+          true,
+        ).ok,
+      ).toBe(true);
+      const stopToken = randomUUID();
+      const stop = JSON.parse(
+        psql(
+          `select public.claim_game_broadcast_operation(
+          '${gameId}','${owner}',false,'stopped','${stopToken}')`,
+          true,
+        ).stdout,
+      );
+      expect(
+        psql(
+          `select public.record_game_broadcast_operation(
+          '${gameId}',${stop.generation},'${stopToken}','stopped',null,null,null,
+          null,null,'stopped',false)`,
+          true,
+        ).ok,
+      ).toBe(true);
+      expect(
+        psql(
+          `select review_id from public.review_game_completion_with_link(
+          '${gameId}','${reviewId}','${owner}',false,'https://youtu.be/manual99')`,
+          true,
+        ).stdout,
+      ).toBe(reviewId);
+      expect(
+        psql(
+          `select completion_id from public.complete_reviewed_game(
+          '${gameId}','${reviewId}','${completionId}','${owner}',false)`,
+          true,
+        ).stdout,
+      ).toBe(completionId);
+      expect(
+        psql(
+          `select youtube_watch_url from public.game_completions where game_id='${gameId}'`,
+        ).stdout,
+      ).toBe("https://youtu.be/manual99");
     });
 
     it("serializes Start against disconnect without stranding a session", async () => {

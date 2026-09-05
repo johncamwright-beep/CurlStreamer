@@ -1,9 +1,10 @@
 # Live YouTube broadcasting
 
-Migration `0021` must be deployed after `0020`. It turns the existing
-service-only `broadcast_sessions` table into a durable operation journal. Do
-not run application code that calls the broadcast route until `0021` is
-applied. No browser role receives table or RPC access.
+Migrations `0021` and `0022` must be deployed in order after `0020`. They turn
+the existing service-only `broadcast_sessions` table into a durable operation
+journal and restrict replay URL promotion to sessions that reached live. Do not
+run application code that calls the broadcast route until both are applied. No
+browser role receives table or RPC access.
 
 Start is available only from the same HTTPS origin configured in
 `APP_BASE_URL`. This prevents Preview deployments that share a production
@@ -35,7 +36,7 @@ teardown; a cleanup failure never changes the immutable result.
 
 Use only a loopback database whose name contains `test` or `disposable`. Apply
 `supabase/test-support/completion_postgres_prerequisites.sql`, followed by every
-migration from `0001` through `0021`. Migration `0020` is a prerequisite but
+migration from `0001` through `0022`. Migration `0020` is a prerequisite but
 must not be reapplied to a database where it is already recorded.
 
 ```powershell

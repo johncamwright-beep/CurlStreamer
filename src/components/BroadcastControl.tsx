@@ -146,7 +146,7 @@ export function BroadcastControl({
       </p>
       {session.watchUrl && (
         <a
-          className="mt-2 inline-block break-all text-cyan-300 underline"
+          className="mt-2 inline-flex min-h-11 items-center break-all text-cyan-300 underline"
           href={session.watchUrl}
           target="_blank"
           rel="noreferrer"

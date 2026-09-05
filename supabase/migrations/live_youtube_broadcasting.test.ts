@@ -5,6 +5,10 @@ const sql = readFileSync(
   "supabase/migrations/0021_add_live_youtube_broadcasting.sql",
   "utf8",
 ).toLowerCase();
+const replayCorrection = readFileSync(
+  "supabase/migrations/0022_require_live_evidence_for_replay_url.sql",
+  "utf8",
+).toLowerCase();
 
 describe("live YouTube broadcasting migration", () => {
   it("keeps lifecycle state and provider credentials service-only", () => {
@@ -33,6 +37,8 @@ describe("live YouTube broadcasting migration", () => {
 
   it("preserves the provider watch URL in immutable completion storage", () => {
     expect(sql).toContain("coalesce(s.watch_url, r.youtube_watch_url)");
+    expect(replayCorrection).toContain("when s.started_at is not null");
+    expect(replayCorrection).toContain("else r.youtube_watch_url");
   });
 
   it("prevents channel replacement while cleanup is unfinished", () => {

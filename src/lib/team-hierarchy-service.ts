@@ -40,7 +40,7 @@ function failure(
 ): Result<never> {
   diagnostic(operation, error);
   if (error.code === "42501") return { ok: false, kind: "authorization" };
-  if (["23505", "23514", "P0001", "P0002"].includes(error.code ?? ""))
+  if (["23505", "23514", "40001", "P0001", "P0002"].includes(error.code ?? ""))
     return { ok: false, kind: "conflict" };
   if (error.code === "22023" || error.code === "22P02")
     return { ok: false, kind: "validation" };
@@ -230,30 +230,6 @@ export function updateScheduledTeamGame(
     p_game_number: parsed.data.gameNumber,
     p_timezone: parsed.data.timezone,
     p_game_label: "",
-  }).then(async (updated) => {
-    if (!updated.ok || !configSnapshot) return updated;
-    const database = createAdminSupabaseClient();
-    const gameUpdate = await database
-      .from("games")
-      .update({ config: configSnapshot })
-      .eq("id", gameId);
-    const current = await database
-      .from("game_states")
-      .select("state")
-      .eq("game_id", gameId)
-      .single();
-    if (gameUpdate.error || current.error)
-      return failure(
-        gameUpdate.error ?? current.error!,
-        "restore_scheduled_game_snapshots",
-      );
-    const state = current.data.state as GameState;
-    const stateUpdate = await database
-      .from("game_states")
-      .update({ state: { ...state, config: configSnapshot } })
-      .eq("game_id", gameId);
-    return stateUpdate.error
-      ? failure(stateUpdate.error, "restore_scheduled_game_state_snapshots")
-      : updated;
+    ...(configSnapshot ? { p_config_snapshot: configSnapshot } : {}),
   });
 }

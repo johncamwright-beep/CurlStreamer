@@ -5,6 +5,10 @@ import type { z } from "zod";
 import type { actionSchema } from "../schema";
 import { activeEvents, deriveScore } from "../scoring";
 import type { GameConfig, GameState } from "../types";
+import {
+  GameStateConflictError,
+  isGameStateConflictError,
+} from "../game-state-conflict";
 
 let client: SupabaseClient | undefined;
 
@@ -119,14 +123,23 @@ export async function claimRole(
   role: keyof GameState["connections"],
   claimant: string,
 ) {
-  const game = await getGame(id);
-  if (!game) return { error: "Game not found" };
-  if (game.status !== "active") return { error: "This game is closed." };
-  if (game.claims[role] && game.claims[role] !== claimant)
-    return { error: "This role is already in use." };
-  game.claims[role] = claimant;
-  await save(game);
-  return { game };
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const record = await getGameRecord(id);
+    if (!record) return { error: "Game not found" };
+    const game = record.state;
+    if (game.status !== "active") return { error: "This game is closed." };
+    const current = game.claims[role];
+    if (current === claimant) return { game };
+    if (current) return { error: "This role is already in use." };
+    game.claims[role] = claimant;
+    try {
+      await save(game, record.version);
+      return { game };
+    } catch (error) {
+      if (!isGameStateConflictError(error)) throw error;
+    }
+  }
+  return { error: "The game changed before this role could be claimed." };
 }
 
 export async function releaseRole(
@@ -134,29 +147,36 @@ export async function releaseRole(
   role: "camera-home" | "camera-away",
   expectedClaim?: string,
 ) {
-  const record = await getGameRecord(id);
-  if (!record) return { error: "Game not found" };
-  const game = record.state;
-  const current = game.claims[role];
-  if (!current) return { game, released: false };
-  if (expectedClaim && current !== expectedClaim)
-    return { error: "Camera claim changed" };
-  delete game.claims[role];
-  game.connections[role] = false;
-  if (game.cameraHealth) delete game.cameraHealth[role];
-  await save(game);
-  return { game, released: true };
+  let targetClaim = expectedClaim;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const record = await getGameRecord(id);
+    if (!record) return { error: "Game not found" };
+    const game = record.state;
+    const current = game.claims[role];
+    if (!current) return { game, released: false };
+    targetClaim ??= current;
+    if (current !== targetClaim) return { error: "Camera claim changed" };
+    delete game.claims[role];
+    game.connections[role] = false;
+    if (game.cameraHealth) delete game.cameraHealth[role];
+    try {
+      await save(game, record.version);
+      return { game, released: true };
+    } catch (error) {
+      if (!isGameStateConflictError(error)) throw error;
+    }
+  }
+  return { error: "Camera claim changed" };
 }
 
-async function save(game: GameState) {
-  const { error } = await supabase()
-    .from("game_states")
-    .update({
-      state: game,
-      version: Date.now(),
-      updated_at: new Date().toISOString(),
-    })
-    .eq("game_id", game.id);
+async function save(game: GameState, expectedVersion: number) {
+  const { error } = await supabase().rpc("write_game_state", {
+    p_game_id: game.id,
+    p_expected_version: expectedVersion,
+    p_state: game,
+  });
+  if (error?.code === "40001" || error?.code === "55000")
+    throw new GameStateConflictError();
   if (error) databaseError("game update", error);
 }
 
@@ -178,17 +198,7 @@ async function saveScoreEvent(
   if (error) databaseError("score update", error);
 }
 
-export async function updateGame(
-  id: string,
-  action: z.infer<typeof actionSchema>,
-) {
-  const record = await getGameRecord(id);
-  if (!record) return undefined;
-  const game = record.state;
-  if (game.status === "completed") {
-    if (action.type === "close-game") return game;
-    throw new Error("This game is completed");
-  }
+function applyAction(game: GameState, action: z.infer<typeof actionSchema>) {
   const now = Date.now();
   let scoreEvent: GameState["scoreEvents"][number] | undefined;
   if (action.type === "score") {
@@ -272,7 +282,51 @@ export async function updateGame(
     if (action.paused !== undefined) game.sponsorMode.paused = action.paused;
     game.sponsorMode.startedAt = now;
   }
-  if (scoreEvent) await saveScoreEvent(game, record.version, scoreEvent);
-  else await save(game);
-  return game;
+  return scoreEvent;
+}
+
+export async function updateGame(
+  id: string,
+  action: z.infer<typeof actionSchema>,
+  expectedClaim?: string,
+) {
+  const retryable =
+    action.type === "camera-health" || action.type === "connection";
+  const attempts = retryable ? 3 : 1;
+  let capturedClaim = expectedClaim;
+  let claimCaptured = expectedClaim !== undefined;
+
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    const record = await getGameRecord(id);
+    if (!record) return undefined;
+    const game = record.state;
+    if (game.status === "completed") {
+      if (action.type === "close-game") return game;
+      throw new Error("This game is completed");
+    }
+    if (retryable) {
+      const currentClaim = game.claims[action.role];
+      if (!claimCaptured) {
+        capturedClaim = currentClaim;
+        claimCaptured = true;
+      }
+      if (currentClaim !== capturedClaim)
+        throw new GameStateConflictError("Camera assignment changed");
+    }
+
+    const scoreEvent = applyAction(game, action);
+    try {
+      if (scoreEvent) await saveScoreEvent(game, record.version, scoreEvent);
+      else await save(game, record.version);
+      return game;
+    } catch (error) {
+      if (
+        !retryable ||
+        !isGameStateConflictError(error) ||
+        attempt === attempts - 1
+      )
+        throw error;
+    }
+  }
+  throw new GameStateConflictError();
 }

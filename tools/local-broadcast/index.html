@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>CurlStreamer · Local broadcast lab</title>
+    <link rel="stylesheet" href="/style.css" />
+  </head>
+  <body>
+    <main>
+      <p class="eyebrow">CURLSTREAMER · PRIVATE TEST</p>
+      <h1>Local broadcast lab</h1>
+      <p id="intro">Preparing your private test…</p>
+      <p id="message" role="status"></p>
+      <section id="host" hidden>
+        <canvas id="program" width="1280" height="720"></canvas>
+        <div class="panel">
+          <h2>Match overlay</h2>
+          <div class="grid">
+            <label
+              >Team 1<input id="home" value="Team Red" maxlength="40" /></label
+            ><label
+              >Team 2<input id="away" value="Team Blue" maxlength="40" /></label
+            ><label
+              >Team 1 score<input
+                id="home-score"
+                type="number"
+                value="0"
+                min="0"
+                max="99" /></label
+            ><label
+              >Team 2 score<input
+                id="away-score"
+                type="number"
+                value="0"
+                min="0"
+                max="99"
+            /></label>
+          </div>
+        </div>
+        <div class="panel">
+          <h2>Output</h2>
+          <p>
+            720p · 60 fps target. This is a test, separate from your saved
+            games.
+          </p>
+          <p id="audio-status">
+            Audio is OFF. Phone microphones are never requested.
+          </p>
+          <button id="microphone">Choose a computer microphone</button
+          ><label id="mic-label" hidden
+            >Computer microphone<select id="mic-device"></select></label
+          ><button id="mic-enable" hidden>Enable selected microphone</button>
+          <div class="buttons">
+            <button id="record">Start local recording</button
+            ><button id="youtube" hidden>Send test to YouTube</button
+            ><button id="stop">End test & disconnect cameras</button>
+          </div>
+          <p id="output-status">No recording started.</p>
+          <p id="performance"></p>
+        </div>
+        <div class="panel">
+          <h2>Camera connections</h2>
+          <p id="camera1-status">Camera 1: waiting</p>
+          <p id="camera2-status">Camera 2: waiting</p>
+          <p>
+            Direct connections carry video between devices. This first lab has
+            no TURN relay configured; restrictive networks may fail to connect.
+          </p>
+        </div>
+      </section>
+      <section id="camera" hidden class="panel">
+        <h2 id="camera-title">Camera</h2>
+        <p>
+          Keep this page open. Video only; microphone stays off. This private
+          test may record your camera on the scoring computer.
+        </p>
+        <video id="camera-preview" muted autoplay playsinline></video>
+        <div class="buttons">
+          <button id="connect">Connect camera</button
+          ><button id="disconnect">Disconnect</button>
+        </div>
+        <p id="camera-status">Not connected</p>
+      </section>
+    </main>
+    <script type="module" src="/app.js"></script>
+  </body>
+</html>

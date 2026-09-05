@@ -112,7 +112,7 @@ export default function Scorer({
             before scoring begins.
           </p>
           <Link className="btn mt-4 inline-flex" href={`/games/${id}/edit`}>
-            Edit Schedule
+            Edit game
           </Link>
         </section>
       </main>

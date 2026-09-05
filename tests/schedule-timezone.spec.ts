@@ -155,7 +155,7 @@ test("an unchanged Toronto edit round-trips in a Vancouver browser", async ({
   await page.goto(origin);
   const date = page.getByLabel("Scheduled date (America/Toronto)");
   const time = page.getByLabel("Scheduled time (America/Toronto)");
-  const save = page.getByRole("button", { name: "Save schedule" });
+  const save = page.getByRole("button", { name: "Save changes" });
 
   await expect(date).toHaveValue("2026-11-01");
   await expect(time).toHaveValue("01:30");

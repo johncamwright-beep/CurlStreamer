@@ -45,10 +45,10 @@ export function TeamGameLinks({
         <Link
           className="min-h-11 rounded-lg bg-slate-700 px-3 py-3"
           href={`/games/${gameId}/edit`}
-          aria-label={`Edit Schedule: ${title}`}
+          aria-label={`Edit game: ${title}`}
           onClick={select}
         >
-          Edit Schedule
+          Edit game
         </Link>
       )}
       {(!opponentTbd || administrator) && (

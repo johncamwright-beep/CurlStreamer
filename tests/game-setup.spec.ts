@@ -3,17 +3,20 @@ test.skip(
   process.env.YOUTUBE_SETTINGS_E2E !== "1",
   "Uses the isolated authenticated Supabase fixture",
 );
-test.beforeEach(async ({ page }) => {
-  await page.goto("/login?next=/games/new");
+test.beforeEach(async ({ page }, info) => {
+  const target = info.title.startsWith("edit game")
+    ? "/games/66666666-6666-4666-8666-000000000002/edit"
+    : "/games/new";
+  await page.goto(`/login?next=${encodeURIComponent(target)}`);
   await page.getByLabel("Email address").fill("admin@youtube.test");
   await page.getByLabel("Password").fill("playwright-password");
   await page.getByRole("button", { name: "Sign in" }).click();
-  await page.waitForURL("**/games/new");
+  await page.waitForURL(`**${target}`);
 });
 async function fillGame(page: import("@playwright/test").Page) {
   await page
     .getByLabel("Team 2 — Opponent", { exact: true })
-    .fill("Team Wright");
+    .selectOption({ label: "Team Wright" });
   await page.getByLabel("Scheduled date (UTC)").fill("2026-10-20");
   await page.getByLabel("Scheduled time (UTC)").fill("18:30");
 }
@@ -115,5 +118,62 @@ test("expanded options stay inside the setup form on phones and small laptops", 
   await page.screenshot({
     path: info.outputPath(`setup-expanded-${info.project.name}.png`),
     fullPage: true,
+  });
+});
+
+test("new opponents and TBD save the intended opponent without a stale selection", async ({
+  page,
+}) => {
+  await fillGame(page);
+  const picker = page.getByLabel("Team 2 — Opponent", { exact: true });
+  await picker.selectOption("__new");
+  await page.getByLabel("New opponent name").fill("  Team   Granite  ");
+  const payloads: Record<string, unknown>[] = [];
+  await page.route("**/api/team-schedule", async (route) => {
+    payloads.push(route.request().postDataJSON());
+    await route.fulfill({ status: 503, json: { error: "Try again shortly." } });
+  });
+  const save = page.getByRole("button", { name: "Schedule game", exact: true });
+  await save.click();
+  await expect.poll(() => payloads.length).toBe(1);
+  expect(payloads[0]).toMatchObject({ opponentName: "Team Granite" });
+  expect(payloads[0]).not.toHaveProperty("opponentId");
+  await expect(save).toBeEnabled();
+  await page.getByLabel("Opponent TBD", { exact: true }).check();
+  await expect(picker).toBeDisabled();
+  await save.click();
+  await expect.poll(() => payloads.length).toBe(2);
+  expect(payloads[1]).not.toHaveProperty("opponentId");
+  expect(payloads[1]).not.toHaveProperty("opponentName");
+  expect(payloads[1]).toMatchObject({ config: { awayName: "Opponent TBD" } });
+});
+
+test("edit game preserves the current opponent and allows selecting a saved team", async ({
+  page,
+}) => {
+  await expect(
+    page.getByRole("heading", { name: "Edit game", exact: true }),
+  ).toBeVisible();
+  const picker = page.getByLabel("Team 2 — Opponent", { exact: true });
+  await expect(picker).toHaveValue("opponent");
+  const payloads: Record<string, unknown>[] = [];
+  await page.route("**/api/team-schedule", async (route) => {
+    payloads.push(route.request().postDataJSON());
+    await route.fulfill({ status: 503, json: { error: "Try again shortly." } });
+  });
+  const save = page.getByRole("button", { name: "Save changes", exact: true });
+  await save.click();
+  await expect.poll(() => payloads.length).toBe(1);
+  expect(payloads[0]).toMatchObject({
+    operation: "updateGame",
+    opponentId: "opponent",
+  });
+  await expect(save).toBeEnabled();
+  await picker.selectOption({ label: "Team Wright" });
+  await save.click();
+  await expect.poll(() => payloads.length).toBe(2);
+  expect(payloads[1]).toMatchObject({
+    operation: "updateGame",
+    opponentId: "77777777-7777-4777-8777-777777777777",
   });
 });

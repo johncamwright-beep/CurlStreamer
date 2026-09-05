@@ -437,7 +437,7 @@ function GameCard({
           <div>
             {!completed && !closed && (
               <Link className="btn-secondary" href={`/games/${game.id}/edit`}>
-                Edit schedule
+                Edit game
               </Link>
             )}
             <GameDeletionControl gameId={game.id} title={title} matchup="" />

@@ -62,6 +62,9 @@ export default async function TrashPage() {
                   gameId={game.game_id}
                   title={title}
                   matchup=""
+                  cleanupStatus={game.cleanup_status}
+                  cleanupAttempts={game.cleanup_attempts}
+                  cleanupLastError={game.cleanup_last_error}
                 />
               </div>
             </article>

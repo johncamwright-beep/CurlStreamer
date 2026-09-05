@@ -10,6 +10,7 @@ import {
   type CompletionCredential,
 } from "@/lib/game-completion";
 import { terminateGameLiveKit } from "@/lib/providers/livekit";
+import { listCameraIdentityGenerations } from "@/lib/store";
 import { youtubeWatchUrlSchema } from "@/lib/youtube-watch";
 import { readAccessToken } from "@/lib/tokens";
 
@@ -76,7 +77,8 @@ async function cleanup(gameId: string, authority: CompletionCredential) {
     return existing.value;
   let providerError: string | undefined;
   try {
-    await terminateGameLiveKit(gameId);
+    const generations = await listCameraIdentityGenerations(gameId);
+    await terminateGameLiveKit(gameId, generations);
   } catch {
     providerError = "LiveKit room shutdown was not confirmed";
   }

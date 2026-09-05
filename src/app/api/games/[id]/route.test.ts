@@ -642,7 +642,7 @@ describe("GET /api/games/[id] over HTTP", () => {
     expect(mocks.updateGame).toHaveBeenCalledWith(
       testGameId,
       { type: "camera-health", role: "camera-home", phase: "live" },
-      claimant,
+      { claim: claimant, generation: undefined },
     );
   });
 });

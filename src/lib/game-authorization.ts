@@ -9,6 +9,7 @@ import {
 } from "@/lib/team-games";
 import { getGame } from "@/lib/store";
 import { readAccessToken } from "@/lib/tokens";
+import type { GameState } from "@/lib/types";
 
 export type GameAccountRole = ActiveTeam["role"];
 export type ExistingAccess = Awaited<ReturnType<typeof readAccessToken>>;
@@ -27,6 +28,20 @@ export type GameAuthorization =
       /** Only a successfully checked, credential-free request may read Broadcast. */
       anonymous?: true;
     };
+
+export function participantAccessMatches(
+  game: GameState,
+  access: ExistingAccess,
+) {
+  if (!access.role || !access.deviceId) return false;
+  const currentGeneration = game.claimGenerations?.[access.role] ?? 0;
+  return (
+    game.claims[access.role] === access.deviceId &&
+    (access.assignmentGeneration === undefined
+      ? currentGeneration === 0
+      : access.assignmentGeneration === currentGeneration)
+  );
+}
 
 /** One authority for the verified-account OR existing-token decision. */
 export async function authorizeGame(
@@ -108,9 +123,7 @@ export async function authorizeGame(
           return { ok: false, reason: "closed" };
         if (
           access.purpose === "participant" &&
-          (!access.role ||
-            !access.deviceId ||
-            game.claims[access.role] !== access.deviceId)
+          !participantAccessMatches(game, access)
         )
           return { ok: false, reason: "released" };
         return { ok: true, via: "token", access };

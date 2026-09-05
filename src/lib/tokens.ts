@@ -24,18 +24,39 @@ async function issueAccessToken(
   expiresIn: string,
   role?: Role,
   deviceId?: string,
+  assignmentGeneration?: number,
+  tokenId = crypto.randomUUID(),
 ) {
-  return new SignJWT({ gameId, purpose, role, deviceId })
+  return new SignJWT({
+    gameId,
+    purpose,
+    role,
+    deviceId,
+    assignmentGeneration,
+  })
     .setProtectedHeader({ alg: "HS256" })
     .setIssuedAt()
-    .setJti(crypto.randomUUID())
+    .setJti(tokenId)
     .setExpirationTime(expiresIn)
     .sign(signingSecret());
 }
 
 /** Shareable invitations are brief and exchange once a device claims a role. */
-export function issueRoleToken(gameId: string, role: Role) {
-  return issueAccessToken(gameId, "invitation", "30m", role);
+export function issueRoleToken(
+  gameId: string,
+  role: Role,
+  invitationId?: string,
+  assignmentGeneration?: number,
+) {
+  return issueAccessToken(
+    gameId,
+    "invitation",
+    "30m",
+    role,
+    undefined,
+    assignmentGeneration,
+    invitationId,
+  );
 }
 
 export function issueChooserToken(gameId: string) {
@@ -47,8 +68,16 @@ export function issueParticipantToken(
   gameId: string,
   role: Role,
   deviceId: string,
+  assignmentGeneration?: number,
 ) {
-  return issueAccessToken(gameId, "participant", "6h", role, deviceId);
+  return issueAccessToken(
+    gameId,
+    "participant",
+    "6h",
+    role,
+    deviceId,
+    assignmentGeneration,
+  );
 }
 
 export function issueOrganizerToken(gameId: string) {
@@ -62,6 +91,8 @@ export async function readAccessToken(token: string) {
     purpose: AccessPurpose;
     role?: Role;
     deviceId?: string;
+    assignmentGeneration?: number;
+    jti?: string;
     iat?: number;
     exp?: number;
   };

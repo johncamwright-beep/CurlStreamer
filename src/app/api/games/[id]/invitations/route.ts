@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { participantUrl } from "@/lib/participant-links";
 import { issueChooserToken, issueRoleToken } from "@/lib/tokens";
+import { prepareRoleInvitation } from "@/lib/store";
 import {
   authorizeGame,
   operatorRoles,
@@ -35,16 +36,31 @@ export async function POST(
     !authorization.access.role;
   if (parsed.data === "chooser" && chooserExchange)
     return NextResponse.json({ error: "Not authorized" }, { status: 403 });
-  const token =
-    parsed.data === "chooser"
-      ? await issueChooserToken(id)
-      : await issueRoleToken(id, parsed.data);
+  const expiresAt = new Date(Date.now() + 1_800_000).toISOString();
+  let token: string;
+  if (parsed.data === "chooser") token = await issueChooserToken(id);
+  else {
+    const invitationId = crypto.randomUUID();
+    const prepared = await prepareRoleInvitation(
+      id,
+      parsed.data,
+      invitationId,
+      expiresAt,
+    );
+    if (prepared.error)
+      return NextResponse.json({ error: prepared.error }, { status: 409 });
+    token = await issueRoleToken(
+      id,
+      parsed.data,
+      invitationId,
+      prepared.generation,
+    );
+  }
   const parameter = parsed.data === "chooser" ? "chooser" : "token";
   const url = participantUrl(
     request,
     `/join/${encodeURIComponent(id)}?${parameter}=${encodeURIComponent(token)}`,
   );
-  const expiresAt = new Date(Date.now() + 1_800_000).toISOString();
   return NextResponse.json(
     { token, url, expiresIn: 1800, expiresAt },
     { headers: { "cache-control": "no-store" } },

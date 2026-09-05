@@ -55,6 +55,8 @@ export interface GameState {
   cameraHealth?: Partial<Record<"camera-home" | "camera-away", CameraHealth>>;
   cameraFraming?: Partial<Record<"camera-home" | "camera-away", CameraFraming>>;
   claims: Partial<Record<Role, string>>;
+  /** Opaque server-issued authority epochs; absent means legacy generation 0. */
+  claimGenerations?: Partial<Record<Role, number>>;
   sponsors: Sponsor[];
   sponsorMode: {
     active: boolean;

@@ -13,6 +13,17 @@ import { GameStateConflictError } from "../game-state-conflict";
 const storePath =
   process.env.CURLCAST_MOCK_STORE_PATH || join(tmpdir(), "curlcast-games.json");
 const lockPath = `${storePath}.lock`;
+// Development-only authority metadata. Production uses PostgreSQL 0019.
+const invitations = new Map<
+  string,
+  {
+    gameId: string;
+    role: keyof GameState["connections"];
+    generation: number;
+    expiresAt: string;
+    claimant?: string;
+  }
+>();
 
 function readGames() {
   try {
@@ -88,43 +99,130 @@ export function createGame(config: GameConfig) {
 export function getGame(id: string) {
   return readGames().get(id);
 }
+export function prepareRoleInvitation(
+  id: string,
+  role: keyof GameState["connections"],
+  invitationId: string,
+  expiresAt: string,
+) {
+  return mutate((games) => {
+    const game = games.get(id);
+    if (!game || game.status !== "active" || game.claims[role])
+      return { error: "This invitation could not be created." };
+    game.claimGenerations ??= {};
+    const generation = (game.claimGenerations[role] ?? 0) + 1;
+    game.claimGenerations[role] = generation;
+    for (const [key, invitation] of invitations)
+      if (
+        invitation.gameId === id &&
+        invitation.role === role &&
+        !invitation.claimant
+      )
+        invitations.delete(key);
+    invitations.set(invitationId, { gameId: id, role, generation, expiresAt });
+    return { generation };
+  });
+}
 export function claimRole(
   id: string,
   role: keyof GameState["connections"],
   claimant: string,
+  invitation: {
+    id: string;
+    expectedGeneration?: number;
+    expiresAt: string;
+  },
 ) {
   return mutate((games) => {
     const game = games.get(id);
     if (!game) return { error: "Game not found" };
     if (game.status !== "active") return { error: "This game is closed." };
+    const generation = game.claimGenerations?.[role] ?? 0;
+    let registered = invitations.get(invitation.id);
+    if (!registered) {
+      if (invitation.expectedGeneration !== undefined || generation !== 0)
+        return { error: "This invitation is stale." };
+      registered = {
+        gameId: id,
+        role,
+        generation: 0,
+        expiresAt: invitation.expiresAt,
+      };
+      invitations.set(invitation.id, registered);
+    }
+    if (
+      registered.gameId !== id ||
+      registered.role !== role ||
+      registered.generation !== generation ||
+      registered.expiresAt <= new Date().toISOString() ||
+      (invitation.expectedGeneration !== undefined &&
+        invitation.expectedGeneration !== generation)
+    )
+      return { error: "This invitation is stale." };
+    if (registered.claimant)
+      return registered.claimant === claimant && game.claims[role] === claimant
+        ? { game, generation }
+        : { error: "This invitation has already been used." };
     if (game.claims[role] && game.claims[role] !== claimant)
       return { error: "This role is already in use." };
     game.claims[role] = claimant;
-    return { game };
+    registered.claimant = claimant;
+    return { game, generation };
   });
 }
 export function releaseRole(
   id: string,
   role: "camera-home" | "camera-away",
-  expectedClaim?: string,
+  expectedClaim: string,
+  expectedGeneration: number,
 ) {
   return mutate((games) => {
     const game = games.get(id);
     if (!game) return { error: "Game not found" };
     const current = game.claims[role];
     if (!current) return { game, released: false };
-    if (expectedClaim && current !== expectedClaim)
+    const generation = game.claimGenerations?.[role] ?? 0;
+    if (current !== expectedClaim || generation !== expectedGeneration)
       return { error: "Camera claim changed" };
+    game.claimGenerations ??= {};
+    const releasedGeneration = generation;
+    game.claimGenerations[role] = releasedGeneration + 1;
     delete game.claims[role];
     game.connections[role] = false;
     if (game.cameraHealth) delete game.cameraHealth[role];
-    return { game, released: true };
+    for (const [key, invitation] of invitations)
+      if (
+        invitation.gameId === id &&
+        invitation.role === role &&
+        !invitation.claimant
+      )
+        invitations.delete(key);
+    return { game, released: true, releasedGeneration };
   });
+}
+
+export function listCameraIdentityGenerations(id: string) {
+  const result: Partial<Record<"camera-home" | "camera-away", number[]>> = {};
+  for (const invitation of invitations.values()) {
+    if (
+      invitation.gameId !== id ||
+      !invitation.claimant ||
+      (invitation.role !== "camera-home" &&
+        invitation.role !== "camera-away") ||
+      invitation.generation <= 0
+    )
+      continue;
+    const role = invitation.role;
+    const values = (result[role] ??= []);
+    if (!values.includes(invitation.generation))
+      values.push(invitation.generation);
+  }
+  return result;
 }
 export function updateGame(
   id: string,
   action: z.infer<typeof actionSchema>,
-  expectedClaim?: string,
+  expectedAuthority?: { claim?: string; generation?: number },
 ) {
   return mutate((games) => {
     const game = games.get(id);
@@ -135,8 +233,12 @@ export function updateGame(
     }
     if (
       (action.type === "camera-health" || action.type === "connection") &&
-      expectedClaim !== undefined &&
-      game.claims[action.role] !== expectedClaim
+      expectedAuthority !== undefined &&
+      (game.claims[action.role] !== expectedAuthority.claim ||
+        (expectedAuthority.generation === undefined
+          ? (game.claimGenerations?.[action.role] ?? 0) !== 0
+          : (game.claimGenerations?.[action.role] ?? 0) !==
+            expectedAuthority.generation))
     )
       throw new GameStateConflictError("Camera assignment changed");
     const now = Date.now();

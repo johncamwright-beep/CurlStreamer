@@ -26,6 +26,7 @@ const mocks = vi.hoisted(() => ({
   recordCleanup: vi.fn(),
   readSummary: vi.fn(),
   terminate: vi.fn(),
+  listGenerations: vi.fn(),
   readToken: vi.fn(),
 }));
 vi.mock("@/lib/game-completion", () => ({
@@ -38,6 +39,9 @@ vi.mock("@/lib/game-completion", () => ({
 }));
 vi.mock("@/lib/providers/livekit", () => ({
   terminateGameLiveKit: mocks.terminate,
+}));
+vi.mock("@/lib/store", () => ({
+  listCameraIdentityGenerations: mocks.listGenerations,
 }));
 vi.mock("@/lib/tokens", () => ({ readAccessToken: mocks.readToken }));
 
@@ -82,6 +86,10 @@ describe("End Game route", () => {
     });
     mocks.readSummary.mockResolvedValue(summary);
     mocks.terminate.mockResolvedValue(undefined);
+    mocks.listGenerations.mockResolvedValue({
+      "camera-home": [1, 3],
+      "camera-away": [2],
+    });
   });
 
   it("falls back to a verified account when a stored bearer is a scorer", async () => {
@@ -127,6 +135,10 @@ describe("End Game route", () => {
     expect(await response.json()).toMatchObject({
       completion: summary,
       cleanup: { status: "failed", attempts: 1 },
+    });
+    expect(mocks.terminate).toHaveBeenCalledWith(gameId, {
+      "camera-home": [1, 3],
+      "camera-away": [2],
     });
   });
 

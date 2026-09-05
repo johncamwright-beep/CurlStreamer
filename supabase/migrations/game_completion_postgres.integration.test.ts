@@ -623,10 +623,8 @@ describe.skipIf(!enabled)("game completion PostgreSQL transactions", () => {
     const state = psql(
       `select state from public.game_states where game_id='${gameId}'`,
     ).stdout;
-    const writerState = JSON.parse(state) as {
-      claims: Record<string, string>;
-    };
-    writerState.claims["camera-home"] = "writer-first";
+    const writerState = JSON.parse(state) as { audioMuted: boolean };
+    writerState.audioMuted = !writerState.audioMuted;
     const writer = heldTransaction(
       `select public.write_game_state(
         '${gameId}',${version},${sqlJson(writerState)});`,

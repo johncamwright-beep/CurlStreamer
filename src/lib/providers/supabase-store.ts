@@ -107,6 +107,22 @@ export async function getGame(id: string) {
   return record?.state;
 }
 
+export async function prepareRoleInvitation(
+  id: string,
+  role: keyof GameState["connections"],
+  invitationId: string,
+  expiresAt: string,
+) {
+  const { data, error } = await supabase().rpc("prepare_game_role_invitation", {
+    p_game_id: id,
+    p_role: role,
+    p_invitation_id: invitationId,
+    p_expires_at: expiresAt,
+  });
+  if (error) return { error: "This invitation could not be created." };
+  return { generation: Number(data) };
+}
+
 async function getGameRecord(id: string) {
   const { data, error } = await supabase()
     .from("game_states")
@@ -122,51 +138,66 @@ export async function claimRole(
   id: string,
   role: keyof GameState["connections"],
   claimant: string,
+  invitation: {
+    id: string;
+    expectedGeneration?: number;
+    expiresAt: string;
+  },
 ) {
-  for (let attempt = 0; attempt < 3; attempt += 1) {
-    const record = await getGameRecord(id);
-    if (!record) return { error: "Game not found" };
-    const game = record.state;
-    if (game.status !== "active") return { error: "This game is closed." };
-    const current = game.claims[role];
-    if (current === claimant) return { game };
-    if (current) return { error: "This role is already in use." };
-    game.claims[role] = claimant;
-    try {
-      await save(game, record.version);
-      return { game };
-    } catch (error) {
-      if (!isGameStateConflictError(error)) throw error;
-    }
-  }
-  return { error: "The game changed before this role could be claimed." };
+  const { data, error } = await supabase().rpc("claim_game_role", {
+    p_game_id: id,
+    p_role: role,
+    p_invitation_id: invitation.id,
+    p_expected_generation: invitation.expectedGeneration ?? null,
+    p_claimant: claimant,
+    p_expires_at: invitation.expiresAt,
+  });
+  const row = (data as Record<string, unknown>[] | null)?.[0];
+  if (error || !row)
+    return { error: "This invitation is stale or the role is already in use." };
+  return {
+    game: row.game_state as GameState,
+    generation: Number(row.assignment_generation),
+  };
 }
 
 export async function releaseRole(
   id: string,
   role: "camera-home" | "camera-away",
-  expectedClaim?: string,
+  expectedClaim: string,
+  expectedGeneration: number,
 ) {
-  let targetClaim = expectedClaim;
-  for (let attempt = 0; attempt < 3; attempt += 1) {
-    const record = await getGameRecord(id);
-    if (!record) return { error: "Game not found" };
-    const game = record.state;
-    const current = game.claims[role];
-    if (!current) return { game, released: false };
-    targetClaim ??= current;
-    if (current !== targetClaim) return { error: "Camera claim changed" };
-    delete game.claims[role];
-    game.connections[role] = false;
-    if (game.cameraHealth) delete game.cameraHealth[role];
-    try {
-      await save(game, record.version);
-      return { game, released: true };
-    } catch (error) {
-      if (!isGameStateConflictError(error)) throw error;
-    }
+  const { data, error } = await supabase().rpc("release_game_role", {
+    p_game_id: id,
+    p_role: role,
+    p_expected_claim: expectedClaim,
+    p_expected_generation: expectedGeneration,
+  });
+  const row = (data as Record<string, unknown>[] | null)?.[0];
+  if (error || !row) return { error: "Camera claim changed" };
+  return {
+    game: row.game_state as GameState,
+    released: Boolean(row.released),
+    releasedGeneration: Number(row.released_generation),
+  };
+}
+
+export async function listCameraIdentityGenerations(id: string) {
+  const { data, error } = await supabase().rpc(
+    "list_game_camera_identity_generations",
+    { p_game_id: id },
+  );
+  if (error) databaseError("camera identity lookup", error);
+  const generations: Partial<Record<"camera-home" | "camera-away", number[]>> =
+    {};
+  for (const row of (data as Record<string, unknown>[] | null) ?? []) {
+    const role = row.role as "camera-home" | "camera-away";
+    if (role !== "camera-home" && role !== "camera-away") continue;
+    const generation = Number(row.generation);
+    if (!Number.isSafeInteger(generation) || generation <= 0) continue;
+    (generations[role] ??= []).push(generation);
   }
-  return { error: "Camera claim changed" };
+  return generations;
 }
 
 async function save(game: GameState, expectedVersion: number) {
@@ -288,13 +319,17 @@ function applyAction(game: GameState, action: z.infer<typeof actionSchema>) {
 export async function updateGame(
   id: string,
   action: z.infer<typeof actionSchema>,
-  expectedClaim?: string,
+  expectedAuthority?: { claim?: string; generation?: number },
 ) {
   const retryable =
     action.type === "camera-health" || action.type === "connection";
   const attempts = retryable ? 3 : 1;
-  let capturedClaim = expectedClaim;
-  let claimCaptured = expectedClaim !== undefined;
+  let capturedClaim = expectedAuthority?.claim;
+  let capturedGeneration = expectedAuthority?.generation;
+  let authorityCaptured = expectedAuthority !== undefined;
+  const requiresLegacyGeneration =
+    expectedAuthority !== undefined &&
+    expectedAuthority.generation === undefined;
 
   for (let attempt = 0; attempt < attempts; attempt += 1) {
     const record = await getGameRecord(id);
@@ -306,11 +341,19 @@ export async function updateGame(
     }
     if (retryable) {
       const currentClaim = game.claims[action.role];
-      if (!claimCaptured) {
+      const currentGeneration = game.claimGenerations?.[action.role] ?? 0;
+      if (!authorityCaptured) {
         capturedClaim = currentClaim;
-        claimCaptured = true;
+        capturedGeneration = currentGeneration;
+        authorityCaptured = true;
       }
       if (currentClaim !== capturedClaim)
+        throw new GameStateConflictError("Camera assignment changed");
+      if (
+        requiresLegacyGeneration
+          ? currentGeneration !== 0
+          : currentGeneration !== capturedGeneration
+      )
         throw new GameStateConflictError("Camera assignment changed");
     }
 

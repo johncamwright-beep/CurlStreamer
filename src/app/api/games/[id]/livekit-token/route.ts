@@ -11,8 +11,11 @@ import {
   authorizeGame,
   operatorRoles,
   authorizationError,
+  participantAccessMatches,
   type GameAuthorization,
+  type ExistingAccess,
 } from "@/lib/game-authorization";
+import { listCameraIdentityGenerations } from "@/lib/store";
 
 export const dynamic = "force-dynamic";
 const paramsSchema = z.object({ id: z.string().regex(/^[a-zA-Z0-9-]{1,64}$/) });
@@ -61,6 +64,8 @@ export async function POST(
     );
 
   let role: LiveKitAccess | undefined;
+  let assignmentGeneration: number | undefined;
+  let participantAccess: ExistingAccess | undefined;
   if (capability.data === "public-viewer") {
     const authorization = await authorizeGame(request, id, {
       accountRoles: [],
@@ -94,6 +99,8 @@ export async function POST(
     )
       return credentialResponse({ error: "Access denied" }, { status: 403 });
     role = authorization.access.role;
+    assignmentGeneration = authorization.access.assignmentGeneration;
+    participantAccess = authorization.access;
   } else if (capability.data === "preview-subscribe") {
     const authorization = await authorizeGame(request, id, {
       accountRoles: operatorRoles,
@@ -103,6 +110,11 @@ export async function POST(
     });
     if (!authorization.ok) return deniedAuthorization(authorization);
     role = "preview-subscriber";
+    if (
+      authorization.via === "token" &&
+      authorization.access.purpose === "participant"
+    )
+      participantAccess = authorization.access;
   } else {
     // Rollout compatibility: a valid claimed camera bearer wins even when an
     // account cookie is present. Older camera pages omit `capability`.
@@ -139,6 +151,14 @@ export async function POST(
               authorization.access.role === "camera-away"
             ? authorization.access.role
             : undefined;
+    if (
+      authorization.ok &&
+      authorization.via === "token" &&
+      authorization.access.purpose === "participant"
+    ) {
+      participantAccess = authorization.access;
+      assignmentGeneration = authorization.access.assignmentGeneration;
+    }
   }
 
   if (role === "public-viewer" || role === "broadcast-viewer") {
@@ -174,19 +194,33 @@ export async function POST(
         { status: denied.status },
       );
     }
-    const issued = await issueLiveKitToken(id, role);
+    const issued =
+      assignmentGeneration === undefined
+        ? await issueLiveKitToken(id, role)
+        : await issueLiveKitToken(id, role, assignmentGeneration);
     // Close the authorization/signing race. A token signed after completion
     // cleanup is never returned, and cleanup is repeated so it cannot reopen a
     // just-deleted room before expiry.
     const after = await readGame(id);
     if (after.kind !== "active") {
-      await terminateGameLiveKit(id).catch(() => {});
+      try {
+        const generations = await listCameraIdentityGenerations(id);
+        await terminateGameLiveKit(id, generations);
+      } catch {
+        // Lifecycle denial remains authoritative if cleanup is unavailable.
+      }
       const reason = after.kind === "completed" ? "closed" : after.kind;
       const denied = authorizationError({ ok: false, reason });
       return credentialResponse(
         { error: denied.error },
         { status: denied.status },
       );
+    }
+    if (
+      participantAccess &&
+      !participantAccessMatches(after.game, participantAccess)
+    ) {
+      return deniedAuthorization({ ok: false, reason: "released" });
     }
     return credentialResponse(issued);
   } catch (error) {

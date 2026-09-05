@@ -5,6 +5,7 @@ const mocks = vi.hoisted(() => ({
   getGame: vi.fn(),
   issueChooserToken: vi.fn(),
   issueRoleToken: vi.fn(),
+  prepareRoleInvitation: vi.fn(),
 }));
 
 vi.mock("@/lib/game-authorization", () => ({
@@ -20,7 +21,10 @@ vi.mock("@/lib/game-authorization", () => ({
     status: ["deleted", "closed"].includes(result.reason) ? 410 : 401,
   }),
 }));
-vi.mock("@/lib/store", () => ({ getGame: mocks.getGame }));
+vi.mock("@/lib/store", () => ({
+  getGame: mocks.getGame,
+  prepareRoleInvitation: mocks.prepareRoleInvitation,
+}));
 vi.mock("@/lib/tokens", () => ({
   issueChooserToken: mocks.issueChooserToken,
   issueRoleToken: mocks.issueRoleToken,
@@ -51,6 +55,7 @@ describe("game invitations", () => {
     mocks.getGame.mockResolvedValue({ status: "active" });
     mocks.issueChooserToken.mockResolvedValue("chooser-secret");
     mocks.issueRoleToken.mockResolvedValue("role-secret");
+    mocks.prepareRoleInvitation.mockResolvedValue({ generation: 3 });
   });
 
   it.each([
@@ -94,7 +99,18 @@ describe("game invitations", () => {
         params: Promise.resolve({ id: "game-1" }),
       });
       expect(response.status).toBe(200);
-      expect(mocks.issueRoleToken).toHaveBeenLastCalledWith("game-1", role);
+      expect(mocks.prepareRoleInvitation).toHaveBeenLastCalledWith(
+        "game-1",
+        role,
+        expect.any(String),
+        expect.any(String),
+      );
+      expect(mocks.issueRoleToken).toHaveBeenLastCalledWith(
+        "game-1",
+        role,
+        expect.any(String),
+        3,
+      );
     }
   });
 

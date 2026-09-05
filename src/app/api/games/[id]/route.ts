@@ -8,6 +8,7 @@ import {
   authorizationError,
   authorizeGame,
   operatorRoles,
+  participantAccessMatches,
   type GameAuthorization,
 } from "@/lib/game-authorization";
 import {
@@ -111,8 +112,7 @@ export async function GET(
       authorization.via === "token" &&
       authorization.access.purpose === "participant"
     ) {
-      const { role, deviceId } = authorization.access;
-      if (!role || !deviceId || game.claims[role] !== deviceId)
+      if (!participantAccessMatches(game, authorization.access))
         return readFailure("released");
     }
     if (publicBroadcast) {
@@ -211,12 +211,15 @@ export async function PATCH(
     );
   let game;
   try {
-    const expectedClaim =
+    const expectedAuthority =
       authorization.via === "token" &&
       authorization.access.purpose === "participant"
-        ? authorization.access.deviceId
+        ? {
+            claim: authorization.access.deviceId,
+            generation: authorization.access.assignmentGeneration,
+          }
         : undefined;
-    game = await updateGame(id, body.data, expectedClaim);
+    game = await updateGame(id, body.data, expectedAuthority);
   } catch (error) {
     const message = error instanceof Error ? error.message : "";
     if (message.includes("Hammer must be selected"))

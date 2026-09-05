@@ -40,9 +40,13 @@ describe("explicit organizer camera release route", () => {
       via: "token",
       access: { purpose: "organizer", gameId: "game-1" },
     });
-    mocks.getGame.mockResolvedValue({ claims: { "camera-home": "claimed" } });
+    mocks.getGame.mockResolvedValue({
+      claims: { "camera-home": "claimed" },
+      claimGenerations: { "camera-home": 3 },
+    });
     mocks.releaseRole.mockResolvedValue({
       released: true,
+      releasedGeneration: 3,
       game: { claims: {} },
     });
   });
@@ -91,12 +95,29 @@ describe("explicit organizer camera release route", () => {
     expect(mocks.removeCameraParticipant).toHaveBeenCalledWith(
       "game-1",
       "camera-home",
+      3,
     );
     expect(mocks.releaseRole).toHaveBeenCalledWith(
       "game-1",
       "camera-home",
       "claimed",
+      3,
     );
+  });
+
+  it("does not clean up or release a newer same-device generation", async () => {
+    mocks.releaseRole.mockResolvedValue({ error: "Camera claim changed" });
+    const response = await POST(request(), {
+      params: Promise.resolve({ id: "game-1" }),
+    });
+    expect(response.status).toBe(409);
+    expect(mocks.releaseRole).toHaveBeenCalledWith(
+      "game-1",
+      "camera-home",
+      "claimed",
+      3,
+    );
+    expect(mocks.removeCameraParticipant).not.toHaveBeenCalled();
   });
 
   it("releases an offline claim when LiveKit reports participant not found", async () => {
@@ -108,15 +129,19 @@ describe("explicit organizer camera release route", () => {
     expect(mocks.releaseRole).toHaveBeenCalledOnce();
   });
 
-  it("does not clear a live claim when LiveKit removal fails", async () => {
+  it("keeps the database revocation authoritative when provider removal fails", async () => {
     mocks.removeCameraParticipant.mockRejectedValue(
       new Error("service failed"),
     );
     vi.spyOn(console, "error").mockImplementation(() => undefined);
-    expect(
-      (await POST(request(), { params: Promise.resolve({ id: "game-1" }) }))
-        .status,
-    ).toBe(503);
-    expect(mocks.releaseRole).not.toHaveBeenCalled();
+    const response = await POST(request(), {
+      params: Promise.resolve({ id: "game-1" }),
+    });
+    expect(response.status).toBe(202);
+    expect(await response.json()).toMatchObject({
+      released: true,
+      providerCleanup: { status: "failed" },
+    });
+    expect(mocks.releaseRole).toHaveBeenCalledOnce();
   });
 });

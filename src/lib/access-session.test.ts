@@ -1,9 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
+  cameraPublishAccessToken,
   canManageCompletion,
+  gameAccessToken,
   hasOrganizerAccess,
   hasScoringAccess,
   organizerAccessToken,
+  previewSubscribeAccessToken,
   preserveAndStoreParticipantAccess,
 } from "./access-session";
 
@@ -21,6 +24,44 @@ function storage(initial: Record<string, string> = {}) {
 }
 
 describe("browser access sessions", () => {
+  it("selects the preserved matching camera token instead of organizer authority", () => {
+    const organizer = token({ purpose: "organizer", gameId: "game-1" });
+    const camera = token({
+      purpose: "participant",
+      gameId: "game-1",
+      role: "camera-home",
+    });
+    const store = storage({
+      "curlcast-access-game-1": organizer,
+      "curlcast-participant-access-game-1": camera,
+    });
+
+    expect(cameraPublishAccessToken(store, "game-1", "camera-home")).toBe(
+      camera,
+    );
+    expect(cameraPublishAccessToken(store, "game-1", "camera-away")).toBe(
+      undefined,
+    );
+    expect(previewSubscribeAccessToken(store, "game-1")).toBe(organizer);
+  });
+
+  it("ignores expired and cross-game credentials", () => {
+    const expired = token({
+      purpose: "participant",
+      gameId: "game-1",
+      role: "scorer",
+      exp: 1,
+    });
+    const otherGame = token({ purpose: "organizer", gameId: "game-2" });
+    const store = storage({
+      "curlcast-access-game-1": expired,
+      "curlcast-organizer-access-game-1": otherGame,
+    });
+
+    expect(gameAccessToken(store, "game-1")).toBeUndefined();
+    expect(previewSubscribeAccessToken(store, "game-1")).toBeUndefined();
+  });
+
   it.each([
     ["owner", false, true],
     ["team_admin", false, true],

@@ -52,6 +52,38 @@ describe("LiveKit grants", () => {
     });
   });
 
+  it.each(["preview-subscriber", "public-viewer"] as const)(
+    "limits %s to subscription without publication or data",
+    (access) => {
+      expect(liveKitVideoGrant("game-1", access)).toEqual({
+        room: "game-game-1",
+        roomJoin: true,
+        canPublish: false,
+        canSubscribe: true,
+        canPublishData: false,
+      });
+    },
+  );
+
+  it.each(["preview-subscriber", "public-viewer"] as const)(
+    "signs %s JWTs with subscriber-only video grants",
+    async (access) => {
+      process.env.NEXT_PUBLIC_LIVEKIT_URL = "wss://live.example.test";
+      process.env.LIVEKIT_API_KEY = "test-key";
+      process.env.LIVEKIT_API_SECRET = "super-secret-value";
+      const claims = decodeJwt(
+        (await issueLiveKitToken("game-1", access)).token,
+      );
+      expect(claims.video).toEqual({
+        room: "game-game-1",
+        roomJoin: true,
+        canPublish: false,
+        canSubscribe: true,
+        canPublishData: false,
+      });
+    },
+  );
+
   it("limits an anonymous Broadcast viewer to game-room subscription only", () => {
     const grant = liveKitVideoGrant("game-1", "broadcast-viewer");
     expect(grant).toEqual({

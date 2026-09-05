@@ -11,11 +11,16 @@ describe("camera connection lifecycle", () => {
     const acquisition = page.indexOf("acquireVerifiedPortraitCamera(");
     expect(acquisition).toBeGreaterThan(0);
     expect(
-      page.indexOf("fetch(`/api/games/${id}/livekit-token`"),
+      page.indexOf("/api/games/${id}/livekit-token?capability=camera-publish"),
     ).toBeGreaterThan(acquisition);
     expect(page.indexOf("await nextRoom.connect")).toBeGreaterThan(acquisition);
     expect(page.match(/acquireVerifiedPortraitCamera\(/g)).toHaveLength(1);
     expect(page).not.toContain("createLocalTracks");
+  });
+
+  it("uses only the matching preserved camera participant credential", () => {
+    expect(page).toContain("cameraPublishAccessToken(localStorage, id, role)");
+    expect(page).not.toContain("localStorage.getItem(`curlcast-access-${id}`)");
   });
 
   it("does not clean up when a browser permission sheet hides the page", () => {

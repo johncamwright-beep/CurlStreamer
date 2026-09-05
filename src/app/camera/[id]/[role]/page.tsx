@@ -25,6 +25,7 @@ import {
   type ConnectionState,
   type ConnectionEvent,
 } from "@/lib/livekit-state";
+import { cameraPublishAccessToken } from "@/lib/access-session";
 
 const labels: Record<ConnectionState, string> = {
   idle: "Not connected",
@@ -262,13 +263,16 @@ export default function Camera({
       room.current = nextRoom;
 
       stage = "token fetching";
-      const access = localStorage.getItem(`curlcast-access-${id}`);
+      const access = cameraPublishAccessToken(localStorage, id, role);
       let response: Response;
       try {
-        response = await fetch(`/api/games/${id}/livekit-token`, {
-          method: "POST",
-          headers: access ? { authorization: `Bearer ${access}` } : {},
-        });
+        response = await fetch(
+          `/api/games/${id}/livekit-token?capability=camera-publish`,
+          {
+            method: "POST",
+            headers: access ? { authorization: `Bearer ${access}` } : {},
+          },
+        );
       } catch {
         throw new Error("Token error: unable to reach the credential service.");
       }

@@ -46,6 +46,17 @@ const cameraRequest = (id = "scheduled-game") =>
     method: "POST",
     headers: { authorization: "Bearer device-bound-participant" },
   });
+const capabilityRequest = (
+  capability: "camera-publish" | "preview-subscribe" | "public-viewer",
+  bearer?: string,
+) =>
+  new Request(
+    `https://preview.example/api/games/scheduled-game/livekit-token?capability=${capability}`,
+    {
+      method: "POST",
+      headers: bearer ? { authorization: `Bearer ${bearer}` } : {},
+    },
+  );
 
 describe("camera LiveKit token route", () => {
   beforeEach(() => {
@@ -86,13 +97,124 @@ describe("camera LiveKit token route", () => {
       request,
       "scheduled-game",
       expect.objectContaining({
-        accountRoles: ["owner", "team_admin", "scorer"],
+        accountRoles: [],
       }),
     );
     expect(mocks.issueLiveKitToken).toHaveBeenCalledWith(
       "scheduled-game",
       "camera-home",
     );
+  });
+
+  it("does not let legacy account fallback replace a released camera bearer", async () => {
+    mocks.authorizeGame
+      .mockResolvedValueOnce({ ok: false, reason: "released" })
+      .mockResolvedValueOnce({ ok: true, via: "account", role: "owner" });
+    const response = await POST(cameraRequest(), {
+      params: Promise.resolve({ id: "scheduled-game" }),
+    });
+    expect(response.status).toBe(401);
+    expect(mocks.authorizeGame).toHaveBeenCalledOnce();
+    expect(mocks.issueLiveKitToken).not.toHaveBeenCalled();
+  });
+
+  it("issues explicit camera-publish using token-only authority", async () => {
+    const request = capabilityRequest(
+      "camera-publish",
+      "device-bound-participant",
+    );
+    const response = await POST(request, {
+      params: Promise.resolve({ id: "scheduled-game" }),
+    });
+    expect(response.status).toBe(200);
+    expect(mocks.authorizeGame).toHaveBeenCalledWith(
+      request,
+      "scheduled-game",
+      expect.objectContaining({ accountRoles: [] }),
+    );
+    expect(mocks.issueLiveKitToken).toHaveBeenCalledWith(
+      "scheduled-game",
+      "camera-home",
+    );
+  });
+
+  it.each(["unauthorized", "released"])(
+    "does not issue camera-publish after %s participant validation",
+    async (reason) => {
+      mocks.authorizeGame.mockResolvedValue({ ok: false, reason });
+      const response = await POST(
+        capabilityRequest("camera-publish", "invalid-camera"),
+        { params: Promise.resolve({ id: "scheduled-game" }) },
+      );
+      expect(response.status).toBe(401);
+      expect(mocks.issueLiveKitToken).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each([
+    ["account", { ok: true, via: "account", role: "owner" }],
+    [
+      "organizer",
+      {
+        ok: true,
+        via: "token",
+        access: { purpose: "organizer", gameId: "scheduled-game" },
+      },
+    ],
+    [
+      "scorer participant",
+      {
+        ok: true,
+        via: "token",
+        access: {
+          purpose: "participant",
+          gameId: "scheduled-game",
+          role: "scorer",
+          deviceId: "scorer-device",
+        },
+      },
+    ],
+  ] as const)(
+    "issues subscribe-only preview access for %s",
+    async (_label, auth) => {
+      mocks.authorizeGame.mockResolvedValue(auth);
+      const response = await POST(capabilityRequest("preview-subscribe"), {
+        params: Promise.resolve({ id: "scheduled-game" }),
+      });
+      expect(response.status).toBe(200);
+      expect(mocks.issueLiveKitToken).toHaveBeenCalledWith(
+        "scheduled-game",
+        "preview-subscriber",
+      );
+    },
+  );
+
+  it("issues explicit credential-free public viewer access", async () => {
+    mocks.authorizeGame.mockResolvedValue({
+      ok: false,
+      reason: "unauthorized",
+      anonymous: true,
+    });
+    const response = await POST(capabilityRequest("public-viewer"), {
+      params: Promise.resolve({ id: "scheduled-game" }),
+    });
+    expect(response.status).toBe(200);
+    expect(mocks.issueLiveKitToken).toHaveBeenCalledWith(
+      "scheduled-game",
+      "public-viewer",
+    );
+  });
+
+  it("rejects public-viewer when account or credential context is present", async () => {
+    mocks.authorizeGame.mockResolvedValue({
+      ok: false,
+      reason: "unauthorized",
+    });
+    const response = await POST(capabilityRequest("public-viewer"), {
+      params: Promise.resolve({ id: "scheduled-game" }),
+    });
+    expect(response.status).toBe(401);
+    expect(mocks.issueLiveKitToken).not.toHaveBeenCalled();
   });
 
   it("does not return a token when completion wins the signing race", async () => {

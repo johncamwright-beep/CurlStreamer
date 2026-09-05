@@ -71,9 +71,13 @@ test("scheduled-game chooser claims Camera 1 and requests LiveKit as the device"
       });
     });
     await context.route(
-      "**/api/games/scheduled-game/livekit-token",
+      "**/api/games/scheduled-game/livekit-token*",
       async (route) => {
         expect(route.request().headers().cookie).toBeUndefined();
+        if (new URL(route.request().url()).searchParams.has("capability"))
+          expect(
+            new URL(route.request().url()).searchParams.get("capability"),
+          ).toBe("camera-publish");
         if (
           route.request().headers().authorization !==
           `Bearer ${participantCredential}`

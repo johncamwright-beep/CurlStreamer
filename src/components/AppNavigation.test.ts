@@ -46,6 +46,8 @@ describe("shared application navigation", () => {
     expect(navigation).toContain(
       '{ href: "/account", label: "Account", icon: "account" }',
     );
+    expect(navigation).toContain('href: "/settings/youtube"');
+    expect(navigation).toContain('label: "YouTube Settings"');
     expect(navigation).toContain(
       '{ href: "/login", label: "Sign in", icon: "account" }',
     );
@@ -56,7 +58,7 @@ describe("shared application navigation", () => {
     expect(navigation).toContain(
       '{ href: "/opponents", label: "Opponents", icon: "opponent" }',
     );
-    expect(navigation).not.toMatch(/Administration|YouTube/);
+    expect(navigation).not.toMatch(/Administration/);
     expect(home).not.toContain("AppNavigation");
     expect(home).toContain('<AuthForm mode="login" action={login} />');
     expect(navigation).toContain("createBrowserSupabaseClient");

@@ -3,7 +3,7 @@ import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { randomUUID } from "crypto";
 import type { z } from "zod";
 import type { actionSchema } from "../schema";
-import { activeEvents, deriveScore } from "../scoring";
+import { applyScoringAction } from "../scoring";
 import type { GameConfig, GameState, ParticipantAuthority } from "../types";
 import {
   GameStateConflictError,
@@ -231,45 +231,12 @@ async function saveScoreEvent(
 
 function applyAction(game: GameState, action: z.infer<typeof actionSchema>) {
   const now = Date.now();
-  let scoreEvent: GameState["scoreEvents"][number] | undefined;
-  if (action.type === "score") {
-    const score = deriveScore(game);
-    if (!score.hammer)
-      throw new Error("Hammer must be selected before scoring");
-    scoreEvent = {
-      id: randomUUID(),
-      at: now,
-      type: "end",
-      score: {
-        end: score.currentEnd,
-        team: action.team,
-        points: action.points,
-        blank: action.blank,
-      },
-    };
-    game.scoreEvents.push(scoreEvent);
-  }
-  if (action.type === "hammer") {
-    scoreEvent = {
-      id: randomUUID(),
-      at: now,
-      type: "hammer",
-      team: action.team,
-    };
-    game.scoreEvents.push(scoreEvent);
-  }
-  if (action.type === "undo") {
-    const target = activeEvents(game.scoreEvents).at(-1);
-    if (target) {
-      scoreEvent = {
-        id: randomUUID(),
-        at: now,
-        type: "undo",
-        targetId: target.id,
-      };
-      game.scoreEvents.push(scoreEvent);
-    }
-  }
+  const scoring =
+    action.type === "score" ||
+    action.type === "hammer" ||
+    action.type === "undo"
+      ? applyScoringAction(game, action, now)
+      : undefined;
   if (action.type === "layout") game.layout = action.layout;
   if (action.type === "camera-framing") {
     game.cameraFraming ??= {};
@@ -313,7 +280,7 @@ function applyAction(game: GameState, action: z.infer<typeof actionSchema>) {
     if (action.paused !== undefined) game.sponsorMode.paused = action.paused;
     game.sponsorMode.startedAt = now;
   }
-  return scoreEvent;
+  return scoring;
 }
 
 export async function updateGame(
@@ -367,9 +334,11 @@ export async function updateGame(
         throw new GameStateConflictError("Camera assignment changed");
     }
 
-    const scoreEvent = applyAction(game, action);
+    const scoring = applyAction(game, action);
+    if (scoring?.idempotent) return game;
     try {
-      if (scoreEvent) await saveScoreEvent(game, record.version, scoreEvent);
+      if (scoring?.event)
+        await saveScoreEvent(game, record.version, scoring.event);
       else await save(game, record.version);
       return game;
     } catch (error) {

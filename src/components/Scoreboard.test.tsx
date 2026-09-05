@@ -48,13 +48,16 @@ describe("hammer scoreboard indicator", () => {
   ] as const)("renders an accessible SVG for %s", (team, name) => {
     const markup = renderToStaticMarkup(<Scoreboard game={game(team)} />);
     expect(markup).toContain(`<svg`);
-    expect(markup).toContain(`aria-label="${name} has hammer"`);
+    expect(markup).toContain(
+      `aria-label="${name}: Last stone advantage (Hammer)"`,
+    );
+    expect(markup).toContain("fill-amber-300");
     expect(markup).not.toContain("HAMMER ·");
   });
 
   it("does not show an indicator while hammer is unassigned", () => {
     expect(
       renderToStaticMarkup(<Scoreboard game={game(null)} />),
-    ).not.toContain("has hammer");
+    ).not.toContain("Last stone advantage");
   });
 });

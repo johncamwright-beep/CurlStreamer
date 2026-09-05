@@ -123,6 +123,86 @@ test("End Game reviews the score and replaces controls with the saved result", a
   });
 });
 
+test("authorized scoring page reviews and confirms End Game", async ({
+  page,
+}, testInfo) => {
+  const game = gameFixture();
+  await page.route(`**/api/games/${testGameId}`, (route) =>
+    route.fulfill({
+      json: game,
+      headers: {
+        "x-curlcast-operator": "true",
+        "x-curlcast-account-role": "owner",
+      },
+    }),
+  );
+  await page.route(`**/api/games/${testGameId}/completion`, async (route) => {
+    if (route.request().method() === "GET") {
+      await route.fulfill({
+        json: { status: "complete", attempts: 1, lastError: null },
+      });
+      return;
+    }
+    const body = route.request().postDataJSON();
+    if (body.action === "review") {
+      await route.fulfill({
+        json: {
+          reviewId: "22222222-2222-4222-8222-222222222222",
+          inputRevision: 7,
+          result: {
+            outcome: "home_win",
+            label: "Home win",
+            totals: { home: 2, away: 0 },
+            ends: [],
+          },
+          youtubeWatchUrl: null,
+        },
+      });
+      return;
+    }
+    await route.fulfill({
+      json: {
+        completion: completedFixture(),
+        cleanup: { status: "complete", attempts: 1, lastError: null },
+      },
+    });
+  });
+
+  await page.goto(`/score/${testGameId}`);
+  await expect(page.getByRole("button", { name: "End Game" })).toBeVisible();
+  await page.screenshot({
+    path: testInfo.outputPath("scoring-end-game-access.png"),
+    fullPage: true,
+  });
+  await page.getByRole("button", { name: "End Game" }).click();
+  await page.getByRole("button", { name: "Review final score" }).click();
+  await expect(page.getByText("Rocks 2 – 0 Stones")).toBeVisible();
+  await page.screenshot({
+    path: testInfo.outputPath("scoring-end-game-confirmation.png"),
+    fullPage: true,
+  });
+  await page.getByRole("button", { name: "Confirm End Game" }).click();
+  await expect(
+    page.getByRole("heading", { name: "Home 3 – 2 Visitors" }),
+  ).toBeVisible();
+});
+
+test("scorer-only scoring access cannot End Game", async ({ page }) => {
+  await page.route(`**/api/games/${testGameId}`, (route) =>
+    route.fulfill({
+      json: gameFixture(),
+      headers: {
+        "x-curlcast-operator": "true",
+        "x-curlcast-account-role": "scorer",
+      },
+    }),
+  );
+
+  await page.goto(`/score/${testGameId}`);
+  await expect(page.getByRole("button", { name: "End Game" })).toHaveCount(0);
+  await expect(page.getByText("Game lifecycle")).toHaveCount(0);
+});
+
 test("completed Broadcast keeps the result in the fixed program canvas", async ({
   page,
 }) => {

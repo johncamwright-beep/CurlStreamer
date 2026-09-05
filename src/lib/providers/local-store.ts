@@ -5,7 +5,7 @@ import { join } from "path";
 import type { GameConfig, GameState, ParticipantAuthority } from "../types";
 import type { z } from "zod";
 import type { actionSchema } from "../schema";
-import { activeEvents, deriveScore } from "../scoring";
+import { applyScoringAction } from "../scoring";
 import { GameStateConflictError } from "../game-state-conflict";
 
 // Development-only persistence lets separate Next.js workers/browser contexts
@@ -276,38 +276,12 @@ export function updateGame(
         );
     }
     const now = Date.now();
-    if (action.type === "score") {
-      const s = deriveScore(game);
-      if (!s.hammer) throw new Error("Hammer must be selected before scoring");
-      game.scoreEvents.push({
-        id: randomUUID(),
-        at: now,
-        type: "end",
-        score: {
-          end: s.currentEnd,
-          team: action.team,
-          points: action.points,
-          blank: action.blank,
-        },
-      });
-    }
-    if (action.type === "hammer")
-      game.scoreEvents.push({
-        id: randomUUID(),
-        at: now,
-        type: "hammer",
-        team: action.team,
-      });
-    if (action.type === "undo") {
-      const target = activeEvents(game.scoreEvents).at(-1);
-      if (target)
-        game.scoreEvents.push({
-          id: randomUUID(),
-          at: now,
-          type: "undo",
-          targetId: target.id,
-        });
-    }
+    if (
+      action.type === "score" ||
+      action.type === "hammer" ||
+      action.type === "undo"
+    )
+      applyScoringAction(game, action, now);
     if (action.type === "layout") game.layout = action.layout;
     if (action.type === "camera-framing") {
       game.cameraFraming ??= {};

@@ -25,7 +25,7 @@ describe("anonymous Broadcast projection consumer", () => {
       expect(projected).toBe(full);
       expect(projected).toContain("END 2");
       expect(projected).toContain("Rocks");
-      expect(projected).toContain("Stones has hammer");
+      expect(projected).toContain("Stones: Last stone advantage (Hammer)");
       expect(projected).toContain("Audio muted");
     },
   );

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { hasSafeSponsorContent } from "./schema";
+import { actionSchema, hasSafeSponsorContent } from "./schema";
 
 describe("sponsor content validation", () => {
   it("accepts supported signatures and bundled mock assets", () => {
@@ -23,5 +23,30 @@ describe("sponsor content validation", () => {
     expect(
       hasSafeSponsorContent("data:text/html;base64,PGgxPkJvb208L2gxPg=="),
     ).toBe(false);
+  });
+});
+
+describe("scoring action validation", () => {
+  const base = {
+    type: "score",
+    intentId: "10000000-0000-4000-8000-000000000013",
+    expectedEnd: 1,
+    expectedLastEventId: null,
+  };
+
+  it.each([
+    { ...base, team: "home", points: 1, blank: false },
+    { ...base, team: null, points: 0, blank: true },
+  ])("accepts a coherent score payload", (action) => {
+    expect(actionSchema.safeParse(action).success).toBe(true);
+  });
+
+  it.each([
+    { ...base, team: "home", points: 0, blank: false },
+    { ...base, team: null, points: 1, blank: false },
+    { ...base, team: "away", points: 0, blank: true },
+    { ...base, team: null, points: 2, blank: true },
+  ])("rejects a contradictory score payload", (action) => {
+    expect(actionSchema.safeParse(action).success).toBe(false);
   });
 });

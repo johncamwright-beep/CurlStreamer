@@ -60,6 +60,7 @@ vi.mock("@/lib/providers/livekit-egress", () => ({
 }));
 
 import {
+  parseBroadcastSession,
   readBroadcastSession,
   startGameBroadcast,
   stopGameBroadcast,
@@ -105,6 +106,9 @@ function recordingRpc(initial: Record<string, unknown>) {
           watchUrl: parameters.p_watch_url ?? current.watchUrl,
           lastErrorCode: parameters.p_error_code ?? undefined,
           providerStep: parameters.p_provider_step ?? undefined,
+          uncertainSince: parameters.p_uncertain
+            ? "2026-09-05T14:12:33.123456+00:00"
+            : current.uncertainSince,
           youtubeBroadcastCreateState:
             parameters.p_youtube_broadcast_create_state ??
             current.youtubeBroadcastCreateState,
@@ -147,6 +151,21 @@ describe("broadcast session orchestration", () => {
     mocks.egressStatus.mockResolvedValue(1);
     mocks.finishBroadcast.mockResolvedValue(undefined);
     mocks.deleteStream.mockResolvedValue(undefined);
+  });
+
+  it("accepts ISO offsets for PostgreSQL timestamps but rejects arbitrary text", () => {
+    expect(
+      parseBroadcastSession({
+        ...session(),
+        uncertainSince: "2026-09-05T14:12:33.123456+00:00",
+      }).uncertainSince,
+    ).toBe("2026-09-05T14:12:33.123456+00:00");
+    expect(() =>
+      parseBroadcastSession({
+        ...session(),
+        uncertainSince: "sometime yesterday",
+      }),
+    ).toThrow();
   });
 
   it("retries a hard-crash create intent with discovery only", async () => {
@@ -277,9 +296,10 @@ describe("broadcast session orchestration", () => {
     expect(mocks.stopEgress).toHaveBeenLastCalledWith("discovered-egress");
   });
 
-  it("accepts an auto-started live broadcast without a duplicate transition", async () => {
+  it("continues past the offset-timestamp intent checkpoint exactly once", async () => {
     recordingRpc(session());
     const result = await startGameBroadcast(gameId, credential);
+    expect(mocks.findOrCreateBroadcast).toHaveBeenCalledTimes(1);
     expect(mocks.broadcastStatus).toHaveBeenCalledWith(
       "access-token",
       "broadcast-id",

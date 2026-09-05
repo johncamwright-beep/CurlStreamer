@@ -53,7 +53,7 @@ const sessionSchema = z.object({
   watchUrl: z.url().optional(),
   lastErrorCode: z.string().optional(),
   providerStep: z.string().optional(),
-  uncertainSince: z.string().datetime().optional(),
+  uncertainSince: z.string().datetime({ offset: true }).optional(),
   youtubeBroadcastCreateState: z
     .enum(["none", "intent", "ready", "uncertain"])
     .optional(),
@@ -74,6 +74,10 @@ export type SafeBroadcastSession = Pick<
   Session,
   "desiredState" | "status" | "watchUrl" | "lastErrorCode"
 >;
+
+export function parseBroadcastSession(value: unknown) {
+  return sessionSchema.parse(value);
+}
 
 export function broadcastStartConfiguration(requestUrl: string) {
   const renderOrigin = process.env.APP_BASE_URL;
@@ -109,7 +113,7 @@ async function rpc(name: string, parameters: Record<string, unknown>) {
   );
   if (error)
     throw Object.assign(new Error("broadcast_database_unavailable"), error);
-  return sessionSchema.parse(data);
+  return parseBroadcastSession(data);
 }
 
 async function actor(gameId: string, credential: CompletionCredential) {
@@ -169,7 +173,7 @@ async function record(
   );
   if (error)
     throw Object.assign(new Error("broadcast_database_unavailable"), error);
-  return data ? sessionSchema.parse(data) : undefined;
+  return data ? parseBroadcastSession(data) : undefined;
 }
 
 async function accessToken(session: Session) {

@@ -1,54 +1,121 @@
 "use client";
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { clearCurrentGame, readCurrentGame } from "@/lib/current-game";
+import { clearCurrentGameIfMatching } from "@/lib/current-game";
 
 export function GameDeletionControl({
   gameId,
   title,
   matchup,
   restore = false,
+  cleanupStatus,
+  cleanupAttempts,
+  cleanupLastError,
 }: {
   gameId: string;
   title: string;
   matchup: string;
   restore?: boolean;
+  cleanupStatus?: "pending" | "failed" | "complete";
+  cleanupAttempts?: number;
+  cleanupLastError?: string | null;
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [cleanupError, setCleanupError] = useState("");
   const router = useRouter();
   const label = restore ? "Restore Game" : "Delete Game";
   async function confirmChange() {
     setBusy(true);
     setError("");
-    const response = await fetch(`/api/games/${gameId}/deletion`, {
-      method: restore ? "POST" : "DELETE",
-    });
-    if (!response.ok) {
-      const body = await response.json().catch(() => null);
+    try {
+      const response = await fetch(`/api/games/${gameId}/deletion`, {
+        method: restore ? "POST" : "DELETE",
+      });
+      const body = (await response.json().catch(() => null)) as {
+        deletionCommitted?: boolean;
+        error?: string;
+      } | null;
+      const deletionCommitted = !restore && body?.deletionCommitted === true;
+      if (deletionCommitted) clearCurrentGameIfMatching(localStorage, gameId);
+      if (!response.ok && !deletionCommitted) {
+        setError(
+          body?.error ??
+            `The game could not be ${restore ? "restored" : "deleted"}.`,
+        );
+        return;
+      }
+      dialog.current?.close();
+      router.refresh();
+    } catch {
       setError(
-        body?.error ??
-          `The game could not be ${restore ? "restored" : "deleted"}.`,
+        `The game could not be ${restore ? "restored" : "deleted"}. Check your connection and try again.`,
       );
+    } finally {
       setBusy(false);
-      return;
     }
-    if (!restore && readCurrentGame(localStorage)?.id === gameId) {
-      clearCurrentGame(localStorage);
+  }
+  async function retryCleanup() {
+    setBusy(true);
+    setCleanupError("");
+    try {
+      const response = await fetch(`/api/games/${gameId}/deletion`, {
+        method: "DELETE",
+      });
+      const body = (await response.json().catch(() => null)) as {
+        deletionCommitted?: boolean;
+        error?: string;
+        warning?: string;
+      } | null;
+      if (!response.ok && body?.deletionCommitted !== true) {
+        setCleanupError(
+          body?.error ?? "Live video cleanup could not be retried.",
+        );
+        return;
+      }
+      router.refresh();
+    } catch {
+      setCleanupError(
+        "Live video cleanup could not be retried. Check your connection and try again.",
+      );
+    } finally {
+      setBusy(false);
     }
-    dialog.current?.close();
-    router.refresh();
   }
   return (
     <>
-      <button
-        type="button"
-        className="min-h-11 rounded-lg border border-red-700 px-3 py-2 text-red-200"
-        onClick={() => dialog.current?.showModal()}
-      >
-        {label}
-      </button>
+      <div className="flex flex-wrap items-center gap-3">
+        <button
+          type="button"
+          className="min-h-11 rounded-lg border border-red-700 px-3 py-2 text-red-200"
+          onClick={() => dialog.current?.showModal()}
+        >
+          {label}
+        </button>
+        {restore && cleanupStatus && cleanupStatus !== "complete" && (
+          <button
+            type="button"
+            className="btn-secondary"
+            disabled={busy}
+            onClick={() => void retryCleanup()}
+          >
+            Retry video cleanup
+          </button>
+        )}
+      </div>
+      {restore && cleanupStatus && cleanupStatus !== "complete" && (
+        <p className="mt-2 text-sm text-amber-200">
+          Live video cleanup is {cleanupStatus}
+          {cleanupAttempts ? ` after ${cleanupAttempts} attempt(s)` : ""}.
+          {cleanupLastError ? ` Last attempt: ${cleanupLastError}` : ""}
+        </p>
+      )}
+      {cleanupError && (
+        <p role="alert" className="mt-2 text-sm text-red-300">
+          {cleanupError}
+        </p>
+      )}
       <dialog
         ref={dialog}
         aria-labelledby={`game-change-${gameId}`}

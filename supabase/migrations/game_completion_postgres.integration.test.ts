@@ -240,6 +240,142 @@ function stateWithEvent(state: string, event: ReturnType<typeof scoreEvent>) {
 }
 
 describe.skipIf(!enabled)("game completion PostgreSQL transactions", () => {
+  it("atomically deletes, records cleanup truthfully, and restores metadata without reopening state", () => {
+    const organizationId = randomUUID();
+    const creatorId = randomUUID();
+    const gameId = randomUUID();
+    const owner = randomUUID();
+    const administrator = randomUUID();
+    expect(
+      psql(`${fixture(gameId, organizationId, creatorId)}
+        ${account(owner, organizationId)}
+        ${account(administrator, organizationId, { role: "team_admin" })}
+        update public.game_states set state=jsonb_set(state,'{broadcast}','"idle"'::jsonb,true)
+          where game_id='${gameId}';`).ok,
+    ).toBe(true);
+    const initialVersion = psql(
+      `select version from public.game_states where game_id='${gameId}'`,
+    ).stdout;
+
+    expect(
+      psqlAsServiceRole(
+        `select public.soft_delete_team_game('${owner}','${gameId}')`,
+      ),
+    ).toMatchObject({ ok: true, stdout: "t" });
+    expect(
+      psql(`select g.deleted_by_user_id='${owner}',gs.state->>'status',
+        gs.state->>'broadcast',gs.state->>'audioMuted',
+        gs.state->'claims'='{}'::jsonb,
+        gs.state#>>'{connections,camera-home}',
+        gs.state->'cameraHealth'='{}'::jsonb,
+        gs.state#>>'{sponsorMode,active}',gs.version>${initialVersion},
+        c.status,c.attempts,
+        (select count(*) from public.audit_events where action='game.deleted'
+          and subject_identifier='${gameId}')
+        from public.games g join public.game_states gs on gs.game_id=g.id
+        join public.game_deletion_cleanup c on c.game_id=g.id
+        where g.id='${gameId}'`).stdout,
+    ).toBe("t|closed|idle|true|t|false|t|false|t|pending|0|1");
+
+    expect(
+      psqlAsServiceRole(
+        `select public.soft_delete_team_game('${administrator}','${gameId}')`,
+      ),
+    ).toMatchObject({ ok: true, stdout: "f" });
+    expect(
+      psql(`select deleted_by_user_id='${owner}',
+        (select count(*) from public.audit_events where action='game.deleted'
+          and subject_identifier='${gameId}'),
+        (select count(*) from public.game_deletion_cleanup where game_id='${gameId}')
+        from public.games where id='${gameId}'`).stdout,
+    ).toBe("t|1|1");
+
+    expect(
+      psqlAsServiceRole(`select status,attempts,last_error from
+        public.record_game_deletion_cleanup('${owner}','${gameId}',false,'provider unavailable')`)
+        .stdout,
+    ).toBe("failed|1|provider unavailable");
+    expect(
+      psqlAsServiceRole(`select cleanup_status,cleanup_attempts,cleanup_last_error from
+        public.list_deleted_team_games_with_cleanup('${owner}')
+        where game_id='${gameId}'`).stdout,
+    ).toBe("failed|1|provider unavailable");
+    expect(
+      psqlAsServiceRole(`select status,attempts,last_error is null from
+        public.record_game_deletion_cleanup('${owner}','${gameId}',true,null)`)
+        .stdout,
+    ).toBe("complete|2|t");
+    expect(
+      psqlAsServiceRole(`select status,attempts,last_error is null from
+        public.record_game_deletion_cleanup('${owner}','${gameId}',false,'late outage')`)
+        .stdout,
+    ).toBe("complete|2|t");
+
+    const deletedVersion = psql(
+      `select version from public.game_states where game_id='${gameId}'`,
+    ).stdout;
+    expect(
+      psqlAsServiceRole(
+        `select public.restore_team_game('${administrator}','${gameId}')`,
+      ),
+    ).toMatchObject({ ok: true, stdout: "t" });
+    expect(
+      psql(`select g.deleted_at is null,g.deleted_by_user_id is null,
+        gs.state->>'status',gs.state->'claims'='{}'::jsonb,
+        gs.version=${deletedVersion},c.status,
+        (select count(*) from public.audit_events where action='game.restored'
+          and subject_identifier='${gameId}')
+        from public.games g join public.game_states gs on gs.game_id=g.id
+        join public.game_deletion_cleanup c on c.game_id=g.id
+        where g.id='${gameId}'`).stdout,
+    ).toBe("t|t|closed|t|t|complete|1");
+    expect(
+      psqlAsServiceRole(
+        `select public.restore_team_game('${owner}','${gameId}')`,
+      ),
+    ).toMatchObject({ ok: true, stdout: "f" });
+    expect(
+      psql(`select count(*) from public.audit_events where action='game.restored'
+        and subject_identifier='${gameId}'`).stdout,
+    ).toBe("1");
+  });
+
+  it("repairs a legacy partial deletion before restore makes it visible", () => {
+    const organizationId = randomUUID();
+    const creatorId = randomUUID();
+    const gameId = randomUUID();
+    const administratorId = randomUUID();
+    expect(
+      psql(`${fixture(gameId, organizationId, creatorId)}
+        ${account(administratorId, organizationId)}
+        update public.games set deleted_at=now(),deleted_by_user_id='${administratorId}'
+          where id='${gameId}';`).ok,
+    ).toBe(true);
+    const legacyVersion = psql(
+      `select version from public.game_states where game_id='${gameId}'`,
+    ).stdout;
+
+    expect(
+      psqlAsServiceRole(
+        `select public.restore_team_game('${administratorId}','${gameId}')`,
+      ),
+    ).toMatchObject({ ok: true, stdout: "t" });
+    expect(
+      psql(`select g.deleted_at is null,g.deleted_by_user_id is null,
+        gs.state->>'status',gs.state->>'broadcast',gs.state->>'audioMuted',
+        gs.state->'claims'='{}'::jsonb,
+        gs.state->'cameraHealth'='{}'::jsonb,
+        gs.state#>>'{connections,camera-home}',
+        gs.state#>>'{sponsorMode,active}',gs.version>${legacyVersion},
+        (select count(*) from public.audit_events where action='game.deleted'
+          and subject_identifier='${gameId}'),
+        (select count(*) from public.audit_events where action='game.restored'
+          and subject_identifier='${gameId}')
+        from public.games g join public.game_states gs on gs.game_id=g.id
+        where g.id='${gameId}'`).stdout,
+    ).toBe("t|t|closed|idle|true|t|t|false|false|t|0|1");
+  });
+
   it("keeps state writers service-role only while preserving both schedule signatures", () => {
     expect(
       psql(`select
@@ -247,9 +383,14 @@ describe.skipIf(!enabled)("game completion PostgreSQL transactions", () => {
         has_function_privilege('authenticated','public.write_game_state(uuid,bigint,jsonb)','execute'),
         has_function_privilege('service_role','public.update_scheduled_team_game(uuid,uuid,uuid,uuid,uuid,timestamptz,text,integer,text)','execute'),
         has_function_privilege('service_role','public.update_scheduled_team_game(uuid,uuid,uuid,uuid,uuid,timestamptz,text,integer,text,jsonb)','execute'),
-        has_function_privilege('authenticated','public.update_scheduled_team_game(uuid,uuid,uuid,uuid,uuid,timestamptz,text,integer,text,jsonb)','execute')`)
+        has_function_privilege('authenticated','public.update_scheduled_team_game(uuid,uuid,uuid,uuid,uuid,timestamptz,text,integer,text,jsonb)','execute'),
+        has_function_privilege('service_role','public.get_game_deletion_cleanup(uuid,uuid)','execute'),
+        has_function_privilege('authenticated','public.get_game_deletion_cleanup(uuid,uuid)','execute'),
+        has_function_privilege('service_role','public.list_deleted_team_games_with_cleanup(uuid)','execute'),
+        has_function_privilege('authenticated','public.list_deleted_team_games_with_cleanup(uuid)','execute'),
+        has_table_privilege('service_role','public.game_deletion_cleanup','select')`)
         .stdout,
-    ).toBe("t|f|t|t|f");
+    ).toBe("t|f|t|t|f|t|f|t|f|f");
   });
 
   it("preserves supplied historical names for schedule-only edits and accepts changed-opponent snapshots", () => {
@@ -650,6 +791,266 @@ describe.skipIf(!enabled)("game completion PostgreSQL transactions", () => {
         (select version>${appendVersion} from public.game_states where game_id='${appendFirstGame}')
         from public.score_events where game_id='${appendFirstGame}'`).stdout,
     ).toBe("1|1|true|t");
+  }, 20_000);
+
+  it("serializes deletion with scoring in both orderings", async () => {
+    const organizationId = randomUUID();
+    const creatorId = randomUUID();
+    const administratorId = randomUUID();
+    const deleteFirstGame = randomUUID();
+    expect(
+      psql(`${fixture(deleteFirstGame, organizationId, creatorId)}
+        ${account(administratorId, organizationId)}
+        update public.game_states set state=jsonb_set(state,'{broadcast}','"idle"'::jsonb,true)
+          where game_id='${deleteFirstGame}';`).ok,
+    ).toBe(true);
+    const version = psql(
+      `select version from public.game_states where game_id='${deleteFirstGame}'`,
+    ).stdout;
+    const state = psql(
+      `select state from public.game_states where game_id='${deleteFirstGame}'`,
+    ).stdout;
+    const event = scoreEvent(deleteFirstGame, "home", 1, 1);
+    const scoredState = stateWithEvent(state, event);
+    const deletion = heldTransaction(
+      `select public.soft_delete_team_game('${administratorId}','${deleteFirstGame}');`,
+      `delete_first_${randomUUID().replaceAll("-", "")}`,
+      true,
+    );
+    await deletion.ready;
+    const appendApp = `append_after_delete_${randomUUID().replaceAll("-", "")}`;
+    const append = psqlAsync(
+      `select public.append_score_event('${deleteFirstGame}',${version},'${event.id}',
+        'end',${sqlJson(event.payload)},'integration',${sqlJson(scoredState)});`,
+      appendApp,
+    );
+    waitUntilBlocked(appendApp);
+    deletion.release();
+    expect(await deletion.result).toMatchObject({ ok: true, stdout: "t" });
+    const rejectedAppend = await append;
+    expect(rejectedAppend.ok).toBe(false);
+    expect(rejectedAppend.stderr).toContain("stale game state");
+    expect(
+      psql(`select gs.state->>'status',gs.state->'claims'='{}'::jsonb,
+        count(se.id) from public.game_states gs
+        left join public.score_events se on se.game_id=gs.game_id
+        where gs.game_id='${deleteFirstGame}' group by gs.state`).stdout,
+    ).toBe("closed|t|0");
+
+    const scoreFirstGame = randomUUID();
+    const scoreFirstOrganization = randomUUID();
+    const scoreFirstCreator = randomUUID();
+    const scoreFirstAdministrator = randomUUID();
+    expect(
+      psql(`${fixture(scoreFirstGame, scoreFirstOrganization, scoreFirstCreator)}
+        ${account(scoreFirstAdministrator, scoreFirstOrganization)}
+        update public.game_states set state=jsonb_set(state,'{broadcast}','"idle"'::jsonb,true)
+          where game_id='${scoreFirstGame}';`).ok,
+    ).toBe(true);
+    const nextVersion = psql(
+      `select version from public.game_states where game_id='${scoreFirstGame}'`,
+    ).stdout;
+    const nextState = psql(
+      `select state from public.game_states where game_id='${scoreFirstGame}'`,
+    ).stdout;
+    const nextEvent = scoreEvent(scoreFirstGame, "away", 2, 1);
+    const nextScoredState = stateWithEvent(nextState, nextEvent);
+    const heldAppend = heldTransaction(
+      `select public.append_score_event('${scoreFirstGame}',${nextVersion},'${nextEvent.id}',
+        'end',${sqlJson(nextEvent.payload)},'integration',${sqlJson(nextScoredState)});`,
+      `score_before_delete_${randomUUID().replaceAll("-", "")}`,
+      true,
+    );
+    await heldAppend.ready;
+    const deleteApp = `delete_after_score_${randomUUID().replaceAll("-", "")}`;
+    const waitingDelete = psqlAsync(
+      `select public.soft_delete_team_game('${scoreFirstAdministrator}','${scoreFirstGame}');`,
+      deleteApp,
+    );
+    waitUntilBlocked(deleteApp);
+    heldAppend.release();
+    expect(await heldAppend.result).toMatchObject({ ok: true });
+    expect(await waitingDelete).toMatchObject({ ok: true, stdout: "t" });
+    expect(
+      psql(`select gs.state->>'status',gs.state->'claims'='{}'::jsonb,
+        jsonb_array_length(gs.state->'scoreEvents'),count(se.id)
+        from public.game_states gs
+        join public.score_events se on se.game_id=gs.game_id
+        where gs.game_id='${scoreFirstGame}' group by gs.state`).stdout,
+    ).toBe("closed|t|1|1");
+  }, 20_000);
+
+  it("serializes deletion with completion and preserves completed state through restore", async () => {
+    const organizationId = randomUUID();
+    const creatorId = randomUUID();
+    const administratorId = randomUUID();
+    const deleteFirstGame = randomUUID();
+    const deleteFirstReview = randomUUID();
+    expect(
+      psql(`${fixture(deleteFirstGame, organizationId, creatorId)}
+        ${account(administratorId, organizationId)}
+        update public.game_states set state=jsonb_set(state,'{broadcast}','"idle"'::jsonb,true)
+          where game_id='${deleteFirstGame}';`).ok,
+    ).toBe(true);
+    expect(
+      psqlAsServiceRole(
+        `select review_id from public.review_game_completion('${deleteFirstGame}','${deleteFirstReview}','${administratorId}',false)`,
+      ).ok,
+    ).toBe(true);
+    const deletion = heldTransaction(
+      `select public.soft_delete_team_game('${administratorId}','${deleteFirstGame}');`,
+      `delete_before_completion_${randomUUID().replaceAll("-", "")}`,
+      true,
+    );
+    await deletion.ready;
+    const completionApp = `completion_after_delete_${randomUUID().replaceAll("-", "")}`;
+    const completion = psqlAsync(
+      `select completion_id from public.complete_reviewed_game(
+        '${deleteFirstGame}','${deleteFirstReview}','${randomUUID()}','${administratorId}',false);`,
+      completionApp,
+    );
+    waitUntilBlocked(completionApp);
+    deletion.release();
+    expect(await deletion.result).toMatchObject({ ok: true, stdout: "t" });
+    const rejectedCompletion = await completion;
+    expect(rejectedCompletion.ok).toBe(false);
+    expect(rejectedCompletion.stderr).toContain("game_deleted");
+    expect(
+      psql(`select count(c.game_id),state->>'status' from public.game_completions c
+        right join public.game_states gs on gs.game_id='${deleteFirstGame}'
+          and c.game_id=gs.game_id where gs.game_id='${deleteFirstGame}'
+        group by gs.state`).stdout,
+    ).toBe("0|closed");
+
+    const completeFirstGame = randomUUID();
+    const completeFirstReview = randomUUID();
+    const completionId = randomUUID();
+    const completeFirstOrganization = randomUUID();
+    const completeFirstCreator = randomUUID();
+    const completeFirstAdministrator = randomUUID();
+    expect(
+      psql(`${fixture(completeFirstGame, completeFirstOrganization, completeFirstCreator)}
+        ${account(completeFirstAdministrator, completeFirstOrganization)}`).ok,
+    ).toBe(true);
+    expect(
+      psqlAsServiceRole(
+        `select review_id from public.review_game_completion('${completeFirstGame}','${completeFirstReview}','${completeFirstAdministrator}',false)`,
+      ).ok,
+    ).toBe(true);
+    const heldCompletion = heldTransaction(
+      `select completion_id from public.complete_reviewed_game(
+        '${completeFirstGame}','${completeFirstReview}','${completionId}','${completeFirstAdministrator}',false);`,
+      `completion_before_delete_${randomUUID().replaceAll("-", "")}`,
+      true,
+    );
+    await heldCompletion.ready;
+    const deleteApp = `delete_after_completion_${randomUUID().replaceAll("-", "")}`;
+    const waitingDelete = psqlAsync(
+      `select public.soft_delete_team_game('${completeFirstAdministrator}','${completeFirstGame}');`,
+      deleteApp,
+    );
+    waitUntilBlocked(deleteApp);
+    heldCompletion.release();
+    expect(await heldCompletion.result).toMatchObject({
+      ok: true,
+      stdout: completionId,
+    });
+    expect(await waitingDelete).toMatchObject({ ok: true, stdout: "t" });
+    const frozen = psql(`select gs.state::text,c.result::text
+      from public.game_states gs join public.game_completions c on c.game_id=gs.game_id
+      where gs.game_id='${completeFirstGame}'`).stdout;
+    expect(
+      psqlAsServiceRole(
+        `select public.restore_team_game('${completeFirstAdministrator}','${completeFirstGame}')`,
+      ),
+    ).toMatchObject({ ok: true, stdout: "t" });
+    expect(
+      psql(`select g.deleted_at is null,g.status,gs.state->>'status',
+        gs.state->'claims'='{}'::jsonb,
+        (gs.state::text||'|'||c.result::text)='${frozen.replaceAll("'", "''")}'
+        from public.games g join public.game_states gs on gs.game_id=g.id
+        join public.game_completions c on c.game_id=g.id
+        where g.id='${completeFirstGame}'`).stdout,
+    ).toBe("t|completed|completed|t|t");
+  }, 20_000);
+
+  it("serializes restore and delete in both orderings without reviving claims or actors", async () => {
+    const organizationId = randomUUID();
+    const creatorId = randomUUID();
+    const owner = randomUUID();
+    const administrator = randomUUID();
+    const deleteFirstGame = randomUUID();
+    expect(
+      psql(`${fixture(deleteFirstGame, organizationId, creatorId)}
+        ${account(owner, organizationId)}
+        ${account(administrator, organizationId, { role: "team_admin" })}
+        update public.game_states set state=jsonb_set(state,'{broadcast}','"idle"'::jsonb,true)
+          where game_id='${deleteFirstGame}';`).ok,
+    ).toBe(true);
+    const heldDelete = heldTransaction(
+      `select public.soft_delete_team_game('${owner}','${deleteFirstGame}');`,
+      `held_delete_${randomUUID().replaceAll("-", "")}`,
+      true,
+    );
+    await heldDelete.ready;
+    const restoreApp = `restore_after_delete_${randomUUID().replaceAll("-", "")}`;
+    const waitingRestore = psqlAsync(
+      `select public.restore_team_game('${administrator}','${deleteFirstGame}');`,
+      restoreApp,
+    );
+    waitUntilBlocked(restoreApp);
+    heldDelete.release();
+    expect(await heldDelete.result).toMatchObject({ ok: true, stdout: "t" });
+    expect(await waitingRestore).toMatchObject({ ok: true, stdout: "t" });
+    expect(
+      psql(`select g.deleted_at is null,g.deleted_by_user_id is null,
+        gs.state->>'status',gs.state->'claims'='{}'::jsonb
+        from public.games g join public.game_states gs on gs.game_id=g.id
+        where g.id='${deleteFirstGame}'`).stdout,
+    ).toBe("t|t|closed|t");
+
+    const restoreFirstGame = randomUUID();
+    const restoreFirstOrganization = randomUUID();
+    const restoreFirstCreator = randomUUID();
+    const restoreFirstOwner = randomUUID();
+    const restoreFirstAdministrator = randomUUID();
+    expect(
+      psql(`${fixture(restoreFirstGame, restoreFirstOrganization, restoreFirstCreator)}
+        ${account(restoreFirstOwner, restoreFirstOrganization)}
+        ${account(restoreFirstAdministrator, restoreFirstOrganization, { role: "team_admin" })}
+        update public.game_states set state=jsonb_set(state,'{broadcast}','"idle"'::jsonb,true)
+          where game_id='${restoreFirstGame}';`).ok,
+    ).toBe(true);
+    expect(
+      psqlAsServiceRole(
+        `select public.soft_delete_team_game('${restoreFirstOwner}','${restoreFirstGame}')`,
+      ).stdout,
+    ).toBe("t");
+    const heldRestore = heldTransaction(
+      `select public.restore_team_game('${restoreFirstAdministrator}','${restoreFirstGame}');`,
+      `held_restore_${randomUUID().replaceAll("-", "")}`,
+      true,
+    );
+    await heldRestore.ready;
+    const deleteApp = `delete_after_restore_${randomUUID().replaceAll("-", "")}`;
+    const waitingDelete = psqlAsync(
+      `select public.soft_delete_team_game('${restoreFirstAdministrator}','${restoreFirstGame}');`,
+      deleteApp,
+    );
+    waitUntilBlocked(deleteApp);
+    heldRestore.release();
+    expect(await heldRestore.result).toMatchObject({ ok: true, stdout: "t" });
+    expect(await waitingDelete).toMatchObject({ ok: true, stdout: "t" });
+    expect(
+      psql(`select g.deleted_at is not null,g.deleted_by_user_id='${restoreFirstAdministrator}',
+        gs.state->>'status',gs.state->'claims'='{}'::jsonb,
+        (select count(*) from public.audit_events where action='game.deleted'
+          and subject_identifier='${restoreFirstGame}'),
+        (select count(*) from public.audit_events where action='game.restored'
+          and subject_identifier='${restoreFirstGame}')
+        from public.games g join public.game_states gs on gs.game_id=g.id
+        where g.id='${restoreFirstGame}'`).stdout,
+    ).toBe("t|t|closed|t|2|1");
   }, 20_000);
 
   it("rejects competing claims and prevents stale writers from restoring a released claim", async () => {

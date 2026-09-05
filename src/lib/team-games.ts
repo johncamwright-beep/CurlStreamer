@@ -17,6 +17,9 @@ export type TeamGameSummary = {
   created_at: string;
   game_status: string;
   deleted_at?: string;
+  cleanup_status?: "pending" | "failed" | "complete";
+  cleanup_attempts?: number;
+  cleanup_last_error?: string | null;
 };
 
 function safeDiagnostic(operation: string, error: unknown) {
@@ -142,7 +145,7 @@ export async function listTeamGames(user: User) {
 
 export async function listDeletedTeamGames(user: User) {
   const { data, error } = await createAdminSupabaseClient().rpc(
-    "list_deleted_team_games",
+    "list_deleted_team_games_with_cleanup",
     { p_user_id: user.id },
   );
   if (error) {

@@ -166,3 +166,13 @@ test("an unreadable broadcast response leaves scoring usable", async ({
     page.getByRole("button", { name: "Save 1 point" }),
   ).toBeEnabled();
 });
+
+test("an active carousel can be stopped after its sponsors are removed", async ({
+  page,
+}) => {
+  const { game, actions } = await setup(page);
+  game.sponsors = [];
+  await page.reload();
+  await page.getByRole("button", { name: "Stop carousel" }).click();
+  expect(actions).toEqual([{ type: "sponsor-mode", active: false }]);
+});

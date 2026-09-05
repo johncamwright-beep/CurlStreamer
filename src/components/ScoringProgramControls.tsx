@@ -155,7 +155,7 @@ export function ScoringProgramControls({
         </p>
         <button
           className="btn-secondary scoring-wide"
-          disabled={busy || !sponsors.length}
+          disabled={busy || (!sponsors.length && !game.sponsorMode.active)}
           onClick={() =>
             update({ type: "sponsor-mode", active: !game.sponsorMode.active })
           }

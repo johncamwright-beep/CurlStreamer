@@ -1,3 +1,5 @@
+import https from "node:https";
+import { Resolver } from "node:dns/promises";
 // Bounded private phone test. Starts no cloud compute and never selects YouTube.
 import { spawn } from "node:child_process";
 import { createRequire } from "node:module";
@@ -8,6 +10,39 @@ const { chromium } = require("@playwright/test");
 const out = resolve(process.env.LOCAL_LAB_OUTPUT || ".local-broadcast-private");
 if (!process.env.CLOUDFLARED_PATH) throw Error("CLOUDFLARED_PATH is required");
 await mkdir(out, { recursive: true });
+// Use a public resolver only for this temporary tunnel probe. TLS hostname
+// verification stays enabled; no system DNS or browser settings are changed.
+async function probe(url, headers, body) {
+  const resolver = new Resolver({ timeout: 3000, tries: 2 });
+  resolver.setServers(["1.1.1.1"]);
+  const addresses = await resolver.resolve4(new URL(url).hostname);
+  return new Promise((done, reject) => {
+    const req = https.request(
+      url,
+      {
+        method: body ? "POST" : "GET",
+        headers,
+        lookup: (_name, options, callback) =>
+          options.all
+            ? callback(
+                null,
+                addresses.map((address) => ({ address, family: 4 })),
+              )
+            : callback(null, addresses[0], 4),
+      },
+      (response) => {
+        response.resume();
+        done({
+          status: response.statusCode,
+          ok: response.statusCode >= 200 && response.statusCode < 300,
+        });
+      },
+    );
+    req.setTimeout(5000, () => req.destroy(Error("Tunnel probe timeout")));
+    req.on("error", reject);
+    req.end(body);
+  });
+}
 const wait = (ms) => new Promise((done) => setTimeout(done, ms));
 const helper = spawn(process.execPath, ["tools/local-broadcast/server.mjs"], {
   env: { ...process.env, LOCAL_LAB_OUTPUT: out },
@@ -60,9 +95,8 @@ try {
   for (let attempt = 0; attempt < 30 && !ready; attempt++) {
     try {
       ready = (
-        await fetch(`${publicUrl}/poll`, {
-          headers: { authorization: `Bearer ${keys.camera1}` },
-          signal: AbortSignal.timeout(4000),
+        await probe(`${publicUrl}/poll`, {
+          authorization: `Bearer ${keys.camera1}`,
         })
       ).ok;
     } catch {
@@ -74,9 +108,8 @@ try {
   let denied;
   for (let attempt = 0; attempt < 10; attempt++) {
     try {
-      denied = await fetch(`${publicUrl}/poll`, {
-        headers: { authorization: `Bearer ${keys.host}` },
-        signal: AbortSignal.timeout(4000),
+      denied = await probe(`${publicUrl}/poll`, {
+        authorization: `Bearer ${keys.host}`,
       });
       break;
     } catch {
@@ -85,15 +118,15 @@ try {
   }
   if (denied?.status !== 403)
     throw Error("Host control isolation check failed");
-  const cameraSignal = await fetch(`${publicUrl}/signal`, {
-    method: "POST",
-    headers: {
+  const cameraSignal = await probe(
+    `${publicUrl}/signal`,
+    {
       authorization: `Bearer ${keys.camera1}`,
       origin: publicUrl,
       "content-type": "application/json",
     },
-    body: JSON.stringify({ to: "host", data: { type: "bye" } }),
-  });
+    JSON.stringify({ to: "host", data: { type: "bye" } }),
+  );
   if (!cameraSignal.ok) throw Error("Phone signaling unavailable");
   browser = await chromium.launch({
     ...(process.platform === "win32" ? { channel: "msedge" } : {}),

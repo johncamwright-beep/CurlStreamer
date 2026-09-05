@@ -642,7 +642,45 @@ describe("GET /api/games/[id] over HTTP", () => {
     expect(mocks.updateGame).toHaveBeenCalledWith(
       testGameId,
       { type: "camera-health", role: "camera-home", phase: "live" },
-      { claim: claimant, generation: undefined },
+      {
+        role: "camera-home",
+        claim: claimant,
+        generation: undefined,
+      },
+    );
+  });
+
+  it("binds scorer writes to the trusted token role and generation", async () => {
+    anonymous();
+    const claimant = game.claims.scorer!;
+    game.claimGenerations = { scorer: 5 };
+    const response = await PATCH(
+      new Request(`${origin}/api/games/${testGameId}`, {
+        method: "PATCH",
+        headers: {
+          authorization: `Bearer ${await issueParticipantToken(
+            testGameId,
+            "scorer",
+            claimant,
+            5,
+          )}`,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          type: "score",
+          team: "home",
+          points: 1,
+          blank: false,
+        }),
+      }),
+      { params: Promise.resolve({ id: testGameId }) },
+    );
+
+    expect(response.status).toBe(200);
+    expect(mocks.updateGame).toHaveBeenCalledWith(
+      testGameId,
+      { type: "score", team: "home", points: 1, blank: false },
+      { role: "scorer", claim: claimant, generation: 5 },
     );
   });
 });

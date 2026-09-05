@@ -4,7 +4,7 @@ import { randomUUID } from "crypto";
 import type { z } from "zod";
 import type { actionSchema } from "../schema";
 import { activeEvents, deriveScore } from "../scoring";
-import type { GameConfig, GameState } from "../types";
+import type { GameConfig, GameState, ParticipantAuthority } from "../types";
 import {
   GameStateConflictError,
   isGameStateConflictError,
@@ -319,17 +319,14 @@ function applyAction(game: GameState, action: z.infer<typeof actionSchema>) {
 export async function updateGame(
   id: string,
   action: z.infer<typeof actionSchema>,
-  expectedAuthority?: { claim?: string; generation?: number },
+  expectedAuthority?: ParticipantAuthority,
 ) {
   const retryable =
     action.type === "camera-health" || action.type === "connection";
   const attempts = retryable ? 3 : 1;
-  let capturedClaim = expectedAuthority?.claim;
-  let capturedGeneration = expectedAuthority?.generation;
-  let authorityCaptured = expectedAuthority !== undefined;
-  const requiresLegacyGeneration =
-    expectedAuthority !== undefined &&
-    expectedAuthority.generation === undefined;
+  let capturedClaim: string | undefined;
+  let capturedGeneration: number | undefined;
+  let authorityCaptured = false;
 
   for (let attempt = 0; attempt < attempts; attempt += 1) {
     const record = await getGameRecord(id);
@@ -339,7 +336,24 @@ export async function updateGame(
       if (action.type === "close-game") return game;
       throw new Error("This game is completed");
     }
-    if (retryable) {
+    if (expectedAuthority) {
+      if ("role" in action && action.role !== expectedAuthority.role)
+        throw new GameStateConflictError("Participant role changed");
+      const currentGeneration =
+        game.claimGenerations?.[expectedAuthority.role] ?? 0;
+      if (
+        game.claims[expectedAuthority.role] !== expectedAuthority.claim ||
+        (expectedAuthority.generation === undefined
+          ? currentGeneration !== 0
+          : currentGeneration !== expectedAuthority.generation)
+      )
+        throw new GameStateConflictError(
+          expectedAuthority.role === "scorer"
+            ? "Participant assignment changed"
+            : "Camera assignment changed",
+        );
+    }
+    if (retryable && !expectedAuthority) {
       const currentClaim = game.claims[action.role];
       const currentGeneration = game.claimGenerations?.[action.role] ?? 0;
       if (!authorityCaptured) {
@@ -349,11 +363,7 @@ export async function updateGame(
       }
       if (currentClaim !== capturedClaim)
         throw new GameStateConflictError("Camera assignment changed");
-      if (
-        requiresLegacyGeneration
-          ? currentGeneration !== 0
-          : currentGeneration !== capturedGeneration
-      )
+      if (currentGeneration !== capturedGeneration)
         throw new GameStateConflictError("Camera assignment changed");
     }
 

@@ -64,6 +64,7 @@ export async function POST(
         diagnostic: "Disconnected by organizer",
       },
       {
+        role: parsed.data.role,
         claim,
         generation: game.claimGenerations?.[parsed.data.role],
       },

@@ -402,7 +402,7 @@ describe("Supabase score-event persistence", () => {
     const result = await updateGame(
       first.id,
       { type: "camera-health", role: "camera-home", phase: "live" },
-      { claim: claimant },
+      { role: "camera-home", claim: claimant },
     );
 
     expect(result?.scoreEvents).toEqual(latest.scoreEvents);
@@ -443,7 +443,7 @@ describe("Supabase score-event persistence", () => {
         role: "camera-away",
         phase: "disconnected",
       },
-      { claim: claimant },
+      { role: "camera-away", claim: claimant },
     );
 
     expect(result?.layout).toBe("away");
@@ -479,7 +479,7 @@ describe("Supabase score-event persistence", () => {
         updateGame(
           first.id,
           { type: "camera-health", role: "camera-home", phase: "live" },
-          { claim: claimant },
+          { role: "camera-home", claim: claimant },
         ),
       ).rejects.toThrow("Camera assignment changed");
       expect(mocks.rpc).toHaveBeenCalledOnce();
@@ -513,10 +513,124 @@ describe("Supabase score-event persistence", () => {
       updateGame(
         first.id,
         { type: "camera-health", role: "camera-home", phase: "live" },
-        { claim: claimant, generation: 7 },
+        { role: "camera-home", claim: claimant, generation: 7 },
       ),
     ).rejects.toThrow("Camera assignment changed");
     expect(mocks.rpc).toHaveBeenCalledOnce();
+  });
+
+  it("rejects stale camera framing authority before writing", async () => {
+    const claimant = "12121212-1212-4212-8212-121212121212";
+    const game = storedGame();
+    game.claims["camera-home"] = claimant;
+    game.claimGenerations = { "camera-home": 9 };
+    mocks.maybeSingle.mockResolvedValue({
+      data: { state: game, version: 73 },
+      error: null,
+    });
+
+    await expect(
+      updateGame(
+        game.id,
+        { type: "camera-framing", role: "camera-home", mode: "contain" },
+        { role: "camera-home", claim: claimant, generation: 7 },
+      ),
+    ).rejects.toThrow("Camera assignment changed");
+    expect(mocks.rpc).not.toHaveBeenCalled();
+  });
+
+  it("accepts current camera framing authority", async () => {
+    const claimant = "13131313-1313-4313-8313-131313131313";
+    const game = storedGame();
+    game.claims["camera-home"] = claimant;
+    game.claimGenerations = { "camera-home": 9 };
+    mocks.maybeSingle.mockResolvedValue({
+      data: { state: game, version: 74 },
+      error: null,
+    });
+
+    await expect(
+      updateGame(
+        game.id,
+        { type: "camera-framing", role: "camera-home", mode: "contain" },
+        { role: "camera-home", claim: claimant, generation: 9 },
+      ),
+    ).resolves.toMatchObject({
+      cameraFraming: { "camera-home": "contain" },
+    });
+    expect(mocks.rpc).toHaveBeenCalledWith(
+      "write_game_state",
+      expect.anything(),
+    );
+  });
+
+  it("uses the trusted authority role instead of the action role", async () => {
+    const claimant = "16161616-1616-4616-8616-161616161616";
+    const game = storedGame();
+    game.claims = {
+      "camera-home": claimant,
+      "camera-away": claimant,
+    };
+    game.claimGenerations = { "camera-home": 3, "camera-away": 3 };
+    mocks.maybeSingle.mockResolvedValue({
+      data: { state: game, version: 77 },
+      error: null,
+    });
+
+    await expect(
+      updateGame(
+        game.id,
+        { type: "camera-framing", role: "camera-away", mode: "contain" },
+        { role: "camera-home", claim: claimant, generation: 3 },
+      ),
+    ).rejects.toThrow("Participant role changed");
+    expect(mocks.rpc).not.toHaveBeenCalled();
+  });
+
+  it("rejects stale scorer authority without rebasing score intent", async () => {
+    const claimant = "14141414-1414-4414-8414-141414141414";
+    const game = storedGame();
+    game.claims.scorer = claimant;
+    game.claimGenerations = { scorer: 6 };
+    mocks.maybeSingle.mockResolvedValue({
+      data: { state: game, version: 75 },
+      error: null,
+    });
+
+    await expect(
+      updateGame(
+        game.id,
+        { type: "score", team: "home", points: 1, blank: false },
+        { role: "scorer", claim: claimant, generation: 4 },
+      ),
+    ).rejects.toThrow("Participant assignment changed");
+    expect(mocks.rpc).not.toHaveBeenCalled();
+  });
+
+  it("accepts current scorer authority for one atomic score write", async () => {
+    const claimant = "15151515-1515-4515-8515-151515151515";
+    const game = storedGame();
+    game.claims.scorer = claimant;
+    game.claimGenerations = { scorer: 6 };
+    mocks.maybeSingle.mockResolvedValue({
+      data: { state: game, version: 76 },
+      error: null,
+    });
+
+    await expect(
+      updateGame(
+        game.id,
+        { type: "score", team: "home", points: 1, blank: false },
+        { role: "scorer", claim: claimant, generation: 6 },
+      ),
+    ).resolves.toMatchObject({
+      scoreEvents: [expect.objectContaining({ type: "end" })],
+    });
+    expect(mocks.rpc).toHaveBeenCalledOnce();
+    expect(mocks.rpc).toHaveBeenCalledWith(
+      "append_score_event",
+      expect.anything(),
+    );
   });
 
   it("stops an organizer-observed retry when only the generation changed", async () => {
@@ -568,7 +682,7 @@ describe("Supabase score-event persistence", () => {
       updateGame(
         storedGame().id,
         { type: "connection", role: "camera-home", connected: true },
-        { claim: claimant },
+        { role: "camera-home", claim: claimant },
       ),
     ).rejects.toThrow("Game state update conflict");
     expect(mocks.rpc).toHaveBeenCalledTimes(3);

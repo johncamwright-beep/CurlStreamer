@@ -2,7 +2,7 @@ import { randomUUID } from "crypto";
 import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
-import type { GameConfig, GameState } from "../types";
+import type { GameConfig, GameState, ParticipantAuthority } from "../types";
 import type { z } from "zod";
 import type { actionSchema } from "../schema";
 import { activeEvents, deriveScore } from "../scoring";
@@ -13,17 +13,14 @@ import { GameStateConflictError } from "../game-state-conflict";
 const storePath =
   process.env.CURLCAST_MOCK_STORE_PATH || join(tmpdir(), "curlcast-games.json");
 const lockPath = `${storePath}.lock`;
-// Development-only authority metadata. Production uses PostgreSQL 0019.
-const invitations = new Map<
-  string,
-  {
-    gameId: string;
-    role: keyof GameState["connections"];
-    generation: number;
-    expiresAt: string;
-    claimant?: string;
-  }
->();
+const authorityPath = `${storePath}.authority.json`;
+type LocalInvitation = {
+  gameId: string;
+  role: keyof GameState["connections"];
+  generation: number;
+  expiresAt: string;
+  claimant?: string;
+};
 
 function readGames() {
   try {
@@ -48,7 +45,35 @@ function writeGames(games: Map<string, GameState>) {
   renameSync(temporary, storePath);
 }
 
-function mutate<T>(change: (games: Map<string, GameState>) => T): T {
+function readInvitations() {
+  try {
+    return new Map<string, LocalInvitation>(
+      Object.entries(
+        JSON.parse(readFileSync(authorityPath, "utf8")) as Record<
+          string,
+          LocalInvitation
+        >,
+      ),
+    );
+  } catch {
+    return new Map<string, LocalInvitation>();
+  }
+}
+
+function writeInvitations(invitations: Map<string, LocalInvitation>) {
+  const temporary = `${authorityPath}.${process.pid}.tmp`;
+  writeFileSync(temporary, JSON.stringify(Object.fromEntries(invitations)), {
+    mode: 0o600,
+  });
+  renameSync(temporary, authorityPath);
+}
+
+function mutate<T>(
+  change: (
+    games: Map<string, GameState>,
+    invitations: Map<string, LocalInvitation>,
+  ) => T,
+): T {
   for (let attempt = 0; ; attempt += 1) {
     try {
       mkdirSync(lockPath);
@@ -60,8 +85,10 @@ function mutate<T>(change: (games: Map<string, GameState>) => T): T {
   }
   try {
     const games = readGames();
-    const result = change(games);
+    const invitations = readInvitations();
+    const result = change(games, invitations);
     writeGames(games);
+    writeInvitations(invitations);
     return result;
   } finally {
     rmSync(lockPath, { recursive: true, force: true });
@@ -105,7 +132,7 @@ export function prepareRoleInvitation(
   invitationId: string,
   expiresAt: string,
 ) {
-  return mutate((games) => {
+  return mutate((games, invitations) => {
     const game = games.get(id);
     if (!game || game.status !== "active" || game.claims[role])
       return { error: "This invitation could not be created." };
@@ -133,7 +160,7 @@ export function claimRole(
     expiresAt: string;
   },
 ) {
-  return mutate((games) => {
+  return mutate((games, invitations) => {
     const game = games.get(id);
     if (!game) return { error: "Game not found" };
     if (game.status !== "active") return { error: "This game is closed." };
@@ -176,7 +203,7 @@ export function releaseRole(
   expectedClaim: string,
   expectedGeneration: number,
 ) {
-  return mutate((games) => {
+  return mutate((games, invitations) => {
     const game = games.get(id);
     if (!game) return { error: "Game not found" };
     const current = game.claims[role];
@@ -203,7 +230,7 @@ export function releaseRole(
 
 export function listCameraIdentityGenerations(id: string) {
   const result: Partial<Record<"camera-home" | "camera-away", number[]>> = {};
-  for (const invitation of invitations.values()) {
+  for (const invitation of readInvitations().values()) {
     if (
       invitation.gameId !== id ||
       !invitation.claimant ||
@@ -222,7 +249,7 @@ export function listCameraIdentityGenerations(id: string) {
 export function updateGame(
   id: string,
   action: z.infer<typeof actionSchema>,
-  expectedAuthority?: { claim?: string; generation?: number },
+  expectedAuthority?: ParticipantAuthority,
 ) {
   return mutate((games) => {
     const game = games.get(id);
@@ -231,16 +258,23 @@ export function updateGame(
       if (action.type === "close-game") return game;
       throw new Error("This game is completed");
     }
-    if (
-      (action.type === "camera-health" || action.type === "connection") &&
-      expectedAuthority !== undefined &&
-      (game.claims[action.role] !== expectedAuthority.claim ||
+    if (expectedAuthority) {
+      if ("role" in action && action.role !== expectedAuthority.role)
+        throw new GameStateConflictError("Participant role changed");
+      const currentGeneration =
+        game.claimGenerations?.[expectedAuthority.role] ?? 0;
+      if (
+        game.claims[expectedAuthority.role] !== expectedAuthority.claim ||
         (expectedAuthority.generation === undefined
-          ? (game.claimGenerations?.[action.role] ?? 0) !== 0
-          : (game.claimGenerations?.[action.role] ?? 0) !==
-            expectedAuthority.generation))
-    )
-      throw new GameStateConflictError("Camera assignment changed");
+          ? currentGeneration !== 0
+          : currentGeneration !== expectedAuthority.generation)
+      )
+        throw new GameStateConflictError(
+          expectedAuthority.role === "scorer"
+            ? "Participant assignment changed"
+            : "Camera assignment changed",
+        );
+    }
     const now = Date.now();
     if (action.type === "score") {
       const s = deriveScore(game);

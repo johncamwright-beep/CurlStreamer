@@ -215,7 +215,8 @@ export async function PATCH(
       authorization.via === "token" &&
       authorization.access.purpose === "participant"
         ? {
-            claim: authorization.access.deviceId,
+            role: authorization.access.role!,
+            claim: authorization.access.deviceId!,
             generation: authorization.access.assignmentGeneration,
           }
         : undefined;

@@ -38,28 +38,48 @@ function broadcastSponsorStateKey(rows: SponsorRow[]) {
   );
 }
 
+async function presentOne(
+  row: SponsorRow,
+  signedUrlSeconds: number,
+): Promise<LibrarySponsor> {
+  const db = createAdminSupabaseClient();
+  const { data, error } = await db.storage
+    .from(BUCKET)
+    .createSignedUrl(row.storage_path, signedUrlSeconds);
+  if (error || !data?.signedUrl) throw new Error("Sponsor preview unavailable");
+  return {
+    id: row.id,
+    name: row.display_name,
+    altText: row.alt_text,
+    imageUrl: data.signedUrl,
+    archived: Boolean(row.archived_at),
+    position: row.position,
+  };
+}
+
 async function present(
   rows: SponsorRow[],
   signedUrlSeconds = SIGNED_URL_SECONDS,
 ): Promise<LibrarySponsor[]> {
-  const db = createAdminSupabaseClient();
-  return Promise.all(
-    rows.map(async (row) => {
-      const { data, error } = await db.storage
-        .from(BUCKET)
-        .createSignedUrl(row.storage_path, signedUrlSeconds);
-      if (error || !data?.signedUrl)
-        throw new Error("Sponsor preview unavailable");
-      return {
-        id: row.id,
-        name: row.display_name,
-        altText: row.alt_text,
-        imageUrl: data.signedUrl,
-        archived: Boolean(row.archived_at),
-        position: row.position,
-      };
-    }),
+  return Promise.all(rows.map((row) => presentOne(row, signedUrlSeconds)));
+}
+
+async function presentAvailable(
+  rows: SponsorRow[],
+  signedUrlSeconds: number,
+): Promise<{ sponsors: LibrarySponsor[]; complete: boolean }> {
+  const results = await Promise.allSettled(
+    rows.map((row) => presentOne(row, signedUrlSeconds)),
   );
+  const sponsors = results.flatMap((result) =>
+    result.status === "fulfilled" ? [result.value] : [],
+  );
+  if (rows.length && !sponsors.length)
+    throw new Error("Sponsor preview unavailable");
+  return {
+    sponsors,
+    complete: results.every((result) => result.status === "fulfilled"),
+  };
 }
 
 export async function listSponsorLibrary(user: User) {
@@ -84,7 +104,8 @@ export async function gameLibrarySponsors(
       : { p_game_id: gameId },
   );
   if (error) throw new Error("Sponsor library unavailable");
-  const sponsors = await present((data ?? []) as SponsorRow[]);
+  const rows = ((data ?? []) as SponsorRow[]).filter((row) => !row.archived_at);
+  const { sponsors } = await presentAvailable(rows, SIGNED_URL_SECONDS);
   return sponsors.map((s) => ({
     id: s.id,
     name: s.name,
@@ -105,26 +126,26 @@ export async function gameBroadcastSponsors(
     { p_game_id: gameId },
   );
   if (error) throw new Error("Sponsor library unavailable");
-  const rows = (data ?? []) as SponsorRow[];
+  const rows = ((data ?? []) as SponsorRow[]).filter((row) => !row.archived_at);
   const stateKey = broadcastSponsorStateKey(rows);
   const cached = broadcastSponsorCache.get(gameId);
   if (cached && cached.stateKey === stateKey && cached.expiresAt > Date.now())
     return cached.sponsors;
-  const sponsors = (await present(rows, PUBLIC_BROADCAST_URL_SECONDS)).map(
-    (sponsor) => ({
-      id: sponsor.id,
-      name: sponsor.name,
-      altText: sponsor.altText,
-      dataUrl: sponsor.imageUrl,
-      enabled: true,
-      rotation: 0,
-    }),
-  );
-  broadcastSponsorCache.set(gameId, {
-    stateKey,
-    expiresAt: Date.now() + PUBLIC_BROADCAST_CACHE_MS,
-    sponsors,
-  });
+  const presented = await presentAvailable(rows, PUBLIC_BROADCAST_URL_SECONDS);
+  const sponsors = presented.sponsors.map((sponsor) => ({
+    id: sponsor.id,
+    name: sponsor.name,
+    altText: sponsor.altText,
+    dataUrl: sponsor.imageUrl,
+    enabled: true,
+    rotation: 0,
+  }));
+  if (presented.complete)
+    broadcastSponsorCache.set(gameId, {
+      stateKey,
+      expiresAt: Date.now() + PUBLIC_BROADCAST_CACHE_MS,
+      sponsors,
+    });
   return sponsors;
 }
 

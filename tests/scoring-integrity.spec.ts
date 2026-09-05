@@ -53,6 +53,7 @@ test.beforeAll(async () => {
     jsx: "automatic",
     platform: "browser",
     write: false,
+    loader: { ".css": "empty" },
     tsconfig: "tsconfig.json",
     stdin: {
       contents: `
@@ -175,7 +176,9 @@ test("guards duplicate score clicks and retries the same intent after conflict",
   });
   await expect(save).toBeDisabled();
   await expect(endGame).toBeDisabled();
-  await expect(page.getByRole("status")).toHaveText("Saving scoring change…");
+  await expect(page.getByRole("status", { name: "Scoring update" })).toHaveText(
+    "Saving scoring change…",
+  );
   const first = await page.evaluate(() =>
     structuredClone((globalThis as unknown as { __calls: unknown[] }).__calls),
   );
@@ -196,7 +199,9 @@ test("guards duplicate score clicks and retries the same intent after conflict",
       new Error("The game changed before this update was saved. Try again."),
     ),
   );
-  await expect(page.getByRole("alert")).toContainText("The game changed");
+  await expect(
+    page.getByRole("alert", { name: "Scoring error" }),
+  ).toContainText("The game changed");
   await page.getByRole("button", { name: "Retry same change" }).click();
   const second = await page.evaluate(() =>
     structuredClone((globalThis as unknown as { __calls: unknown[] }).__calls),
@@ -208,7 +213,9 @@ test("guards duplicate score clicks and retries the same intent after conflict",
       globalThis as unknown as { __resolveAction: () => void }
     ).__resolveAction(),
   );
-  await expect(page.getByRole("status")).toHaveText("End 2 saved.");
+  await expect(page.getByRole("status", { name: "Scoring update" })).toHaveText(
+    "End 2 saved.",
+  );
 });
 
 test("shows and submits the exact append-only Undo effect", async ({
@@ -234,7 +241,7 @@ test("shows and submits the exact append-only Undo effect", async ({
       globalThis as unknown as { __resolveAction: () => void }
     ).__resolveAction(),
   );
-  await expect(page.getByRole("status")).toContainText(
-    "prior change remains in history",
-  );
+  await expect(
+    page.getByRole("status", { name: "Scoring update" }),
+  ).toContainText("prior change remains in history");
 });

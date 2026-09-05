@@ -1,0 +1,156 @@
+:root {
+  font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+  color: #e8eef6;
+  background: #09111d;
+  color-scheme: dark;
+}
+* {
+  box-sizing: border-box;
+}
+body {
+  margin: 0;
+}
+main {
+  max-width: 920px;
+  margin: auto;
+  padding: 36px 20px 60px;
+}
+.brand {
+  font-size: 21px;
+  font-weight: 750;
+}
+.tag {
+  float: right;
+  font-size: 11px;
+  letter-spacing: 0.13em;
+  border: 1px solid #40536b;
+  padding: 7px 10px;
+  border-radius: 6px;
+  color: #8ddccc;
+}
+h1 {
+  font-size: clamp(28px, 5vw, 42px);
+  line-height: 1.12;
+  margin: 30px 0 16px;
+  max-width: 650px;
+}
+p {
+  color: #aebed0;
+  line-height: 1.6;
+}
+section {
+  border: 1px solid #28384d;
+  border-radius: 16px;
+  background: #101c2c;
+  padding: 24px;
+  margin-top: 20px;
+}
+h2 {
+  font-size: 18px;
+  margin: 0 0 16px;
+}
+.heading,
+.actions {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+.heading {
+  justify-content: space-between;
+}
+.badge {
+  font-size: 13px;
+  border-radius: 20px;
+  background: #263b4a;
+  padding: 7px 12px;
+}
+button {
+  border: 1px solid transparent;
+  border-radius: 9px;
+  background: #8ce0c9;
+  color: #102a28;
+  min-height: 48px;
+  padding: 12px 18px;
+  font: inherit;
+  font-weight: 650;
+  cursor: pointer;
+}
+button.secondary {
+  background: #1c2d43;
+  color: #e8eef6;
+  border-color: #42556e;
+}
+button:disabled {
+  opacity: 0.45;
+  cursor: wait;
+}
+button:focus-visible,
+input:focus-visible {
+  outline: 3px solid #8ce0c9;
+  outline-offset: 3px;
+}
+input {
+  width: 100%;
+  background: #09111d;
+  border: 1px solid #53657b;
+  border-radius: 7px;
+  min-height: 48px;
+  color: white;
+  font: inherit;
+  padding: 10px;
+  margin: 8px 0 16px;
+}
+label {
+  display: block;
+  font-size: 14px;
+  color: #bccada;
+}
+.scores {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 18px;
+}
+video {
+  width: 100%;
+  background: #05090f;
+  border-radius: 9px;
+  margin: 12px 0;
+  object-fit: contain;
+}
+#local {
+  max-height: 320px;
+}
+#program {
+  aspect-ratio: 16/9;
+}
+#message {
+  color: #ffcd9b;
+  min-height: 28px;
+}
+[hidden] {
+  display: none !important;
+}
+@media (max-width: 480px) {
+  main {
+    padding: 24px 14px;
+  }
+  section {
+    padding: 18px;
+  }
+  .actions button {
+    flex: 1 1 140px;
+  }
+}
+select {
+  display: block;
+  width: 100%;
+  min-height: 48px;
+  margin: 8px 0 18px;
+  background: #09111d;
+  color: #e8eef6;
+  border: 1px solid #53657b;
+  border-radius: 7px;
+  font: inherit;
+  padding: 10px;
+}

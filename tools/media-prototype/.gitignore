@@ -1,0 +1,5 @@
+__pycache__/
+assets/livekit-client.umd.js
+assets/hls.min.js
+*.private.json
+*.zip

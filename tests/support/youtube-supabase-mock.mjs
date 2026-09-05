@@ -1,4 +1,5 @@
 import { createServer } from "node:http";
+import { dashboardResponse } from "./dashboard-fixtures.mjs";
 
 const userId = "11111111-1111-4111-8111-111111111111";
 const organizationId = "22222222-2222-4222-8222-222222222222";
@@ -39,6 +40,8 @@ function send(response, status, body) {
 const server = createServer((request, response) => {
   const url = new URL(request.url ?? "/", "http://127.0.0.1:3101");
   if (request.method === "OPTIONS") return send(response, 204, {});
+  const dashboard = dashboardResponse(url);
+  if (dashboard !== null) return send(response, 200, dashboard);
   if (url.pathname === "/auth/v1/token" && request.method === "POST")
     return send(response, 200, {
       access_token: jwt,

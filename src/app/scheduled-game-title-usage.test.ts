@@ -5,7 +5,7 @@ const source = (path: string) => readFileSync(path, "utf8");
 
 describe("canonical scheduled game title usage", () => {
   it.each([
-    "src/app/dashboard/page.tsx",
+    "src/app/dashboard/GamesDashboard.tsx",
     "src/app/events/[id]/page.tsx",
     "src/app/games/[id]/edit/page.tsx",
   ])("formats structured listings and schedule headings in %s", (path) => {

@@ -11,18 +11,26 @@ import { AppNavigation } from "@/components/AppNavigation";
 import { canonicalTitleFromConfig } from "@/lib/game-title";
 import { gameCapabilities } from "@/lib/current-game";
 import { hasOrganizerAccess } from "@/lib/access-session";
+import { CompletedGameSummary } from "@/components/CompletedGameSummary";
 export default function Scorer({
   params,
 }: {
   params: Promise<{ id: string }>;
 }) {
   const { id } = use(params);
-  const { game, error, act, accountOperator, accountRole } = useGame(id);
+  const { game, completion, error, act, accountOperator, accountRole } =
+    useGame(id);
   const [points, setPoints] = useState(1);
   const [team, setTeam] = useState<Team>("home");
   const [hammerBusy, setHammerBusy] = useState(false);
   const [hammerError, setHammerError] = useState("");
   const [correctingHammer, setCorrectingHammer] = useState(false);
+  if (completion)
+    return (
+      <main className="mx-auto max-w-3xl p-5">
+        <CompletedGameSummary gameId={id} completion={completion} />
+      </main>
+    );
   if (error)
     return (
       <main role="alert" className="p-8">

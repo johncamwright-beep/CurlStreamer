@@ -85,14 +85,17 @@ function liveKitHttpUrl(url: string) {
   return url.replace(/^wss:/, "https:").replace(/^ws:/, "http:");
 }
 
-/** Server-only administrative removal; a missing participant is already disconnected. */
-export async function removeCameraParticipant(
+async function roomServiceRequest(
+  operation: "RemoveParticipant" | "DeleteRoom",
   gameId: string,
-  role: "camera-home" | "camera-away",
+  body: Record<string, string>,
 ) {
   const { url, key, secret } = liveKitConfiguration();
   const token = await new SignJWT({
-    video: { room: `game-${gameId}`, roomAdmin: true },
+    video:
+      operation === "DeleteRoom"
+        ? { roomCreate: true }
+        : { room: `game-${gameId}`, roomAdmin: true },
   })
     .setProtectedHeader({ alg: "HS256", typ: "JWT" })
     .setIssuer(key)
@@ -101,19 +104,51 @@ export async function removeCameraParticipant(
     .setExpirationTime("1m")
     .sign(new TextEncoder().encode(secret));
   const response = await fetch(
-    `${liveKitHttpUrl(url)}/twirp/livekit.RoomService/RemoveParticipant`,
+    `${liveKitHttpUrl(url)}/twirp/livekit.RoomService/${operation}`,
     {
       method: "POST",
       headers: {
         authorization: `Bearer ${token}`,
         "content-type": "application/json",
       },
-      body: JSON.stringify({
-        room: `game-${gameId}`,
-        identity: liveKitIdentity(gameId, role),
-      }),
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(8_000),
     },
   );
   if (response.ok || response.status === 404) return;
-  throw new Error(`LiveKit participant removal failed (${response.status})`);
+  throw new Error(`${operation} failed (${response.status})`);
+}
+
+/** Server-only administrative removal; a missing participant is already disconnected. */
+export async function removeCameraParticipant(
+  gameId: string,
+  role: "camera-home" | "camera-away",
+) {
+  await roomServiceRequest("RemoveParticipant", gameId, {
+    room: `game-${gameId}`,
+    identity: liveKitIdentity(gameId, role),
+  });
+}
+
+/** Disconnects the room and asks LiveKit to revoke both stable camera identities. */
+export async function terminateGameLiveKit(gameId: string) {
+  const removals = await Promise.allSettled([
+    removeCameraParticipant(gameId, "camera-home"),
+    removeCameraParticipant(gameId, "camera-away"),
+  ]);
+  // Wait for stable-identity removal before deleting the room; on LiveKit
+  // Cloud this is the operation that revokes prior tokens for those identities.
+  const deletion = await Promise.allSettled([
+    roomServiceRequest("DeleteRoom", gameId, {
+      room: `game-${gameId}`,
+    }),
+  ]);
+  const operations = [...removals, ...deletion];
+  const failed = operations
+    .map((result, index) => (result.status === "rejected" ? index : -1))
+    .filter((index) => index >= 0);
+  if (failed.length)
+    throw new Error(
+      `LiveKit cleanup was not confirmed for ${failed.length} operation${failed.length === 1 ? "" : "s"}`,
+    );
 }

@@ -8,6 +8,7 @@ import {
 } from "@/lib/team-hierarchy-service";
 import type { EventType, SeasonStatus } from "@/lib/team-hierarchy";
 import type { GameConfig } from "@/lib/types";
+import type { CompletionResult } from "@/lib/game-completion";
 
 export type SeasonRecord = {
   id: string;
@@ -39,6 +40,8 @@ export type ScheduledGameRecord = {
   createdAt: string;
   status: string;
   config: GameConfig;
+  completionResult?: CompletionResult | null;
+  youtubeWatchUrl?: string | null;
 };
 
 export async function loadTeamHierarchyData(user: User) {
@@ -100,6 +103,9 @@ export async function loadTeamHierarchyData(user: User) {
         createdAt: g.created_at as string,
         status: g.game_status as string,
         config: g.config as unknown as GameConfig,
+        completionResult:
+          (g.completion_result as CompletionResult | null) ?? null,
+        youtubeWatchUrl: (g.youtube_watch_url as string | null) ?? null,
       };
     }) as ScheduledGameRecord[],
   };

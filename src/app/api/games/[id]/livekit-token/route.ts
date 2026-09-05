@@ -1,10 +1,10 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { getGame } from "@/lib/store";
 import { readGame } from "@/lib/providers/game-read";
 import {
   issueLiveKitToken,
   LiveKitConfigurationError,
+  terminateGameLiveKit,
   type LiveKitAccess,
 } from "@/lib/providers/livekit";
 import {
@@ -59,7 +59,10 @@ export async function POST(
     try {
       const result = await readGame(id);
       if (result.kind !== "active") {
-        const failure = authorizationError({ ok: false, reason: result.kind });
+        const failure = authorizationError({
+          ok: false,
+          reason: result.kind === "completed" ? "closed" : result.kind,
+        });
         return credentialResponse(
           { error: failure.error },
           { status: failure.status },
@@ -85,18 +88,31 @@ export async function POST(
   }
   if (!role)
     return credentialResponse({ error: "Access denied" }, { status: 403 });
-  if (!anonymousBroadcast) {
-    const game = await getGame(id);
-    if (!game)
-      return credentialResponse({ error: "Game not found" }, { status: 404 });
-    if (game.status === "closed")
-      return credentialResponse(
-        { error: "This game is closed" },
-        { status: 410 },
-      );
-  }
   try {
-    return credentialResponse(await issueLiveKitToken(id, role));
+    const before = await readGame(id);
+    if (before.kind !== "active") {
+      const reason = before.kind === "completed" ? "closed" : before.kind;
+      const denied = authorizationError({ ok: false, reason });
+      return credentialResponse(
+        { error: denied.error },
+        { status: denied.status },
+      );
+    }
+    const issued = await issueLiveKitToken(id, role);
+    // Close the authorization/signing race. A token signed after completion
+    // cleanup is never returned, and cleanup is repeated so it cannot reopen a
+    // just-deleted room before expiry.
+    const after = await readGame(id);
+    if (after.kind !== "active") {
+      await terminateGameLiveKit(id).catch(() => {});
+      const reason = after.kind === "completed" ? "closed" : after.kind;
+      const denied = authorizationError({ ok: false, reason });
+      return credentialResponse(
+        { error: denied.error },
+        { status: denied.status },
+      );
+    }
+    return credentialResponse(issued);
   } catch (error) {
     const configuration = error instanceof LiveKitConfigurationError;
     console.error("LiveKit credential service failed", {

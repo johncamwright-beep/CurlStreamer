@@ -141,7 +141,15 @@ describe("GET /api/games/[id] over HTTP", () => {
     extra = {},
   ) {
     expect(response.status).toBe(status);
-    expect(await response.json()).toEqual({ error, ...extra });
+    expect(await response.json()).toEqual({
+      error,
+      ...(status === 410
+        ? {
+            lifecycle: error.includes("deleted") ? "deleted" : "closed",
+          }
+        : {}),
+      ...extra,
+    });
     expect(response.headers.has("x-curlcast-account-role")).toBe(false);
     expect(response.headers.has("x-curlcast-operator")).toBe(false);
     expect(mocks.gameLibrarySponsors).not.toHaveBeenCalled();
@@ -157,6 +165,36 @@ describe("GET /api/games/[id] over HTTP", () => {
   it("requires access for the default game read", async () => {
     anonymous();
     await failure(await request(), 401, "Game access is required");
+  });
+  it("returns only the safe stored result for a completed game", async () => {
+    const completion = {
+      status: "completed",
+      eventName: "Club final",
+      homeName: "Rocks",
+      awayName: "Stones",
+      result: {
+        outcome: "home_win",
+        label: "Home win",
+        totals: { home: 4, away: 2 },
+        ends: [],
+      },
+      youtubeWatchUrl: "https://youtu.be/abcdefghijk",
+      completedAt: "2026-09-05T00:00:00Z",
+    };
+    mocks.listTeamGames.mockResolvedValue({
+      ok: true,
+      games: [{ game_id: testGameId, game_status: "completed" }],
+    });
+    mocks.readGame.mockResolvedValue({ kind: "completed", completion });
+    const accountResponse = await request();
+    expect(await accountResponse.json()).toEqual(completion);
+    expect(JSON.stringify(completion)).not.toMatch(
+      /reviewId|completionId|claims|actor|credential/i,
+    );
+
+    anonymous();
+    const publicResponse = await request("broadcast");
+    expect(await publicResponse.json()).toEqual(completion);
   });
   it("returns exactly the public Broadcast allowlist, even with unexpected stored fields", async () => {
     anonymous();

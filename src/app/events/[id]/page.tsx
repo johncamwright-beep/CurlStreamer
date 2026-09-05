@@ -98,9 +98,24 @@ export default async function EventPage({
                     · {game.status}
                   </p>
                 )}
-                {data.role !== "viewer" && (
-                  <TeamGameLinks gameId={game.id} title={title} />
+                {game.status === "completed" && (
+                  <p className="mt-2 font-bold text-cyan-200">
+                    Final:{" "}
+                    {game.completionResult?.totals
+                      ? `${game.completionResult.totals.home} – ${game.completionResult.totals.away}`
+                      : game.completionResult?.label}
+                  </p>
                 )}
+                {game.status === "completed" ? (
+                  <Link
+                    className="btn-secondary mt-3 inline-flex"
+                    href={`/games/${game.id}`}
+                  >
+                    View result
+                  </Link>
+                ) : data.role !== "viewer" ? (
+                  <TeamGameLinks gameId={game.id} title={title} />
+                ) : null}
               </article>
             );
           })

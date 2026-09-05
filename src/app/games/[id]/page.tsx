@@ -9,14 +9,22 @@ import { canonicalTitleFromConfig } from "@/lib/game-title";
 import { gameCapabilities } from "@/lib/current-game";
 import { hasOrganizerAccess } from "@/lib/access-session";
 import { GameInvitations } from "@/components/GameInvitations";
+import { EndGameControl } from "@/components/EndGameControl";
+import { CompletedGameSummary } from "@/components/CompletedGameSummary";
+import type {
+  CompletionCleanup,
+  SafeGameCompletion,
+} from "@/lib/game-completion";
 export default function GameLobby({
   params,
 }: {
   params: Promise<{ id: string }>;
 }) {
   const { id } = use(params);
-  const { game, error, act, refresh, accountOperator, accountRole } =
+  const { game, completion, error, refresh, accountOperator, accountRole } =
     useGame(id);
+  const [finished, setFinished] = useState<SafeGameCompletion>();
+  const [finishedCleanup, setFinishedCleanup] = useState<CompletionCleanup>();
   const [disconnecting, setDisconnecting] = useState<Role>();
   const [cameraActionError, setCameraActionError] = useState("");
   async function cameraAction(
@@ -55,6 +63,18 @@ export default function GameLobby({
       setDisconnecting(undefined);
     }
   }
+  const completed = completion ?? finished;
+  if (completed)
+    return (
+      <main className="mx-auto max-w-3xl p-5">
+        <CompletedGameSummary
+          gameId={id}
+          completion={completed}
+          cleanupControls
+          initialCleanup={finishedCleanup}
+        />
+      </main>
+    );
   if (error) return <main className="p-8">{error}</main>;
   if (!game) return <main className="p-8">Loading game…</main>;
   const title = canonicalTitleFromConfig(game.config);
@@ -191,15 +211,19 @@ export default function GameLobby({
           >
             Broadcast preview
           </Link>
-          <button
-            className="btn-secondary border-red-700 text-red-200"
-            onClick={() =>
-              confirm("Close this game and revoke participant access?") &&
-              act({ type: "close-game" })
+          <EndGameControl
+            gameId={id}
+            homeName={game.config.homeName}
+            awayName={game.config.awayName}
+            enabled={
+              ["owner", "team_admin"].includes(accountRole) ||
+              hasOrganizerAccess(localStorage, id)
             }
-          >
-            Close game
-          </button>
+            onCompleted={(value, cleanup) => {
+              setFinished(value);
+              setFinishedCleanup(cleanup);
+            }}
+          />
         </div>
       </section>
     </main>

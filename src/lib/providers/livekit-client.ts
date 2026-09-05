@@ -150,12 +150,14 @@ export async function acquireVerifiedPortraitCamera(
   mediaDevices: Pick<MediaDevices, "getUserMedia">,
   video: HTMLVideoElement,
   devicePortrait: boolean,
+  onTrack?: (track: MediaStreamTrack) => void,
 ) {
   const stream = await mediaDevices.getUserMedia(portraitMediaConstraints);
   const mediaTrack = stream.getVideoTracks()[0];
   if (!mediaTrack)
     throw new DOMException("No video track returned", "NotFoundError");
   try {
+    onTrack?.(mediaTrack);
     video.srcObject = stream;
     const report = await verifyPortraitTrack(mediaTrack, video, devicePortrait);
     return { track: new LocalVideoTrack(mediaTrack), report };

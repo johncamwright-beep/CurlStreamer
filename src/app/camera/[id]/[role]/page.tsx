@@ -40,10 +40,11 @@ export default function Camera({
   params: Promise<{ id: string; role: "camera-home" | "camera-away" }>;
 }) {
   const { id, role } = use(params);
-  const { game, act } = useGame(id);
+  const { lifecycle, act } = useGame(id);
   const video = useRef<HTMLVideoElement>(null);
   const room = useRef<Room | undefined>(undefined);
   const cameraTrack = useRef<LocalVideoTrack | undefined>(undefined);
+  const pendingCapture = useRef<MediaStreamTrack | undefined>(undefined);
   const connectionGate = useRef(new SingleFlightGate());
   const attempt = useRef(0);
   const cleanupFlight = useRef<Promise<void> | undefined>(undefined);
@@ -70,6 +71,28 @@ export default function Camera({
   const [lens, setLens] = useState<RearLens["key"]>();
   const transition = (event: ConnectionEvent) =>
     setState((current) => nextConnectionState(current, event));
+
+  useEffect(() => {
+    if (!lifecycle || lifecycle === "active") return;
+    ++attempt.current;
+    disconnected.current = true;
+    const activeTrack = cameraTrack.current;
+    cameraTrack.current = undefined;
+    // An authoritative terminal poll must turn off browser capture immediately,
+    // even if provider disconnect cleanup is still in flight.
+    activeTrack?.detach();
+    activeTrack?.stop();
+    pendingCapture.current?.stop();
+    pendingCapture.current = undefined;
+    room.current?.disconnect();
+    void wakeLock.current?.release();
+    wakeLock.current = undefined;
+    connectionGate.current.leave();
+    setState("disconnected");
+    setCapture("");
+    setSource("");
+    setPreviewReady(false);
+  }, [lifecycle]);
 
   useEffect(() => {
     mounted.current = true;
@@ -111,6 +134,8 @@ export default function Camera({
       const currentRoom = room.current;
       const currentTrack = cameraTrack.current;
       cameraTrack.current = undefined;
+      pendingCapture.current?.stop();
+      pendingCapture.current = undefined;
       // Stopping synchronously makes the camera indicator go out immediately.
       currentTrack?.detach();
       currentTrack?.stop();
@@ -183,8 +208,12 @@ export default function Camera({
         navigator.mediaDevices,
         video.current,
         deviceIsPortrait(screen.orientation, innerWidth, innerHeight),
+        (track) => {
+          pendingCapture.current = track;
+        },
       );
       const { track, report } = await acquisition;
+      pendingCapture.current = undefined;
       acquired = true;
       setConnectionStatus("Starting camera");
       if (thisAttempt !== attempt.current) {
@@ -429,11 +458,15 @@ export default function Camera({
       );
     }
   }
-  if (game?.status === "closed")
+  if (lifecycle && lifecycle !== "active")
     return (
       <main className="mx-auto max-w-lg p-5">
         <div role="alert" className="panel text-center">
-          <h1 className="text-2xl font-black">This game is closed</h1>
+          <h1 className="text-2xl font-black">
+            {lifecycle === "completed"
+              ? "This game has ended"
+              : "This game is closed"}
+          </h1>
           <p className="mt-2 text-slate-300">
             Camera access has been revoked. You can safely close this page.
           </p>

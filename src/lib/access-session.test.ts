@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   hasOrganizerAccess,
   hasScoringAccess,
+  organizerAccessToken,
   preserveAndStoreParticipantAccess,
 } from "./access-session";
 
@@ -66,6 +67,7 @@ describe("browser access sessions", () => {
     );
     expect(store.values.get("curlcast-participant-access-game-1")).toBe(scorer);
     expect(hasOrganizerAccess(store, "game-1")).toBe(true);
+    expect(organizerAccessToken(store, "game-1")).toBe(organizer);
   });
 
   it("does not mistake participant or another game's token for organizer access", () => {

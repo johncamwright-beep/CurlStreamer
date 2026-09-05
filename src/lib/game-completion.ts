@@ -5,6 +5,7 @@ import { z } from "zod";
 import { createAdminSupabaseClient } from "@/lib/supabase/admin";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { readAccessToken } from "@/lib/tokens";
+import { youtubeWatchUrlSchema } from "@/lib/youtube-watch";
 
 const idSchema = z.string().uuid();
 
@@ -30,12 +31,29 @@ export type CompletionReview = {
   reviewId: string;
   inputRevision: number;
   result: CompletionResult;
+  youtubeWatchUrl: string | null;
 };
 
 export type GameCompletion = CompletionReview & {
   completionId: string;
   completedAt: string;
-  cleanupStatus: "pending" | "complete";
+  cleanupStatus: "pending" | "failed" | "complete";
+};
+
+export type SafeGameCompletion = {
+  status: "completed";
+  eventName: string;
+  homeName: string;
+  awayName: string;
+  result: CompletionResult;
+  youtubeWatchUrl: string | null;
+  completedAt: string;
+};
+
+export type CompletionCleanup = {
+  status: "pending" | "failed" | "complete";
+  attempts: number;
+  lastError: string | null;
 };
 
 type FailureKind = "authorization" | "conflict" | "terminal" | "service";
@@ -69,7 +87,7 @@ export async function verifiedCompletionAccount(): Promise<
   }
 }
 
-async function actorParameters(
+export async function completionActorParameters(
   gameId: string,
   credential: CompletionCredential,
 ) {
@@ -99,6 +117,7 @@ function reviewRow(value: Record<string, unknown>): CompletionReview {
     reviewId: value.review_id as string,
     inputRevision: Number(value.input_revision),
     result: value.result as CompletionResult,
+    youtubeWatchUrl: (value.youtube_watch_url as string | null) ?? null,
   };
 }
 
@@ -106,15 +125,18 @@ function reviewRow(value: Record<string, unknown>): CompletionReview {
 export async function reviewGameCompletion(
   gameId: string,
   credential: CompletionCredential,
+  youtubeWatchUrl: string | null = null,
 ): Promise<Result<CompletionReview>> {
   try {
     const id = idSchema.parse(gameId);
-    const actor = await actorParameters(id, credential);
+    const actor = await completionActorParameters(id, credential);
+    const watchUrl = youtubeWatchUrlSchema.parse(youtubeWatchUrl ?? "");
     const { data, error } = await createAdminSupabaseClient().rpc(
-      "review_game_completion",
+      "review_game_completion_with_link",
       {
         p_game_id: id,
         p_review_id: randomUUID(),
+        p_youtube_watch_url: watchUrl,
         ...actor,
       },
     );
@@ -140,7 +162,7 @@ export async function completeReviewedGame(
 ): Promise<Result<GameCompletion>> {
   try {
     const id = idSchema.parse(gameId);
-    const actor = await actorParameters(id, credential);
+    const actor = await completionActorParameters(id, credential);
     const { data, error } = await createAdminSupabaseClient().rpc(
       "complete_reviewed_game",
       {
@@ -159,9 +181,87 @@ export async function completeReviewedGame(
         ...reviewRow(row),
         completionId: row.completion_id as string,
         completedAt: row.completed_at as string,
-        cleanupStatus: row.cleanup_status as "pending" | "complete",
+        cleanupStatus: row.cleanup_status as GameCompletion["cleanupStatus"],
       },
     };
+  } catch (error) {
+    return failure(error as { code?: string });
+  }
+}
+
+export async function readGameCompletionSummary(
+  gameId: string,
+): Promise<SafeGameCompletion | undefined> {
+  const id = idSchema.parse(gameId);
+  const { data, error } = await createAdminSupabaseClient().rpc(
+    "read_game_completion_summary",
+    { p_game_id: id },
+  );
+  if (error) throw error;
+  if (!data) return;
+  const value = data as Record<string, unknown>;
+  return {
+    status: "completed",
+    eventName: String(value.eventName ?? "Completed game"),
+    homeName: String(value.homeName ?? "Home"),
+    awayName: String(value.awayName ?? "Away"),
+    result: value.result as CompletionResult,
+    youtubeWatchUrl: (value.youtubeWatchUrl as string | null) ?? null,
+    completedAt: String(value.completedAt),
+  };
+}
+
+function cleanupRow(value: Record<string, unknown>): CompletionCleanup {
+  return {
+    status: value.status as CompletionCleanup["status"],
+    attempts: Number(value.attempts),
+    lastError: (value.last_error as string | null) ?? null,
+  };
+}
+
+export async function getCompletionCleanup(
+  gameId: string,
+  credential: CompletionCredential,
+): Promise<Result<CompletionCleanup>> {
+  try {
+    const id = idSchema.parse(gameId);
+    const actor = await completionActorParameters(id, credential);
+    const { data, error } = await createAdminSupabaseClient().rpc(
+      "get_game_completion_cleanup",
+      { p_game_id: id, ...actor },
+    );
+    if (error) return failure(error);
+    const row = (data as Record<string, unknown>[] | null)?.[0];
+    return row
+      ? { ok: true, value: cleanupRow(row) }
+      : { ok: false, kind: "service" };
+  } catch (error) {
+    return failure(error as { code?: string });
+  }
+}
+
+export async function recordCompletionCleanup(
+  gameId: string,
+  credential: CompletionCredential,
+  outcome: { succeeded: boolean; error?: string },
+): Promise<Result<CompletionCleanup>> {
+  try {
+    const id = idSchema.parse(gameId);
+    const actor = await completionActorParameters(id, credential);
+    const { data, error } = await createAdminSupabaseClient().rpc(
+      "record_game_completion_cleanup",
+      {
+        p_game_id: id,
+        p_succeeded: outcome.succeeded,
+        p_error: outcome.error ?? null,
+        ...actor,
+      },
+    );
+    if (error) return failure(error);
+    const row = (data as Record<string, unknown>[] | null)?.[0];
+    return row
+      ? { ok: true, value: cleanupRow(row) }
+      : { ok: false, kind: "service" };
   } catch (error) {
     return failure(error as { code?: string });
   }

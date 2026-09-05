@@ -33,6 +33,8 @@ function readFailure(
     {
       error: failure.error,
       ...(reason === "released" ? { code: "camera_assignment_released" } : {}),
+      ...(reason === "closed" ? { lifecycle: "closed" } : {}),
+      ...(reason === "deleted" ? { lifecycle: "deleted" } : {}),
     },
     { status: failure.status },
   );
@@ -59,11 +61,18 @@ export async function GET(
     authorization.reason === "unauthorized" &&
     authorization.anonymous &&
     view.data === "broadcast";
-  if (!authorization.ok && !publicBroadcast)
+  if (
+    !authorization.ok &&
+    !publicBroadcast &&
+    authorization.reason !== "closed"
+  )
     return readFailure(authorization.reason);
 
   try {
     const result = await readGame(id);
+    if (result.kind === "completed") return gameResponse(result.completion);
+    if (!authorization.ok && !publicBroadcast)
+      return readFailure(authorization.reason);
     if (result.kind !== "active") return readFailure(result.kind);
     const game = result.game;
     // Recheck the current snapshot in case a participant was released during authorization.

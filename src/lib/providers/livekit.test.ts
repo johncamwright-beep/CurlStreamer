@@ -7,6 +7,7 @@ import {
   liveKitMetadata,
   liveKitVideoGrant,
   removeCameraParticipant,
+  terminateGameLiveKit,
 } from "./livekit";
 
 describe("LiveKit grants", () => {
@@ -126,6 +127,46 @@ describe("LiveKit grants", () => {
       identity: "game-1:camera-away",
     });
     expect(String(init?.headers)).not.toContain("super-secret-value");
+    request.mockRestore();
+  });
+
+  it("revokes stable camera identities and deletes the room with operation-specific grants", async () => {
+    process.env.LIVEKIT_URL = "wss://live.example.test";
+    process.env.LIVEKIT_API_KEY = "test-key";
+    process.env.LIVEKIT_API_SECRET = "super-secret-value";
+    const request = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(new Response("", { status: 200 }));
+    await terminateGameLiveKit("game-1");
+    expect(request).toHaveBeenCalledTimes(3);
+    const calls = request.mock.calls.map(([url, init]) => ({
+      url: String(url),
+      body: JSON.parse(String(init?.body)),
+      claims: decodeJwt(
+        String((init?.headers as Record<string, string>).authorization).slice(
+          7,
+        ),
+      ),
+      signal: init?.signal,
+    }));
+    expect(
+      calls.filter((call) => call.url.endsWith("RemoveParticipant")),
+    ).toHaveLength(2);
+    expect(calls.map((call) => call.body)).toEqual(
+      expect.arrayContaining([
+        { room: "game-game-1", identity: "game-1:camera-home" },
+        { room: "game-game-1", identity: "game-1:camera-away" },
+        { room: "game-game-1" },
+      ]),
+    );
+    const deleteCall = calls.find((call) => call.url.endsWith("DeleteRoom"))!;
+    expect(deleteCall.claims.video).toEqual({ roomCreate: true });
+    expect(deleteCall.signal).toBeInstanceOf(AbortSignal);
+    for (const call of calls.filter((value) => value !== deleteCall))
+      expect(call.claims.video).toEqual({
+        room: "game-game-1",
+        roomAdmin: true,
+      });
     request.mockRestore();
   });
 });

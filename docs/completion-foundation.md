@@ -61,7 +61,7 @@ so legitimate retries work without making completion public.
 ## Disposable PostgreSQL verification
 
 The transaction integration suite requires `psql` and a disposable local
-database with migrations `0001` through `0015` already applied. For plain local
+database with migrations `0001` through `0016` already applied. For plain local
 PostgreSQL, apply `supabase/test-support/completion_postgres_prerequisites.sql`
 first. That test-only bootstrap creates only the `anon`, `authenticated`, and
 `service_role` roles (including Supabase's `BYPASSRLS` property for the latter)

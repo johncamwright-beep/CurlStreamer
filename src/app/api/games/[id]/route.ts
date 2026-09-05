@@ -33,6 +33,8 @@ function readFailure(
     {
       error: failure.error,
       ...(reason === "released" ? { code: "camera_assignment_released" } : {}),
+      ...(reason === "closed" ? { lifecycle: "closed" } : {}),
+      ...(reason === "deleted" ? { lifecycle: "deleted" } : {}),
     },
     { status: failure.status },
   );
@@ -49,22 +51,58 @@ export async function GET(
   if (!parsed.success || !view.success)
     return gameResponse({ error: "Invalid game request" }, { status: 400 });
   const { id } = parsed.data;
-  const authorization = await authorizeGame(request, id, {
+  let authorization = await authorizeGame(request, id, {
     accountRoles: operatorRoles,
     tokenAllowed: (access) =>
       access.purpose !== "invitation" || view.data === "join",
+    allowCompletedAccount: true,
   });
+  // A viewer account must not shadow a valid organizer or participant bearer.
+  // Only after the primary account-or-token decision misses do we retain
+  // same-team viewer identity for a possible safe completed projection below.
+  if (!authorization.ok && authorization.reason === "unauthorized") {
+    const viewer = await authorizeGame(request, id, {
+      accountRoles: ["viewer"],
+      tokenAllowed: () => false,
+      allowCompletedAccount: true,
+    });
+    if (viewer.ok) authorization = viewer;
+  }
   const publicBroadcast =
     !authorization.ok &&
     authorization.reason === "unauthorized" &&
     authorization.anonymous &&
     view.data === "broadcast";
-  if (!authorization.ok && !publicBroadcast)
+  if (
+    !authorization.ok &&
+    !publicBroadcast &&
+    authorization.reason !== "closed"
+  )
     return readFailure(authorization.reason);
 
   try {
     const result = await readGame(id);
+    if (result.kind === "completed")
+      return gameResponse(result.completion, {
+        headers:
+          authorization.ok && authorization.via === "account"
+            ? {
+                "x-curlcast-operator": String(authorization.role !== "viewer"),
+                "x-curlcast-account-role": authorization.role,
+                "access-control-expose-headers":
+                  "x-curlcast-operator, x-curlcast-account-role",
+              }
+            : undefined,
+      });
+    if (!authorization.ok && !publicBroadcast)
+      return readFailure(authorization.reason);
     if (result.kind !== "active") return readFailure(result.kind);
+    if (
+      authorization.ok &&
+      authorization.via === "account" &&
+      authorization.role === "viewer"
+    )
+      return readFailure("unauthorized");
     const game = result.game;
     // Recheck the current snapshot in case a participant was released during authorization.
     if (

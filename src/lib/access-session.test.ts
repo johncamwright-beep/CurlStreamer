@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
+  canManageCompletion,
   hasOrganizerAccess,
   hasScoringAccess,
+  organizerAccessToken,
   preserveAndStoreParticipantAccess,
 } from "./access-session";
 
@@ -19,6 +21,19 @@ function storage(initial: Record<string, string> = {}) {
 }
 
 describe("browser access sessions", () => {
+  it.each([
+    ["owner", false, true],
+    ["team_admin", false, true],
+    ["scorer", false, false],
+    ["viewer", false, false],
+    ["", true, true],
+  ])(
+    "derives completion cleanup authority for %s with organizer=%s",
+    (role, organizer, expected) => {
+      expect(canManageCompletion(role, organizer)).toBe(expected);
+    },
+  );
+
   it("recognizes only same-game organizer and scorer sessions as scoring access", () => {
     const organizer = token({ purpose: "organizer", gameId: "game-1" });
     const scorer = token({
@@ -66,6 +81,7 @@ describe("browser access sessions", () => {
     );
     expect(store.values.get("curlcast-participant-access-game-1")).toBe(scorer);
     expect(hasOrganizerAccess(store, "game-1")).toBe(true);
+    expect(organizerAccessToken(store, "game-1")).toBe(organizer);
   });
 
   it("does not mistake participant or another game's token for organizer access", () => {

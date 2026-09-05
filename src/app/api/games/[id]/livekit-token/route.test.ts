@@ -5,6 +5,7 @@ const mocks = vi.hoisted(() => ({
   getGame: vi.fn(),
   readGame: vi.fn(),
   issueLiveKitToken: vi.fn(),
+  terminateGameLiveKit: vi.fn(),
 }));
 vi.mock("@/lib/game-authorization", () => ({
   operatorRoles: ["owner", "team_admin", "scorer"],
@@ -34,6 +35,7 @@ vi.mock("@/lib/store", () => ({ getGame: mocks.getGame }));
 vi.mock("@/lib/providers/game-read", () => ({ readGame: mocks.readGame }));
 vi.mock("@/lib/providers/livekit", () => ({
   issueLiveKitToken: mocks.issueLiveKitToken,
+  terminateGameLiveKit: mocks.terminateGameLiveKit,
   LiveKitConfigurationError: class extends Error {},
 }));
 
@@ -67,6 +69,7 @@ describe("camera LiveKit token route", () => {
       url: "wss://live.example",
       token: "livekit-room-token",
     });
+    mocks.terminateGameLiveKit.mockResolvedValue(undefined);
   });
 
   it("issues Camera 1 credentials using only its participant bearer", async () => {
@@ -90,6 +93,28 @@ describe("camera LiveKit token route", () => {
       "scheduled-game",
       "camera-home",
     );
+  });
+
+  it("does not return a token when completion wins the signing race", async () => {
+    mocks.readGame
+      .mockResolvedValueOnce({ kind: "active", game: { status: "active" } })
+      .mockResolvedValueOnce({ kind: "completed", completion: {} });
+    const response = await POST(cameraRequest(), {
+      params: Promise.resolve({ id: "scheduled-game" }),
+    });
+    expect(response.status).toBe(410);
+    expect(mocks.issueLiveKitToken).toHaveBeenCalledOnce();
+    expect(mocks.terminateGameLiveKit).toHaveBeenCalledWith("scheduled-game");
+    expect(await response.json()).not.toHaveProperty("token");
+  });
+
+  it("denies an already-completed game before signing", async () => {
+    mocks.readGame.mockResolvedValue({ kind: "completed", completion: {} });
+    const response = await POST(cameraRequest(), {
+      params: Promise.resolve({ id: "scheduled-game" }),
+    });
+    expect(response.status).toBe(410);
+    expect(mocks.issueLiveKitToken).not.toHaveBeenCalled();
   });
 
   it.each(["wrong-game", "expired", "deleted", "closed"])(

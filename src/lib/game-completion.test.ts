@@ -66,11 +66,12 @@ describe("internal game completion boundary", () => {
     expect(result.ok).toBe(true);
     expect(mocks.getUser).toHaveBeenCalledOnce();
     expect(mocks.rpc).toHaveBeenCalledWith(
-      "review_game_completion",
+      "review_game_completion_with_link",
       expect.objectContaining({
         p_game_id: gameId,
         p_actor_user_id: "33333333-3333-4333-8333-333333333333",
         p_verified_organizer: false,
+        p_youtube_watch_url: null,
       }),
     );
   });
@@ -107,7 +108,7 @@ describe("internal game completion boundary", () => {
       token: await issueOrganizerToken(gameId),
     });
     expect(mocks.rpc).toHaveBeenCalledWith(
-      "review_game_completion",
+      "review_game_completion_with_link",
       expect.objectContaining({
         p_game_id: gameId,
         p_actor_user_id: null,

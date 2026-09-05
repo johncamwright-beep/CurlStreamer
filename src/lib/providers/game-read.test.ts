@@ -1,11 +1,18 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { gameFixture, testGameId } from "@/test/game-fixture";
 
-const mocks = vi.hoisted(() => ({ rpc: vi.fn(), getGame: vi.fn() }));
+const mocks = vi.hoisted(() => ({
+  rpc: vi.fn(),
+  getGame: vi.fn(),
+  readSummary: vi.fn(),
+}));
 vi.mock("@/lib/supabase/admin", () => ({
   createAdminSupabaseClient: () => ({ rpc: mocks.rpc }),
 }));
 vi.mock("./local-store", () => ({ getGame: mocks.getGame }));
+vi.mock("@/lib/game-completion", () => ({
+  readGameCompletionSummary: mocks.readSummary,
+}));
 import { readGame } from "./game-read";
 
 describe("game read provider lifecycle boundary", () => {
@@ -37,6 +44,7 @@ describe("game read provider lifecycle boundary", () => {
         data: [{ outcome: kind, state: gameFixture() }],
         error: null,
       });
+      mocks.readSummary.mockResolvedValue(undefined);
       expect(await readGame(testGameId)).toEqual({ kind });
     },
   );
@@ -81,5 +89,31 @@ describe("game read provider lifecycle boundary", () => {
     mocks.getGame.mockReturnValue(undefined);
     expect(await readGame("deadbeef")).toEqual({ kind: "not-found" });
     expect(mocks.rpc).not.toHaveBeenCalled();
+  });
+
+  it("returns only the stored safe completion summary for completed games", async () => {
+    const completion = {
+      status: "completed",
+      eventName: "Final",
+      homeName: "Home",
+      awayName: "Away",
+      result: {
+        outcome: "tie",
+        label: "Tie",
+        totals: { home: 2, away: 2 },
+        ends: [],
+      },
+      youtubeWatchUrl: null,
+      completedAt: "2026-09-05T00:00:00Z",
+    };
+    mocks.rpc.mockResolvedValue({
+      data: [{ outcome: "closed", state: null }],
+      error: null,
+    });
+    mocks.readSummary.mockResolvedValue(completion);
+    expect(await readGame(testGameId)).toEqual({
+      kind: "completed",
+      completion,
+    });
   });
 });

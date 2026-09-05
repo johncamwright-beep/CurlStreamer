@@ -41,20 +41,31 @@ const event: EventRecord = {
 };
 describe("games hub grouping", () => {
   it("orders next games and separates events, season single games, and history", () => {
+    const completedEarly = {
+      ...game("completed-early", "2026-09-04T00:00:00Z", "event"),
+      status: "completed",
+      completionResult: {
+        outcome: "home_win" as const,
+        label: "Home win",
+        totals: { home: 5, away: 3 },
+        ends: [],
+      },
+    };
     const groups = groupGames(
       [
         game("later", "2026-09-03T00:00:00Z"),
         game("past", "2026-08-01T00:00:00Z"),
         game("event-game", "2026-09-02T00:00:00Z", "event"),
+        completedEarly,
       ],
       [event],
       Date.parse("2026-09-01T00:00:00Z"),
     );
     expect(groups.nextUp.map((g) => g.id)).toEqual(["event-game", "later"]);
     expect(groups.singleGames.map((g) => g.id)).toEqual(["later"]);
-    expect(groups.past.map((g) => g.id)).toEqual(["past"]);
+    expect(groups.past.map((g) => g.id)).toEqual(["completed-early", "past"]);
     expect(groups.eventSummaries[0]).toMatchObject({
-      gameCount: 1,
+      gameCount: 2,
       nextGame: { id: "event-game" },
     });
   });

@@ -67,6 +67,36 @@ describe("game authorization lookup", () => {
     expect(mocks.getGame).not.toHaveBeenCalled();
   });
 
+  it("allows completed account lookup only when the caller explicitly requests it", async () => {
+    mocks.loadActiveTeam.mockResolvedValue({
+      kind: "ready",
+      team: { organizationId: "team-1", role: "viewer" },
+    });
+    mocks.listTeamGames.mockResolvedValue({
+      ok: true,
+      games: [{ game_id: "scheduled-game", game_status: "completed" }],
+    });
+    const completedOptions = {
+      accountRoles: ["viewer"] as const,
+      tokenAllowed: () => false,
+    };
+
+    await expect(
+      authorizeGame(request(), "scheduled-game", completedOptions),
+    ).resolves.toEqual({ ok: false, reason: "closed" });
+    await expect(
+      authorizeGame(request(), "scheduled-game", {
+        ...completedOptions,
+        allowCompletedAccount: true,
+      }),
+    ).resolves.toEqual({
+      ok: true,
+      via: "account",
+      role: "viewer",
+      organizationId: "team-1",
+    });
+  });
+
   it("retains organizer-token access without an account session", async () => {
     mocks.getUser.mockResolvedValue({ data: { user: null } });
     mocks.readAccessToken.mockResolvedValue({

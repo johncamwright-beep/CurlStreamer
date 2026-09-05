@@ -61,6 +61,14 @@ export function clearCurrentGame(storage: Pick<Storage, "removeItem">) {
     new CustomEvent<null>(CURRENT_GAME_EVENT, { detail: null }),
   );
 }
+export function clearCurrentGameIfMatching(
+  storage: Pick<Storage, "getItem" | "removeItem">,
+  id: string,
+) {
+  if (readCurrentGame(storage)?.id !== id) return false;
+  clearCurrentGame(storage);
+  return true;
+}
 export function gameCapabilities(
   role: string,
   opponentTbd: boolean,

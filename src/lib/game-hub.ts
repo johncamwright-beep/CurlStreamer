@@ -13,11 +13,16 @@ export function groupGames(
     (a.scheduledStart ?? "9999").localeCompare(b.scheduledStart ?? "9999"),
   );
   const upcoming = chronological.filter(
-    (g) => g.scheduledStart && new Date(g.scheduledStart).getTime() >= now,
+    (g) =>
+      g.status !== "completed" &&
+      g.scheduledStart &&
+      new Date(g.scheduledStart).getTime() >= now,
   );
   const past = chronological
     .filter(
-      (g) => g.scheduledStart && new Date(g.scheduledStart).getTime() < now,
+      (g) =>
+        g.status === "completed" ||
+        (g.scheduledStart && new Date(g.scheduledStart).getTime() < now),
     )
     .reverse();
   return {
@@ -32,7 +37,9 @@ export function groupGames(
         nextGame:
           eventGames.find(
             (g) =>
-              g.scheduledStart && new Date(g.scheduledStart).getTime() >= now,
+              g.status !== "completed" &&
+              g.scheduledStart &&
+              new Date(g.scheduledStart).getTime() >= now,
           ) ?? null,
       };
     }),

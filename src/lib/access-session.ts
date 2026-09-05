@@ -15,10 +15,17 @@ export function hasOrganizerAccess(
   storage: Pick<Storage, "getItem">,
   id: string,
 ) {
+  return Boolean(organizerAccessToken(storage, id));
+}
+
+export function organizerAccessToken(
+  storage: Pick<Storage, "getItem">,
+  id: string,
+) {
   return [
     storage.getItem(`curlcast-organizer-access-${id}`),
     storage.getItem(`curlcast-access-${id}`),
-  ].some((token) => {
+  ].find((token) => {
     const value = claims(token);
     return value?.purpose === "organizer" && value.gameId === id;
   });
@@ -40,6 +47,13 @@ export function hasScoringAccess(
         (value.purpose === "participant" && value.role === "scorer"))
     );
   });
+}
+
+export function canManageCompletion(
+  accountRole: string,
+  hasOrganizerToken: boolean,
+) {
+  return hasOrganizerToken || ["owner", "team_admin"].includes(accountRole);
 }
 
 export function preserveAndStoreParticipantAccess(

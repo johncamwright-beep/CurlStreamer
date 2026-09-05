@@ -213,6 +213,7 @@ function GameRow({
   const scheduledLabel = game.scheduledStart
     ? formatScheduledStart(game.scheduledStart, timezone)
     : "Schedule not set";
+  const totals = game.completionResult?.totals;
   return (
     <li className="list-none p-4">
       <div className="flex flex-wrap justify-between gap-3">
@@ -222,8 +223,20 @@ function GameRow({
           <p className="text-sm text-slate-500">
             {event?.name ?? "Single Game"}
           </p>
+          {game.status === "completed" && (
+            <p className="mt-1 font-bold text-cyan-200">
+              Final:{" "}
+              {totals
+                ? `${totals.home} – ${totals.away}`
+                : game.completionResult?.label}
+            </p>
+          )}
         </div>
-        {role !== "viewer" && (
+        {game.status === "completed" ? (
+          <Link className="btn-secondary" href={`/games/${game.id}`}>
+            View result
+          </Link>
+        ) : role !== "viewer" ? (
           <TeamGameLinks
             gameId={game.id}
             title={title}
@@ -231,7 +244,7 @@ function GameRow({
             role={role}
             opponentTbd={!game.opponentId}
           />
-        )}
+        ) : null}
       </div>
       {administrator && (
         <details className="mt-2">
@@ -239,9 +252,11 @@ function GameRow({
             More actions
           </summary>
           <div className="flex flex-wrap gap-2">
-            <Link className="btn-secondary" href={`/games/${game.id}/edit`}>
-              Edit schedule
-            </Link>
+            {game.status !== "completed" && (
+              <Link className="btn-secondary" href={`/games/${game.id}/edit`}>
+                Edit schedule
+              </Link>
+            )}
             <GameDeletionControl gameId={game.id} title={title} matchup="" />
           </div>
         </details>

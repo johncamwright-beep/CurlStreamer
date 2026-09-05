@@ -7,6 +7,7 @@ import { AppNavigation } from "@/components/AppNavigation";
 import { hasOrganizerAccess, hasScoringAccess } from "@/lib/access-session";
 import { canonicalTitleFromConfig } from "@/lib/game-title";
 import { gameCapabilities } from "@/lib/current-game";
+import { CompletedGameSummary } from "@/components/CompletedGameSummary";
 
 const PROGRAM_WIDTH = 1920;
 const PROGRAM_HEIGHT = 1080;
@@ -23,7 +24,7 @@ export default function Broadcast({
   params: Promise<{ id: string }>;
 }) {
   const { id } = use(params);
-  const { game, error, accountOperator, accountRole } = useGame(
+  const { game, completion, error, accountOperator, accountRole } = useGame(
     id,
     "broadcast",
   );
@@ -56,11 +57,12 @@ export default function Broadcast({
         {error}
       </main>
     );
-  if (!game) return <main className="p-8">Loading 1920×1080 program…</main>;
+  if (!game && !completion)
+    return <main className="p-8">Loading 1920×1080 program…</main>;
   return (
     <main className="broadcast-viewport">
       <BroadcastOperatorNavigation id={id} accountOperator={accountOperator} />
-      {(operator || accountOperator) && (
+      {game && (operator || accountOperator) && (
         <AppNavigation
           className="broadcast-app-navigation"
           gameContext={{
@@ -92,7 +94,18 @@ export default function Broadcast({
           className="broadcast-fixed-canvas"
           style={{ transform: `scale(${scale ?? 1})` }}
         >
-          <BroadcastCanvas game={game} />
+          {completion ? (
+            <div
+              data-testid="broadcast-canvas"
+              className="flex aspect-video w-full items-center justify-center bg-[radial-gradient(circle_at_top,#164e63,#07111f_55%)] p-24"
+            >
+              <div className="w-full max-w-4xl">
+                <CompletedGameSummary gameId={id} completion={completion} />
+              </div>
+            </div>
+          ) : game ? (
+            <BroadcastCanvas game={game} />
+          ) : null}
         </div>
       </div>
     </main>

@@ -141,7 +141,15 @@ describe("GET /api/games/[id] over HTTP", () => {
     extra = {},
   ) {
     expect(response.status).toBe(status);
-    expect(await response.json()).toEqual({ error, ...extra });
+    expect(await response.json()).toEqual({
+      error,
+      ...(status === 410
+        ? {
+            lifecycle: error.includes("deleted") ? "deleted" : "closed",
+          }
+        : {}),
+      ...extra,
+    });
     expect(response.headers.has("x-curlcast-account-role")).toBe(false);
     expect(response.headers.has("x-curlcast-operator")).toBe(false);
     expect(mocks.gameLibrarySponsors).not.toHaveBeenCalled();
@@ -157,6 +165,79 @@ describe("GET /api/games/[id] over HTTP", () => {
   it("requires access for the default game read", async () => {
     anonymous();
     await failure(await request(), 401, "Game access is required");
+  });
+  it("returns only the safe stored result for a completed game", async () => {
+    const completion = {
+      status: "completed",
+      eventName: "Club final",
+      homeName: "Rocks",
+      awayName: "Stones",
+      result: {
+        outcome: "home_win",
+        label: "Home win",
+        totals: { home: 4, away: 2 },
+        ends: [],
+      },
+      youtubeWatchUrl: "https://youtu.be/abcdefghijk",
+      completedAt: "2026-09-05T00:00:00Z",
+    };
+    mocks.listTeamGames.mockResolvedValue({
+      ok: true,
+      games: [{ game_id: testGameId, game_status: "completed" }],
+    });
+    mocks.readGame.mockResolvedValue({ kind: "completed", completion });
+    const accountResponse = await request();
+    expect(await accountResponse.json()).toEqual(completion);
+    expect(JSON.stringify(completion)).not.toMatch(
+      /reviewId|completionId|claims|actor|credential/i,
+    );
+
+    anonymous();
+    const publicResponse = await request("broadcast");
+    expect(await publicResponse.json()).toEqual(completion);
+  });
+  it.each([
+    ["owner", "true"],
+    ["team_admin", "true"],
+    ["scorer", "true"],
+    ["viewer", "false"],
+  ] as const)(
+    "returns safe completed state and authority headers to same-team %s",
+    async (role, operator) => {
+      const completion = {
+        status: "completed",
+        eventName: "Club final",
+        homeName: "Rocks",
+        awayName: "Stones",
+        result: { label: "Home win", totals: { home: 4, away: 2 } },
+        youtubeWatchUrl: null,
+        completedAt: "2026-09-05T00:00:00Z",
+      };
+      mocks.loadActiveTeam.mockResolvedValue({
+        kind: "ready",
+        team: { organizationId: "same-team", role },
+      });
+      mocks.listTeamGames.mockResolvedValue({
+        ok: true,
+        games: [{ game_id: testGameId, game_status: "completed" }],
+      });
+      mocks.readGame.mockResolvedValue({ kind: "completed", completion });
+
+      const response = await request();
+      expect(response.status).toBe(200);
+      expect(await response.json()).toEqual(completion);
+      expect(response.headers.get("x-curlcast-account-role")).toBe(role);
+      expect(response.headers.get("x-curlcast-operator")).toBe(operator);
+      expect(mocks.gameLibrarySponsors).not.toHaveBeenCalled();
+    },
+  );
+  it("does not reveal a completed result to a signed-in cross-team account", async () => {
+    mocks.readGame.mockResolvedValue({
+      kind: "completed",
+      completion: { status: "completed" },
+    });
+    await failure(await request(), 401, "Game access is required");
+    expect(mocks.readGame).not.toHaveBeenCalled();
   });
   it("returns exactly the public Broadcast allowlist, even with unexpected stored fields", async () => {
     anonymous();
@@ -281,8 +362,40 @@ describe("GET /api/games/[id] over HTTP", () => {
       kind: "ready",
       team: { organizationId: "same-team", role: "viewer" },
     });
+    mocks.listTeamGames.mockResolvedValue({
+      ok: true,
+      games: [{ game_id: testGameId, game_status: "active" }],
+    });
     await failure(await request(), 401, "Game access is required");
+    expect(mocks.readGame).toHaveBeenCalledWith(testGameId);
   });
+  it.each(["organizer", "participant"] as const)(
+    "does not let a viewer account shadow a valid same-game %s bearer",
+    async (credential) => {
+      mocks.loadActiveTeam.mockResolvedValue({
+        kind: "ready",
+        team: { organizationId: "same-team", role: "viewer" },
+      });
+      mocks.listTeamGames.mockResolvedValue({
+        ok: true,
+        games: [{ game_id: testGameId, game_status: "active" }],
+      });
+      const token =
+        credential === "organizer"
+          ? await issueOrganizerToken(testGameId)
+          : await issueParticipantToken(
+              testGameId,
+              "scorer",
+              game.claims.scorer!,
+            );
+
+      const response = await request("", token);
+      expect(response.status).toBe(200);
+      expect(await response.json()).toEqual(game);
+      expect(response.headers.get("x-curlcast-operator")).toBe("true");
+      expect(response.headers.get("x-curlcast-account-role")).toBe("");
+    },
+  );
   it("preserves organizer tokens and authorized sponsor hydration", async () => {
     anonymous();
     const sponsors = [{ ...game.sponsors[1], enabled: true }];

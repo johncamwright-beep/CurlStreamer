@@ -581,4 +581,71 @@ describe.skipIf(!enabled)("game completion PostgreSQL transactions", () => {
         .stdout,
     ).toBe("2");
   }, 20_000);
+
+  it("persists safe End Game summaries, watch links, cleanup attempts, and schedule results", () => {
+    const organizationId = randomUUID();
+    const creatorId = randomUUID();
+    const gameId = randomUUID();
+    const administratorId = randomUUID();
+    const reviewId = randomUUID();
+    const completionId = randomUUID();
+    const watchUrl = "https://youtu.be/abcdefghijk";
+    expect(
+      psql(`${fixture(gameId, organizationId, creatorId)}
+        ${account(administratorId, organizationId)}`).ok,
+    ).toBe(true);
+    const invalid = psqlAsServiceRole(
+      `select * from public.review_game_completion_with_link(
+        '${gameId}','${randomUUID()}','${administratorId}',false,'https://example.com/not-youtube')`,
+    );
+    expect(invalid.ok).toBe(false);
+    expect(invalid.stderr).toContain("invalid_youtube_watch_url");
+    expect(
+      psqlAsServiceRole(
+        `select review_id from public.review_game_completion_with_link(
+          '${gameId}','${reviewId}','${administratorId}',false,'${watchUrl}')`,
+      ),
+    ).toMatchObject({ ok: true, stdout: reviewId });
+    expect(
+      psqlAsServiceRole(
+        `select completion_id from public.complete_reviewed_game(
+          '${gameId}','${reviewId}','${completionId}','${administratorId}',false)`,
+      ),
+    ).toMatchObject({ ok: true, stdout: completionId });
+    expect(
+      psqlAsServiceRole(`select
+        s->>'status',s->>'youtubeWatchUrl',s#>>'{result,outcome}',
+        (s ? 'reviewId')::text,(s ? 'completedByUserId')::text,(s ? 'claims')::text
+        from (select public.read_game_completion_summary('${gameId}') s) value`)
+        .stdout,
+    ).toBe(`completed|${watchUrl}|no_result|false|false|false`);
+    expect(
+      psqlAsServiceRole(`select status,attempts,last_error from
+        public.record_game_completion_cleanup('${gameId}','${administratorId}',false,false,'provider unavailable')`)
+        .stdout,
+    ).toBe("failed|1|provider unavailable");
+    expect(
+      psqlAsServiceRole(`select status,attempts,last_error is null from
+        public.record_game_completion_cleanup('${gameId}','${administratorId}',false,true,null)`)
+        .stdout,
+    ).toBe("complete|2|t");
+    expect(
+      psqlAsServiceRole(`select status,attempts,last_error is null from
+        public.record_game_completion_cleanup('${gameId}','${administratorId}',false,false,'late outage')`)
+        .stdout,
+    ).toBe("complete|2|t");
+    expect(
+      psqlAsServiceRole(`select game_status,completion_result->>'outcome',youtube_watch_url
+        from public.list_team_hierarchy_games('${administratorId}')
+        where id='${gameId}'`).stdout,
+    ).toBe(`completed|no_result|${watchUrl}`);
+    expect(
+      psql(`update public.games set deleted_at=now() where id='${gameId}'`).ok,
+    ).toBe(true);
+    expect(
+      psqlAsServiceRole(
+        `select public.read_game_completion_summary('${gameId}') is null`,
+      ).stdout,
+    ).toBe("t");
+  });
 });

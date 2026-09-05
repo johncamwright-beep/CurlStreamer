@@ -281,6 +281,65 @@ describe.skipIf(!enabled)("game completion PostgreSQL transactions", () => {
     expect(result).toMatchObject({ ok: true, stdout: "tie|2|2|2" });
   });
 
+  it("anonymizes a deleted account without changing completion evidence", () => {
+    const organizationId = randomUUID();
+    const creatorId = randomUUID();
+    const gameId = randomUUID();
+    const administratorId = randomUUID();
+    const reviewId = randomUUID();
+    const completionId = randomUUID();
+    expect(
+      psql(`${fixture(gameId, organizationId, creatorId)}
+        ${account(administratorId, organizationId, { role: "team_admin" })}`)
+        .ok,
+    ).toBe(true);
+    expect(
+      psqlAsServiceRole(
+        `select review_id from public.review_game_completion(
+          '${gameId}','${reviewId}','${administratorId}',false)`,
+      ),
+    ).toMatchObject({ ok: true, stdout: reviewId });
+    expect(
+      psqlAsServiceRole(
+        `select completion_id,review_id from public.complete_reviewed_game(
+          '${gameId}','${reviewId}','${completionId}','${administratorId}',false)`,
+      ),
+    ).toMatchObject({ ok: true, stdout: `${completionId}|${reviewId}` });
+
+    expect(
+      psql(`delete from auth.users where id='${administratorId}'`),
+    ).toMatchObject({ ok: true });
+    expect(
+      psql(`select r.reviewer_user_id is null,c.completed_by_user_id is null,
+        r.result=c.result,c.completed_by_kind,a.actor_user_id is null,
+        a.metadata->>'completion_id',a.metadata->>'review_id'
+        from public.game_completion_reviews r
+        join public.game_completions c on c.review_id=r.id
+        join public.audit_events a on a.action='game.completed'
+          and a.subject_identifier=c.game_id::text
+        where r.id='${reviewId}'`).stdout,
+    ).toBe(`t|t|t|account|t|${completionId}|${reviewId}`);
+
+    for (const mutation of [
+      `update public.game_completion_reviews set result='{}' where id='${reviewId}'`,
+      `update public.game_completion_reviews set reviewer_user_id=null where id='${reviewId}'`,
+      `update public.game_completions set completed_by_user_id=null where game_id='${gameId}'`,
+      `delete from public.game_completions where game_id='${gameId}'`,
+    ]) {
+      const rejected = psql(mutation);
+      expect(rejected.ok).toBe(false);
+      expect(rejected.stderr).toContain("completion_records_are_immutable");
+    }
+    for (const mutation of [
+      `update public.audit_events set metadata='{}' where action='game.completed' and subject_identifier='${gameId}'`,
+      `update public.audit_events set actor_user_id=null where action='game.completed' and subject_identifier='${gameId}'`,
+    ]) {
+      const rejected = psql(mutation);
+      expect(rejected.ok).toBe(false);
+      expect(rejected.stderr).toContain("audit events are append-only");
+    }
+  });
+
   it("rolls back completion when the reviewed revision changes", () => {
     const gameId = randomUUID();
     const reviewId = randomUUID();

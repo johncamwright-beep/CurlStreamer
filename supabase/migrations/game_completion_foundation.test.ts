@@ -38,6 +38,42 @@ describe("game completion foundation migration", () => {
     expect(sql).toContain("create trigger prevent_completion_changes");
   });
 
+  it("allows only FK-driven actor anonymization on immutable evidence", () => {
+    const immutable = sql.slice(
+      sql.indexOf(
+        "create function public.prevent_immutable_completion_changes",
+      ),
+      sql.indexOf("create trigger prevent_completion_review_changes"),
+    );
+    expect(immutable).toContain(
+      "when 'game_completion_reviews' then 'reviewer_user_id'",
+    );
+    expect(immutable).toContain(
+      "when 'game_completions' then 'completed_by_user_id'",
+    );
+    expect(immutable).toContain("v_new->v_actor_column = 'null'::jsonb");
+    expect(immutable).toContain(
+      "(v_old - v_actor_column) is not distinct from (v_new - v_actor_column)",
+    );
+    expect(immutable).toContain("completion_records_are_immutable");
+
+    const audit = sql.slice(
+      sql.indexOf(
+        "create or replace function public.prevent_audit_event_changes",
+      ),
+      sql.indexOf(
+        "create function public.prevent_immutable_completion_changes",
+      ),
+    );
+    expect(audit).toContain(
+      "old.actor_user_id is not null and new.actor_user_id is null",
+    );
+    expect(audit).toContain(
+      "(to_jsonb(old) - 'actor_user_id') is not distinct from (to_jsonb(new) - 'actor_user_id')",
+    );
+    expect(audit).toContain("audit events are append-only");
+  });
+
   it("serializes every state and score writer with completion", () => {
     expect(sql).toContain(
       "before insert or update or delete on public.game_states",

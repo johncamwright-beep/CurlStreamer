@@ -228,9 +228,40 @@ create trigger track_score_event_insert
 after insert on public.score_events
 for each row execute function public.track_score_event_insert();
 
-create function public.prevent_immutable_completion_changes()
+-- The existing audit FK declares ON DELETE SET NULL, so its append-only guard
+-- must allow that one anonymization transition while preserving every other
+-- part of the audit record.
+create or replace function public.prevent_audit_event_changes()
 returns trigger language plpgsql set search_path = '' as $$
 begin
+  if tg_op = 'UPDATE'
+     and old.actor_user_id is not null and new.actor_user_id is null
+     and (to_jsonb(old) - 'actor_user_id') is not distinct from
+       (to_jsonb(new) - 'actor_user_id') then
+    return new;
+  end if;
+  raise exception 'audit events are append-only' using errcode = '55000';
+end;
+$$;
+
+create function public.prevent_immutable_completion_changes()
+returns trigger language plpgsql set search_path = '' as $$
+declare
+  v_actor_column text := case tg_table_name
+    when 'game_completion_reviews' then 'reviewer_user_id'
+    when 'game_completions' then 'completed_by_user_id'
+    else null end;
+  v_old jsonb := to_jsonb(old);
+  v_new jsonb := to_jsonb(new);
+begin
+  -- Preserve immutable completion evidence while allowing the declared auth
+  -- foreign keys to anonymize a deleted account. No other value may change.
+  if tg_op = 'UPDATE' and v_actor_column is not null
+     and v_old->v_actor_column is distinct from 'null'::jsonb
+     and v_new->v_actor_column = 'null'::jsonb
+     and (v_old - v_actor_column) is not distinct from (v_new - v_actor_column) then
+    return new;
+  end if;
   raise exception 'completion_records_are_immutable' using errcode = '55000';
 end;
 $$;

@@ -7,8 +7,18 @@ import { readFile, writeFile, mkdir, appendFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 const require = createRequire(import.meta.url);
 const { chromium } = require("@playwright/test");
+const recordingSeconds = Number(process.env.LOCAL_LAB_RECORD_SECONDS || 600);
+if (
+  !Number.isFinite(recordingSeconds) ||
+  recordingSeconds < 5 ||
+  recordingSeconds > 600
+)
+  throw Error("Recording limit must be between 5 and 600 seconds");
 const out = resolve(process.env.LOCAL_LAB_OUTPUT || ".local-broadcast-private");
-if (!process.env.CLOUDFLARED_PATH) throw Error("CLOUDFLARED_PATH is required");
+const loopbackTest =
+  process.env.LOCAL_LAB_LOOPBACK_TEST === "1" && recordingSeconds <= 30;
+if (!loopbackTest && !process.env.CLOUDFLARED_PATH)
+  throw Error("CLOUDFLARED_PATH is required");
 await mkdir(out, { recursive: true });
 // Use a public resolver only for this temporary tunnel probe. TLS hostname
 // verification stays enabled; no system DNS or browser settings are changed.
@@ -67,67 +77,70 @@ try {
     await readFile(join(out, "access.private.json")),
   );
   const base = `http://localhost:${port}`;
-  tunnel = spawn(
-    process.env.CLOUDFLARED_PATH,
-    ["tunnel", "--url", `http://127.0.0.1:${port}`, "--no-autoupdate"],
-    { windowsHide: true, stdio: ["ignore", "ignore", "pipe"] },
-  );
-  const publicUrl = await new Promise((done, reject) => {
-    const timeout = setTimeout(
-      () => reject(Error("Private test tunnel did not start")),
-      45000,
+  let publicUrl = base;
+  if (!loopbackTest) {
+    tunnel = spawn(
+      process.env.CLOUDFLARED_PATH,
+      ["tunnel", "--url", `http://127.0.0.1:${port}`, "--no-autoupdate"],
+      { windowsHide: true, stdio: ["ignore", "ignore", "pipe"] },
     );
-    tunnel.once("error", reject);
-    tunnel.stderr.on("data", (data) => {
-      void appendFile(join(out, "tunnel.log"), data);
-      const match = String(data).match(
-        /https:\/\/[a-z0-9-]+\.trycloudflare\.com/,
+    publicUrl = await new Promise((done, reject) => {
+      const timeout = setTimeout(
+        () => reject(Error("Private test tunnel did not start")),
+        45000,
       );
-      if (match) {
-        clearTimeout(timeout);
-        done(match[0]);
-      }
-    });
-  });
-  await writeFile(join(out, "endpoint.json"), JSON.stringify({ publicUrl }));
-  // Assert camera authorization and host isolation through the actual HTTPS tunnel.
-  let ready = false;
-  for (let attempt = 0; attempt < 30 && !ready; attempt++) {
-    try {
-      ready = (
-        await probe(`${publicUrl}/poll`, {
-          authorization: `Bearer ${keys.camera1}`,
-        })
-      ).ok;
-    } catch {
-      /* Tunnel DNS may still be propagating. */
-    }
-    if (!ready) await wait(2000);
-  }
-  if (!ready) throw Error("Phone link not reachable");
-  let denied;
-  for (let attempt = 0; attempt < 10; attempt++) {
-    try {
-      denied = await probe(`${publicUrl}/poll`, {
-        authorization: `Bearer ${keys.host}`,
+      tunnel.once("error", reject);
+      tunnel.stderr.on("data", (data) => {
+        void appendFile(join(out, "tunnel.log"), data);
+        const match = String(data).match(
+          /https:\/\/[a-z0-9-]+\.trycloudflare\.com/,
+        );
+        if (match) {
+          clearTimeout(timeout);
+          done(match[0]);
+        }
       });
-      break;
-    } catch {
-      await wait(2000);
+    });
+    await writeFile(join(out, "endpoint.json"), JSON.stringify({ publicUrl }));
+    // Assert camera authorization and host isolation through the actual HTTPS tunnel.
+    let ready = false;
+    for (let attempt = 0; attempt < 30 && !ready; attempt++) {
+      try {
+        ready = (
+          await probe(`${publicUrl}/poll`, {
+            authorization: `Bearer ${keys.camera1}`,
+          })
+        ).ok;
+      } catch {
+        /* Tunnel DNS may still be propagating. */
+      }
+      if (!ready) await wait(2000);
     }
+    if (!ready) throw Error("Phone link not reachable");
+    let denied;
+    for (let attempt = 0; attempt < 10; attempt++) {
+      try {
+        denied = await probe(`${publicUrl}/poll`, {
+          authorization: `Bearer ${keys.host}`,
+        });
+        break;
+      } catch {
+        await wait(2000);
+      }
+    }
+    if (denied?.status !== 403)
+      throw Error("Host control isolation check failed");
+    const cameraSignal = await probe(
+      `${publicUrl}/signal`,
+      {
+        authorization: `Bearer ${keys.camera1}`,
+        origin: publicUrl,
+        "content-type": "application/json",
+      },
+      JSON.stringify({ to: "host", data: { type: "bye" } }),
+    );
+    if (!cameraSignal.ok) throw Error("Phone signaling unavailable");
   }
-  if (denied?.status !== 403)
-    throw Error("Host control isolation check failed");
-  const cameraSignal = await probe(
-    `${publicUrl}/signal`,
-    {
-      authorization: `Bearer ${keys.camera1}`,
-      origin: publicUrl,
-      "content-type": "application/json",
-    },
-    JSON.stringify({ to: "host", data: { type: "bye" } }),
-  );
-  if (!cameraSignal.ok) throw Error("Phone signaling unavailable");
   browser = await chromium.launch({
     ...(process.platform === "win32" ? { channel: "msedge" } : {}),
     headless: true,
@@ -146,13 +159,12 @@ try {
       expires: new Date(deadline).toISOString(),
       camera1: `${publicUrl}/#camera1:${keys.camera1}`,
       camera2: `${publicUrl}/#camera2:${keys.camera2}`,
-      recording:
-        "Starts automatically when a camera connects; silent audio; local file only; stops after 10 minutes.",
+      recording: `Starts automatically when a camera connects; silent audio; local file only; stops after ${recordingSeconds} seconds.`,
     }),
     { mode: 0o600 },
   );
   console.log(
-    "Private phone links ready. Waiting for cameras; local recording only, maximum 10 minutes.",
+    `Private phone links ready. Waiting for cameras; local recording only, maximum ${recordingSeconds} seconds.`,
   );
   let started = 0;
   while (!cancelled && Date.now() < deadline) {
@@ -166,14 +178,15 @@ try {
       await page.evaluate(() => window.lab.startOutput());
       started = Date.now();
       console.log("Phone connected. Local recording started; microphone off.");
-    }
-    if (started) {
+    } else if (started) {
+      // This snapshot predates startOutput when starting above. Only inspect
+      // recording completion on a later iteration with a fresh snapshot.
       await writeFile(
         join(out, "phone-metrics.json"),
         JSON.stringify(snapshot),
       );
       if (
-        Date.now() - started >= 10 * 60_000 ||
+        Date.now() - started >= recordingSeconds * 1000 ||
         snapshot.recording === "inactive"
       )
         break;

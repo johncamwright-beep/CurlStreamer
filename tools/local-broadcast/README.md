@@ -71,3 +71,12 @@ Keep phone pages open. Do not open a second host page during this operator test.
 Sources: [Canvas capture](https://developer.mozilla.org/en-US/docs/Web/API/HTMLCanvasElement/captureStream),
 [MediaRecorder capability detection](https://developer.mozilla.org/en-US/docs/Web/API/MediaRecorder/isTypeSupported_static),
 [Quick Tunnels](https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/do-more-with-tunnels/trycloudflare/).
+
+## Automatic controller regression
+
+`node tools/local-broadcast/operator-smoke.mjs` runs the actual phone-session
+controller on port 4320 with a synthetic camera and a twelve-second recording
+limit. It asserts that recording survives the initial inactive snapshot and
+reaches the configured duration before a clean shutdown. This catches the
+startup race that the lower-level recorder smoke did not exercise. Uses the same FFmpeg settings and a loopback-only test mode, capped at thirty
+seconds. This keeps the startup regression independent of external tunnel DNS.

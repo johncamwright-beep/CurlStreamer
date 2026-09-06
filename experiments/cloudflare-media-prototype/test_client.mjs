@@ -1,8 +1,8 @@
-const { test } = require("node:test");
-const assert = require("node:assert/strict");
-const fs = require("node:fs");
-const vm = require("node:vm");
-const { CameraSession } = require("./camera-session.js");
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import fs from "node:fs";
+import vm from "node:vm";
+import { CameraSession } from "./camera-session.js";
 const deferred = () => {
   let resolve;
   const promise = new Promise((r) => (resolve = r));
@@ -131,7 +131,7 @@ function browser({ permission, offer } = {}) {
     },
   });
   vm.runInContext(
-    fs.readFileSync(require.resolve("./client.js"), "utf8"),
+    fs.readFileSync(new URL("./client.js", import.meta.url), "utf8"),
     context,
   );
   return {

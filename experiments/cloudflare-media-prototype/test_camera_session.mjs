@@ -1,6 +1,6 @@
-const { test } = require("node:test");
-const assert = require("node:assert/strict");
-const { CameraSession } = require("./camera-session.js");
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { CameraSession } from "./camera-session.js";
 const deferred = () => {
   let resolve;
   const promise = new Promise((r) => (resolve = r));

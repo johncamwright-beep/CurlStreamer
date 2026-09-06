@@ -42,7 +42,8 @@ function waitForPeer(
       clearTimeout(deadline);
       peer.removeEventListener(event, check);
       signal.removeEventListener("abort", abort);
-      error ? reject(error) : resolve();
+      if (error) reject(error);
+      else resolve();
     };
     const check = () => {
       if (predicate()) finish();

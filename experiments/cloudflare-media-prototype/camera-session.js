@@ -31,7 +31,7 @@ class CameraSession {
     for (const dispose of attempt.resources.splice(0)) {
       try {
         await dispose();
-      } catch (_) {
+      } catch {
         /* Continue releasing other resources. */
       }
     }

@@ -31,7 +31,8 @@ standalone deployable camera service.
 
 ## Offline checks
 
-Use Node's built-in test runner: `node --test test_camera_session.cjs test_client.cjs`.
+From this directory, use Node's built-in test runner:
+`node --test test_camera_session.mjs test_client.mjs`.
 With FastAPI, HTTPX and their dependencies available, run
 `python -m unittest test_server test_ownership test_cloudflare_api test_processor`.
 All provider calls in these tests are mocked. The processor deadline test uses

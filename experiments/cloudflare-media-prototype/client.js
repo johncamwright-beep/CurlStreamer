@@ -19,6 +19,11 @@ let observedDeadline = Number(
 );
 let monitorUntil = Date.now() + 60000;
 let canStart = true;
+let previewEpoch = 0,
+  previewDispose = () => {},
+  previewState = "idle",
+  previewMode = "none",
+  previewDiagnosticCount = 0;
 let pageAccess = sessionStorage.getItem("labPageAccess") || "";
 async function api(path, body, signal) {
   const r = await fetch(path, {
@@ -229,6 +234,9 @@ function connect() {
   if (!ended) return camera.connect();
 }
 function stopPreview() {
+  previewEpoch++;
+  previewDispose();
+  previewDispose = () => {};
   if (hls) {
     hls.destroy();
     hls = null;
@@ -237,6 +245,19 @@ function stopPreview() {
   $("program").removeAttribute("src");
   $("program").load();
   previewGeneration = -1;
+  setPreviewState("idle", "Preview is not playing.");
+}
+function setPreviewState(state, message, category = "none") {
+  previewState = state;
+  const label = $("previewState");
+  label.textContent = message;
+  label.dataset.state = state;
+  label.dataset.mode = previewMode;
+  label.dataset.failure = category;
+  $("previewRetry").hidden = state !== "error";
+  $("previewRetry").disabled = state !== "error";
+  if (previewDiagnosticCount++ < 24)
+    console.info("PRIVATE_LAB_PREVIEW", { state, mode: previewMode, category });
 }
 function preview(generation) {
   if (previewGeneration === generation) return;
@@ -244,21 +265,120 @@ function preview(generation) {
   previewGeneration = generation;
   const video = $("program"),
     url = "/hls/program.m3u8";
+  const epoch = previewEpoch;
+  let deadline;
+  const listeners = [];
+  const current = () => epoch === previewEpoch;
+  const fail = (category) => {
+    if (!current()) return;
+    stopPreview();
+    // Latch this generation: ordinary status polls must not retry media forever.
+    previewGeneration = generation;
+    const message =
+      category === "playback_blocked"
+        ? "Playback needs your permission. Press Retry preview to play."
+        : "Preview could not play. Camera and encoder counters do not verify the picture. Retry preview without restarting the test.";
+    setPreviewState("error", message, category);
+  };
+  const wait = () => {
+    if (!current() || deadline) return;
+    setPreviewState(
+      "loading",
+      "Loading preview… The picture is not yet verified.",
+    );
+    deadline = setTimeout(() => fail("playback_timeout"), 15000);
+  };
+  const listen = (name, callback) => {
+    video.addEventListener(name, callback);
+    listeners.push([name, callback]);
+  };
+  previewDispose = () => {
+    clearTimeout(deadline);
+    deadline = null;
+    for (const [name, callback] of listeners)
+      video.removeEventListener(name, callback);
+  };
+  const play = () => {
+    if (!current()) return;
+    video
+      .play()
+      .catch((error) =>
+        fail(
+          error?.name === "NotAllowedError"
+            ? "playback_blocked"
+            : "media_error",
+        ),
+      );
+  };
+  listen("playing", () => {
+    if (!current()) return;
+    clearTimeout(deadline);
+    deadline = null;
+    setPreviewState(
+      "playing",
+      "Preview is playing. Check both pictures and the score visually.",
+    );
+  });
+  listen("waiting", wait);
+  listen("pause", () => {
+    if (!current() || video.ended) return;
+    clearTimeout(deadline);
+    deadline = null;
+    setPreviewState("paused", "Preview is paused. Press Play to continue.");
+  });
+  listen("ended", () => {
+    if (!current()) return;
+    clearTimeout(deadline);
+    deadline = null;
+    setPreviewState("ended", "Preview playback ended.");
+  });
+  listen("error", () =>
+    fail(video.error?.code === 2 ? "network_error" : "media_error"),
+  );
   if (video.canPlayType("application/vnd.apple.mpegurl")) {
+    previewMode = "native";
+    wait();
     video.src = url;
-    video.play().catch(() => {});
+    play();
   } else if (window.Hls && Hls.isSupported()) {
+    previewMode = "mse";
+    wait();
     hls = new Hls({ maxBufferLength: 6 });
+    hls.on(Hls.Events.ERROR, (_event, data) => {
+      if (data.fatal)
+        fail(
+          data.type === Hls.ErrorTypes.NETWORK_ERROR
+            ? "network_error"
+            : "media_error",
+        );
+    });
+    hls.on(Hls.Events.MANIFEST_PARSED, play);
     hls.loadSource(url);
     hls.attachMedia(video);
-    hls.on(Hls.Events.MANIFEST_PARSED, () => video.play().catch(() => {}));
-  } else
-    showError(
-      new Error(
-        "Preview playback is unavailable in this browser. Try Safari or Chrome.",
-      ),
-    );
+  } else {
+    previewMode = "unsupported";
+    fail("unsupported");
+  }
 }
+$("previewRetry").onclick = () => {
+  if (
+    role !== "control" ||
+    !monitoring ||
+    ended ||
+    document.hidden ||
+    previewState !== "error" ||
+    previewGeneration < 0
+  )
+    return;
+  if (
+    (absoluteExpires && Date.now() >= absoluteExpires * 1000) ||
+    (observedDeadline && Date.now() >= observedDeadline)
+  )
+    return;
+  const generation = previewGeneration;
+  previewGeneration = -1;
+  preview(generation);
+};
 function pauseControl(message) {
   controlGeneration++;
   activeStatusRead?.abort();
@@ -479,8 +599,7 @@ $("score").onclick = () =>
     })
     .catch(showError);
 window.addEventListener("pagehide", () => {
-  monitoring = false;
-  clearInterval(timer);
+  pauseControl("Control monitoring paused. Resume when ready.");
   const lease = camera.current?.lease;
   void localStop();
   if (lease)

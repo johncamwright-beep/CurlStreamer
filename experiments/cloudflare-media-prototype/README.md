@@ -135,7 +135,35 @@ window; rotating either revokes old tickets. Native receiver, HLS bundle, privat
 access and Modal configuration stay outside Git. Do not deploy tests or the fake
 browser server. This new revision has not been deployed or run on GPUs/phones.
 
-## Local visual fixture
+## Preview playback status and bounded retry
+
+The supervised cloud run delivered authenticated playlist/segment HTTP 206
+responses but showed a black desktop player. Its cause remains unknown. The same
+native-first player and authenticated route played a local CPU-generated HLS
+pattern in installed Edge and the desktop browser. HTTP 206 alone is expected
+for accepted Range requests and does not demonstrate a defect.
+
+Preview status now separately reports loading, playing, paused, ended and failure.
+A continuous loading/buffering episode gets one 15-second deadline; repeated
+waiting events cannot extend it. Failure disposes of media and latches the
+generation so ordinary status polling cannot restart it. Retry preview reloads
+only media and requires an active, visible, unexpired control page. It never
+reauthenticates or repeats Start, score or Stop. Hide/pagehide, pause of control,
+Stop and retry invalidate old media callbacks and pending play rejections.
+Native pause stays paused until the user presses Play.
+
+Up to 24 `PRIVATE_LAB_PREVIEW` console records expose only fixed state, selected
+native/MSE mode and failure category. No URL, raw media/Hls error, token or video
+is recorded. These are browser-local diagnostics, not retained server telemetry.
+Playing is browser playback state, not proof that either camera image is fresh.
+No player-selection or codec change is claimed to fix the cloud black picture.
+
+`test_preview_http.py` checks the actual authenticated HLS route's MIME, byte
+ranges, invalid ranges and camera/page-only access rejection using synthetic
+bytes. It does not decode video. The existing JavaScript tests exercise actual
+client timeout, explicit retry, pause/pagehide and stale callback behavior.
+
+## Local control fixture
 
 Run `node browser-fixture.mjs` from this directory; open
 `http://127.0.0.1:3310/#offline-control`. An optional numeric argument changes the

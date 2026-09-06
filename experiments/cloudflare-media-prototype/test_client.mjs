@@ -16,12 +16,14 @@ function browser({ permission, offer, reply, stored = [] } = {}) {
     peers = [],
     nodes = new Map(),
     storage = new Map([["labPageAccess", "page-one"], ...stored]),
-    intervals = new Map();
+    intervals = new Map(),
+    windowEvents = new Map();
   let intervalNumber = 0;
   const node = (id) => {
     if (!nodes.has(id))
       nodes.set(id, {
         textContent: "",
+        dataset: {},
         pause() {},
         load() {},
         removeAttribute() {},
@@ -98,7 +100,9 @@ function browser({ permission, offer, reply, stored = [] } = {}) {
     },
     location: { hash: "", pathname: "/" },
     history: { replaceState() {} },
-    window: { addEventListener() {} },
+    window: {
+      addEventListener: (name, callback) => windowEvents.set(name, callback),
+    },
     navigator: {
       mediaDevices: {
         getUserMedia: () =>
@@ -145,6 +149,7 @@ function browser({ permission, offer, reply, stored = [] } = {}) {
   );
   return {
     context,
+    windowEvents,
     intervals,
     storage,
     requests,
@@ -155,6 +160,178 @@ function browser({ permission, offer, reply, stored = [] } = {}) {
     run: (source) => vm.runInContext(source, context),
   };
 }
+
+async function previewBrowser({ native = "maybe", rejectedPlay } = {}) {
+  const b = browser();
+  await tick();
+  const events = new Map(),
+    deadlines = new Map(),
+    diagnostics = [];
+  let sequence = 0,
+    plays = 0;
+  const video = b.node("program");
+  video.canPlayType = () => native;
+  video.addEventListener = (name, callback) => events.set(name, callback);
+  video.removeEventListener = (name, callback) => {
+    if (events.get(name) === callback) events.delete(name);
+  };
+  video.play = () => {
+    plays++;
+    return rejectedPlay ? Promise.reject(rejectedPlay) : Promise.resolve();
+  };
+  b.context.setTimeout = (callback) => {
+    deadlines.set(++sequence, callback);
+    return sequence;
+  };
+  b.context.clearTimeout = (id) => deadlines.delete(id);
+  b.context.console = { info: (_label, value) => diagnostics.push(value) };
+  b.run("role = 'control'; monitoring = true; ended = false; preview(1)");
+  return { ...b, events, deadlines, diagnostics, video, plays: () => plays };
+}
+
+test("preview timeout stops media and latches error without automatic retries or test writes", async () => {
+  const b = await previewBrowser();
+  const requests = b.requests.length;
+  const originalTimeout = [...b.deadlines.values()][0];
+  b.events.get("waiting")();
+  b.events.get("waiting")();
+  assert.equal([...b.deadlines.values()][0], originalTimeout);
+  [...b.deadlines.values()][0]();
+  assert.equal(b.node("previewState").dataset.failure, "playback_timeout");
+  assert.equal(b.node("previewRetry").hidden, false);
+  assert.equal(b.deadlines.size, 0);
+  b.run("preview(1)");
+  assert.equal(b.plays(), 1);
+  b.node("previewRetry").onclick();
+  b.node("previewRetry").onclick();
+  assert.equal(b.plays(), 2);
+  assert.equal(b.requests.length, requests);
+  b.run("stopPreview()");
+});
+
+test("preview play rejection survives polling error clear and never exposes raw error", async () => {
+  const b = await previewBrowser({
+    rejectedPlay: { name: "NotAllowedError", message: "PRIVATE-SENTINEL" },
+  });
+  await tick();
+  b.node("error").textContent = "";
+  assert.equal(b.node("previewState").dataset.failure, "playback_blocked");
+  assert.match(b.node("previewState").textContent, /permission/);
+  assert.equal(
+    JSON.stringify(b.diagnostics).includes("PRIVATE-SENTINEL"),
+    false,
+  );
+});
+
+test("pending preview callbacks cannot overwrite pause or newer playback", async () => {
+  const b = await previewBrowser();
+  const oldPlaying = b.events.get("playing"),
+    oldTimeout = [...b.deadlines.values()][0];
+  b.run("pauseControl('Paused')");
+  oldPlaying();
+  oldTimeout();
+  b.node("previewRetry").onclick();
+  assert.equal(b.node("previewState").dataset.state, "idle");
+  assert.equal(b.plays(), 1);
+  b.run("monitoring=true;preview(2)");
+  b.events.get("playing")();
+  oldTimeout();
+  assert.equal(b.node("previewState").dataset.state, "playing");
+  assert.equal(b.deadlines.size, 0);
+  b.run("stopPreview()");
+});
+
+test("late play rejection cannot fail a replacement preview", async () => {
+  const b = await previewBrowser();
+  let reject;
+  b.video.play = () =>
+    new Promise((_resolve, failure) => {
+      reject = failure;
+    });
+  b.run("preview(2)");
+  b.video.play = () => Promise.resolve();
+  b.run("preview(3)");
+  b.events.get("playing")();
+  reject({ name: "NotSupportedError", message: "PRIVATE-SENTINEL" });
+  await tick();
+  assert.equal(b.node("previewState").dataset.state, "playing");
+  assert.equal(b.node("previewRetry").hidden, true);
+  b.run("stopPreview()");
+});
+
+test("preview retry respects role, terminal state and absolute expiry", async () => {
+  const b = await previewBrowser();
+  [...b.deadlines.values()][0]();
+  for (const state of [
+    "ended=true",
+    "ended=false;role='camera1'",
+    "role='control';absoluteExpires=1",
+  ]) {
+    b.run(state);
+    b.node("previewRetry").onclick();
+    assert.equal(b.plays(), 1);
+  }
+});
+
+test("preview user pause is truthful and pagehide disposes pending media", async () => {
+  const b = await previewBrowser();
+  b.events.get("playing")();
+  b.events.get("pause")();
+  assert.equal(b.node("previewState").dataset.state, "paused");
+  assert.equal(b.deadlines.size, 0);
+  assert.equal(b.plays(), 1);
+  b.events.get("waiting")();
+  const oldTimeout = [...b.deadlines.values()][0],
+    oldPlaying = b.events.get("playing");
+  const requests = b.requests.length;
+  b.windowEvents.get("pagehide")();
+  oldTimeout();
+  oldPlaying();
+  await tick();
+  assert.equal(b.node("previewState").dataset.state, "idle");
+  assert.equal(b.deadlines.size, 0);
+  assert.equal(b.events.size, 0);
+  assert.equal(b.requests.length, requests);
+});
+
+test("MSE fatal error destroys player and keeps sanitized failure until explicit retry", async () => {
+  const b = await previewBrowser({ native: "" });
+  const handlers = new Map();
+  let destroyed = 0;
+  class FakeHls {
+    static isSupported() {
+      return true;
+    }
+    static Events = { ERROR: "error", MANIFEST_PARSED: "manifest" };
+    static ErrorTypes = { NETWORK_ERROR: "network" };
+    on(name, callback) {
+      handlers.set(name, callback);
+    }
+    loadSource() {}
+    attachMedia() {}
+    destroy() {
+      destroyed++;
+    }
+  }
+  b.context.Hls = FakeHls;
+  b.context.window.Hls = FakeHls;
+  b.node("previewRetry").onclick();
+  handlers.get("error")("error", {
+    fatal: true,
+    type: "network",
+    details: "PRIVATE-SENTINEL",
+  });
+  assert.equal(destroyed, 1);
+  assert.equal(b.node("previewState").dataset.mode, "mse");
+  assert.equal(b.node("previewState").dataset.failure, "network_error");
+  assert.equal(b.deadlines.size, 0);
+  assert.equal(
+    JSON.stringify(b.diagnostics).includes("PRIVATE-SENTINEL"),
+    false,
+  );
+  b.run("preview(1)");
+  assert.equal(destroyed, 1);
+});
 
 test("real client does not attach when permission resolves after Disconnect", async () => {
   const permission = deferred(),

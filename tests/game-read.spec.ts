@@ -21,7 +21,11 @@ test("anonymous Broadcast requests the public view and removes the program on de
     },
   );
   await page.route(
-    `**/api/games/${testGameId}/livekit-token?view=broadcast`,
+    `**/api/games/${testGameId}/livekit-token?capability=preview-subscribe`,
+    (route) => route.fulfill({ status: 401, json: { error: "Public viewer" } }),
+  );
+  await page.route(
+    `**/api/games/${testGameId}/livekit-token?capability=public-viewer`,
     async (route) => {
       credentialRequests += 1;
       expect(route.request().method()).toBe("POST");
@@ -43,7 +47,7 @@ test("anonymous Broadcast requests the public view and removes the program on de
   await expect(page.getByTestId("back-to-scoring")).toHaveCount(0);
   await expect(page.getByRole("link", { name: "Scoring" })).toHaveCount(0);
   closed = true;
-  await expect(page.locator("main[role='alert']")).toHaveText(
+  await expect(page.locator("main").getByRole("alert")).toHaveText(
     "This game is closed",
   );
   await expect(page.getByTestId("broadcast-canvas")).toHaveCount(0);

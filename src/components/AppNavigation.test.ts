@@ -89,7 +89,7 @@ describe("shared application navigation", () => {
       expect(gameLinks).toContain(action);
     for (const route of [gameControl, scoring, broadcast, editSchedule]) {
       expect(route).toContain("gameContext={{");
-      expect(route).toContain("gameCapabilities(");
+      expect(route).toMatch(/game(?:Entry)?Capabilities\(/);
     }
   });
 

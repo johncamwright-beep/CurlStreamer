@@ -11,7 +11,7 @@ NUMBERS = {"slot", "attempt", "durationSeconds", "durationMs", "generation", "en
 for slot in (1, 2):
     NUMBERS.update(f"camera{slot}{field}" for field in ("Packets", "PayloadBytes", "MarkedFrames", "PacketAgeMs"))
 BOOLEANS = {"receiving", "previewPlaylistFresh", "providerAcknowledged", "camera1Receiving", "camera2Receiving"}
-ENUMS = {"reason": REASONS, "target": {"receiver", "provider_track", "encoder"}, "result": {"attempted", "confirmed", "unknown"}}
+ENUMS = {"reason": REASONS, "target": {"receiver", "provider_track", "encoder", "encoder_log"}, "result": {"attempted", "confirmed", "unknown"}}
 ENUMS.update({"trackKind": {"publisher", "subscriber"}, "failureCategory": {"timeout", "network", "authentication", "rate_limited", "upstream_error", "http_error", "invalid_response", "provider_rejected", "invalid_identifier", "process_error", "unexpected_error"}})
 
 def number(value):

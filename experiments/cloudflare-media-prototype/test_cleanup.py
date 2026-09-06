@@ -81,6 +81,20 @@ class CleanupTests(unittest.TestCase):
         proc.terminate.assert_called_once()
         proc.kill.assert_called_once()
 
+    def test_encoder_log_io_error_cannot_skip_resource_cleanup(self):
+        receiver = self.camera(1)
+        self.lab.encoder = Mock()
+        self.lab.encoder.poll.return_value = 0
+        self.lab.log = Mock()
+        self.lab.log.close.side_effect = OSError('PRIVATE-SENTINEL')
+        self.lab.stop('deadline')
+        receiver.stop.assert_called_once()
+        self.assertEqual(self.lab.cf.close_track.call_count, 2)
+        self.assertTrue(any(r.get('target') == 'encoder_log' and r.get('result') == 'unknown' for r in self.rows))
+        self.assertTrue(any(r['event'] == 'encoder_stopped' for r in self.rows))
+        self.assertEqual(self.rows[-1]['reason'], 'deadline')
+        self.assertNotIn('PRIVATE-SENTINEL', json.dumps(self.rows))
+
     def test_failed_encoder_stop_during_detach_ends_run_instead_of_restart(self):
         self.camera(1)
         other = self.camera(2)
@@ -106,6 +120,21 @@ class CleanupTests(unittest.TestCase):
             cf.publish('owned', {'type': 'offer', 'sdp': 'v=0'}, '0', 'camera')
             cf.close_track('owned', '0')
             self.assertEqual([c.kwargs['timeout'] for c in factory.return_value.open.call_args_list], [15, 15, 5])
+
+    def test_uncertain_receiver_detach_ends_run_before_replacement_can_claim_port(self):
+        one, two = self.camera(1), self.camera(2)
+        one.stop.side_effect = subprocess.TimeoutExpired('PRIVATE-SENTINEL', 3)
+        self.lab.detach(1)
+        self.assertTrue(self.lab.ended)
+        self.assertEqual(self.lab.cameras, {})
+        two.stop.assert_called_once()
+        self.assertEqual(self.lab.cf.close_track.call_count, 4)
+        outcomes = [r for r in self.rows if r.get('target') == 'receiver' and r.get('slot') == 1]
+        self.assertEqual([r['result'] for r in outcomes], ['attempted', 'unknown'])
+        self.assertEqual(self.rows[-1]['reason'], 'receiver_failed')
+        with self.assertRaises(ValueError):
+            self.lab.publish_browser(1, {'type': 'offer', 'sdp': 'v=0'}, '0')
+        self.lab.cf.new_session.assert_not_called()
 
     def test_http_failures_are_categorized_without_body_or_credentials(self):
         cf = Cloudflare('fixture', 'fixture-not-a-real-credential')

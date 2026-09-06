@@ -150,6 +150,7 @@ class Lab:
         with self.lock:
             camera=self.cameras.pop(slot,None)
             encoder_stopped=self.stop_encoder()
+            receiver_stopped=True
             if camera:
                 if camera['receiver']:
                     self.evidence.emit('cleanup',slot=slot,target='receiver',result='attempted')
@@ -157,6 +158,7 @@ class Lab:
                         camera['receiver'].stop()
                         self.evidence.emit('cleanup',slot=slot,target='receiver',result='confirmed')
                     except (OSError, subprocess.TimeoutExpired) as error:
+                        receiver_stopped=False
                         self.evidence.emit('cleanup',slot=slot,target='receiver',result='unknown',failureCategory=cleanup_failure(error))
                 tracks=[(camera['source'],camera['source_mid'])]
                 if camera.get('session'):tracks.append((camera['session'],camera['mid']))
@@ -176,6 +178,7 @@ class Lab:
                 self.evidence.sample(self.status(),force=True)
             self.message='Camera disconnected. Reconnect it to resume the preview.'
             if not encoder_stopped:self.stop('encoder_failure')
+            elif not receiver_stopped:self.stop('receiver_failed')
 
     def stop_encoder(self):
         if self.encoder:
@@ -191,7 +194,9 @@ class Lab:
                 self.evidence.emit('cleanup',target='encoder',result='confirmed')
                 self.evidence.emit('encoder_stopped',generation=self.generation)
             if hasattr(self,'log'):
-                self.log.close()
+                try:self.log.close()
+                except OSError:
+                    self.evidence.emit('cleanup',target='encoder_log',result='unknown',failureCategory='process_error')
             return stopped
         return True
 

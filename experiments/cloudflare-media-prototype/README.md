@@ -116,8 +116,10 @@ are never logged. An acknowledged close still has durable outcome unknown.
 Local processes get their existing terminate grace (receiver three seconds,
 encoder four), then a kill wait capped at three seconds. Expected process errors
 or kill timeouts record unknown, allow remaining teardown to proceed, and never
-emit a successful encoder-stop event. If encoder termination is uncertain during
-an ordinary disconnect, the test ends instead of starting another encoder.
+emit a successful encoder-stop event. If encoder or receiver termination is
+uncertain during an ordinary disconnect, the test ends instead of starting a
+replacement process that could conflict with the old one.
+An encoder log close I/O error is recorded separately and cannot skip resource cleanup.
 Repeated stop/disconnect does not replay completed cleanup. Individual provider
 failures remain isolated so the other tracks and final end event are attempted.
 Partial setup/negotiation cleanup and a strict overall teardown deadline remain

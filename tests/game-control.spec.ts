@@ -372,3 +372,59 @@ test("scoring read retry refreshes unavailable schedule and preview details can 
     "1920px",
   );
 });
+
+test("a hung initial context read does not block ordinary polling or restore stale game state", async ({
+  page,
+}) => {
+  const { game, state } = await fixture(page);
+  const initialGame = structuredClone(game);
+  let release!: () => void;
+  const pending = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  let contextRequests = 0;
+  await page.route(`**/api/games/${testGameId}`, async (route) => {
+    if (route.request().headers()["x-curlcast-game-context"] !== "include")
+      return route.fallback();
+    contextRequests++;
+    await pending;
+    await route.fulfill({
+      json: {
+        ...initialGame,
+        navigationMetadata: {
+          state: "available",
+          scheduledStart: "2026-10-20T23:30:00Z",
+          timezone: "America/Toronto",
+          gameNumber: 3,
+        },
+      },
+      headers: {
+        "x-curlcast-operator": "true",
+        "x-curlcast-account-role": "owner",
+      },
+    });
+  });
+  try {
+    await page.goto(`/games/${testGameId}`);
+    await expect.poll(() => contextRequests).toBe(1);
+    game.config.homeName = "Latest state from ordinary polling";
+    await expect(page.getByRole("heading", { level: 1 })).toContainText(
+      game.config.homeName,
+    );
+    await expect(page.getByLabel("Game schedule")).toContainText(
+      "Schedule unavailable",
+    );
+    await expect.poll(() => state.polls).toBeGreaterThanOrEqual(2);
+    expect(contextRequests).toBe(1);
+    expect(state.writes).toEqual([]);
+    release();
+    await expect(page.getByLabel("Game schedule")).toContainText("7:30 PM");
+    await expect(page.getByRole("heading", { level: 1 })).toContainText(
+      game.config.homeName,
+    );
+    expect(contextRequests).toBe(1);
+    expect(state.writes).toEqual([]);
+  } finally {
+    release();
+  }
+});

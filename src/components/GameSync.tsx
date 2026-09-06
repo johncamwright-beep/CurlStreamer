@@ -124,17 +124,14 @@ export function useGame<V extends GameView = undefined>(
     setAccountOperator(false);
     setAccountRole("");
     setNavigationMetadata(undefined);
-    let mounted = true;
-    let timer: ReturnType<typeof setInterval> | undefined;
-    // Ordinary state polling never fans out to schedule metadata reads.
-    void refresh(includeContext).finally(() => {
-      if (mounted) timer = setInterval(() => void refresh(), 1000);
-    });
+    // Routine state reads must recover even if initial context enrichment stalls.
+    // Their responses have separate ordering and never request schedule metadata.
+    void refresh(includeContext);
+    const timer = setInterval(() => void refresh(), 1000);
     const channel = new BroadcastChannel(`curlcast-${id}`);
     channel.onmessage = () => void refresh();
     return () => {
       clearInterval(timer);
-      mounted = false;
       currentContextGate.reset();
       channel.close();
     };

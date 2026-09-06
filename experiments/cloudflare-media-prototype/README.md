@@ -1,4 +1,4 @@
-# Isolated camera cancellation and ownership work
+# Isolated camera ownership, control recovery and evidence
 
 This source-only experiment is not imported by the CurlStreamer application and
 is not deployed. It was copied from the private Cloudflare camera scratch lab
@@ -34,15 +34,14 @@ standalone deployable camera service.
 From this directory, use Node's built-in test runner:
 `node --test test_camera_session.mjs test_client.mjs`.
 With FastAPI, HTTPX and their dependencies available, run
-`python -m unittest test_server test_ownership test_cloudflare_api test_processor`.
+`python -m unittest discover -p "test_*.py"`.
 All provider calls in these tests are mocked. The processor deadline test uses
 only a local temporary directory and timer. No GPU or network is required.
 
 ## Remaining gates
 
-The processor is deliberately unchanged. Its external calls under the lifecycle
-lock, partial-failure cleanup, and packet-based rather than decoded-picture
-freshness remain follow-up work. Failed cleanup requests remain best effort;
+External calls under the processor lifecycle lock, partial-failure cleanup, and
+packet-based rather than decoded-picture freshness remain follow-up work. Failed cleanup requests remain best effort;
 server expiry is the final backstop, not proof of immediate provider teardown.
 Claiming a camera position intentionally replaces its previous connection; a
 production takeover policy and authenticated game boundaries are still needed.
@@ -50,3 +49,67 @@ production takeover policy and authenticated game boundaries are still needed.
 One user-reported phone connection with a good picture is not two-phone,
 teardown, Safari/rotation, adaptive-dimension, cellular, full-match, microphone,
 YouTube, or multi-game capacity qualification. None is claimed here.
+
+## Explicit control recovery
+
+Control authentication issues a signed control-only recovery ticket stored in the
+same tab's sessionStorage. Its absolute expiry matches the private link and its
+signature is tied to the deployment key/expiry. It never grants camera identity
+or a connection lease. Hidden, unstarted-idle (60 seconds), failed and expired
+control pages stop polling and disable actions. Resume is an explicit bounded
+reauthentication/read sequence; it never repeats Start, Stop, score or camera
+writes. Pausing aborts and generation-fences pending reads. HTTP 410 is terminal
+expiry regardless of browser clock.
+
+Recovered control can read the current instance/preview and explicitly Stop or
+score an existing run, including a replacement instance already started by phones.
+It cannot Start or retrieve original camera links: both are server restrictions.
+The preview cookie has a distinct HMAC purpose and cannot authenticate an original
+control page. Changed-instance UI does not claim the earlier run was restored.
+A fresh original private link is required to regain Start authority.
+
+Run state remains process-local. A fresh original camera/control link can start a
+different instance after process death; there is no durable global one-run ledger.
+Each instance retains its 600-second cap, shortened by absolute link expiry.
+Recovery cannot extend it. Automatic monitoring is bounded by the observed run
+and absolute deadlines. A user explicitly resuming a paused control can cold-start
+the existing deployment; there is no automatic recovery or GPU wakeup loop.
+
+## Retained minimal evidence
+
+`evidence.py` emits flushed `PRIVATE_LAB_EVIDENCE` JSON lines to existing Modal
+stdout logs, retained after container exit without a new store/service. A random,
+non-authorizing instance ID plus wall/monotonic timestamps correlates events.
+An allowlist accepts only known events, numeric/boolean fields and enumerated
+reasons. No video/audio, SDP, capabilities, page IDs, leases, provider session IDs,
+private links or raw exception messages are included. Limit: 512 ordinary events
+plus one final end event; periodic samples every 10 seconds, plus cleanup samples.
+
+Events cover publish/reconnect attempts, receiver negotiation, packet-freshness
+transitions/counters/age, encoder generation/output frame count/average fps,
+playlist freshness, start/end reason and cleanup. A waited local process exit is
+confirmed. Provider API acknowledgement still leaves durable cleanup unknown.
+An abrupt kill may omit the final event: absence is unknown, never success.
+
+RTP packets/markers are not decoded frames or visually verified motion. Dimensions
+and target fps are explicitly configured values, not measured input/output
+qualification. No decoded-frame detector was added. Shared provider-lock waits can
+delay telemetry and short packet gaps can be missed. Partial-failure cleanup and
+freshness remain separate gates.
+
+Future packaging must include `evidence.py` alongside existing reviewed files,
+including `camera-session.js`. Preserve key/expiry for recovery in the same private
+window; rotating either revokes old tickets. Native receiver, HLS bundle, private
+access and Modal configuration stay outside Git. Do not deploy tests or the fake
+browser server. This new revision has not been deployed or run on GPUs/phones.
+
+## Local visual fixture
+
+Run `node browser-fixture.mjs` from this directory; open
+`http://127.0.0.1:3310/#offline-control`. An optional numeric argument changes the
+port. Click Replace server (running), wait for disconnection, then Resume: Start
+stays disabled; Stop/score are available for the fake current run. Replace server
+(idle) then Resume keeps all mutation controls disabled. Expire link removes Resume
+and shows fresh-link guidance. All API replies are fake; media and writes are
+disabled. Only loopback is bound, with no Modal/provider/outbound calls. Ctrl+C
+stops the fixture.

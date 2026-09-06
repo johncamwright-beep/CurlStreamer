@@ -1,11 +1,24 @@
 "use strict";
 const $ = (id) => document.getElementById(id);
-let role = null,
+let role = sessionStorage.getItem("labRole") || null,
   hls = null,
   previewGeneration = -1,
   ended = false,
   connecting = false,
   timer = null;
+let monitoring = true,
+  polling = false,
+  resuming = false;
+let controlGeneration = 0,
+  activeStatusRead = null;
+let recoveryTicket = sessionStorage.getItem("labRecoveryTicket") || "";
+let absoluteExpires = Number(sessionStorage.getItem("labExpiresAt") || 0);
+let lastInstance = sessionStorage.getItem("labInstance") || "";
+let observedDeadline = Number(
+  sessionStorage.getItem("labObservedDeadline") || 0,
+);
+let monitorUntil = Date.now() + 60000;
+let canStart = true;
 let pageAccess = sessionStorage.getItem("labPageAccess") || "";
 async function api(path, body, signal) {
   const r = await fetch(path, {
@@ -18,12 +31,15 @@ async function api(path, body, signal) {
     signal,
   });
   const data = await r.json();
-  if (!r.ok)
-    throw new Error(
+  if (!r.ok) {
+    const error = new Error(
       typeof data.detail === "string"
         ? data.detail
         : "The request could not be completed.",
     );
+    error.status = r.status;
+    throw error;
+  }
   return data;
 }
 function showError(e) {
@@ -243,13 +259,145 @@ function preview(generation) {
       ),
     );
 }
-async function poll() {
+function pauseControl(message) {
+  controlGeneration++;
+  activeStatusRead?.abort();
+  activeStatusRead = null;
+  polling = false;
+  monitoring = false;
+  clearInterval(timer);
+  timer = null;
+  for (const id of ["start", "stop", "score"]) $(id).disabled = true;
+  $("resume").hidden = Boolean(
+    !recoveryTicket ||
+    ended ||
+    (absoluteExpires && Date.now() >= absoluteExpires * 1000),
+  );
+  $("connection").textContent = message;
+  stopPreview();
+}
+async function controlRead(path, body, abort = new AbortController()) {
+  const timeout = setTimeout(() => abort.abort(), 15000);
   try {
-    const s = await api("/status");
+    return await api(path, body, abort.signal);
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+function bindAuth(auth, freshLink = false) {
+  role = auth.role;
+  pageAccess = auth.pageAccess;
+  canStart = auth.canStart !== false;
+  absoluteExpires = auth.expiresAt || 0;
+  sessionStorage.setItem("labPageAccess", pageAccess);
+  sessionStorage.setItem("labRole", role);
+  sessionStorage.setItem("labExpiresAt", String(absoluteExpires));
+  if (freshLink) {
+    recoveryTicket = auth.recoveryTicket || "";
+    sessionStorage.setItem("labRecoveryTicket", recoveryTicket);
+    sessionStorage.setItem("labSequence", "0");
+    lastInstance = "";
+    observedDeadline = 0;
+    sessionStorage.setItem("labInstance", "");
+    sessionStorage.setItem("labObservedDeadline", "0");
+  }
+}
+function startPolling() {
+  clearInterval(timer);
+  if (monitoring && !ended) timer = setInterval(() => void poll(), 2000);
+}
+async function resumeControl() {
+  if (resuming || !recoveryTicket || ended) return;
+  if (absoluteExpires && Date.now() >= absoluteExpires * 1000) {
+    pauseControl("Private link expired. Request a fresh test link.");
+    return;
+  }
+  resuming = true;
+  $("resume").disabled = true;
+  pauseControl("Reconnecting control… No test actions will be repeated.");
+  const generation = controlGeneration;
+  try {
+    const auth = await controlRead("/resume-control", {
+      ticket: recoveryTicket,
+    });
+    if (generation !== controlGeneration || document.hidden) return;
+    if (auth.role !== "control" || auth.canStart !== false)
+      throw new Error("Reopen the private control link.");
+    bindAuth(auth);
+    monitoring = true;
+    monitorUntil = Date.now() + 60000;
+    if (await poll()) startPolling();
+  } catch (e) {
+    showError(e);
+    if (e.status === 410) {
+      absoluteExpires = 1;
+      ended = true;
+      $("remaining").textContent = "Private link expired";
+    }
+    pauseControl(
+      e.status === 410
+        ? "Private link expired. Request a fresh test link."
+        : "Control disconnected. Resume to check again, or reopen a fresh private link.",
+    );
+  } finally {
+    resuming = false;
+    $("resume").disabled = false;
+  }
+}
+async function poll() {
+  if (!monitoring || polling) return false;
+  if (absoluteExpires && Date.now() >= absoluteExpires * 1000) {
+    pauseControl("Private link expired. Request a fresh test link.");
+    return false;
+  }
+  if (
+    role === "control" &&
+    (document.hidden ||
+      Date.now() >= monitorUntil ||
+      (absoluteExpires && Date.now() >= absoluteExpires * 1000))
+  ) {
+    pauseControl(
+      "Control monitoring paused. Resume when you are ready to watch.",
+    );
+    return false;
+  }
+  polling = true;
+  const generation = controlGeneration;
+  const abort = new AbortController();
+  activeStatusRead = abort;
+  try {
+    const s = await controlRead("/status", undefined, abort);
+    if (!monitoring || generation !== controlGeneration) return false;
     if (role !== null && role !== s.role)
       throw new Error("This page role changed. Reopen its private link.");
     role = s.role;
     ended = s.ended;
+    canStart = s.canStart !== false;
+    absoluteExpires = s.expiresAt || absoluteExpires;
+    sessionStorage.setItem("labRole", role);
+    sessionStorage.setItem("labExpiresAt", String(absoluteExpires));
+    const replaced = Boolean(
+      lastInstance && s.instance && lastInstance !== s.instance,
+    );
+    if (replaced) observedDeadline = 0;
+    if (s.instance) lastInstance = s.instance;
+    if (s.started && !ended) {
+      const deadline =
+        Date.now() + Math.min(600, Math.max(0, s.remaining)) * 1000;
+      observedDeadline = observedDeadline
+        ? Math.min(observedDeadline, deadline)
+        : deadline;
+      monitorUntil = observedDeadline + 3000;
+    }
+    sessionStorage.setItem("labInstance", lastInstance);
+    sessionStorage.setItem("labObservedDeadline", String(observedDeadline));
+    $("connection").textContent = replaced
+      ? "Server changed. Showing its current test; the earlier session was not restored."
+      : !canStart && role === "control"
+        ? "Control resumed. A fresh private link is required to start a new test."
+        : "";
+    $("resume").hidden = true;
+    $("error").textContent = "";
     $("role").textContent =
       role === "control" ? "Test control" : `Camera ${role.slice(-1)}`;
     $("control").hidden = role !== "control";
@@ -259,8 +407,9 @@ async function poll() {
     $("remaining").textContent = ended
       ? "Test finished"
       : `${Math.floor(s.remaining / 60)}:${String(s.remaining % 60).padStart(2, "0")} remaining`;
-    $("start").disabled = s.started || ended;
+    $("start").disabled = !canStart || s.started || ended;
     $("stop").disabled = !s.started || ended;
+    $("score").disabled = !s.started || ended;
     $("connect").disabled = ended || connecting;
     if (role !== "control" && !s.started && !ended)
       $("message").textContent =
@@ -268,36 +417,67 @@ async function poll() {
     for (const slot of [1, 2]) {
       const c = s.cameras[String(slot)];
       $("cam" + slot).textContent =
-        `Camera ${slot} · ${c?.connected ? "receiving video" : "waiting"}`;
+        `Camera ${slot} · ${c?.connected ? "receiving packets" : "waiting"}`;
     }
     $("metrics").textContent =
-      `${s.encodedFrames.toLocaleString()} encoded frames · ${s.encoderFps.toFixed(1)} average encoder fps`;
+      `${s.encodedFrames.toLocaleString()} encoded output frames · ${s.encoderFps.toFixed(1)} average encoder fps · camera motion not verified by these counters`;
     if (role === "control") {
       if (s.preview) preview(s.generation);
       else if (previewGeneration !== -1) stopPreview();
     }
     if (ended) {
+      pauseControl("Test ended. Automatic monitoring stopped.");
       await localStop();
-      clearInterval(timer);
     }
+    return monitoring && !ended;
   } catch (e) {
+    if (generation !== controlGeneration) return false;
     showError(e);
+    if (e.status === 410) {
+      absoluteExpires = 1;
+      ended = true;
+      $("remaining").textContent = "Private link expired";
+    }
+    // Pause immediately, before any best-effort camera cleanup can block.
+    pauseControl(
+      e.status === 410
+        ? "Private link expired. Request a fresh test link."
+        : role === "control"
+          ? "Control disconnected. Resume to check the current test; actions are paused."
+          : "Camera disconnected. Reopen this camera’s private link, then tap Connect camera.",
+    );
     await localStop();
-    stopPreview();
-    clearInterval(timer);
+    return false;
+  } finally {
+    if (generation === controlGeneration) {
+      polling = false;
+      activeStatusRead = null;
+    }
   }
 }
-$("start").onclick = () => api("/start", {}).then(poll).catch(showError);
-$("stop").onclick = () => api("/stop", {}).then(poll).catch(showError);
+$("resume").onclick = () => void resumeControl();
+document.addEventListener("visibilitychange", () => {
+  if (role === "control" && document.hidden)
+    pauseControl(
+      "Control monitoring paused while this page is hidden. Resume when ready.",
+    );
+});
+$("start").onclick = () =>
+  monitoring && api("/start", {}).then(poll).catch(showError);
+$("stop").onclick = () =>
+  monitoring && api("/stop", {}).then(poll).catch(showError);
 $("connect").onclick = () => connect()?.catch(showError);
 $("disconnect").onclick = () => disconnect().catch(showError);
 $("score").onclick = () =>
+  monitoring &&
   api("/score", { red: Number($("red").value), blue: Number($("blue").value) })
     .then(() => {
       $("error").textContent = "";
     })
     .catch(showError);
 window.addEventListener("pagehide", () => {
+  monitoring = false;
+  clearInterval(timer);
   const lease = camera.current?.lease;
   void localStop();
   if (lease)
@@ -312,17 +492,22 @@ window.addEventListener("pagehide", () => {
   try {
     const token = location.hash.slice(1);
     if (token) {
-      const auth = await api("/auth", { token });
-      role = auth.role;
-      pageAccess = auth.pageAccess;
-      sessionStorage.setItem("labPageAccess", pageAccess);
-      sessionStorage.setItem("labSequence", "0");
+      bindAuth(await controlRead("/auth", { token }), true);
       history.replaceState(null, "", location.pathname);
     }
-    await poll();
-    if (!ended) timer = setInterval(poll, 2000);
+    if (await poll()) startPolling();
   } catch (e) {
     showError(e);
+    if (e.status === 410) {
+      absoluteExpires = 1;
+      ended = true;
+      $("remaining").textContent = "Private link expired";
+    }
+    pauseControl(
+      e.status === 410
+        ? "Private link expired. Request a fresh test link."
+        : "Open the private link provided for this device.",
+    );
     $("message").textContent =
       "Open the private link provided for this device.";
   }

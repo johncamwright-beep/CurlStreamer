@@ -10,7 +10,7 @@ class FakeLab:
     def __init__(self):self.calls=[]
     def status(self):return {'preview':False}
     def start(self):self.calls.append('start')
-    def stop(self):self.calls.append('stop')
+    def stop(self,reason='manual_stop'):self.calls.append('stop')
     def attach(self,*args):self.calls.append(('attach',args[0]));return {'ok':True}
     publish_browser=attach
     def detach(self,*args):self.calls.append(('detach',args[0]))

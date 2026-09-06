@@ -1,4 +1,6 @@
 """Expiring, role-scoped phone test. No public broadcast, accounts or game writes."""
+import base64
+import json
 import hashlib
 import hmac
 import os
@@ -12,6 +14,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel, Field
 from processor import Lab, ROOT
+from evidence import Evidence
 
 ROLES=('control','camera1','camera2')
 ASSETS=Path('/prototype')
@@ -21,6 +24,8 @@ def token_for(master,role):
 
 class Auth(BaseModel):
     token: str = Field(min_length=32,max_length=128)
+class Resume(BaseModel):
+    ticket: str = Field(min_length=80,max_length=512)
 class Ownership(BaseModel):
     connectionId: str = Field(pattern=r'^[A-Za-z0-9_-]{32,128}$')
 class Claim(BaseModel):
@@ -37,19 +42,23 @@ def create_app(lab=None,master=None,expires=None):
     master=master or os.environ['LAB_ACCESS_KEY']
     expires=expires or int(os.environ['LAB_EXPIRES_AT'])
     tokens={role:token_for(master,role) for role in ROLES}
+    preview_token=token_for(master,'preview-control-v1')
     pages={}
+    recovered_pages={}
+    evidence=getattr(lab,"evidence",None) or Evidence()
+    lab.absolute_expires=expires
     owners={}
     ownership_lock=threading.RLock()
     @asynccontextmanager
     async def lifespan(app):
         yield
-        lab.stop()
+        lab.stop("container_shutdown")
     app=FastAPI(docs_url=None,redoc_url=None,openapi_url=None,lifespan=lifespan)
 
     @app.middleware('http')
     async def guard(request,call_next):
         if time.time()>expires:
-            lab.stop()
+            lab.stop("absolute_expiry")
             return JSONResponse({'detail':'This private test link has expired.'},status_code=410)
         try: length=int(request.headers.get('content-length','0') or '0')
         except ValueError:return JSONResponse({'detail':'Invalid request size.'},status_code=400)
@@ -96,28 +105,63 @@ def create_app(lab=None,master=None,expires=None):
     def asset(name:str):
         if name not in ('client.js','camera-session.js','style.css','hls.min.js'):raise HTTPException(404)
         return FileResponse(ASSETS/name)
+    def issue_page(selected,can_start=True):
+        if len(pages)>=64:raise HTTPException(429,'This test has reached its page limit.')
+        access=secrets.token_urlsafe(32)
+        pages[access]={'role':selected,'sequence':0,'canStart':can_start}
+        return access
+
+    def page_response(selected,access,ticket=None):
+        response=JSONResponse({'role':selected,'pageAccess':access,'canStart':pages[access]['canStart'],
+                               'instance':evidence.instance,'expiresAt':expires,
+                               **({'recoveryTicket':ticket} if ticket else {})})
+        if selected=='control':
+            response.set_cookie('lab_preview',preview_token,path='/hls',httponly=True,secure=True,samesite='strict',max_age=max(1,int(expires-time.time())))
+        return response
+
+    def recovery_ticket():
+        payload=base64.urlsafe_b64encode(json.dumps({'purpose':'control-resume-v1','expires':expires,'nonce':secrets.token_hex(16)},separators=(',',':')).encode()).decode().rstrip('=')
+        return payload+'.'+hmac.new(master.encode(),('resume:'+payload).encode(),hashlib.sha256).hexdigest()
+
+    @app.post('/resume-control')
+    def resume_control(body:Resume):
+        try:
+            payload,signature=body.ticket.split('.')
+            expected=hmac.new(master.encode(),('resume:'+payload).encode(),hashlib.sha256).hexdigest()
+            if not hmac.compare_digest(signature,expected):raise ValueError()
+            value=json.loads(base64.urlsafe_b64decode(payload+'='*(-len(payload)%4)))
+            if value['purpose']!='control-resume-v1' or value['expires']!=expires or time.time()>=value['expires']:raise ValueError()
+            nonce=value['nonce']
+            if not isinstance(nonce,str) or not re.fullmatch(r'[0-9a-f]{32}',nonce):raise ValueError()
+        except (ValueError,KeyError,TypeError):raise HTTPException(401,'Reopen your fresh private control link.') from None
+        with ownership_lock:
+            access=recovered_pages.get(nonce)
+            if access is None:
+                access=issue_page('control',can_start=False)
+                recovered_pages[nonce]=access
+        evidence.emit('control_resumed')
+        return page_response('control',access)
+
     @app.post('/auth')
     def auth(body:Auth):
         selected=next((r for r,t in tokens.items() if hmac.compare_digest(t,body.token)),None)
         if not selected:raise HTTPException(401,'This private link is not valid.')
         with ownership_lock:
-            if len(pages)>=64:raise HTTPException(429,'This test has reached its page limit.')
-            access=secrets.token_urlsafe(32)
-            pages[access]={'role':selected,'sequence':0}
-        response=JSONResponse({'role':selected,'pageAccess':access})
-        if selected=='control':
-            response.set_cookie('lab_preview',tokens[selected],path='/hls',httponly=True,secure=True,samesite='strict',max_age=max(1,int(expires-time.time())))
-        return response
+            access=issue_page(selected)
+        return page_response(selected,access,recovery_ticket() if selected=='control' else None)
     @app.get('/status')
     def status(request:Request):
-        return {'role':role(request),**lab.status()}
+        return {'role':role(request),'canStart':page(request)['canStart'],'instance':evidence.instance,'expiresAt':expires,**lab.status()}
     @app.get('/links')
     def links(request:Request):
         control(request)
+        if not page(request)['canStart']:raise HTTPException(403,'Recovered control cannot issue new camera links.')
         return {r:str(request.base_url)+'#'+tokens[r] for r in ('camera1','camera2')}
     @app.post('/start')
     def start(request:Request):
-        control(request);lab.start();return lab.status()
+        control(request)
+        if not page(request)['canStart']:raise HTTPException(403,'Recovered control cannot start a new test. Open a fresh private link.')
+        lab.start();return lab.status()
     @app.post('/camera-claim')
     def claim(request:Request,body:Claim):
         with ownership_lock:
@@ -171,7 +215,7 @@ def create_app(lab=None,master=None,expires=None):
             return {'disconnected':True}
     @app.get('/hls/{name}')
     def hls(request:Request,name:str):
-        if not hmac.compare_digest(request.cookies.get('lab_preview',''),tokens['control']):raise HTTPException(403)
+        if not hmac.compare_digest(request.cookies.get('lab_preview',''),preview_token):raise HTTPException(403)
         if not lab.status()['preview']:raise HTTPException(409,'Preview is not live.')
         if not re.fullmatch(r'(program\.m3u8|segment\d+-\d{5}\.ts)',name):raise HTTPException(404)
         path=ROOT/name

@@ -7,6 +7,7 @@ import threading
 import time
 from pathlib import Path
 from cloudflare_api import Cloudflare
+from evidence import Evidence
 
 ROOT = Path('/test-output')
 FONT = '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf'
@@ -52,6 +53,9 @@ class Child:
 
 class Lab:
     def __init__(self):
+        self.evidence=Evidence()
+        self.attempts={1:0,2:0}
+        self.end_reason=None
         self.cf=Cloudflare(os.environ['CF_APP_ID'], os.environ['CF_APP_SECRET'])
         self.lock=threading.RLock()
         self.cameras={}
@@ -60,6 +64,7 @@ class Lab:
         self.created=time.monotonic()
         self.ended=False
         self.message='Ready. Start the test, then connect two camera phones.'
+        self.absolute_expires=float(os.environ.get('LAB_EXPIRES_AT','inf'))
         self.deadline=0
         self.generation=0
         ROOT.mkdir(exist_ok=True)
@@ -69,9 +74,11 @@ class Lab:
 
     def start(self, seconds=600):
         with self.lock:
+            if self.ended: raise ValueError("This test has finished")
             if self.started: return
             if not 5 <= seconds <= 600: raise ValueError('Invalid test duration')
-            self.started=time.monotonic(); self.deadline=self.started+seconds
+            self.started=time.monotonic(); self.deadline=self.started+min(seconds,max(0,self.absolute_expires-time.time()))
+            self.evidence.emit('run_started',durationSeconds=seconds)
             self.message='Waiting for both cameras. Microphones are off.'
 
     def attach(self, slot, offer, mid, source=None):
@@ -85,8 +92,8 @@ class Lab:
                 published=self.cf.publish(source,offer,mid,'camera')
             receiver_session=self.cf.new_session()
             try:pulled=self.cf.subscribe(receiver_session,source,'camera')
-            except Exception as exc:
-                print('PRIVATE_LAB subscribe failed: '+str(exc),flush=True)
+            except Exception:
+                self.evidence.emit('failure',reason='subscribe_failed',slot=slot)
                 raise
             port=5100+slot*4
             receiver=Child({'offer':pulled['sessionDescription'],'port':port,
@@ -96,10 +103,11 @@ class Lab:
                 self.cf.answer(receiver_session,answer)
                 self.cameras[slot]={'receiver':receiver,'source':source,'source_mid':mid,'session':receiver_session,
                                     'mid':pulled['tracks'][0]['mid'],'port':port,'attached':time.monotonic()}
-            except Exception as exc:
-                print('PRIVATE_LAB receiver negotiation failed: '+str(exc),flush=True)
+            except Exception:
+                self.evidence.emit('failure',reason='receiver_failed',slot=slot)
                 receiver.stop()
                 raise
+            self.evidence.emit("receiver_attached",slot=slot)
             return published
 
     def publish_browser(self,slot,offer,mid):
@@ -109,6 +117,8 @@ class Lab:
             source=self.cf.new_session()
             result=self.cf.publish(source,offer,mid,'camera')
             self.cameras[slot]={'receiver':None,'source':source,'source_mid':mid,'attached':time.monotonic()}
+            self.attempts[slot]+=1
+            self.evidence.emit("camera_published",slot=slot,attempt=self.attempts[slot])
             return result
 
     def receive_browser(self,slot):
@@ -130,21 +140,37 @@ class Lab:
             camera=self.cameras.pop(slot,None)
             self.stop_encoder()
             if camera:
-                if camera['receiver']:camera['receiver'].stop()
+                if camera['receiver']:
+                    self.evidence.emit('cleanup',slot=slot,target='receiver',result='attempted')
+                    try:
+                        camera['receiver'].stop()
+                        self.evidence.emit('cleanup',slot=slot,target='receiver',result='confirmed')
+                    except Exception:
+                        self.evidence.emit('cleanup',slot=slot,target='receiver',result='unknown')
                 tracks=[(camera['source'],camera['source_mid'])]
                 if camera.get('session'):tracks.append((camera['session'],camera['mid']))
-                for session,mid in tracks:
-                    try: self.cf.close_track(session,mid)
+                for index,(session,mid) in enumerate(tracks,1):
+                    self.evidence.emit('cleanup',slot=slot,track=index,target='provider_track',result='attempted')
+                    acknowledged=False
+                    try:
+                        self.cf.close_track(session,mid)
+                        acknowledged=True
                     except Exception: pass
+                    self.evidence.emit('cleanup',slot=slot,track=index,target='provider_track',result='unknown',providerAcknowledged=acknowledged)
+                self.evidence.sample(self.status(),force=True)
             self.message='Camera disconnected. Reconnect it to resume the preview.'
 
     def stop_encoder(self):
         if self.encoder:
+            self.evidence.sample(self.status(),force=True)
+            self.evidence.emit('cleanup',target='encoder',result='attempted')
             if self.encoder.poll() is None:
                 self.encoder.terminate()
                 try:self.encoder.wait(timeout=4)
                 except subprocess.TimeoutExpired:self.encoder.kill();self.encoder.wait()
             self.encoder=None
+            self.evidence.emit('cleanup',target='encoder',result='confirmed')
+            self.evidence.emit('encoder_stopped',generation=self.generation)
             if hasattr(self,'log'):
                 self.log.close()
 
@@ -183,13 +209,16 @@ class Lab:
         while not self.ended:
             time.sleep(1)
             with self.lock:
+                if time.time()>=self.absolute_expires:
+                    self.stop('absolute_expiry');break
                 if not self.started:
                     if time.monotonic()-self.created>180:
-                        self.stop()
+                        self.stop('unused_timeout')
                         self.message='The unused test has expired. Open a fresh test session to continue.'
                     continue
                 if time.monotonic()>=self.deadline:
-                    self.stop();break
+                    self.stop('deadline');break
+                self.evidence.sample(self.status())
                 ready=len(self.cameras)==2 and all(self.fresh(c) for c in self.cameras.values())
                 if not ready and self.encoder:
                     self.stop_encoder(); self.message='Camera signal lost. Preview paused until both cameras return.'
@@ -200,15 +229,13 @@ class Lab:
                     (ROOT/'program.m3u8').unlink(missing_ok=True)
                     self.log=(ROOT/'encoder.log').open('w')
                     self.encoder=subprocess.Popen(self.command(),cwd=ROOT,stdout=subprocess.DEVNULL,stderr=self.log)
+                    self.evidence.emit('encoder_started',generation=self.generation,configuredWidth=1280,configuredHeight=720,targetFps=60)
                     self.message='Preparing the combined preview.'
                 if self.encoder and self.encoder.poll() is not None:
-                    print('PRIVATE_LAB encoder failure: '+(ROOT/'encoder.log').read_text()[-3500:],flush=True)
+                    self.evidence.emit('failure',reason='encoder_failure')
                     self.message='Video processing failed. Stop the test and report this message.'
                     # Do not restart-loop and consume credits on a persistent decoder failure.
-                    self.ended=True
-                    self.stop_encoder()
-                    for c in self.cameras.values():
-                        if c['receiver']:c['receiver'].stop()
+                    self.stop('encoder_failure')
                     break
                 if self.encoder and (ROOT/'program.m3u8').exists(): self.message='Preview is live. This is a private test, not a YouTube broadcast.'
 
@@ -225,9 +252,13 @@ class Lab:
                     'encoderFps':float(progress.get('fps','0').strip() or 0),
                     'cameras':{str(k):{'connected':self.fresh(v), **(v['receiver'].metric if v['receiver'] else {})} for k,v in self.cameras.items()}}
 
-    def stop(self):
+    def stop(self,reason='manual_stop'):
         with self.lock:
+            if self.ended:return
+            self.evidence.sample(self.status(),force=True)
             self.ended=True
+            self.end_reason=reason
             self.stop_encoder()
             for slot in list(self.cameras):self.detach(slot)
-            self.message='Test finished. Cameras and cloud processing have stopped.'
+            self.evidence.emit('run_ended',reason=reason,generation=self.generation)
+            self.message='Test finished. Local processing stopped; provider cleanup is not independently verified.'

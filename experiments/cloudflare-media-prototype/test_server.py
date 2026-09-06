@@ -1,6 +1,6 @@
 import sys
 from pathlib import Path
-import unittest,time
+import hashlib,json,tempfile,unittest,time
 from unittest.mock import patch
 from fastapi.testclient import TestClient
 from server import create_app,token_for
@@ -30,6 +30,7 @@ class AccessTests(unittest.TestCase):
         return response.json()
     def test_unauthenticated_cannot_read_status_or_start(self):
         self.assertEqual(self.client.get('/status').status_code,401)
+        self.assertEqual(self.client.get('/build').status_code,401)
         self.assertEqual(self.client.post('/start',json={}).status_code,401)
         self.assertEqual(self.lab.calls,[])
     def test_camera_cannot_start_stop_score_or_read_program(self):
@@ -37,7 +38,32 @@ class AccessTests(unittest.TestCase):
         for path,body in [('/start',{}),('/stop',{}),('/score',{'red':1,'blue':2})]:
             self.assertEqual(self.client.post(path,json=body).status_code,403)
         self.assertEqual(self.client.get('/hls/program.m3u8').status_code,403)
+        self.assertEqual(self.client.get('/build').status_code,403)
         self.assertEqual(self.lab.calls,[])
+    def test_control_reads_exact_validated_build_provenance(self):
+        from server import PROVENANCE_ASSETS
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory);assets={}
+            for name in PROVENANCE_ASSETS:
+                path=root/name;path.parent.mkdir(parents=True,exist_ok=True);path.write_bytes(name.encode())
+                assets[name]=hashlib.sha256(name.encode()).hexdigest()
+            package=json.dumps({'schema':1,'gitHead':'a'*40,'assets':assets},sort_keys=True,separators=(',',':')).encode()
+            provenance={'schema':1,'gitHead':'a'*40,'packageSha256':hashlib.sha256(package).hexdigest(),'assets':assets}
+            client=TestClient(create_app(FakeLab(),'private-test-master',time.time()+60,provenance,root),base_url='https://testserver')
+            auth=client.post('/auth',json={'token':token_for('private-test-master','control')}).json()
+            response=client.get('/build',headers={'X-Lab-Page':auth['pageAccess']})
+            self.assertEqual(response.status_code,200)
+            self.assertEqual(response.json(),{'schema':1,'verified':True,**provenance})
+            (root/PROVENANCE_ASSETS[0]).write_bytes(b'tampered')
+            tampered=TestClient(create_app(FakeLab(),'private-test-master',time.time()+60,provenance,root),base_url='https://testserver')
+            auth=tampered.post('/auth',json={'token':token_for('private-test-master','control')}).json()
+            self.assertEqual(tampered.get('/build',headers={'X-Lab-Page':auth['pageAccess']}).json(),{'schema':1,'verified':False})
+    def test_missing_or_invalid_build_provenance_fails_closed(self):
+        self.auth('control')
+        self.assertEqual(self.client.get('/build').json(),{'schema':1,'verified':False})
+        client=TestClient(create_app(FakeLab(),'private-test-master',time.time()+60,{'gitHead':'PRIVATE'}),base_url='https://testserver')
+        auth=client.post('/auth',json={'token':token_for('private-test-master','control')}).json()
+        self.assertEqual(client.get('/build',headers={'X-Lab-Page':auth['pageAccess']}).json(),{'schema':1,'verified':False})
     def test_camera_can_start_bounded_test_without_control_page(self):
         self.auth('camera1')
         lease=self.claim()

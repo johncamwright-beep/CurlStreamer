@@ -18,6 +18,28 @@ from evidence import Evidence
 
 ROLES=('control','camera1','camera2')
 ASSETS=Path('/prototype')
+PROVENANCE=ASSETS/'build-provenance.json'
+PROVENANCE_ASSETS=('cloudflare_api.py','processor.py','server.py','evidence.py','index.html','style.css',
+                   'client.js','camera-session.js','hls.min.js','receiver-linux')
+
+def build_provenance(value=None,asset_root=ASSETS):
+    if value is None:
+        try:value=json.loads((asset_root/'build-provenance.json').read_text())
+        except (OSError,json.JSONDecodeError):return {'schema':1,'verified':False}
+    try:
+        assets=value['assets']
+        actual={name:hashlib.sha256((asset_root/name).read_bytes()).hexdigest() for name in PROVENANCE_ASSETS}
+        package=hashlib.sha256(json.dumps({'schema':1,'gitHead':value['gitHead'],'assets':actual},
+                                         sort_keys=True,separators=(',',':')).encode()).hexdigest()
+        valid=(value['schema']==1 and re.fullmatch(r'[0-9a-f]{40}',value['gitHead']) and
+               re.fullmatch(r'[0-9a-f]{64}',value['packageSha256']) and isinstance(assets,dict) and assets and
+               set(assets)==set(PROVENANCE_ASSETS) and
+               all(isinstance(name,str) and re.fullmatch(r'[0-9a-f]{64}',digest) for name,digest in assets.items()) and
+               assets==actual and value['packageSha256']==package)
+    except (KeyError,TypeError,OSError):valid=False
+    return ({'schema':1,'verified':True,'gitHead':value['gitHead'],'packageSha256':value['packageSha256'],
+             'assets':{name:assets[name] for name in PROVENANCE_ASSETS}}
+            if valid else {'schema':1,'verified':False})
 
 def token_for(master,role):
     return hmac.new(master.encode(),role.encode(),hashlib.sha256).hexdigest()
@@ -37,12 +59,13 @@ class Score(BaseModel):
     red: int = Field(ge=0,le=99)
     blue: int = Field(ge=0,le=99)
 
-def create_app(lab=None,master=None,expires=None):
+def create_app(lab=None,master=None,expires=None,provenance=None,asset_root=ASSETS):
     lab=lab or Lab()
     master=master or os.environ['LAB_ACCESS_KEY']
     expires=expires or int(os.environ['LAB_EXPIRES_AT'])
     tokens={role:token_for(master,role) for role in ROLES}
     preview_token=token_for(master,'preview-control-v1')
+    provenance=build_provenance(provenance,asset_root)
     pages={}
     recovered_pages={}
     evidence=getattr(lab,"evidence",None) or Evidence()
@@ -152,6 +175,9 @@ def create_app(lab=None,master=None,expires=None):
     @app.get('/status')
     def status(request:Request):
         return {'role':role(request),'canStart':page(request)['canStart'],'instance':evidence.instance,'expiresAt':expires,**lab.status()}
+    @app.get('/build')
+    def build(request:Request):
+        control(request);return provenance
     @app.get('/links')
     def links(request:Request):
         control(request)

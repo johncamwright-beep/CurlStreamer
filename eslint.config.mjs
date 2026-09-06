@@ -13,6 +13,8 @@ export default [
       "node_modules/**",
       "playwright-report/**",
       "test-results/**",
+      "tools/media-prototype/assets/livekit-client.umd.js",
+      "tools/media-prototype/assets/hls.min.js",
     ],
   },
   ...compat.extends("next/core-web-vitals", "next/typescript"),

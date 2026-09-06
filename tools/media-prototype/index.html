@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>CurlStreamer · Camera lab</title>
+    <link rel="stylesheet" href="/assets/style.css" />
+    <script defer src="/assets/livekit-client.umd.js"></script>
+    <script defer src="/assets/hls.min.js"></script>
+    <script defer src="/assets/client.js"></script>
+  </head>
+  <body>
+    <main>
+      <header>
+        <span class="brand">CurlStreamer</span
+        ><span class="tag">CAMERA LAB</span>
+        <h1>Real cameras. A new broadcast engine.</h1>
+        <p>
+          A private, ten-minute video test. Uses a separate room and test
+          scores. Audio is silent; nothing is sent to YouTube.
+        </p>
+      </header>
+      <section id="login">
+        <h2>Private test access</h2>
+        <form id="loginForm">
+          <label
+            >Test code<input
+              id="code"
+              type="password"
+              autocomplete="off"
+              required /></label
+          ><button>Open test</button>
+        </form>
+      </section>
+      <div id="workspace" hidden>
+        <section>
+          <div class="heading">
+            <h2>Processor</h2>
+            <span id="state" class="badge">Not started</span>
+          </div>
+          <label
+            >Picture setting<select id="profile">
+              <option value="720p60">720p · 60 fps — smoother motion</option>
+              <option value="1080p30">1080p · 30 fps — comparison</option>
+            </select></label
+          >
+          <div class="actions">
+            <button id="start">Start 10-minute test</button
+            ><button id="stop" class="secondary">Stop test</button>
+          </div>
+          <p id="progress">The processor starts only when you press Start.</p>
+          <p id="cameras">Cameras not connected.</p>
+          <p>
+            <a id="report" href="/api/report" download hidden
+              >Download this test's results</a
+            >
+          </p>
+          <p>
+            Download before closing the page. Diagnostic summaries are also
+            recorded in the test server logs.
+          </p>
+        </section>
+        <section>
+          <h2>Use this phone as a camera</h2>
+          <p>
+            Open the private test link on each phone. Choose a different camera
+            on each device. Keep the page open.
+          </p>
+          <div class="actions">
+            <button id="home" class="secondary">Connect camera 1</button
+            ><button id="away" class="secondary">Connect camera 2</button
+            ><button id="disconnect" class="secondary">
+              Disconnect camera
+            </button>
+          </div>
+          <video id="local" muted autoplay playsinline hidden></video>
+          <p id="cameraState">
+            Camera off. Microphone is never requested in this test.
+          </p>
+        </section>
+        <section>
+          <h2>Processed program</h2>
+          <p>
+            This preview has a few seconds of delay. A missing camera becomes a
+            blank panel after three seconds.
+          </p>
+          <video id="program" muted controls autoplay playsinline></video
+          ><button id="watch" class="secondary">Load processed preview</button>
+        </section>
+        <section>
+          <h2>Test score overlay</h2>
+          <form id="scoreForm">
+            <div class="scores">
+              <label
+                >Team Red<input
+                  id="red"
+                  type="number"
+                  min="0"
+                  max="99"
+                  value="0"
+                  required /></label
+              ><label
+                >Team Blue<input
+                  id="blue"
+                  type="number"
+                  min="0"
+                  max="99"
+                  value="0"
+                  required
+              /></label>
+            </div>
+            <button>Update test score</button>
+          </form>
+        </section>
+      </div>
+      <p id="message" role="status" aria-live="polite"></p>
+    </main>
+  </body>
+</html>

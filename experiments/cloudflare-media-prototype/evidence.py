@@ -7,11 +7,12 @@ import time
 
 EVENTS = {"instance_created", "run_started", "camera_published", "receiver_attached", "camera_receiving", "sample", "encoder_started", "encoder_stopped", "cleanup", "failure", "run_ended", "control_resumed"}
 REASONS = {"manual_stop", "deadline", "absolute_expiry", "unused_timeout", "container_shutdown", "encoder_failure", "subscribe_failed", "receiver_failed"}
-NUMBERS = {"slot", "attempt", "durationSeconds", "generation", "encodedFrames", "encoderFps", "configuredWidth", "configuredHeight", "targetFps", "track"}
+NUMBERS = {"slot", "attempt", "durationSeconds", "durationMs", "generation", "encodedFrames", "encoderFps", "configuredWidth", "configuredHeight", "targetFps", "track"}
 for slot in (1, 2):
     NUMBERS.update(f"camera{slot}{field}" for field in ("Packets", "PayloadBytes", "MarkedFrames", "PacketAgeMs"))
 BOOLEANS = {"receiving", "previewPlaylistFresh", "providerAcknowledged", "camera1Receiving", "camera2Receiving"}
 ENUMS = {"reason": REASONS, "target": {"receiver", "provider_track", "encoder"}, "result": {"attempted", "confirmed", "unknown"}}
+ENUMS.update({"trackKind": {"publisher", "subscriber"}, "failureCategory": {"timeout", "network", "authentication", "rate_limited", "upstream_error", "http_error", "invalid_response", "provider_rejected", "invalid_identifier", "process_error", "unexpected_error"}})
 
 def number(value):
     return isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value) and 0 <= value <= 1e15

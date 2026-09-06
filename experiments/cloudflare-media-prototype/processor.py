@@ -6,11 +6,26 @@ import subprocess
 import threading
 import time
 from pathlib import Path
-from cloudflare_api import Cloudflare
+from cloudflare_api import Cloudflare, ConnectionError
 from evidence import Evidence
 
 ROOT = Path('/test-output')
 FONT = '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf'
+
+def stop_process(proc, grace):
+    if proc.poll() is not None:return
+    proc.terminate()
+    try:proc.wait(timeout=grace)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        proc.wait(timeout=3)
+
+def cleanup_failure(error):
+    if isinstance(error, ConnectionError):return error.category
+    if isinstance(error, (TimeoutError, subprocess.TimeoutExpired)):return 'timeout'
+    if isinstance(error, OSError):return 'process_error'
+    if isinstance(error, ValueError):return 'invalid_identifier'
+    return 'unexpected_error'
 
 class Child:
     def __init__(self, config):
@@ -45,11 +60,7 @@ class Child:
         raise RuntimeError('Camera connection timed out')
 
     def stop(self):
-        if self.proc.poll() is None:
-            self.proc.terminate()
-            try: self.proc.wait(timeout=3)
-            except subprocess.TimeoutExpired:
-                self.proc.kill(); self.proc.wait()
+        stop_process(self.proc,3)
 
 class Lab:
     def __init__(self):
@@ -138,41 +149,51 @@ class Lab:
     def detach(self,slot):
         with self.lock:
             camera=self.cameras.pop(slot,None)
-            self.stop_encoder()
+            encoder_stopped=self.stop_encoder()
             if camera:
                 if camera['receiver']:
                     self.evidence.emit('cleanup',slot=slot,target='receiver',result='attempted')
                     try:
                         camera['receiver'].stop()
                         self.evidence.emit('cleanup',slot=slot,target='receiver',result='confirmed')
-                    except Exception:
-                        self.evidence.emit('cleanup',slot=slot,target='receiver',result='unknown')
+                    except (OSError, subprocess.TimeoutExpired) as error:
+                        self.evidence.emit('cleanup',slot=slot,target='receiver',result='unknown',failureCategory=cleanup_failure(error))
                 tracks=[(camera['source'],camera['source_mid'])]
                 if camera.get('session'):tracks.append((camera['session'],camera['mid']))
                 for index,(session,mid) in enumerate(tracks,1):
-                    self.evidence.emit('cleanup',slot=slot,track=index,target='provider_track',result='attempted')
+                    kind='publisher' if index==1 else 'subscriber'
+                    self.evidence.emit('cleanup',slot=slot,track=index,trackKind=kind,target='provider_track',result='attempted')
+                    started=time.monotonic()
                     acknowledged=False
+                    failure={}
                     try:
                         self.cf.close_track(session,mid)
                         acknowledged=True
-                    except Exception: pass
-                    self.evidence.emit('cleanup',slot=slot,track=index,target='provider_track',result='unknown',providerAcknowledged=acknowledged)
+                    except Exception as error:
+                        # Fault-isolate each provider cleanup, retaining only an enum.
+                        failure={'failureCategory':cleanup_failure(error)}
+                    self.evidence.emit('cleanup',slot=slot,track=index,trackKind=kind,target='provider_track',result='unknown',providerAcknowledged=acknowledged,durationMs=int((time.monotonic()-started)*1000),**failure)
                 self.evidence.sample(self.status(),force=True)
             self.message='Camera disconnected. Reconnect it to resume the preview.'
+            if not encoder_stopped:self.stop('encoder_failure')
 
     def stop_encoder(self):
         if self.encoder:
             self.evidence.sample(self.status(),force=True)
             self.evidence.emit('cleanup',target='encoder',result='attempted')
-            if self.encoder.poll() is None:
-                self.encoder.terminate()
-                try:self.encoder.wait(timeout=4)
-                except subprocess.TimeoutExpired:self.encoder.kill();self.encoder.wait()
+            stopped=True
+            try:stop_process(self.encoder,4)
+            except (OSError, subprocess.TimeoutExpired) as error:
+                stopped=False
+                self.evidence.emit('cleanup',target='encoder',result='unknown',failureCategory=cleanup_failure(error))
             self.encoder=None
-            self.evidence.emit('cleanup',target='encoder',result='confirmed')
-            self.evidence.emit('encoder_stopped',generation=self.generation)
+            if stopped:
+                self.evidence.emit('cleanup',target='encoder',result='confirmed')
+                self.evidence.emit('encoder_stopped',generation=self.generation)
             if hasattr(self,'log'):
                 self.log.close()
+            return stopped
+        return True
 
     def command(self):
         args=['ffmpeg','-hide_banner','-nostdin','-y','-loglevel','warning','-stats_period','1',
@@ -221,7 +242,9 @@ class Lab:
                 self.evidence.sample(self.status())
                 ready=len(self.cameras)==2 and all(self.fresh(c) for c in self.cameras.values())
                 if not ready and self.encoder:
-                    self.stop_encoder(); self.message='Camera signal lost. Preview paused until both cameras return.'
+                    if not self.stop_encoder():
+                        self.stop('encoder_failure');break
+                    self.message='Camera signal lost. Preview paused until both cameras return.'
                 if ready and self.encoder is None:
                     self.generation+=1
                     (ROOT/'progress.txt').write_text('')
@@ -261,4 +284,4 @@ class Lab:
             self.stop_encoder()
             for slot in list(self.cameras):self.detach(slot)
             self.evidence.emit('run_ended',reason=reason,generation=self.generation)
-            self.message='Test finished. Local processing stopped; provider cleanup is not independently verified.'
+            self.message='Test finished. Cleanup attempted; see retained evidence for confirmed and unknown outcomes.'

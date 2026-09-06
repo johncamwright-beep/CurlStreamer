@@ -1,7 +1,7 @@
 # Isolated camera ownership, control recovery and evidence
 
 This source-only experiment is not imported by the CurlStreamer application and
-is not deployed. It was copied from the private Cloudflare camera scratch lab
+is not itself a deployment package. It was copied from the private Cloudflare camera scratch lab
 using an individually reviewed allowlist: `client.js`, `server.py`,
 `processor.py`, `cloudflare_api.py`, `index.html`, `style.css`,
 `test_server.py`, `test_processor.py`, and `test_cloudflare_api.py`.
@@ -40,7 +40,7 @@ only a local temporary directory and timer. No GPU or network is required.
 
 ## Remaining gates
 
-External calls under the processor lifecycle lock, partial-failure cleanup, and
+External calls under the processor lifecycle lock, partial-negotiation cleanup, and
 packet-based rather than decoded-picture freshness remain follow-up work. Failed cleanup requests remain best effort;
 server expiry is the final backstop, not proof of immediate provider teardown.
 Claiming a camera position intentionally replaces its previous connection; a
@@ -96,6 +96,36 @@ and target fps are explicitly configured values, not measured input/output
 qualification. No decoded-frame detector was added. Shared provider-lock waits can
 delay telemetry and short packet gaps can be missed. Partial-failure cleanup and
 freshness remain separate gates.
+
+## Teardown fault isolation
+
+Retained measurements from the latest private run identified two unacknowledged
+subscriber-track closes after acknowledged publisher-track closes. The previous
+logs did not retain their error categories; the root cause remains unknown.
+Cloudflare documents track closure as a per-session operation in its
+[Connection API](https://developers.cloudflare.com/realtime/sfu/https-api/).
+The forced-close payload and local-first cleanup order are unchanged here.
+
+Cleanup requests alone use a five-second socket timeout; negotiation requests
+retain fifteen seconds. There are no automatic retries. This is not a hard
+wall-clock deadline: DNS and response reads can exceed a socket timeout.
+Each provider outcome includes a fixed publisher/subscriber label, duration and
+allowlisted failure category. Arbitrary provider error codes and raw exceptions
+are never logged. An acknowledged close still has durable outcome unknown.
+
+Local processes get their existing terminate grace (receiver three seconds,
+encoder four), then a kill wait capped at three seconds. Expected process errors
+or kill timeouts record unknown, allow remaining teardown to proceed, and never
+emit a successful encoder-stop event. If encoder termination is uncertain during
+an ordinary disconnect, the test ends instead of starting another encoder.
+Repeated stop/disconnect does not replay completed cleanup. Individual provider
+failures remain isolated so the other tracks and final end event are attempted.
+Partial setup/negotiation cleanup and a strict overall teardown deadline remain
+separate follow-ups; this does not prove provider resource deletion.
+
+`test_cleanup.py` exercises process timeouts, partial provider failures, repeated
+teardown, failure redaction and cleanup-only timeout selection without networking
+or subprocess creation. This cleanup revision has not been deployed or live-tested.
 
 Future packaging must include `evidence.py` alongside existing reviewed files,
 including `camera-session.js`. Preserve key/expiry for recovery in the same private

@@ -5,12 +5,15 @@ No provider response text or SDP is logged. Creating tracks is not retried blind
 """
 import json
 import re
+import socket
 import urllib.error
 import urllib.request
 
 
 class ConnectionError(RuntimeError):
-    pass
+    def __init__(self, message, category='provider_rejected'):
+        super().__init__(message)
+        self.category = category
 
 
 def identifier(value):
@@ -49,16 +52,29 @@ class Cloudflare:
             def redirect_request(self, req, fp, code, msg, headers, newurl):
                 return None
         try:
-            with urllib.request.build_opener(NoRedirect).open(request, timeout=15) as response:
+            # Cleanup has its own socket timeout; connection negotiation keeps 15s.
+            # This is not an end-to-end deadline (DNS/body reads may take longer).
+            timeout = 5 if path.endswith('/tracks/close') else 15
+            with urllib.request.build_opener(NoRedirect).open(request, timeout=timeout) as response:
                 raw = response.read(256001)
                 if len(raw) > 256000:
-                    raise ConnectionError('The camera service returned an oversized response.')
+                    raise ConnectionError('The camera service returned an oversized response.', 'invalid_response')
                 return json.loads(raw)
         except urllib.error.HTTPError as error:
             category = 'Check the test app credentials.' if error.code in (401, 403) else 'Try again after checking the connection.'
-            raise ConnectionError('The camera service could not complete the request. ' + category) from None
-        except (OSError, ValueError):
-            raise ConnectionError('The camera service did not return a valid response.') from None
+            failure = 'authentication' if error.code in (401, 403) else 'http_error'
+            if error.code == 429: failure = 'rate_limited'
+            elif error.code >= 500: failure = 'upstream_error'
+            raise ConnectionError('The camera service could not complete the request. ' + category, failure) from None
+        except (TimeoutError, socket.timeout):
+            raise ConnectionError('The camera service request timed out.', 'timeout') from None
+        except urllib.error.URLError as error:
+            failure = 'timeout' if isinstance(error.reason, TimeoutError) else 'network'
+            raise ConnectionError('The camera service could not be reached.', failure) from None
+        except OSError:
+            raise ConnectionError('The camera service could not be reached.', 'network') from None
+        except ValueError:
+            raise ConnectionError('The camera service did not return a valid response.', 'invalid_response') from None
 
     def _call(self, method, path, body=None):
         result = self._transport(method, path, body)
@@ -66,10 +82,6 @@ class Cloudflare:
             raise ConnectionError('The camera service could not complete the connection.')
         tracks = result.get('tracks', [])
         if not isinstance(tracks, list) or any(not isinstance(t, dict) or t.get('errorCode') for t in tracks):
-            if isinstance(tracks,list):
-                codes=[t.get('errorCode') for t in tracks if isinstance(t,dict) and t.get('errorCode')]
-                safe=[code for code in codes if isinstance(code,str) and re.fullmatch(r'[a-zA-Z_]{1,60}',code)]
-                print('PRIVATE_LAB provider track error codes: '+','.join(safe),flush=True)
             raise ConnectionError('One of the camera tracks could not connect.')
         return result
 

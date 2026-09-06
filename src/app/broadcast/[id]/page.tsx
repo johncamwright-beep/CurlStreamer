@@ -5,8 +5,10 @@ import { BroadcastCanvas } from "@/components/BroadcastCanvas";
 import { BroadcastOperatorNavigation } from "@/components/BroadcastOperatorNavigation";
 import { AppNavigation } from "@/components/AppNavigation";
 import { hasOrganizerAccess, hasScoringAccess } from "@/lib/access-session";
-import { canonicalTitleFromConfig } from "@/lib/game-title";
-import { gameCapabilities } from "@/lib/current-game";
+import { gameEntryPresentation, gameEntryCapabilities } from "@/lib/game-entry";
+import { GameReadScreen } from "@/components/GameReadScreen";
+import "@/components/game-entry.css";
+
 import { CompletedGameSummary } from "@/components/CompletedGameSummary";
 
 const PROGRAM_WIDTH = 1920;
@@ -24,11 +26,16 @@ export default function Broadcast({
   params: Promise<{ id: string }>;
 }) {
   const { id } = use(params);
-  const { game, completion, error, accountOperator, accountRole } = useGame(
-    id,
-    "broadcast",
-  );
+  const {
+    game,
+    completion,
+    error,
+    accountRole,
+    navigationMetadata,
+    refreshContext,
+  } = useGame(id, "broadcast", undefined, true);
   const [scale, setScale] = useState<number>();
+  const [detailsOpen, setDetailsOpen] = useState(false);
   const [operator, setOperator] = useState(false);
   useEffect(() => setOperator(hasScoringAccess(localStorage, id)), [id]);
   useEffect(() => {
@@ -51,31 +58,63 @@ export default function Broadcast({
       window.visualViewport?.removeEventListener("resize", fit);
     };
   }, []);
-  if (error)
+  if (error || (!game && !completion))
     return (
-      <main role="alert" className="p-8">
-        {error}
-      </main>
+      <GameReadScreen
+        label="Broadcast preview"
+        error={error}
+        retry={refreshContext}
+      />
     );
-  if (!game && !completion)
-    return <main className="p-8">Loading 1920×1080 program…</main>;
+  const presentation = game
+    ? gameEntryPresentation(game.config, navigationMetadata)
+    : undefined;
+  const capabilities = gameEntryCapabilities(
+    accountRole,
+    operator && hasOrganizerAccess(localStorage, id),
+    operator,
+    game?.config.awayName === "Opponent TBD",
+  );
   return (
     <main className="broadcast-viewport">
-      <BroadcastOperatorNavigation id={id} accountOperator={accountOperator} />
-      {game && (operator || accountOperator) && (
-        <AppNavigation
-          className="broadcast-app-navigation"
-          gameContext={{
-            id,
-            title: canonicalTitleFromConfig(game.config),
-            scheduledLabel: "Schedule not set",
-            capabilities: gameCapabilities(
-              accountRole ||
-                (hasOrganizerAccess(localStorage, id) ? "organizer" : "scorer"),
-              game.config.awayName === "Opponent TBD",
-            ),
-          }}
-        />
+      <BroadcastOperatorNavigation
+        id={id}
+        accountOperator={capabilities.scoring}
+      />
+      {game && presentation && capabilities.broadcast && (
+        <>
+          <AppNavigation
+            signedIn={accountRole ? true : undefined}
+            className="broadcast-app-navigation"
+            gameContext={{ id, ...presentation, capabilities }}
+          />
+          <aside
+            className="broadcast-entry-context"
+            aria-label="Preview game context"
+          >
+            <button
+              aria-expanded={detailsOpen}
+              onClick={() => setDetailsOpen(!detailsOpen)}
+            >
+              {detailsOpen ? "Hide game details" : "Show game details"}
+            </button>
+            {detailsOpen && (
+              <>
+                <strong>{presentation.title}</strong>
+                <p aria-label="Game schedule">{presentation.scheduledLabel}</p>
+                <p>
+                  Program preview · this picture does not confirm YouTube
+                  delivery.
+                </p>
+                {presentation.scheduledLabel === "Schedule unavailable" && (
+                  <button onClick={() => void refreshContext()}>
+                    Refresh game details
+                  </button>
+                )}
+              </>
+            )}
+          </aside>
+        </>
       )}
       <div
         data-testid="broadcast-visible-wrapper"

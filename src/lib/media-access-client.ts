@@ -11,6 +11,7 @@ export async function fetchGameWithSelectedAccess(
   invitation: string | null | undefined,
   storage: Pick<Storage, "getItem">,
   fetcher: Fetch = fetch,
+  includeNavigationMetadata = false,
 ) {
   const token =
     invitation ??
@@ -20,7 +21,15 @@ export async function fetchGameWithSelectedAccess(
   const url = `/api/games/${id}${view ? `?view=${view}` : ""}`;
   const response = await fetcher(url, {
     cache: "no-store",
-    headers: token ? { authorization: `Bearer ${token}` } : undefined,
+    headers:
+      token || includeNavigationMetadata
+        ? {
+            ...(token ? { authorization: `Bearer ${token}` } : {}),
+            ...(includeNavigationMetadata
+              ? { "x-curlcast-game-context": "include" }
+              : {}),
+          }
+        : undefined,
   });
   if (view !== "broadcast" || ![401, 403].includes(response.status))
     return response;

@@ -9,7 +9,7 @@ import { GameSetupNavigation } from "@/components/GameSetupNavigation";
 import { activeEvents, deriveScore, type ScoringAction } from "@/lib/scoring";
 import type { Team } from "@/lib/types";
 import { AppNavigation } from "@/components/AppNavigation";
-import { canonicalTitleFromConfig } from "@/lib/game-title";
+import { gameEntryPresentation } from "@/lib/game-entry";
 import { gameCapabilities } from "@/lib/current-game";
 import { canManageCompletion, hasOrganizerAccess } from "@/lib/access-session";
 import { CompletedGameSummary } from "@/components/CompletedGameSummary";
@@ -30,10 +30,11 @@ export default function Scorer({
     completion,
     error,
     act,
-    refresh,
     accountOperator,
     accountRole,
-  } = useGame(id);
+    navigationMetadata,
+    refreshContext,
+  } = useGame(id, undefined, undefined, true);
   const [points, setPoints] = useState(1);
   const [team, setTeam] = useState<Team>("home");
   const scoringFlight = useRef(false);
@@ -70,7 +71,7 @@ export default function Scorer({
           <h1 className="text-xl font-bold">Scoring unavailable</h1>
           <p className="mt-3 text-slate-300">{error}</p>
           <div className="mt-5 flex flex-wrap gap-3">
-            <button className="btn" onClick={() => void refresh()}>
+            <button className="btn" onClick={() => void refreshContext()}>
               Try again
             </button>
             <Link
@@ -89,10 +90,15 @@ export default function Scorer({
       <main className="mx-auto max-w-xl p-5">
         <div className="mb-4">
           <AppNavigation
+            signedIn={accountRole ? true : undefined}
             gameContext={{
               id,
-              title: canonicalTitleFromConfig(game.config),
-              scheduledLabel: "Schedule not set",
+              title: gameEntryPresentation(game.config, navigationMetadata)
+                .title,
+              scheduledLabel: gameEntryPresentation(
+                game.config,
+                navigationMetadata,
+              ).scheduledLabel,
               capabilities: gameCapabilities(
                 accountRole ||
                   (hasOrganizerAccess(localStorage, id)
@@ -111,9 +117,16 @@ export default function Scorer({
             This game is scheduled with Opponent TBD. Assign the actual opponent
             before scoring begins.
           </p>
-          <Link className="btn mt-4 inline-flex" href={`/games/${id}/edit`}>
-            Edit game
-          </Link>
+          {canManageCompletion(accountRole, organizerAccess) ? (
+            <Link className="btn mt-4 inline-flex" href={`/games/${id}/edit`}>
+              Edit game
+            </Link>
+          ) : (
+            <p className="mt-4">
+              Ask the organizer to assign the opponent. You can return to your
+              games while they update it.
+            </p>
+          )}
         </section>
       </main>
     );
@@ -122,10 +135,15 @@ export default function Scorer({
       <main className="mx-auto max-w-lg p-5">
         <div className="mb-3">
           <AppNavigation
+            signedIn={accountRole ? true : undefined}
             gameContext={{
               id,
-              title: canonicalTitleFromConfig(game.config),
-              scheduledLabel: "Schedule not set",
+              title: gameEntryPresentation(game.config, navigationMetadata)
+                .title,
+              scheduledLabel: gameEntryPresentation(
+                game.config,
+                navigationMetadata,
+              ).scheduledLabel,
               capabilities: gameCapabilities(
                 accountRole ||
                   (hasOrganizerAccess(localStorage, id)
@@ -144,7 +162,7 @@ export default function Scorer({
         </div>
       </main>
     );
-  const title = canonicalTitleFromConfig(game.config);
+  const title = gameEntryPresentation(game.config, navigationMetadata).title;
   const score = deriveScore(game);
   const undoTarget = activeEvents(game.scoreEvents).at(-1);
   const expectedLastEventId = game.scoreEvents.at(-1)?.id ?? null;
@@ -194,10 +212,14 @@ export default function Scorer({
     <main className="scoring-workspace mx-auto max-w-6xl">
       <div className="scoring-navigation">
         <AppNavigation
+          signedIn={accountRole ? true : undefined}
           gameContext={{
             id,
-            title: canonicalTitleFromConfig(game.config),
-            scheduledLabel: "Schedule not set",
+            title: gameEntryPresentation(game.config, navigationMetadata).title,
+            scheduledLabel: gameEntryPresentation(
+              game.config,
+              navigationMetadata,
+            ).scheduledLabel,
             capabilities: gameCapabilities(
               accountRole ||
                 (hasOrganizerAccess(localStorage, id) ? "organizer" : "scorer"),
@@ -212,6 +234,12 @@ export default function Scorer({
           <p className="scoring-eyebrow">Match control</p>
           <h1>Scoring</h1>
           <p className="scoring-match-title">{title}</p>
+          <p className="text-sm text-slate-300" aria-label="Game schedule">
+            {
+              gameEntryPresentation(game.config, navigationMetadata)
+                .scheduledLabel
+            }
+          </p>
         </div>
         <div className="scoring-page-actions">
           <Link

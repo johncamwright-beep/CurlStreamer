@@ -15,7 +15,10 @@ describe("canonical scheduled game title usage", () => {
   it.each(["src/app/games/[id]/page.tsx", "src/app/score/[id]/page.tsx"])(
     "formats live game context in %s",
     (path) => {
-      expect(source(path)).toContain("canonicalTitleFromConfig");
+      expect(source(path)).toContain("gameEntryPresentation");
+      expect(source("src/lib/game-entry.ts")).toContain(
+        "canonicalTitleFromConfig",
+      );
     },
   );
 

@@ -10,11 +10,19 @@ import {
 import { getGame } from "@/lib/store";
 import { readAccessToken } from "@/lib/tokens";
 import type { GameState } from "@/lib/types";
+import { readGameNavigationMetadata } from "@/lib/game-navigation-metadata";
+import type { GameNavigationMetadata } from "@/lib/game-entry";
 
 export type GameAccountRole = ActiveTeam["role"];
 export type ExistingAccess = Awaited<ReturnType<typeof readAccessToken>>;
 export type GameAuthorization =
-  | { ok: true; via: "account"; role: GameAccountRole; organizationId: string }
+  | {
+      ok: true;
+      via: "account";
+      role: GameAccountRole;
+      organizationId: string;
+      navigationMetadata?: GameNavigationMetadata;
+    }
   | { ok: true; via: "token"; access: ExistingAccess }
   | {
       ok: false;
@@ -51,6 +59,7 @@ export async function authorizeGame(
     accountRoles: readonly GameAccountRole[];
     tokenAllowed: (access: ExistingAccess) => boolean;
     allowCompletedAccount?: boolean;
+    includeNavigationMetadata?: boolean;
   },
 ): Promise<GameAuthorization> {
   let user;
@@ -89,6 +98,14 @@ export async function authorizeGame(
             via: "account",
             role: team.team.role,
             organizationId: team.team.organizationId,
+            ...(options.includeNavigationMetadata
+              ? {
+                  navigationMetadata: await readGameNavigationMetadata(
+                    accountUser,
+                    gameId,
+                  ),
+                }
+              : {}),
           };
         }
         if (["owner", "team_admin"].includes(team.team.role)) {

@@ -17,7 +17,8 @@ function browser({ permission, offer, reply, stored = [] } = {}) {
     nodes = new Map(),
     storage = new Map([["labPageAccess", "page-one"], ...stored]),
     intervals = new Map(),
-    windowEvents = new Map();
+    windowEvents = new Map(),
+    observerScripts = [];
   let intervalNumber = 0;
   const node = (id) => {
     if (!nodes.has(id))
@@ -93,7 +94,16 @@ function browser({ permission, offer, reply, stored = [] } = {}) {
       return intervalNumber;
     },
     clearInterval: (id) => intervals.delete(id),
-    document: { getElementById: node, addEventListener() {} },
+    document: {
+      getElementById: node,
+      addEventListener() {},
+      createElement: () => ({
+        remove() {
+          this.removed = true;
+        },
+      }),
+      head: { append: (script) => observerScripts.push(script) },
+    },
     sessionStorage: {
       getItem: (key) => storage.get(key),
       setItem: (key, value) => storage.set(key, value),
@@ -155,6 +165,7 @@ function browser({ permission, offer, reply, stored = [] } = {}) {
     requests,
     tracks,
     peers,
+    observerScripts,
     makeStream,
     node,
     run: (source) => vm.runInContext(source, context),
@@ -315,6 +326,8 @@ test("MSE fatal error destroys player and keeps sanitized failure until explicit
   }
   b.context.Hls = FakeHls;
   b.context.window.Hls = FakeHls;
+  b.observerScripts[0].onerror();
+  await tick();
   b.node("previewRetry").onclick();
   handlers.get("error")("error", {
     fatal: true,
@@ -331,6 +344,33 @@ test("MSE fatal error destroys player and keeps sanitized failure until explicit
   );
   b.run("preview(1)");
   assert.equal(destroyed, 1);
+});
+
+test("observer player timeout removes the script and explicit retry starts fresh", async () => {
+  const b = await previewBrowser({ native: "" });
+  assert.equal(b.observerScripts.length, 1);
+  const loaderTimeout = [...b.deadlines.values()][1];
+  loaderTimeout();
+  await tick();
+  assert.equal(b.observerScripts[0].removed, true);
+  assert.equal(b.node("previewState").dataset.failure, "unsupported");
+  assert.equal(b.run("observerPlayerPromise"), null);
+  b.node("previewRetry").onclick();
+  assert.equal(b.observerScripts.length, 2);
+  b.run("stopPreview()");
+});
+
+test("late observer player failure cannot overwrite a newer preview", async () => {
+  const b = await previewBrowser({ native: "" });
+  const oldFailure = b.observerScripts[0].onerror;
+  b.video.canPlayType = () => "maybe";
+  b.run("preview(2)");
+  b.events.get("playing")();
+  oldFailure();
+  await tick();
+  assert.equal(b.node("previewState").dataset.state, "playing");
+  assert.equal(b.node("previewState").dataset.failure, "none");
+  b.run("stopPreview()");
 });
 
 test("real client does not attach when permission resolves after Disconnect", async () => {

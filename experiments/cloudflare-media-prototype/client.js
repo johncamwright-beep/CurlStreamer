@@ -24,6 +24,7 @@ let previewEpoch = 0,
   previewState = "idle",
   previewMode = "none",
   previewDiagnosticCount = 0;
+let observerPlayerPromise = null;
 let pageAccess = sessionStorage.getItem("labPageAccess") || "";
 async function api(path, body, signal) {
   const r = await fetch(path, {
@@ -259,6 +260,41 @@ function setPreviewState(state, message, category = "none") {
   if (previewDiagnosticCount++ < 24)
     console.info("PRIVATE_LAB_PREVIEW", { state, mode: previewMode, category });
 }
+function loadObserverPlayer() {
+  if (window.Hls) return Promise.resolve();
+  if (!observerPlayerPromise) {
+    observerPlayerPromise = new Promise((resolve, reject) => {
+      const script = document.createElement("script");
+      let settled = false;
+      const finish = (error) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(deadline);
+        script.onload = null;
+        script.onerror = null;
+        if (error) {
+          script.remove();
+          reject(error);
+        } else resolve();
+      };
+      script.src = "/assets/hls.min.js";
+      script.onload = () =>
+        finish(
+          window.Hls ? undefined : new Error("Observer player unavailable"),
+        );
+      script.onerror = () => finish(new Error("Observer player unavailable"));
+      const deadline = setTimeout(
+        () => finish(new Error("Observer player load timed out")),
+        12000,
+      );
+      document.head.append(script);
+    }).catch((error) => {
+      observerPlayerPromise = null;
+      throw error;
+    });
+  }
+  return observerPlayerPromise;
+}
 function preview(generation) {
   if (previewGeneration === generation) return;
   stopPreview();
@@ -340,7 +376,19 @@ function preview(generation) {
     wait();
     video.src = url;
     play();
-  } else if (window.Hls && Hls.isSupported()) {
+  } else if (!window.Hls) {
+    previewMode = "mse";
+    wait();
+    void loadObserverPlayer()
+      .then(() => {
+        if (!current() || previewGeneration !== generation) return;
+        previewGeneration = -1;
+        preview(generation);
+      })
+      .catch(() => {
+        if (current() && previewGeneration === generation) fail("unsupported");
+      });
+  } else if (Hls.isSupported()) {
     previewMode = "mse";
     wait();
     hls = new Hls({ maxBufferLength: 6 });
@@ -390,8 +438,8 @@ function pauseControl(message) {
   for (const id of ["start", "stop", "score"]) $(id).disabled = true;
   $("resume").hidden = Boolean(
     !recoveryTicket ||
-    ended ||
-    (absoluteExpires && Date.now() >= absoluteExpires * 1000),
+      ended ||
+      (absoluteExpires && Date.now() >= absoluteExpires * 1000),
   );
   $("connection").textContent = message;
   stopPreview();

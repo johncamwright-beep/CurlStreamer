@@ -393,3 +393,40 @@ test("server 410 expires control even when the browser deadline has not elapsed"
   await b.run("resumeControl()");
   assert.equal(b.requests.length, count);
 });
+
+test("local camera expiry ends capture and cancels queued reconnect without reauthentication", async () => {
+  const b = browser();
+  await tick();
+  await b.run("connect()");
+  assert.equal(b.tracks[0].stopped, false);
+  assert.equal(b.peers[0].closed, false);
+  b.run(`
+    camera.schedule = (callback) => { globalThis.queuedRetry = callback; return 42; };
+    camera.unschedule = (id) => { globalThis.cancelledRetry = id; };
+    camera.reconnect(camera.current);
+    absoluteExpires = 1;
+  `);
+  const count = b.requests.length;
+  await b.run("poll()");
+  assert.equal(b.run("ended"), true);
+  assert.equal(b.tracks[0].stopped, true);
+  assert.equal(b.peers[0].closed, true);
+  assert.equal(b.run("camera.current"), null);
+  assert.equal(b.run("camera.retryTimer"), null);
+  assert.equal(b.run("cancelledRetry"), 42);
+  assert.equal(b.intervals.size, 0);
+  assert.equal(b.node("resume").hidden, true);
+  assert.match(b.node("remaining").textContent, /expired/);
+  assert.deepEqual(
+    b.requests.slice(count).map((r) => r.path),
+    ["/disconnect"],
+  );
+  b.run("queuedRetry()");
+  await b.run("connect()");
+  await tick();
+  assert.equal(b.peers.length, 1);
+  assert.deepEqual(
+    b.requests.slice(count).map((r) => r.path),
+    ["/disconnect"],
+  );
+});

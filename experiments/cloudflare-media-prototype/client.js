@@ -347,7 +347,10 @@ async function resumeControl() {
 async function poll() {
   if (!monitoring || polling) return false;
   if (absoluteExpires && Date.now() >= absoluteExpires * 1000) {
+    ended = true;
+    $("remaining").textContent = "Private link expired";
     pauseControl("Private link expired. Request a fresh test link.");
+    await localStop();
     return false;
   }
   if (

@@ -1,0 +1,151 @@
+:root {
+  color-scheme: dark;
+  font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+  background: #071321;
+  color: #f0f5fa;
+}
+* {
+  box-sizing: border-box;
+}
+body {
+  margin: 0;
+}
+main {
+  max-width: 880px;
+  margin: auto;
+  padding: 30px 18px;
+}
+header {
+  margin: 10px 0 30px;
+}
+h1 {
+  font-size: clamp(28px, 6vw, 42px);
+  letter-spacing: -1px;
+  margin: 8px 0;
+}
+h2 {
+  font-size: 21px;
+  margin: 0;
+}
+h3 {
+  font-size: 17px;
+}
+.eyebrow {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 2px;
+  color: #7dd7df;
+}
+p {
+  line-height: 1.6;
+  color: #b6c6d5;
+}
+section {
+  background: #101f2e;
+  border: 1px solid #304455;
+  border-radius: 20px;
+  padding: 24px;
+  margin-bottom: 18px;
+}
+.heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.badge {
+  font-size: 12px;
+  border: 1px solid #415669;
+  border-radius: 20px;
+  padding: 7px 12px;
+  color: #c9d8e4;
+}
+.buttons,
+.signals,
+.scores {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin: 20px 0;
+}
+button {
+  border: 0;
+  border-radius: 12px;
+  padding: 16px 22px;
+  font-size: 16px;
+  font-weight: 650;
+  background: #82d9d9;
+  color: #071c27;
+  cursor: pointer;
+  min-height: 50px;
+}
+.secondary {
+  background: #203447;
+  color: #e5edf4;
+  border: 1px solid #466074;
+}
+button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.buttons button {
+  flex: 1;
+}
+.signals span {
+  flex: 1;
+  padding: 12px;
+  background: #071321;
+  border-radius: 10px;
+  min-width: 180px;
+  font-size: 14px;
+}
+video {
+  width: 100%;
+  border-radius: 12px;
+  background: #03080d;
+  max-height: 65vh;
+  object-fit: contain;
+}
+#local {
+  margin-top: 8px;
+}
+#error {
+  color: #ffb9ac;
+}
+#error:empty {
+  display: none;
+}
+.muted,
+footer {
+  font-size: 13px;
+  color: #8fa8bb;
+}
+footer {
+  text-align: center;
+  margin: 24px 0;
+}
+.scores label {
+  display: grid;
+  gap: 8px;
+  flex: 1;
+  min-width: 90px;
+  font-size: 14px;
+}
+input {
+  width: 100%;
+  padding: 12px;
+  border: 1px solid #4b6477;
+  border-radius: 10px;
+  background: #091725;
+  color: white;
+  font-size: 18px;
+}
+[hidden] {
+  display: none !important;
+}
+button:focus-visible,
+input:focus-visible {
+  outline: 3px solid #fff;
+  outline-offset: 3px;
+}

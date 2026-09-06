@@ -1,0 +1,10 @@
+__pycache__/
+private-access.json
+.env*
+*.sdp
+*.log
+*.zip
+evidence/
+runtime/
+tooldeps/
+receiver-linux

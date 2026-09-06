@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>CurlStreamer · Cloud camera test</title>
+    <link rel="stylesheet" href="/assets/style.css" />
+    <script defer src="/assets/hls.min.js"></script>
+    <script defer src="/assets/camera-session.js"></script>
+    <script defer src="/assets/client.js"></script>
+  </head>
+  <body>
+    <main>
+      <header>
+        <p class="eyebrow">CURLSTREAMER / PRIVATE LAB</p>
+        <h1>Cloud camera test</h1>
+        <p>Two cameras. One cloud-produced picture.</p>
+      </header>
+      <section>
+        <div class="heading">
+          <h2 id="role">Connecting…</h2>
+          <span class="badge" id="remaining">10-minute test</span>
+        </div>
+        <p id="message" role="status" aria-live="polite">
+          Checking your private link…
+        </p>
+        <p id="error" role="alert"></p>
+        <div id="control" hidden>
+          <div class="buttons">
+            <button id="start">Start 10-minute test</button
+            ><button class="secondary" id="stop">Stop test</button>
+          </div>
+          <div class="signals">
+            <span id="cam1">Camera 1 · waiting</span
+            ><span id="cam2">Camera 2 · waiting</span>
+          </div>
+        </div>
+        <div id="camera" hidden>
+          <p>
+            Keep this page open and the phone upright. Video only; your
+            microphone stays off.
+          </p>
+          <div class="buttons">
+            <button id="connect">Connect camera</button
+            ><button id="disconnect" class="secondary">Disconnect</button>
+          </div>
+          <video id="local" autoplay muted playsinline></video>
+          <p id="capture"></p>
+        </div>
+      </section>
+      <section id="previewPanel" hidden>
+        <div class="heading">
+          <h2>Program preview</h2>
+          <span class="badge">720p / target 60 fps</span>
+        </div>
+        <p class="muted">
+          The preview is a few seconds behind the cameras. Nothing is sent to
+          YouTube.
+        </p>
+        <video id="program" controls autoplay muted playsinline></video>
+        <p id="metrics" class="muted"></p>
+        <h3>Try the score overlay</h3>
+        <div class="scores">
+          <label
+            >Team Red<input
+              id="red"
+              type="number"
+              min="0"
+              max="99"
+              value="0" /></label
+          ><label
+            >Team Blue<input
+              id="blue"
+              type="number"
+              min="0"
+              max="99"
+              value="0" /></label
+          ><button id="score">Update score</button>
+        </div>
+      </section>
+      <footer>
+        The test stops automatically after 10 minutes. This is an isolated
+        prototype.
+      </footer>
+    </main>
+  </body>
+</html>

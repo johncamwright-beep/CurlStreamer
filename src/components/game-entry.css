@@ -264,3 +264,7 @@
 .studio-setup a.text-cyan-300 {
   color: #075985;
 }
+.studio-setup .panel .bg-slate-950 {
+  background: #eef3f8;
+  border-color: #bbcbd8;
+}

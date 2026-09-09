@@ -13,14 +13,16 @@ export const invitationRoles: [Role, string][] = [
 
 type Invitation = { url: string; expiresAt: string };
 
-async function issueInvitation(
+export async function issueInvitation(
   id: string,
   role: Role | "chooser",
   token: string | null,
+  signal?: AbortSignal,
 ) {
   const response = await fetch(`/api/games/${id}/invitations`, {
     method: "POST",
     cache: "no-store",
+    signal,
     headers: {
       "content-type": "application/json",
       ...(token ? { authorization: `Bearer ${token}` } : {}),

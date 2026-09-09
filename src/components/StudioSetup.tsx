@@ -6,6 +6,7 @@ import { hasOrganizerAccess } from "@/lib/access-session";
 import { GameReadScreen } from "./GameReadScreen";
 import { M3Operator } from "./M3Operator";
 import { GameInvitations } from "./GameInvitations";
+import { StudioDeviceCards } from "./StudioDeviceCards";
 import "./game-entry.css";
 
 export function StudioSetup({
@@ -60,6 +61,42 @@ export function StudioSetup({
       />
     );
   const allowed = organizer || ["owner", "team_admin"].includes(accountRole);
+  if (desktop)
+    return (
+      <main className="studio-connect-page">
+        <Link href={"/score/" + id}>← Back to Game day</Link>
+        <header>
+          <p className="game-entry-eyebrow">Device setup</p>
+          <h1>Connect your devices</h1>
+          <p>
+            {game.config.homeName} vs {game.config.awayName}
+          </p>
+          <p>
+            Keep camera phones on the same network as this PC. Choose a role
+            below and scan its QR code with that device.
+          </p>
+        </header>
+        {!allowed ? (
+          <p role="status">
+            Sign in as this game’s administrator to invite devices.
+          </p>
+        ) : !directCameras ? (
+          <p role="status">
+            Camera setup is not enabled on this deployment yet.
+          </p>
+        ) : (
+          <StudioDeviceCards id={id} claims={game.claims} enabled />
+        )}
+        <section className="studio-connect-note">
+          <h2 className="font-semibold">Recording on this PC</h2>
+          <p>
+            Use Start recording at the bottom of Studio. Your score and sponsor
+            graphics are included automatically. Keep camera pages open during
+            the game.
+          </p>
+        </section>
+      </main>
+    );
   return (
     <main className="game-control-page studio-setup">
       <div className="game-control-inner">

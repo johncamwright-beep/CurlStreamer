@@ -63,7 +63,15 @@ jobs:
           NEXT_PUBLIC_SUPABASE_URL: http://127.0.0.1:9
           NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: playwright-public-placeholder
           SUPABASE_SECRET_KEY: playwright-server-placeholder
-      - run: npx playwright install --with-deps chromium
+      - name: Install Chromium test dependencies
+        run: |
+          # Playwright downloads its pinned Chromium separately. An unrelated
+          # Chrome apt feed on hosted runners has returned mismatched indexes.
+          # Keep verification enabled and use Ubuntu's dependency repositories.
+          for source in /etc/apt/sources.list.d/google-chrome.list /etc/apt/sources.list.d/google-chrome.sources; do
+            if [ -f "$source" ]; then sudo mv -- "$source" "$source.disabled"; fi
+          done
+          npx playwright install --with-deps chromium
       - name: Browser integration with local API fixtures
         run: npm run test:e2e
         env:

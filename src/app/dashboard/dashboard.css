@@ -525,3 +525,65 @@
     flex-wrap: wrap;
   }
 }
+.games-dashboard .dashboard-heading > div:first-of-type {
+  flex: 0 0 auto;
+}
+.games-dashboard .dashboard-heading > .dashboard-title {
+  flex: 1;
+  min-width: 0;
+}
+.dashboard-team-title {
+  font-size: 24px;
+  font-weight: 750;
+  line-height: 1.2;
+}
+.games-dashboard .dashboard-title h1 {
+  font-size: 16px;
+  color: #b7c7d9;
+  margin-top: 3px;
+}
+.games-dashboard .dashboard-game-grid {
+  grid-template-columns: minmax(0, 1fr);
+}
+@media (min-width: 701px) {
+  .games-dashboard .dashboard-game-card {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    gap: 4px 18px;
+    align-items: center;
+    padding: 10px 14px;
+  }
+  .games-dashboard .dashboard-card-meta {
+    grid-column: 1;
+    justify-content: flex-start;
+    margin: 0;
+  }
+  .games-dashboard .dashboard-matchup {
+    grid-column: 1;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 24px;
+  }
+  .games-dashboard .dashboard-game-date,
+  .games-dashboard .dashboard-outcome,
+  .games-dashboard .dashboard-saved-status {
+    grid-column: 1;
+    margin: 0;
+  }
+  .games-dashboard .dashboard-actions {
+    grid-column: 2;
+    grid-row: 1 / span 3;
+    margin: 0;
+  }
+  .games-dashboard .dashboard-more {
+    grid-column: 3;
+    grid-row: 1 / span 3;
+    border: 0;
+    margin: 0;
+    max-width: 240px;
+  }
+  .games-dashboard .dashboard-more summary {
+    min-height: 44px;
+    padding: 12px 0;
+  }
+}

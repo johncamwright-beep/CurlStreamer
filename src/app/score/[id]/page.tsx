@@ -407,7 +407,7 @@ export default function Scorer({
                 {game.config[`${team}Name`]} · {points} point
                 {points === 1 ? "" : "s"}
               </p>
-              <div className="mt-3 grid grid-cols-2 gap-2">
+              <div className="scoring-action-row mt-3 grid grid-cols-2 gap-2">
                 <button
                   disabled={scoringLocked}
                   className="btn"
@@ -485,7 +485,7 @@ export default function Scorer({
                   <p className="mt-1 text-sm text-slate-300">
                     This correction does not change the score or end.
                   </p>
-                  <div className="mt-3 grid grid-cols-2 gap-2">
+                  <div className="scoring-action-row mt-3 grid grid-cols-2 gap-2">
                     {(["home", "away"] as const).map((side) => (
                       <button
                         key={side}

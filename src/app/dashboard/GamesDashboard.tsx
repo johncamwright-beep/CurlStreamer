@@ -68,8 +68,8 @@ export function GamesDashboard({
     <main className="games-dashboard">
       <header className="dashboard-heading">
         <AppNavigation signedIn />
-        <div>
-          <p className="dashboard-eyebrow">{membership.teamName}</p>
+        <div className="dashboard-title">
+          <p className="dashboard-team-title">{membership.teamName}</p>
           <h1>Games</h1>
         </div>
         <div className="dashboard-season-bar">

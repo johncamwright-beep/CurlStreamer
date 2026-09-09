@@ -761,3 +761,11 @@
   background: #101e2c;
   box-shadow: 0 12px 40px #0008;
 }
+.scoring-desktop .scoring-control-tiles {
+  align-items: stretch;
+}
+@media (min-width: 851px) {
+  .scoring-desktop .scoring-entry > .scoring-action-row {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}

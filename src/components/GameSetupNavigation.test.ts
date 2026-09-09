@@ -19,7 +19,7 @@ describe("setup navigation", () => {
     expect(navigation).toContain(
       "organizer || accountOperator ? `/games/${id}` : `/join/${id}`",
     );
-    expect(navigation).toContain("Back to Game Setup");
+    expect(navigation).toContain("Game control");
     expect(navigation).toContain("Exit Scoring");
     expect(navigation).not.toContain("router.back");
     expect(navigation).not.toContain("history.back");

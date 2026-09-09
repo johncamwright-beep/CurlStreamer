@@ -18,7 +18,7 @@ export function GameSetupNavigation({
       className="btn-secondary inline-flex min-h-11 items-center"
       href={organizer || accountOperator ? `/games/${id}` : `/join/${id}`}
     >
-      {organizer || accountOperator ? "← Back to Game Setup" : "← Exit Scoring"}
+      {organizer || accountOperator ? "← Game control" : "← Exit Scoring"}
     </Link>
   );
 }

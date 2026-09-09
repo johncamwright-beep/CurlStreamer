@@ -197,6 +197,21 @@ export function BroadcastControl({
         const value = await response.json().catch(() => null);
         if (!response.ok)
           throw new Error(value?.error ?? "Broadcast control failed.");
+        if (
+          !value ||
+          ![
+            "idle",
+            "preparing",
+            "live",
+            "stopping",
+            "stopped",
+            "failed",
+          ].includes(value.status) ||
+          !["live", "stopped"].includes(value.desiredState)
+        )
+          throw new Error(
+            "The broadcast service returned an unreadable status. Retry status to check again.",
+          );
         setSession(value);
         setStatusUnavailable(false);
         setUnconfirmedAction(false);

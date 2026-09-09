@@ -14,8 +14,10 @@ describe("Game invitations", () => {
         connectedDevices={<section>Connected devices</section>}
       />,
     );
-    expect(markup).toContain("Invitation unavailable.");
-    expect(markup).toContain("Retry invitation");
+    expect(markup).toContain(
+      "Create a secure invitation when your devices are ready.",
+    );
+    expect(markup).toContain("Create invitation");
     expect(markup).toContain("Invite devices");
     expect(markup).not.toContain("Individual invitation links");
     expect(markup).not.toContain('href="#"');

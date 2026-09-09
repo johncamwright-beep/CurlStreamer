@@ -5,7 +5,7 @@ const source = (path: string) => readFileSync(path, "utf8");
 
 describe("canonical scheduled game title usage", () => {
   it.each([
-    "src/app/dashboard/page.tsx",
+    "src/app/dashboard/GamesDashboard.tsx",
     "src/app/events/[id]/page.tsx",
     "src/app/games/[id]/edit/page.tsx",
   ])("formats structured listings and schedule headings in %s", (path) => {
@@ -15,13 +15,16 @@ describe("canonical scheduled game title usage", () => {
   it.each(["src/app/games/[id]/page.tsx", "src/app/score/[id]/page.tsx"])(
     "formats live game context in %s",
     (path) => {
-      expect(source(path)).toContain("canonicalTitleFromConfig");
+      expect(source(path)).toContain("gameEntryPresentation");
+      expect(source("src/lib/game-entry.ts")).toContain(
+        "canonicalTitleFromConfig",
+      );
     },
   );
 
   it("uses canonical titles in game action accessibility labels", () => {
     const links = source("src/components/TeamGameLinks.tsx");
-    for (const action of ["Open Game", "Edit Schedule", "Broadcast"])
+    for (const action of ["Open Game", "Edit game", "Broadcast"])
       expect(links).toContain(`aria-label={\`${action}: \${title}\`}`);
   });
 

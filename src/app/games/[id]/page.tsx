@@ -5,9 +5,15 @@ import { useGame } from "@/components/GameSync";
 import type { Role } from "@/lib/types";
 import { cameraDisplayStatus } from "@/lib/camera-status";
 import { AppNavigation } from "@/components/AppNavigation";
-import { canonicalTitleFromConfig } from "@/lib/game-title";
-import { gameCapabilities } from "@/lib/current-game";
-import { canManageCompletion, hasOrganizerAccess } from "@/lib/access-session";
+import { gameEntryPresentation, gameEntryCapabilities } from "@/lib/game-entry";
+import { GameReadScreen } from "@/components/GameReadScreen";
+import "@/components/game-entry.css";
+
+import {
+  canManageCompletion,
+  hasOrganizerAccess,
+  hasScoringAccess,
+} from "@/lib/access-session";
 import { GameInvitations } from "@/components/GameInvitations";
 import { EndGameControl } from "@/components/EndGameControl";
 import { CompletedGameSummary } from "@/components/CompletedGameSummary";
@@ -26,19 +32,21 @@ export default function GameLobby({
     completion,
     error,
     refresh,
-    accountOperator,
     accountRole,
     m1Pilot,
-  } = useGame(id);
+    navigationMetadata,
+    refreshContext,
+  } = useGame(id, undefined, undefined, true);
   const [finished, setFinished] = useState<SafeGameCompletion>();
   const [finishedCleanup, setFinishedCleanup] = useState<CompletionCleanup>();
   const [organizerAccess, setOrganizerAccess] = useState(false);
+  const [scoringAccess, setScoringAccess] = useState(false);
   const [disconnecting, setDisconnecting] = useState<Role>();
   const [cameraActionError, setCameraActionError] = useState("");
-  useEffect(
-    () => setOrganizerAccess(hasOrganizerAccess(localStorage, id)),
-    [id],
-  );
+  useEffect(() => {
+    setOrganizerAccess(hasOrganizerAccess(localStorage, id));
+    setScoringAccess(hasScoringAccess(localStorage, id));
+  }, [id]);
   async function cameraAction(
     role: "camera-home" | "camera-away",
     release: boolean,
@@ -88,174 +96,238 @@ export default function GameLobby({
         />
       </main>
     );
-  if (error) return <main className="p-8">{error}</main>;
-  if (!game) return <main className="p-8">Loading game…</main>;
-  const title = canonicalTitleFromConfig(game.config);
-  return (
-    <main className="mx-auto max-w-5xl p-5">
-      <div className="mb-4">
-        <AppNavigation
-          gameContext={{
-            id,
-            title,
-            scheduledLabel: "Schedule not set",
-            capabilities: gameCapabilities(
-              accountRole || (organizerAccess ? "organizer" : "scorer"),
-              game.config.awayName === "Opponent TBD",
-            ),
-          }}
-        />
-      </div>
-      <p className="text-cyan-300">GAME CONTROL</p>
-      <h1 className="text-4xl font-black">{title}</h1>
-      <p className="text-slate-300">
-        {game.config.homeName} vs {game.config.awayName} ·{" "}
-        {game.config.scheduledEnds} ends
-      </p>
-      <GameInvitations
-        id={id}
-        enabled={accountOperator || organizerAccess}
-        claims={game.claims}
-        connectedDevices={
-          <section className="panel min-w-0">
-            <h2 className="mb-3 text-xl font-bold">Connected devices</h2>
-            {m1Pilot && (
-              <p className="mb-3 text-slate-300">
-                Camera 1 uses the M1 direct-media pilot. Check video and path
-                status in the{" "}
-                <Link
-                  className="inline-flex min-h-11 items-center text-cyan-200 underline"
-                  href={`/studio-spike/${id}`}
-                >
-                  PC receiver
-                </Link>
-                . The claim below shows assignment only.
-              </p>
-            )}
-            <div className="grid gap-3">
-              {(["camera-home", "camera-away", "scorer"] as const).map(
-                (role) => (
-                  <div
-                    key={role}
-                    className="btn-secondary flex min-h-11 items-center justify-between gap-3"
-                  >
-                    <div className="min-w-0">
-                      <strong>
-                        {role === "camera-home"
-                          ? "Camera 1"
-                          : role === "camera-away"
-                            ? "Camera 2"
-                            : "Scorekeeper + Audio"}
-                      </strong>
-                      <span className="ml-3 text-cyan-200">
-                        {role === "scorer"
-                          ? game.claims.scorer
-                            ? "Claimed"
-                            : "Not connected"
-                          : m1Pilot && role === "camera-home"
-                            ? game.claims[role]
-                              ? "Claimed · see PC receiver"
-                              : "Not claimed"
-                            : cameraDisplayStatus(game, role)}
-                      </span>
-                      {role !== "scorer" &&
-                        !(m1Pilot && role === "camera-home") &&
-                        game.cameraHealth?.[role] && (
-                          <small className="block overflow-hidden text-ellipsis text-slate-400">
-                            {game.cameraHealth[role]?.diagnostic
-                              ? `${game.cameraHealth[role]?.diagnostic} · `
-                              : ""}
-                            Updated{" "}
-                            {new Date(
-                              game.cameraHealth[role]!.updatedAt,
-                            ).toLocaleTimeString()}
-                          </small>
-                        )}
-                    </div>
-                    {role !== "scorer" && game.claims[role] && (
-                      <button
-                        className="min-h-11 shrink-0 rounded-lg border border-red-700 px-3 text-red-200"
-                        disabled={disconnecting === role}
-                        onClick={() => {
-                          const live = (
-                            ["Connecting", "Live", "Reconnecting"] as string[]
-                          ).includes(cameraDisplayStatus(game, role));
-                          void cameraAction(role, !live);
-                        }}
-                      >
-                        {(
-                          ["Connecting", "Live", "Reconnecting"] as string[]
-                        ).includes(cameraDisplayStatus(game, role))
-                          ? "Disconnect Camera"
-                          : "Release Camera"}
-                      </button>
-                    )}
-                  </div>
-                ),
-              )}
-            </div>
-            {cameraActionError && (
-              <p role="alert" className="mt-3 text-amber-300">
-                {cameraActionError}
-              </p>
-            )}
-          </section>
-        }
+  if (error || !game)
+    return (
+      <GameReadScreen
+        label="Game control"
+        error={error}
+        retry={refreshContext}
+        light
       />
-      <section className="panel mt-5">
-        <div className="mb-5 flex min-h-11 flex-wrap items-center justify-between gap-3">
-          <div>
-            <h2 className="text-xl font-bold">Active Sponsor Library</h2>
-            <p className="text-slate-300">
-              {game.sponsors.filter((sponsor) => sponsor.enabled).length} images
-              available for display and rotation.
+    );
+  const { title, scheduledLabel } = gameEntryPresentation(
+    game.config,
+    navigationMetadata,
+  );
+  const capabilities = gameEntryCapabilities(
+    accountRole,
+    organizerAccess,
+    scoringAccess,
+    game.config.awayName === "Opponent TBD",
+  );
+  const canInvite =
+    organizerAccess || ["owner", "team_admin", "scorer"].includes(accountRole);
+  return (
+    <main className="game-control-page">
+      <div className="game-control-inner">
+        <AppNavigation
+          signedIn={accountRole ? true : undefined}
+          gameContext={{ id, title, scheduledLabel, capabilities }}
+        />
+        <header className="game-control-heading">
+          <p className="game-entry-eyebrow">Game control</p>
+          <h1>{title}</h1>
+          <p aria-label="Game schedule">
+            {scheduledLabel} · {game.config.scheduledEnds} ends
+          </p>
+          <nav className="game-entry-actions" aria-label="Primary game actions">
+            {capabilities.scoring && (
+              <Link className="btn" href={`/score/${id}`}>
+                Open scoring
+              </Link>
+            )}
+            {capabilities.assignOpponent && (
+              <Link className="btn" href={`/games/${id}/edit`}>
+                Assign opponent
+              </Link>
+            )}
+            {capabilities.broadcast && (
+              <Link className="btn-secondary" href={`/broadcast/${id}`}>
+                Broadcast preview
+              </Link>
+            )}
+            {capabilities.editSchedule && !capabilities.assignOpponent && (
+              <Link className="btn-secondary" href={`/games/${id}/edit`}>
+                Edit game
+              </Link>
+            )}
+            {!capabilities.scoring && !capabilities.assignOpponent && (
+              <Link className="btn-secondary" href="/dashboard">
+                Back to games
+              </Link>
+            )}
+          </nav>
+          {!capabilities.scoring && (
+            <p>
+              {game.config.awayName === "Opponent TBD"
+                ? "An organizer must assign the opponent before scoring can begin."
+                : "Scoring and broadcast controls require scorer or organizer access. Use the invitation for your role, or ask the organizer for help."}
             </p>
+          )}
+        </header>
+        <section
+          className="game-control-card"
+          aria-labelledby="readiness-heading"
+        >
+          <h2 id="readiness-heading">Device readiness</h2>
+          <p>
+            Camera reports are separate from the program preview and YouTube
+            delivery. Check the picture in Broadcast preview before going live.
+          </p>
+          <div className="game-readiness-grid">
+            {(["camera-home", "camera-away"] as const).map((role) => {
+              const directPilot = m1Pilot && role === "camera-home";
+              const status = cameraDisplayStatus(game, role);
+              const stale =
+                game.cameraHealth?.[role] &&
+                Date.now() - game.cameraHealth[role]!.updatedAt > 75000;
+              const label = stale
+                ? "Status out of date"
+                : status === "Live"
+                  ? "Reporting video"
+                  : status;
+              const live = (
+                ["Connecting", "Live", "Reconnecting"] as string[]
+              ).includes(status);
+              return (
+                <div className="game-readiness-device" key={role}>
+                  <h3>{role === "camera-home" ? "Camera 1" : "Camera 2"}</h3>
+                  <strong>
+                    {directPilot
+                      ? game.claims[role]
+                        ? "Claimed · see PC receiver"
+                        : "Not claimed"
+                      : label}
+                  </strong>
+                  <p>
+                    {directPilot
+                      ? "The claim shows assignment only. Check the received picture and connection in the PC receiver."
+                      : stale
+                        ? "Open the camera phone and check its connection. Its last report is no longer current."
+                        : status === "Unclaimed"
+                          ? canInvite
+                            ? "Create an invitation below and open it on the camera phone."
+                            : "Ask the organizer for a camera invitation."
+                          : status === "Live"
+                            ? "Keep the camera page open. Confirm the received picture in the preview."
+                            : "Open the camera page on the assigned phone and reconnect. Ask the organizer to release the role if you need a different device."}
+                  </p>
+                  {directPilot && (
+                    <Link
+                      className="btn-secondary"
+                      href={`/studio-spike/${id}`}
+                    >
+                      PC receiver
+                    </Link>
+                  )}
+                  {!directPilot && game.cameraHealth?.[role] && (
+                    <small>
+                      Last report{" "}
+                      {new Date(
+                        game.cameraHealth[role]!.updatedAt,
+                      ).toLocaleTimeString()}
+                    </small>
+                  )}
+                  {canInvite && game.claims[role] && (
+                    <button
+                      disabled={Boolean(disconnecting)}
+                      onClick={() => void cameraAction(role, !live)}
+                    >
+                      {disconnecting === role
+                        ? "Updating…"
+                        : live
+                          ? "Disconnect camera"
+                          : "Release camera"}
+                    </button>
+                  )}
+                </div>
+              );
+            })}
+            <div className="game-readiness-device">
+              <h3>Scorekeeper</h3>
+              <strong>
+                {game.claims.scorer ? "Role claimed" : "Role available"}
+              </strong>
+              <p>
+                A claimed role does not confirm that the phone is online. Audio
+                delivery is not verified here.
+              </p>
+              <p>
+                {capabilities.scoring
+                  ? "Open scoring above to operate this game."
+                  : "Use a scorer invitation or ask the organizer for access."}
+              </p>
+            </div>
           </div>
-          {accountOperator && (
-            <Link className="btn-secondary" href="/sponsors">
-              Manage Sponsors
-            </Link>
+          {cameraActionError && (
+            <p role="alert" className="mt-4">
+              {cameraActionError} Check the latest device status before trying
+              the action again.
+            </p>
           )}
-        </div>
-        <h2 className="text-xl font-bold">Game actions</h2>
-        <div className="mt-3 flex flex-wrap gap-3">
-          {accountOperator && (
-            <Link
+          <div className="game-entry-actions">
+            <button
               className="btn-secondary"
-              href={`/games/${id}/edit`}
-              aria-label={`Edit Schedule: ${title}`}
+              onClick={() => void refreshContext()}
             >
-              Edit Schedule
-            </Link>
+              Refresh game details
+            </button>
+          </div>
+        </section>
+        <details className="game-control-setup">
+          <summary>Invite devices & camera setup</summary>
+          <p>
+            Use a separate phone for each camera. Open the role invitation on
+            the device that will do that job.
+          </p>
+          {canInvite ? (
+            <GameInvitations
+              id={id}
+              enabled
+              claims={game.claims}
+              connectedDevices={
+                <section className="panel">
+                  <h2 className="text-xl font-bold">Changing a camera phone</h2>
+                  <p className="mt-3 text-slate-300">
+                    Release its role above, then create a fresh invitation for
+                    the replacement phone. Keep camera video upright; verify the
+                    picture in the preview.
+                  </p>
+                </section>
+              }
+            />
+          ) : (
+            <p>
+              Only an account scorer or organizer can create invitations. Ask
+              them to send the link for your device.
+            </p>
           )}
-          <Link
-            className="btn"
-            href={`/score/${id}`}
-            aria-label={`Scoring: ${title}`}
-          >
-            Open scoring
-          </Link>
-          <Link
-            className="btn-secondary"
-            href={`/broadcast/${id}`}
-            aria-label={`Broadcast: ${title}`}
-          >
-            Broadcast preview
-          </Link>
-          <EndGameControl
-            gameId={id}
-            homeName={game.config.homeName}
-            awayName={game.config.awayName}
-            enabled={
-              ["owner", "team_admin"].includes(accountRole) || organizerAccess
-            }
-            onCompleted={(value, cleanup) => {
-              setFinished(value);
-              setFinishedCleanup(cleanup);
-            }}
-          />
-        </div>
-      </section>
+        </details>
+        <section className="game-control-card">
+          <h2>Game management</h2>
+          <p>
+            {game.sponsors.filter((sponsor) => sponsor.enabled).length} sponsor
+            images enabled. Display settings stay in scoring.
+          </p>
+          <div className="game-entry-actions">
+            {canInvite && accountRole && (
+              <Link className="btn-secondary" href="/sponsors">
+                Manage sponsors
+              </Link>
+            )}
+            <EndGameControl
+              gameId={id}
+              homeName={game.config.homeName}
+              awayName={game.config.awayName}
+              enabled={canManageCompletion(accountRole, organizerAccess)}
+              onCompleted={(value, cleanup) => {
+                setFinished(value);
+                setFinishedCleanup(cleanup);
+              }}
+            />
+          </div>
+        </section>
+      </div>
     </main>
   );
 }

@@ -57,7 +57,7 @@ test("scheduled-game chooser claims Camera 1 and requests LiveKit as the device"
         await route.fulfill({
           json: {
             token: `${role}-invitation`,
-            url: `http://127.0.0.1:3000/join/scheduled-game?${parameter}=${role}-invitation`,
+            url: `${new URL(route.request().url()).origin}/join/scheduled-game?${parameter}=${role}-invitation`,
             expiresAt: new Date(Date.now() + 1_800_000).toISOString(),
           },
         });
@@ -119,6 +119,12 @@ test("scheduled-game chooser claims Camera 1 and requests LiveKit as the device"
 
   await installRoutes(page.context(), true);
   await page.goto("/games/scheduled-game");
+  await page
+    .getByText("Invite devices & camera setup", { exact: true })
+    .click();
+  await page
+    .getByRole("button", { name: "Create invitation", exact: true })
+    .click();
   await expect(
     page.getByAltText("QR code to open the role chooser"),
   ).toBeVisible();
@@ -150,7 +156,7 @@ test("scheduled-game chooser claims Camera 1 and requests LiveKit as the device"
   await expect(page.getByText("Claimed but offline")).toBeVisible();
   const releasedCredential = participantCredential;
   page.once("dialog", (dialog) => void dialog.accept());
-  await page.getByRole("button", { name: "Release Camera" }).click();
+  await page.getByRole("button", { name: "Release camera" }).click();
   await expect(page.getByText("Unclaimed").first()).toBeVisible();
   await expect(
     page.getByRole("alert").filter({ hasText: "provider cleanup" }),

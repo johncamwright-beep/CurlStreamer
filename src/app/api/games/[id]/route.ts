@@ -58,6 +58,9 @@ export async function GET(
     tokenAllowed: (access) =>
       access.purpose !== "invitation" || view.data === "join",
     allowCompletedAccount: true,
+    includeNavigationMetadata:
+      view.data !== "join" &&
+      request.headers.get("x-curlcast-game-context") === "include",
   });
   // A viewer account must not shadow a valid organizer or participant bearer.
   // Only after the primary account-or-token decision misses do we retain
@@ -92,7 +95,7 @@ export async function GET(
                 "x-curlcast-operator": String(authorization.role !== "viewer"),
                 "x-curlcast-account-role": authorization.role,
                 "access-control-expose-headers":
-                  "x-curlcast-operator, x-curlcast-account-role",
+                  "x-curlcast-operator, x-curlcast-account-role, x-curlcast-m1-pilot",
               }
             : undefined,
       });
@@ -142,19 +145,34 @@ export async function GET(
       // membership and signed render URLs could not be verified.
       responseGame = { ...game, sponsors: [] };
     }
-    return gameResponse(responseGame, {
-      headers: {
-        "x-curlcast-operator": "true",
-        "x-curlcast-m1-pilot":
-          process.env.CURLCAST_M1_DIRECT_SPIKE === "disposable"
-            ? "true"
-            : "false",
-        "x-curlcast-account-role":
-          authorization.via === "account" ? authorization.role : "",
-        "access-control-expose-headers":
-          "x-curlcast-operator, x-curlcast-account-role, x-curlcast-m1-pilot",
+    return gameResponse(
+      {
+        ...responseGame,
+        ...(request.headers.get("x-curlcast-game-context") === "include"
+          ? {
+              navigationMetadata:
+                authorization.via === "account"
+                  ? (authorization.navigationMetadata ?? {
+                      state: "unavailable",
+                    })
+                  : { state: "unavailable" },
+            }
+          : {}),
       },
-    });
+      {
+        headers: {
+          "x-curlcast-operator": "true",
+          "x-curlcast-m1-pilot":
+            process.env.CURLCAST_M1_DIRECT_SPIKE === "disposable"
+              ? "true"
+              : "false",
+          "x-curlcast-account-role":
+            authorization.via === "account" ? authorization.role : "",
+          "access-control-expose-headers":
+            "x-curlcast-operator, x-curlcast-account-role",
+        },
+      },
+    );
   } catch {
     return readFailure("unavailable");
   }

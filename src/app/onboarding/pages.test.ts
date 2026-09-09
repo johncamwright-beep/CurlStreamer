@@ -15,7 +15,9 @@ describe("first-team account pages", () => {
   });
 
   it("protects and redirects the dashboard while listing authenticated team games", () => {
-    const dashboard = source("../dashboard/page.tsx");
+    const dashboard =
+      source("../dashboard/page.tsx") +
+      source("../dashboard/GamesDashboard.tsx");
     expect(dashboard).toContain('redirect("/login")');
     expect(dashboard).toContain('redirect("/onboarding")');
     expect(dashboard).toContain("Account access denied");

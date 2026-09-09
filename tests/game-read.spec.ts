@@ -51,7 +51,7 @@ test("anonymous Broadcast requests the public view and removes the program on de
   await expect(page.getByTestId("back-to-scoring")).toHaveCount(0);
   await expect(page.getByRole("link", { name: "Scoring" })).toHaveCount(0);
   closed = true;
-  await expect(page.locator("main[role='alert']")).toHaveText(
+  await expect(page.locator("main").getByRole("alert")).toHaveText(
     "This game is closed",
   );
   await expect(page.getByTestId("broadcast-canvas")).toHaveCount(0);

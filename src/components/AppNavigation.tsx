@@ -69,8 +69,16 @@ export function AppNavigation({
       const persisted = readCurrentGame(localStorage);
       const synchronized =
         persisted?.id === gameContext.id &&
-        gameContext.scheduledLabel === "Schedule not set"
-          ? { ...gameContext, scheduledLabel: persisted.scheduledLabel }
+        ["Schedule not set", "Schedule unavailable"].includes(
+          gameContext.scheduledLabel,
+        ) &&
+        !["Schedule not set", "Schedule unavailable"].includes(
+          persisted.scheduledLabel,
+        )
+          ? {
+              ...gameContext,
+              scheduledLabel: `Saved on this device: ${persisted.scheduledLabel.replace(/^Saved on this device: /, "")}`,
+            }
           : gameContext;
       selectCurrentGame(localStorage, synchronized);
       setCurrent(synchronized);
@@ -146,7 +154,7 @@ export function AppNavigation({
           ? [
               {
                 href: `/broadcast/${current.id}`,
-                label: "Broadcast",
+                label: "Broadcast preview",
                 icon: "broadcast" as const,
               },
             ]
@@ -155,7 +163,7 @@ export function AppNavigation({
           ? [
               {
                 href: `/games/${current.id}/edit`,
-                label: "Edit schedule",
+                label: "Edit game",
                 icon: "edit" as const,
               },
             ]

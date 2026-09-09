@@ -2,13 +2,13 @@
 
 import QRCode from "qrcode";
 import React from "react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useState } from "react";
 import type { Role } from "@/lib/types";
 
 export const invitationRoles: [Role, string][] = [
   ["camera-home", "Camera 1"],
   ["camera-away", "Camera 2"],
-  ["scorer", "Scorekeeper + Audio"],
+  ["scorer", "Scorekeeper"],
 ];
 
 type Invitation = { url: string; expiresAt: string };
@@ -104,10 +104,6 @@ export function GameInvitations({
     }
   }, [claimedRoles, enabled, id]);
 
-  useEffect(() => {
-    void regenerate();
-  }, [regenerate]);
-
   return (
     <div className="mt-6 grid gap-5 overflow-hidden md:grid-cols-2">
       <section className="panel min-w-0" aria-busy={loading}>
@@ -129,7 +125,7 @@ export function GameInvitations({
                 {error ||
                   (loading
                     ? "Creating secure invitation…"
-                    : "Invitation unavailable.")}
+                    : "Create a secure invitation when your devices are ready.")}
               </p>
             </div>
           )}
@@ -148,10 +144,14 @@ export function GameInvitations({
           )}
           <button
             className="btn-secondary mt-3 w-full"
-            disabled={loading}
+            disabled={loading || !enabled}
             onClick={() => void regenerate()}
           >
-            {chooser ? "Regenerate invitation" : "Retry invitation"}
+            {chooser
+              ? "Regenerate invitation"
+              : error
+                ? "Retry invitation"
+                : "Create invitation"}
           </button>
         </div>
       </section>

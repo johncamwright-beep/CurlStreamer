@@ -18,6 +18,7 @@ import {
 
 const mocks = vi.hoisted(() => ({
   getUser: vi.fn(),
+  hierarchy: vi.fn(),
   loadActiveTeam: vi.fn(),
   listTeamGames: vi.fn(),
   listDeletedTeamGames: vi.fn(),
@@ -26,6 +27,9 @@ const mocks = vi.hoisted(() => ({
   gameBroadcastSponsors: vi.fn(),
   gameLibrarySponsors: vi.fn(),
   updateGame: vi.fn(),
+}));
+vi.mock("@/lib/team-hierarchy-service", () => ({
+  listTeamHierarchyGames: mocks.hierarchy,
 }));
 vi.mock("@/lib/supabase/server", () => ({
   createServerSupabaseClient: async () => ({
@@ -162,6 +166,77 @@ describe("GET /api/games/[id] over HTTP", () => {
     expect(mocks.gameBroadcastSponsors).not.toHaveBeenCalled();
   }
 
+  it("enriches explicit account navigation but ordinary polls do not load the hierarchy", async () => {
+    mocks.listTeamGames.mockResolvedValue({
+      ok: true,
+      games: [{ game_id: testGameId, game_status: "active" }],
+    });
+    mocks.hierarchy.mockResolvedValue({
+      ok: true,
+      value: [
+        {
+          id: testGameId,
+          scheduled_start: "2026-10-20T22:30:00Z",
+          schedule_timezone: "America/Toronto",
+          game_number: 3,
+          private: "omit",
+        },
+      ],
+    });
+    const standard = await request();
+    expect((await standard.json()).navigationMetadata).toBeUndefined();
+    expect(mocks.hierarchy).not.toHaveBeenCalled();
+    const enriched = await fetch(`${origin}/api/games/${testGameId}`, {
+      headers: { "x-curlcast-game-context": "include" },
+    });
+    expect((await enriched.json()).navigationMetadata).toEqual({
+      state: "available",
+      scheduledStart: "2026-10-20T22:30:00Z",
+      timezone: "America/Toronto",
+      gameNumber: 3,
+    });
+    expect(enriched.headers.get("x-curlcast-account-role")).toBe("owner");
+    expect(mocks.hierarchy).toHaveBeenCalledOnce();
+    await request();
+    expect(mocks.hierarchy).toHaveBeenCalledOnce();
+  });
+  it("omits metadata and hierarchy reads from anonymous broadcast and join projections", async () => {
+    anonymous();
+    const publicResponse = await fetch(
+      `${origin}/api/games/${testGameId}?view=broadcast`,
+      { headers: { "x-curlcast-game-context": "include" } },
+    );
+    expect(publicResponse.status).toBe(200);
+    expect((await publicResponse.json()).navigationMetadata).toBeUndefined();
+    const chooser = await issueChooserToken(testGameId);
+    const joinResponse = await fetch(
+      `${origin}/api/games/${testGameId}?view=join`,
+      {
+        headers: {
+          authorization: `Bearer ${chooser}`,
+          "x-curlcast-game-context": "include",
+        },
+      },
+    );
+    expect(joinResponse.status).toBe(200);
+    expect((await joinResponse.json()).navigationMetadata).toBeUndefined();
+    expect(mocks.hierarchy).not.toHaveBeenCalled();
+  });
+  it("token-only navigation does not broaden schedule permissions", async () => {
+    anonymous();
+    const token = await issueOrganizerToken(testGameId);
+    const response = await fetch(`${origin}/api/games/${testGameId}`, {
+      headers: {
+        authorization: `Bearer ${token}`,
+        "x-curlcast-game-context": "include",
+      },
+    });
+    expect(response.status).toBe(200);
+    expect((await response.json()).navigationMetadata).toEqual({
+      state: "unavailable",
+    });
+    expect(mocks.hierarchy).not.toHaveBeenCalled();
+  });
   it.each(["", "broadcast", "join"])(
     "denies a verified cross-team caller, including view=%s",
     async (view) => {

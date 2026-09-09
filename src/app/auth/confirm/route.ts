@@ -1,6 +1,6 @@
 import { type EmailOtpType } from "@supabase/supabase-js";
 import { NextResponse } from "next/server";
-import { approvedRedirect } from "@/lib/auth/validation";
+import { approvedRedirect, confirmationUrl } from "@/lib/auth/validation";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 const otpTypes = new Set<EmailOtpType>([
   "signup",
@@ -12,6 +12,7 @@ const otpTypes = new Set<EmailOtpType>([
 ]);
 export async function GET(request: Request) {
   const url = new URL(request.url);
+  const publicOrigin = new URL(confirmationUrl()).origin;
   const next = approvedRedirect(url.searchParams.get("next"));
   const code = url.searchParams.get("code");
   const token_hash = url.searchParams.get("token_hash");
@@ -24,7 +25,7 @@ export async function GET(request: Request) {
       : { error: new Error("invalid confirmation") };
   if (result.error)
     return NextResponse.redirect(
-      new URL("/login?confirmation=invalid", url.origin),
+      new URL("/login?confirmation=invalid", publicOrigin),
     );
-  return NextResponse.redirect(new URL(next, url.origin));
+  return NextResponse.redirect(new URL(next, publicOrigin));
 }

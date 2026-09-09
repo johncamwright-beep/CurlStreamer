@@ -119,6 +119,14 @@ test.beforeAll(async () => {
               "@/components/CompletedGameSummary",
               "export function CompletedGameSummary() { return null; }",
             ],
+            [
+              "@/components/EndGameControl",
+              "export function EndGameControl({ enabled, disabled }) { return enabled ? <button disabled={disabled}>End Game</button> : null; }",
+            ],
+            [
+              "@/components/BroadcastControl",
+              "export function BroadcastControl() { return null; }",
+            ],
           ]);
           builder.onResolve({ filter: /.*/ }, (args) =>
             stubs.has(args.path)
@@ -175,7 +183,9 @@ test("guards duplicate score clicks and retries the same intent after conflict",
   });
   await expect(save).toBeDisabled();
   await expect(endGame).toBeDisabled();
-  await expect(page.getByRole("status")).toHaveText("Saving scoring change…");
+  await expect(
+    page.getByRole("status").filter({ hasText: "Saving scoring change…" }),
+  ).toHaveText("Saving scoring change…");
   const first = await page.evaluate(() =>
     structuredClone((globalThis as unknown as { __calls: unknown[] }).__calls),
   );
@@ -208,7 +218,9 @@ test("guards duplicate score clicks and retries the same intent after conflict",
       globalThis as unknown as { __resolveAction: () => void }
     ).__resolveAction(),
   );
-  await expect(page.getByRole("status")).toHaveText("End 2 saved.");
+  await expect(
+    page.getByRole("status").filter({ hasText: "End 2 saved." }),
+  ).toHaveText("End 2 saved.");
 });
 
 test("shows and submits the exact append-only Undo effect", async ({
@@ -234,7 +246,9 @@ test("shows and submits the exact append-only Undo effect", async ({
       globalThis as unknown as { __resolveAction: () => void }
     ).__resolveAction(),
   );
-  await expect(page.getByRole("status")).toContainText(
-    "prior change remains in history",
-  );
+  await expect(
+    page
+      .getByRole("status")
+      .filter({ hasText: "prior change remains in history" }),
+  ).toContainText("prior change remains in history");
 });

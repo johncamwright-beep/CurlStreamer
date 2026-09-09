@@ -26,7 +26,7 @@ describe("canonical scheduled game title usage", () => {
   });
 
   it("keeps the broadcast rail to the event snapshot or Single Game", () => {
-    expect(source("src/components/BroadcastCanvas.tsx")).toContain(
+    expect(source("src/components/ProgramCanvas.tsx")).toContain(
       "formatBroadcastRailTitle(game.config.eventName)",
     );
   });

@@ -24,6 +24,7 @@ export function useGame<V extends GameView = undefined>(
   const [error, setError] = useState("");
   const [accountOperator, setAccountOperator] = useState(false);
   const [accountRole, setAccountRole] = useState("");
+  const [m1Pilot, setM1Pilot] = useState(false);
   const refreshGate = useRef(new GameRefreshGate());
   const refresh = useCallback(async () => {
     const ticket = refreshGate.current.start();
@@ -52,6 +53,7 @@ export function useGame<V extends GameView = undefined>(
       }
       setAccountOperator(r.headers.get("x-curlcast-operator") === "true");
       setAccountRole(r.headers.get("x-curlcast-account-role") ?? "");
+      setM1Pilot(r.headers.get("x-curlcast-m1-pilot") === "true");
       setError("");
     } else {
       const body = await r.json().catch(() => null);
@@ -64,6 +66,7 @@ export function useGame<V extends GameView = undefined>(
       setCompletion(undefined);
       setAccountOperator(false);
       setAccountRole("");
+      setM1Pilot(false);
       if (nextLifecycle) setLifecycle(nextLifecycle);
       if ([401, 404, 410].includes(r.status))
         clearCurrentGameIfMatching(localStorage, id);
@@ -78,6 +81,7 @@ export function useGame<V extends GameView = undefined>(
     setError("");
     setAccountOperator(false);
     setAccountRole("");
+    setM1Pilot(false);
     void refresh();
     const timer = setInterval(refresh, 1000);
     const channel = new BroadcastChannel(`curlcast-${id}`);
@@ -120,5 +124,6 @@ export function useGame<V extends GameView = undefined>(
     refresh,
     accountOperator,
     accountRole,
+    m1Pilot,
   };
 }

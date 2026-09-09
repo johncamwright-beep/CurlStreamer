@@ -145,10 +145,14 @@ export async function GET(
     return gameResponse(responseGame, {
       headers: {
         "x-curlcast-operator": "true",
+        "x-curlcast-m1-pilot":
+          process.env.CURLCAST_M1_DIRECT_SPIKE === "disposable"
+            ? "true"
+            : "false",
         "x-curlcast-account-role":
           authorization.via === "account" ? authorization.role : "",
         "access-control-expose-headers":
-          "x-curlcast-operator, x-curlcast-account-role",
+          "x-curlcast-operator, x-curlcast-account-role, x-curlcast-m1-pilot",
       },
     });
   } catch {

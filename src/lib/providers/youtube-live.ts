@@ -8,7 +8,20 @@ const API = "https://www.googleapis.com/youtube/v3";
 const broadcastSchema = z.object({
   id: z.string().min(1),
   snippet: z.object({ description: z.string().optional() }),
-  status: z.object({ lifeCycleStatus: z.string() }).optional(),
+  status: z
+    .object({
+      lifeCycleStatus: z.string(),
+      privacyStatus: z.unknown().optional(),
+    })
+    .optional(),
+  contentDetails: z.unknown().optional(),
+});
+const manualBroadcastSchema = z.object({
+  status: z.object({ privacyStatus: z.literal("unlisted") }),
+  contentDetails: z.object({
+    enableAutoStart: z.literal(false),
+    enableAutoStop: z.literal(false),
+  }),
 });
 const streamSchema = z.object({
   id: z.string().min(1),
@@ -75,11 +88,12 @@ export async function findYouTubeBroadcast(
   accessToken: string,
   sessionKey: string,
   fetcher: typeof fetch = fetch,
+  manualLifecycle = false,
 ) {
   const description = marker(sessionKey);
   return (
     await pagedItems(
-      "/liveBroadcasts?part=id,snippet,status&broadcastStatus=all&maxResults=50",
+      `/liveBroadcasts?part=id,snippet,status${manualLifecycle ? ",contentDetails" : ""}&broadcastStatus=all&maxResults=50`,
       accessToken,
       broadcastSchema,
       fetcher,
@@ -115,15 +129,19 @@ export async function findOrCreateYouTubeBroadcast(
     sessionKey: string;
     title: string;
     visibility: "private" | "unlisted" | "public";
+    manualLifecycle?: boolean;
   },
   fetcher: typeof fetch = fetch,
   allowCreate = true,
 ): Promise<YouTubeBroadcast> {
+  if (values.manualLifecycle && values.visibility !== "unlisted")
+    throw new Error("youtube_manual_configuration_mismatch");
   const description = marker(values.sessionKey);
   const existing = await findYouTubeBroadcast(
     values.accessToken,
     values.sessionKey,
     fetcher,
+    values.manualLifecycle,
   );
   if (!existing && !allowCreate)
     throw new Error("broadcast_operation_uncertain");
@@ -143,8 +161,8 @@ export async function findOrCreateYouTubeBroadcast(
             },
             status: { privacyStatus: values.visibility },
             contentDetails: {
-              enableAutoStart: true,
-              enableAutoStop: true,
+              enableAutoStart: !values.manualLifecycle,
+              enableAutoStop: !values.manualLifecycle,
               monitorStream: { enableMonitorStream: false },
               recordFromStart: true,
             },
@@ -153,6 +171,8 @@ export async function findOrCreateYouTubeBroadcast(
         fetcher,
       ),
     );
+  if (values.manualLifecycle && !manualBroadcastSchema.safeParse(value).success)
+    throw new Error("youtube_manual_configuration_mismatch");
   return {
     id: value.id,
     watchUrl: `https://www.youtube.com/watch?v=${value.id}`,

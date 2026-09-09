@@ -50,6 +50,10 @@ export function GameInvitations({
   const [qr, setQr] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const claimedRoles = invitationRoles
+    .filter(([role]) => claims[role])
+    .map(([role]) => role)
+    .join(",");
 
   const regenerate = useCallback(async () => {
     if (!enabled) return;
@@ -62,12 +66,16 @@ export function GameInvitations({
       const organizerToken =
         localStorage.getItem(`curlcast-organizer-access-${id}`) ||
         localStorage.getItem(`curlcast-access-${id}`);
-      const [nextChooser, ...direct] = await Promise.all([
-        issueInvitation(id, "chooser", organizerToken),
-        ...invitationRoles.map(([role]) =>
-          issueInvitation(id, role, organizerToken),
-        ),
-      ]);
+      const nextChooser = await issueInvitation(id, "chooser", organizerToken);
+      const unavailable = new Set(claimedRoles.split(",").filter(Boolean));
+      const direct = await Promise.allSettled(
+        invitationRoles
+          .filter(([role]) => !unavailable.has(role))
+          .map(
+            async ([role]) =>
+              [role, await issueInvitation(id, role, organizerToken)] as const,
+          ),
+      );
       const image = await QRCode.toDataURL(nextChooser.url, {
         width: 256,
         margin: 2,
@@ -76,7 +84,11 @@ export function GameInvitations({
       });
       setLinks(
         Object.fromEntries(
-          invitationRoles.map(([role], index) => [role, direct[index].url]),
+          direct.flatMap((result) =>
+            result.status === "fulfilled"
+              ? [[result.value[0], result.value[1].url]]
+              : [],
+          ),
         ),
       );
       setChooser(nextChooser);
@@ -90,7 +102,7 @@ export function GameInvitations({
     } finally {
       setLoading(false);
     }
-  }, [enabled, id]);
+  }, [claimedRoles, enabled, id]);
 
   useEffect(() => {
     void regenerate();
@@ -144,7 +156,7 @@ export function GameInvitations({
         </div>
       </section>
       {connectedDevices}
-      {chooser && Object.keys(links).length === invitationRoles.length && (
+      {chooser && Object.keys(links).length > 0 && (
         <details className="panel min-w-0 md:col-span-2">
           <summary className="flex min-h-11 cursor-pointer items-center font-bold focus-visible:outline focus-visible:outline-2 focus-visible:outline-cyan-300">
             Individual invitation links
@@ -153,18 +165,20 @@ export function GameInvitations({
             Advanced: each link claims one role and expires after 30 minutes.
           </p>
           <div className="grid gap-3">
-            {invitationRoles.map(([role, label]) => (
-              <a
-                key={role}
-                href={links[role]}
-                className="btn-secondary flex min-h-11 items-center justify-between focus-visible:outline focus-visible:outline-2 focus-visible:outline-cyan-300"
-              >
-                <span>{label}</span>
-                <span className="ml-3 text-cyan-200">
-                  {claims[role] ? "Claimed" : "Invite"}
-                </span>
-              </a>
-            ))}
+            {invitationRoles.flatMap(([role, label]) =>
+              links[role]
+                ? [
+                    <a
+                      key={role}
+                      href={links[role]}
+                      className="btn-secondary flex min-h-11 items-center justify-between focus-visible:outline focus-visible:outline-2 focus-visible:outline-cyan-300"
+                    >
+                      <span>{label}</span>
+                      <span className="ml-3 text-cyan-200">Invite</span>
+                    </a>,
+                  ]
+                : [],
+            )}
           </div>
         </details>
       )}

@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const user = { id: "11111111-1111-4111-8111-111111111111" };
 const organizationId = "22222222-2222-4222-8222-222222222222";
@@ -60,8 +60,11 @@ function request(
 }
 
 describe("YouTube OAuth callback", () => {
+  afterEach(() => vi.unstubAllEnvs());
   beforeEach(() => {
     vi.resetAllMocks();
+    vi.stubEnv("APP_BASE_URL", undefined);
+    vi.stubEnv("NODE_ENV", "test");
     mocks.manager.mockResolvedValue(user);
     mocks.configuration.mockReturnValue(configuration);
     mocks.open.mockReturnValue({
@@ -85,6 +88,52 @@ describe("YouTube OAuth callback", () => {
     mocks.channel.mockResolvedValue({ id: "channel-1", title: "Club TV" });
     mocks.encrypt.mockReturnValue("encrypted-envelope");
     mocks.complete.mockResolvedValue(undefined);
+  });
+
+  it.each(["http", "https"])(
+    "completes a Next %s loopback callback and returns to canonical HTTPS settings",
+    async (protocol) => {
+      vi.stubEnv("APP_BASE_URL", "https://example.test");
+      vi.stubEnv("NODE_ENV", "production");
+      const response = await GET(
+        new NextRequest(
+          `${protocol}://127.0.0.1:3000/api/settings/youtube/oauth/callback?state=${"s".repeat(43)}&code=code`,
+          {
+            headers: {
+              cookie: "curlstreamer_youtube_oauth=sealed",
+              "x-forwarded-host": "attacker.example",
+            },
+          },
+        ),
+      );
+      expect(response.headers.get("location")).toBe(
+        "https://example.test/settings/youtube?result=connected",
+      );
+      expect(response.headers.get("set-cookie")).toContain("Secure");
+      expect(mocks.complete).toHaveBeenCalledOnce();
+      expect(mocks.exchange.mock.calls[0][3].redirectUri).toBe(
+        configuration.redirectUri,
+      );
+    },
+  );
+
+  it("does not exchange a callback received on an unrelated public host", async () => {
+    vi.stubEnv("APP_BASE_URL", "https://example.test");
+    const response = await GET(
+      new NextRequest(
+        `https://attacker.example/api/settings/youtube/oauth/callback?state=${"s".repeat(43)}&code=code`,
+        {
+          headers: {
+            cookie: "curlstreamer_youtube_oauth=sealed",
+            "x-forwarded-host": "example.test",
+          },
+        },
+      ),
+    );
+    expect(response.status).toBe(503);
+    expect(mocks.consume).not.toHaveBeenCalled();
+    expect(mocks.exchange).not.toHaveBeenCalled();
+    expect(response.headers.get("location")).toBeNull();
   });
 
   it("saves only encrypted credentials and expires the path-bound cookie", async () => {

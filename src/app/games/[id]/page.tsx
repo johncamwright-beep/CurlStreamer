@@ -21,8 +21,15 @@ export default function GameLobby({
   params: Promise<{ id: string }>;
 }) {
   const { id } = use(params);
-  const { game, completion, error, refresh, accountOperator, accountRole } =
-    useGame(id);
+  const {
+    game,
+    completion,
+    error,
+    refresh,
+    accountOperator,
+    accountRole,
+    m1Pilot,
+  } = useGame(id);
   const [finished, setFinished] = useState<SafeGameCompletion>();
   const [finishedCleanup, setFinishedCleanup] = useState<CompletionCleanup>();
   const [organizerAccess, setOrganizerAccess] = useState(false);
@@ -112,6 +119,19 @@ export default function GameLobby({
         connectedDevices={
           <section className="panel min-w-0">
             <h2 className="mb-3 text-xl font-bold">Connected devices</h2>
+            {m1Pilot && (
+              <p className="mb-3 text-slate-300">
+                Camera 1 uses the M1 direct-media pilot. Check video and path
+                status in the{" "}
+                <Link
+                  className="inline-flex min-h-11 items-center text-cyan-200 underline"
+                  href={`/studio-spike/${id}`}
+                >
+                  PC receiver
+                </Link>
+                . The claim below shows assignment only.
+              </p>
+            )}
             <div className="grid gap-3">
               {(["camera-home", "camera-away", "scorer"] as const).map(
                 (role) => (
@@ -132,19 +152,25 @@ export default function GameLobby({
                           ? game.claims.scorer
                             ? "Claimed"
                             : "Not connected"
-                          : cameraDisplayStatus(game, role)}
+                          : m1Pilot && role === "camera-home"
+                            ? game.claims[role]
+                              ? "Claimed · see PC receiver"
+                              : "Not claimed"
+                            : cameraDisplayStatus(game, role)}
                       </span>
-                      {role !== "scorer" && game.cameraHealth?.[role] && (
-                        <small className="block overflow-hidden text-ellipsis text-slate-400">
-                          {game.cameraHealth[role]?.diagnostic
-                            ? `${game.cameraHealth[role]?.diagnostic} · `
-                            : ""}
-                          Updated{" "}
-                          {new Date(
-                            game.cameraHealth[role]!.updatedAt,
-                          ).toLocaleTimeString()}
-                        </small>
-                      )}
+                      {role !== "scorer" &&
+                        !(m1Pilot && role === "camera-home") &&
+                        game.cameraHealth?.[role] && (
+                          <small className="block overflow-hidden text-ellipsis text-slate-400">
+                            {game.cameraHealth[role]?.diagnostic
+                              ? `${game.cameraHealth[role]?.diagnostic} · `
+                              : ""}
+                            Updated{" "}
+                            {new Date(
+                              game.cameraHealth[role]!.updatedAt,
+                            ).toLocaleTimeString()}
+                          </small>
+                        )}
                     </div>
                     {role !== "scorer" && game.claims[role] && (
                       <button

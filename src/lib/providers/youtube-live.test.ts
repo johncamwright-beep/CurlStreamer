@@ -13,6 +13,81 @@ function json(value: unknown, status = 200) {
 }
 
 describe("YouTube Live provider", () => {
+  const manualValues = {
+    accessToken: "token",
+    sessionKey: "manual-session",
+    title: "Rehearsal",
+    visibility: "unlisted" as const,
+    manualLifecycle: true,
+  };
+  const manualBroadcast = {
+    id: "manual-id",
+    snippet: { description: "CurlCast broadcast session manual-session" },
+    status: { lifeCycleStatus: "ready", privacyStatus: "unlisted" },
+    contentDetails: { enableAutoStart: false, enableAutoStop: false },
+  };
+  it("creates an unlisted manual-lifecycle broadcast without transitioning live", async () => {
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(json({ items: [] }))
+      .mockResolvedValueOnce(json(manualBroadcast));
+    await findOrCreateYouTubeBroadcast(manualValues, fetcher);
+    expect(fetcher.mock.calls[0][0]).toContain(
+      "part=id,snippet,status,contentDetails",
+    );
+    const body = JSON.parse(String(fetcher.mock.calls[1][1]?.body));
+    expect(body).toMatchObject({
+      status: { privacyStatus: "unlisted" },
+      contentDetails: { enableAutoStart: false, enableAutoStop: false },
+    });
+    expect(fetcher).toHaveBeenCalledTimes(2);
+    expect(
+      fetcher.mock.calls.some(([url]) => String(url).includes("/transition")),
+    ).toBe(false);
+  });
+  it("reuses verified manual configuration without duplicate creation", async () => {
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(json({ items: [manualBroadcast] }));
+    await expect(
+      findOrCreateYouTubeBroadcast(manualValues, fetcher, false),
+    ).resolves.toMatchObject({ id: "manual-id" });
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    expect(fetcher.mock.calls[0][1]?.method).toBeUndefined();
+  });
+  it.each([
+    { status: { lifeCycleStatus: "ready" } },
+    { status: { lifeCycleStatus: "ready", privacyStatus: "public" } },
+    { status: { lifeCycleStatus: "ready", privacyStatus: "private" } },
+    { contentDetails: undefined },
+    { contentDetails: { enableAutoStart: true, enableAutoStop: false } },
+    { contentDetails: { enableAutoStart: false, enableAutoStop: true } },
+    { contentDetails: { enableAutoStart: "false", enableAutoStop: false } },
+  ])(
+    "rejects missing or mismatched manual discovery instead of creating a duplicate: %j",
+    async (override) => {
+      const fetcher = vi
+        .fn<typeof fetch>()
+        .mockResolvedValue(
+          json({ items: [{ ...manualBroadcast, ...override }] }),
+        );
+      await expect(
+        findOrCreateYouTubeBroadcast(manualValues, fetcher),
+      ).rejects.toThrow("youtube_manual_configuration_mismatch");
+      expect(fetcher).toHaveBeenCalledTimes(1);
+      expect(fetcher.mock.calls[0][1]?.method).toBeUndefined();
+    },
+  );
+  it.each(["public", "private"] as const)(
+    "rejects manual %s visibility before contacting YouTube",
+    async (visibility) => {
+      const fetcher = vi.fn<typeof fetch>();
+      await expect(
+        findOrCreateYouTubeBroadcast({ ...manualValues, visibility }, fetcher),
+      ).rejects.toThrow("youtube_manual_configuration_mismatch");
+      expect(fetcher).not.toHaveBeenCalled();
+    },
+  );
   it("creates a broadcast with the exact configured title and visibility", async () => {
     const fetcher = vi
       .fn<typeof fetch>()

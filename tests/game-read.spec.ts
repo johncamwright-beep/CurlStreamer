@@ -21,11 +21,19 @@ test("anonymous Broadcast requests the public view and removes the program on de
     },
   );
   await page.route(
-    `**/api/games/${testGameId}/livekit-token?view=broadcast`,
+    `**/api/games/${testGameId}/livekit-token*`,
     async (route) => {
-      credentialRequests += 1;
       expect(route.request().method()).toBe("POST");
       expect(route.request().headers().authorization).toBeUndefined();
+      const capability = new URL(route.request().url()).searchParams.get(
+        "capability",
+      );
+      if (capability === "preview-subscribe") {
+        await route.fulfill({ status: 401, json: {} });
+        return;
+      }
+      expect(capability).toBe("public-viewer");
+      credentialRequests += 1;
       await route.fulfill({
         headers: { "cache-control": "no-store" },
         json: {

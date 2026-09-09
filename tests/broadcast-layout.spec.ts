@@ -1,4 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
+import { installGameFixture } from "./support/game-browser-fixture";
+import { testGameId } from "../src/test/game-fixture";
 
 test.setTimeout(90_000);
 
@@ -12,10 +14,8 @@ const viewports = [
 ];
 
 async function createBroadcast(page: Page) {
-  await page.goto("/");
-  await page.getByRole("button", { name: "Create game" }).click();
-  await page.waitForURL(/\/games\/[^/]+$/);
-  const id = page.url().split("/").at(-1)!;
+  await installGameFixture(page);
+  const id = testGameId;
   await page.goto(`/broadcast/${id}`);
   await expect(page.getByTestId("broadcast-canvas")).toBeVisible();
   return id;
@@ -175,6 +175,7 @@ test("authorized operator navigation stays outside the program without changing 
     viewport: { width: 1024, height: 768 },
   });
   const anonymousPage = await anonymous.newPage();
+  await installGameFixture(anonymousPage, false);
   await anonymousPage.goto(`/broadcast/${id}`, {
     waitUntil: "domcontentloaded",
   });

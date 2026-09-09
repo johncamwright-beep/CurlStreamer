@@ -3,6 +3,10 @@ import { NextResponse } from "next/server";
 import { requireYouTubeManager } from "@/lib/youtube-route-auth";
 import { beginYouTubeOAuth } from "@/lib/youtube-connection";
 import {
+  youtubeOAuthCallback,
+  youtubeOAuthOrigin,
+} from "@/lib/youtube-oauth-origin";
+import {
   createYouTubeAuthorizationUrl,
   createYouTubePkce,
   youtubeConfiguration,
@@ -22,25 +26,28 @@ export async function GET(request: Request) {
       { error: "Team administrator access is required" },
       { status: 403 },
     );
+  let stage:
+    "configuration" | "callback_origin" | "oauth_begin" | "oauth_state" =
+    "configuration";
   try {
     const configuration = youtubeConfiguration();
-    const callback = new URL(configuration.redirectUri);
-    if (
-      callback.pathname !== CALLBACK_PATH ||
-      callback.search ||
-      callback.hash ||
-      callback.origin !== new URL(request.url).origin
-    )
-      throw new Error("youtube_configuration_unavailable");
+    stage = "callback_origin";
+    const callback = youtubeOAuthCallback(
+      configuration.redirectUri,
+      youtubeOAuthOrigin(request),
+    );
+    stage = "oauth_state";
     const state = randomBytes(32).toString("base64url");
     const stateHash = createHash("sha256").update(state).digest("hex");
     const { verifier, challenge } = createYouTubePkce();
     const expiresAt = Date.now() + 10 * 60 * 1000;
+    stage = "oauth_begin";
     const attempt = await beginYouTubeOAuth(
       user,
       stateHash,
       new Date(expiresAt).toISOString(),
     );
+    stage = "oauth_state";
     const response = NextResponse.redirect(
       createYouTubeAuthorizationUrl(state, challenge, configuration),
     );
@@ -64,8 +71,13 @@ export async function GET(request: Request) {
     );
     return response;
   } catch {
+    const code = `youtube_oauth_start_${stage}`;
+    console.error("YouTube OAuth start failed", { code });
     return NextResponse.json(
-      { error: "YouTube connection is not configured for this environment" },
+      {
+        error: "YouTube connection is not configured for this environment",
+        code,
+      },
       { status: 503 },
     );
   }

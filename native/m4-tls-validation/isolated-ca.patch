@@ -1,0 +1,14 @@
+--- a/plugins/obs-outputs/librtmp/rtmp.c
++++ b/plugins/obs-outputs/librtmp/rtmp.c
+@@ -297,6 +297,11 @@
+ #ifdef USE_MBEDTLS
+     mbedtls_x509_crt *chain = r->RTMP_TLS_ctx->cacert = calloc(1, sizeof(struct mbedtls_x509_crt));
+     mbedtls_x509_crt_init(chain);
++#ifdef M4_ISOLATED_TEST_CA
++    if (mbedtls_x509_crt_parse_file(chain, M4_ISOLATED_TEST_CA) != 0) goto error;
++    mbedtls_ssl_conf_ca_chain(&r->RTMP_TLS_ctx->conf, chain, NULL);
++    return;
++#endif
+ 
+ #if defined(_WIN32)
+     HCERTSTORE hCertStore;

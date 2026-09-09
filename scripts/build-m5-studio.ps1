@@ -2,7 +2,7 @@ param(
   [Parameter(Mandatory = $true)][string]$SetupRoot,
   [Parameter(Mandatory = $true)][string]$Destination,
   [Parameter(Mandatory = $true)][string]$Configuration,
-  [string]$Release = "0.2.0-preview.2"
+  [string]$Release = "0.3.0-preview.1"
 )
 $ErrorActionPreference = "Stop"
 $repository = Split-Path -Parent $PSScriptRoot
@@ -47,10 +47,17 @@ try {
   }
   $nodeHash = (Get-FileHash -LiteralPath $node -Algorithm SHA256).Hash.ToLowerInvariant()
   $controllerHash = (Get-FileHash -LiteralPath (Join-Path $destinationPath "app/studio.mjs") -Algorithm SHA256).Hash.ToLowerInvariant()
-  $source = (Get-Content -LiteralPath native/m5-studio-launcher/Studio.cs -Raw).Replace("@NODE_SHA256@", $nodeHash).Replace("@CONTROLLER_SHA256@", $controllerHash)
+  $configurationHash = (Get-FileHash -LiteralPath (Join-Path $destinationPath "studio.json") -Algorithm SHA256).Hash.ToLowerInvariant()
+  $sdk = & (Join-Path $PSScriptRoot 'get-studio-webview2.ps1') -CacheRoot (Join-Path $SetupRoot 'build-dependencies')
+  foreach ($dll in @('Microsoft.Web.WebView2.Core.dll', 'Microsoft.Web.WebView2.WinForms.dll')) {
+    Copy-Item -LiteralPath (Join-Path $sdk "lib/net462/$dll") -Destination (Join-Path $destinationPath $dll)
+  }
+  Copy-Item -LiteralPath (Join-Path $sdk 'runtimes/win-x64/native/WebView2Loader.dll') -Destination $destinationPath
+  Copy-Item -LiteralPath (Join-Path $sdk 'LICENSE.txt') -Destination (Join-Path $destinationPath 'WebView2-LICENSE.txt')
+  $source = (Get-Content -LiteralPath native/m5-studio-launcher/Studio.cs -Raw).Replace("@NODE_SHA256@", $nodeHash).Replace("@CONTROLLER_SHA256@", $controllerHash).Replace("@CONFIGURATION_SHA256@", $configurationHash)
   $sourcePath = Join-Path $destinationPath "Studio.build.cs"
   [IO.File]::WriteAllText($sourcePath, $source)
-  & $compiler /nologo /target:winexe /platform:x64 /optimize+ /reference:System.Windows.Forms.dll /reference:System.Drawing.dll "/out:$destinationPath/CurlStreamer Studio.exe" $sourcePath
+  & $compiler /nologo /target:winexe /platform:x64 /optimize+ /define:WORKSPACE /reference:System.Windows.Forms.dll /reference:System.Drawing.dll /reference:System.Net.Http.dll /reference:System.Web.Extensions.dll "/reference:$destinationPath/Microsoft.Web.WebView2.Core.dll" "/reference:$destinationPath/Microsoft.Web.WebView2.WinForms.dll" "/out:$destinationPath/CurlStreamer Studio.exe" $sourcePath (Join-Path $repository 'native/m5-studio-launcher/Workspace.cs') (Join-Path $repository 'native/m5-studio-launcher/WorkspacePolicy.cs')
   if ($LASTEXITCODE -ne 0) { throw "Launcher compilation failed." }
   Remove-Item -LiteralPath $sourcePath
   $files = @(Get-ChildItem -LiteralPath $destinationPath -File -Recurse | Sort-Object FullName | ForEach-Object {

@@ -1,11 +1,30 @@
 # Windows Studio preview
 
-M5 now has a compiled Windows launch window, a bundled controller and a relocatable
-private package. The launch window opens the existing controls in the default
-browser. Keep it open while recording; closing a browser tab does not stop Studio.
-The website remains on Vercel.
+Version 0.3.0-preview.1 embeds the hosted account/game workspace in a Windows
+WebView2 window. Games and schedules, seasons, sponsors, account settings, scoring
+and QR invitations use the existing website. A separate persistent app profile
+keeps the user's sign-in; the first launch requires signing in again.
+
+Native Start recording checks the selected game's PC, asks the signed-in website
+for a scoped recording grant and sends it to the local recorder in memory.
+Neither the game URL nor the private source needs copying. Stop & save recording
+finalizes the file. Closing Studio waits for controller cleanup. Navigation and
+grant responses are restricted to the configured origin and exact game.
+
+The workspace uses Microsoft's WebView2 Runtime (already installed on the
+development PC); the pinned SDK and loader are included in the package. Clean
+machine runtime bootstrap remains a distribution prerequisite. No host objects
+or generic native commands are exposed to web content. External OAuth setup
+still uses the normal website; integrated YouTube controls remain subsequent work.
+Streaming remains disabled in this private preview.
+
+The earlier 0.2 launcher and its manual link controls are retained for legacy
+build tests. They are not the current desktop user experience.
 
 ## Implemented
+
+- Integrated workspace, native recording handoff, scoped remote-scoring/camera
+  invitations and persistent account profile in 0.3.0-preview.1.
 
 - Windows Forms launch window: paste a game page link, open/reopen controls, open
   recordings, and finish/close Studio. No installed Node or PowerShell is needed

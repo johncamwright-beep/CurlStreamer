@@ -13,6 +13,7 @@ internal sealed class Studio : Form
 {
     private const string NodeHash = "@NODE_SHA256@";
     private const string ControllerHash = "@CONTROLLER_SHA256@";
+    private const string ConfigurationHash = "@CONFIGURATION_SHA256@";
     private readonly TextBox game = new TextBox();
     private readonly Label status = new Label();
     private readonly Button start = new Button();
@@ -38,7 +39,11 @@ internal sealed class Studio : Form
             if (!owner) { MessageBox.Show("Studio is already open. Finish and close its current game before opening another one.", "CurlStreamer Studio"); return; }
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);
+#if WORKSPACE
+            Application.Run(new Workspace(launchGame, NodeHash, ControllerHash, ConfigurationHash));
+#else
             Application.Run(new Studio(launchGame));
+#endif
         }
     }
 

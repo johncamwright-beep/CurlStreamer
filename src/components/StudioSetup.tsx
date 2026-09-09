@@ -26,7 +26,10 @@ export function StudioSetup({
   const [organizer, setOrganizer] = useState(false);
   const [gameUrl, setGameUrl] = useState("");
   const [message, setMessage] = useState("");
+  const [desktop, setDesktop] = useState(false);
   useEffect(() => {
+    // Presentation only; native and server authorization do not trust this hint.
+    setDesktop(navigator.userAgent.includes("CurlStreamerStudio/0.3"));
     setOrganizer(hasOrganizerAccess(localStorage, id));
     setGameUrl(new URL(`/games/${id}`, location.origin).href);
   }, [id]);
@@ -80,80 +83,103 @@ export function StudioSetup({
           </p>
         ) : (
           <>
-            <section
-              className="game-control-card"
-              aria-labelledby="open-studio-heading"
-            >
-              <h2 id="open-studio-heading">
-                1. Open Studio on the recording PC
-              </h2>
-              <p>
-                Use the Windows PC connected to the camera network. Opening
-                Studio fills in this game; choose Open Studio in its window to
-                continue.
-              </p>
-              <div className="game-entry-actions">
-                {gameUrl.startsWith("https://") && (
-                  <a
-                    className="btn"
-                    href={`curlstreamer://open?game=${encodeURIComponent(gameUrl)}`}
+            {desktop ? (
+              <section className="game-control-card">
+                <h2>Recording on this PC</h2>
+                <p>
+                  Use Start recording at the bottom of Studio. It connects this
+                  game automatically. Stop &amp; save recording finalizes the
+                  file.
+                </p>
+                <p>
+                  You can score here or invite a phone or tablet as Scorekeeper.
+                  Camera devices should use the same local network as this PC.
+                </p>
+              </section>
+            ) : (
+              <section
+                className="game-control-card"
+                aria-labelledby="open-studio-heading"
+              >
+                <h2 id="open-studio-heading">
+                  1. Open Studio on the recording PC
+                </h2>
+                <p>
+                  Use the Windows PC connected to the camera network. Opening
+                  Studio fills in this game; choose Open Studio in its window to
+                  continue.
+                </p>
+                <div className="game-entry-actions">
+                  {gameUrl.startsWith("https://") && (
+                    <a
+                      className="btn"
+                      href={`curlstreamer://open?game=${encodeURIComponent(gameUrl)}`}
+                    >
+                      Open Windows Studio
+                    </a>
+                  )}
+                  <button
+                    className="btn-secondary"
+                    disabled={!gameUrl}
+                    onClick={async () => {
+                      try {
+                        await navigator.clipboard.writeText(gameUrl);
+                        setMessage(
+                          "Game link copied. Paste it into Windows Studio.",
+                        );
+                      } catch {
+                        setMessage(
+                          "Copy the game link from the field below and paste it into Windows Studio.",
+                        );
+                      }
+                    }}
                   >
-                    Open Windows Studio
-                  </a>
-                )}
-                <button
-                  className="btn-secondary"
-                  disabled={!gameUrl}
-                  onClick={async () => {
-                    try {
-                      await navigator.clipboard.writeText(gameUrl);
-                      setMessage(
-                        "Game link copied. Paste it into Windows Studio.",
-                      );
-                    } catch {
-                      setMessage(
-                        "Copy the game link from the field below and paste it into Windows Studio.",
-                      );
-                    }
-                  }}
-                >
-                  Copy game link
-                </button>
-              </div>
-              <label className="mt-4 block" htmlFor="studio-game-link">
-                Game link
-              </label>
-              <input
-                id="studio-game-link"
-                readOnly
-                value={gameUrl}
-                className="min-h-11 w-full rounded border border-slate-400 bg-white p-3 text-slate-900"
-              />
-              <p className="mt-3">
-                If nothing opens, launch CurlStreamer Studio from Windows and
-                paste this link. The preview installer is currently supplied
-                separately; there is no public download yet.
-              </p>
-              <p role="status" className="mt-3">
-                {message}
-              </p>
-              <p>
-                Keep the Studio window open while recording. Closing a browser
-                tab does not stop the recording.
-              </p>
-            </section>
+                    Copy game link
+                  </button>
+                </div>
+                <label className="mt-4 block" htmlFor="studio-game-link">
+                  Game link
+                </label>
+                <input
+                  id="studio-game-link"
+                  readOnly
+                  value={gameUrl}
+                  className="min-h-11 w-full rounded border border-slate-400 bg-white p-3 text-slate-900"
+                />
+                <p className="mt-3">
+                  If nothing opens, launch CurlStreamer Studio from Windows and
+                  paste this link. The preview installer is currently supplied
+                  separately; there is no public download yet.
+                </p>
+                <p role="status" className="mt-3">
+                  {message}
+                </p>
+                <p>
+                  Keep the Studio window open while recording. Closing a browser
+                  tab does not stop the recording.
+                </p>
+              </section>
+            )}
             <section className="game-control-card">
-              <h2>2. Connect cameras and recording</h2>
+              <h2>
+                {desktop
+                  ? "Cameras & remote scoring"
+                  : "2. Connect cameras and recording"}
+              </h2>
               {directCameras ? (
                 <>
-                  <p>
-                    In Studio’s local controls, choose Check this PC. Create
-                    camera invitations below, then prepare a private program
-                    link and paste it into Studio to start recording.
-                  </p>
+                  {!desktop && (
+                    <p>
+                      In Studio’s local controls, choose Check this PC. Create
+                      camera invitations below, then prepare a private program
+                      link and paste it into Studio to start recording.
+                    </p>
+                  )}
                   <details className="mt-4">
                     <summary className="min-h-11 cursor-pointer py-3">
-                      Camera invitations
+                      {desktop
+                        ? "Camera and Scorekeeper QR invitations"
+                        : "Camera invitations"}
                     </summary>
                     <GameInvitations
                       id={id}
@@ -164,12 +190,14 @@ export function StudioSetup({
                       }
                     />
                   </details>
-                  <details className="mt-4">
-                    <summary className="min-h-11 cursor-pointer py-3">
-                      Prepare recording connection
-                    </summary>
-                    <M3Operator id={id} studio />
-                  </details>
+                  {!desktop && (
+                    <details className="mt-4">
+                      <summary className="min-h-11 cursor-pointer py-3">
+                        Prepare recording connection
+                      </summary>
+                      <M3Operator id={id} studio />
+                    </details>
+                  )}
                 </>
               ) : (
                 <p role="status">
@@ -179,39 +207,41 @@ export function StudioSetup({
                 </p>
               )}
             </section>
-            <section className="game-control-card">
-              <h2>3. Pair and stream when ready</h2>
-              {pairing ? (
-                <>
-                  <p>
-                    Pair the desktop using the challenge shown in Studio.
-                    Confirm your local recording before preparing the YouTube
-                    broadcast.
+            {!desktop && (
+              <section className="game-control-card">
+                <h2>3. Pair and stream when ready</h2>
+                {pairing ? (
+                  <>
+                    <p>
+                      Pair the desktop using the challenge shown in Studio.
+                      Confirm your local recording before preparing the YouTube
+                      broadcast.
+                    </p>
+                    <div className="game-entry-actions">
+                      <Link
+                        className="btn-secondary"
+                        href={`/studio-m4/${id}/pairing`}
+                      >
+                        Pair desktop
+                      </Link>
+                      <Link className="btn-secondary" href={`/studio-m4/${id}`}>
+                        YouTube preparation
+                      </Link>
+                    </div>
+                  </>
+                ) : (
+                  <p role="status">
+                    YouTube pairing and streaming are not enabled on this
+                    deployment yet.
                   </p>
-                  <div className="game-entry-actions">
-                    <Link
-                      className="btn-secondary"
-                      href={`/studio-m4/${id}/pairing`}
-                    >
-                      Pair desktop
-                    </Link>
-                    <Link className="btn-secondary" href={`/studio-m4/${id}`}>
-                      YouTube preparation
-                    </Link>
-                  </div>
-                </>
-              ) : (
-                <p role="status">
-                  YouTube pairing and streaming are not enabled on this
-                  deployment yet.
+                )}
+                <p className="mt-3">
+                  Stopping streaming leaves recording running. Use Finish and
+                  close Studio to finalize the recording before shutting down
+                  the PC.
                 </p>
-              )}
-              <p className="mt-3">
-                Stopping streaming leaves recording running. Use Finish and
-                close Studio to finalize the recording before shutting down the
-                PC.
-              </p>
-            </section>
+              </section>
+            )}
           </>
         )}
       </div>

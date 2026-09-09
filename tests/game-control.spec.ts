@@ -1,6 +1,31 @@
 import { expect, test, type Page } from "@playwright/test";
 import { gameFixture, testGameId } from "../src/test/game-fixture";
 
+test("desktop workspace replaces manual link passing without automatic writes", async ({
+  page,
+}) => {
+  await page.addInitScript(() =>
+    Object.defineProperty(navigator, "userAgent", {
+      get: () => "CurlStreamerStudio/0.3",
+    }),
+  );
+  const { state } = await fixture(page);
+  await page.goto("/games/" + testGameId + "/studio");
+  await expect(
+    page.getByRole("heading", { name: "Recording on this PC" }),
+  ).toBeVisible();
+  await expect(
+    page.getByText("Use Start recording at the bottom of Studio.", {
+      exact: false,
+    }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Copy game link" }),
+  ).toHaveCount(0);
+  await expect(page.getByLabel("Game link", { exact: true })).toHaveCount(0);
+  expect(state.writes).toEqual([]);
+});
+
 test("Windows Studio setup is reachable and performs no automatic writes", async ({
   page,
 }) => {

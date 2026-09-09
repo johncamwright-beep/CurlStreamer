@@ -214,7 +214,7 @@ test("desktop game day keeps scoring primary and settings available on demand", 
   await expect(page.getByText(/First, use Start recording/)).toHaveCount(0);
   await expect(
     page.getByRole("region", { name: "YouTube broadcast" }),
-  ).toHaveCount(0);
+  ).toBeVisible();
   await expect(
     page.getByRole("button", { name: "Both cameras", exact: true }),
   ).toBeVisible();

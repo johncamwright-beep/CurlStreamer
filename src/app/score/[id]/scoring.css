@@ -685,3 +685,39 @@
     bottom: 60px;
   }
 }
+.scoring-device-dock .studio-device {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 6px 10px;
+  align-items: center;
+}
+.scoring-device-dock .studio-device > header {
+  margin: 0;
+}
+.scoring-device-dock .studio-device > .studio-device-action {
+  width: auto;
+  margin: 0;
+  padding: 8px 12px;
+}
+.scoring-device-dock .studio-device > .studio-device-action.secondary {
+  grid-column: 2;
+}
+.scoring-device-dock .studio-device > div:not(.studio-device-qr) {
+  grid-column: 1 / -1;
+}
+.scoring-device-dock
+  .studio-device
+  > div:not(.studio-device-qr)
+  > .studio-device-action {
+  display: inline-flex;
+  width: auto;
+  margin-right: 6px;
+}
+.scoring-device-dock .studio-device > div:not(.studio-device-qr) > p {
+  margin: 0;
+  font-size: 12px;
+}
+
+.scoring-desktop .scoring-sidebar {
+  gap: 10px;
+}

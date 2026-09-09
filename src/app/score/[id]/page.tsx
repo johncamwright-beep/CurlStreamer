@@ -19,6 +19,7 @@ import type {
   SafeGameCompletion,
 } from "@/lib/game-completion";
 import { StudioDeviceCards } from "@/components/StudioDeviceCards";
+import { StudioYouTube } from "@/components/StudioYouTube";
 import { BroadcastControl } from "@/components/BroadcastControl";
 export default function Scorer({
   params,
@@ -296,7 +297,7 @@ export default function Scorer({
             href={`/broadcast/${id}`}
             aria-label={`Broadcast: ${title}`}
           >
-            Open program preview
+            Show broadcast
           </Link>
           {!desktop && (
             <a className="btn-secondary" href="#program-controls">
@@ -558,6 +559,7 @@ export default function Scorer({
               <ScoringProgramControls game={game} act={act} />
             </>
           )}
+          {desktop && canEndGame && <StudioYouTube id={id} />}
           {canEndGame && (
             <div className="scoring-card scoring-finish">
               {!desktop && (

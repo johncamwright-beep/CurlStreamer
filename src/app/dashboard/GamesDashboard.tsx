@@ -2,7 +2,7 @@ import Link from "next/link";
 import { AppNavigation } from "@/components/AppNavigation";
 import { TeamGameLinks } from "@/components/TeamGameLinks";
 import { GameDeletionControl } from "@/components/GameDeletionControl";
-import { readableTeamRole, type AccountContext } from "@/lib/auth/account";
+import { type AccountContext } from "@/lib/auth/account";
 import type {
   EventRecord,
   ScheduledGameRecord,
@@ -66,19 +66,41 @@ export function GamesDashboard({
           : groups.upcoming;
   return (
     <main className="games-dashboard">
-      <div className="dashboard-topbar">
-        <AppNavigation signedIn />
-        <span>
-          {account.profile.display_name} · {readableTeamRole(membership.role)}
-        </span>
-      </div>
       <header className="dashboard-heading">
+        <AppNavigation signedIn />
         <div>
           <p className="dashboard-eyebrow">{membership.teamName}</p>
           <h1>Games</h1>
-          <p className="dashboard-subtitle">
-            Choose a game to connect cameras and score.
-          </p>
+        </div>
+        <div className="dashboard-season-bar">
+          <div>
+            <span className="dashboard-eyebrow">Season</span>
+            <strong>{season?.name ?? "No season set up"}</strong>
+          </div>
+          {seasons.length > 1 && (
+            <form action="/dashboard" className="dashboard-season-form">
+              <label className="sr-only" htmlFor="dashboard-season">
+                Choose season
+              </label>
+              <select
+                id="dashboard-season"
+                name="season"
+                defaultValue={season?.id}
+              >
+                {seasons.map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.name}
+                    {item.status === "active" ? " · Current" : ""}
+                  </option>
+                ))}
+              </select>
+              <input type="hidden" name="tab" value={tab} />
+              <button className="btn-secondary">View season</button>
+            </form>
+          )}
+          {administrator && (
+            <Link href="/seasons">Manage seasons &amp; events →</Link>
+          )}
         </div>
         {membership.role !== "viewer" && (
           <Link className="btn dashboard-schedule" href="/games/new">
@@ -86,36 +108,6 @@ export function GamesDashboard({
           </Link>
         )}
       </header>
-      <div className="dashboard-season-bar">
-        <div>
-          <span className="dashboard-eyebrow">Season</span>
-          <strong>{season?.name ?? "No season set up"}</strong>
-        </div>
-        {seasons.length > 1 && (
-          <form action="/dashboard" className="dashboard-season-form">
-            <label className="sr-only" htmlFor="dashboard-season">
-              Choose season
-            </label>
-            <select
-              id="dashboard-season"
-              name="season"
-              defaultValue={season?.id}
-            >
-              {seasons.map((item) => (
-                <option key={item.id} value={item.id}>
-                  {item.name}
-                  {item.status === "active" ? " · Current" : ""}
-                </option>
-              ))}
-            </select>
-            <input type="hidden" name="tab" value={tab} />
-            <button className="btn-secondary">View season</button>
-          </form>
-        )}
-        {administrator && (
-          <Link href="/seasons">Manage seasons &amp; events →</Link>
-        )}
-      </div>
       <section aria-label="Browse games">
         <nav className="dashboard-tabs" aria-label="Browse games">
           {(

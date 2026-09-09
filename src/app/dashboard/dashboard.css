@@ -475,3 +475,53 @@
     flex: 1;
   }
 }
+.games-dashboard {
+  max-width: 1500px;
+  padding: 12px 20px 24px;
+}
+.games-dashboard .dashboard-heading {
+  gap: 14px;
+  margin-bottom: 14px;
+}
+.games-dashboard .dashboard-heading > div:first-of-type {
+  flex: 1;
+}
+.games-dashboard .dashboard-heading h1 {
+  font-size: 24px;
+  margin: 0;
+}
+.games-dashboard .dashboard-season-bar {
+  gap: 8px;
+  padding: 6px 10px;
+}
+.games-dashboard .dashboard-season-bar > a {
+  display: none;
+}
+.games-dashboard .dashboard-list-heading {
+  margin-top: 12px;
+  margin-bottom: 10px;
+}
+.games-dashboard .dashboard-list-heading p {
+  display: none;
+}
+.games-dashboard .dashboard-game-grid,
+.games-dashboard .dashboard-event-grid {
+  gap: 10px;
+}
+.games-dashboard .dashboard-game-card,
+.games-dashboard .dashboard-event-card {
+  padding: 14px;
+  border-radius: 12px;
+}
+.games-dashboard .dashboard-card-meta {
+  margin-bottom: 8px;
+}
+.games-dashboard .dashboard-game-date,
+.games-dashboard .dashboard-actions {
+  margin-top: 8px;
+}
+@media (max-width: 850px) {
+  .games-dashboard .dashboard-heading {
+    flex-wrap: wrap;
+  }
+}

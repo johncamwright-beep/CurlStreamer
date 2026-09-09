@@ -132,7 +132,7 @@ internal sealed class Workspace : Form
                 else if (!recording && !busy) status.Text = selectedGame == null ? "Choose a game from your schedule to get started." : "Preparing this game for your camera phones.";
                 UpdateButtons();
             };
-            core.NewWindowRequested += (s, e) => { e.Handled = true; if (WorkspacePolicy.SameOrigin(e.Uri, origin)) Navigate(new Uri(e.Uri).PathAndQuery + new Uri(e.Uri).Fragment); else status.Text = "External account connections are available from the website in your browser."; };
+            core.NewWindowRequested += (s, e) => { e.Handled = true; if (WorkspacePolicy.SameOrigin(e.Uri, origin)) Navigate(new Uri(e.Uri).PathAndQuery + new Uri(e.Uri).Fragment); else { Uri external; if (Uri.TryCreate(e.Uri, UriKind.Absolute, out external) && external.Scheme == "https" && external.Host == "studio.youtube.com" && String.IsNullOrEmpty(external.UserInfo)) Process.Start(new ProcessStartInfo(external.AbsoluteUri) { UseShellExecute = true }); else status.Text = "External account connections are available from the website in your browser."; } };
             core.PermissionRequested += (s, e) => { e.State = CoreWebView2PermissionState.Deny; };
             core.WebMessageReceived += ReceiveGrant;
             var initialId = launchGame == null ? null : WorkspacePolicy.Game(launchGame, origin);
@@ -151,6 +151,7 @@ internal sealed class Workspace : Form
             var value = json.Deserialize<Dictionary<string, object>>(raw);
             if (value.Count == 2 && TextValue(value, "gameId") == selectedGame && selectedGame != null && !busy && !closing) {
                 var type = TextValue(value, "type");
+                if (type == "studio-youtube-start" || type == "studio-youtube-stop") { await YouTube(type == "studio-youtube-start"); return; }
                 if (type == "studio-game-ended") { if (recording && runningGame == selectedGame) await StopRecording(); return; }
                 if (type == "studio-game-ready") {
                     if (recording && runningGame != selectedGame) await StopRecording();
@@ -176,6 +177,46 @@ internal sealed class Workspace : Form
             if (WorkspacePolicy.Game(web.CoreWebView2.Source, origin) != gameId) throw new InvalidDataException();
             return WorkspacePolicy.Code((string)result["sourceUrl"], origin, gameId);
         } finally { handoff = null; handoffNonce = null; }
+    }
+    private async Task<string> WebsiteYouTube(string gameId, string suffix, object body) {
+        if (WorkspacePolicy.Game(web.CoreWebView2.Source, origin) != gameId) throw new InvalidDataException();
+        handoffNonce = Guid.NewGuid().ToString("N"); handoff = new TaskCompletionSource<Dictionary<string, object>>();
+        var script = "(async()=>{let status=0,sourceUrl='';try{const r=await fetch(" + json.Serialize("/api/games/" + gameId + "/studio-m4" + suffix) + ",{method:'POST',headers:{'content-type':'application/json'},body:" + json.Serialize(json.Serialize(body)) + ",signal:AbortSignal.timeout(30000)});status=r.status;if(r.ok){const v=await r.json();sourceUrl=v.code||v.status||'';}}catch{}window.chrome.webview.postMessage({nonce:" + json.Serialize(handoffNonce) + ",status,sourceUrl});})();";
+        try {
+            await web.ExecuteScriptAsync(script);
+            if (await Task.WhenAny(handoff.Task, Task.Delay(35000)) != handoff.Task) throw new InvalidDataException();
+            var result = await handoff.Task;
+            if (Convert.ToInt32(result["status"]) != 200 || WorkspacePolicy.Game(web.CoreWebView2.Source, origin) != gameId) throw new InvalidDataException();
+            return TextValue(result, "sourceUrl");
+        } finally { handoff = null; handoffNonce = null; }
+    }
+    private string youtubeError = "";
+    private async Task YouTube(bool start) {
+        if (busy || closing || !recording || selectedGame != runningGame) return;
+        var gameId = runningGame; busy = true; youtubeError = "";
+        try {
+            if (start) {
+                var prepared = await WebsiteYouTube(gameId, "", new { action = "prepare" });
+                if (prepared != "prepared") throw new InvalidDataException();
+                Dictionary<string, object> state;
+                using (var response = await local.GetAsync(localAddress + "/state")) { response.EnsureSuccessStatusCode(); state = json.Deserialize<Dictionary<string, object>>(await response.Content.ReadAsStringAsync()); }
+                if (TextValue(state, "pairing") == "unpaired") {
+                    var challenge = TextValue(state, "challenge");
+                    if (challenge == null || !System.Text.RegularExpressions.Regex.IsMatch(challenge, "^[a-f0-9]{64}$")) throw new InvalidDataException();
+                    var code = await WebsiteYouTube(gameId, "/desktop-pairing", new { challenge = challenge });
+                    if (code == null || !System.Text.RegularExpressions.Regex.IsMatch(code, "^[A-Za-z0-9_-]{43}$")) throw new InvalidDataException();
+                    ApplyState(await Command(new { action = "pair", code = code }));
+                }
+                ApplyState(await Command(new { action = "start-stream", intentId = Guid.NewGuid().ToString() }));
+            } else {
+                ApplyState(await Command(new { action = "stop-stream" }));
+                await WebsiteYouTube(gameId, "", new { action = "stop" });
+            }
+        } catch {
+            youtubeError = "YouTube setup could not finish. Check the YouTube account connection before trying again.";
+            if (WorkspacePolicy.Game(web.CoreWebView2.Source, origin) == gameId)
+                web.ExecuteScriptAsync("window.dispatchEvent(new CustomEvent('studio-youtube-status',{detail:" + json.Serialize(new { gameId = gameId, available = true, busy = false, streaming = "failed", live = false, receiving = false, message = "YouTube setup could not finish. Check the YouTube account connection before trying again." }) + "}));");
+        } finally { busy = false; UpdateButtons(); }
     }
     private async Task StartRecording() {
         if (busy || closing || recording || selectedGame == null) return;
@@ -246,6 +287,10 @@ internal sealed class Workspace : Form
         object cameraStatus;
         if (web.CoreWebView2 != null && WorkspacePolicy.SameOrigin(web.CoreWebView2.Source, origin) && selectedGame == runningGame && state.TryGetValue("cameraStatus", out cameraStatus))
             web.CoreWebView2.ExecuteScriptAsync("window.dispatchEvent(new CustomEvent('studio-camera-status',{detail:" + json.Serialize(new { gameId = runningGame, cameras = cameraStatus }) + "}));");
+        if (web.CoreWebView2 != null && WorkspacePolicy.SameOrigin(web.CoreWebView2.Source, origin) && selectedGame == runningGame) {
+            object available; var enabled = state.TryGetValue("streamingAvailable", out available) && available is bool && (bool)available;
+            web.CoreWebView2.ExecuteScriptAsync("window.dispatchEvent(new CustomEvent('studio-youtube-status',{detail:" + json.Serialize(new { gameId = runningGame, available = enabled, busy = busy, streaming = TextValue(state, "streaming") ?? "idle", live = TextValue(state, "broadcast") == "live", receiving = TextValue(state, "youtubeReception") == "confirmed", message = enabled ? youtubeError : "YouTube streaming is not enabled in this Studio installation." }) + "}));");
+        }
         status.Text = phase == "recording" ? "Cameras ready · Not recording · YouTube off" : phase == "stopped" ? "Cameras disconnected · No recording saved" : TextValue(state, "programMessage") ?? "Camera status is unavailable.";
         UpdateButtons();
     }

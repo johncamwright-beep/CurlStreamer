@@ -1,7 +1,8 @@
 param(
   [Parameter(Mandatory = $true)][string]$StudioSource,
   [Parameter(Mandatory = $true)][string]$InstallerOutput,
-  [Parameter(Mandatory = $true)][string]$CompilerPath
+  [Parameter(Mandatory = $true)][string]$CompilerPath,
+  [switch]$AllowStreamingPreview
 )
 $ErrorActionPreference = "Stop"
 $sourceRoot = (Resolve-Path -LiteralPath $StudioSource).Path
@@ -30,7 +31,8 @@ foreach ($required in @('CurlStreamer Studio.exe', 'studio.json', 'node/node.exe
   if (-not $expected.Contains($required)) { throw "Incomplete Studio assembly." }
 }
 $configuration = Get-Content -LiteralPath (Join-Path $sourceRoot 'studio.json') -Raw | ConvertFrom-Json
-if ($configuration.version -ne 1 -or $configuration.realtimeKey -notmatch '^sb_publishable_[A-Za-z0-9_-]+$' -or $configuration.streamingEnabled -ne $false) { throw "Installer preparation currently accepts only a disabled private preview." }
+if ($configuration.version -ne 1 -or $configuration.realtimeKey -notmatch '^sb_publishable_[A-Za-z0-9_-]+$' -or $configuration.streamingEnabled -isnot [bool]) { throw "Invalid private preview configuration." }
+if ($configuration.streamingEnabled -and -not $AllowStreamingPreview) { throw "Streaming preview packaging requires explicit opt-in." }
 if (@($configuration.PSObject.Properties.Name | Where-Object { $_ -notin @('version','website','realtimeUrl','realtimeKey','streamingEnabled') }).Count) { throw "Unexpected Studio configuration." }
 New-Item -ItemType Directory -Path $outputRoot -Force | Out-Null
 $installerPath = Join-Path $outputRoot "CurlStreamer-Studio-$($manifest.release)-Setup.exe"

@@ -155,7 +155,7 @@ export async function POST(
         id.data,
         auth.via === "account" ? auth.organizationId : undefined,
       );
-      const code = createProgramGrant(scope);
+      const code = await createProgramGrant(scope);
       return response({
         sourceUrl: new URL(
           `/studio-m3/${id.data}/program#code=${code}`,

@@ -83,7 +83,18 @@ export function M3Operator({
         body: JSON.stringify({ action: "prepare" }),
         signal: AbortSignal.timeout(15_000),
       });
-      if (!response.ok) throw Error();
+      if (!response.ok) {
+        setMessage(
+          response.status === 401 || response.status === 403
+            ? "Sign in as this game’s organizer to prepare the recording link."
+            : response.status === 400
+              ? "The website rejected the recording request. Its public address configuration needs checking (HTTP 400)."
+              : response.status === 409
+                ? "The recording connection expired. Prepare a new private program link."
+                : `The recording service could not prepare the link (HTTP ${response.status}). Please try again shortly.`,
+        );
+        return;
+      }
       const result = await response.json();
       const sourceUrl = new URL(result.sourceUrl);
       if (
@@ -103,7 +114,7 @@ export function M3Operator({
       );
     } catch {
       setMessage(
-        "Could not prepare the OBS source. Sign in as the game organizer and check the local server.",
+        "Could not reach or validate the recording service. Check your connection and try again.",
       );
     } finally {
       setBusy(false);

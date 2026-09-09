@@ -1,77 +1,40 @@
 # Studio session flow
 
-User direction, September 9, 2026: opening a game prepares Studio; phones connect
-without starting a local recording. The operator scores and checks the cameras,
-then chooses Go live. End game stops the broadcast and removes temporary local
-video automatically. Start recording and Saved videos are not part of the normal
-product interface. Existing recordings are outside this cleanup change.
+Selecting an authorized game in the Windows workspace now prepares the camera
+receiver automatically. The native `--preview-only` mode initializes the OBS
+program and optional stream encoders without opening an MKV file or starting a
+recording output. Explicit Connect cameras remains a retry control. Leaving a game
+for another game switches the owned session; ending the game disconnects it.
+Existing user recordings are preserved. YouTube remains disabled in this pilot;
+receiving cameras and broadcasting are separate operations.
 
-## Implementation boundary
+The monitoring image is 1280x720 at a target of 15 updates per second, rather than
+two 1080p snapshots. Requests run sequentially to avoid cancelling a slow image
+before it loads. Shared-memory reads retry a concurrent frame write briefly.
+The underlying OBS program is still 1920x1080 at 30 fps. Actual device smoothness
+must be checked after the new desktop version is installed.
 
-The current preview starts its receiver, renderer and recorder together. Removing
-the buttons alone would prevent phones from connecting. Separate receiver lifetime
-from broadcast output before changing the controls:
+A server heartbeat is labelled Phone online / Waiting for video. Only advancing,
+verified decoded-frame counters from Studio's private renderer yield Video
+receiving. Counters expire after five seconds; the web display also expires if
+the native status bridge stops. QR codes collapse when video is received.
+Regular browsers cannot infer PC video reception from a heartbeat.
 
-1. Selecting a game prepares one game-scoped receiver session in Studio. Display
-   readiness and camera assignment/release controls beside scoring and QR codes.
-2. Connecting a phone captures its camera for preview and sends it to the PC;
-   it does not save a video or publish a broadcast. The phone retains a clear
-   connected indicator, Disconnect and hardware zoom where supported.
-3. Go live starts the encoder and YouTube delivery in the background. Confirm
-   actual delivery before displaying Live. Any required local files are temporary.
-4. Stopping a broadcast leaves the game and cameras ready to resume. Ending the
-   game stops delivery, closes camera sessions, finalizes the game and removes only
-   that session's temporary video after the output process has confirmed shutdown.
-5. After a crash, reconcile output state and clean up owned temporary files on the
-   next launch. Never delete existing user recordings or files outside the managed
-   session directory. Keep scores, schedule, sponsors and any YouTube replay.
+For a connected phone whose host/prflx addresses are redacted, DirectPeer permits
+a fresh, negotiation-scoped path-confirmed message from the authenticated receiver
+as complementary evidence. Only the receiver emits it after its own unchanged
+path checks pass. It is rejected from the camera side, expires after five seconds,
+and cannot admit relays, server-reflexive candidates or explicitly invalid/public
+endpoints. The phone waits up to eight seconds for this proof; the PC still rejects
+an unproven receive path. Physical Camera 2 recovery remains to be verified.
 
-The operator should see progress and actionable failures, not private source links,
-signaling terminology, file paths or routine cleanup controls. Remote scoring stays
-available from a phone or tablet on the same game.
+Validation includes native preview-only startup without an MKV, correct program
+quadrants, clean shutdown, WebView image decoding and game/freshness isolation,
+receiver-confirmation expiry/role/relay boundaries, renderer-only frame reports,
+stale counters, and 18 browser checks for cameras and card state. Full integration
+checks run in CI before final handoff. Automatic foreground game preparation and
+physical camera reception require checking in the installed app.
 
-## Current connection repair
-
-Live Supabase logs showed hundreds of thousands of SQLSTATE 40001 conflicts per
-hour from write_game_state, and the dashboard reported 100% CPU. Supabase documents
-an endless PostgREST retry loop for application exceptions using that code:
-https://supabase.com/docs/guides/troubleshooting/high-cpu-and-infinite-transaction-retries-when-using-custom-error-codes-in-rpc-functions-77326b
-
-Migration 0032 changes only the application conflict codes to PT409 in six affected
-functions. All revision, locking, completion and assignment checks remain. Server
-callers accept PT409 and the legacy code during rollout. The live repair applied
-the same exact code replacement to the six existing function definitions, retaining
-their ownership and grants; all six verified PT409 with no remaining 40001 clause.
-This removes the identified retry trigger. Physical phone reconnection still needs
-verification; the new receiver/broadcast lifetime is not implemented yet.
-
-The user subsequently confirmed both camera slots connected after renewing Studio.
-The old broadcast page still subscribed to LiveKit, while these phones send media
-directly to the native recorder. Preview 0.3.0-preview.4 connects that page to the
-actual OBS program output through a read-only, game-scoped WebView image handler.
-Two preview frames per second are shared in memory; no preview video files or
-camera grants enter the website. Frame freshness and sequence checks reject old
-or partially written pictures. Regular browsers show a recording-PC explanation
-on direct-camera deployments instead of subscribing to the wrong feed.
-
-Native quadrant validation confirmed the output's colours/orientation and clean
-recording finalization. An isolated real WebView2 fixture decoded the preview and
-rejected another game's image and stale frames. Real camera pictures in the updated
-desktop still need checking. Camera cards now emphasize phone connection status,
-hide reconnect instructions while online and use compact expandable QR codes.
-Hardware zoom is shown directly beneath the phone picture when supported.
-
-Preview 5 follow-up: the user verified Camera 1 in the actual program preview,
-but its 640x360 monitoring image was visibly pixelated when enlarged. The shared
-image is now native 1920x1080, still sampled twice per second. Camera placeholders
-use large centered text instead of unstyled diagnostic strings. Native quadrant
-and real WebView2 decoding/isolation checks passed at the new dimensions.
-
-Camera cards share a row down to 520px, expand QR codes on request, hide them
-without reissuing invitations, and collapse reconnect codes when a phone becomes
-online. Ten browser checks cover the layout and connection transition. Phone path
-failures now show a short recovery instruction; aggregate diagnostic evidence is
-retained. This wording does not fix the underlying withheld-address rejection.
-The reported host/prflx/address-unavailable case still fails the existing strict
-path check. Camera 2 recovery remains unverified. Automatic receiver preparation
-and removal of the Start recording dependency remain unimplemented.
+The earlier Supabase retry storm was addressed by migration 0032: application
+conflicts use PT409 instead of PostgREST's retried SQLSTATE 40001. Authorization,
+revision checks, row locks and existing game data were preserved.

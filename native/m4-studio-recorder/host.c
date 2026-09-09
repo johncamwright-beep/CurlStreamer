@@ -52,11 +52,13 @@ int wmain(int argc, WCHAR **argv)
     parent_watch watch = {0}; HANDLE monitor = NULL;
     m4_media *media = NULL; int result = 1; char program[256] = {0};
     const WCHAR *stream_plugin = NULL;
+    bool preview_only = argc > 6 && !wcscmp(argv[5], L"--preview-only") && !wcscmp(argv[6], L"-");
     if (argc >= 3 && !wcscmp(argv[argc - 2], L"--stream-plugin")) {
         stream_plugin = argv[argc - 1]; argc -= 2;
     }
     if ((argc != 7 && argc != 11) || wcscmp(argv[1], L"--parent-pid") ||
-        wcscmp(argv[3], L"--runtime") || wcscmp(argv[5], L"--recording")) return 2;
+        wcscmp(argv[3], L"--runtime") || (!preview_only && wcscmp(argv[5], L"--recording"))) return 2;
+    if (preview_only && argc != 11) return 2;
     if (argc == 11 && (wcscmp(argv[7], L"--program-cache") ||
         wcscmp(argv[9], L"--webrtc-ip-handling-policy=default") ||
         wcscmp(argv[10], L"--disable-features=WebRtcHideLocalIpsWithMdns"))) return 2;
@@ -74,12 +76,12 @@ int wmain(int argc, WCHAR **argv)
         DWORD length = 0; ULONGLONG deadline = GetTickCount64() + 5000;
         if (!read_exact(input, parent, &length, 4, deadline) || !length || length >= sizeof(program) ||
             !read_exact(input, parent, program, length, deadline) || memchr(program, 0, length)) goto done;
-        if (!m4_media_initialize_program(argv[4], argv[6], argv[8], program, &media)) goto done;
+        if (!m4_media_initialize_program(argv[4], preview_only ? NULL : argv[6], argv[8], program, &media)) goto done;
         SecureZeroMemory(program, sizeof(program));
     } else if (!m4_media_initialize(argv[4], argv[6], &media)) goto done;
     if (stream_plugin && !m4_media_prepare_stream(media, argv[4], stream_plugin)) goto done;
     if (!m4_media_start(media)) goto done;
-    {
+    if (!preview_only) {
         ULONGLONG deadline = GetTickCount64() + 5000;
         while (m4_media_active(media) && m4_media_bytes(media) == 0 && GetTickCount64() < deadline) {
             if (WaitForSingleObject(parent, 50) != WAIT_TIMEOUT ||

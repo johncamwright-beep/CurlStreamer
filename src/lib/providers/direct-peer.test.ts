@@ -47,6 +47,72 @@ function stats(local = "host", remote = "host", extra: object[] = []) {
   ] as [string, object][]) as unknown as RTCStatsReport;
 }
 describe("M1 direct media boundary", () => {
+  it("requires fresh receiver confirmation for a camera's redacted prflx path", async () => {
+    vi.useFakeTimers();
+    const report = stats("host", "prflx") as unknown as Map<
+      string,
+      Record<string, unknown>
+    >;
+    report.get("local")!.address = "";
+    report.get("remote")!.address = "";
+    const failure = vi.fn();
+    const pc = {
+      addTransceiver: vi.fn(),
+      getStats: async () => report,
+      connectionState: "connected",
+      close: vi.fn(),
+    };
+    const peer = new DirectPeer({
+      side: "camera",
+      createPeer: () => pc as unknown as RTCPeerConnection,
+      send: vi.fn(),
+      onVideo: vi.fn(),
+      onFailure: failure,
+    });
+    expect(await peer.inspect()).toMatchObject({
+      direct: false,
+      path: "pending",
+    });
+    await peer.receive({ type: "path-confirmed" });
+    expect(await peer.inspect()).toMatchObject({
+      direct: true,
+      path: "peer-reflexive",
+      remoteEndpointProven: false,
+    });
+    await vi.advanceTimersByTimeAsync(9000);
+    expect(await peer.inspect()).toMatchObject({
+      direct: false,
+      path: "rejected",
+    });
+    expect(failure).toHaveBeenCalledOnce();
+    peer.close();
+    vi.useRealTimers();
+  });
+  it("never accepts a camera confirmation or hides relay rejection", async () => {
+    expect(signalAllowed("camera", { type: "path-confirmed" })).toBe(false);
+    expect(signalAllowed("receiver", { type: "path-confirmed" })).toBe(true);
+    const failure = vi.fn();
+    const pc = {
+      addTransceiver: vi.fn(),
+      getStats: async () => stats("host", "relay"),
+      connectionState: "connected",
+      close: vi.fn(),
+    };
+    const peer = new DirectPeer({
+      side: "camera",
+      createPeer: () => pc as unknown as RTCPeerConnection,
+      send: vi.fn(),
+      onVideo: vi.fn(),
+      onFailure: failure,
+    });
+    await peer.receive({ type: "path-confirmed" });
+    expect(await peer.inspect()).toMatchObject({
+      direct: false,
+      path: "rejected",
+    });
+    expect(failure).toHaveBeenCalledOnce();
+    peer.close();
+  });
   it("verifies legacy ip stats only with the same exact private endpoint proof", () => {
     const report = stats("host", "prflx") as unknown as Map<
       string,

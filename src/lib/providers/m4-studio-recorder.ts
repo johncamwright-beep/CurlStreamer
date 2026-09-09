@@ -52,6 +52,7 @@ export async function startM4StudioRecorder(paths: {
   executable: string;
   runtime: string;
   recording: string;
+  previewOnly?: boolean;
   streamPlugin?: string;
   program?: { url: string; cacheDirectory: string };
 }) {
@@ -80,8 +81,8 @@ export async function startM4StudioRecorder(paths: {
       String(process.pid),
       "--runtime",
       paths.runtime,
-      "--recording",
-      paths.recording,
+      paths.previewOnly ? "--preview-only" : "--recording",
+      paths.previewOnly ? "-" : paths.recording,
       ...(source
         ? [
             "--program-cache",

@@ -43,13 +43,13 @@ internal sealed class Workspace : Form
         var bottom = new TableLayoutPanel { Dock = DockStyle.Bottom, Height = 96, Padding = new Padding(16, 8, 16, 8), ColumnCount = 1, RowCount = 2 };
         bottom.RowStyles.Add(new RowStyle(SizeType.Absolute, 50)); bottom.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         var actions = new FlowLayoutPanel { Dock = DockStyle.Fill, WrapContents = false, Height = 54 };
-        record.Text = "Start recording"; Style(record); record.Click += async (s, e) => await StartRecording();
+        record.Text = "Connect cameras"; Style(record); record.Click += async (s, e) => await StartRecording();
         record.BackColor = Color.FromArgb(74, 214, 196); record.ForeColor = Color.FromArgb(7, 28, 36); record.FlatAppearance.BorderSize = 0;
         record.FlatAppearance.MouseOverBackColor = Color.FromArgb(116, 233, 216);
-        finish.Text = "Stop & save recording"; Style(finish); finish.Click += async (s, e) => await StopRecording();
+        finish.Text = "Disconnect cameras"; Style(finish); finish.Click += async (s, e) => await StopRecording();
         devices.Text = "Connect devices"; Style(devices); devices.Click += (s, e) => Navigate("/games/" + selectedGame + "/studio");
         var files = MakeButton("Saved videos"); files.Click += (s, e) => OpenRecordings();
-        actions.Controls.AddRange(new Control[] { record, finish, files });
+        actions.Controls.AddRange(new Control[] { record, finish });
         status.Text = "Opening your workspace…"; status.Dock = DockStyle.Fill; status.AutoEllipsis = true;
         status.AccessibleName = "Recording status"; status.Padding = new Padding(5, 5, 0, 0);
         bottom.Controls.Add(actions); bottom.Controls.Add(status);
@@ -128,7 +128,7 @@ internal sealed class Workspace : Form
             core.NavigationCompleted += (s, e) => {
                 selectedGame = WorkspacePolicy.Game(core.Source, origin);
                 if (!e.IsSuccess && !recording) status.Text = "The workspace could not load. Check your internet connection and choose Refresh.";
-                else if (!recording && !busy) status.Text = selectedGame == null ? "Choose a game from your schedule to get started." : "Game selected. Start recording before connecting camera phones.";
+                else if (!recording && !busy) status.Text = selectedGame == null ? "Choose a game from your schedule to get started." : "Preparing this game for your camera phones.";
                 UpdateButtons();
             };
             core.NewWindowRequested += (s, e) => { e.Handled = true; if (WorkspacePolicy.SameOrigin(e.Uri, origin)) Navigate(new Uri(e.Uri).PathAndQuery + new Uri(e.Uri).Fragment); else status.Text = "External account connections are available from the website in your browser."; };
@@ -141,13 +141,22 @@ internal sealed class Workspace : Form
             origin = null; status.Text = "Workspace could not open. Check the installation and Microsoft Edge WebView2 Runtime."; UpdateButtons();
         }
     }
-    private void ReceiveGrant(object sender, CoreWebView2WebMessageReceivedEventArgs args) {
-        if (handoff == null || handoff.Task.IsCompleted || !WorkspacePolicy.SameOrigin(args.Source, origin) ||
+    private async void ReceiveGrant(object sender, CoreWebView2WebMessageReceivedEventArgs args) {
+        if (!WorkspacePolicy.SameOrigin(args.Source, origin) ||
             !WorkspacePolicy.SameOrigin(web.CoreWebView2.Source, origin) || WorkspacePolicy.Game(args.Source, origin) != selectedGame) return;
         try {
             var raw = args.WebMessageAsJson;
             if (raw.Length > 4096) return;
             var value = json.Deserialize<Dictionary<string, object>>(raw);
+            if (value.Count == 2 && TextValue(value, "gameId") == selectedGame && selectedGame != null && !busy && !closing) {
+                var type = TextValue(value, "type");
+                if (type == "studio-game-ended") { if (recording && runningGame == selectedGame) await StopRecording(); return; }
+                if (type == "studio-game-ready") {
+                    if (recording && runningGame != selectedGame) await StopRecording();
+                    await StartRecording(); return;
+                }
+            }
+            if (handoff == null || handoff.Task.IsCompleted) return;
             if (value.Count != 3 || !value.ContainsKey("nonce") || !value.ContainsKey("status") || !value.ContainsKey("sourceUrl") ||
                 (string)value["nonce"] != handoffNonce) return;
             handoff.TrySetResult(value);
@@ -176,18 +185,18 @@ internal sealed class Workspace : Form
             if (child == null) await StartController(gameId);
             var checkedState = await Command(new { action = "check" });
             if (TextValue(checkedState, "pc") != "ready") throw new WorkspaceFailure("This PC did not pass the recording check. Check the Studio installation.");
-            status.Text = "Preparing your recording connection…";
+            status.Text = "Preparing your camera connection…";
             var code = await PrepareGrant(gameId);
-            status.Text = "Starting recording…";
+            status.Text = "Connecting cameras…";
             ApplyState(await Command(new { action = "start-program", invitation = code }));
-            if (!recording) throw new WorkspaceFailure("Recording could not start. Your game and camera assignments are retained. Try Start recording again.");
+            if (!recording) throw new WorkspaceFailure("Cameras could not connect. Your game and camera assignments are retained. Try Connect cameras again.");
         } catch (WorkspaceFailure e) { status.Text = e.Message; }
-        catch { status.Text = "Recording could not start. Check your connection and Studio installation, then try again."; }
+        catch { status.Text = "Cameras could not connect. Check your connection and Studio installation, then try again."; }
         finally { busy = false; UpdateButtons(); }
     }
     private async Task StopRecording() {
         if (busy || !recording) return;
-        busy = true; UpdateButtons(); status.Text = "Finalizing your recording…";
+        busy = true; UpdateButtons(); status.Text = "Disconnecting cameras…";
         try { ApplyState(await Command(new { action = "stop-program" })); }
         catch { status.Text = "Finalization was not confirmed. Keep Studio open and check the recordings folder."; }
         finally { busy = false; UpdateButtons(); }
@@ -233,7 +242,10 @@ internal sealed class Workspace : Form
         var phase = TextValue(state, "program");
         recording = phase == "recording" || phase == "starting" || phase == "stopping" || (phase == "failed" && recording);
         previewMapping = phase == "recording" ? TextValue(state, "previewMapping") : null;
-        status.Text = phase == "recording" ? "Recording on this PC · YouTube off · Keep Studio open" : TextValue(state, "programMessage") ?? "Recording status is unavailable.";
+        object cameraStatus;
+        if (web.CoreWebView2 != null && WorkspacePolicy.SameOrigin(web.CoreWebView2.Source, origin) && selectedGame == runningGame && state.TryGetValue("cameraStatus", out cameraStatus))
+            web.CoreWebView2.ExecuteScriptAsync("window.dispatchEvent(new CustomEvent('studio-camera-status',{detail:" + json.Serialize(new { gameId = runningGame, cameras = cameraStatus }) + "}));");
+        status.Text = phase == "recording" ? "Cameras ready · Not recording · YouTube off" : phase == "stopped" ? "Cameras disconnected · No recording saved" : TextValue(state, "programMessage") ?? "Camera status is unavailable.";
         UpdateButtons();
     }
     private async Task Poll() {
@@ -245,7 +257,7 @@ internal sealed class Workspace : Form
     }
     private async Task CloseController() {
         if (child == null) return;
-        status.Text = "Stopping output and saving your recording…";
+        status.Text = "Stopping output and disconnecting cameras…";
         if (!child.HasExited) { child.StandardInput.WriteLine("close"); child.StandardInput.Flush(); }
         if (await Task.WhenAny(exited.Task, Task.Delay(120000)) != exited.Task ||
             (!(await exited.Task) && !(startupFailed && !controllerReady))) throw new InvalidDataException();

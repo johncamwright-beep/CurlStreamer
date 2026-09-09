@@ -22,6 +22,7 @@ const optionsSchema = z
     executable: z.string().min(1),
     runtime: z.string().min(1),
     recording: z.string().min(1),
+    previewOnly: z.boolean().optional(),
     cacheRoot: z.string().min(1),
     rendererRoot: z.string().min(1),
     streamPlugin: z.string().min(1).optional(),
@@ -81,6 +82,7 @@ export async function startM4ProgramHost(input: z.input<typeof optionsSchema>) {
       executable: options.executable,
       runtime: options.runtime,
       recording: options.recording,
+      previewOnly: options.previewOnly,
       program: { url: bridge.rendererUrl, cacheDirectory },
       streamPlugin: options.streamPlugin,
     });
@@ -118,6 +120,7 @@ export async function startM4ProgramHost(input: z.input<typeof optionsSchema>) {
     stop,
     closed,
     rendererAddress: bridge.address,
+    cameraStatus: bridge.cameraStatus,
     previewMapping:
       "Local\\CurlStreamerPreview-" + basename(cacheDirectory).slice(20),
     ...(recorder.stream ? { stream: recorder.stream } : {}),

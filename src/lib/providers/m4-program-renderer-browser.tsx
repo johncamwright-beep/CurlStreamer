@@ -152,7 +152,17 @@ function ProgramRenderer() {
                 message: "Verified direct camera",
               },
             })),
-          onMetrics: (metrics) =>
+          onMetrics: (metrics) => {
+            void request(
+              "/camera",
+              {
+                action: "observe",
+                cameraRole: role,
+                frames: metrics.framesDecoded,
+                verified: metrics.direct,
+              },
+              controller.signal,
+            ).catch(() => undefined);
             setCameras((current) => ({
               ...current,
               [role]: {
@@ -162,7 +172,8 @@ function ProgramRenderer() {
                   ? "Verified direct camera"
                   : "Verifying direct path…",
               },
-            })),
+            }));
+          },
           onStop: (message) => {
             handles.delete(role);
             setCameras((current) => ({

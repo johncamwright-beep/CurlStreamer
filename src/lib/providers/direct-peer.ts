@@ -372,7 +372,9 @@ export class DirectPeer {
         if (this.closed) return;
         const sender = this.options.side === "camera" ? "receiver" : "camera";
         if (!signalAllowed(sender, signal)) throw Error("Rejected signaling");
-        if (signal.type === "ready") {
+        if (signal.type === "path-confirmed") {
+          this.receiverConfirmedAt = performance.now();
+        } else if (signal.type === "ready") {
           ++this.handshake.readyReceived;
           // Broadcast delivery is ephemeral. The camera repeats readiness until
           // it receives an offer, so repeat the completed local description if
@@ -436,6 +438,9 @@ export class DirectPeer {
       );
     return this.queue;
   }
+  private receiverConfirmedAt = -Infinity;
+  private lastConfirmationAt = -Infinity;
+  private hiddenPathSince: number | undefined;
   async inspect() {
     const report = await this.pc.getStats();
     const metrics = reduceDirectStats(report, this.advertised);
@@ -446,6 +451,41 @@ export class DirectPeer {
     metrics.iceGatheringState = this.pc.iceGatheringState;
     metrics.handshake = { ...this.handshake };
     if (this.closed) return metrics;
+    // A camera browser can redact prflx addresses. Its authenticated receiver
+    // must independently prove the path; this never relaxes receiver checks.
+    const hiddenCameraPath =
+      this.options.side === "camera" &&
+      metrics.relayBytes === 0 &&
+      metrics.pairState === "succeeded" &&
+      this.pc.connectionState === "connected" &&
+      [metrics.localCandidateType, metrics.remoteCandidateType].every(
+        (type) => type === "host" || type === "prflx",
+      ) &&
+      [metrics.localEndpointIssue, metrics.remoteEndpointIssue].every(
+        (issue) =>
+          issue === "none" ||
+          issue === "address-unavailable" ||
+          issue === "mdns-address",
+      ) &&
+      [metrics.localEndpointIssue, metrics.remoteEndpointIssue].some(
+        (issue) => issue === "address-unavailable" || issue === "mdns-address",
+      );
+    if (hiddenCameraPath && !metrics.direct) {
+      this.hiddenPathSince ??= performance.now();
+      if (performance.now() - this.receiverConfirmedAt < 5000) {
+        metrics.direct = true;
+        metrics.path = "peer-reflexive";
+      } else if (performance.now() - this.hiddenPathSince < 8000)
+        metrics.path = "pending";
+    } else this.hiddenPathSince = undefined;
+    if (
+      metrics.direct &&
+      this.options.side === "receiver" &&
+      performance.now() - this.lastConfirmationAt >= 2000
+    ) {
+      this.lastConfirmationAt = performance.now();
+      await this.options.send({ type: "path-confirmed" });
+    }
     if (metrics.direct)
       report.forEach((row) => {
         if (row.candidateType !== "host") return;

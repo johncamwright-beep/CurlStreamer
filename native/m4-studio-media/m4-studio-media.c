@@ -33,8 +33,8 @@ struct m4_media {
 };
 /* A process-owned, read-only preview for the signed-in Windows shell. Frames
  * stay in memory and are sampled from the same OBS output as the recording. */
-#define PREVIEW_WIDTH 1920
-#define PREVIEW_HEIGHT 1080
+#define PREVIEW_WIDTH 1280
+#define PREVIEW_HEIGHT 720
 #define PREVIEW_PIXELS (PREVIEW_WIDTH * PREVIEW_HEIGHT * 4)
 #define PREVIEW_BITMAP (54 + PREVIEW_PIXELS)
 #define PREVIEW_BYTES (16 + PREVIEW_BITMAP)
@@ -76,7 +76,7 @@ static bool initialize_preview(m4_media *m, const wchar_t *cache_root)
     struct video_scale_info scale = {0};
     scale.format = VIDEO_FORMAT_BGRA; scale.width = PREVIEW_WIDTH; scale.height = PREVIEW_HEIGHT;
     scale.range = VIDEO_RANGE_FULL; scale.colorspace = VIDEO_CS_709;
-    obs_add_raw_video_callback2(&scale, 15, preview_frame, m);
+    obs_add_raw_video_callback2(&scale, 2, preview_frame, m);
     m->preview_attached = true;
     return true;
 }
@@ -210,18 +210,18 @@ static bool initialize(const wchar_t *runtime_bin, const wchar_t *absolute_mkv, 
     struct obs_video_info video = {0}; struct obs_audio_info audio = {0};
     if (!out || *out) return false;
     *out = NULL;
-    if (!local_path(runtime_bin) || !local_path(absolute_mkv) || _wcsicmp(absolute_mkv + wcslen(absolute_mkv) - 4, L".mkv") ||
+    if (!local_path(runtime_bin) || (!absolute_mkv && !url) || (absolute_mkv && (!local_path(absolute_mkv) || _wcsicmp(absolute_mkv + wcslen(absolute_mkv) - 4, L".mkv"))) ||
         !WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS, runtime_bin, -1, runtime, sizeof(runtime), NULL, NULL) ||
-        !WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS, absolute_mkv, -1, path, sizeof(path), NULL, NULL)) return false;
+        (absolute_mkv && !WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS, absolute_mkv, -1, path, sizeof(path), NULL, NULL))) return false;
     if (cache_root && (!local_path(cache_root) || !WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS, cache_root, -1, cache, sizeof(cache), NULL, NULL))) return false;
     if (obs_initialized() || InterlockedCompareExchange(&owner, 1, 0)) return false;
     m = calloc(1, sizeof(*m));
     if (!m) { InterlockedExchange(&owner, 0); return false; }
     m->reservation = INVALID_HANDLE_VALUE;
     m->stop_code = OBS_OUTPUT_ERROR;
-    m->reservation = CreateFileW(absolute_mkv, GENERIC_READ | GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE,
+    if (absolute_mkv) m->reservation = CreateFileW(absolute_mkv, GENERIC_READ | GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE,
         NULL, CREATE_NEW, FILE_ATTRIBUTE_NORMAL, NULL);
-    if (m->reservation == INVALID_HANDLE_VALUE) goto fail;
+    if (absolute_mkv && m->reservation == INVALID_HANDLE_VALUE) goto fail;
     if (!contain_process()) goto fail;
     if (cache_root && (!private_directory(cache_root) || !cache_owner(cache_root) ||
         !program_address_preferences(cache_root, url))) goto fail;
@@ -253,6 +253,7 @@ static bool initialize(const wchar_t *runtime_bin, const wchar_t *absolute_mkv, 
     obs_data_release(settings); settings = NULL;
     if (!m->video || !m->audio) goto fail;
     obs_encoder_set_video(m->video, obs_get_video()); obs_encoder_set_audio(m->audio, obs_get_audio());
+    if (absolute_mkv) {
     settings = obs_data_create(); obs_data_set_string(settings, "path", path);
     obs_data_set_bool(settings, "split_file", false);
     m->record = obs_output_create("ffmpeg_muxer", "M4 independent local MKV", settings, NULL);
@@ -260,6 +261,7 @@ static bool initialize(const wchar_t *runtime_bin, const wchar_t *absolute_mkv, 
     if (!m->record) goto fail;
     obs_output_set_video_encoder(m->record, m->video); obs_output_set_audio_encoder(m->record, m->audio, 0);
     signal_handler_connect(obs_output_get_signal_handler(m->record), "stop", on_stop, m);
+    }
     if (url) {
         settings = obs_get_private_data(); obs_data_set_bool(settings, "BrowserHWAccel", false); obs_data_release(settings); settings = NULL;
         if (!module(runtime, "obs-browser")) goto fail;
@@ -290,8 +292,8 @@ bool m4_media_initialize_program(const wchar_t *runtime_bin, const wchar_t *abso
 }
 bool m4_media_start(m4_media *m)
 {
-    if (!m || !m->record || m->started || m->stop_requested) return false;
-    m->started = obs_output_start(m->record);
+    if (!m || !m->initialized || m->started || m->stop_requested) return false;
+    m->started = m->record ? obs_output_start(m->record) : true;
     return m->started;
 }
 bool m4_media_prepare_stream(m4_media *m, const wchar_t *runtime_bin, const wchar_t *absolute_plugin)
@@ -320,7 +322,7 @@ bool m4_media_attach_stream(m4_media *m, HANDLE pipe, const unsigned char capabi
 void m4_media_poll_stream(m4_media *m)
 { if (m && m->start_stream && m->service) m->start_stream(m->service); }
 bool m4_media_active(const m4_media *m)
-{ return m && m->record && obs_output_active(m->record); }
+{ return m && m->started && !m->stop_requested && (m->record ? obs_output_active(m->record) : m->initialized); }
 uint64_t m4_media_bytes(const m4_media *m)
 {
     LARGE_INTEGER size;
@@ -329,6 +331,7 @@ uint64_t m4_media_bytes(const m4_media *m)
 bool m4_media_finalize(m4_media *m, uint32_t timeout_ms)
 {
     if (!m || !m->started || timeout_ms < 1 || timeout_ms > 30000) return false;
+    if (!m->record) { m->stop_requested = true; return true; }
     ULONGLONG deadline = GetTickCount64() + timeout_ms;
     if (!m->stop_requested) { m->stop_requested = true; obs_output_stop(m->record); }
     ULONGLONG now = GetTickCount64();

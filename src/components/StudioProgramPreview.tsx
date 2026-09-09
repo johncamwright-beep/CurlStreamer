@@ -1,17 +1,32 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 export function StudioProgramPreview({ gameId }: { gameId: string }) {
   const [supported, setSupported] = useState(false);
   const [frame, setFrame] = useState(0);
   const [ready, setReady] = useState(false);
+  const next = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const requestedAt = useRef(0);
+  const schedule = (loaded: boolean) => {
+    setReady(loaded);
+    clearTimeout(next.current);
+    next.current = setTimeout(
+      () => {
+        requestedAt.current = performance.now();
+        setFrame((value) => value + 1);
+      },
+      loaded
+        ? Math.max(0, 1000 / 15 - (performance.now() - requestedAt.current))
+        : 1000,
+    );
+  };
   useEffect(() => {
     setReady(false);
     const available = navigator.userAgent.includes("StudioProgramPreview/1");
     setSupported(available);
     if (!available) return;
-    const timer = setInterval(() => setFrame((value) => value + 1), 500);
-    return () => clearInterval(timer);
+    requestedAt.current = performance.now();
+    return () => clearTimeout(next.current);
   }, [gameId]);
   return (
     <section
@@ -31,8 +46,8 @@ export function StudioProgramPreview({ gameId }: { gameId: string }) {
         <img
           src={`/__studio-preview/${gameId}?frame=${frame}`}
           alt="Actual Studio program output"
-          onLoad={() => setReady(true)}
-          onError={() => setReady(false)}
+          onLoad={() => schedule(true)}
+          onError={() => schedule(false)}
           style={{
             width: "100%",
             height: "100%",

@@ -4,6 +4,7 @@ export const studioSideSchema = z.enum(["receiver", "camera"]);
 export type StudioSide = z.infer<typeof studioSideSchema>;
 export const signalSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("ready") }).strict(),
+  z.object({ type: z.literal("path-confirmed") }).strict(),
   z
     .object({
       type: z.enum(["offer", "answer"]),
@@ -65,6 +66,7 @@ export function hostCandidate(candidate: string) {
 }
 export function signalAllowed(side: StudioSide, signal: StudioSignal) {
   if (signal.type === "ready") return side === "camera";
+  if (signal.type === "path-confirmed") return side === "receiver";
   if (signal.type === "ice") return hostCandidate(signal.candidate.candidate);
   if ((signal.type === "offer") !== (side === "receiver")) return false;
   return signal.sdp

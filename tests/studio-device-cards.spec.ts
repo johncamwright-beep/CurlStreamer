@@ -155,10 +155,23 @@ test("camera cards share a row on a tablet and reconnect QR collapses when onlin
   await expect(first.getByRole("img")).toBeVisible();
   online = true;
   await page.clock.fastForward(5000);
-  await expect(first.getByRole("status")).toHaveText("Phone connected");
+  await expect(first.getByRole("status")).toHaveText(
+    "Phone online · Waiting for video",
+  );
+  await expect(first.getByRole("img")).toBeVisible();
+  await page.evaluate(
+    (gameId) =>
+      window.dispatchEvent(
+        new CustomEvent("studio-camera-status", {
+          detail: { gameId, cameras: { "camera-home": true } },
+        }),
+      ),
+    testGameId,
+  );
+  await expect(first.getByRole("status")).toHaveText("Video receiving");
   await expect(first.getByRole("img")).toHaveCount(0);
   online = false;
-  await page.clock.fastForward(5000);
+  await page.clock.fastForward(6500);
   await expect(
     first.getByRole("button", { name: "Show reconnect QR" }),
   ).toBeVisible();
@@ -229,7 +242,19 @@ test("release stays on the game and requires an explicit confirmation", async ({
   });
   await openCards(page);
   const card = page.getByRole("region", { name: "Camera 1", exact: true });
-  await expect(card.getByRole("status")).toHaveText("Phone connected");
+  await expect(card.getByRole("status")).toHaveText(
+    "Phone online · Waiting for video",
+  );
+  await page.evaluate(
+    (gameId) =>
+      window.dispatchEvent(
+        new CustomEvent("studio-camera-status", {
+          detail: { gameId, cameras: { "camera-home": true } },
+        }),
+      ),
+    testGameId,
+  );
+  await expect(card.getByRole("status")).toHaveText("Video receiving");
   await expect(
     card.getByRole("button", { name: "Show reconnect QR" }),
   ).toHaveCount(0);

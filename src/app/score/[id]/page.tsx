@@ -58,6 +58,32 @@ export default function Scorer({
     [id],
   );
   const completed = completion ?? finished;
+  useEffect(() => {
+    if (
+      (!game && !completed) ||
+      !desktop ||
+      !m1Pilot ||
+      (!accountOperator && !organizerAccess)
+    )
+      return;
+    const shell = (
+      window as unknown as {
+        chrome?: { webview?: { postMessage(value: unknown): void } };
+      }
+    ).chrome?.webview;
+    shell?.postMessage({
+      type: completed ? "studio-game-ended" : "studio-game-ready",
+      gameId: id,
+    });
+  }, [
+    id,
+    Boolean(game),
+    Boolean(completed),
+    desktop,
+    m1Pilot,
+    accountOperator,
+    organizerAccess,
+  ]);
   const canEndGame = canManageCompletion(accountRole, organizerAccess);
   if (completed)
     return (

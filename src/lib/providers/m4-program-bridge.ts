@@ -41,6 +41,10 @@ export async function createM4ProgramBridge(
   rendererAssets?: { directory: string; sponsorStorageOrigin?: string },
 ) {
   const key = randomBytes(32).toString("base64url");
+  const cameraFrames = new Map<
+    CameraRole,
+    { frames: number; advancedAt: number }
+  >();
   const rendererCookie = randomBytes(32).toString("base64url");
   const expected = Buffer.from(`Bearer ${key}`);
   const expectedRendererCookie = Buffer.from(`m4_program=${rendererCookie}`);
@@ -245,6 +249,30 @@ export async function createM4ProgramBridge(
         chunks.push(chunk);
       }
       const parsed = JSON.parse(Buffer.concat(chunks).toString("utf8"));
+      const observation = z
+        .object({
+          action: z.literal("observe"),
+          cameraRole: cameraRoleSchema,
+          frames: z.number().int().nonnegative(),
+          verified: z.boolean(),
+        })
+        .strict()
+        .safeParse(parsed);
+      if (observation.success && rendererAllowed) {
+        const { cameraRole, frames, verified } = observation.data;
+        const previous = cameraFrames.get(cameraRole);
+        cameraFrames.set(cameraRole, {
+          frames,
+          advancedAt:
+            verified && frames > (previous?.frames ?? 0)
+              ? Date.now()
+              : verified
+                ? (previous?.advancedAt ?? 0)
+                : 0,
+        });
+        reply(200, { ok: true });
+        return;
+      }
       const connect = z
         .object({ action: z.literal("connect"), cameraRole: cameraRoleSchema })
         .strict()
@@ -285,6 +313,14 @@ export async function createM4ProgramBridge(
   let closing: Promise<void> | undefined;
   return {
     address,
+    cameraStatus: () =>
+      Object.fromEntries(
+        (["camera-home", "camera-away"] as const).map((role) => [
+          role,
+          !closed &&
+            Date.now() - (cameraFrames.get(role)?.advancedAt ?? 0) < 5000,
+        ]),
+      ),
     rendererUrl: address + "/",
     // Owner-only transport capability. Never log or put in a URL/config file.
     authorization: `Bearer ${key}`,

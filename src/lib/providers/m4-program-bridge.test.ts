@@ -21,6 +21,51 @@ async function setup() {
   return { client, action, bridge, headers };
 }
 describe("private loopback program API", () => {
+  it("reports advancing renderer frames, never a heartbeat or a stale counter", async () => {
+    const { bridge, headers } = await setup();
+    const page = await fetch(bridge.rendererUrl);
+    const cookie = page.headers.get("set-cookie")!.split(";")[0];
+    let now = Date.now();
+    const clock = vi.spyOn(Date, "now").mockImplementation(() => now);
+    try {
+      const body = {
+        action: "observe",
+        cameraRole: "camera-home",
+        frames: 5,
+        verified: true,
+      };
+      const observe = (frames: number) =>
+        fetch(bridge.address + "/camera", {
+          method: "POST",
+          headers: {
+            origin: bridge.address,
+            cookie,
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({ ...body, frames }),
+        });
+      expect(
+        (
+          await fetch(bridge.address + "/camera", {
+            method: "POST",
+            headers,
+            body: JSON.stringify(body),
+          })
+        ).status,
+      ).toBe(409);
+      expect(bridge.cameraStatus()["camera-home"]).toBe(false);
+      expect((await observe(5)).status).toBe(200);
+      expect(bridge.cameraStatus()["camera-home"]).toBe(true);
+      expect(bridge.cameraStatus()["camera-away"]).toBe(false);
+      now += 6000;
+      await observe(5);
+      expect(bridge.cameraStatus()["camera-home"]).toBe(false);
+      await observe(6);
+      expect(bridge.cameraStatus()["camera-home"]).toBe(true);
+    } finally {
+      clock.mockRestore();
+    }
+  });
   it("returns only public connection metadata and scoped events", async () => {
     const client = new M4ProgramClient(
       "11111111-1111-4111-8111-111111111111",

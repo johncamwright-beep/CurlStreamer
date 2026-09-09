@@ -23,17 +23,21 @@ function DeviceCard({
   claimed: boolean;
   enabled: boolean;
   onChanged?: () => Promise<unknown>;
-  connectionStatus?: { receiverReady: boolean; phoneOnline: boolean };
+  connectionStatus?: {
+    receiverReady: boolean;
+    phoneOnline: boolean;
+    videoReceiving?: boolean;
+  };
 }) {
   const [confirmRelease, setConfirmRelease] = useState(false);
   const [largeQr, setLargeQr] = useState(false);
   const [qrOpen, setQrOpen] = useState(false);
   useEffect(() => {
-    if (connectionStatus?.phoneOnline) {
+    if (connectionStatus?.videoReceiving) {
       setQrOpen(false);
       setLargeQr(false);
     }
-  }, [connectionStatus?.phoneOnline]);
+  }, [connectionStatus?.videoReceiving]);
   async function releaseCamera() {
     if (busy || role === "scorer" || !onChanged) return;
     setBusy(true);
@@ -181,7 +185,7 @@ function DeviceCard({
   }
   const active = invitation && now < invitation.expires && !claimed && enabled;
   const scorer = role === "scorer";
-  const online = !scorer && claimed && connectionStatus?.phoneOnline;
+  const online = !scorer && claimed && connectionStatus?.videoReceiving;
   const stateLabel = scorer
     ? claimed
       ? "Assigned to a device"
@@ -189,12 +193,14 @@ function DeviceCard({
     : !connectionStatus
       ? "Status unavailable"
       : online
-        ? "Phone connected"
-        : !connectionStatus.receiverReady
-          ? "Studio offline"
-          : claimed
-            ? "Waiting for phone"
-            : "Ready to connect";
+        ? "Video receiving"
+        : connectionStatus.phoneOnline
+          ? "Phone online · Waiting for video"
+          : !connectionStatus.receiverReady
+            ? "Studio offline"
+            : claimed
+              ? "Waiting for phone"
+              : "Ready to connect";
   return (
     <section className="studio-device" aria-label={label} aria-busy={busy}>
       <header>
@@ -227,10 +233,10 @@ function DeviceCard({
                 ? "Assignment does not confirm a live connection."
                 : connectionStatus
                   ? connectionStatus.phoneOnline
-                    ? "Phone is connected to this game."
+                    ? "The phone has checked in. Video has not been confirmed on this screen."
                     : connectionStatus.receiverReady
                       ? "Studio is ready. Reconnect this phone or release it to use another."
-                      : "Start Studio recording for this game to reconnect."
+                      : "Open this game in Studio to connect cameras."
                   : "Connection status unavailable · assignment retained"}
             </p>
           )}
@@ -374,6 +380,27 @@ export function StudioDeviceCards({
   enabled: boolean;
   onChanged?: () => Promise<unknown>;
 }) {
+  const [received, setReceived] = useState<Record<string, boolean>>({});
+  useEffect(() => {
+    let expiry: ReturnType<typeof setTimeout>;
+    const receive = (event: Event) => {
+      const parsed = z
+        .object({
+          gameId: z.literal(id),
+          cameras: z.record(z.string(), z.boolean()),
+        })
+        .safeParse((event as CustomEvent).detail);
+      if (!parsed.success) return;
+      setReceived(parsed.data.cameras);
+      clearTimeout(expiry);
+      expiry = setTimeout(() => setReceived({}), 6000);
+    };
+    window.addEventListener("studio-camera-status", receive);
+    return () => {
+      clearTimeout(expiry);
+      window.removeEventListener("studio-camera-status", receive);
+    };
+  }, [id]);
   const [connections, setConnections] =
     useState<
       Record<string, { receiverReady: boolean; phoneOnline: boolean }>
@@ -429,7 +456,11 @@ export function StudioDeviceCards({
           claimed={Boolean(claims[role])}
           enabled={enabled}
           onChanged={onChanged}
-          connectionStatus={connections?.[role]}
+          connectionStatus={
+            connections?.[role]
+              ? { ...connections[role], videoReceiving: received[role] }
+              : undefined
+          }
         />
       ))}
     </div>

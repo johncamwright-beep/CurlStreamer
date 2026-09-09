@@ -21,7 +21,7 @@ internal static class WorkspacePolicyTests
         Assert(ProgramPreview.Read(null) == null);
         Assert(ProgramPreview.Read("Local\\OtherProgram") == null);
         var mappingName = "Local\\CurlStreamerPreview-" + Guid.NewGuid().ToString("N");
-        const int bitmapLength = 54 + 1920 * 1080 * 4;
+        const int bitmapLength = 54 + 1280 * 720 * 4;
         using (var mapping = System.IO.MemoryMappedFiles.MemoryMappedFile.CreateNew(mappingName, 16 + bitmapLength))
         using (var view = mapping.CreateViewAccessor()) {
             view.Write(0, 2); view.Write(4, bitmapLength); view.Write(8, DateTime.UtcNow.ToFileTimeUtc());

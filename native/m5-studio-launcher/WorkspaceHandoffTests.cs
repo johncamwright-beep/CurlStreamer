@@ -40,6 +40,7 @@ internal static class WorkspaceHandoffTests
                 var api = args.Request.Uri.Contains("/api/games/");
                 if (api) requests++;
                 var body = api ? "{\"sourceUrl\":\"" + origin + "/studio-m3/" + (mode == 1 ? "22222222-2222-4222-8222-222222222222" : id) + "/program#code=" + new string('a',43) + "\"}" : "<!doctype html><title>Fixture game</title><h1>Fixture game</h1>";
+                if (args.Request.Uri.Contains("/studio-m4")) body = args.Request.Uri.EndsWith("/desktop-pairing") ? "{\"code\":\"" + new string('b',43) + "\"}" : "{\"status\":\"prepared\"}";
                 args.Response = core.Environment.CreateWebResourceResponse(new MemoryStream(Encoding.UTF8.GetBytes(body)), api && mode == 2 ? 401 : 200, "Fixture", "Content-Type: " + (api ? "application/json" : "text/html"));
             };
             core.NavigationCompleted += async (sender, args) => {
@@ -56,6 +57,13 @@ internal static class WorkspaceHandoffTests
                     mode = 2; refused = false;
                     try { await (Task<string>)prepare.Invoke(form, new object[] { id }); } catch (Exception error) { refused = error.Message.Contains("Sign in"); }
                     if (!refused) throw new Exception("Account denial was not preserved.");
+                    var youtube = typeof(Workspace).GetMethod("WebsiteYouTube", BindingFlags.Instance | BindingFlags.NonPublic);
+                    mode = 0;
+                    if (await (Task<string>)youtube.Invoke(form, new object[] { id, "", new { action = "prepare" } }) != "prepared") throw new Exception("YouTube prepare handoff failed.");
+                    if (await (Task<string>)youtube.Invoke(form, new object[] { id, "/desktop-pairing", new { challenge = new string('c',64) } }) != new string('b',43)) throw new Exception("YouTube pairing handoff failed.");
+                    mode = 2; refused = false;
+                    try { await (Task<string>)youtube.Invoke(form, new object[] { id, "", new { action = "prepare" } }); } catch { refused = true; }
+                    if (!refused) throw new Exception("YouTube account denial was not preserved.");
                     var mappingName = "Local\\CurlStreamerPreview-" + Guid.NewGuid().ToString("N");
                     byte[] picture;
                     using (var bitmap = new System.Drawing.Bitmap(1280, 720, System.Drawing.Imaging.PixelFormat.Format32bppRgb))

@@ -152,7 +152,9 @@ test("eligibility guidance remains usable at 320px", async ({
   );
 
   await page.goto(`/score/${testGameId}`);
-  await expect(page.getByText("Needs attention")).toBeVisible();
+  await expect(
+    page.getByLabel("YouTube broadcast").getByText("Needs attention"),
+  ).toBeVisible();
   await expect(
     page.getByText("up to 24 hours", { exact: false }),
   ).toBeVisible();

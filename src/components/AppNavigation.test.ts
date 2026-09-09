@@ -70,7 +70,8 @@ describe("shared application navigation", () => {
       "selectCurrentGame(localStorage, synchronized)",
     );
     expect(navigation).toContain("CURRENT_GAME_EVENT");
-    expect(navigation).toContain("href: `/games/${current.id}`");
+    expect(navigation).not.toContain("href: `/games/${current.id}`");
+    expect(navigation).toContain('label: "Game Scoring"');
     expect(navigation).toContain("href: `/score/${current.id}`");
     expect(navigation).toContain("href: `/broadcast/${current.id}`");
     expect(navigation).toContain("current.capabilities.assignOpponent");

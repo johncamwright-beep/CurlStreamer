@@ -239,6 +239,26 @@ test("desktop game day keeps scoring primary and settings available on demand", 
     expect(end!.y + end!.height).toBeLessThanOrEqual(
       page.viewportSize()!.height,
     );
+    const first = page.getByRole("region", { name: "Camera 1", exact: true });
+    const second = page.getByRole("region", { name: "Camera 2", exact: true });
+    const scorer = page.getByRole("region", {
+      name: "Remote scorer",
+      exact: true,
+    });
+    const before = await first.boundingBox();
+    expect((await second.boundingBox())!.y).toBe(before!.y);
+    expect((await scorer.boundingBox())!.y).toBe(before!.y);
+    expect(before!.y + before!.height).toBeLessThanOrEqual(
+      page.viewportSize()!.height,
+    );
+    await first.getByRole("button", { name: "Show reconnect QR" }).click();
+    const qr = first.getByRole("img", { name: "Camera 1 reconnect QR code" });
+    await expect(qr).toBeVisible();
+    expect((await qr.boundingBox())!.x).toBeGreaterThan(
+      before!.x + before!.width,
+    );
+    expect(await first.boundingBox()).toEqual(before);
+    await first.getByRole("button", { name: "Hide QR code" }).click();
   }
   await page.getByRole("button", { name: "Save 1 point", exact: true }).click();
   await expect.poll(() => actions.length).toBe(1);

@@ -19,11 +19,11 @@ internal sealed class Workspace : Form
 {
     private readonly WebView2 web = new WebView2();
     private readonly Label status = new Label();
-    private readonly Button record = new Button(), finish = new Button(), devices = new Button();
+    private readonly Button record = new Button(), finish = new Button(), devices = new Button(), gameDay = new Button();
     private readonly JavaScriptSerializer json = new JavaScriptSerializer { MaxJsonLength = 65536 };
     private readonly string nodeHash, controllerHash, configurationHash, root, launchGame, profileDirectory;
     private readonly System.Windows.Forms.Timer poll = new System.Windows.Forms.Timer { Interval = 2000 };
-    private string origin, selectedGame, runningGame, localAddress, handoffNonce;
+    private string origin, selectedGame, lastGame, runningGame, localAddress, handoffNonce;
     private Process child;
     private HttpClient local;
     private TaskCompletionSource<string> ready;
@@ -40,17 +40,27 @@ internal sealed class Workspace : Form
         ClientSize = new Size(1180, 820); MinimumSize = new Size(940, 680);
         AutoScaleMode = AutoScaleMode.Dpi; Font = new Font("Segoe UI", 10);
         BackColor = Color.FromArgb(10, 24, 40); ForeColor = Color.White;
-        var header = new FlowLayoutPanel { Dock = DockStyle.Top, Height = 62, Padding = new Padding(10, 6, 10, 6), WrapContents = false };
+        var header = new FlowLayoutPanel { Dock = DockStyle.Top, Height = 68, Padding = new Padding(16, 10, 16, 10), WrapContents = false };
         header.Controls.Add(new Label { Text = "CurlStreamer Studio", AutoSize = true, Font = new Font(Font.FontFamily, 15, FontStyle.Bold), Padding = new Padding(3, 10, 14, 0) });
-        Nav(header, "Games & schedule", "/dashboard"); Nav(header, "Seasons", "/seasons");
-        Nav(header, "Sponsors", "/sponsors"); Nav(header, "Account", "/account");
-        var refresh = MakeButton("Refresh"); refresh.Click += (s, e) => { if (!busy && web.CoreWebView2 != null) web.Reload(); }; header.Controls.Add(refresh);
-        var bottom = new TableLayoutPanel { Dock = DockStyle.Bottom, Height = 118, Padding = new Padding(12, 5, 12, 7), ColumnCount = 1, RowCount = 2 };
+        Nav(header, "Schedule", "/dashboard");
+        gameDay.Text = "Game day"; Style(gameDay); gameDay.Click += (s, e) => Navigate("/score/" + (recording ? runningGame : lastGame)); header.Controls.Add(gameDay);
+        var manage = MakeButton("Manage");
+        var menu = new ContextMenuStrip { Font = Font, ShowImageMargin = false };
+        foreach (var item in new[] { new[] { "Seasons & events", "/seasons" }, new[] { "Sponsors", "/sponsors" }, new[] { "Account", "/account" } }) {
+            var path = item[1]; var entry = menu.Items.Add(item[0]); entry.Click += (s, e) => Navigate(path);
+        }
+        menu.Items.Add(new ToolStripSeparator());
+        menu.Items.Add("Refresh page", null, (s, e) => { if (!busy && !closing && web.CoreWebView2 != null) web.Reload(); });
+        manage.Click += (s, e) => menu.Show(manage, new Point(0, manage.Height)); header.Controls.Add(manage);
+        var bottom = new TableLayoutPanel { Dock = DockStyle.Bottom, Height = 96, Padding = new Padding(16, 8, 16, 8), ColumnCount = 1, RowCount = 2 };
+        bottom.RowStyles.Add(new RowStyle(SizeType.Absolute, 50)); bottom.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         var actions = new FlowLayoutPanel { Dock = DockStyle.Fill, WrapContents = false, Height = 54 };
         record.Text = "Start recording"; Style(record); record.Click += async (s, e) => await StartRecording();
+        record.BackColor = Color.FromArgb(74, 214, 196); record.ForeColor = Color.FromArgb(7, 28, 36); record.FlatAppearance.BorderSize = 0;
+        record.FlatAppearance.MouseOverBackColor = Color.FromArgb(116, 233, 216);
         finish.Text = "Stop & save recording"; Style(finish); finish.Click += async (s, e) => await StopRecording();
-        devices.Text = "Cameras & remote scoring"; Style(devices); devices.Click += (s, e) => Navigate("/games/" + selectedGame + "/studio");
-        var files = MakeButton("Recordings folder"); files.Click += (s, e) => OpenRecordings();
+        devices.Text = "Connect devices"; Style(devices); devices.Click += (s, e) => Navigate("/games/" + selectedGame + "/studio");
+        var files = MakeButton("Saved videos"); files.Click += (s, e) => OpenRecordings();
         actions.Controls.AddRange(new Control[] { record, finish, devices, files });
         status.Text = "Opening your workspace…"; status.Dock = DockStyle.Fill; status.AutoEllipsis = true;
         status.AccessibleName = "Recording status"; status.Padding = new Padding(5, 5, 0, 0);
@@ -76,10 +86,12 @@ internal sealed class Workspace : Form
         UpdateButtons();
     }
     private Button MakeButton(string text) { var b = new Button { Text = text }; Style(b); return b; }
-    private void Style(Button b) { b.UseMnemonic = false; b.AutoSize = true; b.Height = 44; b.MinimumSize = new Size(80, 44); b.Padding = new Padding(8, 0, 8, 0); b.ForeColor = Color.Black; b.BackColor = Color.FromArgb(65, 211, 226); }
+    private void Style(Button b) { b.UseMnemonic = false; b.AutoSize = true; b.Height = 44; b.MinimumSize = new Size(80, 44); b.Padding = new Padding(14, 0, 14, 0); b.Margin = new Padding(0, 0, 10, 0); b.ForeColor = Color.FromArgb(220, 230, 238); b.BackColor = Color.FromArgb(21, 38, 54); b.FlatStyle = FlatStyle.Flat; b.FlatAppearance.BorderColor = Color.FromArgb(52, 73, 91); b.FlatAppearance.MouseOverBackColor = Color.FromArgb(39, 69, 83); b.Cursor = Cursors.Hand; }
     private void Nav(FlowLayoutPanel panel, string label, string path) { var b = MakeButton(label); b.Click += (s, e) => Navigate(path); panel.Controls.Add(b); }
     private void Navigate(string path) { if (!busy && !closing && origin != null && web.CoreWebView2 != null) web.CoreWebView2.Navigate(origin + path); }
     private void UpdateButtons() {
+        gameDay.Enabled = !busy && !closing && (recording ? runningGame : lastGame) != null;
+        record.Visible = !recording; finish.Visible = recording;
         record.Enabled = !busy && !closing && selectedGame != null && !recording && origin != null;
         finish.Enabled = !busy && !closing && recording;
         devices.Enabled = !busy && !closing && selectedGame != null;
@@ -106,11 +118,11 @@ internal sealed class Workspace : Form
                 if (!WorkspacePolicy.SameOrigin(e.Uri, origin)) { e.Cancel = true; status.Text = "Use the website in your browser for external account connections."; }
                 selectedGame = null; UpdateButtons();
             };
-            core.SourceChanged += (s, e) => { selectedGame = WorkspacePolicy.Game(core.Source, origin); UpdateButtons(); };
+            core.SourceChanged += (s, e) => { selectedGame = WorkspacePolicy.Game(core.Source, origin); if (selectedGame != null) lastGame = selectedGame; UpdateButtons(); };
             core.NavigationCompleted += (s, e) => {
                 selectedGame = WorkspacePolicy.Game(core.Source, origin);
                 if (!e.IsSuccess && !recording) status.Text = "The workspace could not load. Check your internet connection and choose Refresh.";
-                else if (!recording && !busy) status.Text = selectedGame == null ? "Sign in and choose a game. Your account, schedule and sponsors are shared with the website." : "Game selected. Connect your camera devices, then choose Start recording. YouTube is off in this preview.";
+                else if (!recording && !busy) status.Text = selectedGame == null ? "Choose a game from your schedule to get started." : "Game ready. Open Game day to score, or connect your devices.";
                 UpdateButtons();
             };
             core.NewWindowRequested += (s, e) => { e.Handled = true; if (WorkspacePolicy.SameOrigin(e.Uri, origin)) Navigate(new Uri(e.Uri).PathAndQuery + new Uri(e.Uri).Fragment); else status.Text = "External account connections are available from the website in your browser."; };
@@ -213,7 +225,7 @@ internal sealed class Workspace : Form
     private void ApplyState(Dictionary<string, object> state) {
         var phase = TextValue(state, "program");
         recording = phase == "recording" || phase == "starting" || phase == "stopping" || (phase == "failed" && recording);
-        status.Text = phase == "recording" ? "Recording is active on this PC. You can score or browse your workspace. YouTube is off in this preview." : TextValue(state, "programMessage") ?? "Recording status is unavailable.";
+        status.Text = phase == "recording" ? "Recording on this PC · YouTube off · Keep Studio open" : TextValue(state, "programMessage") ?? "Recording status is unavailable.";
         UpdateButtons();
     }
     private async Task Poll() {

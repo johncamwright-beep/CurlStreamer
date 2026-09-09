@@ -386,3 +386,105 @@
     font-size: 34px;
   }
 }
+
+/* The desktop shell owns navigation and recording; give scoring the foreground. */
+.scoring-desktop {
+  max-width: 1320px;
+  padding: 24px 32px 40px;
+}
+.scoring-desktop .scoring-navigation {
+  margin-bottom: 12px;
+}
+.scoring-desktop .scoring-navigation > :first-child {
+  display: none;
+}
+.scoring-desktop .scoring-page-heading {
+  margin-bottom: 24px;
+  padding-bottom: 22px;
+  border-bottom: 1px solid #263747;
+}
+.scoring-desktop .scoring-page-heading h1 {
+  font-size: clamp(23px, 2.6vw, 32px);
+  max-width: 680px;
+}
+.scoring-desktop .scoring-columns {
+  grid-template-columns: minmax(0, 1fr) 300px;
+  gap: 28px;
+}
+.scoring-desktop .scoring-card {
+  box-shadow: none;
+  border-color: #263747;
+  background: #101e2c;
+  padding: 20px;
+}
+.scoring-desktop .scoring-main {
+  gap: 16px;
+}
+.scoring-desktop .scoring-team-row {
+  padding: 6px 0;
+}
+.scoring-desktop .scoring-total {
+  font-size: 32px;
+}
+.scoring-desktop .scoring-section-heading {
+  margin-bottom: 10px;
+}
+.studio-device-card h2 {
+  margin: 8px 0;
+  font-size: 19px;
+  font-weight: 650;
+  line-height: 1.4;
+}
+.studio-device-card > p:not(.scoring-eyebrow),
+.studio-output-note > p {
+  color: #adbdcb;
+  font-size: 14px;
+  line-height: 1.7;
+}
+.studio-device-card a {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-top: 18px;
+  font-size: 14px;
+}
+.studio-output-note .scoring-badge {
+  font-size: 11px;
+}
+.studio-settings {
+  border-top: 1px solid #263747;
+}
+.studio-settings > summary {
+  min-height: 52px;
+  padding: 16px 4px;
+  cursor: pointer;
+  color: #c7d5e0;
+  font-size: 14px;
+}
+.studio-settings-content {
+  display: grid;
+  gap: 12px;
+}
+.scoring-desktop :is(button, a, summary):focus-visible {
+  outline: 3px solid #6ee7cf;
+  outline-offset: 4px;
+}
+@media (max-width: 1000px) {
+  .scoring-desktop {
+    padding: 20px;
+  }
+  .scoring-desktop .scoring-columns {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .scoring-desktop .scoring-sidebar {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .studio-settings {
+    grid-column: 1 / -1;
+  }
+}
+@media (max-width: 600px) {
+  .scoring-desktop .scoring-sidebar {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

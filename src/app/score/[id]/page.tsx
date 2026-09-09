@@ -36,6 +36,10 @@ export default function Scorer({
     refreshContext,
   } = useGame(id, undefined, undefined, true);
   const [points, setPoints] = useState(1);
+  const [desktop, setDesktop] = useState(false);
+  useEffect(() => {
+    setDesktop(navigator.userAgent.includes("CurlStreamerStudio/0.3"));
+  }, []);
   const [team, setTeam] = useState<Team>("home");
   const scoringFlight = useRef(false);
   const [scoringBusy, setScoringBusy] = useState(false);
@@ -209,7 +213,12 @@ export default function Scorer({
     });
   }
   return (
-    <main className="scoring-workspace mx-auto max-w-6xl">
+    <main
+      className={
+        "scoring-workspace mx-auto max-w-6xl" +
+        (desktop ? " scoring-desktop" : "")
+      }
+    >
       <div className="scoring-navigation">
         <AppNavigation
           signedIn={accountRole ? true : undefined}
@@ -231,9 +240,11 @@ export default function Scorer({
       </div>
       <header className="scoring-page-heading">
         <div>
-          <p className="scoring-eyebrow">Match control</p>
-          <h1>Scoring</h1>
-          <p className="scoring-match-title">{title}</p>
+          <p className="scoring-eyebrow">
+            {desktop ? "Game day" : "Match control"}
+          </p>
+          <h1>{desktop ? title : "Scoring"}</h1>
+          {!desktop && <p className="scoring-match-title">{title}</p>}
           <p className="text-sm text-slate-300" aria-label="Game schedule">
             {
               gameEntryPresentation(game.config, navigationMetadata)
@@ -249,9 +260,11 @@ export default function Scorer({
           >
             Open program preview
           </Link>
-          <a className="btn-secondary" href="#program-controls">
-            Broadcast controls ↓
-          </a>
+          {!desktop && (
+            <a className="btn-secondary" href="#program-controls">
+              Broadcast controls ↓
+            </a>
+          )}
         </div>
       </header>
       <div className="scoring-columns">
@@ -512,8 +525,45 @@ export default function Scorer({
           className="scoring-sidebar"
           aria-label="Broadcast and program controls"
         >
-          {canEndGame && <BroadcastControl gameId={id} enabled />}
-          <ScoringProgramControls game={game} act={act} />
+          {desktop ? (
+            <>
+              <section className="scoring-card studio-device-card">
+                <p className="scoring-eyebrow">Devices</p>
+                <h2>Bring your cameras and scorer</h2>
+                <p>
+                  Join cameras from their phones, or let someone score from a
+                  tablet.
+                </p>
+                <Link
+                  className="btn-secondary"
+                  href={"/games/" + id + "/studio"}
+                >
+                  Camera &amp; scorer QR codes
+                </Link>
+              </section>
+              <section className="scoring-card studio-output-note">
+                <div className="scoring-section-heading">
+                  <h2>YouTube</h2>
+                  <span className="scoring-badge">Coming next</span>
+                </div>
+                <p>
+                  Local recording is available from the Studio bar below.
+                  YouTube streaming is not enabled in this desktop preview.
+                </p>
+              </section>
+              <details className="studio-settings">
+                <summary>Picture, audio &amp; sponsors</summary>
+                <div className="studio-settings-content">
+                  <ScoringProgramControls game={game} act={act} />
+                </div>
+              </details>
+            </>
+          ) : (
+            <>
+              {canEndGame && <BroadcastControl gameId={id} enabled />}
+              <ScoringProgramControls game={game} act={act} />
+            </>
+          )}
         </aside>
       </div>
     </main>

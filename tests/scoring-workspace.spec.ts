@@ -1,7 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 import { gameFixture, testGameId } from "../src/test/game-fixture";
 
-async function setup(page: Page) {
+async function setup(page: Page, desktop = false) {
   const game = gameFixture();
   game.cameraHealth!["camera-home"]!.updatedAt = Date.now();
   game.config.homeName = "Northern Ontario Curling Club";
@@ -23,7 +23,9 @@ async function setup(page: Page) {
   );
   await page.goto(`/score/${testGameId}`);
   await expect(
-    page.getByRole("heading", { name: "Scoring", exact: true }),
+    desktop
+      ? page.getByRole("heading", { level: 1, name: /Northern Ontario/ })
+      : page.getByRole("heading", { name: "Scoring", exact: true }),
   ).toBeVisible();
   return { game, actions };
 }
@@ -183,4 +185,40 @@ test("an active carousel can be stopped after its sponsors are removed", async (
   await page.reload();
   await page.getByRole("button", { name: "Stop carousel" }).click();
   expect(actions).toEqual([{ type: "sponsor-mode", active: false }]);
+});
+
+test("desktop game day keeps scoring primary and settings available on demand", async ({
+  page,
+}, info) => {
+  await page.addInitScript(() =>
+    Object.defineProperty(navigator, "userAgent", {
+      value: "CurlStreamerStudio/0.3",
+    }),
+  );
+  const { actions } = await setup(page, true);
+  await expect(
+    page.getByRole("button", { name: "Save 1 point", exact: true }),
+  ).toBeEnabled();
+  await expect(
+    page.getByRole("link", { name: "Camera & scorer QR codes" }),
+  ).toHaveAttribute("href", `/games/${testGameId}/studio`);
+  await expect(
+    page.getByRole("region", { name: "YouTube broadcast" }),
+  ).toHaveCount(0);
+  await expect(
+    page.getByRole("button", { name: "Both cameras", exact: true }),
+  ).toBeHidden();
+  await page.getByText("Picture, audio & sponsors", { exact: true }).click();
+  await expect(
+    page.getByRole("button", { name: "Both cameras", exact: true }),
+  ).toBeVisible();
+  expect(actions).toEqual([]);
+  await page.getByText("Picture, audio & sponsors", { exact: true }).click();
+  await page.screenshot({
+    path: info.outputPath("desktop-game-day.png"),
+    fullPage: true,
+  });
+  await page.getByRole("button", { name: "Save 1 point", exact: true }).click();
+  await expect.poll(() => actions.length).toBe(1);
+  expect(actions[0]).toMatchObject({ type: "score", points: 1 });
 });

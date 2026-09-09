@@ -21,7 +21,7 @@ internal sealed class Workspace : Form
     private readonly Label status = new Label();
     private readonly Button record = new Button(), finish = new Button(), devices = new Button();
     private readonly JavaScriptSerializer json = new JavaScriptSerializer { MaxJsonLength = 65536 };
-    private readonly string nodeHash, controllerHash, configurationHash, root, launchGame;
+    private readonly string nodeHash, controllerHash, configurationHash, root, launchGame, profileDirectory;
     private readonly System.Windows.Forms.Timer poll = new System.Windows.Forms.Timer { Interval = 2000 };
     private string origin, selectedGame, runningGame, localAddress, handoffNonce;
     private Process child;
@@ -31,9 +31,10 @@ internal sealed class Workspace : Form
     private TaskCompletionSource<Dictionary<string, object>> handoff;
     private bool busy, polling, closing, mayClose, cleanupConfirmed, recording, controllerReady, startupFailed;
 
-    internal Workspace(string initialGame, string node, string controller, string configuration)
+    internal Workspace(string initialGame, string node, string controller, string configuration, string testProfile = null)
     {
         launchGame = initialGame; nodeHash = node; controllerHash = controller; configurationHash = configuration;
+        profileDirectory = testProfile;
         root = AppDomain.CurrentDomain.BaseDirectory;
         Text = "CurlStreamer Studio — Workspace Preview";
         ClientSize = new Size(1180, 820); MinimumSize = new Size(940, 680);
@@ -93,7 +94,7 @@ internal sealed class Workspace : Form
             var config = json.Deserialize<Dictionary<string, object>>(File.ReadAllText(Path.Combine(root, "studio.json")));
             origin = (string)config["website"];
             if (!WorkspacePolicy.SameOrigin(origin, origin) || new Uri(origin).AbsoluteUri != origin + "/") throw new InvalidDataException();
-            var profile = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "CurlStreamer", "Studio", "WorkspaceProfile");
+            var profile = profileDirectory ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "CurlStreamer", "Studio", "WorkspaceProfile");
             var environment = await CoreWebView2Environment.CreateAsync(null, profile);
             await web.EnsureCoreWebView2Async(environment);
             var core = web.CoreWebView2;

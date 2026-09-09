@@ -21,6 +21,16 @@ Streaming remains disabled in this private preview.
 The earlier 0.2 launcher and its manual link controls are retained for legacy
 build tests. They are not the current desktop user experience.
 
+The local WebView2 fixture test exercises the actual asynchronous native grant
+handoff, wrong-game rejection and HTTP account denial using intercepted fixture
+resources and a separate browser profile. It performs no real sign-in, camera
+registration, recording or broadcast. The installed-controller/native smoke
+check and first-window visual inspection passed separately. Real-account
+recording acceptance remains pending the user's sign-in.
+
+Implementation follows Microsoft's [WinForms integration](https://learn.microsoft.com/en-us/microsoft-edge/webview2/get-started/winforms)
+and [WebView2 security guidance](https://learn.microsoft.com/en-us/microsoft-edge/webview2/concepts/security).
+
 ## Implemented
 
 - Integrated workspace, native recording handoff, scoped remote-scoring/camera

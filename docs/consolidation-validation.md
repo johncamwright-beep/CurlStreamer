@@ -20,9 +20,10 @@ September 9, 2026. The direct-network pilot was merged with GitHub main at
   bounded scan, not a guarantee that arbitrary secrets can always be detected.
 - Staged diff whitespace check: passed. Intentional patch context/generated
   whitespace is declared in `.gitattributes`.
-- Full formatting remains baseline debt: the working checkout reports 263 files.
-  Touched consolidation files are formatted; the broad formatter also inspects
-  older files and local handoff notes. This is not a green full-format claim.
+- Full formatting: passed. The initial 263-file failure was Windows CRLF checkout
+  normalization, not source-style changes. Converting the tracked working copy to
+  LF produced no source diff and made the full check pass. `.gitattributes` now
+  enforces LF consistently on Windows and Linux.
 
 Browser/build checks ran in an isolated source copy without `.env.local`; provider
 fixtures used loopback addresses. No shared database mutation, real broadcast,
@@ -32,8 +33,8 @@ Native and database skips need their separate dependency-enabled evidence.
 ## Automated checks
 
 The new GitHub workflow runs npm installation, typecheck, units, renderer build,
-mock production build and browser integration. Formatting debt is visible but
-non-blocking until cleaned up separately. The workflow uses no production secrets
+mock production build and browser integration. Formatting is also required.
+The workflow uses no production secrets
 and does not deploy. Its first hosted result must be inspected independently of
 the local Windows results above.
 

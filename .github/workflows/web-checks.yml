@@ -27,9 +27,7 @@ jobs:
       - run: npm ci
       - run: npm run typecheck
       - run: npm test
-      - name: Report existing formatting debt
-        continue-on-error: true
-        run: npm run format:check
+      - run: npm run format:check
       - run: npm run build:m4-renderer
       - name: Build mock website
         run: npm run build

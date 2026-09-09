@@ -78,8 +78,11 @@ Before publishing binaries: complete bundled
 licenses/source notices, verify prerequisites on a clean Windows machine, review
 the native window at normal/high DPI, test upgrades and crash recovery, and
 integrate ordinary game selection/pairing with the deployed website. Production
-streaming remains disabled in this private assembly. No installer is published. The
-Windows desktop was locked during review, so native visual/DPI review remains pending.
+streaming remains disabled in this private assembly. No installer is published.
+
+After Windows was unlocked, the native launcher passed visual review at the current
+display scale, empty-link validation, opening browser controls and normal Finish/close
+with both launcher and controller exiting. Separate display-scale testing remains.
 
 Inno Setup's [AppMutex](https://jrsoftware.org/ishelp/topic_setup_appmutex.htm)
 provides the running-app install/uninstall guard. The launch window uses Windows

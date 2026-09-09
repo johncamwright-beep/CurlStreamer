@@ -59,7 +59,7 @@ internal sealed class Studio : Form
         controls.Click += (sender, args) => OpenControls();
         layout.Controls.Add(controls);
         stop.Text = "Finish and close Studio"; stop.Height = 48; stop.Dock = DockStyle.Top; stop.Enabled = false;
-        stop.Click += (sender, args) => RequestStop();
+        stop.Click += (sender, args) => { exitAfterStop = true; RequestStop(); };
         layout.Controls.Add(stop);
         var recordings = new Button { Text = "Open recordings folder", Height = 48, Dock = DockStyle.Top };
         recordings.Click += (sender, args) => {

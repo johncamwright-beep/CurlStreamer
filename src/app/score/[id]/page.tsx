@@ -299,6 +299,21 @@ export default function Scorer({
           >
             Show broadcast
           </Link>
+          {desktop && canEndGame && (
+            <div className="scoring-header-finish">
+              <EndGameControl
+                gameId={id}
+                homeName={game.config.homeName}
+                awayName={game.config.awayName}
+                enabled
+                disabled={scoringLocked}
+                onCompleted={(value, cleanup) => {
+                  setFinished(value);
+                  setFinishedCleanup(cleanup);
+                }}
+              />
+            </div>
+          )}
           {!desktop && (
             <a className="btn-secondary" href="#program-controls">
               Broadcast controls ↓
@@ -560,7 +575,7 @@ export default function Scorer({
             </>
           )}
           {desktop && canEndGame && <StudioYouTube id={id} />}
-          {canEndGame && (
+          {!desktop && canEndGame && (
             <div className="scoring-card scoring-finish">
               {!desktop && (
                 <>

@@ -637,9 +637,6 @@
   display: none;
 }
 
-.scoring-desktop .scoring-control-tiles {
-  grid-template-columns: 1fr;
-}
 .scoring-device-dock {
   margin-top: 12px;
 }
@@ -720,4 +717,47 @@
 
 .scoring-desktop .scoring-sidebar {
   gap: 10px;
+}
+
+/* Leave more vertical room for the phone connections. */
+.scoring-desktop .scoring-main > .scoring-card {
+  padding: 8px 14px;
+}
+.scoring-desktop .scoring-team-row {
+  padding: 2px 0;
+}
+.scoring-desktop .scoring-field-label {
+  margin: 5px 0 3px;
+}
+.scoring-desktop .scoring-entry .mt-3 {
+  margin-top: 8px;
+}
+.scoring-desktop .scoring-entry :is(button, .btn, .btn-secondary) {
+  min-height: 44px;
+  padding-top: 6px;
+  padding-bottom: 6px;
+}
+.scoring-desktop .scoring-control-tiles .scoring-eyebrow {
+  display: none;
+}
+.scoring-desktop .scoring-control-tiles .scoring-segmented {
+  flex-wrap: wrap;
+}
+.scoring-desktop .scoring-control-tiles .scoring-segmented button {
+  min-width: 0;
+  padding: 6px;
+}
+.scoring-header-finish {
+  position: relative;
+}
+.scoring-header-finish section {
+  position: absolute;
+  right: 0;
+  top: 100%;
+  z-index: 40;
+  width: min(420px, calc(100vw - 40px));
+  max-height: 70vh;
+  overflow-y: auto;
+  background: #101e2c;
+  box-shadow: 0 12px 40px #0008;
 }

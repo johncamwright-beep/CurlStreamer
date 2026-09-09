@@ -21,7 +21,7 @@ The [rehearsal record](m4-controlled-rehearsal.md) distinguishes successful evid
 ## Remaining product work
 
 1. Source consolidation is complete in draft PR #65 with hosted checks.
-2. M5 launch window and relocatable package are implemented and locally checked; installer compilation, distribution notices and clean-machine checks remain.
+2. M5 launch window and relocatable package are implemented and locally checked; private installer build/lifecycle checks are implemented; distribution notices, visual review and clean-machine checks remain.
 3. Integrate the ordinary game workflow without developer commands.
 4. Verify Vercel configuration and stable-origin sign-in/pairing.
 5. Package a hobby beta with clear errors, recovery, version information and updates.

@@ -21,7 +21,7 @@ The website remains on Vercel.
   caches in the adjacent `Cache` directory, outside the installation.
 - Exit waits for recording finalization and reports uncertain cleanup instead of
   silently succeeding. Stream stop remains independent of recording stop.
-- Inno Setup recipe for a per-user Windows installer and Start menu shortcut.
+- Compiled Inno Setup private preview for a per-user Windows installer and Start menu shortcut.
   Install/uninstall checks the running-app mutex and retains recordings.
 
 ## Developer build
@@ -68,11 +68,18 @@ and passed decoded-frame checks including local ICE visibility. Focused unit
 checks cover configuration, origin boundaries, corruption and finalization.
 These are local automated checks, not a clean Windows installation or GUI review.
 
-Before publishing binaries: compile/exercise the installer, complete bundled
+The private installer now compiles with Inno Setup 6.7.3. Its running-app guard,
+install, same-version reinstall, installed controller/native check and uninstall
+are exercised locally; a synthetic recording-data marker survives each step.
+The approximately 151 MB installer records component-manifest and installer hashes.
+The test suppresses shortcuts and does not claim Start menu or visual validation.
+
+Before publishing binaries: complete bundled
 licenses/source notices, verify prerequisites on a clean Windows machine, review
 the native window at normal/high DPI, test upgrades and crash recovery, and
 integrate ordinary game selection/pairing with the deployed website. Production
-streaming remains disabled in this private assembly. No installer is published.
+streaming remains disabled in this private assembly. No installer is published. The
+Windows desktop was locked during review, so native visual/DPI review remains pending.
 
 Inno Setup's [AppMutex](https://jrsoftware.org/ishelp/topic_setup_appmutex.htm)
 provides the running-app install/uninstall guard. The launch window uses Windows
@@ -83,3 +90,27 @@ The original development operator build remains available through
 `scripts/build-m4-operator-local.ps1 -SetupRoot ... -Readiness` for existing pilot
 workflows. Desktop packaging does not deploy Vercel, apply migrations, or create
 a YouTube broadcast.
+
+## Installer build and local lifecycle check
+
+```powershell
+./scripts/build-m5-installer.ps1 -StudioSource C:/Studio-staging -InstallerOutput C:/Studio-installer -CompilerPath C:/build-tools/Inno/ISCC.exe
+./scripts/check-m5-installer.ps1 -Installer C:/Studio-installer/CurlStreamer-Studio-0.2.0-preview.1-Setup.exe -TestRoot C:/Studio-install-check
+```
+
+The builder checks every listed hash, rejects unlisted files and links, and accepts
+only public configuration with streaming disabled. Installer output must be
+outside the assembly. Setup requires Windows 10 build 17763 or newer and .NET
+Framework 4.8 or newer; it does not change Windows prerequisites automatically.
+
+The lifecycle check refuses to run if Studio is already installed or open. It
+installs into a new test directory, runs the offline installed-controller check,
+reinstalls, repeats the check and uninstalls. It checks that registration/executable
+are removed while a uniquely named synthetic marker in the recording directory
+survives. It removes only its own marker. This tests the current PC, not a clean
+Windows machine or a version-changing upgrade.
+
+Compiler acquisition: [official Inno Setup downloads](https://jrsoftware.org/isdl.php),
+6.7.3, with a valid Pyrsys B.V. Authenticode signature checked locally. The .NET
+check uses the documented [IsDotNetInstalled](https://jrsoftware.org/ishelp/topic_isxfunc_isdotnetinstalled.htm)
+function. Downloaded build tools and compiled installers stay outside Git.

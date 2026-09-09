@@ -8,6 +8,7 @@ import {
   issueStudioTicket,
   broadcastStudioSignal,
   StudioRejected,
+  StudioUnavailable,
 } from "@/lib/providers/m2-studio-session";
 
 export const dynamic = "force-dynamic";
@@ -87,6 +88,14 @@ export async function POST(
       return response(await issueStudioTicket(game.data, ticket, body.side));
     return response(ticket);
   } catch (cause) {
+    if (!(cause instanceof StudioRejected)) {
+      // Never log request bodies, credentials, SDP/ICE, or raw provider errors.
+      console.error("Studio camera service unavailable", {
+        stage: cause instanceof StudioUnavailable ? cause.stage : "unexpected",
+        databaseCode:
+          cause instanceof StudioUnavailable ? cause.databaseCode : undefined,
+      });
+    }
     return cause instanceof StudioRejected
       ? response(
           {

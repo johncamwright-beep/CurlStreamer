@@ -9,7 +9,15 @@ import {
 } from "@/lib/m2-studio-protocol";
 import type { z } from "zod";
 
-export class StudioUnavailable extends Error {}
+export class StudioUnavailable extends Error {
+  constructor(
+    readonly stage:
+      "configuration" | "database" | "ticket" | "broadcast" = "configuration",
+    readonly databaseCode?: string,
+  ) {
+    super("Studio service unavailable");
+  }
+}
 export class StudioRejected extends Error {}
 export function requireStudioConfiguration() {
   // Reuse the explicit disposable-pilot gate; never enable an implicit mock.
@@ -18,7 +26,7 @@ export function requireStudioConfiguration() {
     process.env.NODE_ENV !== "production" ||
     (process.env.SUPABASE_JWT_SECRET?.length ?? 0) < 32
   )
-    throw new StudioUnavailable();
+    throw new StudioUnavailable("configuration");
 }
 export async function studioAction(
   gameId: string,
@@ -46,11 +54,14 @@ export async function studioAction(
   if (error) {
     if (["55000", "42501", "54000", "22023"].includes(error.code))
       throw new StudioRejected();
-    throw new StudioUnavailable();
+    throw new StudioUnavailable(
+      "database",
+      /^[A-Z0-9]{5,9}$/.test(error.code) ? error.code : undefined,
+    );
   }
   const parsed = studioTicketSchema.safeParse(data);
   if (!parsed.success || parsed.data.cameraRole !== input.cameraRole)
-    throw new StudioUnavailable();
+    throw new StudioUnavailable("ticket");
   return { ...parsed.data, serverTime: Date.now() };
 }
 export function studioTopic(ticket: StudioTicket, side: StudioSide) {
@@ -117,7 +128,7 @@ export async function broadcastStudioSignal(
       },
       { timeout: 5_000 },
     );
-    if (!outcome.success) throw new StudioUnavailable();
+    if (!outcome.success) throw new StudioUnavailable("broadcast");
   } finally {
     await db.removeChannel(channel);
   }

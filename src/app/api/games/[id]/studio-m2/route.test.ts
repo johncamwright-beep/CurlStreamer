@@ -16,6 +16,7 @@ vi.mock("@/lib/game-authorization", () => ({
 vi.mock("@/lib/providers/m2-studio-session", () => ({
   ...mocks,
   StudioRejected: class extends Error {},
+  StudioUnavailable: class extends Error {},
 }));
 import { POST } from "./route";
 import { StudioRejected } from "@/lib/providers/m2-studio-session";
@@ -127,6 +128,7 @@ describe("M2 studio route", () => {
     expect(mocks.studioAction).not.toHaveBeenCalled();
   });
   it("fences stale generations and redacts provider errors", async () => {
+    const log = vi.spyOn(console, "error").mockImplementation(() => {});
     mocks.studioAction.mockRejectedValueOnce(new StudioRejected());
     expect(
       (await call({ action: "ticket", side: "receiver", sessionId })).status,
@@ -139,6 +141,14 @@ describe("M2 studio route", () => {
     });
     expect(response.status).toBe(503);
     expect(await response.text()).not.toContain("private-provider-secret");
+    expect(log).toHaveBeenCalledWith("Studio camera service unavailable", {
+      stage: "unexpected",
+      databaseCode: undefined,
+    });
+    expect(JSON.stringify(log.mock.calls)).not.toContain(
+      "private-provider-secret",
+    );
+    log.mockRestore();
   });
   it("checks authority again after an ephemeral broadcast", async () => {
     const response = await call({

@@ -4,6 +4,7 @@ import {
   issueStudioTicket,
   requireStudioConfiguration,
   studioTopic,
+  studioRejectionReason,
 } from "./m2-studio-session";
 describe("M2 private receive credential", () => {
   afterEach(() => vi.unstubAllEnvs());
@@ -54,4 +55,12 @@ describe("M2 private receive credential", () => {
       }),
     ).rejects.toThrow();
   });
+});
+
+it("preserves only recognized rejection reasons, never raw database details", () => {
+  expect(studioRejectionReason("studio_stale")).toBe("studio_stale");
+  expect(studioRejectionReason("peer_stale")).toBe("peer_stale");
+  expect(studioRejectionReason("camera_released")).toBe("camera_released");
+  expect(studioRejectionReason("signal_limit")).toBe("signal_limit");
+  expect(studioRejectionReason("private database detail")).toBe("unknown");
 });

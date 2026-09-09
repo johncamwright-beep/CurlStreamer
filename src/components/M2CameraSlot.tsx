@@ -127,7 +127,15 @@ export function M2CameraSlot({
       if (requestEpoch === epoch.current)
         failure.current =
           side === "camera" && result.status === 409
-            ? "The PC connection or camera access is no longer ready. Start recording for this game in Studio, then try again. If this camera was released, scan a fresh invitation."
+            ? value?.code === "studio_stale"
+              ? "The recording PC connection expired or was replaced. Keep Studio recording this game, then tap Connect phone."
+              : value?.code === "peer_stale"
+                ? "This camera connection expired or was replaced. Close any other camera tabs on this phone, then tap Connect phone."
+                : value?.code === "camera_released"
+                  ? "This camera assignment was released or replaced. Scan a fresh camera QR code from the scoring screen."
+                  : value?.code === "signal_limit"
+                    ? "Too many connection attempts. Wait one minute, then tap Connect phone once."
+                    : "The PC connection or camera access is no longer ready. Start recording for this game in Studio, then try again. If this camera was released, scan a fresh invitation."
             : side === "camera" &&
                 (result.status === 401 || result.status === 403)
               ? "This camera no longer has access. Ask the organizer for a new camera QR code."

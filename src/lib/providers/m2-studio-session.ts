@@ -18,7 +18,28 @@ export class StudioUnavailable extends Error {
     super("Studio service unavailable");
   }
 }
-export class StudioRejected extends Error {}
+export class StudioRejected extends Error {
+  constructor(
+    readonly reason:
+      | "studio_stale"
+      | "peer_stale"
+      | "camera_released"
+      | "signal_limit"
+      | "unknown" = "unknown",
+  ) {
+    super("Studio authority rejected");
+  }
+}
+export function studioRejectionReason(
+  message: string,
+): StudioRejected["reason"] {
+  return message === "studio_stale" ||
+    message === "peer_stale" ||
+    message === "camera_released" ||
+    message === "signal_limit"
+    ? message
+    : "unknown";
+}
 export function requireStudioConfiguration() {
   // Reuse the explicit disposable-pilot gate; never enable an implicit mock.
   if (
@@ -53,7 +74,7 @@ export async function studioAction(
   );
   if (error) {
     if (["55000", "42501", "54000", "22023"].includes(error.code))
-      throw new StudioRejected();
+      throw new StudioRejected(studioRejectionReason(error.message));
     throw new StudioUnavailable(
       "database",
       /^[A-Z0-9]{5,9}$/.test(error.code) ? error.code : undefined,

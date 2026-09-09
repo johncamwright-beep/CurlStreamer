@@ -101,6 +101,7 @@ export async function POST(
           {
             error:
               "Studio or camera authority expired. Reconnect from the current session.",
+            code: cause.reason ?? "unknown",
           },
           409,
         )

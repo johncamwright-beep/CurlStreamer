@@ -492,3 +492,147 @@
 .scoring-sidebar .studio-device-grid {
   grid-template-columns: minmax(0, 1fr);
 }
+
+/* Keep the game, scoring and device controls in one compact desktop workspace. */
+.scoring-desktop {
+  max-width: 1500px;
+  padding: 12px 20px 20px;
+}
+.scoring-desktop .scoring-page-heading {
+  gap: 14px;
+  margin-bottom: 12px;
+}
+.scoring-desktop .scoring-navigation {
+  margin: 0;
+  flex: 0 0 auto;
+}
+.scoring-desktop .scoring-title-block {
+  flex: 1;
+  min-width: 0;
+}
+.scoring-desktop .scoring-page-heading h1 {
+  font-size: 21px;
+  margin: 0 0 3px;
+}
+.scoring-desktop .scoring-title-block > .scoring-eyebrow {
+  display: none;
+}
+.scoring-desktop .scoring-columns {
+  grid-template-columns: minmax(0, 1.2fr) minmax(360px, 1fr);
+  gap: 16px;
+}
+.scoring-desktop .scoring-main {
+  gap: 10px;
+}
+.scoring-desktop .scoring-card {
+  padding: 12px 14px;
+  border-radius: 12px;
+}
+.scoring-desktop .scoring-summary {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0 16px;
+}
+.scoring-desktop .scoring-summary .scoring-section-heading,
+.scoring-desktop .scoring-summary .scoring-history-details {
+  grid-column: 1 / -1;
+}
+.scoring-desktop .scoring-team-row + .scoring-team-row {
+  border-top: 0;
+}
+.scoring-desktop .scoring-team-name {
+  font-size: 15px;
+}
+.scoring-desktop .scoring-total {
+  font-size: 26px;
+  min-width: 25px;
+}
+.scoring-desktop .scoring-history-details {
+  margin-top: 4px;
+}
+.scoring-desktop .scoring-history-details summary {
+  padding-top: 10px;
+  min-height: 44px;
+}
+.scoring-desktop .scoring-field-label {
+  margin: 8px 0 5px;
+}
+.scoring-desktop .scoring-team-choice {
+  min-height: 44px;
+  padding: 8px;
+}
+.scoring-desktop .scoring-save-preview {
+  margin-top: 8px;
+}
+.scoring-desktop .scoring-section-heading {
+  margin-bottom: 6px;
+}
+.scoring-desktop .scoring-control-tiles {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  align-items: start;
+}
+.scoring-desktop .scoring-control-tiles .scoring-wide {
+  margin-top: 8px;
+}
+.scoring-desktop .scoring-sidebar .studio-device-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.scoring-desktop .studio-device {
+  padding: 12px;
+}
+.scoring-desktop .studio-device-action {
+  margin-top: 8px;
+  padding: 8px;
+}
+.scoring-desktop .studio-device header {
+  gap: 8px;
+  margin-bottom: 6px;
+}
+.scoring-desktop .studio-device-number {
+  width: 34px;
+  height: 34px;
+}
+.scoring-desktop .studio-device h2 {
+  font-size: 15px;
+}
+.scoring-desktop .scoring-finish {
+  padding: 10px 14px;
+}
+@media (max-width: 850px) {
+  .scoring-desktop .scoring-columns {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .scoring-desktop .scoring-sidebar {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+@media (max-width: 520px) {
+  .scoring-desktop .scoring-page-heading {
+    flex-wrap: wrap;
+  }
+  .scoring-desktop .scoring-page-actions {
+    width: 100%;
+  }
+  .scoring-desktop .scoring-control-tiles,
+  .scoring-desktop .scoring-sidebar .studio-device-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+.scoring-workspace:not(.scoring-desktop) .scoring-page-heading {
+  flex-wrap: wrap;
+}
+.scoring-workspace:not(.scoring-desktop) .scoring-navigation {
+  width: 100%;
+}
+.scoring-desktop .scoring-navigation > :last-child {
+  display: block;
+}
+.scoring-desktop .scoring-page-heading {
+  padding-bottom: 8px;
+}
+.scoring-desktop .scoring-save-preview,
+.scoring-desktop .scoring-entry > p.mt-3 {
+  display: none;
+}

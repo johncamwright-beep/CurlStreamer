@@ -16,7 +16,7 @@ export interface ProgramCanvasProps {
 
 /** Direct program output always contains complete camera and sponsor frames. */
 export function ProgramCanvas(props: ProgramCanvasProps) {
-  return <ProgramComposition {...props} containMedia />;
+  return <ProgramComposition {...props} containMedia showStatus={false} />;
 }
 
 /** Shared composition; the preserved LiveKit wrapper retains its legacy framing. */
@@ -26,7 +26,8 @@ export function ProgramComposition({
   audioStatus = "Video only",
   statusLabel = "Local program",
   containMedia = false,
-}: ProgramCanvasProps & { containMedia?: boolean }) {
+  showStatus = true,
+}: ProgramCanvasProps & { containMedia?: boolean; showStatus?: boolean }) {
   const camera = (role: ProgramCameraRole, label: string) => (
     <div
       data-testid={`camera-panel-${role}`}
@@ -109,19 +110,21 @@ export function ProgramComposition({
               mode="sidebar"
             />
           )}
-          <div
-            className="mt-auto pt-[.6cqw] text-[.9cqw] leading-tight"
-            aria-label="Program status"
-          >
-            <span
-              className={
-                statusLabel === "LIVE" ? "text-red-300" : "text-slate-300"
-              }
+          {showStatus && (
+            <div
+              className="mt-auto pt-[.6cqw] text-[.9cqw] leading-tight"
+              aria-label="Program status"
             >
-              ● {statusLabel}
-            </span>
-            <p>{audioStatus}</p>
-          </div>
+              <span
+                className={
+                  statusLabel === "LIVE" ? "text-red-300" : "text-slate-300"
+                }
+              >
+                ● {statusLabel}
+              </span>
+              <p>{audioStatus}</p>
+            </div>
+          )}
         </aside>
       </div>
     </div>

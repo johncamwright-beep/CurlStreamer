@@ -38,3 +38,15 @@ physical camera reception require checking in the installed app.
 The earlier Supabase retry storm was addressed by migration 0032: application
 conflicts use PT409 instead of PostgREST's retried SQLSTATE 40001. Authorization,
 revision checks, row locks and existing game data were preserved.
+
+## Compact workspace follow-up
+
+The user confirmed both physical cameras connect and the Preview 6 picture looks
+good. Preview 7 removes diagnostic text from the native program composition and
+the game-details overlay from the preview. The native camera-action bar is removed;
+a short status notice remains only while preparing or when the session is not ready.
+The scoring header places the hamburger beside the game title. Desktop scoring has
+a compact score summary, static camera/remote-scorer cards, visible camera-layout
+and sponsor controls below score entry, then End Game. The primary desktop layout
+fits a 1280x850 fixture with sponsor playback active; QR codes and final-score review
+can expand as needed. Existing non-desktop program controls remain available.

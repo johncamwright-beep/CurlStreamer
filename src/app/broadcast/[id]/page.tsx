@@ -38,7 +38,6 @@ export default function Broadcast({
     refreshContext,
   } = useGame(id, "broadcast", undefined, true);
   const [scale, setScale] = useState<number>();
-  const [detailsOpen, setDetailsOpen] = useState(false);
   const [operator, setOperator] = useState(false);
   useEffect(() => setOperator(hasScoringAccess(localStorage, id)), [id]);
   useEffect(() => {
@@ -91,32 +90,6 @@ export default function Broadcast({
             className="broadcast-app-navigation"
             gameContext={{ id, ...presentation, capabilities }}
           />
-          <aside
-            className="broadcast-entry-context"
-            aria-label="Preview game context"
-          >
-            <button
-              aria-expanded={detailsOpen}
-              onClick={() => setDetailsOpen(!detailsOpen)}
-            >
-              {detailsOpen ? "Hide game details" : "Show game details"}
-            </button>
-            {detailsOpen && (
-              <>
-                <strong>{presentation.title}</strong>
-                <p aria-label="Game schedule">{presentation.scheduledLabel}</p>
-                <p>
-                  Program preview · this picture does not confirm YouTube
-                  delivery.
-                </p>
-                {presentation.scheduledLabel === "Schedule unavailable" && (
-                  <button onClick={() => void refreshContext()}>
-                    Refresh game details
-                  </button>
-                )}
-              </>
-            )}
-          </aside>
         </>
       )}
       <div

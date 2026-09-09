@@ -191,6 +191,8 @@ test("an active carousel can be stopped after its sponsors are removed", async (
 test("desktop game day keeps scoring primary and settings available on demand", async ({
   page,
 }, info) => {
+  if (info.project.name !== "mobile")
+    await page.setViewportSize({ width: 1280, height: 850 });
   await page.addInitScript(() =>
     Object.defineProperty(navigator, "userAgent", {
       value: "CurlStreamerStudio/0.3",
@@ -200,28 +202,49 @@ test("desktop game day keeps scoring primary and settings available on demand", 
   await expect(
     page.getByRole("button", { name: "Save 1 point", exact: true }),
   ).toBeEnabled();
-  await page.getByText("Connect phones", { exact: true }).click();
+  await expect(
+    page.getByRole("button", { name: "Open navigation menu" }),
+  ).toBeVisible();
+  await expect(page.getByText("Connect phones", { exact: true })).toHaveCount(
+    0,
+  );
   await expect(
     page.getByRole("region", { name: "Camera 1", exact: true }),
   ).toBeVisible();
-  await expect(page.getByText(/First, use Start recording/)).toBeVisible();
+  await expect(page.getByText(/First, use Start recording/)).toHaveCount(0);
   await expect(
     page.getByRole("region", { name: "YouTube broadcast" }),
   ).toHaveCount(0);
   await expect(
     page.getByRole("button", { name: "Both cameras", exact: true }),
-  ).toBeHidden();
-  await page.getByText("Picture, audio & sponsors", { exact: true }).click();
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Stop sponsors", exact: true }),
+  ).toBeVisible();
   await expect(
     page.getByRole("button", { name: "Both cameras", exact: true }),
   ).toBeVisible();
   expect(actions).toEqual([]);
-  await page.getByText("Picture, audio & sponsors", { exact: true }).click();
+  await expect(
+    page.getByRole("button", { name: "Stop sponsors", exact: true }),
+  ).toBeVisible();
   await page.screenshot({
     path: info.outputPath("desktop-game-day.png"),
     fullPage: true,
   });
+  if (info.project.name !== "mobile") {
+    const end = await page
+      .getByRole("button", { name: "End Game", exact: true })
+      .boundingBox();
+    expect(end!.y + end!.height).toBeLessThanOrEqual(
+      page.viewportSize()!.height,
+    );
+  }
   await page.getByRole("button", { name: "Save 1 point", exact: true }).click();
   await expect.poll(() => actions.length).toBe(1);
   expect(actions[0]).toMatchObject({ type: "score", points: 1 });
+  await page
+    .getByRole("button", { name: "Stop sponsors", exact: true })
+    .click();
+  expect(actions[1]).toEqual({ type: "sponsor-mode", active: false });
 });

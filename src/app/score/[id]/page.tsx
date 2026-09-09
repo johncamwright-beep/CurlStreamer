@@ -248,27 +248,32 @@ export default function Scorer({
         (desktop ? " scoring-desktop" : "")
       }
     >
-      <div className="scoring-navigation">
-        <AppNavigation
-          signedIn={accountRole ? true : undefined}
-          gameContext={{
-            id,
-            title: gameEntryPresentation(game.config, navigationMetadata).title,
-            scheduledLabel: gameEntryPresentation(
-              game.config,
-              navigationMetadata,
-            ).scheduledLabel,
-            capabilities: gameCapabilities(
-              accountRole ||
-                (hasOrganizerAccess(localStorage, id) ? "organizer" : "scorer"),
-              game.config.awayName === "Opponent TBD",
-            ),
-          }}
-        />
-        <GameSetupNavigation id={id} accountOperator={accountOperator} />
-      </div>
       <header className="scoring-page-heading">
-        <div>
+        <div className="scoring-navigation">
+          <AppNavigation
+            signedIn={accountRole ? true : undefined}
+            gameContext={{
+              id,
+              title: gameEntryPresentation(game.config, navigationMetadata)
+                .title,
+              scheduledLabel: gameEntryPresentation(
+                game.config,
+                navigationMetadata,
+              ).scheduledLabel,
+              capabilities: gameCapabilities(
+                accountRole ||
+                  (hasOrganizerAccess(localStorage, id)
+                    ? "organizer"
+                    : "scorer"),
+                game.config.awayName === "Opponent TBD",
+              ),
+            }}
+          />
+          {!desktop && (
+            <GameSetupNavigation id={id} accountOperator={accountOperator} />
+          )}
+        </div>
+        <div className="scoring-title-block">
           <p className="scoring-eyebrow">
             {desktop ? "Selected game" : "Match control"}
           </p>
@@ -528,12 +533,22 @@ export default function Scorer({
               {scoringNotice}
             </p>
           )}
+          {desktop && (
+            <div className="scoring-control-tiles">
+              <ScoringProgramControls game={game} act={act} compact />
+            </div>
+          )}
           {canEndGame && (
             <div className="scoring-card scoring-finish">
-              <h2 className="font-bold">Finish the game</h2>
-              <p className="mb-3 mt-2 text-sm text-slate-300">
-                Review and confirm the saved final score before ending the game.
-              </p>
+              {!desktop && (
+                <>
+                  <h2 className="font-bold">Finish the game</h2>
+                  <p className="mb-3 mt-2 text-sm text-slate-300">
+                    Review and confirm the saved final score before ending the
+                    game.
+                  </p>
+                </>
+              )}
               <EndGameControl
                 gameId={id}
                 homeName={game.config.homeName}
@@ -557,39 +572,15 @@ export default function Scorer({
           {desktop ? (
             <>
               {canEndGame && m1Pilot && (
-                <details id="devices" className="studio-settings">
-                  <summary>Connect phones</summary>
-                  <div className="studio-settings-content">
-                    <p>
-                      First, use Start recording in Studio on this PC. Then scan
-                      a camera code on each phone. Keep the phones on the same
-                      Wi-Fi and leave their camera pages open.
-                    </p>
-                    <StudioDeviceCards
-                      id={id}
-                      claims={game.claims}
-                      onChanged={refresh}
-                      enabled
-                    />
-                  </div>
-                </details>
+                <section id="devices" aria-label="Connected devices">
+                  <StudioDeviceCards
+                    id={id}
+                    claims={game.claims}
+                    onChanged={refresh}
+                    enabled
+                  />
+                </section>
               )}
-              <section className="scoring-card studio-output-note">
-                <div className="scoring-section-heading">
-                  <h2>YouTube</h2>
-                  <span className="scoring-badge">Coming next</span>
-                </div>
-                <p>
-                  Local recording is available from the Studio bar below.
-                  YouTube streaming is not enabled in this desktop preview.
-                </p>
-              </section>
-              <details className="studio-settings">
-                <summary>Picture, audio &amp; sponsors</summary>
-                <div className="studio-settings-content">
-                  <ScoringProgramControls game={game} act={act} />
-                </div>
-              </details>
             </>
           ) : (
             <>

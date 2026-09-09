@@ -40,8 +40,7 @@ internal sealed class Workspace : Form
         ClientSize = new Size(1180, 820); MinimumSize = new Size(940, 680);
         AutoScaleMode = AutoScaleMode.Dpi; Font = new Font("Segoe UI", 10);
         BackColor = Color.FromArgb(10, 24, 40); ForeColor = Color.White;
-        var bottom = new TableLayoutPanel { Dock = DockStyle.Bottom, Height = 96, Padding = new Padding(16, 8, 16, 8), ColumnCount = 1, RowCount = 2 };
-        bottom.RowStyles.Add(new RowStyle(SizeType.Absolute, 50)); bottom.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+        bottom = new TableLayoutPanel { Dock = DockStyle.Bottom, Height = 34, Padding = new Padding(12, 2, 12, 2), ColumnCount = 1, RowCount = 1 };
         var actions = new FlowLayoutPanel { Dock = DockStyle.Fill, WrapContents = false, Height = 54 };
         record.Text = "Connect cameras"; Style(record); record.Click += async (s, e) => await StartRecording();
         record.BackColor = Color.FromArgb(74, 214, 196); record.ForeColor = Color.FromArgb(7, 28, 36); record.FlatAppearance.BorderSize = 0;
@@ -52,7 +51,7 @@ internal sealed class Workspace : Form
         actions.Controls.AddRange(new Control[] { record, finish });
         status.Text = "Opening your workspace…"; status.Dock = DockStyle.Fill; status.AutoEllipsis = true;
         status.AccessibleName = "Recording status"; status.Padding = new Padding(5, 5, 0, 0);
-        bottom.Controls.Add(actions); bottom.Controls.Add(status);
+        bottom.Controls.Add(status);
         web.Dock = DockStyle.Fill;
         Controls.Add(web); Controls.Add(bottom);
         Shown += async (s, e) => await Initialize();
@@ -77,7 +76,9 @@ internal sealed class Workspace : Form
     private void Style(Button b) { b.UseMnemonic = false; b.AutoSize = true; b.Height = 44; b.MinimumSize = new Size(80, 44); b.Padding = new Padding(14, 0, 14, 0); b.Margin = new Padding(0, 0, 10, 0); b.ForeColor = Color.FromArgb(220, 230, 238); b.BackColor = Color.FromArgb(21, 38, 54); b.FlatStyle = FlatStyle.Flat; b.FlatAppearance.BorderColor = Color.FromArgb(52, 73, 91); b.FlatAppearance.MouseOverBackColor = Color.FromArgb(39, 69, 83); b.Cursor = Cursors.Hand; }
     private void Nav(FlowLayoutPanel panel, string label, string path) { var b = MakeButton(label); b.Click += (s, e) => Navigate(path); panel.Controls.Add(b); }
     private void Navigate(string path) { if (!busy && !closing && origin != null && web.CoreWebView2 != null) web.CoreWebView2.Navigate(origin + path); }
+    private TableLayoutPanel bottom;
     private void UpdateButtons() {
+        bottom.Visible = !recording && (selectedGame != null || origin == null);
         gameDay.Enabled = !busy && !closing && (recording ? runningGame : lastGame) != null;
         record.Visible = !recording; finish.Visible = recording;
         record.Enabled = !busy && !closing && selectedGame != null && !recording && origin != null;

@@ -35,8 +35,8 @@ describe("provider-neutral program composition", () => {
     expect(markup).toContain("Stones");
     expect(markup).toContain(">2</strong>");
     expect(markup).toContain(">0</strong>");
-    expect(markup).toContain("Video only");
-    expect(markup).toContain("Local program");
+    expect(markup).not.toContain("Video only");
+    expect(markup).not.toContain("Local program");
     expect(markup).not.toContain("Scorer audio live");
     expect(markup).not.toContain("● LIVE");
     expect(markup).toContain("[&amp;_video]:!object-contain");
@@ -82,7 +82,7 @@ describe("provider-neutral program composition", () => {
     );
     expect(markup).toContain('data-testid="sponsor-sidebar"');
     expect(markup).toContain("PRESENTED BY");
-    expect(markup).toContain("Local recording");
-    expect(markup).toContain("OBS audio configured separately");
+    expect(markup).not.toContain("Local recording");
+    expect(markup).not.toContain("OBS audio configured separately");
   });
 });

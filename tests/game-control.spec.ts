@@ -36,7 +36,7 @@ test("Windows Studio setup is reachable and performs no automatic writes", async
     page.getByRole("heading", { name: "Windows Studio", exact: true }),
   ).toBeVisible();
   await expect(page.getByLabel("Game link", { exact: true })).toHaveValue(
-    `http://127.0.0.1:3000/games/${testGameId}`,
+    `${new URL(page.url()).origin}/games/${testGameId}`,
   );
   await expect(
     page.getByText("Direct-camera recording is not enabled", { exact: false }),
@@ -213,9 +213,8 @@ test("current game carries authoritative metadata across control scoring and pre
     `/broadcast/${testGameId}`,
   ]) {
     await page.goto(path);
-    if (path.startsWith("/broadcast/"))
-      await page.getByRole("button", { name: "Show game details" }).click();
-    await expect(page.getByLabel("Game schedule")).toContainText("6:30 PM");
+    if (!path.startsWith("/broadcast/"))
+      await expect(page.getByLabel("Game schedule")).toContainText("6:30 PM");
     await page.getByRole("button", { name: "Open navigation menu" }).click();
     const nav = page.getByRole("navigation", {
       name: "CurlStreamer navigation",
@@ -328,7 +327,7 @@ test("loading and failed reads have recovery without replaying invitation writes
   await expect(page.getByTestId("broadcast-canvas")).toHaveCount(0);
   state.unreadable = false;
   await page.getByRole("button", { name: "Try again", exact: true }).click();
-  await expect(page.getByTestId("broadcast-canvas")).toBeVisible();
+  await expect(page.getByTestId("broadcast-visible-wrapper")).toBeVisible();
 });
 
 test("unavailable schedule preserves clearly labeled same-game device context", async ({
@@ -429,12 +428,9 @@ test("scoring read retry refreshes unavailable schedule and preview details can 
   );
   await page.goto(`/broadcast/${testGameId}`);
   await expect(page.getByLabel("Game schedule")).toHaveCount(0);
-  await page.getByRole("button", { name: "Show game details" }).click();
-  await expect(page.getByLabel("Game schedule")).toContainText(
-    "America/Toronto",
-  );
-  await page.getByRole("button", { name: "Hide game details" }).click();
-  await expect(page.getByLabel("Game schedule")).toHaveCount(0);
+  await expect(
+    page.getByRole("button", { name: "Show game details" }),
+  ).toHaveCount(0);
   await expect(page.getByTestId("broadcast-fixed-canvas")).toHaveCSS(
     "width",
     "1920px",

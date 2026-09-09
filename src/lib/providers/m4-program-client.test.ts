@@ -50,6 +50,34 @@ const projected = {
   },
 };
 describe("Node program authority", () => {
+  it("recovers a temporary server failure without replacing program authority", async () => {
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(exchange())
+      .mockResolvedValueOnce(new Response("unavailable", { status: 503 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ game: projected })));
+    const client = new M4ProgramClient(game, origin, fetcher);
+    await client.exchange("a".repeat(43));
+    expect(await client.readGame()).toEqual(projected);
+    expect(client.active).toBe(true);
+    expect(fetcher).toHaveBeenCalledTimes(3);
+    client.close();
+  });
+  it("keeps the existing credential after a bounded outage but still rejects revocation", async () => {
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(exchange())
+      .mockRejectedValueOnce(new TypeError("network"))
+      .mockRejectedValueOnce(new TypeError("network"))
+      .mockResolvedValueOnce(new Response("revoked", { status: 403 }));
+    const client = new M4ProgramClient(game, origin, fetcher);
+    await client.exchange("a".repeat(43));
+    await expect(client.readGame()).rejects.toThrow();
+    expect(client.active).toBe(true);
+    await expect(client.readGame()).rejects.toThrow();
+    expect(client.active).toBe(false);
+    expect(fetcher).toHaveBeenCalledTimes(4);
+  });
   it("reads only its fixed game and strips unknown fields at every projection level", async () => {
     const upstream = {
       ...projected,

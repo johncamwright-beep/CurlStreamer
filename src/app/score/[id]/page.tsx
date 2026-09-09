@@ -277,7 +277,11 @@ export default function Scorer({
           <p className="scoring-eyebrow">
             {desktop ? "Selected game" : "Match control"}
           </p>
-          <h1>{desktop ? title : "Scoring"}</h1>
+          <h1>
+            {desktop
+              ? `${game.config.homeName} vs ${game.config.awayName} — ${game.config.eventName || "Single Game"}`
+              : "Scoring"}
+          </h1>
           {!desktop && <p className="scoring-match-title">{title}</p>}
           <p className="text-sm text-slate-300" aria-label="Game schedule">
             {
@@ -533,10 +537,26 @@ export default function Scorer({
               {scoringNotice}
             </p>
           )}
-          {desktop && (
-            <div className="scoring-control-tiles">
-              <ScoringProgramControls game={game} act={act} compact />
-            </div>
+        </div>
+        <aside
+          id="program-controls"
+          tabIndex={-1}
+          className="scoring-sidebar"
+          aria-label="Broadcast and program controls"
+        >
+          {desktop ? (
+            <>
+              {desktop && (
+                <div className="scoring-control-tiles">
+                  <ScoringProgramControls game={game} act={act} compact />
+                </div>
+              )}
+            </>
+          ) : (
+            <>
+              {canEndGame && <BroadcastControl gameId={id} enabled />}
+              <ScoringProgramControls game={game} act={act} />
+            </>
           )}
           {canEndGame && (
             <div className="scoring-card scoring-finish">
@@ -562,34 +582,22 @@ export default function Scorer({
               />
             </div>
           )}
-        </div>
-        <aside
-          id="program-controls"
-          tabIndex={-1}
-          className="scoring-sidebar"
-          aria-label="Broadcast and program controls"
-        >
-          {desktop ? (
-            <>
-              {canEndGame && m1Pilot && (
-                <section id="devices" aria-label="Connected devices">
-                  <StudioDeviceCards
-                    id={id}
-                    claims={game.claims}
-                    onChanged={refresh}
-                    enabled
-                  />
-                </section>
-              )}
-            </>
-          ) : (
-            <>
-              {canEndGame && <BroadcastControl gameId={id} enabled />}
-              <ScoringProgramControls game={game} act={act} />
-            </>
-          )}
         </aside>
       </div>
+      {desktop && (
+        <div className="scoring-device-dock">
+          {canEndGame && m1Pilot && (
+            <section id="devices" aria-label="Connected devices">
+              <StudioDeviceCards
+                id={id}
+                claims={game.claims}
+                onChanged={refresh}
+                enabled
+              />
+            </section>
+          )}
+        </div>
+      )}
     </main>
   );
 }

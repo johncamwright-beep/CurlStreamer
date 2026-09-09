@@ -21,6 +21,7 @@ const actionSchema = z
   .strict();
 const fail = () => new Error("m4_program_unavailable");
 class SlotUnavailable extends Error {}
+class NetworkUnavailable extends Error {}
 
 const sponsorUrl = z
   .string()
@@ -135,6 +136,26 @@ export class M4ProgramClient {
     return this.#organizationId;
   }
   async #call(body: unknown, cookie?: string, method: "GET" | "POST" = "POST") {
+    try {
+      return await this.#attempt(body, cookie, method);
+    } catch (cause) {
+      const action = (body as { action?: string } | undefined)?.action;
+      // Only idempotent reads/lease checks may be retried. Never replay an
+      // invitation exchange, signal or stop after an ambiguous response.
+      if (
+        !(cause instanceof NetworkUnavailable) ||
+        !this.active ||
+        !(method === "GET" || action === "check" || action === "ticket")
+      )
+        throw cause;
+      return this.#attempt(body, cookie, method);
+    }
+  }
+  async #attempt(
+    body: unknown,
+    cookie?: string,
+    method: "GET" | "POST" = "POST",
+  ) {
     const controller = new AbortController();
     this.#requests.add(controller);
     const timer = setTimeout(() => controller.abort(), 8000);
@@ -150,7 +171,13 @@ export class M4ProgramClient {
           ...(cookie ? { cookie } : {}),
         },
         ...(method === "POST" ? { body: JSON.stringify(body) } : {}),
+      }).catch(() => {
+        throw new NetworkUnavailable();
       });
+      if ([408, 429, 500, 502, 503, 504].includes(response.status)) {
+        await response.body?.cancel().catch(() => undefined);
+        throw new NetworkUnavailable();
+      }
       if (
         method === "POST" &&
         cookie &&
@@ -183,7 +210,11 @@ export class M4ProgramClient {
         for (const chunk of chunks) chunk.fill(0);
       }
     } catch (cause) {
-      if (cause instanceof SlotUnavailable) throw cause;
+      if (
+        cause instanceof SlotUnavailable ||
+        cause instanceof NetworkUnavailable
+      )
+        throw cause;
       throw fail();
     } finally {
       clearTimeout(timer);
@@ -280,7 +311,11 @@ export class M4ProgramClient {
         throw fail();
       return ticket;
     } catch (cause) {
-      if (!(cause instanceof SlotUnavailable)) this.close();
+      if (
+        !(cause instanceof SlotUnavailable) &&
+        !(cause instanceof NetworkUnavailable)
+      )
+        this.close();
       throw fail();
     }
   }
@@ -300,9 +335,11 @@ export class M4ProgramClient {
       if (game.id !== this.#gameId) throw fail();
       this.#organizationId = organizationId;
       return { ...game, cameraFraming: game.cameraFraming };
-    } catch {
+    } catch (cause) {
       // GET checks the entire program scope; a failure differs from a waiting slot.
-      this.close();
+      // A transport outage does not revoke the credential. Subsequent requests
+      // still validate the game and the original, unextended deadline.
+      if (!(cause instanceof NetworkUnavailable)) this.close();
       throw fail();
     }
   }

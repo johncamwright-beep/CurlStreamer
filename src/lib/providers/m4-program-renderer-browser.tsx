@@ -103,10 +103,10 @@ function ProgramRenderer() {
         setProgramMessage("Local program ready");
         timer = setTimeout(() => void poll(), 500);
       } catch {
-        if (!controller.signal.aborted)
-          setProgramMessage(
-            "Program authority ended. Reopen CurlStreamer Studio.",
-          );
+        if (!controller.signal.aborted) {
+          setProgramMessage("Reconnecting to Studio…");
+          timer = setTimeout(() => void poll(), 2000);
+        }
       }
     };
     void poll();

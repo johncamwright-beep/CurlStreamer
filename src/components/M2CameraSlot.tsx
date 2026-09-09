@@ -76,6 +76,24 @@ export function M2CameraSlot({
   const metricsAt = useRef<number | undefined>(undefined);
   const [timedTest, setTimedTest] = useState("");
   const failure = useRef("");
+  const retryTimer = useRef<ReturnType<typeof setTimeout> | undefined>(
+    undefined,
+  );
+  const retryCount = useRef(0);
+  const mounted = useRef(true);
+  const recoverable = useRef(false);
+  function recover() {
+    if (
+      !mounted.current ||
+      side !== "camera" ||
+      !recoverable.current ||
+      retryCount.current >= 6
+    )
+      return;
+    const delay = Math.min(10000, 2000 * ++retryCount.current);
+    setStatus("Connection interrupted. Reconnecting to Studio…");
+    retryTimer.current = setTimeout(() => void run(connect), delay);
+  }
   const stage = useRef("operation");
   const sessionRef = useRef<string | undefined>(undefined);
   const [session, setSession] = useState<string>();
@@ -83,7 +101,7 @@ export function M2CameraSlot({
   const [status, setStatus] = useState(
     side === "receiver"
       ? "Register this PC, then pair camera."
-      : "Start your camera when Studio is recording on the PC.",
+      : "Open this game in Studio, then connect your phone.",
   );
   const [qr, setQr] = useState("");
   const [warning, setWarning] = useState("");
@@ -108,6 +126,7 @@ export function M2CameraSlot({
     body: Omit<Parameters<StudioRequest>[0], "cameraRole">,
   ) => {
     const requestEpoch = epoch.current;
+    recoverable.current = false;
     const token =
       side === "camera"
         ? cameraPublishAccessToken(localStorage, id, cameraRole)
@@ -121,21 +140,26 @@ export function M2CameraSlot({
       body: JSON.stringify({ ...body, cameraRole }),
       cache: "no-store",
       signal: AbortSignal.timeout(8_000),
+    }).catch((error: unknown) => {
+      if (requestEpoch === epoch.current) recoverable.current = true;
+      throw error;
     });
     const value = await result.json().catch(() => null);
     if (!result.ok) {
+      recoverable.current =
+        result.status >= 500 || value?.code === "studio_stale";
       if (requestEpoch === epoch.current)
         failure.current =
           side === "camera" && result.status === 409
             ? value?.code === "studio_stale"
-              ? "The recording PC connection expired or was replaced. Keep Studio recording this game, then tap Connect phone."
+              ? "Studio is reconnecting. Keep this game open on the PC, then tap Connect phone."
               : value?.code === "peer_stale"
                 ? "This camera connection expired or was replaced. Close any other camera tabs on this phone, then tap Connect phone."
                 : value?.code === "camera_released"
                   ? "This camera assignment was released or replaced. Scan a fresh camera QR code from the scoring screen."
                   : value?.code === "signal_limit"
                     ? "Too many connection attempts. Wait one minute, then tap Connect phone once."
-                    : "The PC connection or camera access is no longer ready. Start recording for this game in Studio, then try again. If this camera was released, scan a fresh invitation."
+                    : "Open this game in Studio and try again. If this camera was released, scan a fresh invitation."
             : side === "camera" &&
                 (result.status === 401 || result.status === 403)
               ? "This camera no longer has access. Ask the organizer for a new camera QR code."
@@ -145,6 +169,7 @@ export function M2CameraSlot({
     return value;
   };
   function cleanup(reason = "Connection cleanup") {
+    clearTimeout(retryTimer.current);
     recorder.current?.finish("interrupted", reason);
     epoch.current += 1;
     setupAbort.current?.abort();
@@ -166,6 +191,7 @@ export function M2CameraSlot({
     if (video.current) video.current.srcObject = null;
   }
   useEffect(() => {
+    mounted.current = true;
     const readInvitation = () => {
       if (side !== "camera") return;
       const incoming = new URLSearchParams(location.hash.slice(1)).get("token");
@@ -185,6 +211,7 @@ export function M2CameraSlot({
     const hide = () => cleanup("Receiver page hidden by navigation or closure");
     window.addEventListener("pagehide", hide);
     return () => {
+      mounted.current = false;
       cleanup("Receiver component unmounted");
       window.removeEventListener("pagehide", hide);
       window.removeEventListener("hashchange", readInvitation);
@@ -235,6 +262,7 @@ export function M2CameraSlot({
     } catch {
       cleanup(failure.current || `Could not complete ${stage.current}.`);
       setStatus(failure.current || `Could not complete ${stage.current}.`);
+      recover();
     } finally {
       setBusy(false);
     }
@@ -389,6 +417,7 @@ export function M2CameraSlot({
           });
         metricsAt.current = Date.now();
         setMetrics(value);
+        if (value.direct) retryCount.current = 0;
         const report = evidence.current;
         report.samples += 1;
         report.verifiedSamples += value.direct ? 1 : 0;
@@ -405,6 +434,13 @@ export function M2CameraSlot({
         failure.current ||= reason;
         cleanup(failure.current);
         setStatus(failure.current);
+        if (
+          /signaling disconnected|Signaling stopped|Studio authority expired/i.test(
+            reason,
+          )
+        )
+          recoverable.current = true;
+        recover();
       },
     }).catch((error: unknown) => {
       if (attempt !== epoch.current) return undefined;
@@ -595,6 +631,7 @@ export function M2CameraSlot({
           className="btn phone-camera-connect"
           disabled={busy}
           onClick={() => {
+            retryCount.current = 0;
             if (previewReady) {
               cleanup("Phone disconnected");
               setMetrics(undefined);

@@ -636,3 +636,52 @@
 .scoring-desktop .scoring-entry > p.mt-3 {
   display: none;
 }
+
+.scoring-desktop .scoring-control-tiles {
+  grid-template-columns: 1fr;
+}
+.scoring-device-dock {
+  margin-top: 12px;
+}
+.scoring-device-dock .studio-device-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+.scoring-device-dock .studio-device:last-child {
+  grid-column: auto;
+}
+.scoring-device-dock .studio-device {
+  position: relative;
+}
+.scoring-device-dock
+  .studio-device
+  > p:not([role="alert"]):not([role="status"]) {
+  display: none;
+}
+.scoring-device-dock .studio-device-qr {
+  position: absolute;
+  left: calc(100% + 8px);
+  bottom: 0;
+  z-index: 30;
+  width: 210px;
+  margin: 0;
+  padding: 12px;
+  background: #101e2c;
+  border: 1px solid #78e1cc;
+  border-radius: 12px;
+  box-shadow: 0 10px 40px #0008;
+}
+.scoring-device-dock .studio-device:last-child .studio-device-qr {
+  left: auto;
+  right: calc(100% + 8px);
+}
+@media (max-width: 850px) {
+  .scoring-device-dock .studio-device-grid {
+    grid-template-columns: 1fr;
+  }
+  .scoring-device-dock .studio-device-qr,
+  .scoring-device-dock .studio-device:last-child .studio-device-qr {
+    left: auto;
+    right: 8px;
+    bottom: 60px;
+  }
+}

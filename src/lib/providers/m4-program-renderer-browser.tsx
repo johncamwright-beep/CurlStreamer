@@ -53,7 +53,24 @@ function CameraVideo({ state }: { state: CameraState }) {
     <>
       <video ref={ref} autoPlay playsInline muted aria-label="Direct camera" />
       {!state.stream && (
-        <p className="program-camera-status">{state.message}</p>
+        <div
+          style={{
+            position: "absolute",
+            inset: 0,
+            display: "grid",
+            placeContent: "center",
+            textAlign: "center",
+            padding: 32,
+            background: "#122332",
+            color: "#b8c7d4",
+            fontSize: 28,
+          }}
+        >
+          <p>Camera not connected</p>
+          <p style={{ fontSize: 20, marginTop: 12 }}>
+            Connect your phone from the game screen.
+          </p>
+        </div>
       )}
     </>
   );

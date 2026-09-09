@@ -33,8 +33,8 @@ struct m4_media {
 };
 /* A process-owned, read-only preview for the signed-in Windows shell. Frames
  * stay in memory and are sampled from the same OBS output as the recording. */
-#define PREVIEW_WIDTH 640
-#define PREVIEW_HEIGHT 360
+#define PREVIEW_WIDTH 1920
+#define PREVIEW_HEIGHT 1080
 #define PREVIEW_PIXELS (PREVIEW_WIDTH * PREVIEW_HEIGHT * 4)
 #define PREVIEW_BITMAP (54 + PREVIEW_PIXELS)
 #define PREVIEW_BYTES (16 + PREVIEW_BITMAP)

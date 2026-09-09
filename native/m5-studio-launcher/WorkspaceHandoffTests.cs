@@ -58,7 +58,7 @@ internal static class WorkspaceHandoffTests
                     if (!refused) throw new Exception("Account denial was not preserved.");
                     var mappingName = "Local\\CurlStreamerPreview-" + Guid.NewGuid().ToString("N");
                     byte[] picture;
-                    using (var bitmap = new System.Drawing.Bitmap(640, 360, System.Drawing.Imaging.PixelFormat.Format32bppRgb))
+                    using (var bitmap = new System.Drawing.Bitmap(1920, 1080, System.Drawing.Imaging.PixelFormat.Format32bppRgb))
                     using (var graphics = System.Drawing.Graphics.FromImage(bitmap))
                     using (var imageStream = new MemoryStream()) {
                         graphics.Clear(System.Drawing.Color.Red); bitmap.Save(imageStream, System.Drawing.Imaging.ImageFormat.Bmp); picture = imageStream.ToArray();
@@ -85,7 +85,7 @@ internal static class WorkspaceHandoffTests
         return result;
     }
     private static async Task CheckPreview(CoreWebView2 core, string url, bool expected) {
-        await core.ExecuteScriptAsync("window.previewResult=null;var image=new Image();image.onload=()=>window.previewResult=image.naturalWidth===640&&image.naturalHeight===360;image.onerror=()=>window.previewResult=false;image.src='" + url + "';document.body.appendChild(image);");
+        await core.ExecuteScriptAsync("window.previewResult=null;var image=new Image();image.onload=()=>window.previewResult=image.naturalWidth===1920&&image.naturalHeight===1080;image.onerror=()=>window.previewResult=false;image.src='" + url + "';document.body.appendChild(image);");
         string actual = "null";
         for (int i = 0; i < 30 && actual == "null"; i++) { await Task.Delay(100); actual = await core.ExecuteScriptAsync("window.previewResult"); }
         if (actual != (expected ? "true" : "false")) throw new Exception("Preview image boundary failed: " + actual);

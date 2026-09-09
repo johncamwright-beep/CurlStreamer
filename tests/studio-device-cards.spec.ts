@@ -103,6 +103,11 @@ test("device QR requests are explicit, role-specific and cleared when claimed", 
   await camera2.getByRole("button", { name: "Enlarge QR code" }).click();
   expect((await joinCode.boundingBox())?.width).toBeGreaterThan(176);
   await camera2.getByRole("button", { name: "Shrink QR code" }).click();
+  await camera2.getByRole("button", { name: "Hide QR code" }).click();
+  await expect(joinCode).toHaveCount(0);
+  await camera2.getByRole("button", { name: "Show QR code" }).click();
+  await expect(joinCode).toBeVisible();
+  expect(roles).toEqual(["camera-away"]);
   await scorer.getByRole("button", { name: "Show QR code" }).click();
   await expect(
     scorer.getByRole("img", { name: "Remote scorer join QR code" }),
@@ -125,6 +130,39 @@ test("device QR requests are explicit, role-specific and cleared when claimed", 
   expect(await page.evaluate(() => JSON.stringify(localStorage))).not.toContain(
     "fixture-only",
   );
+});
+
+test("camera cards share a row on a tablet and reconnect QR collapses when online", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 768, height: 900 });
+  await page.clock.install();
+  let online = false;
+  await page.route("**/api/games/" + testGameId + "/studio-devices", (route) =>
+    route.fulfill({
+      json: {
+        cameras: {
+          "camera-home": { receiverReady: true, phoneOnline: online },
+        },
+      },
+    }),
+  );
+  await openCards(page);
+  const first = page.getByRole("region", { name: "Camera 1", exact: true });
+  const second = page.getByRole("region", { name: "Camera 2", exact: true });
+  expect((await first.boundingBox())?.y).toBe((await second.boundingBox())?.y);
+  await first.getByRole("button", { name: "Show reconnect QR" }).click();
+  await expect(first.getByRole("img")).toBeVisible();
+  online = true;
+  await page.clock.fastForward(5000);
+  await expect(first.getByRole("status")).toHaveText("Phone connected");
+  await expect(first.getByRole("img")).toHaveCount(0);
+  online = false;
+  await page.clock.fastForward(5000);
+  await expect(
+    first.getByRole("button", { name: "Show reconnect QR" }),
+  ).toBeVisible();
+  await expect(first.getByRole("img")).toHaveCount(0);
 });
 test("an expired device QR cannot be reused", async ({ page }) => {
   await page.clock.install();

@@ -60,3 +60,18 @@ rejected another game's image and stale frames. Real camera pictures in the upda
 desktop still need checking. Camera cards now emphasize phone connection status,
 hide reconnect instructions while online and use compact expandable QR codes.
 Hardware zoom is shown directly beneath the phone picture when supported.
+
+Preview 5 follow-up: the user verified Camera 1 in the actual program preview,
+but its 640x360 monitoring image was visibly pixelated when enlarged. The shared
+image is now native 1920x1080, still sampled twice per second. Camera placeholders
+use large centered text instead of unstyled diagnostic strings. Native quadrant
+and real WebView2 decoding/isolation checks passed at the new dimensions.
+
+Camera cards share a row down to 520px, expand QR codes on request, hide them
+without reissuing invitations, and collapse reconnect codes when a phone becomes
+online. Ten browser checks cover the layout and connection transition. Phone path
+failures now show a short recovery instruction; aggregate diagnostic evidence is
+retained. This wording does not fix the underlying withheld-address rejection.
+The reported host/prflx/address-unavailable case still fails the existing strict
+path check. Camera 2 recovery remains unverified. Automatic receiver preparation
+and removal of the Start recording dependency remain unimplemented.

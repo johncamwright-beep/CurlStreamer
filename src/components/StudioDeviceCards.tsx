@@ -27,6 +27,13 @@ function DeviceCard({
 }) {
   const [confirmRelease, setConfirmRelease] = useState(false);
   const [largeQr, setLargeQr] = useState(false);
+  const [qrOpen, setQrOpen] = useState(false);
+  useEffect(() => {
+    if (connectionStatus?.phoneOnline) {
+      setQrOpen(false);
+      setLargeQr(false);
+    }
+  }, [connectionStatus?.phoneOnline]);
   async function releaseCamera() {
     if (busy || role === "scorer" || !onChanged) return;
     setBusy(true);
@@ -87,6 +94,11 @@ function DeviceCard({
   }, [invitation]);
   async function showReconnect() {
     if (!claimed || !enabled || request.current) return;
+    if (reconnect) {
+      setQrOpen(!qrOpen);
+      return;
+    }
+    setQrOpen(true);
     const controller = new AbortController();
     request.current = controller;
     setBusy(true);
@@ -119,6 +131,11 @@ function DeviceCard({
   }
   async function showQr() {
     if (request.current || claimed || !enabled) return;
+    if (invitation && Date.now() < invitation.expires) {
+      setQrOpen(!qrOpen);
+      return;
+    }
+    setQrOpen(true);
     const controller = new AbortController();
     request.current = controller;
     setBusy(true);
@@ -197,25 +214,27 @@ function DeviceCard({
       </header>
       {claimed ? (
         <>
-          {!online && (
+          {scorer && (
             <p>
               {scorer
                 ? "Open scoring on the assigned phone or tablet to continue."
                 : "Reopen the camera page on the original phone and keep it in the foreground."}
             </p>
           )}
-          <p className="studio-device-help">
-            {scorer
-              ? "Assignment does not confirm a live connection."
-              : connectionStatus
-                ? connectionStatus.phoneOnline
-                  ? "Phone is connected to this game."
-                  : connectionStatus.receiverReady
-                    ? "Studio is ready. Reconnect this phone or release it to use another."
-                    : "Start Studio recording for this game to reconnect."
-                : "Connection status unavailable · assignment retained"}
-          </p>
-          {reconnect && !online && (
+          {!online && (
+            <p className="studio-device-help">
+              {scorer
+                ? "Assignment does not confirm a live connection."
+                : connectionStatus
+                  ? connectionStatus.phoneOnline
+                    ? "Phone is connected to this game."
+                    : connectionStatus.receiverReady
+                      ? "Studio is ready. Reconnect this phone or release it to use another."
+                      : "Start Studio recording for this game to reconnect."
+                  : "Connection status unavailable · assignment retained"}
+            </p>
+          )}
+          {reconnect && !online && qrOpen && (
             <div className="studio-device-qr" data-large={largeQr}>
               <button
                 className="studio-qr-size"
@@ -244,7 +263,11 @@ function DeviceCard({
               disabled={busy || !enabled}
               onClick={() => void showReconnect()}
             >
-              {busy ? "Preparing…" : "Show reconnect QR"}
+              {busy
+                ? "Preparing…"
+                : reconnect && qrOpen
+                  ? "Hide QR code"
+                  : "Show reconnect QR"}
             </button>
           )}
           {!scorer &&
@@ -279,12 +302,14 @@ function DeviceCard({
         </>
       ) : (
         <>
-          <p>
-            {scorer
-              ? "Score from a phone or tablet. Changes appear in this game."
-              : "Use your phone’s camera to scan the code, then allow camera access."}
-          </p>
-          {active && (
+          {scorer && (
+            <p>
+              {scorer
+                ? "Score from a phone or tablet. Changes appear in this game."
+                : "Use your phone’s camera to scan the code, then allow camera access."}
+            </p>
+          )}
+          {active && qrOpen && (
             <div className="studio-device-qr" data-large={largeQr}>
               <button
                 className="studio-qr-size"
@@ -325,7 +350,9 @@ function DeviceCard({
             {busy
               ? "Creating QR code…"
               : active
-                ? "Refresh QR code"
+                ? qrOpen
+                  ? "Hide QR code"
+                  : "Show QR code"
                 : error
                   ? "Try again"
                   : "Show QR code"}

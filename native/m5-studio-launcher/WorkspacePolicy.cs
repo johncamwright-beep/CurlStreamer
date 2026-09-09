@@ -58,7 +58,7 @@ internal static class ProgramPreview
 {
     internal static byte[] Read(string previewMapping) {
         const string prefix = "Local\\CurlStreamerPreview-";
-        const int bitmapLength = 54 + 640 * 360 * 4;
+        const int bitmapLength = 54 + 1920 * 1080 * 4;
         if (previewMapping == null || !previewMapping.StartsWith(prefix) || previewMapping.Length != prefix.Length + 32) return null;
         foreach (char c in previewMapping.Substring(prefix.Length)) if (!(c >= '0' && c <= '9') && !(c >= 'a' && c <= 'f')) return null;
         using (var mapping = System.IO.MemoryMappedFiles.MemoryMappedFile.OpenExisting(previewMapping, System.IO.MemoryMappedFiles.MemoryMappedFileRights.Read))

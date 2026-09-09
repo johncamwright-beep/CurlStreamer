@@ -7,7 +7,7 @@ internal static class ProgramPreviewProbe
             if (args.Length != 2) return 2;
             var frame = ProgramPreview.Read(args[0]);
             if (frame == null) return 3;
-            int[] positions = { 54 + (90 * 640 + 160) * 4, 54 + (90 * 640 + 480) * 4, 54 + (270 * 640 + 160) * 4, 54 + (270 * 640 + 480) * 4 };
+            int[] positions = { 54 + (270 * 1920 + 480) * 4, 54 + (270 * 1920 + 1440) * 4, 54 + (810 * 1920 + 480) * 4, 54 + (810 * 1920 + 1440) * 4 };
             var red = positions[0]; var green = positions[1]; var blue = positions[2]; var white = positions[3];
             if (frame[red + 2] < 180 || frame[red] > 70 || frame[red + 1] > 70 ||
                 frame[green + 1] < 180 || frame[green] > 70 || frame[green + 2] > 70 ||

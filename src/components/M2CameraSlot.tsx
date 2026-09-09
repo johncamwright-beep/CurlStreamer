@@ -613,7 +613,9 @@ export function M2CameraSlot({
               : "Connect phone"}
         </button>
         <p role="status" aria-live="polite">
-          {status}
+          {status.startsWith("Path check stopped:")
+            ? "Studio could not verify this phone’s connection. Reload this phone page, then tap Connect phone. Keep Studio open."
+            : status}
         </p>
         {warning && <p role="alert">{warning}</p>}
         <p className="phone-camera-hint">

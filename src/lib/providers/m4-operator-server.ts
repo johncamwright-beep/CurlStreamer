@@ -145,6 +145,8 @@ export async function createM4OperatorServer(options: {
   let programHandle: ProgramHandle | undefined;
   let address = "";
   let closing = false;
+  let cleanupFailed = false;
+  let closePromise: Promise<{ cleanupConfirmed: boolean }> | undefined;
   let pendingProgram: Promise<void> | undefined;
   const observation = z
     .object({
@@ -439,13 +441,19 @@ export async function createM4OperatorServer(options: {
               }))
           )(invitation, recording);
           if (closing) {
-            await handle.stop().catch(() => undefined);
+            try {
+              await handle.stop();
+              if (!(await handle.closed).finalized) cleanupFailed = true;
+            } catch {
+              cleanupFailed = true;
+            }
             throw new Error();
           }
           programHandle = handle;
           program = "recording";
           programMessage = "Program connected. Local recording is active.";
           void handle.closed.then((result) => {
+            if (!result.finalized) cleanupFailed = true;
             if (programHandle !== handle) return;
             if (handle.stream && streaming !== "failed") {
               streaming = result.finalized ? "stopped" : "failed";
@@ -610,17 +618,33 @@ export async function createM4OperatorServer(options: {
   }, 5000);
   return {
     address,
-    async close() {
+    close() {
+      if (closePromise) return closePromise;
       clearInterval(heartbeat);
       closing = true;
       ++epoch;
       ++streamEpoch;
-      await programHandle?.stream?.stop().catch(() => undefined);
-      await programHandle?.stop().catch(() => undefined);
-      await pendingProgram;
-      await desktop.stop().catch(() => undefined);
-      server.closeAllConnections();
-      await new Promise<void>((resolve) => server.close(() => resolve()));
+      closePromise = (async () => {
+        const handle = programHandle;
+        await handle?.stream?.stop().catch(() => {
+          cleanupFailed = true;
+        });
+        try {
+          await handle?.stop();
+          if (handle && !(await handle.closed).finalized) cleanupFailed = true;
+        } catch {
+          cleanupFailed = true;
+        }
+        await pendingProgram;
+        await desktop.stop().catch(() => {
+          // An untouched desktop has no server session to release.
+          if (pairing !== "unpaired") cleanupFailed = true;
+        });
+        server.closeAllConnections();
+        await new Promise<void>((resolve) => server.close(() => resolve()));
+        return { cleanupConfirmed: !cleanupFailed };
+      })();
+      return closePromise;
     },
   };
 }

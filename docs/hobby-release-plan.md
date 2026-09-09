@@ -14,7 +14,7 @@ Preserve local source/evidence outside Git; commit publishable M1-M4 code, tests
 
 See the [component layout and first packaging slice](studio-packaging.md).
 
-- Choose the desktop shell and installer format; neither has been selected yet.
+- Windows Forms launch window and Inno Setup installer recipe are selected; the compiled private launcher opens local browser controls.
 - Provide one launch entry point, PC readiness, pairing and game selection.
 - Show camera pictures, recording destination and independent recording/streaming controls.
 - Bundle pinned dependencies; remove developer paths and manual commands.

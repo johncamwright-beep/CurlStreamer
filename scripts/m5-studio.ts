@@ -1,6 +1,6 @@
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { mkdir } from "node:fs/promises";
+import { mkdir, realpath } from "node:fs/promises";
 import { createInterface } from "node:readline";
 import { createM4OperatorServer } from "../src/lib/providers/m4-operator-server";
 import {
@@ -45,7 +45,16 @@ try {
   );
   if (process.version !== manifest.nodeVersion) throw new Error();
   const gameId = readStudioGame(process.argv[2], configuration.website);
-  const dataRoot = join(process.env.LOCALAPPDATA, "CurlStreamer", "Studio");
+  const requestedDataRoot = join(
+    process.env.LOCALAPPDATA,
+    "CurlStreamer",
+    "Studio",
+  );
+  await mkdir(requestedDataRoot, { recursive: true });
+  // Windows can virtualize LocalAppData for a launcher inherited from an MSIX
+  // app. Pass its canonical location to native children and cache recovery so
+  // they agree on the same directory, without relaxing cache link checks.
+  const dataRoot = await realpath(requestedDataRoot);
   const recordingRoot = join(dataRoot, "Recordings");
   await mkdir(recordingRoot, { recursive: true });
   if (requestedClose) {

@@ -26,7 +26,15 @@ handoff, wrong-game rejection and HTTP account denial using intercepted fixture
 resources and a separate browser profile. It performs no real sign-in, camera
 registration, recording or broadcast. The installed-controller/native smoke
 check and first-window visual inspection passed separately. Real-account
-recording acceptance remains pending the user's sign-in.
+recording acceptance also passed after sign-in: automatic start, scoring-page
+navigation during recording, and Stop & save produced a finalized 43.8-second
+1920x1080 H.264 file with the actual score and sponsor image. Both camera panes
+were waiting; live camera reception and camera audio were not verified.
+
+The controller resolves the actual Windows data directory before passing paths
+to native children. This handles MSIX LocalAppData redirection when launched from
+Codex without weakening private-cache symlink checks. The recordings-folder
+button resolves the same Windows directory before opening Explorer.
 
 Implementation follows Microsoft's [WinForms integration](https://learn.microsoft.com/en-us/microsoft-edge/webview2/get-started/winforms)
 and [WebView2 security guidance](https://learn.microsoft.com/en-us/microsoft-edge/webview2/concepts/security).

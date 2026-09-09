@@ -232,7 +232,7 @@ internal sealed class Workspace : Form
         if (local != null) local.Dispose(); local = null; child.Dispose(); child = null; runningGame = null; localAddress = null; recording = false;
     }
     private void OpenRecordings() {
-        try { var folder = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "CurlStreamer", "Studio", "Recordings"); Directory.CreateDirectory(folder); Process.Start(new ProcessStartInfo(folder) { UseShellExecute = true }); }
+        try { var folder = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "CurlStreamer", "Studio", "Recordings"); Directory.CreateDirectory(folder); Process.Start(new ProcessStartInfo(WorkspacePolicy.ExistingDirectory(folder)) { UseShellExecute = true }); }
         catch { status.Text = "Could not open the recordings folder."; }
     }
     private sealed class WorkspaceFailure : Exception { internal WorkspaceFailure(string message) : base(message) {} }

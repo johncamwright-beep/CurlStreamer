@@ -1,9 +1,29 @@
 using System;
 using System.IO;
 using System.Text.RegularExpressions;
+using System.Text;
+using System.Runtime.InteropServices;
+using Microsoft.Win32.SafeHandles;
 
 internal static class WorkspacePolicy
 {
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    private static extern SafeFileHandle CreateFile(string name, uint access, uint share, IntPtr security, uint disposition, uint flags, IntPtr template);
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    private static extern uint GetFinalPathNameByHandle(SafeFileHandle handle, StringBuilder path, uint size, uint flags);
+    internal static string ExistingDirectory(string folder)
+    {
+        // Resolve Windows package redirection before passing the folder to Explorer.
+        using (var handle = CreateFile(folder, 0, 7, IntPtr.Zero, 3, 0x02000000, IntPtr.Zero)) {
+            if (handle.IsInvalid) throw new IOException();
+            var path = new StringBuilder(32768);
+            var length = GetFinalPathNameByHandle(handle, path, (uint)path.Capacity, 0);
+            if (length == 0 || length >= path.Capacity) throw new IOException();
+            var result = path.ToString();
+            if (!Regex.IsMatch(result, @"^\\\\\?\\[A-Za-z]:\\")) throw new IOException();
+            return result.Substring(4);
+        }
+    }
     internal static bool SameOrigin(string value, string origin)
     {
         Uri url;

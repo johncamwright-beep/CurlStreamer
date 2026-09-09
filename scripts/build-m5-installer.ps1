@@ -37,6 +37,9 @@ $installerPath = Join-Path $outputRoot "CurlStreamer-Studio-$($manifest.release)
 if (Test-Path -LiteralPath $installerPath) { throw "Use a new output directory; existing installers are never overwritten." }
 & $CompilerPath "/DStudioSource=$sourceRoot" "/DStudioVersion=$($manifest.release)" "/DInstallerOutput=$outputRoot" (Join-Path $PSScriptRoot '../native/m5-studio-launcher/installer.iss') *> (Join-Path $outputRoot 'compile.log')
 if ($LASTEXITCODE -ne 0) { throw "Installer compilation failed. See compile.log." }
-[ordered]@{ release = $manifest.release; installerSha256 = (Get-FileHash -LiteralPath $installerPath -Algorithm SHA256).Hash.ToLowerInvariant(); manifestSha256 = (Get-FileHash -LiteralPath (Join-Path $sourceRoot 'manifest.json') -Algorithm SHA256).Hash.ToLowerInvariant(); compilerVersion = (Get-Item -LiteralPath $CompilerPath).VersionInfo.FileVersion; privatePreview = $true } |
+$compilerLog = Get-Content -LiteralPath (Join-Path $outputRoot 'compile.log') -Raw
+$compilerVersion = [regex]::Match($compilerLog, 'Compiler engine version: Inno Setup ([0-9.]+)').Groups[1].Value
+if (-not $compilerVersion) { throw "Compiler version was not reported in compile.log." }
+[ordered]@{ release = $manifest.release; installerSha256 = (Get-FileHash -LiteralPath $installerPath -Algorithm SHA256).Hash.ToLowerInvariant(); manifestSha256 = (Get-FileHash -LiteralPath (Join-Path $sourceRoot 'manifest.json') -Algorithm SHA256).Hash.ToLowerInvariant(); compilerVersion = $compilerVersion; compilerSha256 = (Get-FileHash -LiteralPath $CompilerPath -Algorithm SHA256).Hash.ToLowerInvariant(); privatePreview = $true } |
   ConvertTo-Json | Set-Content -LiteralPath (Join-Path $outputRoot 'installer-evidence.json') -Encoding utf8NoBOM
 Write-Output "Private Studio installer compiled and hashed. Distribution readiness remains separate."

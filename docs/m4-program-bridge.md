@@ -1,6 +1,6 @@
 # M4 private program pipeline
 
-The pipeline separates the camera invitation and realtime authentication from the renderer. These modules are implemented, but the managed application's renderer bootstrap and actual physical-camera run are not connected yet.
+The pipeline separates camera invitation and realtime authentication from the renderer. The managed bootstrap, two-camera recording and YouTube rehearsal have now been verified; see [current results](m4-controlled-rehearsal.md).
 
 - `m4-program-client.ts` exchanges the existing one-use M3 invitation in Node, keeps its cookie private, validates the fixed game's projection and permits only scoped camera actions. It cannot prepare or reassign cameras.
 - `m4-program-realtime.ts` owns one private subscription per camera and renews scoped tokens in Node. It validates identity, generation, expiry and sender, rechecks current server authority, and returns bounded signal events without the realtime token or topic.
@@ -9,4 +9,4 @@ The pipeline separates the camera invitation and realtime authentication from th
 
 The pipeline forwards WebRTC signaling because the renderer needs it to establish the direct media path. It does not claim that SDP is non-sensitive or that all browser state is memory-only. Invitation cookies and Supabase realtime tokens are specifically kept out of these renderer responses. No module logs raw signaling or credentials.
 
-The renderer bundle now mounts the shared `ProgramCanvas`, polls the private program projection and connects both cameras through the credential-free adapter. Built-in sponsor art is served locally. The remaining integration is the Node owner that starts the bridge and recorder together, deletes the private browser cache at shutdown, and supplies real invitation and Supabase configuration. External sponsor assets still require a bounded proxy. No private camera invitation has been sent through this new pipeline, and no physical-camera or endurance acceptance is implied by software tests.
+The renderer mounts the shared `ProgramCanvas`, polls the private projection and connects both cameras through the adapter. Node starts the bridge and recorder together and supplies private invitation/Supabase configuration. External sponsors use the bounded Node proxy described in the integration notes. Owned private cache cleanup follows recorder exit. Real physical-camera evidence exists; long endurance remains deferred.

@@ -237,7 +237,8 @@ test("loading and failed reads have recovery without replaying invitation writes
     "Invitation response uncertain",
   );
   const invitationWrites = state.writes.length;
-  expect(invitationWrites).toBe(4);
+  // A failed chooser request stops before issuing any individual invitations.
+  expect(invitationWrites).toBe(1);
   state.failure = true;
   await expect(
     page.getByRole("heading", { name: "Game control unavailable" }),

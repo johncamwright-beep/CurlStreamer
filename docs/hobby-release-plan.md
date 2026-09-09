@@ -12,6 +12,8 @@ Preserve local source/evidence outside Git; commit publishable M1-M4 code, tests
 
 ## 2. Assemble Windows Studio
 
+See the [component layout and first packaging slice](studio-packaging.md).
+
 - Choose the desktop shell and installer format; neither has been selected yet.
 - Provide one launch entry point, PC readiness, pairing and game selection.
 - Show camera pictures, recording destination and independent recording/streaming controls.

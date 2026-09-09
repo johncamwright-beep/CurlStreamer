@@ -84,7 +84,9 @@ async function scheduleGame(page: Page) {
     });
   });
   await page.goto("/games/new");
-  await page.getByPlaceholder("Search or add a new opponent").fill("Stones");
+  await page
+    .getByRole("textbox", { name: "New opponent name", exact: true })
+    .fill("Stones");
   await page.locator('input[name="scheduledDate"]').fill("2026-11-01");
   await page.locator('input[name="scheduledTime"]').fill("13:00");
   await page
@@ -99,6 +101,12 @@ test("organizer schedules a game and sees role links with the local API fixture"
   page,
 }) => {
   await scheduleGame(page);
+  await page
+    .getByText("Invite devices & camera setup", { exact: true })
+    .click();
+  await page
+    .getByRole("button", { name: "Create invitation", exact: true })
+    .click();
   await expect(
     page.getByRole("link", { name: "Open role chooser", exact: true }),
   ).toBeVisible();
@@ -107,7 +115,7 @@ test("organizer schedules a game and sees role links with the local API fixture"
     page.getByRole("link", { name: "Camera 1 Invite", exact: true }),
   ).toBeVisible();
   await expect(
-    page.getByRole("link", { name: "Scorekeeper + Audio Invite", exact: true }),
+    page.getByRole("link", { name: "Scorekeeper Invite", exact: true }),
   ).toBeVisible();
 });
 

@@ -124,15 +124,6 @@ export function AppNavigation({
 
   const gameLinks: NavLink[] = current
     ? [
-        ...(current.capabilities.control
-          ? [
-              {
-                href: `/games/${current.id}`,
-                label: "Game control",
-                icon: "control" as const,
-              },
-            ]
-          : []),
         ...(current.capabilities.assignOpponent
           ? [
               {
@@ -145,7 +136,7 @@ export function AppNavigation({
             ? [
                 {
                   href: `/score/${current.id}`,
-                  label: "Scoring",
+                  label: "Game Scoring",
                   icon: "score" as const,
                 },
               ]

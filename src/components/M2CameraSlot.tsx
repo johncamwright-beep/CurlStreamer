@@ -3,6 +3,12 @@ import { useEffect, useRef, useState } from "react";
 import QRCode from "qrcode";
 import Image from "next/image";
 import {
+  hardwareZoomRange,
+  clampZoom,
+  type ZoomRange,
+} from "@/lib/providers/livekit-client";
+import "./phone-camera.css";
+import {
   cameraPublishAccessToken,
   organizerAccessToken,
   preserveAndStoreParticipantAccess,
@@ -37,6 +43,27 @@ export function M2CameraSlot({
   onReady?: (role: "camera-home" | "camera-away", ready: boolean) => void;
   testRun?: number;
 }) {
+  const [previewReady, setPreviewReady] = useState(false);
+  const [zoomRange, setZoomRange] = useState<ZoomRange>();
+  const [zoom, setZoom] = useState(1);
+  const zoomFlight = useRef(false);
+  async function updateZoom(value: number) {
+    const current = track.current;
+    if (!current || !zoomRange || zoomFlight.current) return;
+    zoomFlight.current = true;
+    try {
+      const next = clampZoom(value, zoomRange);
+      await current.applyConstraints({
+        advanced: [{ zoom: next } as MediaTrackConstraintSet],
+      });
+      if (current === track.current)
+        setZoom(current.getSettings().zoom ?? next);
+    } catch {
+      setWarning("This phone could not adjust zoom.");
+    } finally {
+      zoomFlight.current = false;
+    }
+  }
   const video = useRef<HTMLVideoElement>(null);
   const track = useRef<MediaStreamTrack | undefined>(undefined);
   const connection = useRef<{ stop: () => void } | undefined>(undefined);
@@ -115,6 +142,8 @@ export function M2CameraSlot({
     setupAbort.current?.abort();
     setupAbort.current = undefined;
     active.current = false;
+    setPreviewReady(false);
+    setZoomRange(undefined);
     onReady?.(cameraRole, false);
     connection.current?.stop();
     connection.current = undefined;
@@ -136,9 +165,7 @@ export function M2CameraSlot({
         cleanup("Operator opened a new camera invitation");
         invitation.current = incoming;
         history.replaceState(null, "", location.pathname);
-        setStatus(
-          "New invitation received. Claim camera to replace the saved camera access.",
-        );
+        setStatus("New invitation received. Tap Connect phone to continue.");
       }
       setClaimed(
         !invitation.current &&
@@ -291,6 +318,13 @@ export function M2CameraSlot({
         return;
       }
       setWarning(acquired.report.warning ?? "");
+      setPreviewReady(true);
+      const range =
+        typeof acquired.track.getCapabilities === "function"
+          ? hardwareZoomRange(acquired.track)
+          : undefined;
+      setZoomRange(range);
+      setZoom(acquired.track.getSettings().zoom ?? range?.min ?? 1);
       captureEvidence.current = { report: acquired.report };
       wake.current = new OptionalScreenWakeLock(
         navigator,
@@ -491,6 +525,95 @@ export function M2CameraSlot({
     // The parent increments this only when both independent slots are ready.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [testRun]);
+  const phoneView = side === "camera";
+  if (phoneView)
+    return (
+      <main
+        className="phone-camera"
+        aria-label={cameraRole === "camera-home" ? "Camera 1" : "Camera 2"}
+      >
+        <header>
+          <div>
+            <p>{cameraRole === "camera-home" ? "CAMERA 1" : "CAMERA 2"}</p>
+            <h1>Portrait camera</h1>
+          </div>
+          <span>
+            {metrics?.direct && previewReady
+              ? "Connected"
+              : previewReady
+                ? "Connecting"
+                : "Not connected"}
+          </span>
+        </header>
+        <div className="phone-camera-frame">
+          <video
+            ref={video}
+            autoPlay
+            muted
+            playsInline
+            aria-label="Complete local camera frame"
+          />
+          {!previewReady && (
+            <div className="phone-camera-guide" aria-hidden="true">
+              <div className="phone-camera-house">
+                <div />
+              </div>
+              <div className="phone-camera-line" />
+            </div>
+          )}
+        </div>
+        <button
+          className="btn phone-camera-connect"
+          disabled={busy}
+          onClick={() => {
+            if (previewReady) {
+              cleanup("Phone disconnected");
+              setMetrics(undefined);
+              setStatus("Phone disconnected. Connect again when ready.");
+            } else
+              void run(async () => {
+                if (invitation.current) await claim();
+                await connect();
+              });
+          }}
+        >
+          {busy
+            ? "Connecting…"
+            : previewReady
+              ? "Disconnect phone"
+              : "Connect phone"}
+        </button>
+        <p role="status" aria-live="polite">
+          {status}
+        </p>
+        {warning && <p role="alert">{warning}</p>}
+        {previewReady && (
+          <details className="phone-camera-zoom">
+            <summary>Zoom</summary>
+            {zoomRange ? (
+              <label>
+                Zoom {zoom.toFixed(1)}×
+                <input
+                  aria-label="Hardware zoom"
+                  type="range"
+                  min={zoomRange.min}
+                  max={zoomRange.max}
+                  step={zoomRange.step}
+                  value={zoom}
+                  onChange={(e) => void updateZoom(Number(e.target.value))}
+                />
+              </label>
+            ) : (
+              <p>This phone does not offer camera zoom in this browser.</p>
+            )}
+          </details>
+        )}
+        <p className="phone-camera-hint">
+          Keep the phone upright, on the same Wi-Fi as Studio, and leave this
+          page open.
+        </p>
+      </main>
+    );
   return (
     <section
       aria-label={cameraRole === "camera-home" ? "Camera 1" : "Camera 2"}
@@ -625,11 +748,7 @@ export function M2CameraSlot({
         controls={side === "receiver"}
         className="h-[45vh] w-full rounded-xl bg-black"
         style={{ objectFit: "contain" }}
-        aria-label={
-          side === "camera"
-            ? "Complete local camera frame"
-            : "Complete received camera frame"
-        }
+        aria-label="Complete received camera frame"
       />
       {side === "receiver" && metrics && (
         <dl className="panel grid grid-cols-2 gap-2">

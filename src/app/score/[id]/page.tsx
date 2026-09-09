@@ -36,6 +36,7 @@ export default function Scorer({
     accountRole,
     navigationMetadata,
     refreshContext,
+    refresh,
   } = useGame(id, undefined, undefined, true);
   const [points, setPoints] = useState(1);
   const [desktop, setDesktop] = useState(false);
@@ -538,7 +539,12 @@ export default function Scorer({
                       a camera code on each phone. Keep the phones on the same
                       Wi-Fi and leave their camera pages open.
                     </p>
-                    <StudioDeviceCards id={id} claims={game.claims} enabled />
+                    <StudioDeviceCards
+                      id={id}
+                      claims={game.claims}
+                      onChanged={refresh}
+                      enabled
+                    />
                   </div>
                 </details>
               )}

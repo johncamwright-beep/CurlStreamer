@@ -18,12 +18,8 @@ export function StudioSetup({
   directCameras: boolean;
   pairing: boolean;
 }) {
-  const { game, completion, accountRole, error, refreshContext } = useGame(
-    id,
-    undefined,
-    undefined,
-    true,
-  );
+  const { game, completion, accountRole, error, refreshContext, refresh } =
+    useGame(id, undefined, undefined, true);
   const [organizer, setOrganizer] = useState(false);
   const [gameUrl, setGameUrl] = useState("");
   const [message, setMessage] = useState("");
@@ -85,7 +81,12 @@ export function StudioSetup({
             Camera setup is not enabled on this deployment yet.
           </p>
         ) : (
-          <StudioDeviceCards id={id} claims={game.claims} enabled />
+          <StudioDeviceCards
+            id={id}
+            claims={game.claims}
+            onChanged={refresh}
+            enabled
+          />
         )}
         <section className="studio-connect-note">
           <h2 className="font-semibold">Recording on this PC</h2>

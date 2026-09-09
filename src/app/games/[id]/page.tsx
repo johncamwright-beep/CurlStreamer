@@ -1,5 +1,6 @@
 "use client";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { use, useEffect, useState } from "react";
 import { useGame } from "@/components/GameSync";
 import type { Role } from "@/lib/types";
@@ -27,6 +28,7 @@ export default function GameLobby({
   params: Promise<{ id: string }>;
 }) {
   const { id } = use(params);
+  const router = useRouter();
   const {
     game,
     completion,
@@ -47,6 +49,26 @@ export default function GameLobby({
     setOrganizerAccess(hasOrganizerAccess(localStorage, id));
     setScoringAccess(hasScoringAccess(localStorage, id));
   }, [id]);
+  useEffect(() => {
+    if (
+      navigator.userAgent.includes("CurlStreamerStudio/0.3") &&
+      game &&
+      !completion &&
+      game.config.awayName !== "Opponent TBD" &&
+      (organizerAccess ||
+        scoringAccess ||
+        ["owner", "team_admin", "scorer"].includes(accountRole))
+    )
+      router.replace("/score/" + id);
+  }, [
+    game,
+    completion,
+    organizerAccess,
+    scoringAccess,
+    accountRole,
+    id,
+    router,
+  ]);
   async function cameraAction(
     role: "camera-home" | "camera-away",
     release: boolean,

@@ -1,6 +1,6 @@
 "use client";
 
-import Link from "next/link";
+import { organizerAccessToken } from "@/lib/access-session";
 import QRCode from "qrcode";
 import { useEffect, useRef, useState } from "react";
 import { z } from "zod";
@@ -14,13 +14,47 @@ function DeviceCard({
   label,
   claimed,
   enabled,
+  onChanged,
+  connectionStatus,
 }: {
   id: string;
   role: Role;
   label: string;
   claimed: boolean;
   enabled: boolean;
+  onChanged?: () => Promise<unknown>;
+  connectionStatus?: { receiverReady: boolean; phoneOnline: boolean };
 }) {
+  const [confirmRelease, setConfirmRelease] = useState(false);
+  async function releaseCamera() {
+    if (busy || role === "scorer" || !onChanged) return;
+    setBusy(true);
+    setError("");
+    try {
+      const token = organizerAccessToken(localStorage, id);
+      const response = await fetch("/api/games/" + id + "/release-camera", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          ...(token ? { authorization: "Bearer " + token } : {}),
+        },
+        body: JSON.stringify({ role }),
+      });
+      if (!response.ok) throw Error();
+      const result = await response.json();
+      setReconnect(undefined);
+      setConfirmRelease(false);
+      await onChanged();
+      if (result.providerCleanup?.status === "failed")
+        setError(
+          "Assignment released. The old phone may take a moment to disconnect.",
+        );
+    } catch {
+      setError("Could not confirm release. Refresh the game and try again.");
+    } finally {
+      setBusy(false);
+    }
+  }
   const [invitation, setInvitation] = useState<{
     url: string;
     image: string;
@@ -150,7 +184,15 @@ function DeviceCard({
               : "Reopen the camera page on the original phone and keep it in the foreground."}
           </p>
           <p className="studio-device-help">
-            Assignment does not confirm a live connection.
+            {scorer
+              ? "Assignment does not confirm a live connection."
+              : connectionStatus
+                ? connectionStatus.phoneOnline
+                  ? "Phone online · video reception not verified here"
+                  : connectionStatus.receiverReady
+                    ? "PC ready · no current phone connection"
+                    : "PC connection inactive · start recording first"
+                : "Connection status unavailable · assignment retained"}
           </p>
           {reconnect && (
             <div className="studio-device-qr">
@@ -176,12 +218,35 @@ function DeviceCard({
           >
             {busy ? "Preparing…" : "Show reconnect QR"}
           </button>
-          <Link
-            className="studio-device-action secondary"
-            href={"/games/" + id}
-          >
-            Manage assignment
-          </Link>
+          {!scorer &&
+            onChanged &&
+            (confirmRelease ? (
+              <div>
+                <p>Release this camera? Its saved access will stop working.</p>
+                <button
+                  className="studio-device-action"
+                  disabled={busy}
+                  onClick={() => void releaseCamera()}
+                >
+                  Confirm release
+                </button>
+                <button
+                  className="studio-device-action secondary"
+                  disabled={busy}
+                  onClick={() => setConfirmRelease(false)}
+                >
+                  Cancel
+                </button>
+              </div>
+            ) : (
+              <button
+                className="studio-device-action secondary"
+                disabled={busy}
+                onClick={() => setConfirmRelease(true)}
+              >
+                Release camera
+              </button>
+            ))}
         </>
       ) : (
         <>
@@ -240,21 +305,69 @@ export function StudioDeviceCards({
   id,
   claims,
   enabled,
+  onChanged,
 }: {
   id: string;
   claims: Partial<Record<Role, string>>;
   enabled: boolean;
+  onChanged?: () => Promise<unknown>;
 }) {
+  const [connections, setConnections] =
+    useState<
+      Record<string, { receiverReady: boolean; phoneOnline: boolean }>
+    >();
+  useEffect(() => {
+    if (!enabled) return;
+    let cancelled = false;
+    let inFlight = false;
+    const poll = async () => {
+      if (inFlight) return;
+      inFlight = true;
+      try {
+        const token = organizerAccessToken(localStorage, id);
+        const response = await fetch("/api/games/" + id + "/studio-devices", {
+          headers: token ? { authorization: "Bearer " + token } : {},
+          cache: "no-store",
+          signal: AbortSignal.timeout(8000),
+        });
+        if (!response.ok) throw Error();
+        const parsed = z
+          .object({
+            cameras: z.record(
+              z.string(),
+              z.object({
+                receiverReady: z.boolean(),
+                phoneOnline: z.boolean(),
+              }),
+            ),
+          })
+          .parse(await response.json());
+        if (!cancelled) setConnections(parsed.cameras);
+      } catch {
+        if (!cancelled) setConnections(undefined);
+      } finally {
+        inFlight = false;
+      }
+    };
+    void poll();
+    const timer = setInterval(() => void poll(), 5000);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [id, enabled]);
   return (
     <div className="studio-device-grid">
       {invitationRoles.map(([role, label]) => (
         <DeviceCard
-          key={id + role}
+          key={id + role + (claims[role] ?? "")}
           id={id}
           role={role}
           label={role === "scorer" ? "Remote scorer" : label}
           claimed={Boolean(claims[role])}
           enabled={enabled}
+          onChanged={onChanged}
+          connectionStatus={connections?.[role]}
         />
       ))}
     </div>

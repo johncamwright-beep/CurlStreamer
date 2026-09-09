@@ -6,7 +6,7 @@ let stylesheet: string;
 test.beforeAll(async () => {
   const output = await build({
     stdin: {
-      contents: `import React from 'react'; import {createRoot} from 'react-dom/client'; import {StudioDeviceCards} from './src/components/StudioDeviceCards'; const root=createRoot(document.getElementById('root')); window.updateDeviceFixture=(claims)=>root.render(React.createElement(StudioDeviceCards,{id:'${testGameId}',enabled:true,claims})); window.updateDeviceFixture({'camera-home':'assigned'});`,
+      contents: `import React from 'react'; import {createRoot} from 'react-dom/client'; import {StudioDeviceCards} from './src/components/StudioDeviceCards'; const root=createRoot(document.getElementById('root')); window.updateDeviceFixture=(claims)=>root.render(React.createElement(StudioDeviceCards,{id:'${testGameId}',enabled:true,claims,onChanged:async()=>window.updateDeviceFixture({})})); window.updateDeviceFixture({'camera-home':'assigned'});`,
       resolveDir: process.cwd(),
       loader: "tsx",
     },
@@ -165,4 +165,34 @@ test("an invitation for another game is rejected without displaying a QR", async
   await expect(card.getByRole("alert")).toBeVisible();
   await expect(card.getByRole("img")).toHaveCount(0);
   await expect(card.getByRole("button", { name: "Try again" })).toBeEnabled();
+});
+
+test("release stays on the game and requires an explicit confirmation", async ({
+  page,
+}) => {
+  const releases: unknown[] = [];
+  await page.route("**/api/games/" + testGameId + "/studio-devices", (r) =>
+    r.fulfill({
+      json: {
+        cameras: { "camera-home": { receiverReady: true, phoneOnline: true } },
+      },
+    }),
+  );
+  await page.route("**/api/games/" + testGameId + "/release-camera", (r) => {
+    releases.push(r.request().postDataJSON());
+    return r.fulfill({ json: { released: true } });
+  });
+  await openCards(page);
+  const card = page.getByRole("region", { name: "Camera 1", exact: true });
+  await expect(card).toContainText("Phone online");
+  await card
+    .getByRole("button", { name: "Release camera", exact: true })
+    .click();
+  expect(releases).toEqual([]);
+  await card.getByRole("button", { name: "Confirm release" }).click();
+  await expect(
+    card.getByRole("button", { name: "Show QR code", exact: true }),
+  ).toBeVisible();
+  expect(releases).toEqual([{ role: "camera-home" }]);
+  expect(new URL(page.url()).pathname).toBe("/device-fixture");
 });

@@ -89,7 +89,7 @@ test("two accessible receiver slots scope registration and invitations independe
 
 test("camera-away fresh invitation supersedes saved access and claims only that role", async ({
   page,
-}) => {
+}, info) => {
   await page.addInitScript(
     ({ id }) => {
       const saved =
@@ -122,14 +122,24 @@ test("camera-away fresh invitation supersedes saved access and claims only that 
     "New invitation received",
   );
   await expect(
-    page.getByRole("button", { name: "Start camera" }),
-  ).toBeDisabled();
+    page.getByRole("button", { name: "Connect phone", exact: true }),
+  ).toBeEnabled();
+  await page.evaluate(() => {
+    navigator.mediaDevices.getUserMedia = async () => {
+      throw new DOMException("Fixture camera unavailable", "NotFoundError");
+    };
+  });
   await page
-    .getByRole("button", { name: "Accept camera invitation", exact: true })
+    .getByRole("button", { name: "Connect phone", exact: true })
     .click();
   await expect(
-    page.getByRole("button", { name: "Start camera" }),
+    page.getByRole("button", { name: "Connect phone", exact: true }),
   ).toBeEnabled();
+  await expect(page.getByRole("main").getByRole("button")).toHaveCount(1);
+  await page.screenshot({
+    path: info.outputPath("phone-portrait.png"),
+    fullPage: true,
+  });
   expect(claims).toEqual([
     { token: "synthetic-fresh-away", claimant: expect.any(String) },
   ]);

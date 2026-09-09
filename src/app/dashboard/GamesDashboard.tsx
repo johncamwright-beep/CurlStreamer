@@ -77,12 +77,12 @@ export function GamesDashboard({
           <p className="dashboard-eyebrow">{membership.teamName}</p>
           <h1>Games</h1>
           <p className="dashboard-subtitle">
-            Your schedule, match controls and results in one place.
+            Choose a game to connect cameras and score.
           </p>
         </div>
         {membership.role !== "viewer" && (
           <Link className="btn dashboard-schedule" href="/games/new">
-            ＋ Schedule a game
+            ＋ Create game
           </Link>
         )}
       </header>
@@ -116,58 +116,6 @@ export function GamesDashboard({
           <Link href="/seasons">Manage seasons &amp; events →</Link>
         )}
       </div>
-      <div className="dashboard-overview" aria-label="Season overview">
-        <Link href={href("upcoming")}>
-          <strong>{groups.upcoming.length}</strong>
-          <span>Upcoming games</span>
-        </Link>
-        <Link href={href("past")}>
-          <strong>{groups.completed.length}</strong>
-          <span>Completed games</span>
-        </Link>
-        <Link href={href("events")}>
-          <strong>{events.length}</strong>
-          <span>Events</span>
-        </Link>
-      </div>
-      {!broadcasts.available && (
-        <p className="dashboard-notice" role="status">
-          Broadcast status is temporarily unavailable. Your schedule and saved
-          results are still available. <a href={href(tab)}>Refresh status</a>
-        </p>
-      )}
-      {!!groups.broadcasting.length && (
-        <section
-          className="dashboard-activity"
-          aria-labelledby="broadcast-activity"
-        >
-          <div className="dashboard-section-heading">
-            <div>
-              <h2 id="broadcast-activity">Broadcast activity</h2>
-              <p>
-                Last saved YouTube status. Open game controls for the latest
-                status.
-              </p>
-            </div>
-            <a className="btn-secondary" href={href(tab)}>
-              Refresh
-            </a>
-          </div>
-          {rows(groups.broadcasting)}
-        </section>
-      )}
-      {!!groups.unfinished.length && tab !== "unfinished" && (
-        <div className="dashboard-unfinished">
-          <div>
-            <strong>
-              {groups.unfinished.length} unfinished{" "}
-              {groups.unfinished.length === 1 ? "game" : "games"}
-            </strong>
-            <p>Past the scheduled start, or still waiting for a date.</p>
-          </div>
-          <Link href={href("unfinished")}>Review games →</Link>
-        </div>
-      )}
       <section aria-label="Browse games">
         <nav className="dashboard-tabs" aria-label="Browse games">
           {(
@@ -275,6 +223,32 @@ export function GamesDashboard({
           />
         )}
       </section>
+      {!broadcasts.available && (
+        <p className="dashboard-notice" role="status">
+          Broadcast status is temporarily unavailable. Your schedule and saved
+          results are still available. <a href={href(tab)}>Refresh status</a>
+        </p>
+      )}
+      {!!groups.broadcasting.length && (
+        <section
+          className="dashboard-activity"
+          aria-labelledby="broadcast-activity"
+        >
+          <div className="dashboard-section-heading">
+            <div>
+              <h2 id="broadcast-activity">Broadcast activity</h2>
+              <p>
+                Last saved YouTube status. Open game controls for the latest
+                status.
+              </p>
+            </div>
+            <a className="btn-secondary" href={href(tab)}>
+              Refresh
+            </a>
+          </div>
+          {rows(groups.broadcasting)}
+        </section>
+      )}
       {administrator && (
         <footer className="dashboard-footer">
           <Link href="/dashboard/trash">Recently deleted games →</Link>

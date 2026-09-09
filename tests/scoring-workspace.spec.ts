@@ -15,6 +15,7 @@ async function setup(page: Page, desktop = false) {
       headers: {
         "x-curlcast-operator": "true",
         "x-curlcast-account-role": "owner",
+        "x-curlcast-m1-pilot": "true",
       },
     });
   });
@@ -199,9 +200,11 @@ test("desktop game day keeps scoring primary and settings available on demand", 
   await expect(
     page.getByRole("button", { name: "Save 1 point", exact: true }),
   ).toBeEnabled();
+  await page.getByText("Connect phones", { exact: true }).click();
   await expect(
-    page.getByRole("link", { name: "Camera & scorer QR codes" }),
-  ).toHaveAttribute("href", `/games/${testGameId}/studio`);
+    page.getByRole("region", { name: "Camera 1", exact: true }),
+  ).toBeVisible();
+  await expect(page.getByText(/First, use Start recording/)).toBeVisible();
   await expect(
     page.getByRole("region", { name: "YouTube broadcast" }),
   ).toHaveCount(0);

@@ -122,11 +122,13 @@ test("camera-away fresh invitation supersedes saved access and claims only that 
     "New invitation received",
   );
   await expect(
-    page.getByRole("button", { name: "Start or reconnect camera" }),
+    page.getByRole("button", { name: "Start camera" }),
   ).toBeDisabled();
-  await page.getByRole("button", { name: "Claim camera", exact: true }).click();
+  await page
+    .getByRole("button", { name: "Accept camera invitation", exact: true })
+    .click();
   await expect(
-    page.getByRole("button", { name: "Start or reconnect camera" }),
+    page.getByRole("button", { name: "Start camera" }),
   ).toBeEnabled();
   expect(claims).toEqual([
     { token: "synthetic-fresh-away", claimant: expect.any(String) },

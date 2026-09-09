@@ -18,6 +18,7 @@ import type {
   CompletionCleanup,
   SafeGameCompletion,
 } from "@/lib/game-completion";
+import { StudioDeviceCards } from "@/components/StudioDeviceCards";
 import { BroadcastControl } from "@/components/BroadcastControl";
 export default function Scorer({
   params,
@@ -31,6 +32,7 @@ export default function Scorer({
     error,
     act,
     accountOperator,
+    m1Pilot,
     accountRole,
     navigationMetadata,
     refreshContext,
@@ -241,7 +243,7 @@ export default function Scorer({
       <header className="scoring-page-heading">
         <div>
           <p className="scoring-eyebrow">
-            {desktop ? "Game day" : "Match control"}
+            {desktop ? "Selected game" : "Match control"}
           </p>
           <h1>{desktop ? title : "Scoring"}</h1>
           {!desktop && <p className="scoring-match-title">{title}</p>}
@@ -527,20 +529,19 @@ export default function Scorer({
         >
           {desktop ? (
             <>
-              <section className="scoring-card studio-device-card">
-                <p className="scoring-eyebrow">Devices</p>
-                <h2>Bring your cameras and scorer</h2>
-                <p>
-                  Join cameras from their phones, or let someone score from a
-                  tablet.
-                </p>
-                <Link
-                  className="btn-secondary"
-                  href={"/games/" + id + "/studio"}
-                >
-                  Camera &amp; scorer QR codes
-                </Link>
-              </section>
+              {canEndGame && m1Pilot && (
+                <details id="devices" className="studio-settings">
+                  <summary>Connect phones</summary>
+                  <div className="studio-settings-content">
+                    <p>
+                      First, use Start recording in Studio on this PC. Then scan
+                      a camera code on each phone. Keep the phones on the same
+                      Wi-Fi and leave their camera pages open.
+                    </p>
+                    <StudioDeviceCards id={id} claims={game.claims} enabled />
+                  </div>
+                </details>
+              )}
               <section className="scoring-card studio-output-note">
                 <div className="scoring-section-heading">
                   <h2>YouTube</h2>

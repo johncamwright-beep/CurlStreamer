@@ -51,6 +51,8 @@ describe("dashboard role controls", () => {
   it("gives scorers scoring access and reserves administrative actions for admins", () => {
     const scorer = render("scorer");
     expect(scorer).toContain('href="/score/one"');
+    expect(scorer).not.toContain("Season overview");
+    expect(scorer).not.toContain("Scoring:");
     expect(scorer).not.toContain("More actions");
     const admin = render("team_admin");
     expect(admin).toContain("More actions");

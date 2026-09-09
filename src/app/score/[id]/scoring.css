@@ -395,7 +395,7 @@
 .scoring-desktop .scoring-navigation {
   margin-bottom: 12px;
 }
-.scoring-desktop .scoring-navigation > :first-child {
+.scoring-desktop .scoring-navigation > :last-child {
   display: none;
 }
 .scoring-desktop .scoring-page-heading {
@@ -487,4 +487,8 @@
   .scoring-desktop .scoring-sidebar {
     grid-template-columns: minmax(0, 1fr);
   }
+}
+
+.scoring-sidebar .studio-device-grid {
+  grid-template-columns: minmax(0, 1fr);
 }

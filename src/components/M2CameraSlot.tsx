@@ -56,7 +56,7 @@ export function M2CameraSlot({
   const [status, setStatus] = useState(
     side === "receiver"
       ? "Register this PC, then pair camera."
-      : "Claim camera, then start the camera.",
+      : "Start your camera when Studio is recording on the PC.",
   );
   const [qr, setQr] = useState("");
   const [warning, setWarning] = useState("");
@@ -98,7 +98,13 @@ export function M2CameraSlot({
     const value = await result.json().catch(() => null);
     if (!result.ok) {
       if (requestEpoch === epoch.current)
-        failure.current = `Studio ${body.action} request failed (HTTP ${result.status}).`;
+        failure.current =
+          side === "camera" && result.status === 409
+            ? "The PC connection or camera access is no longer ready. Start recording for this game in Studio, then try again. If this camera was released, scan a fresh invitation."
+            : side === "camera" &&
+                (result.status === 401 || result.status === 403)
+              ? "This camera no longer has access. Ask the organizer for a new camera QR code."
+              : "Could not connect to Studio. Check your connection and try again.";
       throw Error("Studio request failed");
     }
     return value;
@@ -348,8 +354,8 @@ export function M2CameraSlot({
         report.last = value;
         setStatus(
           value.direct
-            ? "Direct path verified. Confirm the phone and PC are on the same router LAN."
-            : "Waiting for a verified direct connection.",
+            ? "Connected to Studio. Keep this page open."
+            : "Connecting to Studio…",
         );
       },
       onStop: (reason) => {
@@ -368,9 +374,7 @@ export function M2CameraSlot({
       return;
     }
     connection.current = handle;
-    setStatus(
-      "Private signaling connected. Waiting for the direct video path.",
-    );
+    setStatus("Connecting to Studio…");
   }
   function exportEvidence() {
     const blob = new Blob(
@@ -493,14 +497,12 @@ export function M2CameraSlot({
       className="mx-auto max-w-4xl space-y-4 p-4"
     >
       <h2 className="text-3xl font-bold">
-        M2 direct camera ·{" "}
-        {cameraRole === "camera-home" ? "Camera 1" : "Camera 2"} ·{" "}
-        {side === "receiver" ? "PC receiver" : "Publisher"}
+        {side === "receiver" ? "PC receiver · " : ""}
+        {cameraRole === "camera-home" ? "Camera 1" : "Camera 2"}
       </h2>
       <p>
-        Disposable infrastructure test · one camera · video only. Keep both
-        devices on the same router, with client isolation disabled. Keep the
-        phone powered, upright, unlocked, and in the foreground.
+        Keep your phone upright and on the same Wi-Fi as the recording PC. Leave
+        this page open while filming.
       </p>
       <p role="status" aria-live="polite" className="panel">
         {status}
@@ -555,19 +557,21 @@ export function M2CameraSlot({
           </>
         ) : (
           <>
-            <button
-              className="btn-secondary"
-              disabled={busy || claimed}
-              onClick={() => void run(claim)}
-            >
-              Claim camera
-            </button>
+            {!claimed && (
+              <button
+                className="btn-secondary"
+                disabled={busy || claimed}
+                onClick={() => void run(claim)}
+              >
+                Accept camera invitation
+              </button>
+            )}
             <button
               className="btn"
               disabled={busy || !claimed}
               onClick={() => void run(connect)}
             >
-              Start or reconnect camera
+              Start camera
             </button>
           </>
         )}
@@ -593,13 +597,15 @@ export function M2CameraSlot({
         >
           Stop
         </button>
-        <button
-          className="btn-secondary"
-          disabled={!metrics}
-          onClick={exportEvidence}
-        >
-          Export aggregate evidence
-        </button>
+        {side === "receiver" && (
+          <button
+            className="btn-secondary"
+            disabled={!metrics}
+            onClick={exportEvidence}
+          >
+            Export aggregate evidence
+          </button>
+        )}
       </div>
       {qr && (
         <Image
@@ -616,7 +622,7 @@ export function M2CameraSlot({
         autoPlay
         muted
         playsInline
-        controls
+        controls={side === "receiver"}
         className="h-[45vh] w-full rounded-xl bg-black"
         style={{ objectFit: "contain" }}
         aria-label={
@@ -625,7 +631,7 @@ export function M2CameraSlot({
             : "Complete received camera frame"
         }
       />
-      {metrics && (
+      {side === "receiver" && metrics && (
         <dl className="panel grid grid-cols-2 gap-2">
           <dt>Verified direct path</dt>
           <dd>{metrics.direct ? "Yes" : "No"}</dd>
@@ -667,13 +673,15 @@ export function M2CameraSlot({
           </dd>
         </dl>
       )}
-      <p>
-        To reconnect after Wi-Fi loss: restart camera, then reconnect the
-        receiver within 30 seconds. If the PC session expired, register it again
-        first. Completing or closing the game, releasing camera, or replacing
-        this PC session invalidates access. M2 acceptance still requires a
-        physical two-and-a-half-hour test.
-      </p>
+      {side === "receiver" && (
+        <p>
+          To reconnect after Wi-Fi loss: restart camera, then reconnect the
+          receiver within 30 seconds. If the PC session expired, register it
+          again first. Completing or closing the game, releasing camera, or
+          replacing this PC session invalidates access. M2 acceptance still
+          requires a physical two-and-a-half-hour test.
+        </p>
+      )}
     </section>
   );
 }

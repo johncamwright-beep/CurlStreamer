@@ -40,18 +40,6 @@ internal sealed class Workspace : Form
         ClientSize = new Size(1180, 820); MinimumSize = new Size(940, 680);
         AutoScaleMode = AutoScaleMode.Dpi; Font = new Font("Segoe UI", 10);
         BackColor = Color.FromArgb(10, 24, 40); ForeColor = Color.White;
-        var header = new FlowLayoutPanel { Dock = DockStyle.Top, Height = 68, Padding = new Padding(16, 10, 16, 10), WrapContents = false };
-        header.Controls.Add(new Label { Text = "CurlStreamer Studio", AutoSize = true, Font = new Font(Font.FontFamily, 15, FontStyle.Bold), Padding = new Padding(3, 10, 14, 0) });
-        Nav(header, "Schedule", "/dashboard");
-        gameDay.Text = "Game day"; Style(gameDay); gameDay.Click += (s, e) => Navigate("/score/" + (recording ? runningGame : lastGame)); header.Controls.Add(gameDay);
-        var manage = MakeButton("Manage");
-        var menu = new ContextMenuStrip { Font = Font, ShowImageMargin = false };
-        foreach (var item in new[] { new[] { "Seasons & events", "/seasons" }, new[] { "Sponsors", "/sponsors" }, new[] { "Account", "/account" } }) {
-            var path = item[1]; var entry = menu.Items.Add(item[0]); entry.Click += (s, e) => Navigate(path);
-        }
-        menu.Items.Add(new ToolStripSeparator());
-        menu.Items.Add("Refresh page", null, (s, e) => { if (!busy && !closing && web.CoreWebView2 != null) web.Reload(); });
-        manage.Click += (s, e) => menu.Show(manage, new Point(0, manage.Height)); header.Controls.Add(manage);
         var bottom = new TableLayoutPanel { Dock = DockStyle.Bottom, Height = 96, Padding = new Padding(16, 8, 16, 8), ColumnCount = 1, RowCount = 2 };
         bottom.RowStyles.Add(new RowStyle(SizeType.Absolute, 50)); bottom.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         var actions = new FlowLayoutPanel { Dock = DockStyle.Fill, WrapContents = false, Height = 54 };
@@ -61,12 +49,12 @@ internal sealed class Workspace : Form
         finish.Text = "Stop & save recording"; Style(finish); finish.Click += async (s, e) => await StopRecording();
         devices.Text = "Connect devices"; Style(devices); devices.Click += (s, e) => Navigate("/games/" + selectedGame + "/studio");
         var files = MakeButton("Saved videos"); files.Click += (s, e) => OpenRecordings();
-        actions.Controls.AddRange(new Control[] { record, finish, devices, files });
+        actions.Controls.AddRange(new Control[] { record, finish, files });
         status.Text = "Opening your workspace…"; status.Dock = DockStyle.Fill; status.AutoEllipsis = true;
         status.AccessibleName = "Recording status"; status.Padding = new Padding(5, 5, 0, 0);
         bottom.Controls.Add(actions); bottom.Controls.Add(status);
         web.Dock = DockStyle.Fill;
-        Controls.Add(web); Controls.Add(bottom); Controls.Add(header);
+        Controls.Add(web); Controls.Add(bottom);
         Shown += async (s, e) => await Initialize();
         poll.Tick += async (s, e) => await Poll();
         FormClosing += async (s, e) => {
@@ -122,13 +110,14 @@ internal sealed class Workspace : Form
             core.NavigationCompleted += (s, e) => {
                 selectedGame = WorkspacePolicy.Game(core.Source, origin);
                 if (!e.IsSuccess && !recording) status.Text = "The workspace could not load. Check your internet connection and choose Refresh.";
-                else if (!recording && !busy) status.Text = selectedGame == null ? "Choose a game from your schedule to get started." : "Game ready. Open Game day to score, or connect your devices.";
+                else if (!recording && !busy) status.Text = selectedGame == null ? "Choose a game from your schedule to get started." : "Game selected. Start recording before connecting camera phones.";
                 UpdateButtons();
             };
             core.NewWindowRequested += (s, e) => { e.Handled = true; if (WorkspacePolicy.SameOrigin(e.Uri, origin)) Navigate(new Uri(e.Uri).PathAndQuery + new Uri(e.Uri).Fragment); else status.Text = "External account connections are available from the website in your browser."; };
             core.PermissionRequested += (s, e) => { e.State = CoreWebView2PermissionState.Deny; };
             core.WebMessageReceived += ReceiveGrant;
-            core.Navigate(launchGame != null && WorkspacePolicy.Game(launchGame, origin) != null ? launchGame : origin + "/dashboard");
+            var initialId = launchGame == null ? null : WorkspacePolicy.Game(launchGame, origin);
+            core.Navigate(initialId != null ? origin + "/score/" + initialId : origin + "/dashboard");
             poll.Start();
         } catch {
             origin = null; status.Text = "Workspace could not open. Check the installation and Microsoft Edge WebView2 Runtime."; UpdateButtons();

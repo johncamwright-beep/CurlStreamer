@@ -35,7 +35,7 @@ export function TeamGameLinks({
     <div className="mt-3 flex flex-wrap gap-2">
       <Link
         className="min-h-11 rounded-lg bg-slate-700 px-3 py-3"
-        href={`/games/${gameId}`}
+        href={compact && !opponentTbd ? `/score/${gameId}` : `/games/${gameId}`}
         aria-label={`Open Game: ${title}`}
         onClick={select}
       >
@@ -51,7 +51,7 @@ export function TeamGameLinks({
           Edit game
         </Link>
       )}
-      {(!opponentTbd || administrator) && (
+      {!compact && (!opponentTbd || administrator) && (
         <Link
           className="min-h-11 rounded-lg bg-slate-700 px-3 py-3"
           href={opponentTbd ? `/games/${gameId}/edit` : `/score/${gameId}`}

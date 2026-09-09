@@ -24,20 +24,18 @@ test("dashboard separates reported broadcasts, upcoming games and unfinished gam
   await expect(
     page.getByRole("link", { name: /Open YouTube/ }),
   ).toHaveAttribute("href", "https://www.youtube.com/watch?v=liveabcdefgh");
+  await expect(page.getByRole("link", { name: /^Unfinished/ })).toBeVisible();
   await expect(
-    page.getByText("2 unfinished games", { exact: true }),
+    page.getByRole("link", { name: /^Open Game:.*Team Benning/ }),
   ).toBeVisible();
-  await expect(
-    page.getByRole("link", { name: /^Scoring:.*Team Benning/ }),
-  ).toBeVisible();
-  await page.getByRole("link", { name: "Review games →" }).click();
+  await page.getByRole("link", { name: /^Unfinished/ }).click();
   await expect(
     page.getByRole("heading", { name: "Unfinished games", exact: true }),
   ).toBeVisible();
   await expect(page.getByText("Team Epping", { exact: true })).toBeVisible();
   await expect(page.getByText("Opponent TBD", { exact: true })).toBeVisible();
   await expect(
-    page.getByRole("link", { name: /^Assign Opponent:/ }),
+    page.getByRole("link", { name: /^Open Game:.*Opponent/ }),
   ).toBeVisible();
   await page.screenshot({
     path: info.outputPath(`dashboard-unfinished-${info.project.name}.png`),

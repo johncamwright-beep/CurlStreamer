@@ -56,8 +56,9 @@ function readProgramInvitation(value: string, origin: string, gameId: string) {
 }
 type ProgramHandle = Omit<
   Awaited<ReturnType<typeof startM4ProgramHost>>,
-  "stream"
+  "stream" | "previewMapping"
 > & {
+  previewMapping?: string;
   stream?: {
     start(desktop: M4DesktopClient, intentId: string): Promise<void>;
     stop(): Promise<void>;
@@ -249,6 +250,8 @@ export async function createM4OperatorServer(options: {
       programAvailable: Boolean(options.program),
       program,
       programMessage,
+      previewMapping:
+        program === "recording" ? programHandle?.previewMapping : undefined,
     };
   };
   const approval = new URL(

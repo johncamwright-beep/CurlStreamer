@@ -81,7 +81,7 @@ test("device QR requests are explicit, role-specific and cleared when claimed", 
     name: "Remote scorer",
     exact: true,
   });
-  await expect(camera1).toContainText("Assigned to a device");
+  await expect(camera1).toContainText("Status unavailable");
   await camera1.getByRole("button", { name: "Show reconnect QR" }).click();
   await expect(
     camera1.getByRole("img", { name: "Camera 1 reconnect QR code" }),
@@ -98,6 +98,11 @@ test("device QR requests are explicit, role-specific and cleared when claimed", 
     camera2.getByRole("img", { name: "Camera 2 join QR code" }),
   ).toBeVisible();
   expect(roles).toEqual(["camera-away"]);
+  const joinCode = camera2.getByRole("img", { name: "Camera 2 join QR code" });
+  expect((await joinCode.boundingBox())?.width).toBe(176);
+  await camera2.getByRole("button", { name: "Enlarge QR code" }).click();
+  expect((await joinCode.boundingBox())?.width).toBeGreaterThan(176);
+  await camera2.getByRole("button", { name: "Shrink QR code" }).click();
   await scorer.getByRole("button", { name: "Show QR code" }).click();
   await expect(
     scorer.getByRole("img", { name: "Remote scorer join QR code" }),
@@ -116,7 +121,7 @@ test("device QR requests are explicit, role-specific and cleared when claimed", 
     }),
   );
   await expect(camera2.getByRole("img")).toHaveCount(0);
-  await expect(camera2).toContainText("Assigned to a device");
+  await expect(camera2).toContainText("assignment retained");
   expect(await page.evaluate(() => JSON.stringify(localStorage))).not.toContain(
     "fixture-only",
   );
@@ -143,7 +148,9 @@ test("an expired device QR cannot be reused", async ({ page }) => {
   await expect(card.getByRole("img")).toBeVisible();
   await page.clock.fastForward(65000);
   await expect(card.getByRole("img")).toHaveCount(0);
-  await expect(card.getByRole("status")).toContainText("expired");
+  await expect(
+    card.getByRole("status").filter({ hasText: "expired" }),
+  ).toBeVisible();
 });
 test("an invitation for another game is rejected without displaying a QR", async ({
   page,
@@ -184,7 +191,11 @@ test("release stays on the game and requires an explicit confirmation", async ({
   });
   await openCards(page);
   const card = page.getByRole("region", { name: "Camera 1", exact: true });
-  await expect(card).toContainText("Phone online");
+  await expect(card.getByRole("status")).toHaveText("Phone connected");
+  await expect(
+    card.getByRole("button", { name: "Show reconnect QR" }),
+  ).toHaveCount(0);
+  await expect(card).not.toContainText("Reopen the camera page");
   await card
     .getByRole("button", { name: "Release camera", exact: true })
     .click();

@@ -2,6 +2,8 @@
 import { use, useEffect, useState } from "react";
 import { useGame } from "@/components/GameSync";
 import { BroadcastCanvas } from "@/components/BroadcastCanvas";
+import { useStudioPreviewMode } from "@/components/StudioPreviewMode";
+import { StudioProgramPreview } from "@/components/StudioProgramPreview";
 import { BroadcastOperatorNavigation } from "@/components/BroadcastOperatorNavigation";
 import { AppNavigation } from "@/components/AppNavigation";
 import { hasOrganizerAccess, hasScoringAccess } from "@/lib/access-session";
@@ -26,6 +28,7 @@ export default function Broadcast({
   params: Promise<{ id: string }>;
 }) {
   const { id } = use(params);
+  const directPreview = useStudioPreviewMode();
   const {
     game,
     completion,
@@ -143,7 +146,11 @@ export default function Broadcast({
               </div>
             </div>
           ) : game ? (
-            <BroadcastCanvas game={game} />
+            directPreview ? (
+              <StudioProgramPreview gameId={id} />
+            ) : (
+              <BroadcastCanvas game={game} />
+            )
           ) : null}
         </div>
       </div>

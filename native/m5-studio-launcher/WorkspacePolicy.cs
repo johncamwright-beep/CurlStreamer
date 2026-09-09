@@ -33,7 +33,7 @@ internal static class WorkspacePolicy
     internal static string Game(string value, string origin)
     {
         if (!SameOrigin(value, origin)) return null;
-        var match = Regex.Match(new Uri(value).AbsolutePath, @"^/(?:games|score)/([a-fA-F0-9-]{36})(?:/(?:studio|edit))?/?$");
+        var match = Regex.Match(new Uri(value).AbsolutePath, @"^/(?:games|score|broadcast)/([a-fA-F0-9-]{36})(?:/(?:studio|edit))?/?$");
         Guid id;
         return match.Success && Guid.TryParse(match.Groups[1].Value, out id) ? id.ToString() : null;
     }
@@ -51,5 +51,27 @@ internal static class WorkspacePolicy
         return Uri.TryCreate(address, UriKind.Absolute, out uri) && uri.Scheme == "http" &&
             uri.Host == "127.0.0.1" && uri.Port > 0 && uri.Port <= 65535 &&
             uri.UserInfo.Length == 0 && uri.AbsolutePath == "/" && uri.Query.Length == 0 && uri.Fragment.Length == 0;
+    }
+}
+
+internal static class ProgramPreview
+{
+    internal static byte[] Read(string previewMapping) {
+        const string prefix = "Local\\CurlStreamerPreview-";
+        const int bitmapLength = 54 + 640 * 360 * 4;
+        if (previewMapping == null || !previewMapping.StartsWith(prefix) || previewMapping.Length != prefix.Length + 32) return null;
+        foreach (char c in previewMapping.Substring(prefix.Length)) if (!(c >= '0' && c <= '9') && !(c >= 'a' && c <= 'f')) return null;
+        using (var mapping = System.IO.MemoryMappedFiles.MemoryMappedFile.OpenExisting(previewMapping, System.IO.MemoryMappedFiles.MemoryMappedFileRights.Read))
+        using (var view = mapping.CreateViewAccessor(0, 16 + bitmapLength, System.IO.MemoryMappedFiles.MemoryMappedFileAccess.Read)) {
+            var before = view.ReadInt32(0);
+            if (before <= 0 || (before & 1) != 0 || view.ReadInt32(4) != bitmapLength) return null;
+            var age = DateTime.UtcNow - DateTime.FromFileTimeUtc(view.ReadInt64(8));
+            if (age.TotalSeconds < -1 || age.TotalSeconds > 3) return null;
+            System.Threading.Thread.MemoryBarrier();
+            byte[] bytes = new byte[bitmapLength]; view.ReadArray(16, bytes, 0, bytes.Length);
+            System.Threading.Thread.MemoryBarrier();
+            if (before != view.ReadInt32(0) || bytes[0] != 'B' || bytes[1] != 'M') return null;
+            return bytes;
+        }
     }
 }

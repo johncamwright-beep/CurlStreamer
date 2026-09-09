@@ -23,7 +23,7 @@ internal sealed class Workspace : Form
     private readonly JavaScriptSerializer json = new JavaScriptSerializer { MaxJsonLength = 65536 };
     private readonly string nodeHash, controllerHash, configurationHash, root, launchGame, profileDirectory;
     private readonly System.Windows.Forms.Timer poll = new System.Windows.Forms.Timer { Interval = 2000 };
-    private string origin, selectedGame, lastGame, runningGame, localAddress, handoffNonce;
+    private string origin, selectedGame, lastGame, runningGame, localAddress, handoffNonce, previewMapping;
     private Process child;
     private HttpClient local;
     private TaskCompletionSource<string> ready;
@@ -100,6 +100,24 @@ internal sealed class Workspace : Form
             var core = web.CoreWebView2;
             core.Settings.AreHostObjectsAllowed = false;
             core.Settings.UserAgent += " CurlStreamerStudio/0.3";
+            core.Settings.UserAgent += " StudioProgramPreview/1";
+            core.AddWebResourceRequestedFilter(origin + "/__studio-preview/*", CoreWebView2WebResourceContext.Image);
+            core.WebResourceRequested += (s, e) => {
+                if (e.ResourceContext != CoreWebView2WebResourceContext.Image || !e.Request.Uri.StartsWith(origin + "/__studio-preview/")) return;
+                byte[] frame = null;
+                try {
+                    var requested = new Uri(e.Request.Uri);
+                    if (recording && runningGame != null && selectedGame == runningGame &&
+                        WorkspacePolicy.SameOrigin(core.Source, origin) &&
+                        WorkspacePolicy.SameOrigin(e.Request.Uri, origin) &&
+                        requested.AbsolutePath == "/__studio-preview/" + runningGame && e.Request.Method == "GET")
+                        frame = ProgramPreview.Read(previewMapping);
+                } catch { }
+                e.Response = core.Environment.CreateWebResourceResponse(
+                    new MemoryStream(frame ?? new byte[0]), frame == null ? 503 : 200,
+                    frame == null ? "Preview unavailable" : "OK",
+                    "Content-Type: image/bmp\r\nCache-Control: no-store\r\nX-Content-Type-Options: nosniff");
+            };
             core.Settings.AreDevToolsEnabled = false; core.Settings.IsStatusBarEnabled = false;
             core.NavigationStarting += (s, e) => {
                 if (busy || closing) { e.Cancel = true; return; }
@@ -214,6 +232,7 @@ internal sealed class Workspace : Form
     private void ApplyState(Dictionary<string, object> state) {
         var phase = TextValue(state, "program");
         recording = phase == "recording" || phase == "starting" || phase == "stopping" || (phase == "failed" && recording);
+        previewMapping = phase == "recording" ? TextValue(state, "previewMapping") : null;
         status.Text = phase == "recording" ? "Recording on this PC · YouTube off · Keep Studio open" : TextValue(state, "programMessage") ?? "Recording status is unavailable.";
         UpdateButtons();
     }

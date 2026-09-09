@@ -27,7 +27,59 @@ struct m4_media {
     bool initialized;
     bool started;
     bool stop_requested;
+    HANDLE preview_mapping;
+    unsigned char *preview_memory;
+    bool preview_attached;
 };
+/* A process-owned, read-only preview for the signed-in Windows shell. Frames
+ * stay in memory and are sampled from the same OBS output as the recording. */
+#define PREVIEW_WIDTH 640
+#define PREVIEW_HEIGHT 360
+#define PREVIEW_PIXELS (PREVIEW_WIDTH * PREVIEW_HEIGHT * 4)
+#define PREVIEW_BITMAP (54 + PREVIEW_PIXELS)
+#define PREVIEW_BYTES (16 + PREVIEW_BITMAP)
+static void preview_frame(void *context, struct video_data *frame)
+{
+    m4_media *m = context;
+    if (!m->preview_memory || !frame->data[0] || frame->linesize[0] < PREVIEW_WIDTH * 4) return;
+    volatile LONG *sequence = (volatile LONG *)m->preview_memory;
+    InterlockedIncrement(sequence);
+    FILETIME now; GetSystemTimeAsFileTime(&now);
+    memcpy(m->preview_memory + 8, &now, sizeof(now));
+    for (unsigned int y = 0; y < PREVIEW_HEIGHT; ++y)
+        memcpy(m->preview_memory + 16 + 54 + y * PREVIEW_WIDTH * 4,
+            frame->data[0] + y * frame->linesize[0], PREVIEW_WIDTH * 4);
+    InterlockedIncrement(sequence);
+}
+static bool initialize_preview(m4_media *m, const wchar_t *cache_root)
+{
+    const wchar_t *leaf = wcsrchr(cache_root, L'\\');
+    const wchar_t *slash = wcsrchr(cache_root, L'/');
+    if (!leaf || (slash && slash > leaf)) leaf = slash;
+    /* Legacy isolated media checks do not request a shell preview. */
+    if (!leaf || wcsncmp(leaf + 1, L"curlstreamer-m4-cef-", 20) || wcslen(leaf + 1) != 52) return true;
+    const wchar_t *suffix = leaf + 21;
+    if (wcsspn(suffix, L"0123456789abcdef") != 32) return false;
+    wchar_t name[96];
+    if (swprintf_s(name, 96, L"Local\\CurlStreamerPreview-%ls", suffix) < 0) return false;
+    m->preview_mapping = CreateFileMappingW(INVALID_HANDLE_VALUE, NULL, PAGE_READWRITE, 0, PREVIEW_BYTES, name);
+    if (!m->preview_mapping || GetLastError() == ERROR_ALREADY_EXISTS) return false;
+    m->preview_memory = MapViewOfFile(m->preview_mapping, FILE_MAP_WRITE, 0, 0, PREVIEW_BYTES);
+    if (!m->preview_memory) return false;
+    BITMAPFILEHEADER file = {0}; BITMAPINFOHEADER info = {0};
+    file.bfType = 0x4d42; file.bfSize = PREVIEW_BITMAP; file.bfOffBits = 54;
+    info.biSize = sizeof(info); info.biWidth = PREVIEW_WIDTH; info.biHeight = -PREVIEW_HEIGHT;
+    info.biPlanes = 1; info.biBitCount = 32; info.biCompression = BI_RGB; info.biSizeImage = PREVIEW_PIXELS;
+    *(DWORD *)(m->preview_memory + 4) = PREVIEW_BITMAP;
+    memcpy(m->preview_memory + 16, &file, sizeof(file));
+    memcpy(m->preview_memory + 16 + sizeof(file), &info, sizeof(info));
+    struct video_scale_info scale = {0};
+    scale.format = VIDEO_FORMAT_BGRA; scale.width = PREVIEW_WIDTH; scale.height = PREVIEW_HEIGHT;
+    scale.range = VIDEO_RANGE_FULL; scale.colorspace = VIDEO_CS_709;
+    obs_add_raw_video_callback2(&scale, 15, preview_frame, m);
+    m->preview_attached = true;
+    return true;
+}
 static volatile LONG owner;
 /* Process-lifetime containment. Never close a live self-containing job: the OS
  * closes its noninherited handle at process exit and kills remaining helpers. */
@@ -132,6 +184,9 @@ bool m4_media_release(m4_media **reference)
     if (!reference || !*reference) return true;
     m4_media *m = *reference;
     if (m->record && (obs_output_active(m->record) || (m->started && WaitForSingleObject(m->stopped, 0) != WAIT_OBJECT_0))) return false;
+    if (m->preview_attached) obs_remove_raw_video_callback(preview_frame, m);
+    if (m->preview_memory) UnmapViewOfFile(m->preview_memory);
+    if (m->preview_mapping) CloseHandle(m->preview_mapping);
     if (m->stream) { obs_output_force_stop(m->stream); obs_output_release(m->stream); }
     if (m->service) obs_service_release(m->service);
     if (m->record) {
@@ -218,6 +273,7 @@ static bool initialize(const wchar_t *runtime_bin, const wchar_t *absolute_mkv, 
         obs_data_release(settings); settings = NULL;
         if (!m->program) goto fail;
         obs_set_output_source(0, m->program);
+        if (!initialize_preview(m, cache_root)) goto fail;
     }
     *out = m; return true;
 fail:

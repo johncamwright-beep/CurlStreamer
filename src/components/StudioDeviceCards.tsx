@@ -26,6 +26,7 @@ function DeviceCard({
   connectionStatus?: { receiverReady: boolean; phoneOnline: boolean };
 }) {
   const [confirmRelease, setConfirmRelease] = useState(false);
+  const [largeQr, setLargeQr] = useState(false);
   async function releaseCamera() {
     if (busy || role === "scorer" || !onChanged) return;
     setBusy(true);
@@ -163,6 +164,20 @@ function DeviceCard({
   }
   const active = invitation && now < invitation.expires && !claimed && enabled;
   const scorer = role === "scorer";
+  const online = !scorer && claimed && connectionStatus?.phoneOnline;
+  const stateLabel = scorer
+    ? claimed
+      ? "Assigned to a device"
+      : "Ready to join"
+    : !connectionStatus
+      ? "Status unavailable"
+      : online
+        ? "Phone connected"
+        : !connectionStatus.receiverReady
+          ? "Studio offline"
+          : claimed
+            ? "Waiting for phone"
+            : "Ready to connect";
   return (
     <section className="studio-device" aria-label={label} aria-busy={busy}>
       <header>
@@ -171,38 +186,50 @@ function DeviceCard({
         </span>
         <div>
           <h2>{label}</h2>
-          <p className="studio-device-state">
-            {claimed ? "Assigned to a device" : "Ready to join"}
+          <p
+            className="studio-device-state"
+            role="status"
+            data-online={Boolean(online)}
+          >
+            {stateLabel}
           </p>
         </div>
       </header>
       {claimed ? (
         <>
-          <p>
-            {scorer
-              ? "Open scoring on the assigned phone or tablet to continue."
-              : "Reopen the camera page on the original phone and keep it in the foreground."}
-          </p>
+          {!online && (
+            <p>
+              {scorer
+                ? "Open scoring on the assigned phone or tablet to continue."
+                : "Reopen the camera page on the original phone and keep it in the foreground."}
+            </p>
+          )}
           <p className="studio-device-help">
             {scorer
               ? "Assignment does not confirm a live connection."
               : connectionStatus
                 ? connectionStatus.phoneOnline
-                  ? "Phone online · video reception not verified here"
+                  ? "Phone is connected to this game."
                   : connectionStatus.receiverReady
-                    ? "PC ready · no current phone connection"
-                    : "PC connection inactive · start recording first"
+                    ? "Studio is ready. Reconnect this phone or release it to use another."
+                    : "Start Studio recording for this game to reconnect."
                 : "Connection status unavailable · assignment retained"}
           </p>
-          {reconnect && (
-            <div className="studio-device-qr">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={reconnect.image}
-                alt={label + " reconnect QR code"}
-                width={240}
-                height={240}
-              />
+          {reconnect && !online && (
+            <div className="studio-device-qr" data-large={largeQr}>
+              <button
+                className="studio-qr-size"
+                onClick={() => setLargeQr(!largeQr)}
+                aria-label={largeQr ? "Shrink QR code" : "Enlarge QR code"}
+              >
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={reconnect.image}
+                  alt={label + " reconnect QR code"}
+                  width={240}
+                  height={240}
+                />
+              </button>
               <p>
                 Use the original device and browser. This code does not grant
                 access to a different device.
@@ -211,13 +238,15 @@ function DeviceCard({
             </div>
           )}
           {error && <p role="alert">{error}</p>}
-          <button
-            className="studio-device-action"
-            disabled={busy || !enabled}
-            onClick={() => void showReconnect()}
-          >
-            {busy ? "Preparing…" : "Show reconnect QR"}
-          </button>
+          {!online && (
+            <button
+              className="studio-device-action"
+              disabled={busy || !enabled}
+              onClick={() => void showReconnect()}
+            >
+              {busy ? "Preparing…" : "Show reconnect QR"}
+            </button>
+          )}
           {!scorer &&
             onChanged &&
             (confirmRelease ? (
@@ -256,16 +285,22 @@ function DeviceCard({
               : "Use your phone’s camera to scan the code, then allow camera access."}
           </p>
           {active && (
-            <div className="studio-device-qr">
-              {/* Generated in memory; never stored in a profile or sent to an image service. */}
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={invitation.image}
-                alt={label + " join QR code"}
-                width={240}
-                height={240}
-              />
-              <p>Scan on the device you want to join.</p>
+            <div className="studio-device-qr" data-large={largeQr}>
+              <button
+                className="studio-qr-size"
+                onClick={() => setLargeQr(!largeQr)}
+                aria-label={largeQr ? "Shrink QR code" : "Enlarge QR code"}
+              >
+                {/* Generated in memory; never stored in a profile or sent to an image service. */}
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={invitation.image}
+                  alt={label + " join QR code"}
+                  width={240}
+                  height={240}
+                />
+              </button>
+              <p>Scan to connect · Tap code to enlarge</p>
               <p>
                 Expires in{" "}
                 {Math.max(1, Math.ceil((invitation.expires - now) / 60000))} min

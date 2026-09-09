@@ -538,6 +538,7 @@ export function M2CameraSlot({
     return (
       <main
         className="phone-camera"
+        data-capturing={previewReady}
         aria-label={cameraRole === "camera-home" ? "Camera 1" : "Camera 2"}
       >
         <header>
@@ -570,6 +571,26 @@ export function M2CameraSlot({
             </div>
           )}
         </div>
+        {previewReady && (
+          <section className="phone-camera-zoom" aria-label="Camera zoom">
+            {zoomRange ? (
+              <label>
+                Zoom {zoom.toFixed(1)}×
+                <input
+                  aria-label="Hardware zoom"
+                  type="range"
+                  min={zoomRange.min}
+                  max={zoomRange.max}
+                  step={zoomRange.step}
+                  value={zoom}
+                  onChange={(e) => void updateZoom(Number(e.target.value))}
+                />
+              </label>
+            ) : (
+              <p>Zoom is unavailable on this phone/browser.</p>
+            )}
+          </section>
+        )}
         <button
           className="btn phone-camera-connect"
           disabled={busy}
@@ -595,27 +616,6 @@ export function M2CameraSlot({
           {status}
         </p>
         {warning && <p role="alert">{warning}</p>}
-        {previewReady && (
-          <details className="phone-camera-zoom">
-            <summary>Zoom</summary>
-            {zoomRange ? (
-              <label>
-                Zoom {zoom.toFixed(1)}×
-                <input
-                  aria-label="Hardware zoom"
-                  type="range"
-                  min={zoomRange.min}
-                  max={zoomRange.max}
-                  step={zoomRange.step}
-                  value={zoom}
-                  onChange={(e) => void updateZoom(Number(e.target.value))}
-                />
-              </label>
-            ) : (
-              <p>This phone does not offer camera zoom in this browser.</p>
-            )}
-          </details>
-        )}
         <p className="phone-camera-hint">
           Keep the phone upright, on the same Wi-Fi as Studio, and leave this
           page open.

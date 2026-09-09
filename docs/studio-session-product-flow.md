@@ -44,3 +44,19 @@ the same exact code replacement to the six existing function definitions, retain
 their ownership and grants; all six verified PT409 with no remaining 40001 clause.
 This removes the identified retry trigger. Physical phone reconnection still needs
 verification; the new receiver/broadcast lifetime is not implemented yet.
+
+The user subsequently confirmed both camera slots connected after renewing Studio.
+The old broadcast page still subscribed to LiveKit, while these phones send media
+directly to the native recorder. Preview 0.3.0-preview.4 connects that page to the
+actual OBS program output through a read-only, game-scoped WebView image handler.
+Two preview frames per second are shared in memory; no preview video files or
+camera grants enter the website. Frame freshness and sequence checks reject old
+or partially written pictures. Regular browsers show a recording-PC explanation
+on direct-camera deployments instead of subscribing to the wrong feed.
+
+Native quadrant validation confirmed the output's colours/orientation and clean
+recording finalization. An isolated real WebView2 fixture decoded the preview and
+rejected another game's image and stale frames. Real camera pictures in the updated
+desktop still need checking. Camera cards now emphasize phone connection status,
+hide reconnect instructions while online and use compact expandable QR codes.
+Hardware zoom is shown directly beneath the phone picture when supported.

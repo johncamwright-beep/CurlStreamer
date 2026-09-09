@@ -35,7 +35,7 @@ test("dashboard separates reported broadcasts, upcoming games and unfinished gam
   await expect(page.getByText("Team Epping", { exact: true })).toBeVisible();
   await expect(page.getByText("Opponent TBD", { exact: true })).toBeVisible();
   await expect(
-    page.getByRole("link", { name: /^Open Game:.*Opponent/ }),
+    page.getByRole("link", { name: /^Open Game:.*TBD/ }),
   ).toBeVisible();
   await page.screenshot({
     path: info.outputPath(`dashboard-unfinished-${info.project.name}.png`),

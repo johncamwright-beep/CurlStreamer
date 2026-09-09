@@ -27,10 +27,12 @@ function DeviceCard({
     expires: number;
   }>();
   const [now, setNow] = useState(Date.now());
+  const [reconnect, setReconnect] = useState<{ url: string; image: string }>();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const request = useRef<AbortController | null>(null);
   useEffect(() => {
+    setReconnect(undefined);
     if (claimed || !enabled) {
       request.current?.abort();
       request.current = null;
@@ -48,6 +50,38 @@ function DeviceCard({
     const timer = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(timer);
   }, [invitation]);
+  async function showReconnect() {
+    if (!claimed || !enabled || request.current) return;
+    const controller = new AbortController();
+    request.current = controller;
+    setBusy(true);
+    setError("");
+    try {
+      // This is only a page address. The original device must still present
+      // its existing scoped session; it grants no access or reassignment.
+      const url = new URL(
+        role === "scorer"
+          ? "/score/" + id
+          : "/studio-m2/" + id + "/camera/" + role,
+        location.origin,
+      ).href;
+      const image = await QRCode.toDataURL(url, {
+        width: 240,
+        margin: 2,
+        errorCorrectionLevel: "M",
+      });
+      if (request.current === controller && !controller.signal.aborted)
+        setReconnect({ url, image });
+    } catch {
+      if (request.current === controller)
+        setError("Could not display the reconnect code. Try again.");
+    } finally {
+      if (request.current === controller) {
+        request.current = null;
+        setBusy(false);
+      }
+    }
+  }
   async function showQr() {
     if (request.current || claimed || !enabled) return;
     const controller = new AbortController();
@@ -118,6 +152,30 @@ function DeviceCard({
           <p className="studio-device-help">
             Assignment does not confirm a live connection.
           </p>
+          {reconnect && (
+            <div className="studio-device-qr">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={reconnect.image}
+                alt={label + " reconnect QR code"}
+                width={240}
+                height={240}
+              />
+              <p>
+                Use the original device and browser. This code does not grant
+                access to a different device.
+              </p>
+              <a href={reconnect.url}>Open reconnect page</a>
+            </div>
+          )}
+          {error && <p role="alert">{error}</p>}
+          <button
+            className="studio-device-action"
+            disabled={busy || !enabled}
+            onClick={() => void showReconnect()}
+          >
+            {busy ? "Preparing…" : "Show reconnect QR"}
+          </button>
           <Link
             className="studio-device-action secondary"
             href={"/games/" + id}

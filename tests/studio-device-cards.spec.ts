@@ -82,7 +82,16 @@ test("device QR requests are explicit, role-specific and cleared when claimed", 
     exact: true,
   });
   await expect(camera1).toContainText("Assigned to a device");
-  await expect(camera1.getByRole("button")).toHaveCount(0);
+  await camera1.getByRole("button", { name: "Show reconnect QR" }).click();
+  await expect(
+    camera1.getByRole("img", { name: "Camera 1 reconnect QR code" }),
+  ).toBeVisible();
+  await expect(
+    camera1.getByRole("link", { name: "Open reconnect page" }),
+  ).toHaveAttribute(
+    "href",
+    new RegExp("/studio-m2/" + testGameId + "/camera/camera-home$"),
+  );
   expect(roles).toEqual([]);
   await camera2.getByRole("button", { name: "Show QR code" }).click();
   await expect(

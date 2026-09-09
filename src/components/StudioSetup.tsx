@@ -32,7 +32,7 @@ export function StudioSetup({
   }, [id]);
   if (completion)
     return (
-      <main className="game-control-page">
+      <main className="game-control-page studio-setup">
         <div className="game-control-inner">
           <h1 className="text-3xl font-bold">Windows Studio</h1>
           <p role="status" className="my-4">
@@ -58,7 +58,7 @@ export function StudioSetup({
     );
   const allowed = organizer || ["owner", "team_admin"].includes(accountRole);
   return (
-    <main className="game-control-page">
+    <main className="game-control-page studio-setup">
       <div className="game-control-inner">
         <Link
           className="inline-flex min-h-11 items-center underline"

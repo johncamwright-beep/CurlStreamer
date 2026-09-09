@@ -76,7 +76,8 @@ Protocol implementation follows the [official obs-websocket v5 protocol](https:/
 The sponsor check using existing enabled bundled images failed visually in both modes. M3 had cleared all stored sponsor metadata before projection. The fix permits only the two exact bundled image paths after a successful library lookup; current library images still take precedence, and failures/private paths do not fall back. Seven route tests, TypeScript, build, focused formatting and six browser checks pass. Physical sponsor retest awaits the existing server restart. Sponsor display was turned off and original style/interval restored; no sponsor assets were modified. The mode API resets rotation timing, so this is not a claim of exact timing-phase restoration.
 
 Physical sponsor retest passed after server restart: both cameras were present throughout overlay/sidebar display and restoration. Evidence `m3-sponsor-check.json`, `m3-sponsor-recorded.png`, and recording `2026-09-08 00-24-39.mkv`. Zero additional render/encode skips; recording and streaming inactive. This supersedes the pending sponsor result above; long endurance remains outstanding.
-# Vercel recording-link deployment (September 9, 2026)
+
+## Vercel recording-link deployment (September 9, 2026)
 
 Apply `0031_add_m3_program_grants.sql` alongside the M2 camera schema before deploying the durable program-link provider. The table is server-only with RLS and no anonymous/authenticated privileges. It retains one pending grant per game, stores only a SHA-256 digest of the code, and consumes it using a single `DELETE RETURNING` operation. Links expire after five minutes; preparing another replaces the pending link. Session checks still fence replaced, stopped or completed games.
 

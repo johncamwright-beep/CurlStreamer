@@ -40,7 +40,11 @@ function failure(
 ): Result<never> {
   diagnostic(operation, error);
   if (error.code === "42501") return { ok: false, kind: "authorization" };
-  if (["23505", "23514", "40001", "P0001", "P0002"].includes(error.code ?? ""))
+  if (
+    ["23505", "23514", "PT409", "40001", "P0001", "P0002"].includes(
+      error.code ?? "",
+    )
+  )
     return { ok: false, kind: "conflict" };
   if (error.code === "22023" || error.code === "22P02")
     return { ok: false, kind: "validation" };

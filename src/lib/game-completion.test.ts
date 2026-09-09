@@ -131,15 +131,18 @@ describe("internal game completion boundary", () => {
     expect(mocks.rpc).not.toHaveBeenCalled();
   });
 
-  it("maps stale reviewed revisions to an explicit conflict", async () => {
-    mocks.rpc.mockResolvedValue({ data: null, error: { code: "40001" } });
-    expect(
-      await completeReviewedGame(gameId, reviewId, {
-        kind: "organizer",
-        token: await issueOrganizerToken(gameId),
-      }),
-    ).toEqual({ ok: false, kind: "conflict" });
-  });
+  it.each(["PT409", "40001"])(
+    "maps stale reviewed revisions (%s) to an explicit conflict",
+    async (code) => {
+      mocks.rpc.mockResolvedValue({ data: null, error: { code } });
+      expect(
+        await completeReviewedGame(gameId, reviewId, {
+          kind: "organizer",
+          token: await issueOrganizerToken(gameId),
+        }),
+      ).toEqual({ ok: false, kind: "conflict" });
+    },
+  );
 
   it("returns the database completion identity on idempotent retries", async () => {
     const completed = {

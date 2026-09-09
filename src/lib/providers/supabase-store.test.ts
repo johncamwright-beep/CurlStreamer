@@ -509,26 +509,29 @@ describe("Supabase score-event persistence", () => {
     });
   });
 
-  it("surfaces an ordinary stale write as a state conflict", async () => {
-    const game = storedGame();
-    mocks.maybeSingle.mockResolvedValue({
-      data: { state: game, version: 49 },
-      error: null,
-    });
-    mocks.rpc.mockResolvedValue({
-      error: { code: "40001", message: "stale game state" },
-    });
+  it.each(["PT409", "40001"])(
+    "surfaces an ordinary stale write (%s) as a state conflict",
+    async (code) => {
+      const game = storedGame();
+      mocks.maybeSingle.mockResolvedValue({
+        data: { state: game, version: 49 },
+        error: null,
+      });
+      mocks.rpc.mockResolvedValue({
+        error: { code, message: "stale game state" },
+      });
 
-    await expect(
-      updateGame(game.id, {
-        type: "connection",
-        role: "camera-home",
-        connected: true,
-      }),
-    ).rejects.toThrow("Game state update conflict");
-    expect(mocks.maybeSingle).toHaveBeenCalledTimes(3);
-    expect(mocks.rpc).toHaveBeenCalledTimes(3);
-  });
+      await expect(
+        updateGame(game.id, {
+          type: "connection",
+          role: "camera-home",
+          connected: true,
+        }),
+      ).rejects.toThrow("Game state update conflict");
+      expect(mocks.maybeSingle).toHaveBeenCalledTimes(3);
+      expect(mocks.rpc).toHaveBeenCalledTimes(3);
+    },
+  );
 
   it("retries camera live state on fresh scored state without erasing the score", async () => {
     const claimant = "77777777-7777-4777-8777-777777777777";

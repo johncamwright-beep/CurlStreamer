@@ -206,7 +206,7 @@ async function save(game: GameState, expectedVersion: number) {
     p_expected_version: expectedVersion,
     p_state: game,
   });
-  if (error?.code === "40001" || error?.code === "55000")
+  if (error && ["PT409", "40001", "55000"].includes(error.code))
     throw new GameStateConflictError();
   if (error) databaseError("game update", error);
 }
@@ -225,7 +225,8 @@ async function saveScoreEvent(
     p_actor: "server",
     p_state: game,
   });
-  if (error?.code === "40001") throw new Error("Score update conflict");
+  if (error?.code === "PT409" || error?.code === "40001")
+    throw new Error("Score update conflict");
   if (error) databaseError("score update", error);
 }
 

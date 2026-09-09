@@ -7,6 +7,8 @@ $root = [IO.Path]::GetFullPath($TestRoot)
 if (Test-Path -LiteralPath $root) { throw "Use a new test directory." }
 $registration = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\{C13ED906-44B5-493A-AF70-81BE409EF911}_is1'
 if (Test-Path -LiteralPath $registration) { throw "Studio is already installed; use an isolated test account." }
+$protocol = 'HKCU:\Software\Classes\curlstreamer'
+if (Test-Path -LiteralPath $protocol) { throw "Studio launch protocol already exists; use an isolated test account." }
 $mutex = $null
 try { $mutex = [Threading.Mutex]::OpenExisting('Local\CurlStreamerStudio') } catch [Threading.WaitHandleCannotBeOpenedException] {}
 if ($mutex) { $mutex.Dispose(); throw "Finish and close Studio before this check." }
@@ -27,6 +29,9 @@ try {
     if (-not (Test-Path -LiteralPath (Join-Path $installation 'CurlStreamer Studio.exe'))) { throw "Launch executable missing." }
     $registered = (Get-ItemProperty -LiteralPath $registration).InstallLocation.TrimEnd('\')
     if ($registered -ine $installation) { throw "Installer registered an unexpected location." }
+    $command = (Get-Item -LiteralPath (Join-Path $protocol 'shell/open/command')).GetValue('')
+    $expectedCommand = '"' + (Join-Path $installation 'CurlStreamer Studio.exe') + '" "%1"'
+    if ($command -ine $expectedCommand -or $null -eq (Get-Item -LiteralPath $protocol).GetValue('URL Protocol')) { throw "Studio launch protocol was not registered correctly." }
     & node (Join-Path $PSScriptRoot 'check-m5-studio.mjs') $installation
     if ($LASTEXITCODE -ne 0) { throw "Installed controller failed its offline check." }
     if (-not (Test-Path -LiteralPath $sentinel)) { throw "Recording preservation check failed." }
@@ -36,6 +41,7 @@ try {
   if (-not ([IO.Path]::GetFullPath($uninstaller)).StartsWith($root + [IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase)) { throw "Unsafe uninstall path." }
   RunInstaller $uninstaller @('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART',('/LOG="' + (Join-Path $root 'uninstall.log') + '"'))
   if ((Test-Path -LiteralPath (Join-Path $installation 'CurlStreamer Studio.exe')) -or (Test-Path -LiteralPath $registration)) { throw "Uninstall left executable or registration behind." }
+  if (Test-Path -LiteralPath $protocol) { throw "Uninstall left the launch protocol behind." }
   if (-not (Test-Path -LiteralPath $sentinel)) { throw "Uninstall removed recording data." }
   [ordered]@{ install = 'passed'; reinstall = 'passed'; installedController = 'passed'; uninstall = 'passed'; recordingsPreserved = $true; cleanWindowsMachine = $false } |
     ConvertTo-Json | Set-Content -LiteralPath (Join-Path $root 'result.json') -Encoding utf8NoBOM

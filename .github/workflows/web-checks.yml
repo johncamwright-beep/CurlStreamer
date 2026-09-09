@@ -13,6 +13,19 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  windows-launch:
+    runs-on: windows-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check Windows launch protocol input
+        shell: pwsh
+        run: |
+          $proof = Join-Path $env:RUNNER_TEMP 'studio-launch-tests.exe'
+          & "$env:WINDIR\Microsoft.NET\Framework64\v4.0.30319\csc.exe" /nologo /target:exe /main:LaunchLinkTests /reference:System.Windows.Forms.dll /reference:System.Drawing.dll "/out:$proof" (Join-Path $PWD 'native\m5-studio-launcher\Studio.cs') (Join-Path $PWD 'native\m5-studio-launcher\LaunchLinkTests.cs')
+          if ($LASTEXITCODE -ne 0) { throw 'Launcher test compilation failed' }
+          & $proof
+          if ($LASTEXITCODE -ne 0) { throw 'Launcher protocol tests failed' }
   web:
     runs-on: ubuntu-latest
     timeout-minutes: 25

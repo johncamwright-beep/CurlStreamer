@@ -98,7 +98,7 @@ a YouTube broadcast.
 
 ```powershell
 ./scripts/build-m5-installer.ps1 -StudioSource C:/Studio-staging -InstallerOutput C:/Studio-installer -CompilerPath C:/build-tools/Inno/ISCC.exe
-./scripts/check-m5-installer.ps1 -Installer C:/Studio-installer/CurlStreamer-Studio-0.2.0-preview.1-Setup.exe -TestRoot C:/Studio-install-check
+./scripts/check-m5-installer.ps1 -Installer C:/Studio-installer/CurlStreamer-Studio-0.2.0-preview.2-Setup.exe -TestRoot C:/Studio-install-check
 ```
 
 The builder checks every listed hash, rejects unlisted files and links, and accepts
@@ -117,3 +117,32 @@ Compiler acquisition: [official Inno Setup downloads](https://jrsoftware.org/isd
 6.7.3, with a valid Pyrsys B.V. Authenticode signature checked locally. The .NET
 check uses the documented [IsDotNetInstalled](https://jrsoftware.org/ishelp/topic_isxfunc_isdotnetinstalled.htm)
 function. Downloaded build tools and compiled installers stay outside Git.
+
+## Game-page handoff
+
+Game administrators and same-game organizers now use **Set up Windows Studio**
+from the ordinary game page. `/games/{id}/studio` presents the launch/copy fallback,
+camera invitations and private recording handoff, and pairing/YouTube preparation.
+Camera and streaming sections reflect existing deployment gates; visiting the
+page never enables those gates or performs a resource write. Completed games and
+scorer/viewer access do not expose setup controls. Every existing API continues to
+enforce its own authorization.
+
+Preview 0.2.0-preview.2 installs a per-user `curlstreamer:` URL handler. The website
+sends only an encoded HTTPS game page URL, never invitation or approval codes.
+Studio validates the link and prefills its game field; the operator still clicks
+Open Studio. The configured website origin is checked by the controller before
+any game connection. An already-open instance is left alone and asks the operator
+to finish its current game. Uninstall removes the handler.
+
+The copy-link/manual launch path remains available when the app or browser handler
+is unavailable. No public installer download link is shown until an installer is
+published. Use a Studio build configured for the same website origin; production
+and Vercel branch-preview origins are distinct.
+
+Native parser checks reject extra commands, malformed URLs and embedded tokens.
+Desktop/mobile browser checks verify navigation, role gating and no automatic
+writes. The updated installer lifecycle check also verifies the quoted URL-handler
+command and its removal. Interactive launch with a protocol argument was blocked
+by automatic tool approval review; it remains distinct from the passing parser
+and registry checks.

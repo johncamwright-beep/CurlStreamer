@@ -3,6 +3,7 @@ export default defineConfig({
   testDir: "./tests",
   fullyParallel: false,
   webServer: {
+    timeout: 180_000,
     command: "npm run build && npm start",
     env: {
       ...process.env,

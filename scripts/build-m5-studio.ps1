@@ -2,7 +2,7 @@ param(
   [Parameter(Mandatory = $true)][string]$SetupRoot,
   [Parameter(Mandatory = $true)][string]$Destination,
   [Parameter(Mandatory = $true)][string]$Configuration,
-  [string]$Release = "0.2.0-preview.1"
+  [string]$Release = "0.2.0-preview.2"
 )
 $ErrorActionPreference = "Stop"
 $repository = Split-Path -Parent $PSScriptRoot

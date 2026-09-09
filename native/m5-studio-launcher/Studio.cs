@@ -25,19 +25,41 @@ internal sealed class Studio : Form
     private bool exitAfterStop;
 
     [STAThread]
-    private static void Main()
+    private static void Main(string[] arguments)
     {
+        string launchGame = null;
+        try {
+            if (arguments.Length > 1) throw new InvalidDataException();
+            if (arguments.Length == 1) launchGame = ReadLaunchGame(arguments[0]);
+        } catch { MessageBox.Show("This Studio launch link is invalid. Open Studio from Windows and paste your game page link.", "CurlStreamer Studio"); return; }
         bool owner;
         using (var mutex = new Mutex(true, "Local\\CurlStreamerStudio", out owner))
         {
-            if (!owner) { MessageBox.Show("Studio is already open. Use its existing window.", "CurlStreamer Studio"); return; }
+            if (!owner) { MessageBox.Show("Studio is already open. Finish and close its current game before opening another one.", "CurlStreamer Studio"); return; }
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);
-            Application.Run(new Studio());
+            Application.Run(new Studio(launchGame));
         }
     }
 
-    private Studio()
+    internal static string ReadLaunchGame(string value)
+    {
+        Uri launch, page;
+        if (value.Length > 2048 || !Uri.TryCreate(value, UriKind.Absolute, out launch) ||
+            launch.Scheme != "curlstreamer" || launch.Host != "open" || launch.Port != -1 ||
+            launch.UserInfo.Length != 0 || launch.Fragment.Length != 0 || launch.AbsolutePath != "/" ||
+            !Regex.IsMatch(launch.Query, @"^\?game=[A-Za-z0-9%._~-]+$")) throw new InvalidDataException();
+        var decoded = Uri.UnescapeDataString(launch.Query.Substring(6));
+        if (!Uri.TryCreate(decoded, UriKind.Absolute, out page) || page.Scheme != "https" ||
+            page.UserInfo.Length != 0 || page.Query.Length != 0 || page.Fragment.Length != 0 ||
+            !Regex.IsMatch(page.AbsolutePath, @"^/games/[a-fA-F0-9-]{36}/?$")) throw new InvalidDataException();
+        Guid gameId;
+        if (!Guid.TryParse(page.AbsolutePath.TrimEnd('/').Substring(7), out gameId)) throw new InvalidDataException();
+        // This link selects a game only. Controller configuration checks the exact website origin.
+        return page.AbsoluteUri;
+    }
+
+    private Studio(string launchGame)
     {
         Text = "CurlStreamer Studio — Preview";
         ClientSize = new Size(650, 470);
@@ -52,6 +74,7 @@ internal sealed class Studio : Form
         layout.Controls.Add(new Label { Text = "Copy your game page link from the website.", AutoSize = true, Margin = new Padding(0, 16, 0, 8) });
         game.Dock = DockStyle.Top; game.AccessibleName = "Game page link"; game.MinimumSize = new Size(0, 44); game.Multiline = true; game.Height = 44;
         layout.Controls.Add(game);
+        if (launchGame != null) game.Text = launchGame;
         start.Text = "Open Studio"; start.Height = 48; start.Dock = DockStyle.Top;
         start.Click += async (sender, args) => await StartStudio();
         layout.Controls.Add(start);

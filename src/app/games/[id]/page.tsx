@@ -131,6 +131,11 @@ export default function GameLobby({
             {scheduledLabel} · {game.config.scheduledEnds} ends
           </p>
           <nav className="game-entry-actions" aria-label="Primary game actions">
+            {capabilities.control && (
+              <Link className="btn" href={`/games/${id}/studio`}>
+                Set up Windows Studio
+              </Link>
+            )}
             {capabilities.scoring && (
               <Link className="btn" href={`/score/${id}`}>
                 Open scoring

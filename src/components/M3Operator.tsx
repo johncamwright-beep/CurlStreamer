@@ -8,7 +8,13 @@ import {
 } from "@/lib/m2-studio-protocol";
 import { programRoles } from "@/lib/providers/m3-program-browser";
 
-export function M3Operator({ id }: { id: string }) {
+export function M3Operator({
+  id,
+  studio = false,
+}: {
+  id: string;
+  studio?: boolean;
+}) {
   const [source, setSource] = useState("");
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
@@ -111,20 +117,25 @@ export function M3Operator({ id }: { id: string }) {
     anchor.click();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
+  const Container = studio ? "section" : "main";
   return (
-    <main className="mx-auto max-w-3xl space-y-5 p-6">
-      <h1 className="text-3xl font-bold">M3 · Local OBS program</h1>
+    <Container className="mx-auto max-w-3xl space-y-5 p-6">
+      {studio ? (
+        <h3 className="text-xl font-bold">Connect the recording program</h3>
+      ) : (
+        <h1 className="text-3xl font-bold">M3 · Local OBS program</h1>
+      )}
       <p>
-        This transfers reception of both cameras to the OBS program source.
-        Preparing it replaces both M2 receiver registrations. Camera assignments
-        are retained.
+        {studio
+          ? "Preparing a new program connection replaces any previous PC receiver connections for this game. Camera assignments are retained."
+          : "This transfers reception of both cameras to the OBS program source. Preparing it replaces both M2 receiver registrations. Camera assignments are retained."}
       </p>
       <button
         className="btn min-h-11"
         disabled={busy}
         onClick={() => void prepare()}
       >
-        Prepare private OBS source
+        {studio ? "Prepare private program link" : "Prepare private OBS source"}
       </button>
       {message && (
         <p role="status" className="rounded-xl border border-slate-600 p-4">
@@ -134,7 +145,7 @@ export function M3Operator({ id }: { id: string }) {
       {source && (
         <section className="space-y-3" aria-label="Private source handoff">
           <label className="block" htmlFor="obs-source">
-            One-use OBS Browser Source URL
+            {studio ? "One-use program link" : "One-use OBS Browser Source URL"}
           </label>
           <input
             id="obs-source"
@@ -142,26 +153,36 @@ export function M3Operator({ id }: { id: string }) {
             value={source}
             className="min-h-11 w-full rounded border border-slate-500 bg-slate-900 p-3"
           />
-          <button className="btn-secondary min-h-11" onClick={download}>
-            Download source file
-          </button>
+          {!studio && (
+            <button className="btn-secondary min-h-11" onClick={download}>
+              Download source file
+            </button>
+          )}
           <p>
-            Add this URL to the dedicated OBS Browser Source at 1920 × 1080 and
-            30 fps. Keep “Shutdown source when not visible” and “Refresh browser
-            when scene becomes active” off. Use OBS Interact only if browser
-            permissions need attention.
+            {studio ? (
+              "Paste this link into the private source field in Studio’s local controls, then choose Start program and recording. Do not open the link in another browser tab."
+            ) : (
+              <>
+                Add this URL to the dedicated OBS Browser Source at 1920 × 1080
+                and 30 fps. Keep “Shutdown source when not visible” and “Refresh
+                browser when scene becomes active” off. Use OBS Interact only if
+                browser permissions need attention.
+              </>
+            )}
           </p>
-          <p>
-            The invitation is consumed by its first browser. Do not open it in
-            another tab before OBS. Its replacement cookie permits only this
-            game’s prepared receiver sessions.
-          </p>
+          {!studio && (
+            <p>
+              The invitation is consumed by its first browser. Do not open it in
+              another tab before OBS. Its replacement cookie permits only this
+              game’s prepared receiver sessions.
+            </p>
+          )}
         </section>
       )}
       <p>
-        Start each camera using its existing M2 camera page. OBS receives
-        automatically. Score, layout, and sponsors continue to use the existing
-        game controls.
+        {studio
+          ? "Keep both camera phones on the same network as the recording PC. Score, layout and sponsors use the game controls."
+          : "Start each camera using its existing M2 camera page. OBS receives automatically. Score, layout, and sponsors continue to use the existing game controls."}
       </p>
       <p>
         Long recording and endurance checks are deferred to final validation. No
@@ -173,6 +194,6 @@ export function M3Operator({ id }: { id: string }) {
       >
         Game controls
       </a>
-    </main>
+    </Container>
   );
 }

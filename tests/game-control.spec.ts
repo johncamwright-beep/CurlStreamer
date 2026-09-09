@@ -1,6 +1,48 @@
 import { expect, test, type Page } from "@playwright/test";
 import { gameFixture, testGameId } from "../src/test/game-fixture";
 
+test("Windows Studio setup is reachable and performs no automatic writes", async ({
+  page,
+}) => {
+  const { state } = await fixture(page);
+  await page.goto(`/games/${testGameId}`);
+  await page.getByRole("link", { name: "Set up Windows Studio" }).click();
+  await expect(
+    page.getByRole("heading", { name: "Windows Studio", exact: true }),
+  ).toBeVisible();
+  await expect(page.getByLabel("Game link", { exact: true })).toHaveValue(
+    `http://127.0.0.1:3000/games/${testGameId}`,
+  );
+  await expect(
+    page.getByText("Direct-camera recording is not enabled", { exact: false }),
+  ).toBeVisible();
+  await expect(
+    page.getByText("YouTube pairing and streaming are not enabled", {
+      exact: false,
+    }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Copy game link" }),
+  ).toBeVisible();
+  expect(state.writes).toEqual([]);
+});
+
+test("scorer cannot access Studio setup controls", async ({ page }) => {
+  const { state } = await fixture(page, "scorer");
+  await page.goto(`/games/${testGameId}`);
+  await expect(
+    page.getByRole("link", { name: "Set up Windows Studio" }),
+  ).toHaveCount(0);
+  await page.goto(`/games/${testGameId}/studio`);
+  await expect(
+    page.getByText("Sign in as this game’s administrator", { exact: false }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Copy game link" }),
+  ).toHaveCount(0);
+  expect(state.writes).toEqual([]);
+});
+
 async function fixture(page: Page, role = "owner") {
   const game = gameFixture();
   game.config.homeName = "Northern Ontario Curling Club";

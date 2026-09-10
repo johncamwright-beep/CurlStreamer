@@ -103,6 +103,7 @@ export function ProgramComposition({
               )}
               <TeamLogo
                 teamName={game.config.homeName}
+                imageUrl={game.config.homeLogoUrl}
                 className="ml-auto h-[5.5cqw] w-[5.5cqw] rounded-lg"
               />
             </div>

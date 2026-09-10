@@ -304,6 +304,7 @@ export default function Scorer({
               : "Scoring"}
             <TeamLogo
               teamName={game.config.homeName}
+              imageUrl={game.config.homeLogoUrl}
               className="ml-3 inline-block h-10 w-10 align-middle"
             />
           </h1>

@@ -7,12 +7,14 @@ export function teamLogoSource(teamName: string) {
 }
 export function TeamLogo({
   teamName,
+  imageUrl,
   className = "h-10 w-10",
 }: {
   teamName: string;
+  imageUrl?: string;
   className?: string;
 }) {
-  const src = teamLogoSource(teamName);
+  const src = imageUrl || teamLogoSource(teamName);
   if (!src) return null;
   // eslint-disable-next-line @next/next/no-img-element
   return (

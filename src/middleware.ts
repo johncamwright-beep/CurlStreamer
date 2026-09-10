@@ -3,6 +3,15 @@ import { NextResponse, type NextRequest } from "next/server";
 import { publicSupabaseConfig } from "@/lib/supabase/config";
 
 export async function middleware(request: NextRequest) {
+  const host = (request.headers.get("host") ?? "").toLowerCase().split(":")[0];
+  const teamHost = /^([a-z0-9]+(?:-[a-z0-9]+)*)\.curlstreamer\.app$/.exec(host);
+  if (teamHost && teamHost[1] !== "www") {
+    if (request.nextUrl.pathname !== "/")
+      return new NextResponse("Not found", { status: 404 });
+    const destination = request.nextUrl.clone();
+    destination.pathname = "/teams/" + teamHost[1];
+    return NextResponse.rewrite(destination);
+  }
   let response = NextResponse.next({ request });
   const { url, key } = publicSupabaseConfig(
     process.env.NEXT_PUBLIC_SUPABASE_URL,

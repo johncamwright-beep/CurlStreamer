@@ -9,6 +9,7 @@ export default defineConfig({
     "youtube-settings.spec.ts",
     "dashboard.spec.ts",
     "game-setup.spec.ts",
+    "team-settings.spec.ts",
   ],
   fullyParallel: false,
   webServer: [

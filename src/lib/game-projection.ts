@@ -7,7 +7,12 @@ export interface BroadcastGame {
   id: string;
   config: Pick<
     GameConfig,
-    "eventName" | "homeName" | "awayName" | "homeColor" | "awayColor"
+    | "eventName"
+    | "homeName"
+    | "awayName"
+    | "homeColor"
+    | "awayColor"
+    | "homeLogoUrl"
   >;
   score: {
     hammer: Team | null;
@@ -52,6 +57,9 @@ export function broadcastGame(
   return {
     id: game.id,
     config: {
+      ...(game.config.homeLogoUrl
+        ? { homeLogoUrl: game.config.homeLogoUrl }
+        : {}),
       eventName: game.config.eventName,
       homeName: game.config.homeName,
       awayName: game.config.awayName,

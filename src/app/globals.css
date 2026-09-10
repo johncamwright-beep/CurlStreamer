@@ -452,3 +452,16 @@ button {
   outline: 3px solid #67e8f9;
   outline-offset: 3px;
 }
+
+.input {
+  min-height: 44px;
+  border: 1px solid #475569;
+  border-radius: 0.65rem;
+  padding: 0.65rem 0.8rem;
+  background: #0b1626;
+  color: #f8fafc;
+}
+.input:focus-visible {
+  outline: 2px solid #67e8f9;
+  outline-offset: 2px;
+}

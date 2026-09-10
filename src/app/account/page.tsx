@@ -1,3 +1,5 @@
+import { AccountEmail } from "@/components/AccountEmail";
+import { TeamSettings } from "@/components/TeamSettings";
 import { redirect } from "next/navigation";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { getAccountContext, readableTeamRole } from "@/lib/auth/account";
@@ -15,18 +17,13 @@ export default async function AccountPage() {
   if (!result.ok) return <AccountServiceUnavailable />;
   const account = result.account;
   return (
-    <main className="mx-auto min-h-screen max-w-xl p-5 md:py-12">
+    <main className="mx-auto min-h-screen max-w-5xl p-5 md:py-12">
       <div className="mb-4">
         <AppNavigation signedIn />
       </div>
       <section className="panel grid gap-4">
         <h1 className="text-3xl font-black">My account</h1>
-        <dl>
-          <dt className="text-slate-400">Display name</dt>
-          <dd>{account.profile.display_name}</dd>
-          <dt className="mt-3 text-slate-400">Email</dt>
-          <dd>{user.email}</dd>
-        </dl>
+        <AccountEmail email={user.email ?? ""} />
         {account.profile.status !== "active" ? (
           <p role="alert" className="text-red-300">
             This account is not currently active.
@@ -47,6 +44,9 @@ export default async function AccountPage() {
           <Link className="btn text-center" href="/onboarding">
             Create your team
           </Link>
+        )}
+        {account.profile.status === "active" && account.membership && (
+          <TeamSettings name={account.membership.teamName} />
         )}
         <form action={signOut}>
           <button className="btn-secondary w-full">Sign Out</button>

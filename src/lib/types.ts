@@ -11,6 +11,7 @@ export type SponsorStyle = "fullscreen" | "overlay";
 export type CameraFraming = "fill" | "contain";
 
 export interface GameConfig {
+  homeLogoUrl?: string;
   eventName: string;
   homeName: string;
   awayName: string;

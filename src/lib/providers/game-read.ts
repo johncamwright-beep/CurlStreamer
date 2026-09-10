@@ -8,6 +8,8 @@ import {
   type SafeGameCompletion,
 } from "@/lib/game-completion";
 
+const logoCache = new Map<string, { expires: number; url?: string }>();
+
 export type GameRead =
   | { kind: "active"; game: GameState }
   | { kind: "completed"; completion: SafeGameCompletion }
@@ -41,5 +43,22 @@ export async function readGame(id: string): Promise<GameRead> {
   }
   if (row.outcome !== "active" || !row.state)
     throw new Error("Game read unavailable");
-  return { kind: "active", game: row.state as GameState };
+  const game = row.state as GameState;
+  let logo = logoCache.get(id);
+  if (!logo || logo.expires < Date.now()) {
+    const result = await Promise.resolve(
+      createAdminSupabaseClient().rpc("read_game_team_logo", { p_game: id }),
+    ).catch(() => ({ data: null }));
+    logo = {
+      expires: Date.now() + 60_000,
+      url:
+        typeof result.data === "string" && result.data.startsWith("https://")
+          ? result.data
+          : undefined,
+    };
+    if (logoCache.size > 500) logoCache.clear();
+    logoCache.set(id, logo);
+  }
+  if (logo.url) game.config = { ...game.config, homeLogoUrl: logo.url };
+  return { kind: "active", game };
 }

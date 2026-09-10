@@ -13,7 +13,8 @@ export function AccountShortcut() {
       .then((value) => {
         if (
           typeof value?.logo === "string" &&
-          value.logo.startsWith("/branding/")
+          (value.logo.startsWith("/branding/") ||
+            value.logo.startsWith("https://"))
         )
           setLogo(value.logo);
       })

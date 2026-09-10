@@ -30,6 +30,7 @@ const statusSchema = z.object({
   gameId: z.string(),
   devices: z.array(z.object({ id: z.string(), name: z.string() })).max(128),
   running: z.boolean(),
+  allMuted: z.boolean().default(false),
   error: z.string().nullable(),
   channels: z
     .array(
@@ -102,6 +103,19 @@ export function StudioNativeUsbAudio({ gameId }: { gameId: string }) {
         >
           USB setup
         </button>
+        {state?.running && (
+          <button
+            type="button"
+            className="btn min-h-11 shrink-0"
+            aria-pressed={state.allMuted}
+            disabled={pending || stale}
+            onClick={() =>
+              send("studio-usb-mute-all", { muted: !state.allMuted })
+            }
+          >
+            {state.allMuted ? "Unmute all" : "Mute all"}
+          </button>
+        )}
         {state?.running && (
           <button
             type="button"

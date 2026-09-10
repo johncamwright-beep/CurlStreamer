@@ -20,6 +20,7 @@ internal sealed class UsbAudioChannelSnapshot
 
 internal sealed class UsbAudioSnapshot
 {
+    public bool allMuted;
     public bool running;
     public int sampleRate;
     public UsbAudioChannelSnapshot[] channels;
@@ -39,7 +40,7 @@ internal sealed class UsbAudio : IDisposable
     private ManualResetEvent cancel;
     private ManualResetEvent ready;
     private IntPtr audioEvent;
-    private bool running, disposed;
+    private bool running, disposed, allMuted;
     private string error;
     private int sampleRate, channelCount;
     private float[] peaks, rms, levels;
@@ -130,9 +131,11 @@ internal sealed class UsbAudio : IDisposable
             for (int i = 0; i < channelCount; i++) channels[i] = new UsbAudioChannelSnapshot {
                 peak = running ? Clamp(peaks[i], 0f, 1f) : 0f, rms = running ? Clamp(rms[i], 0f, 1f) : 0f, muted = muted[i], level = levels[i]
             };
-            return new UsbAudioSnapshot { running = running, sampleRate = sampleRate, channels = channels, error = error };
+            return new UsbAudioSnapshot { allMuted = allMuted, running = running, sampleRate = sampleRate, channels = channels, error = error };
         }
     }
+
+    internal void SetAllMuted(bool value) { lock (gate) allMuted = value; }
 
     internal void SetChannel(int index, bool mute, float level)
     {
@@ -215,8 +218,8 @@ internal sealed class UsbAudio : IDisposable
     {
         if (frames <= 0) return;
         var output = new float[frames]; var packetPeak = new float[wave.channels]; var squares = new double[wave.channels];
-        bool[] localMuted; float[] localLevels;
-        lock (gate) { localMuted = (bool[])muted.Clone(); localLevels = (float[])levels.Clone(); }
+        bool[] localMuted; float[] localLevels; bool masterMuted;
+        lock (gate) { localMuted = (bool[])muted.Clone(); localLevels = (float[])levels.Clone(); masterMuted = allMuted; }
         for (int frame = 0; frame < frames; frame++) {
             double mixed = 0;
             for (int ch = 0; ch < wave.channels; ch++) {
@@ -224,9 +227,9 @@ internal sealed class UsbAudio : IDisposable
                 float absolute = Math.Abs(value); if (absolute > packetPeak[ch]) packetPeak[ch] = absolute; squares[ch] += value * value;
                 if (!localMuted[ch]) mixed += value * localLevels[ch];
             }
-            // Divide by the physical channel count, not enabled sources: muting a
-            // channel must not make every remaining channel louder.
-            output[frame] = MixMono((float)mixed, wave.channels);
+            // Preserve each microphone's level. The renderer limits the floating
+            // point sum; neither silent nor muted channels attenuate other mics.
+            output[frame] = masterMuted ? 0f : MixMono((float)mixed, wave.channels);
         }
         lock (gate) for (int ch = 0; ch < wave.channels; ch++) { peaks[ch] = packetPeak[ch]; rms[ch] = (float)Math.Sqrt(squares[ch] / frames); }
         try { onMono(output, wave.sampleRate); } catch (Exception ex) { lock (gate) error = "USB audio callback failed: " + SafeMessage(ex); }
@@ -244,7 +247,7 @@ internal sealed class UsbAudio : IDisposable
         return Normalize(Marshal.ReadInt32(data, offset) / 2147483648f);
     }
 
-    internal static float MixMono(float sum, int activeChannels) { return activeChannels == 0 ? 0f : Clamp(sum / activeChannels, -1f, 1f); }
+    internal static float MixMono(float sum, int activeChannels) { return activeChannels == 0 || Single.IsNaN(sum) || Single.IsInfinity(sum) ? 0f : sum; }
 
     private static string FriendlyName(IMMDevice device)
     {

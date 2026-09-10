@@ -128,6 +128,32 @@ test("native USB capture is opt-in with compact independent dBFS meters", async 
     level: 1,
   });
   // Collapsing the panel must keep capture and the stop control available.
+  await page.getByRole("button", { name: "Mute all", exact: true }).click();
+  expect(await page.evaluate(() => (window as any).messages.at(-1))).toEqual({
+    type: "studio-usb-mute-all",
+    gameId: "game",
+    muted: true,
+  });
+  await page.evaluate(() =>
+    window.dispatchEvent(
+      new CustomEvent("studio-usb-status", {
+        detail: {
+          gameId: "game",
+          devices: [],
+          running: true,
+          allMuted: true,
+          error: null,
+          channels: [{ peak: 0.1, rms: 0.05, muted: false, level: 1 }],
+        },
+      }),
+    ),
+  );
+  await page.getByRole("button", { name: "Unmute all", exact: true }).click();
+  expect(await page.evaluate(() => (window as any).messages.at(-1))).toEqual({
+    type: "studio-usb-mute-all",
+    gameId: "game",
+    muted: false,
+  });
   const messagesBeforeCollapse = await page.evaluate(
     () => (window as any).messages.length,
   );

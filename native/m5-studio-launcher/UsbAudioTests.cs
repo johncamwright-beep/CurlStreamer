@@ -14,7 +14,7 @@ internal static class UsbAudioTests
         Check(new byte[] { 0, 0, 0, 0x80 }, UsbAudioSampleFormat.Pcm, 4, -1f, "PCM32 negative full scale");
         Check(BitConverter.GetBytes(0.5f), UsbAudioSampleFormat.Float32, 4, 0.5f, "Float32");
         Check(BitConverter.GetBytes(Single.NaN), UsbAudioSampleFormat.Float32, 4, 0f, "Float32 NaN normalization");
-        if (UsbAudio.MixMono(2f, 2) != 1f || UsbAudio.MixMono(1f, 2) != 0.5f || UsbAudio.MixMono(1f, 0) != 0f || UsbAudio.MixMono(9f, 2) != 1f) throw new Exception("Mono mix, mute, or normalization failed.");
+        if (UsbAudio.MixMono(.25f, 4) != .25f || UsbAudio.MixMono(.25f, 2) != .25f || UsbAudio.MixMono(1f, 0) != 0f || UsbAudio.MixMono(2f, 4) != 2f) throw new Exception("Mono mix lost microphone level or float headroom.");
         CheckFourChannelPacket();
         Console.WriteLine("PASS: PCM16/24/32, float normalization, mute and mono mixing.");
         if (args.Length == 1 && args[0] == "--enumerate") {
@@ -30,14 +30,19 @@ internal static class UsbAudioTests
         var audio = new UsbAudio((samples, rate) => output.Add(samples));
         Set(audio, "channelCount", 4); Set(audio, "peaks", new float[4]); Set(audio, "rms", new float[4]);
         Set(audio, "levels", new[] { 1f, 1f, 1f, 1f }); Set(audio, "muted", new[] { false, true, false, false });
-        var values = new[] { .25f, -.5f, .75f, -1f }; var bytes = new byte[16];
+        var values = new[] { .25f, -.5f, .75f, -.25f }; var bytes = new byte[16];
         for (int i = 0; i < values.Length; i++) Array.Copy(BitConverter.GetBytes(values[i]), 0, bytes, i * 4, 4);
         var pin = GCHandle.Alloc(bytes, GCHandleType.Pinned);
         try {
             var wave = new WaveFormat { channels = 4, sampleRate = 48000, blockAlign = 16, bytesPerSample = 4, format = UsbAudioSampleFormat.Float32, IsSupported = true };
             typeof(UsbAudio).GetMethod("ProcessPacket", BindingFlags.Instance | BindingFlags.NonPublic).Invoke(audio, new object[] { pin.AddrOfPinnedObject(), 1, false, wave });
+            audio.SetAllMuted(true);
+            typeof(UsbAudio).GetMethod("ProcessPacket", BindingFlags.Instance | BindingFlags.NonPublic).Invoke(audio, new object[] { pin.AddrOfPinnedObject(), 1, false, wave });
+            audio.SetAllMuted(false);
+            typeof(UsbAudio).GetMethod("ProcessPacket", BindingFlags.Instance | BindingFlags.NonPublic).Invoke(audio, new object[] { pin.AddrOfPinnedObject(), 1, false, wave });
         } finally { pin.Free(); }
-        if (output.Count != 1 || Math.Abs(output[0][0]) > .00001f) throw new Exception("Four-channel fixed-headroom mute mix failed.");
+        if (output.Count != 3 || output[0][0] != .75f || output[1][0] != 0f || output[2][0] != .75f) throw new Exception("Master mute failed to silence or restore the mix.");
+        if (!audio.Snapshot().channels[1].muted) throw new Exception("Master mute changed an individual microphone selection.");
         var peaks = (float[])Get(audio, "peaks"); var rms = (float[])Get(audio, "rms");
         for (int i = 0; i < 4; i++) if (Math.Abs(peaks[i] - Math.Abs(values[i])) > .00001f || Math.Abs(rms[i] - Math.Abs(values[i])) > .00001f) throw new Exception("Per-channel meter indexing failed.");
     }

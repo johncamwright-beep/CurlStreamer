@@ -56,7 +56,12 @@ function readProgramInvitation(value: string, origin: string, gameId: string) {
 }
 type ProgramHandle = Omit<
   Awaited<ReturnType<typeof startM4ProgramHost>>,
-  "stream" | "previewMapping" | "cameraStatus" | "audioStatus" | "pushUsbAudio"
+  | "stream"
+  | "previewMapping"
+  | "cameraStatus"
+  | "audioStatus"
+  | "usbAudioStatus"
+  | "pushUsbAudio"
 > & {
   pushUsbAudio?: (pcm: Buffer) => void;
   previewMapping?: string;
@@ -65,6 +70,20 @@ type ProgramHandle = Omit<
     string,
     { peak: number; rms: number; receiving: boolean }
   >;
+  usbAudioStatus?: () => {
+    pushedPackets: number;
+    pushedSamples: number;
+    drainedPackets: number;
+    drainedSamples: number;
+    peak: number;
+    rms: number;
+    renderer: {
+      contextState: string;
+      scheduledFrames: number;
+      peak: number;
+      rms: number;
+    };
+  };
   stream?: {
     start(desktop: M4DesktopClient, intentId: string): Promise<void>;
     stop(): Promise<void>;
@@ -282,6 +301,8 @@ export async function createM4OperatorServer(options: {
         program === "recording" ? programHandle?.cameraStatus?.() : {},
       phoneAudio:
         program === "recording" ? (programHandle?.audioStatus?.() ?? {}) : {},
+      usbAudio:
+        program === "recording" ? programHandle?.usbAudioStatus?.() : undefined,
     };
   };
   const approval = new URL(

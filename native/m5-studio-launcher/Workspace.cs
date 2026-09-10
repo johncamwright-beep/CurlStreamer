@@ -367,6 +367,10 @@ internal sealed class Workspace : Form
                         usbSamples.AddRange(samples);
                     }
                 });
+            } else if (type == "studio-usb-mute-all" && value.Count == 3 && usbGame == selectedGame) {
+                object muted;
+                if (!value.TryGetValue("muted", out muted) || !(muted is bool)) throw new InvalidDataException();
+                usbAudio.SetAllMuted((bool)muted);
             } else if (type == "studio-usb-channel" && value.Count == 5 && usbGame == selectedGame) {
                 object channel, muted, level;
                 if (!value.TryGetValue("channel", out channel) || !(channel is int) || !value.TryGetValue("muted", out muted) || !(muted is bool) || !value.TryGetValue("level", out level) || !(level is decimal || level is double || level is int)) throw new InvalidDataException();
@@ -419,7 +423,7 @@ internal sealed class Workspace : Form
         object diagnostics;
         lock (usbLock) diagnostics = new { postedPackets = usbPostedPackets, postedBytes = usbPostedBytes, postFailures = usbPostFailures, latestPostError = usbLastPostError };
         WriteUsbDeliverySnapshot(snapshot.running, diagnostics);
-        web.CoreWebView2.ExecuteScriptAsync("window.dispatchEvent(new CustomEvent('studio-usb-status',{detail:" + json.Serialize(new { gameId = selectedGame, devices = usbDevices, running = snapshot.running, error = usbError ?? snapshot.error, channels = snapshot.channels, diagnostics = diagnostics }) + "}));");
+        web.CoreWebView2.ExecuteScriptAsync("window.dispatchEvent(new CustomEvent('studio-usb-status',{detail:" + json.Serialize(new { gameId = selectedGame, devices = usbDevices, running = snapshot.running, allMuted = snapshot.allMuted, error = usbError ?? snapshot.error, channels = snapshot.channels, diagnostics = diagnostics }) + "}));");
     }
     private void WriteUsbDeliverySnapshot(bool running, object diagnostics) {
         var now = DateTime.UtcNow;

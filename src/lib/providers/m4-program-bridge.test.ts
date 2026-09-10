@@ -46,6 +46,57 @@ describe("private loopback program API", () => {
     expect(flushed.status).toBe(204);
     expect(flushed.headers.get("x-m4-usb-audio-generation")).toBe("1");
   });
+  it("accepts bounded renderer-only USB playback observations and expires them", async () => {
+    const { bridge, headers } = await setup();
+    const page = await fetch(bridge.rendererUrl);
+    const cookie = page.headers.get("set-cookie")!.split(";")[0];
+    let now = Date.now();
+    const clock = vi.spyOn(Date, "now").mockImplementation(() => now);
+    const body = {
+      action: "usb-audio-observe",
+      contextState: "running",
+      scheduledFrames: 2400,
+      peak: 0.4,
+      rms: 0.2,
+    };
+    try {
+      const post = (value: unknown, renderer = true) =>
+        fetch(bridge.address + "/camera", {
+          method: "POST",
+          headers: renderer
+            ? {
+                origin: bridge.address,
+                cookie,
+                "content-type": "application/json",
+              }
+            : headers,
+          body: JSON.stringify(value),
+        });
+      expect((await post(body, false)).status).toBe(409);
+      for (const invalid of [
+        { ...body, scheduledFrames: 480001 },
+        { ...body, peak: Number.NaN },
+        { ...body, extra: true },
+      ])
+        expect((await post(invalid)).status).toBe(409);
+      expect((await post(body)).status).toBe(200);
+      expect(bridge.usbAudioStatus().renderer).toEqual({
+        contextState: "running",
+        scheduledFrames: 2400,
+        peak: 0.4,
+        rms: 0.2,
+      });
+      now += 6001;
+      expect(bridge.usbAudioStatus().renderer).toEqual({
+        contextState: "unavailable",
+        scheduledFrames: 0,
+        peak: 0,
+        rms: 0,
+      });
+    } finally {
+      clock.mockRestore();
+    }
+  });
   it("reports advancing renderer frames, never a heartbeat or a stale counter", async () => {
     const { bridge, headers } = await setup();
     const page = await fetch(bridge.rendererUrl);

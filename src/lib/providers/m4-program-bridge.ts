@@ -56,6 +56,13 @@ export async function createM4ProgramBridge(
   >();
   const rendererCookie = randomBytes(32).toString("base64url");
   const usbAudio = createM4UsbAudioQueue();
+  let usbRenderer = {
+    contextState: "unavailable",
+    scheduledFrames: 0,
+    peak: 0,
+    rms: 0,
+    observedAt: 0,
+  };
   const expected = Buffer.from(`Bearer ${key}`);
   const expectedRendererCookie = Buffer.from(`m4_program=${rendererCookie}`);
   let address = "",
@@ -330,6 +337,21 @@ export async function createM4ProgramBridge(
         reply(200, { ok: true });
         return;
       }
+      const usbObservation = z
+        .object({
+          action: z.literal("usb-audio-observe"),
+          contextState: z.enum(["running", "suspended", "closed"]),
+          scheduledFrames: z.number().int().nonnegative().max(480000),
+          peak: z.number().finite().min(0).max(1),
+          rms: z.number().finite().min(0).max(1),
+        })
+        .strict()
+        .safeParse(parsed);
+      if (usbObservation.success && rendererAllowed) {
+        usbRenderer = { ...usbObservation.data, observedAt: Date.now() };
+        reply(200, { ok: true });
+        return;
+      }
       const connect = z
         .object({ action: z.literal("connect"), cameraRole: cameraRoleSchema })
         .strict()
@@ -398,6 +420,26 @@ export async function createM4ProgramBridge(
           ];
         }),
       ),
+    usbAudioStatus: () => {
+      const queue = usbAudio.snapshot();
+      const fresh = !closed && Date.now() - usbRenderer.observedAt < 6000;
+      return {
+        ...queue,
+        renderer: fresh
+          ? {
+              contextState: usbRenderer.contextState,
+              scheduledFrames: usbRenderer.scheduledFrames,
+              peak: usbRenderer.peak,
+              rms: usbRenderer.rms,
+            }
+          : {
+              contextState: "unavailable",
+              scheduledFrames: 0,
+              peak: 0,
+              rms: 0,
+            },
+      };
+    },
     pushUsbAudio: (pcm: Buffer) => {
       if (closed) throw new Error("m4_program_unavailable");
       usbAudio.push(pcm);

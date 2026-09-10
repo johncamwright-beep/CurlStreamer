@@ -7,6 +7,13 @@ export function createM4UsbAudioQueue() {
   let chunks: Buffer[] = [];
   let bytes = 0;
   let generation = 0;
+  let pushedPackets = 0,
+    pushedSamples = 0,
+    drainedPackets = 0,
+    drainedSamples = 0;
+  let peak = 0,
+    square = 0,
+    observedSamples = 0;
 
   const reset = () => {
     for (const chunk of chunks) chunk.fill(0);
@@ -23,9 +30,14 @@ export function createM4UsbAudioQueue() {
       index < pcm.length;
       index += Float32Array.BYTES_PER_ELEMENT
     ) {
-      if (!Number.isFinite(pcm.readFloatLE(index)))
-        throw new Error("invalid_pcm");
+      const value = pcm.readFloatLE(index);
+      if (!Number.isFinite(value)) throw new Error("invalid_pcm");
+      peak = Math.max(peak, Math.abs(value));
+      square += value * value;
+      observedSamples++;
     }
+    pushedPackets++;
+    pushedSamples += pcm.length / Float32Array.BYTES_PER_ELEMENT;
     chunks.push(Buffer.from(pcm));
     bytes += pcm.length;
     while (bytes > maxQueuedBytes && chunks.length) {
@@ -37,9 +49,19 @@ export function createM4UsbAudioQueue() {
   const drain = () => {
     if (!chunks.length) return { generation, pcm: Buffer.alloc(0) };
     const pcm = Buffer.concat(chunks);
+    drainedPackets++;
+    drainedSamples += pcm.length / Float32Array.BYTES_PER_ELEMENT;
     chunks = [];
     bytes = 0;
     return { generation, pcm };
   };
-  return { push, drain, reset };
+  const snapshot = () => ({
+    pushedPackets,
+    pushedSamples,
+    drainedPackets,
+    drainedSamples,
+    peak,
+    rms: observedSamples ? Math.sqrt(square / observedSamples) : 0,
+  });
+  return { push, drain, reset, snapshot };
 }

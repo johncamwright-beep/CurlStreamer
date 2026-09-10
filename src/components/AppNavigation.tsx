@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { AccountShortcut } from "./AccountShortcut";
-import { CurlStreamerAppBadge } from "./CurlStreamerBrand";
+import { CurlStreamerAppBadge, CurlStreamerLogo } from "./CurlStreamerBrand";
 import { usePathname } from "next/navigation";
 import { useEffect, useId, useRef, useState } from "react";
 import { signOut } from "@/app/account/actions";
@@ -18,7 +18,7 @@ import { createBrowserSupabaseClient } from "@/lib/supabase/browser";
 type NavLink = { href: string; label: string; icon: AppIconName };
 const plan: NavLink[] = [
   { href: "/dashboard", label: "Games", icon: "game" },
-  { href: "/games/new", label: "Schedule a game", icon: "calendar" },
+  { href: "/games/new", label: "Create game", icon: "calendar" },
   { href: "/seasons", label: "Seasons & events", icon: "list" },
   { href: "/opponents", label: "Opponents", icon: "opponent" },
   { href: "/sponsors", label: "Sponsors", icon: "sponsor" },
@@ -147,7 +147,7 @@ export function AppNavigation({
           ? [
               {
                 href: `/broadcast/${current.id}`,
-                label: "Broadcast preview",
+                label: "Show broadcast",
                 icon: "broadcast" as const,
               },
             ]
@@ -214,7 +214,7 @@ export function AppNavigation({
         inert={!open ? true : undefined}
       >
         <div className="app-navigation-brand">
-          <strong>Curl Streamer</strong>
+          <CurlStreamerLogo className="app-navigation-logo" />
           <button
             type="button"
             className="app-navigation-close"
@@ -259,7 +259,7 @@ export function AppNavigation({
               <h2 className="app-navigation-heading">Account</h2>
               <ul>
                 {renderLinks([
-                  { href: "/account", label: "Account", icon: "account" },
+                  { href: "/account", label: "My account", icon: "account" },
                   {
                     href: "/settings/youtube",
                     label: "YouTube Settings",

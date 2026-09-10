@@ -41,10 +41,10 @@ describe("shared application navigation", () => {
       '{ href: "/dashboard", label: "Games", icon: "game" }',
     );
     expect(navigation).toContain(
-      '{ href: "/games/new", label: "Schedule a game", icon: "calendar" }',
+      '{ href: "/games/new", label: "Create game", icon: "calendar" }',
     );
     expect(navigation).toContain(
-      '{ href: "/account", label: "Account", icon: "account" }',
+      '{ href: "/account", label: "My account", icon: "account" }',
     );
     expect(navigation).toContain('href: "/settings/youtube"');
     expect(navigation).toContain('label: "YouTube Settings"');

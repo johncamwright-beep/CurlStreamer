@@ -373,6 +373,15 @@ button {
   justify-content: space-between;
   margin-bottom: 0.5rem;
   font-size: 1.15rem;
+  gap: 1rem;
+}
+.app-navigation-logo {
+  flex: 1;
+  min-width: 0;
+  max-width: 240px;
+}
+.app-navigation-close {
+  flex-shrink: 0;
 }
 .app-navigation-heading {
   margin: 0.8rem 0.75rem 0.35rem;
@@ -390,9 +399,18 @@ button {
   gap: 0.7rem;
 }
 .app-navigation-current {
-  border-top: 1px solid rgb(51 65 85);
-  margin-top: 0.65rem;
-  padding-top: 0.15rem;
+  border: 1px solid #286171;
+  border-radius: 1rem;
+  background: #102e3b;
+  margin: 0.8rem 0;
+  padding: 0.25rem 0.35rem 0.5rem;
+}
+.app-navigation-current .app-navigation-heading {
+  color: #67e8f9;
+}
+.app-navigation-current .app-navigation-link:hover,
+.app-navigation-current .app-navigation-link[aria-current="page"] {
+  background: #1b4656;
 }
 .app-navigation-account {
   border-top: 1px solid rgb(51 65 85);

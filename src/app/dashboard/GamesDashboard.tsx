@@ -13,6 +13,7 @@ import { groupGames, type GamesTab } from "@/lib/game-hub";
 import { formatScheduledStart } from "@/lib/team-hierarchy";
 import { formatCanonicalGameTitle } from "@/lib/game-title";
 import { youtubeWatchUrlSchema } from "@/lib/youtube-watch";
+import { GameEventFilter } from "@/components/GameEventFilter";
 
 export function GamesDashboard({
   account,
@@ -22,6 +23,7 @@ export function GamesDashboard({
   season,
   tab,
   broadcasts,
+  selectedEvent,
 }: {
   account: AccountContext;
   games: ScheduledGameRecord[];
@@ -30,6 +32,7 @@ export function GamesDashboard({
   season?: SeasonRecord;
   tab: GamesTab;
   broadcasts: { available: boolean; sessions: DashboardBroadcast[] };
+  selectedEvent?: string;
 }) {
   const membership = account.membership!;
   const administrator = ["owner", "team_admin"].includes(membership.role);
@@ -38,9 +41,27 @@ export function GamesDashboard({
       .filter((s) => ["live", "preparing", "stopping"].includes(s.status))
       .map((s) => s.gameId),
   );
-  const groups = groupGames(games, events, Date.now(), activityIds);
+  const eventFilter =
+    selectedEvent === "single" ||
+    events.some((event) => event.id === selectedEvent)
+      ? selectedEvent!
+      : "";
+  const filteredGames = games.filter(
+    (game) =>
+      !eventFilter ||
+      (eventFilter === "single" ? !game.eventId : game.eventId === eventFilter),
+  );
+  const filteredEvents = events.filter(
+    (event) => !eventFilter || event.id === eventFilter,
+  );
+  const groups = groupGames(
+    filteredGames,
+    filteredEvents,
+    Date.now(),
+    activityIds,
+  );
   const href = (next: GamesTab) =>
-    `/dashboard?${new URLSearchParams({ tab: next, ...(season ? { season: season.id } : {}) })}`;
+    `/dashboard?${new URLSearchParams({ tab: next, ...(season ? { season: season.id } : {}), ...(eventFilter ? { event: eventFilter } : {}) })}`;
   const rows = (values: ScheduledGameRecord[]) => (
     <ul className="dashboard-game-grid">
       {values.map((game) => (
@@ -113,7 +134,7 @@ export function GamesDashboard({
           {(
             [
               ["upcoming", "Upcoming", groups.upcoming.length],
-              ["events", "Events", events.length],
+              ["events", "Events", filteredEvents.length],
               ["past", "Results", results.length],
               ["unfinished", "Unfinished", groups.unfinished.length],
             ] as const
@@ -132,6 +153,12 @@ export function GamesDashboard({
             </Link>
           ))}
         </nav>
+        <GameEventFilter
+          events={events}
+          selected={eventFilter}
+          season={season?.id}
+          tab={tab}
+        />
         <div className="dashboard-section-heading dashboard-list-heading">
           <div>
             <h2>
@@ -206,11 +233,13 @@ export function GamesDashboard({
                   : "No upcoming games"
             }
             text={
-              tab === "past"
-                ? "End a game to save its final score and YouTube link."
-                : tab === "unfinished"
-                  ? "There are no unscheduled games or past starts waiting for a result."
-                  : "Schedule your next game to get its cameras, scoring and broadcast ready."
+              eventFilter
+                ? "No games match this event in this view. Choose All events to see the full list."
+                : tab === "past"
+                  ? "End a game to save its final score and YouTube link."
+                  : tab === "unfinished"
+                    ? "There are no unscheduled games or past starts waiting for a result."
+                    : "Schedule your next game to get its cameras, scoring and broadcast ready."
             }
           />
         )}

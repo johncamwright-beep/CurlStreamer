@@ -11,7 +11,7 @@ import "./dashboard.css";
 export default async function GamesPage({
   searchParams,
 }: {
-  searchParams: Promise<{ tab?: string; season?: string }>;
+  searchParams: Promise<{ tab?: string; season?: string; event?: string }>;
 }) {
   const {
     data: { user },
@@ -34,7 +34,11 @@ export default async function GamesPage({
     );
   const membership = result.account.membership;
   if (!membership) redirect("/onboarding");
-  const { tab: requestedTab, season: requestedSeason } = await searchParams;
+  const {
+    tab: requestedTab,
+    season: requestedSeason,
+    event: requestedEvent,
+  } = await searchParams;
   const season =
     hierarchy.seasons.find((s) => s.id === requestedSeason) ??
     hierarchy.seasons.find((s) => s.status === "active") ??
@@ -60,6 +64,7 @@ export default async function GamesPage({
       seasons={hierarchy.seasons}
       season={season}
       tab={tab}
+      selectedEvent={requestedEvent}
       broadcasts={broadcasts}
     />
   );

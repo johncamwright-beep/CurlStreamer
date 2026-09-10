@@ -101,3 +101,78 @@ test("dashboard fits narrow phones and preserves reachable controls", async ({
     fullPage: true,
   });
 });
+
+test("event filter follows the selected event across game views and resets", async ({
+  page,
+}) => {
+  const filter = page.getByLabel("Filter by event");
+  await filter.selectOption({ label: "Autumn Club Championship" });
+  await expect(page).toHaveURL(/event=55555555/);
+  await expect(
+    page.getByRole("link", { name: /^Open Game:.*Team Wright/ }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("link", { name: /^Open Game:.*Team Benning/ }),
+  ).toHaveCount(0);
+  await page.getByRole("link", { name: /^Results/ }).click();
+  await expect(filter).toHaveValue("55555555-5555-4555-8555-555555555555");
+  await expect(
+    page.getByText("No games match this event in this view.", { exact: false }),
+  ).toBeVisible();
+  await filter.selectOption("");
+  await expect(page.getByText("Team Gushue", { exact: true })).toBeVisible();
+  await page.getByRole("link", { name: /^Upcoming/ }).click();
+  await expect(
+    page.getByRole("heading", { name: "Upcoming games", exact: true }),
+  ).toBeVisible();
+  await filter.selectOption("single");
+  await expect(
+    page.getByRole("link", { name: /^Open Game:.*Team Benning/ }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("link", { name: /^Open Game:.*Team Wright/ }),
+  ).toHaveCount(0);
+});
+
+test("account logo aligns with content across page widths", async ({
+  page,
+}, info) => {
+  if (info.project.name === "desktop")
+    await page.setViewportSize({ width: 1920, height: 1080 });
+  await expect(
+    page.getByRole("heading", { name: "Games", exact: true }),
+  ).toBeVisible();
+  const origin = new URL(page.url()).origin;
+  for (const path of [
+    "/dashboard",
+    "/account",
+    "/games/new",
+    "/settings/youtube",
+  ]) {
+    if (path !== "/dashboard") await page.goto(new URL(path, origin).href);
+    const shortcut = page.getByRole("link", {
+      name: "My account",
+      exact: true,
+    });
+    await expect(shortcut).toBeVisible();
+    await expect
+      .poll(() =>
+        shortcut.evaluate((element) => {
+          const main = element.closest("main")!;
+          const contentRight =
+            main.getBoundingClientRect().right -
+            parseFloat(getComputedStyle(main).paddingRight);
+          return Math.abs(element.getBoundingClientRect().right - contentRight);
+        }),
+      )
+      .toBeLessThan(2);
+    expect(await page.evaluate(() => document.body.style.paddingRight)).toBe(
+      "",
+    );
+    if (path === "/dashboard")
+      await page.screenshot({
+        path: info.outputPath("aligned-logo.png"),
+        fullPage: true,
+      });
+  }
+});

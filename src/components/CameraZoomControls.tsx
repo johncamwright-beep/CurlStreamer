@@ -96,14 +96,17 @@ function CameraZoomControl({
       targetRef.current = undefined;
       setDesired(undefined);
       setConfirming(false);
+      setError("");
     }
   }, [desired, enabled, status]);
   useEffect(() => {
     if (targetRef.current === undefined) return;
     setConfirming(true);
     const timer = setTimeout(() => {
-      if (targetRef.current !== undefined)
+      if (targetRef.current !== undefined) {
         setError("Phone did not confirm the requested zoom");
+        setConfirming(false);
+      }
     }, 8_000);
     return () => clearTimeout(timer);
   }, [desired]);
@@ -126,6 +129,8 @@ function CameraZoomControl({
     } catch {
       desiredRef.current = undefined;
       targetRef.current = undefined;
+      setDesired(undefined);
+      setConfirming(false);
       setError("Could not send zoom command");
     } finally {
       sending.current = false;

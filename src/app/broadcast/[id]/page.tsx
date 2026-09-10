@@ -42,7 +42,8 @@ export default function Broadcast({
   const [compact, setCompact] = useState(false);
   const [operator, setOperator] = useState(false);
   const zoomRail =
-    operator || ["owner", "team_admin", "scorer"].includes(accountRole);
+    Boolean(game) &&
+    (operator || ["owner", "team_admin", "scorer"].includes(accountRole));
   useEffect(() => setOperator(hasScoringAccess(localStorage, id)), [id]);
   useEffect(() => {
     const fit = () => {

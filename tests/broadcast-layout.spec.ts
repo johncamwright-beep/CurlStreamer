@@ -121,17 +121,11 @@ test("fits and centres the complete logical program across desktop viewports", a
       PROGRAM_HEIGHT * expectedScale,
     );
     if ([1920, 1600, 1024].includes(viewport.width)) {
-      const operatorNavigation = page.getByTestId("back-to-scoring");
-      await operatorNavigation.evaluate((element) => {
-        element.style.visibility = "hidden";
-      });
+      await expect(page.getByTestId("back-to-scoring")).toHaveCount(0);
       await page.getByTestId("broadcast-canvas").screenshot({
         path: testInfo.outputPath(
           `broadcast-${viewport.width}x${viewport.height}.png`,
         ),
-      });
-      await operatorNavigation.evaluate((element) => {
-        element.style.visibility = "";
       });
     }
   }

@@ -1,12 +1,39 @@
 import { z } from "zod";
 
+export const newsFontFamilies = [
+  "Arial",
+  "Georgia",
+  "Trebuchet MS",
+  "Verdana",
+  "Courier New",
+] as const;
+export const newsFontSizes = ["14px", "16px", "18px", "20px", "24px"] as const;
+export const newsTextColors = [
+  "#f8fafc",
+  "#f87171",
+  "#fbbf24",
+  "#4ade80",
+  "#38bdf8",
+  "#c084fc",
+] as const;
+
+const textAlignment = z.enum(["left", "center", "right"]);
+const textStyleMark = z.object({
+  type: z.literal("textStyle"),
+  attrs: z.object({
+    color: z.enum(newsTextColors).nullish(),
+    fontFamily: z.enum(newsFontFamilies).nullish(),
+    fontSize: z.enum(newsFontSizes).nullish(),
+  }),
+});
 const textNode = z.object({
   type: z.literal("text"),
   text: z.string().min(1).max(5000),
   marks: z
     .array(
       z.union([
-        z.object({ type: z.enum(["bold", "italic"]) }),
+        z.object({ type: z.enum(["bold", "italic", "underline", "strike"]) }),
+        textStyleMark,
         z.object({
           type: z.literal("link"),
           attrs: z.object({
@@ -22,6 +49,9 @@ const textNode = z.object({
     .max(8)
     .optional(),
 });
+const textAlignmentAttrs = z
+  .object({ textAlign: textAlignment.nullish() })
+  .optional();
 const imageNode = z.object({
   type: z.literal("image"),
   attrs: z.object({
@@ -40,13 +70,26 @@ const inlineNode = z.union([
 ]);
 const paragraph = z.object({
   type: z.literal("paragraph"),
+  attrs: textAlignmentAttrs,
   content: z.array(inlineNode).max(200).optional(),
 });
 const heading = z.object({
   type: z.literal("heading"),
-  attrs: z.object({ level: z.union([z.literal(2), z.literal(3)]) }),
+  attrs: z.object({
+    level: z.union([z.literal(2), z.literal(3)]),
+    textAlign: textAlignment.nullish(),
+  }),
   content: z.array(inlineNode).max(200).optional(),
 });
+const blockquote = z.object({
+  type: z.literal("blockquote"),
+  attrs: textAlignmentAttrs,
+  content: z
+    .array(z.union([paragraph, heading, imageNode]))
+    .min(1)
+    .max(100),
+});
+const horizontalRule = z.object({ type: z.literal("horizontalRule") });
 const flatListItem = z.object({
   type: z.literal("listItem"),
   content: z
@@ -69,10 +112,21 @@ const list = z.object({
   type: z.enum(["bulletList", "orderedList"]),
   content: z.array(listItem).min(1).max(100),
 });
-const node = z.union([paragraph, heading, list, imageNode]);
+const node = z.union([
+  paragraph,
+  heading,
+  list,
+  blockquote,
+  horizontalRule,
+  imageNode,
+]);
 
 export const newsContentSchema = z
-  .object({ type: z.literal("doc"), content: z.array(node).min(1).max(200) })
+  .object({
+    type: z.literal("doc"),
+    title: z.string().trim().max(160).optional(),
+    content: z.array(node).min(1).max(200),
+  })
   .superRefine((value, context) => {
     if (JSON.stringify(value).length > 40000)
       context.addIssue({
@@ -108,4 +162,16 @@ export function newsPlainText(content: NewsContent) {
       .join(["paragraph", "heading"].includes(node.type) ? "" : "\n");
   }
   return text(content).trim().slice(0, 3000);
+}
+
+export function newsPostTitle(content: unknown, summary: string) {
+  const parsed = newsContentSchema.safeParse(content);
+  const title = parsed.success ? parsed.data.title?.trim() : "";
+  if (title) return title;
+  const source = parsed.success ? newsPlainText(parsed.data) : summary;
+  const firstLine = source
+    .split(/\r?\n/)
+    .find((line) => line.trim())
+    ?.trim();
+  return firstLine ? firstLine.slice(0, 120) : "Untitled post";
 }

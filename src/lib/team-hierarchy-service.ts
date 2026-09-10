@@ -118,6 +118,7 @@ export function createEvent(user: User, input: EventInput) {
     p_end_date: value.endDate,
     p_location: value.location ?? "",
     p_timezone: value.timezone,
+    p_result: value.result ?? null,
   });
 }
 
@@ -144,6 +145,7 @@ export function updateEvent(user: User, eventId: string, input: EventInput) {
     p_end_date: value.endDate,
     p_location: value.location ?? "",
     p_timezone: value.timezone,
+    ...(value.result !== undefined ? { p_result: value.result } : {}),
   });
 }
 export const archiveEvent = (user: User, eventId: string) =>

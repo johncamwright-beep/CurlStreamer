@@ -40,6 +40,67 @@ function send(response, status, body) {
 const server = createServer((request, response) => {
   const url = new URL(request.url ?? "/", "http://127.0.0.1:3101");
   if (request.method === "OPTIONS") return send(response, 204, {});
+  if (
+    url.pathname === "/rest/v1/team_public_profiles" &&
+    url.searchParams.get("slug") === "eq.public-preview"
+  )
+    return send(response, 200, {
+      organization_id: organizationId,
+      logo_url: "/branding/curlstreamer-icon.png",
+      settings: {
+        name: "Test Curling Club",
+        slug: "public-preview",
+        description: "A curling team with a long story. ".repeat(12),
+        tagline: "Together on the ice",
+        published: true,
+        results: true,
+        upcoming: true,
+        news: true,
+        sponsors: true,
+        socials: true,
+        facebook: "https://www.facebook.com/test",
+        instagram: "",
+        roster: {
+          fourth: "Alex",
+          third: "Sam",
+          second: "Pat",
+          lead: "Jo",
+          skip: "third",
+        },
+        theme: { background: "#edf2f7", panel: "#ffffff", accent: "#006b54" },
+        gallery: [
+          {
+            id: "33333333-3333-4333-8333-333333333333",
+            url: "http://127.0.0.1:3000/branding/curlstreamer-logo.png",
+            caption: "Opening day",
+          },
+        ],
+      },
+    });
+  if (url.pathname === "/rest/v1/rpc/read_public_team_games")
+    return send(
+      response,
+      200,
+      Array.from({ length: 14 }, (_, i) => ({
+        id: String(i),
+        home: "Test Curling Club",
+        away: "Opponent " + i,
+        event: i % 2 ? "Orion" : "Shorty Jenkin",
+        number: i + 1,
+        scheduled: "2026-10-" + String(i + 1).padStart(2, "0") + "T12:00:00Z",
+        completed:
+          i >= 7
+            ? "2026-10-" + String(i + 1).padStart(2, "0") + "T15:00:00Z"
+            : null,
+        result: i >= 7 ? { home: 8, away: 4 } : null,
+        youtube: i >= 7 ? "https://www.youtube.com/watch?v=test1234567" : null,
+      })),
+    );
+  if (url.pathname === "/rest/v1/events")
+    return send(response, 200, [
+      { id: "event", name: "Orion", end_date: "2026-09-10", result: "1st" },
+    ]);
+  if (url.pathname === "/rest/v1/team_news") return send(response, 200, []);
   const dashboard = dashboardResponse(url);
   if (dashboard !== null) return send(response, 200, dashboard);
   if (url.pathname === "/auth/v1/token" && request.method === "POST")

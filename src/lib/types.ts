@@ -61,6 +61,7 @@ export interface Sponsor {
   enabled: boolean;
   rotation: number;
   altText?: string;
+  website?: string;
 }
 export interface LibrarySponsor {
   id: string;
@@ -69,6 +70,7 @@ export interface LibrarySponsor {
   imageUrl: string;
   archived: boolean;
   position: number;
+  website?: string;
 }
 export interface GameState {
   id: string;

@@ -45,15 +45,16 @@ export async function PATCH(request: Request) {
         { error: parsed.error.issues[0]?.message ?? "Check the team details." },
         { status: 400 },
       );
-    if (parsed.data.photo) {
+    for (const url of [
+      parsed.data.photo,
+      ...parsed.data.gallery.map((item) => item.url),
+    ].filter(Boolean)) {
       const prefix = createAdminSupabaseClient()
         .storage.from("team-public-media")
         .getPublicUrl(auth.organizationId + "/").data.publicUrl;
       if (
-        !parsed.data.photo.startsWith(prefix) ||
-        !/^[a-f0-9-]+\.(png|jpg|jpeg|webp)$/.test(
-          parsed.data.photo.slice(prefix.length),
-        )
+        !url.startsWith(prefix) ||
+        !/^[a-f0-9-]+\.(png|jpg|jpeg|webp)$/.test(url.slice(prefix.length))
       ) {
         return NextResponse.json(
           { error: "Use a photo uploaded to this team." },
@@ -95,7 +96,9 @@ export async function POST(request: Request) {
         { status: 403 },
       );
     const form = await request.formData();
-    const kind = z.enum(["logo", "photo"]).parse(form.get("kind") ?? "logo");
+    const kind = z
+      .enum(["logo", "photo", "gallery"])
+      .parse(form.get("kind") ?? "logo");
     const file = form.get("file");
     if (!(file instanceof File))
       return NextResponse.json(
@@ -111,6 +114,8 @@ export async function POST(request: Request) {
     });
     if (saveError)
       throw Error("Save your team details before uploading a logo.");
+    if (kind === "gallery" && current.settings.gallery.length >= 50)
+      throw Error("Photo limit reached.");
     const path =
       auth.organizationId + "/" + randomUUID() + "." + image.extension;
     const { error } = await db.storage
@@ -119,11 +124,18 @@ export async function POST(request: Request) {
     if (error) throw Error("Logo upload failed.");
     const logo = db.storage.from("team-public-media").getPublicUrl(path)
       .data.publicUrl;
+    const gallery = [
+      ...current.settings.gallery,
+      { id: randomUUID(), url: logo, caption: "" },
+    ];
     const updated =
-      kind === "photo"
+      kind === "photo" || kind === "gallery"
         ? await db.rpc("update_team_public_profile", {
             p_org: auth.organizationId,
-            p_settings: { ...current.settings, photo: logo },
+            p_settings:
+              kind === "photo"
+                ? { ...current.settings, photo: logo }
+                : { ...current.settings, gallery },
           })
         : await db
             .from("team_public_profiles")
@@ -133,9 +145,16 @@ export async function POST(request: Request) {
       await db.storage.from("team-public-media").remove([path]);
       throw Error("Logo could not be saved.");
     }
-    return NextResponse.json(kind === "photo" ? { photo: logo } : { logo }, {
-      headers,
-    });
+    return NextResponse.json(
+      kind === "gallery"
+        ? { gallery }
+        : kind === "photo"
+          ? { photo: logo }
+          : { logo },
+      {
+        headers,
+      },
+    );
   } catch {
     return NextResponse.json(
       {

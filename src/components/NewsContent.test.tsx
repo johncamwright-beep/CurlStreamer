@@ -5,6 +5,7 @@ import { NewsContent } from "./NewsContent";
 import {
   legacyNewsContent,
   newsContentSchema,
+  newsPostTitle,
   newsPlainText,
 } from "@/lib/news-content";
 
@@ -63,4 +64,79 @@ it("rejects executable URLs instead of rendering supplied markup", () => {
       ),
     ).not.toContain("<img");
   }
+});
+
+it("preserves safe rich text, quotes, dividers, and alignment", () => {
+  const content = newsContentSchema.parse({
+    type: "doc",
+    title: "  Club update  ",
+    content: [
+      {
+        type: "paragraph",
+        attrs: { textAlign: "center" },
+        content: [
+          {
+            type: "text",
+            text: "Styled",
+            marks: [
+              { type: "underline" },
+              { type: "strike" },
+              {
+                type: "textStyle",
+                attrs: {
+                  color: "#38bdf8",
+                  fontFamily: "Georgia",
+                  fontSize: "20px",
+                },
+              },
+            ],
+          },
+        ],
+      },
+      {
+        type: "blockquote",
+        content: [
+          {
+            type: "paragraph",
+            content: [{ type: "text", text: "Draw weight" }],
+          },
+        ],
+      },
+      { type: "horizontalRule" },
+    ],
+  });
+  const html = renderToStaticMarkup(
+    <NewsContent content={content} summary="Fallback" />,
+  );
+  expect(html).toContain("text-align:center");
+  expect(html).toContain("font-family:Georgia");
+  expect(html).toContain("<s><u>Styled</u></s>");
+  expect(html).toContain("<blockquote");
+  expect(html).toContain("<hr");
+  expect(newsPostTitle(content, "Fallback")).toBe("Club update");
+});
+
+it("only accepts curated style values and derives a fallback title", () => {
+  const unsafeStyle = {
+    type: "doc",
+    content: [
+      {
+        type: "paragraph",
+        content: [
+          {
+            type: "text",
+            text: "Text",
+            marks: [
+              { type: "textStyle", attrs: { color: "expression(alert(1))" } },
+            ],
+          },
+        ],
+      },
+    ],
+  };
+  expect(newsContentSchema.safeParse(unsafeStyle).success).toBe(false);
+  expect(
+    newsPostTitle(legacyNewsContent("First line\nSecond line"), "Fallback"),
+  ).toBe("First line");
+  expect(newsPostTitle(null, "")).toBe("Untitled post");
 });

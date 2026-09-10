@@ -538,3 +538,75 @@ button {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
+
+.public-team-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 300px;
+  gap: 1.5rem;
+  align-items: start;
+}
+.public-team-profile {
+  position: sticky;
+  top: 1rem;
+}
+@media (max-width: 800px) {
+  .public-team-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .public-team-profile {
+    position: static;
+  }
+}
+
+.public-team-page {
+  min-height: 100vh;
+  background: var(--page-bg);
+  color: var(--page-text);
+}
+.public-team-page .panel {
+  background: var(--panel-bg);
+  color: var(--panel-text);
+  border-color: color-mix(in srgb, var(--panel-text) 22%, transparent);
+}
+.public-team-page .panel :is(.text-slate-300, .text-slate-400) {
+  color: inherit;
+  opacity: 0.8;
+}
+.public-team-page .panel :is(a, .text-cyan-300, .text-cyan-200) {
+  color: var(--panel-link);
+}
+.public-team-page header a {
+  color: inherit;
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+.public-team-page .btn-secondary {
+  background: var(--accent);
+  color: var(--accent-text) !important;
+  border-color: var(--accent);
+}
+.public-team-page .border-slate-700 {
+  border-color: color-mix(in srgb, var(--panel-text) 22%, transparent);
+}
+[aria-label="Page color preview"].public-team-page {
+  min-height: 0;
+}
+
+.public-games-scroll {
+  max-height: 540px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+.public-game-row {
+  height: 108px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border-bottom: 1px solid
+    color-mix(in srgb, var(--panel-text) 20%, transparent);
+}
+.public-team-page .panel button.text-cyan-300 {
+  color: var(--panel-link);
+}

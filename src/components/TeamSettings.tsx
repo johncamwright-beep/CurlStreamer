@@ -1,7 +1,10 @@
 "use client";
 import { useEffect, useState } from "react";
+import { teamThemeStyle } from "@/lib/team-page-theme";
+import { optimizeUploadImage } from "@/lib/optimize-upload-image";
 import {
   defaultTeamPageSettings,
+  throwingPositions,
   teamPageSettingsSchema,
   type TeamPageSettings,
 } from "@/lib/team-page-settings";
@@ -10,7 +13,7 @@ export function TeamSettings({
   section = "team",
 }: {
   name: string;
-  section?: "team" | "public" | "social";
+  section?: "team" | "public" | "social" | "photos";
 }) {
   const [settings, setSettings] = useState(defaultTeamPageSettings(name)),
     [savedSettings, setSavedSettings] = useState<TeamPageSettings | null>(null),
@@ -68,13 +71,18 @@ export function TeamSettings({
   }
   async function upload(
     file: File | undefined,
-    kind: "logo" | "photo" = "logo",
+    kind: "logo" | "photo" | "gallery" = "logo",
   ) {
     if (!file) return;
     setBusy(true);
     try {
       const form = new FormData();
-      form.append("file", file);
+      form.append(
+        "file",
+        await optimizeUploadImage(file, {
+          maxSide: kind === "logo" ? 800 : 1600,
+        }),
+      );
       form.append("kind", kind);
       const response = await fetch("/api/account/team", {
         method: "POST",
@@ -83,8 +91,15 @@ export function TeamSettings({
       const body = await response.json();
       if (!response.ok) throw Error(body.error);
       if (kind === "logo") setLogo(body.logo);
+      else if (kind === "gallery") change("gallery", body.gallery);
       else change("photo", body.photo);
-      setMessage(kind === "logo" ? "Team logo saved." : "Team photo saved.");
+      setMessage(
+        kind === "logo"
+          ? "Team logo saved."
+          : kind === "gallery"
+            ? "Event photo saved."
+            : "Team photo saved.",
+      );
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Upload failed.");
     } finally {
@@ -99,7 +114,9 @@ export function TeamSettings({
             ? "Team info"
             : section === "public"
               ? "Public team page"
-              : "Social media"}
+              : section === "photos"
+                ? "Event photos"
+                : "Social media"}
         </h2>
         <button
           type="button"
@@ -127,6 +144,16 @@ export function TeamSettings({
             />
           </label>
           <label>
+            Team tagline
+            <input
+              className="input mt-1 w-full"
+              maxLength={160}
+              value={settings.tagline}
+              onChange={(e) => change("tagline", e.target.value)}
+              placeholder="A short line beneath your team name"
+            />
+          </label>
+          <label>
             About the team
             <textarea
               className="input mt-1 w-full"
@@ -136,6 +163,48 @@ export function TeamSettings({
               onChange={(e) => change("description", e.target.value)}
             />
           </label>
+          <fieldset className="grid gap-3 rounded-lg border border-slate-700 p-3">
+            <legend className="px-2 font-bold">Players</legend>
+            <p className="text-sm text-slate-400">
+              List players by throwing order, then choose who skips. The skip
+              can throw in any position.
+            </p>
+            {throwingPositions.map((position) => (
+              <label key={position} className="capitalize">
+                {position}
+                <input
+                  className="input mt-1 w-full"
+                  maxLength={100}
+                  value={settings.roster[position]}
+                  onChange={(e) =>
+                    change("roster", {
+                      ...settings.roster,
+                      [position]: e.target.value,
+                    })
+                  }
+                />
+              </label>
+            ))}
+            <label>
+              Skip throws
+              <select
+                className="input mt-1 w-full"
+                value={settings.roster.skip}
+                onChange={(e) =>
+                  change("roster", {
+                    ...settings.roster,
+                    skip: e.target.value as typeof settings.roster.skip,
+                  })
+                }
+              >
+                {throwingPositions.map((position) => (
+                  <option key={position} value={position}>
+                    {position[0].toUpperCase() + position.slice(1)}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </fieldset>
           {logo && (
             <img
               src={logo}
@@ -153,7 +222,8 @@ export function TeamSettings({
             />
           </label>
           <p className="text-sm text-slate-400">
-            PNG, JPEG or WebP, up to 4 MB. This artwork can appear on your
+            PNG, JPEG or WebP, up to 20 MB. Resized to JPEG under 300 KB;
+            transparent areas become white. This artwork can appear on your
             broadcasts and public team page.
           </p>
           {settings.photo && (
@@ -173,11 +243,61 @@ export function TeamSettings({
             />
           </label>
           <p className="text-sm text-slate-400">
-            PNG, JPEG or WebP, up to 4 MB. Your team photo appears on your
+            PNG, JPEG or WebP, up to 20 MB. Resized to JPEG under 300 KB;
+            transparent areas become white. Your team photo appears on your
             published team page.
           </p>
         </div>
         <div hidden={section !== "public"} className="account-settings-group">
+          <fieldset className="grid gap-3 rounded-lg border border-slate-700 p-3">
+            <legend className="px-2 font-bold">Page colors</legend>
+            <div className="grid gap-3 sm:grid-cols-3">
+              {(
+                [
+                  ["background", "Page background"],
+                  ["panel", "Panel background"],
+                  ["accent", "Accent color"],
+                ] as const
+              ).map(([key, label]) => (
+                <label key={key} className="grid gap-2">
+                  {label}
+                  <input
+                    type="color"
+                    aria-label={label}
+                    className="h-11 w-full cursor-pointer rounded"
+                    value={settings.theme[key]}
+                    onChange={(e) =>
+                      change("theme", {
+                        ...settings.theme,
+                        [key]: e.target.value,
+                      })
+                    }
+                  />
+                </label>
+              ))}
+            </div>
+            <div
+              className="public-team-page rounded-lg p-4"
+              style={teamThemeStyle(settings.theme)}
+              aria-label="Page color preview"
+            >
+              <strong>{settings.name}</strong>
+              <p>{settings.tagline || "Your team tagline"}</p>
+              <div className="panel mt-3">
+                <strong>Team news</strong>
+                <p>Your page text stays readable against the chosen colors.</p>
+                <span
+                  className="mt-2 inline-block rounded px-3 py-2"
+                  style={{
+                    background: "var(--accent)",
+                    color: "var(--accent-text)",
+                  }}
+                >
+                  Team colors
+                </span>
+              </div>
+            </div>
+          </fieldset>
           <label>
             Team address
             <div className="flex items-center gap-1">
@@ -205,6 +325,8 @@ export function TeamSettings({
           {(
             [
               ["results", "Results and YouTube replays"],
+              ["accomplishments", "Event accomplishments and medals"],
+              ["photos", "Event photo carousel"],
               ["upcoming", "Upcoming games"],
               ["news", "News and game summaries"],
               ["sponsors", "Sponsors"],
@@ -271,6 +393,70 @@ export function TeamSettings({
           <p className="text-sm text-slate-400">
             We’re setting up Curl Streamer’s Meta integration. Once ready,
             you’ll sign in here and choose the Pages and profiles to connect.
+          </p>
+        </div>
+        <div hidden={section !== "photos"} className="account-settings-group">
+          <p>
+            Add up to 50 event photos. Images are resized and saved as JPEGs
+            under 300 KB before upload.
+          </p>
+          <label>
+            Add event photo
+            <input
+              className="mt-2 block min-h-11 w-full"
+              type="file"
+              accept="image/png,image/jpeg,image/webp"
+              disabled={settings.gallery.length >= 50}
+              onChange={(e) => void upload(e.target.files?.[0], "gallery")}
+            />
+          </label>
+          <div className="grid gap-4 sm:grid-cols-2">
+            {settings.gallery.map((item) => (
+              <div
+                key={item.id}
+                className="grid gap-2 rounded-lg border border-slate-700 p-3"
+              >
+                <img
+                  src={item.url}
+                  alt={item.caption || "Event photo"}
+                  className="h-36 w-full object-contain"
+                />
+                <label>
+                  Photo caption
+                  <input
+                    className="input mt-1 w-full"
+                    maxLength={200}
+                    value={item.caption}
+                    onChange={(e) =>
+                      change(
+                        "gallery",
+                        settings.gallery.map((photo) =>
+                          photo.id === item.id
+                            ? { ...photo, caption: e.target.value }
+                            : photo,
+                        ),
+                      )
+                    }
+                  />
+                </label>
+                <button
+                  type="button"
+                  className="btn-secondary"
+                  onClick={() =>
+                    change(
+                      "gallery",
+                      settings.gallery.filter((photo) => photo.id !== item.id),
+                    )
+                  }
+                >
+                  Remove from carousel
+                </button>
+              </div>
+            ))}
+          </div>
+          <p className="text-sm text-slate-400">
+            Save changes after editing captions or removing photos from the
+            carousel.
           </p>
         </div>
       </fieldset>

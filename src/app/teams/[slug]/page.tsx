@@ -1,7 +1,15 @@
+import { PublicTeamGames } from "@/components/PublicTeamGames";
 import { notFound } from "next/navigation";
 import { createAdminSupabaseClient } from "@/lib/supabase/admin";
 import { teamPageSettingsSchema } from "@/lib/team-page-settings";
 import { gameLibrarySponsors } from "@/lib/providers/sponsor-library";
+import { newsPostTitle } from "@/lib/news-content";
+import {
+  PublicTeamProfile,
+  type TeamAccomplishment,
+} from "@/components/PublicTeamProfile";
+import { EventPhotoCarousel } from "@/components/EventPhotoCarousel";
+import { teamThemeStyle } from "@/lib/team-page-theme";
 import { NewsContent } from "@/components/NewsContent";
 export const dynamic = "force-dynamic";
 export default async function PublicTeamPage({
@@ -37,158 +45,174 @@ export default async function PublicTeamPage({
   const sponsors = s.sponsors
     ? await gameLibrarySponsors("", profile.organization_id).catch(() => [])
     : [];
+  const { data: accomplishments } = s.accomplishments
+    ? await db
+        .from("events")
+        .select("id,name,end_date,result")
+        .eq("organization_id", profile.organization_id)
+        .in("result", ["1st", "2nd", "3rd", "qualified"])
+        .order("end_date", { ascending: false })
+        .limit(50)
+    : { data: [] };
   return (
-    <main className="mx-auto max-w-5xl p-5">
-      <header className="panel mb-5 flex items-center gap-5">
-        {profile.logo_url && (
-          <img
-            src={profile.logo_url}
-            alt=""
-            className="h-24 w-24 object-contain"
-          />
-        )}
-        <div>
-          <h1 className="text-3xl font-black">{s.name}</h1>
-          <p className="mt-3">{s.description}</p>
-          {s.socials && (
-            <div className="mt-3 flex gap-5">
-              {s.facebook && (
-                <a
-                  className="text-cyan-300 underline"
-                  href={s.facebook}
-                  target="_blank"
-                  rel="noreferrer"
-                >
-                  Facebook
-                </a>
-              )}
-              {s.instagram && (
-                <a
-                  className="text-cyan-300 underline"
-                  href={s.instagram}
-                  target="_blank"
-                  rel="noreferrer"
-                >
-                  Instagram
-                </a>
-              )}
-            </div>
-          )}
-        </div>
-      </header>
-      {s.photo && (
-        <img
-          src={s.photo}
-          alt={s.name + " team photo"}
-          className="mb-5 max-h-96 w-full rounded-xl object-contain"
-        />
-      )}
-      {!!sponsors.length && (
-        <section className="panel mb-5">
-          <h2 className="mb-4 text-xl font-bold">Thank you to our sponsors</h2>
-          <div className="grid grid-cols-2 gap-5 md:grid-cols-3">
-            {sponsors.map((sponsor) => (
+    <div className="public-team-page" style={teamThemeStyle(s.theme)}>
+      <main className="mx-auto max-w-6xl p-5">
+        <header className="mb-5">
+          <div className="flex items-center gap-4">
+            {profile.logo_url && (
               <img
-                key={sponsor.id}
-                src={sponsor.dataUrl}
-                alt={sponsor.name}
-                className="h-32 w-full object-contain"
+                src={profile.logo_url}
+                alt=""
+                className="h-20 w-20 object-contain"
               />
-            ))}
+            )}
+            <div>
+              <h1 className="text-3xl font-black">{s.name}</h1>
+              {s.tagline && <p className="mt-2 text-lg">{s.tagline}</p>}
+            </div>
           </div>
-        </section>
-      )}
-      {s.news && (
-        <section className="mb-5 grid gap-3">
-          <h2 className="text-xl font-bold">Team news</h2>
-          {news?.map((item) => (
-            <article className="panel" key={item.id}>
-              <time className="text-sm text-slate-400">
-                {new Date(item.created_at).toLocaleDateString("en-CA")}
-              </time>
-              <NewsContent content={item.content} summary={item.summary} />
-              {item.photo_url && (
-                <img
-                  src={item.photo_url}
-                  alt="Team update"
-                  className="mt-3 max-h-96 w-full object-contain"
-                />
-              )}
-            </article>
-          ))}
-          {!news?.length && <p>No updates yet.</p>}
-        </section>
-      )}
-      {(["upcoming", "results"] as const)
-        .filter((key) => s[key])
-        .map((key) => (
-          <section key={key} className="mb-5 grid gap-3">
-            <h2 className="text-xl font-bold">
-              {key === "results" ? "Results & replays" : "Upcoming games"}
-            </h2>
-            {(games ?? [])
-              .filter(
-                (g: PublicGame) => Boolean(g.completed) === (key === "results"),
-              )
-              .map((g: PublicGame) => (
-                <article
-                  key={g.id}
-                  className="panel flex flex-wrap items-center justify-between gap-4"
-                >
-                  <div>
-                    <strong>
-                      {g.home} vs {g.away}
-                    </strong>
-                    <p>
-                      {g.event}
-                      {g.number ? ` · Game ${g.number}` : ""}
-                    </p>
-                    <p className="text-sm text-slate-400">
-                      {g.completed || g.scheduled
-                        ? new Date(
-                            g.completed || g.scheduled!,
-                          ).toLocaleDateString("en-CA")
-                        : ""}
-                    </p>
-                  </div>
-                  {g.result && (
-                    <strong>
-                      {g.result.home} – {g.result.away}
-                    </strong>
+          <nav
+            aria-label="Team page sections"
+            className="mt-3 flex flex-wrap gap-x-5"
+          >
+            {s.news && (
+              <a
+                className="inline-flex min-h-11 items-center text-cyan-300"
+                href="#team-news"
+              >
+                News
+              </a>
+            )}
+            {(s.upcoming || s.results) && (
+              <a className="inline-flex min-h-11 items-center" href="#games">
+                Games
+              </a>
+            )}
+            {s.sponsors && (
+              <a
+                className="inline-flex min-h-11 items-center text-cyan-300"
+                href="#sponsors"
+              >
+                Sponsors
+              </a>
+            )}
+          </nav>
+        </header>
+        <div className="public-team-layout">
+          <div className="public-team-content min-w-0">
+            <PublicTeamGames
+              games={games ?? []}
+              upcoming={s.upcoming}
+              results={s.results}
+            />
+            {s.socials && (s.facebook || s.instagram) && (
+              <section className="panel mb-5">
+                <h2 className="mb-3 text-xl font-bold">Social media</h2>
+                <p>Follow the team for more updates.</p>
+                <div className="mt-3 flex flex-wrap gap-3">
+                  {s.facebook && (
+                    <a
+                      className="btn-secondary"
+                      href={s.facebook}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      Facebook
+                    </a>
                   )}
-                  {g.youtube &&
-                    /^https:\/\/www.youtube.com\/watch\?v=/.test(g.youtube) && (
-                      <a
-                        href={g.youtube}
-                        className="btn-secondary"
-                        target="_blank"
-                        rel="noreferrer"
-                      >
-                        Watch on YouTube
-                      </a>
+                  {s.instagram && (
+                    <a
+                      className="btn-secondary"
+                      href={s.instagram}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      Instagram
+                    </a>
+                  )}
+                </div>
+              </section>
+            )}
+            {s.photo && (
+              <img
+                src={s.photo}
+                alt={s.name + " team photo"}
+                className="mb-5 max-h-96 w-full rounded-xl object-contain"
+              />
+            )}
+            {s.news && (
+              <section id="team-news" className="mb-5 grid gap-3">
+                <h2 className="text-xl font-bold">Team news</h2>
+                {news?.map((item) => (
+                  <article className="panel" key={item.id}>
+                    <time className="text-sm text-slate-400">
+                      {new Date(item.created_at).toLocaleDateString("en-CA")}
+                    </time>
+                    <h3 className="text-xl font-bold">
+                      {newsPostTitle(item.content, item.summary)}
+                    </h3>
+                    <NewsContent
+                      content={item.content}
+                      summary={item.summary}
+                    />
+                    {item.photo_url && (
+                      <img
+                        src={item.photo_url}
+                        alt="Team update"
+                        className="mt-3 max-h-96 w-full object-contain"
+                      />
                     )}
-                </article>
-              ))}
-          </section>
-        ))}
-      <footer className="mt-8 flex justify-center">
-        <img
-          src="/branding/curlstreamer-logo.png"
-          alt="Curl Streamer"
-          className="w-52 object-contain"
-        />
-      </footer>
-    </main>
+                  </article>
+                ))}
+                {!news?.length && <p>No updates yet.</p>}
+              </section>
+            )}
+            {!!sponsors.length && (
+              <section id="sponsors" className="panel mb-5">
+                <h2 className="mb-4 text-xl font-bold">
+                  Thank you to our sponsors
+                </h2>
+                <div className="grid grid-cols-2 gap-5 md:grid-cols-3">
+                  {sponsors.map((sponsor) => (
+                    <div key={sponsor.id} className="text-center">
+                      <img
+                        src={sponsor.dataUrl}
+                        alt={sponsor.name}
+                        className="h-32 w-full object-contain"
+                      />
+                      {sponsor.website ? (
+                        <a
+                          href={sponsor.website}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="inline-flex min-h-11 items-center underline"
+                        >
+                          {sponsor.name}
+                        </a>
+                      ) : (
+                        <p className="mt-2 font-semibold">{sponsor.name}</p>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </section>
+            )}
+            {s.photos && <EventPhotoCarousel photos={s.gallery} />}
+          </div>
+          <PublicTeamProfile
+            settings={s}
+            logo={profile.logo_url}
+            accomplishments={(accomplishments ?? []) as TeamAccomplishment[]}
+          />
+        </div>
+        <footer className="mt-8 flex justify-center">
+          <img
+            src="/branding/curlstreamer-logo.png"
+            alt="Curl Streamer"
+            className="w-60 rounded-xl bg-slate-950 p-4 object-contain"
+          />
+        </footer>
+      </main>
+    </div>
   );
 }
-type PublicGame = {
-  id: string;
-  home: string;
-  away: string;
-  event: string;
-  number: number | null;
-  scheduled: string | null;
-  completed: string | null;
-  result: { home: number; away: number } | null;
-  youtube: string | null;
-};

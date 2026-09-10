@@ -19,7 +19,7 @@ const inputSchema = z.object({
   published: z.enum(["true", "false"]).transform((v) => v === "true"),
   removePhoto: z.enum(["true", "false"]).transform((v) => v === "true"),
 });
-export async function GET() {
+export async function GET(request: Request) {
   try {
     const auth = await teamSettingsContext(true);
     if (!auth)
@@ -27,7 +27,13 @@ export async function GET() {
         { error: "Team administrator access is required." },
         { status: 403, headers },
       );
-    const { data, error } = await createAdminSupabaseClient()
+    const id = new URL(request.url).searchParams.get("id");
+    if (id && !z.uuid().safeParse(id).success)
+      return NextResponse.json(
+        { error: "Invalid post." },
+        { status: 400, headers },
+      );
+    let query = createAdminSupabaseClient()
       .from("team_news")
       .select(
         "id,summary,content,photo_url,published,created_at,revision,game_id",
@@ -35,7 +41,9 @@ export async function GET() {
       .eq("organization_id", auth.organizationId)
       .is("deleted_at", null)
       .order("created_at", { ascending: false })
-      .limit(100);
+      .limit(id ? 1 : 100);
+    if (id) query = query.eq("id", id);
+    const { data, error } = await query;
     if (error) throw error;
     return NextResponse.json({ posts: data }, { headers });
   } catch {

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { defaultTeamTheme } from "./team-page-theme";
 const reserved = new Set([
   "www",
   "api",
@@ -29,9 +30,36 @@ const social = (hosts: string[]) =>
         return false;
       }
     }, "Use the full HTTPS profile link.");
+export const throwingPositions = ["fourth", "third", "second", "lead"] as const;
+export const teamRosterSchema = z.object({
+  fourth: z.string().trim().max(100).default(""),
+  third: z.string().trim().max(100).default(""),
+  second: z.string().trim().max(100).default(""),
+  lead: z.string().trim().max(100).default(""),
+  skip: z.enum(throwingPositions).default("fourth"),
+});
 export const teamPageSettingsSchema = z
   .object({
     name: z.string().trim().min(1).max(100),
+    theme: z
+      .object({
+        background: z.string().regex(/^#[0-9a-fA-F]{6}$/),
+        panel: z.string().regex(/^#[0-9a-fA-F]{6}$/),
+        accent: z.string().regex(/^#[0-9a-fA-F]{6}$/),
+      })
+      .default(defaultTeamTheme),
+    tagline: z.string().trim().max(160).default(""),
+    gallery: z
+      .array(
+        z.object({
+          id: z.uuid(),
+          url: z.string().url().max(1000),
+          caption: z.string().trim().max(200),
+        }),
+      )
+      .max(50)
+      .default([]),
+    photos: z.boolean().default(true),
     slug: z
       .string()
       .trim()
@@ -43,6 +71,14 @@ export const teamPageSettingsSchema = z
         (value) => !reserved.has(value),
         "Choose a different team address.",
       ),
+    roster: teamRosterSchema.default({
+      fourth: "",
+      third: "",
+      second: "",
+      lead: "",
+      skip: "fourth",
+    }),
+    accomplishments: z.boolean().default(true),
     description: z.string().trim().max(1000),
     photo: z.union([z.literal(""), z.string().url().max(1000)]).default(""),
     published: z.boolean(),
@@ -59,10 +95,16 @@ export type TeamPageSettings = z.infer<typeof teamPageSettingsSchema>;
 export function defaultTeamPageSettings(name: string): TeamPageSettings {
   return {
     name,
+    theme: { ...defaultTeamTheme },
+    tagline: "",
+    gallery: [],
+    photos: true,
     slug: name
       .toLowerCase()
       .replace(/[^a-z0-9]+/g, "-")
       .replace(/^-|-$/g, ""),
+    roster: { fourth: "", third: "", second: "", lead: "", skip: "fourth" },
+    accomplishments: true,
     description: "",
     photo: "",
     published: false,

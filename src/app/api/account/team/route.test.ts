@@ -119,39 +119,45 @@ it("rejects a photo belonging to a different organization", async () => {
   expect(response.status).toBe(400);
   expect(mocks.rpc).not.toHaveBeenCalled();
 });
-it("stores the validated team photo separately from the logo in the authorized profile", async () => {
-  mocks.context.mockResolvedValue({ organizationId: "trusted-org" });
-  mocks.read.mockResolvedValue({
-    settings: defaultTeamPageSettings("Team Benning"),
-    logo: "existing-logo",
-  });
-  mocks.rpc.mockResolvedValue({ error: null });
-  mocks.upload.mockResolvedValue({ error: null });
-  mocks.validate.mockResolvedValue({
-    extension: "png",
-    bytes: Buffer.from("validated image"),
-    mime: "image/png",
-  });
-  const form = new FormData();
-  form.set("kind", "photo");
-  form.set("file", new File(["test"], "team.png", { type: "image/png" }));
-  const response = await POST(
-    new Request("https://test/api/account/team", {
-      method: "POST",
-      body: form,
-    }),
-  );
-  expect(response.status).toBe(200);
-  const body = await response.json();
-  expect(body.photo).toMatch(
-    /^https:\/\/storage.test\/team-public-media\/trusted-org\/[a-f0-9-]+\.png$/,
-  );
-  expect(mocks.validate).toHaveBeenCalledOnce();
-  expect(mocks.rpc).toHaveBeenLastCalledWith("update_team_public_profile", {
-    p_org: "trusted-org",
-    p_settings: {
-      ...defaultTeamPageSettings("Team Benning"),
-      photo: body.photo,
-    },
-  });
-});
+it.each(["photo", "gallery"])(
+  "stores validated %s in the authorized profile",
+  async (kind) => {
+    mocks.context.mockResolvedValue({ organizationId: "trusted-org" });
+    mocks.read.mockResolvedValue({
+      settings: defaultTeamPageSettings("Team Benning"),
+      logo: "existing-logo",
+    });
+    mocks.rpc.mockResolvedValue({ error: null });
+    mocks.upload.mockResolvedValue({ error: null });
+    mocks.validate.mockResolvedValue({
+      extension: "png",
+      bytes: Buffer.from("validated image"),
+      mime: "image/png",
+    });
+    const form = new FormData();
+    form.set("kind", kind);
+    form.set("file", new File(["test"], "team.png", { type: "image/png" }));
+    const response = await POST(
+      new Request("https://test/api/account/team", {
+        method: "POST",
+        body: form,
+      }),
+    );
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    const uploadedUrl = kind === "gallery" ? body.gallery[0].url : body.photo;
+    expect(uploadedUrl).toMatch(
+      /^https:\/\/storage.test\/team-public-media\/trusted-org\/[a-f0-9-]+\.png$/,
+    );
+    expect(mocks.validate).toHaveBeenCalledOnce();
+    expect(mocks.rpc).toHaveBeenLastCalledWith("update_team_public_profile", {
+      p_org: "trusted-org",
+      p_settings: {
+        ...defaultTeamPageSettings("Team Benning"),
+        ...(kind === "gallery"
+          ? { gallery: body.gallery }
+          : { photo: body.photo }),
+      },
+    });
+  },
+);

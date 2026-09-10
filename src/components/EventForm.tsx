@@ -22,7 +22,8 @@ export function EventForm({
     e.preventDefault();
     setBusy(true);
     setError("");
-    const form = new FormData(e.currentTarget);
+    const formElement = e.currentTarget;
+    const form = new FormData(formElement);
     const input = {
       seasonId,
       name: form.get("name"),
@@ -30,6 +31,7 @@ export function EventForm({
       startDate: form.get("startDate"),
       endDate: form.get("endDate"),
       location: form.get("location") || undefined,
+      result: form.get("result") || null,
       timezone,
     };
     const response = await fetch("/api/team-schedule", {
@@ -48,7 +50,7 @@ export function EventForm({
       return;
     }
     router.refresh();
-    if (!event) e.currentTarget.reset();
+    if (!event) formElement.reset();
     setBusy(false);
   }
   return (
@@ -107,6 +109,20 @@ export function EventForm({
           defaultValue={event?.location ?? ""}
           className="mt-1 w-full rounded-lg bg-slate-800 p-3"
         />
+      </label>
+      <label>
+        Result (optional)
+        <select
+          name="result"
+          defaultValue={event?.result ?? ""}
+          className="mt-1 min-h-11 w-full rounded-lg bg-slate-800 p-3"
+        >
+          <option value="">None</option>
+          <option value="1st">1st place</option>
+          <option value="2nd">2nd place</option>
+          <option value="3rd">3rd place</option>
+          <option value="qualified">Qualified</option>
+        </select>
       </label>
       <label>
         IANA timezone

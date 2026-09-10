@@ -1,7 +1,10 @@
 import React, { type ReactNode } from "react";
 import {
   legacyNewsContent,
+  newsFontFamilies,
+  newsFontSizes,
   newsContentSchema,
+  newsTextColors,
   type NewsContent,
 } from "@/lib/news-content";
 
@@ -12,7 +15,16 @@ type InlineNode =
       type: "text";
       text: string;
       marks?: Array<
-        { type: "bold" | "italic" } | { type: "link"; attrs: { href: string } }
+        | { type: "bold" | "italic" | "underline" | "strike" }
+        | {
+            type: "textStyle";
+            attrs: {
+              color?: (typeof newsTextColors)[number] | null;
+              fontFamily?: (typeof newsFontFamilies)[number] | null;
+              fontSize?: (typeof newsFontSizes)[number] | null;
+            };
+          }
+        | { type: "link"; attrs: { href: string } }
       >;
     };
 function inline(nodes: InlineNode[] | undefined): ReactNode[] {
@@ -32,6 +44,22 @@ function inline(nodes: InlineNode[] | undefined): ReactNode[] {
       if (mark.type === "bold")
         value = <strong key={`b-${index}`}>{value}</strong>;
       if (mark.type === "italic") value = <em key={`i-${index}`}>{value}</em>;
+      if (mark.type === "underline") value = <u key={`u-${index}`}>{value}</u>;
+      if (mark.type === "strike") value = <s key={`s-${index}`}>{value}</s>;
+      if (mark.type === "textStyle") {
+        value = (
+          <span
+            key={`style-${index}`}
+            style={{
+              color: mark.attrs.color ?? undefined,
+              fontFamily: mark.attrs.fontFamily ?? undefined,
+              fontSize: mark.attrs.fontSize ?? undefined,
+            }}
+          >
+            {value}
+          </span>
+        );
+      }
       if (mark.type === "link")
         value = (
           <a
@@ -75,13 +103,35 @@ export function NewsContent({
           );
         if (block.type === "heading")
           return block.attrs.level === 2 ? (
-            <h2 key={index} className="my-3 text-xl font-bold">
+            <h2
+              key={index}
+              className="my-3 text-xl font-bold"
+              style={{ textAlign: block.attrs.textAlign ?? undefined }}
+            >
               {inline(block.content)}
             </h2>
           ) : (
-            <h3 key={index} className="my-3 text-lg font-bold">
+            <h3
+              key={index}
+              className="my-3 text-lg font-bold"
+              style={{ textAlign: block.attrs.textAlign ?? undefined }}
+            >
               {inline(block.content)}
             </h3>
+          );
+        if (block.type === "horizontalRule")
+          return <hr key={index} className="my-6 border-slate-600" />;
+        if (block.type === "blockquote")
+          return (
+            <blockquote
+              key={index}
+              className="my-4 border-l-4 border-cyan-400 pl-4 text-slate-300"
+              style={{ textAlign: block.attrs?.textAlign ?? undefined }}
+            >
+              {block.content.map((child, childIndex) =>
+                renderBlock(child, childIndex),
+              )}
+            </blockquote>
           );
         if (block.type === "bulletList" || block.type === "orderedList") {
           const List = block.type === "bulletList" ? "ul" : "ol";
@@ -105,7 +155,11 @@ export function NewsContent({
           );
         }
         return block.type === "paragraph" ? (
-          <p key={index} className="my-3 whitespace-pre-wrap">
+          <p
+            key={index}
+            className="my-3 whitespace-pre-wrap"
+            style={{ textAlign: block.attrs?.textAlign ?? undefined }}
+          >
             {inline(block.content)}
           </p>
         ) : null;

@@ -55,7 +55,7 @@ beforeEach(() => {
 it("denies reads and writes without an administrator", async () => {
   m.context.mockResolvedValue(null);
   for (const response of [
-    await GET(),
+    await GET(new Request("https://test/api/account/news")),
     await POST(request()),
     await PATCH(request("PATCH")),
     await DELETE(new Request("https://test", { method: "DELETE", body: "{}" })),
@@ -215,4 +215,45 @@ it("cleans up the new image on a definite stale edit rejection", async () => {
   m.rpc.mockResolvedValue({ error: { code: "40001" } });
   expect((await POST(await photoRequest())).status).toBe(409);
   expect(m.remove).toHaveBeenCalledOnce();
+});
+
+it("reads a single post only inside the signed-in organization", async () => {
+  const query = {
+    select: vi.fn(),
+    eq: vi.fn(),
+    is: vi.fn(),
+    order: vi.fn(),
+    limit: vi.fn(),
+    then: (resolve: (value: { data: never[]; error: null }) => unknown) =>
+      Promise.resolve({ data: [] as never[], error: null }).then(resolve),
+  };
+  for (const method of ["select", "eq", "is", "order", "limit"] as const)
+    query[method].mockReturnValue(query);
+  m.from.mockReturnValue(query);
+  expect(
+    (await GET(new Request("https://test/api/account/news?id=" + id))).status,
+  ).toBe(200);
+  expect(query.eq).toHaveBeenCalledWith("organization_id", "trusted");
+  expect(query.eq).toHaveBeenCalledWith("id", id);
+  expect(query.is).toHaveBeenCalledWith("deleted_at", null);
+  expect(
+    (await GET(new Request("https://test/api/account/news?id=not-a-uuid")))
+      .status,
+  ).toBe(400);
+});
+it("persists the explicit post title in the sanitized document", async () => {
+  const content = {
+    type: "doc",
+    title: "Season update",
+    content: [
+      { type: "paragraph", content: [{ type: "text", text: "We are ready." }] },
+    ],
+  };
+  expect(
+    (await POST(request("POST", { content: JSON.stringify(content) }))).status,
+  ).toBe(200);
+  expect(m.rpc).toHaveBeenCalledWith(
+    "manage_team_news",
+    expect.objectContaining({ p_content: content, p_summary: "We are ready." }),
+  );
 });

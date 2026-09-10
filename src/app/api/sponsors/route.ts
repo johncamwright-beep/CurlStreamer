@@ -9,6 +9,10 @@ import {
   replaceSponsor,
   updateSponsor,
 } from "@/lib/providers/sponsor-library";
+import {
+  isSafeSponsorWebsite,
+  normalizeSponsorWebsite,
+} from "@/app/sponsors/sponsor-upload";
 
 export const dynamic = "force-dynamic";
 const updateSchema = z.discriminatedUnion("action", [
@@ -17,6 +21,7 @@ const updateSchema = z.discriminatedUnion("action", [
     id: z.uuid(),
     name: z.string().trim().min(1).max(100),
     altText: z.string().trim().min(1).max(240),
+    website: z.string().trim().max(2048).optional(),
     archived: z.boolean(),
   }),
   z.object({
@@ -78,17 +83,24 @@ export async function POST(request: Request) {
           id: z.uuid().optional(),
           name: z.string().trim().min(1).max(100),
           altText: z.string().trim().min(1).max(240),
+          website: z.string().trim().max(2048).optional(),
         }),
       )
       .min(1)
       .max(20)
       .parse(JSON.parse(String(form.get("metadata"))));
+    if (metadata.some((item) => !isSafeSponsorWebsite(item.website)))
+      throw new Error("Sponsor website must be a valid HTTPS URL");
     if (files.length !== 1 || metadata.length !== 1)
       throw new Error("Upload exactly one sponsor image per request");
     const sponsors = await createSponsors(
       auth.user,
       auth.team.organizationId,
-      files.map((file, index) => ({ file, ...metadata[index] })),
+      files.map((file, index) => ({
+        file,
+        ...metadata[index],
+        website: normalizeSponsorWebsite(metadata[index].website),
+      })),
     );
     return NextResponse.json({ sponsors }, { status: 201 });
   } catch (error) {
@@ -115,11 +127,27 @@ export async function PATCH(request: Request) {
       { error: "Invalid sponsor update" },
       { status: 400 },
     );
+  if (
+    parsed.data.action === "update" &&
+    !isSafeSponsorWebsite(parsed.data.website)
+  )
+    return NextResponse.json(
+      { error: "Sponsor website must be a valid HTTPS URL" },
+      { status: 400 },
+    );
   try {
     const sponsors =
       parsed.data.action === "reorder"
         ? await reorderSponsors(auth.user, parsed.data.ids)
-        : await updateSponsor(auth.user, parsed.data);
+        : await updateSponsor(
+            auth.user,
+            parsed.data.website === undefined
+              ? parsed.data
+              : {
+                  ...parsed.data,
+                  website: normalizeSponsorWebsite(parsed.data.website),
+                },
+          );
     return NextResponse.json({ sponsors });
   } catch {
     return NextResponse.json(

@@ -3,13 +3,70 @@ import { useEditor, EditorContent } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import Link from "@tiptap/extension-link";
 import Image from "@tiptap/extension-image";
+import { Extension, Mark } from "@tiptap/core";
 import { useEffect, useRef, useState } from "react";
 import {
   legacyNewsContent,
+  newsFontFamilies,
+  newsFontSizes,
+  newsTextColors,
   newsContentSchema,
   type NewsContent,
 } from "@/lib/news-content";
+import { optimizeUploadImage } from "@/lib/optimize-upload-image";
 import "./news-editor.css";
+
+const TextStyle = Mark.create({
+  name: "textStyle",
+  addAttributes() {
+    return {
+      color: { default: null, parseHTML: (element) => element.style.color },
+      fontFamily: {
+        default: null,
+        parseHTML: (element) => element.style.fontFamily,
+      },
+      fontSize: {
+        default: null,
+        parseHTML: (element) => element.style.fontSize,
+      },
+    };
+  },
+  parseHTML() {
+    return [{ tag: "span[style]" }];
+  },
+  renderHTML({ HTMLAttributes }) {
+    const { color, fontFamily, fontSize } = HTMLAttributes;
+    const style = [
+      color && `color: ${color}`,
+      fontFamily && `font-family: ${fontFamily}`,
+      fontSize && `font-size: ${fontSize}`,
+    ]
+      .filter(Boolean)
+      .join("; ");
+    return ["span", style ? { style } : {}, 0];
+  },
+});
+
+const TextAlignment = Extension.create({
+  name: "newsTextAlignment",
+  addGlobalAttributes() {
+    return [
+      {
+        types: ["paragraph", "heading", "blockquote"],
+        attributes: {
+          textAlign: {
+            default: null,
+            parseHTML: (element) => element.style.textAlign,
+            renderHTML: (attributes) =>
+              attributes.textAlign
+                ? { style: `text-align: ${attributes.textAlign}` }
+                : {},
+          },
+        },
+      },
+    ];
+  },
+});
 
 export function NewsRichEditor({
   initialContent,
@@ -36,13 +93,11 @@ export function NewsRichEditor({
       StarterKit.configure({
         heading: { levels: [2, 3] },
         link: false,
-        underline: false,
-        blockquote: false,
         codeBlock: false,
         code: false,
-        strike: false,
-        horizontalRule: false,
       }),
+      TextStyle,
+      TextAlignment,
       Link.configure({
         openOnClick: false,
         autolink: false,
@@ -71,16 +126,17 @@ export function NewsRichEditor({
     setError("");
     if (
       !/^image\/(png|jpeg|webp)$/.test(file.type) ||
-      file.size > 4 * 1024 * 1024
+      file.size > 20 * 1024 * 1024
     ) {
-      setError("Choose a PNG, JPEG or WebP photo up to 4 MB.");
+      setError("Choose a PNG, JPEG or WebP photo up to 20 MB.");
       return;
     }
     setUploading(true);
     onUploadingChange?.(true);
     try {
+      const optimized = await optimizeUploadImage(file);
       const form = new FormData();
-      form.append("image", file);
+      form.append("image", optimized);
       const response = await fetch("/api/account/news/upload", {
         method: "POST",
         body: form,
@@ -137,6 +193,16 @@ export function NewsRichEditor({
       run: () => editor.chain().focus().toggleItalic().run(),
     },
     {
+      label: "Underline",
+      active: editor.isActive("underline"),
+      run: () => editor.chain().focus().toggleUnderline().run(),
+    },
+    {
+      label: "Strike through",
+      active: editor.isActive("strike"),
+      run: () => editor.chain().focus().toggleStrike().run(),
+    },
+    {
       label: "Heading",
       active: editor.isActive("heading"),
       run: () => editor.chain().focus().toggleHeading({ level: 2 }).run(),
@@ -151,6 +217,16 @@ export function NewsRichEditor({
       active: editor.isActive("orderedList"),
       run: () => editor.chain().focus().toggleOrderedList().run(),
     },
+    {
+      label: "Quote",
+      active: editor.isActive("blockquote"),
+      run: () => editor.chain().focus().toggleBlockquote().run(),
+    },
+    {
+      label: "Divider",
+      active: false,
+      run: () => editor.chain().focus().setHorizontalRule().run(),
+    },
   ];
   return (
     <div className="news-composer">
@@ -158,7 +234,10 @@ export function NewsRichEditor({
         className="news-toolbar"
         role="group"
         aria-label="News formatting"
-        onMouseDown={(event) => event.preventDefault()}
+        onMouseDown={(event) => {
+          if ((event.target as HTMLElement).closest("button"))
+            event.preventDefault();
+        }}
       >
         {actions.map((action) => (
           <button
@@ -171,6 +250,116 @@ export function NewsRichEditor({
             {action.label}
           </button>
         ))}
+        <label className="news-toolbar-select">
+          <span className="sr-only">Font family</span>
+          <select
+            aria-label="Font family"
+            disabled={locked}
+            value={editor.getAttributes("textStyle").fontFamily ?? ""}
+            onChange={(event) =>
+              editor
+                .chain()
+                .focus()
+                .setMark("textStyle", {
+                  fontFamily: event.target.value || null,
+                })
+                .run()
+            }
+          >
+            <option value="">Font</option>
+            {newsFontFamilies.map((family) => (
+              <option key={family} value={family}>
+                {family}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="news-toolbar-select">
+          <span className="sr-only">Font size</span>
+          <select
+            aria-label="Font size"
+            disabled={locked}
+            value={editor.getAttributes("textStyle").fontSize ?? ""}
+            onChange={(event) =>
+              editor
+                .chain()
+                .focus()
+                .setMark("textStyle", { fontSize: event.target.value || null })
+                .run()
+            }
+          >
+            <option value="">Size</option>
+            {newsFontSizes.map((size) => (
+              <option key={size} value={size}>
+                {size}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="news-toolbar-select">
+          <span className="sr-only">Text color</span>
+          <select
+            aria-label="Text color"
+            disabled={locked}
+            value={editor.getAttributes("textStyle").color ?? ""}
+            onChange={(event) =>
+              editor
+                .chain()
+                .focus()
+                .setMark("textStyle", { color: event.target.value || null })
+                .run()
+            }
+          >
+            <option value="">Color</option>
+            {newsTextColors.map((color) => (
+              <option key={color} value={color}>
+                {
+                  {
+                    "#f8fafc": "White",
+                    "#f87171": "Coral",
+                    "#fbbf24": "Gold",
+                    "#4ade80": "Green",
+                    "#38bdf8": "Blue",
+                    "#c084fc": "Purple",
+                  }[color]
+                }
+              </option>
+            ))}
+          </select>
+        </label>
+        {(["left", "center", "right"] as const).map((alignment) => (
+          <button
+            key={alignment}
+            type="button"
+            disabled={locked}
+            aria-pressed={editor.isActive({ textAlign: alignment })}
+            onClick={() =>
+              editor
+                .chain()
+                .focus()
+                .updateAttributes(
+                  editor.isActive("heading")
+                    ? "heading"
+                    : editor.isActive("blockquote")
+                      ? "blockquote"
+                      : "paragraph",
+                  { textAlign: alignment },
+                )
+                .run()
+            }
+          >
+            Align {alignment}
+          </button>
+        ))}
+        <button
+          type="button"
+          disabled={locked}
+          onClick={() =>
+            editor.chain().focus().unsetAllMarks().clearNodes().run()
+          }
+        >
+          Clear formatting
+        </button>
         <button
           type="button"
           disabled={locked}
@@ -291,7 +480,8 @@ export function NewsRichEditor({
       <EditorContent editor={editor} />
       <p className="news-editor-hint">
         Write your update here. Insert photos between paragraphs. PNG, JPEG or
-        WebP, up to 4 MB each. Uploaded photos have public links, including in
+        WebP, up to 20 MB each. Photos are converted to JPEG and reduced to 300
+        KB before upload. Uploaded photos have public links, including in
         drafts.
       </p>
     </div>

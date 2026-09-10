@@ -9,6 +9,7 @@ export const eventTypes = [
   "exhibition",
   "other",
 ] as const;
+export const eventResults = ["1st", "2nd", "3rd", "qualified"] as const;
 
 const calendarDate = z.iso.date();
 const trimmedName = (maximum: number) => z.string().trim().min(1).max(maximum);
@@ -41,6 +42,7 @@ export const eventInputSchema = z
     startDate: calendarDate,
     endDate: calendarDate,
     location: z.string().trim().min(1).max(200).optional(),
+    result: z.enum(eventResults).nullable().optional(),
     timezone: z.string().trim().min(1).max(100).refine(isIanaTimezone, {
       message: "Select a valid IANA timezone.",
     }),
@@ -67,6 +69,7 @@ export type OpponentInput = z.infer<typeof opponentInputSchema>;
 export type ScheduledGameInput = z.infer<typeof scheduledGameInputSchema>;
 export type SeasonStatus = (typeof seasonStatuses)[number];
 export type EventType = (typeof eventTypes)[number];
+export type EventResult = (typeof eventResults)[number];
 
 export type Season = SeasonInput & {
   id: string;

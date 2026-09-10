@@ -6,7 +6,11 @@ import {
   listSeasons,
   listTeamHierarchyGames,
 } from "@/lib/team-hierarchy-service";
-import type { EventType, SeasonStatus } from "@/lib/team-hierarchy";
+import type {
+  EventResult,
+  EventType,
+  SeasonStatus,
+} from "@/lib/team-hierarchy";
 import type { GameConfig } from "@/lib/types";
 import type { CompletionResult } from "@/lib/game-completion";
 
@@ -25,6 +29,7 @@ export type EventRecord = {
   startDate: string;
   endDate: string;
   location: string | null;
+  result?: EventResult | null;
   timezone: string;
   archivedAt: string | null;
 };
@@ -85,6 +90,7 @@ export async function loadTeamHierarchyData(user: User) {
         startDate: e.start_date,
         endDate: e.end_date,
         location: e.location,
+        result: e.result as EventResult | null,
         timezone: e.timezone,
         archivedAt: e.archived_at,
       };

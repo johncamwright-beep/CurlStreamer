@@ -10,6 +10,7 @@ const sections = [
   ["public", "Public team page"],
   ["social", "Social media"],
   ["news", "News posts"],
+  ["photos", "Event photos"],
   ["sponsors", "Sponsors"],
 ] as const;
 type Section = (typeof sections)[number][0];
@@ -86,7 +87,9 @@ export function AccountWorkspace({
         <div hidden={current !== "account"}>{account}</div>
         {teamName && (
           <>
-            <div hidden={!["team", "public", "social"].includes(current)}>
+            <div
+              hidden={!["team", "public", "social", "photos"].includes(current)}
+            >
               <TeamSettings
                 name={teamName}
                 section={
@@ -94,7 +97,9 @@ export function AccountWorkspace({
                     ? "public"
                     : current === "social"
                       ? "social"
-                      : "team"
+                      : current === "photos"
+                        ? "photos"
+                        : "team"
                 }
               />
             </div>

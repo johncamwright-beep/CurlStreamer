@@ -26,6 +26,9 @@ test("team settings save visibility and social profiles without publishing by de
     .getByRole("button", { name: "Public team page", exact: true })
     .click();
   await expect(page.getByLabel("Publish team page")).not.toBeChecked();
+  await page.getByLabel("Page background", { exact: true }).fill("#112233");
+  await page.getByLabel("Panel background", { exact: true }).fill("#eeeeee");
+  await page.getByLabel("Accent color", { exact: true }).fill("#bb0000");
   await page.getByRole("button", { name: "Team info", exact: true }).click();
   await page.getByLabel("About the team").fill("Curling together.");
   await page.getByRole("button", { name: "Social media", exact: true }).click();
@@ -37,6 +40,7 @@ test("team settings save visibility and social profiles without publishing by de
     page.getByRole("status").filter({ hasText: "Team settings saved." }),
   ).toBeVisible();
   expect(saved).toMatchObject({
+    theme: { background: "#112233", panel: "#eeeeee", accent: "#bb0000" },
     description: "Curling together.",
     published: false,
     facebook: "https://www.facebook.com/teambenning",
@@ -66,7 +70,7 @@ test("public page link follows saved publication and slug, and navigates in this
     }
     return route.fulfill({ json: { settings, logo: null, canEdit: true } });
   });
-  await page.route("**/api/account/news", (route) =>
+  await page.route(/\/api\/account\/news(?:\?.*)?$/, (route) =>
     route.fulfill({ json: { posts: [] } }),
   );
   await page.route("**/teams/new-team", (route) =>
@@ -120,7 +124,7 @@ test("team news drafts, edits and removal stay compact and explicit", async ({
       },
     }),
   );
-  await page.route("**/api/account/news", async (route) => {
+  await page.route(/\/api\/account\/news(?:\?.*)?$/, async (route) => {
     const method = route.request().method();
     if (method === "GET") return route.fulfill({ json: { posts } });
     if (method === "DELETE") {
@@ -150,20 +154,19 @@ test("team news drafts, edits and removal stay compact and explicit", async ({
   await page.waitForURL("**/account");
   await page.getByRole("button", { name: "News posts", exact: true }).click();
   const news = page.getByRole("region", { name: "Manage team news" });
-  await news.getByRole("button", { name: "New post", exact: true }).click();
+  await news.getByRole("link", { name: "New post", exact: true }).click();
+  await news.getByLabel("Post title").fill("Sponsor thanks");
   await expect(news.getByLabel("Publish this post")).not.toBeChecked();
   await news.getByLabel("News text").fill("Thank you to our sponsors!");
   await news.getByRole("button", { name: "Save draft", exact: true }).click();
-  await expect(news.getByText("Draft", { exact: true })).toBeVisible();
-  await news.getByRole("button", { name: "Edit post", exact: true }).click();
+  await news.getByRole("link", { name: /Thank you to our sponsors!/ }).click();
   await news.getByLabel("News text").fill("See you at the next game!");
   await news.getByLabel("Publish this post").check();
   await news.getByRole("button", { name: "Save and publish" }).click();
-  await expect(news.getByText("Published", { exact: true })).toBeVisible();
+  await news.getByRole("link", { name: /See you at the next game!/ }).click();
+  await expect(news.getByLabel("Publish this post")).toBeChecked();
   await news.getByRole("button", { name: "Remove post", exact: true }).click();
-  await expect(
-    news.getByText("See you at the next game!", { exact: true }),
-  ).toBeVisible();
+  await expect(news.getByLabel("News text")).toBeVisible();
   await news.getByRole("button", { name: "Confirm removal" }).click();
   await expect(news.getByText("No news posts yet.")).toBeVisible();
   expect(
@@ -186,6 +189,28 @@ test("account sections preserve edits, support back navigation and save a team p
   );
   await page.route("**/api/account/team", async (route) => {
     if (route.request().method() === "POST") {
+      const request = route.request();
+      const form = await new Request(request.url(), {
+        method: "POST",
+        headers: request.headers(),
+        body: new Uint8Array(request.postDataBuffer()!),
+      }).formData();
+      const uploaded = form.get("file") as File;
+      expect(uploaded.type).toBe("image/jpeg");
+      expect(uploaded.size).toBeLessThanOrEqual(300000);
+      if (form.get("kind") === "gallery") {
+        settings = {
+          ...settings,
+          gallery: [
+            {
+              id: "33333333-3333-4333-8333-333333333333",
+              url: photo,
+              caption: "",
+            },
+          ],
+        };
+        return route.fulfill({ json: { gallery: settings.gallery } });
+      }
       settings = { ...settings, photo };
       return route.fulfill({ json: { photo } });
     }
@@ -206,10 +231,18 @@ test("account sections preserve edits, support back navigation and save a team p
   await expect(page.getByLabel("Sign-in email")).toBeVisible();
   await menu.getByRole("button", { name: "Team info", exact: true }).click();
   await page.getByLabel("About the team").fill("Our team biography.");
+  await page
+    .getByLabel("Team tagline", { exact: true })
+    .fill("Together on the ice");
+  await page.getByLabel("third", { exact: true }).fill("Sam");
+  await page.getByLabel("Skip throws").selectOption("third");
   await page.getByLabel("Upload team photo").setInputFiles({
     name: "team.png",
     mimeType: "image/png",
-    buffer: Buffer.from("fixture upload intercepted"),
+    buffer: Buffer.from(
+      "iVBORw0KGgoAAAANSUhEUgAAAEAAAAAgCAIAAAAt/+nTAAAACXBIWXMAAAPoAAAD6AG1e1JrAAAAYUlEQVRYhe2SQQkAQRDDqqKyzkT8e1gR9wgDhQhIQ9OP00Q36AagV+wuxF2iG3QD0Ct2F+Iu0Q26AegVuwtxl+gG3QD0it2FuEt0g24AesXuQtwlukE3AL1idyHuEt3gJw+VazhbjLy1zAAAAABJRU5ErkJggg==",
+      "base64",
+    ),
   });
   await expect(page.getByText("Team photo saved.")).toBeVisible();
   await menu
@@ -226,6 +259,11 @@ test("account sections preserve edits, support back navigation and save a team p
   await page.getByRole("button", { name: "Save changes", exact: true }).click();
   await expect(page.getByText("Team settings saved.")).toBeVisible();
   await page.reload();
+  await expect(page.getByLabel("Team tagline", { exact: true })).toHaveValue(
+    "Together on the ice",
+  );
+  await expect(page.getByLabel("third", { exact: true })).toHaveValue("Sam");
+  await expect(page.getByLabel("Skip throws")).toHaveValue("third");
   await expect(page.getByLabel("About the team")).toHaveValue(
     "Our team biography.",
   );
@@ -241,4 +279,43 @@ test("account sections preserve edits, support back navigation and save a team p
     path: testInfo.outputPath("account-settings.png"),
     fullPage: true,
   });
+});
+
+test("public page filters games and keeps five rows in its scrolling tile", async ({
+  page,
+}, testInfo) => {
+  await page.goto("/teams/public-preview");
+  const games = page.getByRole("region", { name: "Team games", exact: true });
+  await expect(games.getByRole("article")).toHaveCount(7);
+  const scroll = games.getByRole("region", { name: "Filtered games" });
+  expect(await scroll.evaluate((el) => el.clientHeight)).toBe(540);
+  expect(await scroll.evaluate((el) => el.scrollHeight)).toBeGreaterThan(540);
+  await games.getByLabel("Event", { exact: true }).selectOption("Orion");
+  await expect(games.getByRole("article")).toHaveCount(3);
+  await games.getByLabel("Show games").selectOption("results");
+  await expect(games.getByRole("article")).toHaveCount(4);
+  await expect(games.getByRole("link", { name: "Watch replay" })).toHaveCount(
+    4,
+  );
+  await expect(page.getByText("Skip (third)", { exact: true })).toBeVisible();
+  await expect(
+    page.getByText("1st place · 2026", { exact: true }),
+  ).toBeVisible();
+  await expect(page.locator(".public-team-page")).toHaveCSS(
+    "background-color",
+    "rgb(237, 242, 247)",
+  );
+  await page.getByRole("button", { name: "More…", exact: true }).click();
+  await expect(
+    page.getByRole("button", { name: "Less", exact: true }),
+  ).toHaveAttribute("aria-expanded", "true");
+  await page.screenshot({
+    path: testInfo.outputPath("public-page.png"),
+    fullPage: true,
+  });
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth,
+    ),
+  ).toBe(true);
 });

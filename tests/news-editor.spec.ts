@@ -29,7 +29,7 @@ test("formatted news and inline photos survive save and reopen", async ({
   await page.route("**/api/account/news/upload", (route) =>
     route.fulfill({ json: { url: photo } }),
   );
-  await page.route("**/api/account/news", async (route) => {
+  await page.route(/\/api\/account\/news(?:\?.*)?$/, async (route) => {
     if (route.request().method() === "GET")
       return route.fulfill({ json: { posts } });
     const request = route.request();
@@ -59,7 +59,9 @@ test("formatted news and inline photos survive save and reopen", async ({
   await page.waitForURL("**/account");
   await page.getByRole("button", { name: "News posts", exact: true }).click();
   const news = page.getByRole("region", { name: "Manage team news" });
-  await news.getByRole("button", { name: "New post", exact: true }).click();
+  await news.getByRole("link", { name: "New post", exact: true }).click();
+  await expect(page).toHaveURL(/\/account\/news\/new$/);
+  await news.getByLabel("Post title").fill("Season opening update");
   const editor = news.getByLabel("News text", { exact: true });
   await editor.fill("A great start to the season.");
   // Native select-all modifiers vary with the emulated mobile platform.
@@ -75,6 +77,12 @@ test("formatted news and inline photos survive save and reopen", async ({
   await expect(editor.locator("strong")).toHaveText(
     "A great start to the season.",
   );
+  await news.getByLabel("Font family", { exact: true }).selectOption("Georgia");
+  await news.getByLabel("Font size", { exact: true }).selectOption("20px");
+  await news.getByLabel("Text color", { exact: true }).selectOption("#38bdf8");
+  await news.getByRole("button", { name: "Link", exact: true }).click();
+  await news.getByLabel("Link address").fill("https://example.com/team");
+  await news.getByRole("button", { name: "Apply link", exact: true }).click();
   await editor.press("ArrowRight");
   await editor.press("Enter");
   await news.getByRole("button", { name: "Add photo", exact: true }).click();
@@ -85,7 +93,10 @@ test("formatted news and inline photos survive save and reopen", async ({
     .setInputFiles({
       name: "rink.png",
       mimeType: "image/png",
-      buffer: Buffer.from("test-image"),
+      buffer: Buffer.from(
+        "iVBORw0KGgoAAAANSUhEUgAAAEAAAAAgCAIAAAAt/+nTAAAACXBIWXMAAAPoAAAD6AG1e1JrAAAAYUlEQVRYhe2SQQkAQRDDqqKyzkT8e1gR9wgDhQhIQ9OP00Q36AagV+wuxF2iG3QD0Ct2F+Iu0Q26AegVuwtxl+gG3QD0it2FuEt0g24AesXuQtwlukE3AL1idyHuEt3gJw+VazhbjLy1zAAAAABJRU5ErkJggg==",
+        "base64",
+      ),
     });
   await expect(editor.locator("img")).toHaveAttribute("src", photo);
   await expect(editor.locator("img")).toHaveAttribute(
@@ -101,14 +112,29 @@ test("formatted news and inline photos survive save and reopen", async ({
   ).toBeVisible();
   await news.screenshot({ path: testInfo.outputPath("news-editor.png") });
   await news.getByRole("button", { name: "Save draft", exact: true }).click();
-  await expect(news.getByText("Draft", { exact: true })).toBeVisible();
+  await expect(
+    news.getByRole("link", { name: /Season opening update/ }),
+  ).toBeVisible();
+  await expect(news.locator("img")).toHaveCount(0);
   expect(JSON.stringify(posts[0].content)).toContain('"bold"');
   expect(JSON.stringify(posts[0].content)).toContain(photo);
-  await news.getByRole("button", { name: "Edit post", exact: true }).click();
+  expect(JSON.stringify(posts[0].content)).toContain("Georgia");
+  expect(JSON.stringify(posts[0].content)).toContain("20px");
+  expect(JSON.stringify(posts[0].content)).toContain(
+    "https://example.com/team",
+  );
+  await news.getByRole("link", { name: /Season opening update/ }).click();
+  await expect(news.getByLabel("Post title")).toHaveValue(
+    "Season opening update",
+  );
   await expect(editor.locator("strong")).toHaveText(
     "A great start to the season.",
   );
   await expect(editor.locator("img")).toHaveAttribute("src", photo);
+  await expect(
+    editor.locator('a[href="https://example.com/team"]'),
+  ).toBeVisible();
+  await expect(editor.locator('span[style*="Georgia"]').first()).toBeVisible();
   expect(
     await page.evaluate(
       () => document.documentElement.scrollWidth <= window.innerWidth,

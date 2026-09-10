@@ -12,7 +12,7 @@ test.beforeEach(async ({ page }) => {
     stdin: {
       loader: "tsx",
       resolveDir: process.cwd(),
-      contents: `import React from 'react';import{createRoot}from'react-dom/client';import{ProgramUsbAudio}from'./src/components/ProgramUsbAudio';import{createProgramUsbMix}from'./src/lib/program-usb-mix';window.mix=createProgramUsbMix;window.mount=()=>createRoot(document.getElementById('root')).render(<ProgramUsbAudio/>);`,
+      contents: `import React from 'react';import{createRoot}from'react-dom/client';import{ProgramUsbAudio}from'./src/components/ProgramUsbAudio';import{createProgramUsbMix}from'./src/lib/program-usb-mix';import{usbAudioStart}from'./src/lib/usb-audio-timing';window.timing=usbAudioStart;window.mix=createProgramUsbMix;window.mount=()=>createRoot(document.getElementById('root')).render(<ProgramUsbAudio/>);`,
     },
   });
   await page.route("**/usb-proof", (r) =>
@@ -110,6 +110,46 @@ test("speech level recovers after shouting without clipping or turning silence i
   expect(result.after / result.before).toBeGreaterThan(0.85);
   expect(result.peak).toBeLessThan(0.99);
   expect(result.silence).toBe(0);
+});
+
+test("USB packet jitter renders a continuous waveform without gaps or repeated samples", async ({
+  page,
+}) => {
+  const result = await page.evaluate(async () => {
+    const context = new OfflineAudioContext(1, 144000, 48000);
+    let nextAt = 0;
+    const starts: number[] = [];
+    for (let packet = 0; packet < 20; packet++) {
+      // Timer and HTTP delivery vary by up to 45ms, as on a busy desktop.
+      const now = packet * 0.1 + [0, 0.015, 0.045, 0.025][packet % 4];
+      const timing = (window as any).timing(nextAt, now);
+      const buffer = context.createBuffer(1, 4800, 48000);
+      const input = buffer.getChannelData(0);
+      for (let i = 0; i < input.length; i++)
+        input[i] =
+          0.1 * Math.sin((2 * Math.PI * 437 * (packet * 4800 + i)) / 48000);
+      const source = context.createBufferSource();
+      source.buffer = buffer;
+      source.connect(context.destination);
+      source.start(timing.at);
+      starts.push(timing.at);
+      nextAt = timing.at + 0.1;
+    }
+    const output = (await context.startRendering()).getChannelData(0);
+    let error = 0;
+    const first = Math.round(starts[0] * 48000);
+    for (let i = 0; i < 96000; i++)
+      error = Math.max(
+        error,
+        Math.abs(
+          output[first + i] - 0.1 * Math.sin((2 * Math.PI * 437 * i) / 48000),
+        ),
+      );
+    return { error, starts };
+  });
+  expect(result.error).toBeLessThan(0.00001);
+  for (let i = 1; i < result.starts.length; i++)
+    expect(result.starts[i] - result.starts[i - 1]).toBeCloseTo(0.1, 6);
 });
 
 test("USB playback continues after a delayed response body exceeds its timeout", async ({

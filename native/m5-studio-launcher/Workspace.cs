@@ -33,7 +33,7 @@ internal sealed class Workspace : Form
     private readonly UsbAudio usbAudio = new UsbAudio();
     private readonly object usbLock = new object();
     private readonly List<float> usbSamples = new List<float>();
-    private readonly System.Windows.Forms.Timer usbTimer = new System.Windows.Forms.Timer { Interval = 100 };
+    private readonly System.Windows.Forms.Timer usbTimer = new System.Windows.Forms.Timer { Interval = 50 };
     private Task usbSend = Task.FromResult(true);
     private string usbGame, usbError;
     private bool usbBusy;
@@ -408,10 +408,14 @@ internal sealed class Workspace : Form
         if (usbGame == null) return;
         if (!recording || usbGame != runningGame) { usbAudio.Stop(); usbGame = null; return; }
         float[] samples;
-        lock (usbLock) { var count = Math.Min(4800, usbSamples.Count); samples = usbSamples.GetRange(0, count).ToArray(); usbSamples.RemoveRange(0, count); }
+        // Drain the captured snapshot, not just 100ms per timer tick. Windows
+        // timers can run late; a fixed cap otherwise grows backlog until a drop.
+        lock (usbLock) { samples = usbSamples.ToArray(); usbSamples.Clear(); }
         try {
-            if (samples.Length > 0) {
-                var bytes = new byte[samples.Length * 4]; Buffer.BlockCopy(samples, 0, bytes, 0, bytes.Length);
+            for (int offset = 0; offset < samples.Length; offset += 4800) {
+                if (usbGame == null || closing) break;
+                var count = Math.Min(4800, samples.Length - offset);
+                var bytes = new byte[count * 4]; Buffer.BlockCopy(samples, offset * 4, bytes, 0, bytes.Length);
                 await PostUsbAudio(bytes);
             }
         } catch { NoteUsbPostFailure(); usbError = "USB audio delivery interrupted. Turn USB audio off and on to retry."; usbAudio.Stop(); usbGame = null; lock (usbLock) usbSamples.Clear(); }

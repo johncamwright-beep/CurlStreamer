@@ -2,6 +2,7 @@
 
 import { useEffect } from "react";
 import { acquireProgramAudioOutput } from "@/lib/program-audio-output";
+import { usbAudioStart } from "@/lib/usb-audio-timing";
 
 /** Receives Studio's local USB mix only inside the private OBS browser source. */
 export function ProgramUsbAudio() {
@@ -80,9 +81,9 @@ export function ProgramUsbAudio() {
           raw.byteLength % Float32Array.BYTES_PER_ELEMENT === 0
         ) {
           const allSamples = new Float32Array(raw);
-          // A delayed poll keeps the latest 150ms and discards stale sound.
+          // Keep ordinary catch-up batches; discard only a substantial backlog.
           const input = allSamples.subarray(
-            Math.max(0, allSamples.length - 48_000 * 0.15),
+            Math.max(0, allSamples.length - 48_000 * 0.25),
           );
           let square = 0;
           latestPeak = 0;
@@ -95,14 +96,23 @@ export function ProgramUsbAudio() {
           buffer.copyToChannel(input, 0);
           const source = context.createBufferSource();
           source.buffer = buffer;
-          source.connect(output.input);
+          const packetGain = context.createGain();
+          source.connect(packetGain);
+          packetGain.connect(output.input);
           source.onended = () => {
+            source.disconnect();
+            packetGain.disconnect();
             if (scheduled.delete(source))
               scheduledFrames = Math.max(0, scheduledFrames - input.length);
           };
           const now = context.currentTime;
-          if (nextAt > now + 0.15) flush();
-          nextAt = Math.max(nextAt, now + 0.02);
+          const timing = usbAudioStart(nextAt, now);
+          if (timing.reset) flush();
+          nextAt = timing.at;
+          if (timing.rebuffer) {
+            packetGain.gain.setValueAtTime(0, nextAt);
+            packetGain.gain.linearRampToValueAtTime(1, nextAt + 0.003);
+          }
           source.start(nextAt);
           nextAt += buffer.duration;
           scheduledFrames += input.length;

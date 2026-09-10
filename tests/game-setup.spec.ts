@@ -78,7 +78,9 @@ test("unknown opponents are explained and invalid collapsed title settings reope
   page,
 }) => {
   await fillGame(page);
-  await page.getByLabel("Opponent TBD", { exact: true }).check();
+  await page
+    .getByLabel("Team 2 — Opponent", { exact: true })
+    .selectOption("__tbd");
   await expect(
     page.getByRole("complementary", { name: "Review game" }),
   ).toContainText("Assign the opponent before scoring begins");
@@ -139,8 +141,8 @@ test("new opponents and TBD save the intended opponent without a stale selection
   expect(payloads[0]).toMatchObject({ opponentName: "Team Granite" });
   expect(payloads[0]).not.toHaveProperty("opponentId");
   await expect(save).toBeEnabled();
-  await page.getByLabel("Opponent TBD", { exact: true }).check();
-  await expect(picker).toBeDisabled();
+  await picker.selectOption("__tbd");
+  await expect(picker).toBeEnabled();
   await save.click();
   await expect.poll(() => payloads.length).toBe(2);
   expect(payloads[1]).not.toHaveProperty("opponentId");
@@ -175,5 +177,54 @@ test("edit game preserves the current opponent and allows selecting a saved team
   expect(payloads[1]).toMatchObject({
     operation: "updateGame",
     opponentId: "77777777-7777-4777-8777-777777777777",
+  });
+});
+
+test("saving a new opponent adds it to the dropdown and leaving TBD restores selection", async ({
+  page,
+}) => {
+  await fillGame(page);
+  const picker = page.getByLabel("Team 2 — Opponent", { exact: true });
+  await picker.selectOption("__new");
+  await page.getByLabel("New opponent name").fill("  Team   Granite  ");
+  const payloads: Record<string, unknown>[] = [];
+  await page.route("**/api/team-schedule", async (route) => {
+    const payload = route.request().postDataJSON();
+    payloads.push(payload);
+    if (payload.operation === "createOpponent") {
+      await route.fulfill({
+        status: 201,
+        json: [
+          {
+            opponent_id: "88888888-8888-4888-8888-888888888888",
+            display_name: "Team Granite",
+          },
+        ],
+      });
+    } else
+      await route.fulfill({
+        status: 503,
+        json: { error: "Try again shortly." },
+      });
+  });
+  await page
+    .getByRole("button", { name: "Save opponent", exact: true })
+    .click();
+  await expect(picker).toHaveValue("88888888-8888-4888-8888-888888888888");
+  expect(payloads[0]).toEqual({
+    operation: "createOpponent",
+    input: { displayName: "Team Granite" },
+  });
+  await expect(page.getByLabel("New opponent name")).toHaveCount(0);
+  await picker.selectOption("__tbd");
+  await expect(picker).toBeEnabled();
+  await picker.selectOption({ label: "Team Granite" });
+  await page
+    .getByRole("button", { name: "Schedule game", exact: true })
+    .click();
+  await expect.poll(() => payloads.length).toBe(2);
+  expect(payloads[1]).toMatchObject({
+    opponentId: "88888888-8888-4888-8888-888888888888",
+    config: { awayName: "Team Granite" },
   });
 });

@@ -79,6 +79,33 @@ describe("local-store shared assignment authority", () => {
         { role: "camera-home", claim: claimant, generation: 1 },
       )?.cameraAudio?.["camera-home"],
     ).toMatchObject({ enabled: true, status: "active" });
+    store.updateGame(game.id, {
+      type: "camera-audio",
+      role: "camera-home",
+      enabled: true,
+      volume: 0.25,
+    });
+    expect(store.getGame(game.id)?.cameraAudio?.["camera-home"]).toMatchObject({
+      volume: 0.25,
+      status: "active",
+    });
+    store.updateGame(game.id, {
+      type: "camera-audio",
+      role: "camera-home",
+      enabled: false,
+    });
+    store.updateGame(game.id, {
+      type: "camera-audio",
+      role: "camera-home",
+      enabled: true,
+    });
+    expect(store.getGame(game.id)?.cameraAudio?.["camera-home"]).toMatchObject({
+      volume: 0.25,
+      enabled: true,
+    });
+    expect(
+      store.getGame(game.id)?.cameraAudio?.["camera-away"],
+    ).toBeUndefined();
     expect(
       store.releaseRole(game.id, "camera-home", claimant, 1),
     ).toMatchObject({

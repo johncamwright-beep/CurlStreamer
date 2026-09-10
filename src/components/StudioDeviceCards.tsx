@@ -18,6 +18,7 @@ function DeviceCard({
   onChanged,
   connectionStatus,
   micEnabled,
+  micVolume = 1,
   onAudio,
   shown,
   onVisibility,
@@ -30,12 +31,14 @@ function DeviceCard({
   enabled: boolean;
   onChanged?: () => Promise<unknown>;
   micEnabled?: boolean;
+  micVolume?: number;
   shown?: boolean;
   layoutBusy?: boolean;
   onVisibility?: () => Promise<unknown>;
   onAudio?: (
     role: "camera-home" | "camera-away",
     enabled: boolean,
+    volume?: number,
   ) => Promise<unknown>;
   connectionStatus?: {
     receiverReady: boolean;
@@ -43,6 +46,8 @@ function DeviceCard({
     videoReceiving?: boolean;
   };
 }) {
+  const [volumeDraft, setVolumeDraft] = useState(Math.round(micVolume * 100));
+  useEffect(() => setVolumeDraft(Math.round(micVolume * 100)), [micVolume]);
   const [confirmRelease, setConfirmRelease] = useState(false);
   const [largeQr, setLargeQr] = useState(false);
   const [qrOpen, setQrOpen] = useState(false);
@@ -238,24 +243,78 @@ function DeviceCard({
         </div>
       </header>
       {role !== "scorer" && onAudio && claimed && (
-        <button
-          className="studio-device-action secondary"
-          aria-pressed={micEnabled === true}
-          disabled={busy || !enabled}
-          onClick={async () => {
-            setBusy(true);
-            setError("");
-            try {
-              await onAudio(role, !micEnabled);
-            } catch {
-              setError("Could not change the phone microphone. Try again.");
-            } finally {
-              setBusy(false);
-            }
-          }}
-        >
-          {micEnabled ? "Turn mic off" : "Turn mic on"}
-        </button>
+        <div className="studio-device-mic-controls">
+          <button
+            className="studio-device-action secondary"
+            aria-pressed={micEnabled === true}
+            disabled={busy || !enabled}
+            onClick={async () => {
+              setBusy(true);
+              setError("");
+              try {
+                await onAudio(role, !micEnabled);
+              } catch {
+                setError("Could not change the phone microphone. Try again.");
+              } finally {
+                setBusy(false);
+              }
+            }}
+          >
+            {micEnabled ? "Turn mic off" : "Turn mic on"}
+          </button>
+          <label className="flex min-h-11 items-center gap-2 text-sm">
+            Mic volume
+            <input
+              type="range"
+              aria-label={label + " mic volume"}
+              min="0"
+              max="100"
+              step="5"
+              value={volumeDraft}
+              onChange={(e) => setVolumeDraft(Number(e.target.value))}
+              className="min-h-11 min-w-0 flex-1"
+              disabled={busy || !enabled}
+              onPointerUp={async (e) => {
+                const volume = Number(e.currentTarget.value) / 100;
+                setBusy(true);
+                setError("");
+                try {
+                  await onAudio(role, micEnabled === true, volume);
+                } catch {
+                  setVolumeDraft(Math.round(micVolume * 100));
+                  setError("Could not change mic volume. Try again.");
+                } finally {
+                  setBusy(false);
+                }
+              }}
+              onKeyUp={async (e) => {
+                if (
+                  ![
+                    "ArrowLeft",
+                    "ArrowRight",
+                    "ArrowUp",
+                    "ArrowDown",
+                    "Home",
+                    "End",
+                    "PageUp",
+                    "PageDown",
+                  ].includes(e.key)
+                )
+                  return;
+                try {
+                  await onAudio(
+                    role,
+                    micEnabled === true,
+                    Number(e.currentTarget.value) / 100,
+                  );
+                } catch {
+                  setVolumeDraft(Math.round(micVolume * 100));
+                  setError("Could not change mic volume. Try again.");
+                }
+              }}
+            />
+          </label>
+        </div>
       )}
       <div className="studio-device-actions">
         {!scorer && onVisibility && (
@@ -457,6 +516,7 @@ export function StudioDeviceCards({
   onAudio?: (
     role: "camera-home" | "camera-away",
     enabled: boolean,
+    volume?: number,
   ) => Promise<unknown>;
 }) {
   const layoutFlight = useRef(false);
@@ -549,6 +609,9 @@ export function StudioDeviceCards({
           enabled={enabled}
           onChanged={onChanged}
           micEnabled={role !== "scorer" && cameraAudio?.[role]?.enabled}
+          micVolume={
+            role !== "scorer" ? cameraAudio?.[role]?.volume : undefined
+          }
           onAudio={onAudio}
           shown={
             layout && role !== "scorer"

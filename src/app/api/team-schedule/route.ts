@@ -1,3 +1,4 @@
+import { formatEventGameLabel } from "@/lib/game-title";
 import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
 import { z } from "zod";
@@ -193,10 +194,13 @@ export async function POST(request: Request) {
         const existing = existingGame!;
         const snapshotConfig = {
           ...existing.config,
-          eventName:
+          eventName: formatEventGameLabel(
             existing.eventId === body.eventId
               ? existing.config.eventName
               : (selectedEvent?.name ?? "Single Game"),
+            body.eventId ? body.gameNumber : null,
+          ),
+          youtubeTitle: body.config.youtubeTitle,
           homeName: existing.config.homeName,
           awayName:
             existing.opponentId === (opponentId ?? null)
@@ -221,7 +225,10 @@ export async function POST(request: Request) {
       const gameId = randomUUID();
       const config = {
         ...body.config,
-        eventName: selectedEvent?.name ?? "Single Game",
+        eventName: formatEventGameLabel(
+          selectedEvent?.name ?? "Single Game",
+          body.eventId ? body.gameNumber : null,
+        ),
         homeName: hierarchy.teamName,
         awayName: opponentName ?? "Opponent TBD",
       };

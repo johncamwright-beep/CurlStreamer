@@ -230,6 +230,7 @@ function ProgramRenderer() {
           role={role}
           stream={cameras[role].audio}
           enabled={game.cameraAudio?.[role]?.enabled === true}
+          volume={game.cameraAudio?.[role]?.volume ?? 1}
         />
       ))}
       <ProgramCanvas

@@ -183,3 +183,32 @@
     max-width: 600px;
   }
 }
+
+.studio-device-mic-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.studio-device-mic-controls > button {
+  width: auto;
+  margin: 0;
+  flex-shrink: 0;
+}
+.studio-device-mic-controls > label {
+  flex: 1;
+  min-width: 0;
+}
+.scoring-device-dock .studio-device > .studio-device-mic-controls {
+  grid-column: 2;
+  max-width: 230px;
+}
+.studio-device-mic-controls input {
+  width: 80px;
+}
+@media (max-width: 480px) {
+  .scoring-device-dock .studio-device > .studio-device-mic-controls {
+    grid-column: 1 / -1;
+    max-width: none;
+  }
+}

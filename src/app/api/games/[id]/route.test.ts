@@ -352,8 +352,8 @@ describe("GET /api/games/[id] over HTTP", () => {
       audioMuted: false,
       cameraFraming: { "camera-home": "contain", "camera-away": "contain" },
       cameraAudio: {
-        "camera-home": { enabled: false },
-        "camera-away": { enabled: false },
+        "camera-home": { enabled: false, volume: 1 },
+        "camera-away": { enabled: false, volume: 1 },
       },
       sponsors: [
         {

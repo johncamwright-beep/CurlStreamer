@@ -94,7 +94,13 @@ test("camera and demo audio status stay separate from YouTube status", async ({
   await page.route(`**/api/games/${testGameId}`, (route) =>
     route.request().method() === "PATCH"
       ? route.fulfill({ status: 503, json: { error: "temporary_failure" } })
-      : route.fulfill({ json: gameFixture() }),
+      : route.fulfill({
+          json: gameFixture(),
+          headers: {
+            "x-curlcast-account-role": "owner",
+            "x-curlcast-operator": "true",
+          },
+        }),
   );
   await cameras.getByRole("button", { name: "Camera 2", exact: true }).click();
   await expect(
@@ -364,4 +370,30 @@ test("desktop game day keeps scoring primary and settings available on demand", 
     })),
   );
   expect(game.claims).toEqual(gameFixture().claims);
+});
+
+test("remote scorer only sees scoreboard controls", async ({ page }) => {
+  const game = gameFixture();
+  await page.route("**/api/games/" + testGameId, (route) =>
+    route.fulfill({
+      json: game,
+      headers: {
+        "x-curlcast-operator": "false",
+        "x-curlcast-account-role": "scorer",
+      },
+    }),
+  );
+  await page.goto("/score/" + testGameId);
+  await expect(
+    page.getByRole("button", { name: "Save 1 point", exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("complementary", { name: "Broadcast and program controls" }),
+  ).toHaveCount(0);
+  await expect(
+    page.getByText("Broadcast controls ↓", { exact: true }),
+  ).toHaveCount(0);
+  await expect(
+    page.getByRole("button", { name: "End Game", exact: true }),
+  ).toHaveCount(0);
 });

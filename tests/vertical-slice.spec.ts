@@ -92,31 +92,21 @@ async function scheduleGame(page: Page) {
   await page
     .getByRole("button", { name: "Schedule game", exact: true })
     .click();
-  await expect(page).toHaveURL(new RegExp(`/games/${testGameId}$`));
+  await expect(page).toHaveURL(new RegExp(`/score/${testGameId}$`));
   expect(created).toBe(true);
   return game;
 }
 
-test("organizer schedules a game and sees role links with the local API fixture", async ({
+test("organizer schedules a game and opens Game Scoring directly", async ({
   page,
 }) => {
   await scheduleGame(page);
-  await page
-    .getByText("Invite devices & camera setup", { exact: true })
-    .click();
-  await page
-    .getByRole("button", { name: "Create invitation", exact: true })
-    .click();
   await expect(
-    page.getByRole("link", { name: "Open role chooser", exact: true }),
-  ).toBeVisible();
-  await page.getByText("Individual invitation links", { exact: true }).click();
-  await expect(
-    page.getByRole("link", { name: "Camera 1 Invite", exact: true }),
+    page.getByRole("button", { name: "Save 1 point", exact: true }),
   ).toBeVisible();
   await expect(
-    page.getByRole("link", { name: "Scorekeeper Invite", exact: true }),
-  ).toBeVisible();
+    page.getByRole("heading", { name: "Device readiness" }),
+  ).toHaveCount(0);
 });
 
 test("scoring updates the contained program and sponsor display with the local API fixture", async ({

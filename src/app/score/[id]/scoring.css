@@ -850,3 +850,10 @@
     grid-template-columns: repeat(4, minmax(0, 1fr));
   }
 }
+
+.scoring-remote .scoring-columns {
+  grid-template-columns: minmax(0, 1fr);
+}
+.scoring-remote {
+  max-width: 900px;
+}

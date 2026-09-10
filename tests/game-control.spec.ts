@@ -284,7 +284,7 @@ test("loading and failed reads have recovery without replaying invitation writes
   state.delayed = true;
   await page.goto(`/games/${testGameId}`);
   await expect(
-    page.getByRole("heading", { name: "Loading game control…" }),
+    page.getByRole("heading", { name: "Loading game…" }),
   ).toBeVisible();
   await expect(
     page.getByRole("link", { name: "Back to games", exact: true }),
@@ -307,7 +307,7 @@ test("loading and failed reads have recovery without replaying invitation writes
   expect(invitationWrites).toBe(1);
   state.failure = true;
   await expect(
-    page.getByRole("heading", { name: "Game control unavailable" }),
+    page.getByRole("heading", { name: "Game unavailable" }),
   ).toBeVisible();
   await page.screenshot({
     path: info.outputPath(`game-control-error-${info.project.name}.png`),
@@ -491,4 +491,25 @@ test("a hung initial context read does not block ordinary polling or restore sta
   } finally {
     release();
   }
+});
+
+test("Studio opens a TBD game in Game Scoring instead of the legacy lobby", async ({
+  page,
+}) => {
+  await page.addInitScript(() =>
+    Object.defineProperty(navigator, "userAgent", {
+      value: "CurlStreamerStudio/0.3",
+    }),
+  );
+  const { game, state } = await fixture(page);
+  game.config.awayName = "Opponent TBD";
+  await page.goto("/games/" + testGameId);
+  await expect(page).toHaveURL(new RegExp("/score/" + testGameId));
+  await expect(
+    page.getByRole("link", { name: "Assign opponent", exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "Device readiness" }),
+  ).toHaveCount(0);
+  expect(state.writes).toEqual([]);
 });

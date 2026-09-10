@@ -18,7 +18,7 @@ export interface BroadcastGame {
   broadcast: GameState["broadcast"];
   audioMuted: boolean;
   cameraAudio?: Partial<
-    Record<"camera-home" | "camera-away", { enabled: boolean }>
+    Record<"camera-home" | "camera-away", { enabled: boolean; volume?: number }>
   >;
   cameraFraming: GameState["cameraFraming"];
   sponsors: Sponsor[];
@@ -69,9 +69,11 @@ export function broadcastGame(
     cameraAudio: {
       "camera-home": {
         enabled: cameraAudioEnabled(game, "camera-home"),
+        volume: game.cameraAudio?.["camera-home"]?.volume ?? 1,
       },
       "camera-away": {
         enabled: cameraAudioEnabled(game, "camera-away"),
+        volume: game.cameraAudio?.["camera-away"]?.volume ?? 1,
       },
     },
     cameraFraming: {

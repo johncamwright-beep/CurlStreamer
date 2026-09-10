@@ -1,4 +1,5 @@
 "use client";
+import { TeamLogo } from "@/components/TeamLogo";
 import Link from "next/link";
 import { use, useEffect, useRef, useState } from "react";
 import { useGame } from "@/components/GameSync";
@@ -134,7 +135,7 @@ export default function Scorer({
   );
   if (game.config.awayName === "Opponent TBD")
     return (
-      <main className="mx-auto max-w-xl p-5">
+      <main className="scoring-workspace mx-auto max-w-3xl p-5">
         <div className="mb-4">
           <AppNavigation
             signedIn={accountRole ? true : undefined}
@@ -156,17 +157,16 @@ export default function Scorer({
             }}
           />
         </div>
-        <section className="panel" role="alert">
-          <h1 className="text-3xl font-black">
-            Assign opponent before scoring
+        <section className="scoring-card" role="alert">
+          <h1 className="text-xl font-bold">
+            {gameEntryPresentation(game.config, navigationMetadata).title}
           </h1>
-          <p className="mt-3">
-            This game is scheduled with Opponent TBD. Assign the actual opponent
-            before scoring begins.
+          <p className="mt-2 text-slate-300">
+            Game saved. Assign the opponent when ready to begin scoring.
           </p>
           {canManageCompletion(accountRole, organizerAccess) ? (
             <Link className="btn mt-4 inline-flex" href={`/games/${id}/edit`}>
-              Edit game
+              Assign opponent
             </Link>
           ) : (
             <p className="mt-4">
@@ -174,6 +174,12 @@ export default function Scorer({
               games while they update it.
             </p>
           )}
+          <Link
+            className="btn-secondary mt-4 ml-2 inline-flex min-h-11 items-center"
+            href="/dashboard"
+          >
+            Back to games
+          </Link>
         </section>
       </main>
     );
@@ -259,7 +265,8 @@ export default function Scorer({
     <main
       className={
         "scoring-workspace mx-auto max-w-6xl" +
-        (desktop ? " scoring-desktop" : "")
+        (desktop ? " scoring-desktop" : "") +
+        (!canEndGame ? " scoring-remote" : "")
       }
     >
       <header className="scoring-page-heading">
@@ -295,6 +302,10 @@ export default function Scorer({
             {desktop
               ? `${game.config.homeName} vs ${game.config.awayName} — ${game.config.eventName || "Single Game"}`
               : "Scoring"}
+            <TeamLogo
+              teamName={game.config.homeName}
+              className="ml-3 inline-block h-10 w-10 align-middle"
+            />
           </h1>
           {!desktop && <p className="scoring-match-title">{title}</p>}
           <p className="text-sm text-slate-300" aria-label="Game schedule">
@@ -304,35 +315,37 @@ export default function Scorer({
             }
           </p>
         </div>
-        <div className="scoring-page-actions">
-          <Link
-            className="btn-secondary"
-            href={`/broadcast/${id}`}
-            aria-label={`Broadcast: ${title}`}
-          >
-            Show broadcast
-          </Link>
-          {desktop && canEndGame && (
-            <div className="scoring-header-finish">
-              <EndGameControl
-                gameId={id}
-                homeName={game.config.homeName}
-                awayName={game.config.awayName}
-                enabled
-                disabled={scoringLocked}
-                onCompleted={(value, cleanup) => {
-                  setFinished(value);
-                  setFinishedCleanup(cleanup);
-                }}
-              />
-            </div>
-          )}
-          {!desktop && (
-            <a className="btn-secondary" href="#program-controls">
-              Broadcast controls ↓
-            </a>
-          )}
-        </div>
+        {canEndGame && (
+          <div className="scoring-page-actions">
+            <Link
+              className="btn-secondary"
+              href={`/broadcast/${id}`}
+              aria-label={`Broadcast: ${title}`}
+            >
+              Show broadcast
+            </Link>
+            {desktop && canEndGame && (
+              <div className="scoring-header-finish">
+                <EndGameControl
+                  gameId={id}
+                  homeName={game.config.homeName}
+                  awayName={game.config.awayName}
+                  enabled
+                  disabled={scoringLocked}
+                  onCompleted={(value, cleanup) => {
+                    setFinished(value);
+                    setFinishedCleanup(cleanup);
+                  }}
+                />
+              </div>
+            )}
+            {!desktop && (
+              <a className="btn-secondary" href="#program-controls">
+                Broadcast controls ↓
+              </a>
+            )}
+          </div>
+        )}
       </header>
       <div className="scoring-columns">
         <div className="scoring-main">
@@ -567,53 +580,55 @@ export default function Scorer({
             </p>
           )}
         </div>
-        <aside
-          id="program-controls"
-          tabIndex={-1}
-          className="scoring-sidebar"
-          aria-label="Broadcast and program controls"
-        >
-          {desktop ? (
-            <>
-              {desktop && (
-                <div className="scoring-control-tiles">
-                  <ScoringProgramControls game={game} act={act} compact />
-                  {canEndGame && <StudioYouTube id={id} />}
-                </div>
-              )}
-            </>
-          ) : (
-            <>
-              {canEndGame && <BroadcastControl gameId={id} enabled />}
-              <ScoringProgramControls game={game} act={act} />
-            </>
-          )}
-          {desktop && canEndGame && <StudioAudio id={id} />}
-          {!desktop && canEndGame && (
-            <div className="scoring-card scoring-finish">
-              {!desktop && (
-                <>
-                  <h2 className="font-bold">Finish the game</h2>
-                  <p className="mb-3 mt-2 text-sm text-slate-300">
-                    Review and confirm the saved final score before ending the
-                    game.
-                  </p>
-                </>
-              )}
-              <EndGameControl
-                gameId={id}
-                homeName={game.config.homeName}
-                awayName={game.config.awayName}
-                enabled
-                disabled={scoringLocked}
-                onCompleted={(value, cleanup) => {
-                  setFinished(value);
-                  setFinishedCleanup(cleanup);
-                }}
-              />
-            </div>
-          )}
-        </aside>
+        {canEndGame && (
+          <aside
+            id="program-controls"
+            tabIndex={-1}
+            className="scoring-sidebar"
+            aria-label="Broadcast and program controls"
+          >
+            {desktop ? (
+              <>
+                {desktop && (
+                  <div className="scoring-control-tiles">
+                    <ScoringProgramControls game={game} act={act} compact />
+                    {canEndGame && <StudioYouTube id={id} />}
+                  </div>
+                )}
+              </>
+            ) : (
+              <>
+                {canEndGame && <BroadcastControl gameId={id} enabled />}
+                <ScoringProgramControls game={game} act={act} />
+              </>
+            )}
+            {desktop && canEndGame && <StudioAudio id={id} />}
+            {!desktop && canEndGame && (
+              <div className="scoring-card scoring-finish">
+                {!desktop && (
+                  <>
+                    <h2 className="font-bold">Finish the game</h2>
+                    <p className="mb-3 mt-2 text-sm text-slate-300">
+                      Review and confirm the saved final score before ending the
+                      game.
+                    </p>
+                  </>
+                )}
+                <EndGameControl
+                  gameId={id}
+                  homeName={game.config.homeName}
+                  awayName={game.config.awayName}
+                  enabled
+                  disabled={scoringLocked}
+                  onCompleted={(value, cleanup) => {
+                    setFinished(value);
+                    setFinishedCleanup(cleanup);
+                  }}
+                />
+              </div>
+            )}
+          </aside>
+        )}
       </div>
       {desktop && (
         <div className="scoring-device-dock">
@@ -627,8 +642,8 @@ export default function Scorer({
                 onLayout={async (layout) => {
                   await act({ type: "layout", layout });
                 }}
-                onAudio={async (role, enabled) => {
-                  await act({ type: "camera-audio", role, enabled });
+                onAudio={async (role, enabled, volume) => {
+                  await act({ type: "camera-audio", role, enabled, volume });
                 }}
                 onChanged={refresh}
                 enabled

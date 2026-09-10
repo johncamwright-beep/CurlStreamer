@@ -273,6 +273,7 @@ function GameCard({
     homeName: game.config.homeName,
     awayName: game.opponentId ? game.config.awayName : null,
     eventName: event?.name,
+    gameNumber: game.gameNumber,
   });
   const timezone = event?.timezone ?? game.timezone ?? "UTC";
   const scheduledLabel = game.scheduledStart

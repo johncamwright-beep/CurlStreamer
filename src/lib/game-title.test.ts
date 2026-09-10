@@ -36,7 +36,7 @@ describe("scheduled game titles", () => {
       }),
     ).toBe("Team 1 vs TBD — Event Name");
   });
-  it("uses snapshots and excludes labels, numbers, and event types", () => {
+  it("uses snapshots and includes game numbers but excludes labels and event types", () => {
     expect(
       formatCanonicalGameTitle({
         homeName: "Saved Team",
@@ -48,9 +48,9 @@ describe("scheduled game titles", () => {
           eventType: "playoff",
         } as object),
       }),
-    ).toBe("Saved Team vs Saved Opponent — Saved Event");
+    ).toBe("Saved Team vs Saved Opponent — Saved Event · Game 7");
   });
-  it("removes a legacy game-number suffix from the canonical event title", () => {
+  it("normalizes a legacy game-number suffix without losing it", () => {
     expect(
       canonicalTitleFromConfig({
         homeName: "Team 1",
@@ -62,7 +62,7 @@ describe("scheduled game titles", () => {
         youtubeTitle: "",
         youtubeVisibility: "unlisted",
       }),
-    ).toBe("Team 1 vs Team 2 — Event Name");
+    ).toBe("Team 1 vs Team 2 — Event Name · Game 2");
   });
   it("preserves meaningful legacy titles", () => {
     expect(

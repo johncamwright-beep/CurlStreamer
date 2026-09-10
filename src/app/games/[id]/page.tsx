@@ -43,18 +43,19 @@ export default function GameLobby({
   const [finishedCleanup, setFinishedCleanup] = useState<CompletionCleanup>();
   const [organizerAccess, setOrganizerAccess] = useState(false);
   const [scoringAccess, setScoringAccess] = useState(false);
+  const [desktop, setDesktop] = useState(false);
   const [disconnecting, setDisconnecting] = useState<Role>();
   const [cameraActionError, setCameraActionError] = useState("");
   useEffect(() => {
+    setDesktop(navigator.userAgent.includes("CurlStreamerStudio/0.3"));
     setOrganizerAccess(hasOrganizerAccess(localStorage, id));
     setScoringAccess(hasScoringAccess(localStorage, id));
   }, [id]);
   useEffect(() => {
     if (
-      navigator.userAgent.includes("CurlStreamerStudio/0.3") &&
+      desktop &&
       game &&
       !completion &&
-      game.config.awayName !== "Opponent TBD" &&
       (organizerAccess ||
         scoringAccess ||
         ["owner", "team_admin", "scorer"].includes(accountRole))
@@ -62,6 +63,7 @@ export default function GameLobby({
       router.replace("/score/" + id);
   }, [
     game,
+    desktop,
     completion,
     organizerAccess,
     scoringAccess,
@@ -107,6 +109,15 @@ export default function GameLobby({
     }
   }
   const completed = completion ?? finished;
+  if (
+    desktop &&
+    game &&
+    !completed &&
+    (organizerAccess ||
+      scoringAccess ||
+      ["owner", "team_admin", "scorer"].includes(accountRole))
+  )
+    return <GameReadScreen label="Opening game" retry={refreshContext} />;
   if (completed)
     return (
       <main className="mx-auto max-w-3xl p-5">
@@ -119,14 +130,7 @@ export default function GameLobby({
       </main>
     );
   if (error || !game)
-    return (
-      <GameReadScreen
-        label="Game control"
-        error={error}
-        retry={refreshContext}
-        light
-      />
-    );
+    return <GameReadScreen label="Game" error={error} retry={refreshContext} />;
   const { title, scheduledLabel } = gameEntryPresentation(
     game.config,
     navigationMetadata,

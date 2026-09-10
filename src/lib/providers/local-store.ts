@@ -333,7 +333,12 @@ export function updateGame(
       game.cameraAudio ??= {};
       game.cameraAudio[action.role] = {
         enabled: action.enabled,
-        status: action.enabled ? "pending" : "off",
+        volume: action.volume ?? game.cameraAudio[action.role]?.volume ?? 1,
+        status: action.enabled
+          ? game.cameraAudio[action.role]?.enabled
+            ? game.cameraAudio[action.role]!.status
+            : "pending"
+          : "off",
         updatedAt: now,
         generation: game.claimGenerations?.[action.role] ?? 0,
       };

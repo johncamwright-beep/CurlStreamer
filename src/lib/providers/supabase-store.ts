@@ -1,3 +1,4 @@
+import { formatEventGameLabel } from "../game-title";
 import "server-only";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { randomUUID } from "crypto";
@@ -126,12 +127,27 @@ export async function prepareRoleInvitation(
 async function getGameRecord(id: string) {
   const { data, error } = await supabase()
     .from("game_states")
-    .select("state, version")
+    .select("state, version, games(game_number)")
     .eq("game_id", id)
     .maybeSingle();
   if (error) databaseError("game lookup", error);
   if (!data) return undefined;
-  return { state: data.state as GameState, version: data.version as number };
+  const state = data.state as GameState;
+  const parent = data.games as { game_number?: number | null } | null;
+  const projected =
+    parent && "game_number" in parent
+      ? {
+          ...state,
+          config: {
+            ...state.config,
+            eventName: formatEventGameLabel(
+              state.config.eventName,
+              parent.game_number,
+            ),
+          },
+        }
+      : state;
+  return { state: projected, version: data.version as number };
 }
 
 export async function claimRole(
@@ -277,7 +293,12 @@ function applyAction(game: GameState, action: z.infer<typeof actionSchema>) {
     game.cameraAudio ??= {};
     game.cameraAudio[action.role] = {
       enabled: action.enabled,
-      status: action.enabled ? "pending" : "off",
+      volume: action.volume ?? game.cameraAudio[action.role]?.volume ?? 1,
+      status: action.enabled
+        ? game.cameraAudio[action.role]?.enabled
+          ? game.cameraAudio[action.role]!.status
+          : "pending"
+        : "off",
       updatedAt: now,
       generation: game.claimGenerations?.[action.role] ?? 0,
     };

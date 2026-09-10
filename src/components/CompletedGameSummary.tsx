@@ -114,7 +114,10 @@ export function CompletedGameSummary({
   }
 
   return (
-    <section className="panel text-center" aria-labelledby="final-result">
+    <section
+      className="rounded-2xl border border-slate-700 bg-[#101e2c] p-6 text-center text-slate-100"
+      aria-labelledby="final-result"
+    >
       <p className="text-sm font-bold uppercase tracking-widest text-cyan-300">
         Final result
       </p>
@@ -177,11 +180,6 @@ export function CompletedGameSummary({
             </button>
           )}
         </div>
-      )}
-      {cleanup?.status === "complete" && (
-        <p role="status" className="mt-4 text-emerald-300">
-          LiveKit accepted all room shutdown requests.
-        </p>
       )}
       <Link className="btn-secondary mt-5 inline-flex" href="/dashboard">
         Back to Games

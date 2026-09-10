@@ -265,6 +265,12 @@ describe("private loopback program API", () => {
     expect(new Uint8Array(await logo.arrayBuffer()).slice(0, 4)).toEqual(
       new Uint8Array([137, 80, 78, 71]),
     );
+    const teamLogo = await fetch(
+      bridge.address + "/branding/team-benning.png",
+      { headers: { cookie: cookie!, "sec-fetch-site": "same-origin" } },
+    );
+    expect(teamLogo.status).toBe(200);
+    expect(teamLogo.headers.get("content-type")).toBe("image/png");
     expect(
       (await fetch(bridge.address + "/branding/curlstreamer-logo.png")).status,
     ).toBe(403);

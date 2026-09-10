@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
   rpc: vi.fn(),
+  game: vi.fn(),
   actor: vi.fn(),
   decrypt: vi.fn(),
   refresh: vi.fn(),
@@ -18,6 +19,7 @@ const mocks = vi.hoisted(() => ({
   verifyRetirement: vi.fn(),
   observe: vi.fn(),
 }));
+vi.mock("./supabase-store", () => ({ getGame: mocks.game }));
 vi.mock("@/lib/supabase/admin", () => ({
   createAdminSupabaseClient: () => ({ rpc: mocks.rpc }),
 }));

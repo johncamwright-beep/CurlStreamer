@@ -1,5 +1,5 @@
 "use client";
-import { useMemo, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import type {
   EventRecord,
@@ -8,6 +8,7 @@ import type {
 } from "@/lib/team-hierarchy-data";
 import {
   formatCanonicalGameTitle,
+  formatEventGameLabel,
   formatYouTubeScheduledTitle,
 } from "@/lib/game-title";
 import {
@@ -23,7 +24,7 @@ export function GameCreationForm({
   teamName,
   seasons: initialSeasons,
   events: initialEvents,
-  opponents,
+  opponents: initialOpponents,
   games,
   preselectedEventId,
   editing,
@@ -57,6 +58,7 @@ export function GameCreationForm({
     ? scheduledStartToLocalInput(editing.scheduledStart, initialTimezone)
     : null;
   const [seasons, setSeasons] = useState(initialSeasons);
+  const [opponents, setOpponents] = useState(initialOpponents);
   const [events, setEvents] = useState(initialEvents);
   const [seasonId, setSeasonId] = useState(
     editing?.seasonId ?? preselected?.seasonId ?? current?.id ?? "",
@@ -64,8 +66,11 @@ export function GameCreationForm({
   const [eventId, setEventId] = useState<string>(
     editing?.eventId ?? preselected?.id ?? "",
   );
+  const [gameNumberText, setGameNumberText] = useState(
+    editing?.gameNumber?.toString() ?? "",
+  );
   const [opponentChoice, setOpponentChoice] = useState(
-    editing?.opponentId ?? (opponents.length ? "" : "__new"),
+    editing ? (editing.opponentId ?? "__tbd") : opponents.length ? "" : "__new",
   );
   const [opponentSearch, setOpponentSearch] = useState(
     editing?.opponentId
@@ -73,9 +78,7 @@ export function GameCreationForm({
           editing.config.awayName)
       : "",
   );
-  const [opponentTbd, setOpponentTbd] = useState(
-    editing ? !editing.opponentId : false,
-  );
+  const opponentTbd = opponentChoice === "__tbd";
   const [dialog, setDialog] = useState<Dialog>(
     initialSeasons.length ? null : "season",
   );
@@ -114,6 +117,7 @@ export function GameCreationForm({
     homeName: teamName,
     awayName: opponentTbd ? null : opponentSearch,
     eventName: selectedEvent?.name ?? null,
+    gameNumber: eventId && gameNumberText ? Number(gameNumberText) : null,
   });
   const scheduledInstant = localDateTimeToUtc(
     scheduledDate,
@@ -130,16 +134,6 @@ export function GameCreationForm({
     effectiveTimezone,
   );
   const youtubeTitle = titleCustomized ? customTitle : generatedTitle;
-  const suggested = useMemo(
-    () =>
-      Math.max(
-        0,
-        ...games
-          .filter((g) => g.eventId === eventId && g.id !== editing?.id)
-          .map((g) => g.gameNumber ?? 0),
-      ) + 1,
-    [eventId, games, editing?.id],
-  );
   const matching = opponents.find(
     (o) =>
       o.display_name.trim().toLocaleLowerCase() ===
@@ -161,6 +155,36 @@ export function GameCreationForm({
     if (!response.ok)
       throw new Error(body?.error ?? "The change could not be saved.");
     return body;
+  }
+  async function saveOpponent() {
+    if (saving.current) return;
+    const displayName = opponentSearch.trim().replace(/\s+/g, " ");
+    if (!displayName) return;
+    saving.current = true;
+    setBusy(true);
+    setError("");
+    try {
+      const result = await mutate({
+        operation: "createOpponent",
+        input: { displayName },
+      });
+      const saved = result?.[0];
+      if (!saved?.opponent_id || !saved?.display_name)
+        throw new Error("The opponent could not be saved. Please try again.");
+      setOpponents((items) => [
+        ...items.filter((item) => item.id !== saved.opponent_id),
+        { id: saved.opponent_id, display_name: saved.display_name },
+      ]);
+      setOpponentChoice(saved.opponent_id);
+      setOpponentSearch(saved.display_name);
+    } catch (e) {
+      setError(
+        e instanceof Error ? e.message : "The opponent could not be saved.",
+      );
+    } finally {
+      saving.current = false;
+      setBusy(false);
+    }
   }
   async function createSeason(form: FormData) {
     setBusy(true);
@@ -244,7 +268,8 @@ export function GameCreationForm({
     setError("");
     const form = new FormData(e.currentTarget);
     const date = String(form.get("scheduledDate"));
-    const gameNumber = eventId ? Number(form.get("gameNumber")) : null;
+    const gameNumber =
+      eventId && gameNumberText ? Number(gameNumberText) : null;
     const opponentName = opponentSearch.trim().replace(/\s+/g, " ");
     try {
       const body = await mutate({
@@ -264,7 +289,10 @@ export function GameCreationForm({
         timezone: selectedEvent?.timezone ?? form.get("timezone"),
         gameNumber,
         config: {
-          eventName: selectedEvent?.name ?? "Single Game",
+          eventName: formatEventGameLabel(
+            selectedEvent?.name ?? "Single Game",
+            gameNumber,
+          ),
           homeName: teamName,
           awayName: opponentTbd ? "Opponent TBD" : opponentName,
           homeColor: form.get("homeColor"),
@@ -279,7 +307,7 @@ export function GameCreationForm({
           `curlcast-access-${body.game.id}`,
           body.organizerToken,
         );
-      router.push(editing ? "/dashboard" : `/games/${body.game.id}`);
+      router.push(editing ? "/dashboard" : `/score/${body.game.id}`);
       router.refresh();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Game could not be saved.");
@@ -375,8 +403,7 @@ export function GameCreationForm({
                 <label htmlFor="setup-opponent">Team 2 — Opponent</label>
                 <select
                   id="setup-opponent"
-                  disabled={opponentTbd}
-                  required={!opponentTbd}
+                  required
                   value={opponentChoice}
                   onChange={(e) => {
                     const choice = e.target.value;
@@ -404,30 +431,32 @@ export function GameCreationForm({
                       {o.display_name}
                     </option>
                   ))}
+                  <option value="__tbd">Opponent TBD</option>
                   <option value="__new">Add new opponent…</option>
                 </select>
                 {opponentChoice === "__new" && (
-                  <label className="mt-3 block">
-                    New opponent name
-                    <input
-                      disabled={opponentTbd}
-                      required={!opponentTbd}
-                      value={opponentSearch}
-                      onChange={(e) => setOpponentSearch(e.target.value)}
-                      placeholder="Enter the team name"
-                      className="mt-1 w-full rounded-lg bg-slate-800 p-3"
-                    />
-                  </label>
+                  <div className="mt-3">
+                    <label>
+                      New opponent name
+                      <input
+                        required
+                        maxLength={100}
+                        value={opponentSearch}
+                        onChange={(e) => setOpponentSearch(e.target.value)}
+                        placeholder="Enter the team name"
+                        className="mt-1 w-full rounded-lg bg-slate-800 p-3"
+                      />
+                    </label>
+                    <button
+                      type="button"
+                      className="btn mt-2"
+                      disabled={busy || !opponentSearch.trim()}
+                      onClick={saveOpponent}
+                    >
+                      Save opponent
+                    </button>
+                  </div>
                 )}
-                <label className="setup-checkbox">
-                  <input
-                    className="h-6 w-6"
-                    type="checkbox"
-                    checked={opponentTbd}
-                    onChange={(e) => setOpponentTbd(e.target.checked)}
-                  />{" "}
-                  Opponent TBD
-                </label>
                 <p className="setup-help">
                   Choose a saved team or select “Add new opponent”. You can
                   assign an unknown opponent later.
@@ -502,18 +531,14 @@ export function GameCreationForm({
               )}
               {eventId && (
                 <label>
-                  Game number
+                  Game number (optional)
                   <input
-                    key={`${eventId}-${suggested}`}
-                    required
                     name="gameNumber"
                     type="number"
                     min="1"
-                    defaultValue={
-                      editing?.eventId === eventId
-                        ? (editing.gameNumber ?? suggested)
-                        : suggested
-                    }
+                    value={gameNumberText}
+                    onChange={(e) => setGameNumberText(e.target.value)}
+                    placeholder="Leave blank if not needed"
                     className="mt-1 w-full rounded-lg bg-slate-800 p-3"
                   />
                 </label>
@@ -715,7 +740,7 @@ export function GameCreationForm({
           <p className="setup-help">
             {editing
               ? "Your changes update this game’s teams, schedule and settings."
-              : "Next: invite cameras and open the game controls."}
+              : "Next: open Game Scoring and connect your cameras."}
           </p>
         </aside>
       </form>

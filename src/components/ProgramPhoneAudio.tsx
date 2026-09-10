@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import type { ProgramCameraRole } from "./ProgramCanvas";
 import { acquireProgramAudioOutput } from "@/lib/program-audio-output";
 import { createRemoteAudioPlayout } from "@/lib/remote-audio-playout";
@@ -9,11 +9,20 @@ export function ProgramPhoneAudio({
   role,
   stream,
   enabled,
+  volume = 1,
 }: {
   role: ProgramCameraRole;
   stream?: MediaStream;
   enabled: boolean;
+  volume?: number;
 }) {
+  const gainRef = useRef<GainNode | null>(null);
+  const volumeRef = useRef(volume);
+  volumeRef.current = volume;
+  useEffect(() => {
+    const gain = gainRef.current;
+    if (gain) gain.gain.setTargetAtTime(volume, gain.context.currentTime, 0.02);
+  }, [volume]);
   useEffect(() => {
     if (!stream || !enabled) return;
     const abort = new AbortController();
@@ -26,7 +35,8 @@ export function ProgramPhoneAudio({
     const gain = context.createGain();
     // Phone sources join the renderer's one shared output graph. That graph
     // owns speech protection and the final combined limiter with USB audio.
-    gain.gain.value = 1;
+    gain.gain.value = volumeRef.current;
+    gainRef.current = gain;
     gain.channelCount = 1;
     gain.channelCountMode = "explicit";
     source.connect(analyser);
@@ -84,6 +94,7 @@ export function ProgramPhoneAudio({
       source.disconnect();
       analyser.disconnect();
       gain.disconnect();
+      gainRef.current = null;
       output.release();
     };
   }, [stream, enabled, role]);

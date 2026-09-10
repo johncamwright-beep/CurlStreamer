@@ -1,5 +1,6 @@
 "use client";
 import React, { useEffect, useState } from "react";
+import { TeamLogo } from "./TeamLogo";
 import { Scoreboard } from "./Scoreboard";
 import type { GameState } from "@/lib/types";
 import type { BroadcastGame } from "@/lib/game-projection";
@@ -94,15 +95,10 @@ export function ProgramComposition({
           className="broadcast-information-rail flex min-w-0 flex-col rounded-2xl border border-white/10 bg-slate-950/45"
         >
           <div>
-            <div
-              className="relative mb-[.6cqw] w-full overflow-hidden"
-              style={{ aspectRatio: "6 / 1" }}
-            >
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src="/branding/curlstreamer-logo.png"
-                alt="Curl Streamer"
-                className="absolute left-0 top-1/2 w-full -translate-y-1/2"
+            <div className="mb-[.6cqw] flex justify-end">
+              <TeamLogo
+                teamName={game.config.homeName}
+                className="h-[5.5cqw] w-[5.5cqw] rounded-lg"
               />
             </div>
             {eventTitle && (
@@ -119,6 +115,17 @@ export function ProgramComposition({
               mode="sidebar"
             />
           )}
+          <div
+            className="relative mt-auto w-full shrink-0 overflow-hidden"
+            style={{ aspectRatio: "6 / 1" }}
+          >
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src="/branding/curlstreamer-logo.png"
+              alt="Curl Streamer"
+              className="absolute left-0 top-1/2 w-full -translate-y-1/2"
+            />
+          </div>
           {showStatus && (
             <div
               className="mt-auto pt-[.6cqw] text-[.9cqw] leading-tight"

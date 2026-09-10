@@ -1,4 +1,5 @@
 import "server-only";
+import { getGame } from "./supabase-store";
 import { randomUUID } from "node:crypto";
 import { youtubeLifecycle } from "./youtube-lifecycle";
 import { z } from "zod";
@@ -280,8 +281,20 @@ export async function prepareM4Session(
   try {
     if (!s.sessionKey || !s.title || s.visibility !== "unlisted")
       throw Error("youtube_manual_configuration_mismatch");
-    const sessionKey = s.sessionKey,
-      title = s.title;
+    const game = await getGame(gameId);
+    const number = game?.config.eventName.match(
+      /\s+[—·-]\s+Game\s+(\d+)$/iu,
+    )?.[1];
+    const sessionKey = s.sessionKey;
+    let title = s.title;
+    if (number) {
+      if (/\bGame\s+\d+\b/i.test(title))
+        title = title.replace(/\bGame\s+\d+\b/gi, "Game " + number);
+      else {
+        const suffix = " · Game " + number;
+        title = title.slice(0, 100 - suffix.length) + suffix;
+      }
+    }
     const token = await accessToken(s);
     const allowBroadcast = (s.youtubeBroadcastCreateState ?? "none") === "none";
     creating = "broadcast";

@@ -56,6 +56,7 @@ export const actionSchema = z.discriminatedUnion("type", [
     type: z.literal("camera-audio"),
     role: z.enum(["camera-home", "camera-away"]),
     enabled: z.boolean(),
+    volume: z.number().finite().min(0).max(1).optional(),
   }),
   z.object({
     type: z.literal("camera-audio-status"),

@@ -60,8 +60,18 @@ const projectedGame = z.object({
   audioMuted: z.boolean(),
   cameraAudio: z
     .object({
-      "camera-home": z.object({ enabled: z.boolean() }).optional(),
-      "camera-away": z.object({ enabled: z.boolean() }).optional(),
+      "camera-home": z
+        .object({
+          enabled: z.boolean(),
+          volume: z.number().min(0).max(1).optional(),
+        })
+        .optional(),
+      "camera-away": z
+        .object({
+          enabled: z.boolean(),
+          volume: z.number().min(0).max(1).optional(),
+        })
+        .optional(),
     })
     .optional(),
   cameraFraming: z

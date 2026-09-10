@@ -118,6 +118,7 @@ export type CameraAudioStatus =
 
 export interface CameraAudioState {
   enabled: boolean;
+  volume?: number;
   status: CameraAudioStatus;
   updatedAt: number;
   /** Assignment epoch targeted by this operator intent. Missing legacy state is inert. */

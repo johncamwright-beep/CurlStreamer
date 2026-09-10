@@ -8,9 +8,24 @@ export type GameTitleParts = {
   homeName?: string | null;
   awayName?: string | null;
   eventName?: string | null;
+  gameNumber?: number | null;
   legacyTitle?: string | null;
   structured?: boolean;
 };
+
+export function formatEventGameLabel(
+  eventName?: string | null,
+  gameNumber?: number | null,
+) {
+  const name = normalizeTitleWhitespace(eventName);
+  const legacy = name.match(/\s+[—·-]\s+Game\s+(\d+)$/iu);
+  const base = name.replace(/\s+[—·-]\s+Game\s+\d+$/iu, "");
+  const number =
+    gameNumber === undefined ? (legacy ? Number(legacy[1]) : null) : gameNumber;
+  return number && Number.isInteger(number) && number > 0
+    ? `${base}${base ? " · " : ""}Game ${number}`
+    : base;
+}
 
 /** Formats a title exclusively from the participant and event snapshots. */
 export function formatCanonicalGameTitle(parts: GameTitleParts) {
@@ -21,7 +36,7 @@ export function formatCanonicalGameTitle(parts: GameTitleParts) {
   const home = normalizeTitleWhitespace(parts.homeName) || "TBD";
   const awayValue = normalizeTitleWhitespace(parts.awayName);
   const away = !awayValue || awayValue === "Opponent TBD" ? "TBD" : awayValue;
-  const event = normalizeTitleWhitespace(parts.eventName);
+  const event = formatEventGameLabel(parts.eventName, parts.gameNumber);
   return `${home} vs ${away}${event ? ` — ${event}` : ""}`;
 }
 
@@ -33,7 +48,7 @@ export function canonicalTitleFromConfig<
     ? null
     : config.eventName,
 ) {
-  const canonicalEvent = eventName?.replace(/\s+[—-]\s+Game\s+\d+$/iu, "");
+  const canonicalEvent = formatEventGameLabel(eventName);
   return formatCanonicalGameTitle({
     homeName: config.homeName,
     awayName: config.awayName,

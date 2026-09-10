@@ -34,6 +34,15 @@ internal static class WorkspacePolicy
         return Uri.TryCreate(value, UriKind.Absolute, out url) && url.Scheme == "https" &&
             url.UserInfo.Length == 0 && url.GetLeftPart(UriPartial.Authority) == origin;
     }
+    internal static bool ExternalYouTube(string value)
+    {
+        Uri url;
+        if (!Uri.TryCreate(value, UriKind.Absolute, out url) || url.Scheme != "https" ||
+            !url.IsDefaultPort || url.UserInfo.Length != 0) return false;
+        return url.Host == "studio.youtube.com" ||
+            (url.Host == "www.youtube.com" && url.AbsolutePath == "/watch" &&
+             Regex.IsMatch(url.Query, @"^\?v=[A-Za-z0-9_-]{11}$") && url.Fragment.Length == 0);
+    }
     internal static string Game(string value, string origin)
     {
         if (!SameOrigin(value, origin)) return null;

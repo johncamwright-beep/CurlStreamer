@@ -45,7 +45,7 @@ export function StudioYouTube({ id }: { id: string }) {
       const response = await result.json();
       const messages: Record<string, string> = {
         ended:
-          "This YouTube broadcast has ended. Stop YouTube before starting a new broadcast.",
+          "This YouTube broadcast has ended. Select End Stream before starting a new broadcast.",
         removed:
           "YouTube removed this broadcast. Check your channel in YouTube Studio.",
         "setup-required":
@@ -64,7 +64,7 @@ export function StudioYouTube({ id }: { id: string }) {
     } catch {
       setError(
         halted.current
-          ? "YouTube needs attention. Stop YouTube, check the account, then start again."
+          ? "YouTube needs attention. Select End Stream, check YouTube settings, then start again."
           : "YouTube status is temporarily unavailable. Retrying automatically…",
       );
       nextCheck.current =
@@ -194,7 +194,7 @@ export function StudioYouTube({ id }: { id: string }) {
           {pending || state?.busy
             ? "Please wait…"
             : active
-              ? "Stop YouTube"
+              ? "End Stream"
               : "Broadcast to YouTube"}
         </button>
         <a className="btn-secondary" href="/settings/youtube">

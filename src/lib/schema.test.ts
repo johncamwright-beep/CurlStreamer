@@ -50,3 +50,26 @@ describe("scoring action validation", () => {
     expect(actionSchema.safeParse(action).success).toBe(false);
   });
 });
+
+describe("camera hardware zoom validation", () => {
+  it("requires a complete, bounded phone capability report", () => {
+    expect(
+      actionSchema.safeParse({
+        type: "camera-zoom-status",
+        role: "camera-home",
+        supported: true,
+        min: 1,
+        max: 4,
+        step: 0.1,
+        value: 2,
+      }).success,
+    ).toBe(true);
+    expect(
+      actionSchema.safeParse({
+        type: "camera-zoom-status",
+        role: "camera-home",
+        supported: true,
+      }).success,
+    ).toBe(false);
+  });
+});

@@ -6,6 +6,7 @@ import { useStudioPreviewMode } from "@/components/StudioPreviewMode";
 import { StudioProgramPreview } from "@/components/StudioProgramPreview";
 import { BroadcastOperatorNavigation } from "@/components/BroadcastOperatorNavigation";
 import { AppNavigation } from "@/components/AppNavigation";
+import { BroadcastCameraZoomControls } from "@/components/CameraZoomControls";
 import { hasOrganizerAccess, hasScoringAccess } from "@/lib/access-session";
 import { gameEntryPresentation, gameEntryCapabilities } from "@/lib/game-entry";
 import { GameReadScreen } from "@/components/GameReadScreen";
@@ -38,15 +39,22 @@ export default function Broadcast({
     refreshContext,
   } = useGame(id, "broadcast", undefined, true);
   const [scale, setScale] = useState<number>();
+  const [compact, setCompact] = useState(false);
   const [operator, setOperator] = useState(false);
+  const zoomRail =
+    operator || ["owner", "team_admin", "scorer"].includes(accountRole);
   useEffect(() => setOperator(hasScoringAccess(localStorage, id)), [id]);
   useEffect(() => {
     const fit = () => {
       const viewport = availableViewport();
+      const narrow = viewport.width <= 700;
+      setCompact(narrow);
       setScale(
         Math.min(
-          viewport.width / PROGRAM_WIDTH,
-          viewport.height / PROGRAM_HEIGHT,
+          Math.max(1, viewport.width - (zoomRail && !narrow ? 272 : 0)) /
+            PROGRAM_WIDTH,
+          Math.max(1, viewport.height - (zoomRail && narrow ? 300 : 0)) /
+            PROGRAM_HEIGHT,
         ),
       );
     };
@@ -59,7 +67,7 @@ export default function Broadcast({
       window.removeEventListener("orientationchange", fit);
       window.visualViewport?.removeEventListener("resize", fit);
     };
-  }, []);
+  }, [zoomRail]);
   if (error || (!game && !completion))
     return (
       <GameReadScreen
@@ -92,6 +100,7 @@ export default function Broadcast({
           />
         </>
       )}
+      {zoomRail && <BroadcastCameraZoomControls id={id} />}
       <div
         data-testid="broadcast-visible-wrapper"
         className="broadcast-visible-wrapper"
@@ -101,6 +110,8 @@ export default function Broadcast({
             : {
                 width: PROGRAM_WIDTH * scale,
                 height: PROGRAM_HEIGHT * scale,
+                marginLeft: zoomRail && !compact ? 272 : 0,
+                marginBottom: zoomRail && compact ? 300 : 0,
               }
         }
       >

@@ -29,6 +29,7 @@ import {
   EnduranceRecorder,
   enduranceStorageKey,
 } from "@/lib/providers/m2-endurance-recorder";
+import { shouldApplyCameraZoomCommand } from "@/lib/camera-zoom-command";
 
 export function M2CameraSlot({
   id,
@@ -47,9 +48,45 @@ export function M2CameraSlot({
   const [zoomRange, setZoomRange] = useState<ZoomRange>();
   const [zoom, setZoom] = useState(1);
   const zoomFlight = useRef(false);
+  const zoomCommand = useRef<string | undefined>(undefined);
+  const zoomReportFlight = useRef(false);
+  const zoomCaptureStartedAt = useRef(0);
+  async function reportZoom(range?: ZoomRange, value?: number) {
+    if (side !== "camera" || zoomReportFlight.current) return;
+    zoomReportFlight.current = true;
+    const token = cameraPublishAccessToken(localStorage, id, cameraRole);
+    try {
+      const response = await fetch(`/api/games/${id}`, {
+        method: "PATCH",
+        headers: {
+          "content-type": "application/json",
+          ...(token ? { authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify(
+          range
+            ? {
+                type: "camera-zoom-status",
+                role: cameraRole,
+                supported: true,
+                ...range,
+                value: value ?? range.min,
+              }
+            : {
+                type: "camera-zoom-status",
+                role: cameraRole,
+                supported: false,
+              },
+        ),
+        signal: AbortSignal.timeout(5_000),
+      });
+      if (!response.ok) throw Error("zoom status rejected");
+    } finally {
+      zoomReportFlight.current = false;
+    }
+  }
   async function updateZoom(value: number) {
     const current = track.current;
-    if (!current || !zoomRange || zoomFlight.current) return;
+    if (!current || !zoomRange || zoomFlight.current) return false;
     zoomFlight.current = true;
     try {
       const next = clampZoom(value, zoomRange);
@@ -58,8 +95,14 @@ export function M2CameraSlot({
       });
       if (current === track.current)
         setZoom(current.getSettings().zoom ?? next);
+      if (current === track.current)
+        void reportZoom(zoomRange, current.getSettings().zoom ?? next).catch(
+          () => setWarning("Could not report camera zoom capability."),
+        );
+      return current === track.current;
     } catch {
       setWarning("This phone could not adjust zoom.");
+      return false;
     } finally {
       zoomFlight.current = false;
     }
@@ -177,6 +220,8 @@ export function M2CameraSlot({
     active.current = false;
     setPreviewReady(false);
     setZoomRange(undefined);
+    zoomCommand.current = undefined;
+    zoomCaptureStartedAt.current = 0;
     onReady?.(cameraRole, false);
     connection.current?.stop();
     connection.current = undefined;
@@ -360,7 +405,12 @@ export function M2CameraSlot({
           ? hardwareZoomRange(acquired.track)
           : undefined;
       setZoomRange(range);
-      setZoom(acquired.track.getSettings().zoom ?? range?.min ?? 1);
+      const initialZoom = acquired.track.getSettings().zoom ?? range?.min ?? 1;
+      zoomCaptureStartedAt.current = Date.now();
+      setZoom(initialZoom);
+      void reportZoom(range, initialZoom).catch(() =>
+        setWarning("Could not report camera zoom capability."),
+      );
       captureEvidence.current = { report: acquired.report };
       wake.current = new OptionalScreenWakeLock(
         navigator,
@@ -454,6 +504,73 @@ export function M2CameraSlot({
     connection.current = handle;
     setStatus("Connecting to Studio…");
   }
+  useEffect(() => {
+    if (side !== "camera" || !zoomRange || !track.current) return;
+    let cancelled = false;
+    let checking = false;
+    const checkCommand = async () => {
+      if (checking || cancelled) return;
+      checking = true;
+      try {
+        const token = cameraPublishAccessToken(localStorage, id, cameraRole);
+        const response = await fetch(`/api/games/${id}`, {
+          headers: token ? { authorization: `Bearer ${token}` } : {},
+          cache: "no-store",
+          signal: AbortSignal.timeout(5_000),
+        });
+        if (
+          !response.ok ||
+          cancelled ||
+          effectEpoch !== epoch.current ||
+          track.current !== effectTrack
+        )
+          return;
+        const game = (await response.json().catch(() => null)) as {
+          cameraZoom?: Partial<
+            Record<
+              typeof cameraRole,
+              { command?: { id: string; value: number; requestedAt: number } }
+            >
+          >;
+        } | null;
+        const command = game?.cameraZoom?.[cameraRole]?.command;
+        if (
+          !command ||
+          command.id === zoomCommand.current ||
+          !shouldApplyCameraZoomCommand(
+            command,
+            zoomCaptureStartedAt.current,
+          ) ||
+          cancelled ||
+          effectEpoch !== epoch.current ||
+          track.current !== effectTrack
+        )
+          return;
+        if (await updateZoom(command.value)) zoomCommand.current = command.id;
+      } catch {
+        // The next poll or local zoom report will recover; do not invent a zoom result.
+      } finally {
+        checking = false;
+      }
+    };
+    const effectEpoch = epoch.current;
+    const effectTrack = track.current;
+    void checkCommand();
+    const timer = setInterval(() => void checkCommand(), 2_000);
+    const freshness = setInterval(() => {
+      const current = track.current;
+      if (current)
+        void reportZoom(
+          zoomRange,
+          current.getSettings().zoom ?? zoomRange.min,
+        ).catch(() => undefined);
+    }, 15_000);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+      clearInterval(freshness);
+    };
+  }, [id, side, cameraRole, zoomRange]);
   function exportEvidence() {
     const blob = new Blob(
       [

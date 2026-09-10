@@ -132,7 +132,7 @@ internal sealed class Workspace : Form
                 else if (!recording && !busy) status.Text = selectedGame == null ? "Choose a game from your schedule to get started." : "Preparing this game for your camera phones.";
                 UpdateButtons();
             };
-            core.NewWindowRequested += (s, e) => { e.Handled = true; if (WorkspacePolicy.SameOrigin(e.Uri, origin)) Navigate(new Uri(e.Uri).PathAndQuery + new Uri(e.Uri).Fragment); else { Uri external; if (Uri.TryCreate(e.Uri, UriKind.Absolute, out external) && external.Scheme == "https" && external.Host == "studio.youtube.com" && String.IsNullOrEmpty(external.UserInfo)) Process.Start(new ProcessStartInfo(external.AbsoluteUri) { UseShellExecute = true }); else status.Text = "External account connections are available from the website in your browser."; } };
+            core.NewWindowRequested += (s, e) => { e.Handled = true; if (WorkspacePolicy.SameOrigin(e.Uri, origin)) Navigate(new Uri(e.Uri).PathAndQuery + new Uri(e.Uri).Fragment); else { if (WorkspacePolicy.ExternalYouTube(e.Uri)) Process.Start(new ProcessStartInfo(new Uri(e.Uri).AbsoluteUri) { UseShellExecute = true }); else status.Text = "External account connections are available from the website in your browser."; } };
             core.PermissionRequested += (s, e) => { e.State = CoreWebView2PermissionState.Deny; };
             core.WebMessageReceived += ReceiveGrant;
             var initialId = launchGame == null ? null : WorkspacePolicy.Game(launchGame, origin);

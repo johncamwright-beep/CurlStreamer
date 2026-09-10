@@ -754,6 +754,76 @@ describe("GET /api/games/[id] over HTTP", () => {
     );
   });
 
+  it("accepts only an assigned camera's own zoom status report", async () => {
+    anonymous();
+    const claimant = game.claims["camera-home"]!;
+    const response = await PATCH(
+      new Request(`${origin}/api/games/${testGameId}`, {
+        method: "PATCH",
+        headers: {
+          authorization: `Bearer ${await issueParticipantToken(testGameId, "camera-home", claimant)}`,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          type: "camera-zoom-status",
+          role: "camera-away",
+          supported: false,
+        }),
+      }),
+      { params: Promise.resolve({ id: testGameId }) },
+    );
+    expect(response.status).toBe(403);
+
+    const own = await PATCH(
+      new Request(`${origin}/api/games/${testGameId}`, {
+        method: "PATCH",
+        headers: {
+          authorization: `Bearer ${await issueParticipantToken(testGameId, "camera-home", claimant)}`,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          type: "camera-zoom-status",
+          role: "camera-home",
+          supported: false,
+        }),
+      }),
+      { params: Promise.resolve({ id: testGameId }) },
+    );
+    expect(own.status).toBe(200);
+    expect(mocks.updateGame).toHaveBeenLastCalledWith(
+      testGameId,
+      { type: "camera-zoom-status", role: "camera-home", supported: false },
+      expect.objectContaining({ role: "camera-home", claim: claimant }),
+    );
+  });
+
+  it("keeps scorer zoom commands bound to the scorer assignment", async () => {
+    anonymous();
+    const claimant = game.claims.scorer!;
+    const response = await PATCH(
+      new Request(`${origin}/api/games/${testGameId}`, {
+        method: "PATCH",
+        headers: {
+          authorization: `Bearer ${await issueParticipantToken(testGameId, "scorer", claimant)}`,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          type: "camera-zoom",
+          role: "camera-home",
+          commandId: "10000000-0000-4000-8000-000000000014",
+          value: 2,
+        }),
+      }),
+      { params: Promise.resolve({ id: testGameId }) },
+    );
+    expect(response.status).toBe(200);
+    expect(mocks.updateGame).toHaveBeenLastCalledWith(
+      testGameId,
+      expect.objectContaining({ type: "camera-zoom" }),
+      expect.objectContaining({ role: "scorer", claim: claimant }),
+    );
+  });
+
   it("binds scorer writes to the trusted token role and generation", async () => {
     anonymous();
     const claimant = game.claims.scorer!;

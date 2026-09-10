@@ -19,6 +19,9 @@ internal static class WorkspacePolicyTests
         Assert(WorkspacePolicy.Loopback("http://127.0.0.1:12345"));
         foreach (var address in new[] { "http://localhost:12345", "https://127.0.0.1:12345", "http://127.0.0.1:12345/command", "http://user@127.0.0.1:12345", "http://127.0.0.1:12345?secret=x" }) Assert(!WorkspacePolicy.Loopback(address));
         Assert(WorkspacePolicy.RestartYouTube("stopped", "stopped"));
+        Assert(WorkspacePolicy.ExternalYouTube("https://www.youtube.com/watch?v=abcdefgh_-1"));
+        Assert(WorkspacePolicy.ExternalYouTube("https://studio.youtube.com/channel/example"));
+        foreach (var value in new[] { "http://www.youtube.com/watch?v=abcdefgh_-1", "https://www.youtube.com.attacker/watch?v=abcdefgh_-1", "https://user@www.youtube.com/watch?v=abcdefgh_-1", "https://www.youtube.com:444/watch?v=abcdefgh_-1", "https://www.youtube.com/watch?v=short", "https://www.youtube.com/redirect?v=abcdefgh_-1", "https://www.youtube.com/watch?v=abcdefgh_-1&redirect=x" }) Assert(!WorkspacePolicy.ExternalYouTube(value));
         Assert(WorkspacePolicy.RestartYouTube("failed", "idle"));
         Assert(WorkspacePolicy.RestartYouTube("paired", "failed"));
         Assert(!WorkspacePolicy.RestartYouTube("unpaired", "idle"));

@@ -213,7 +213,8 @@ export async function PATCH(
     !(
       (body.data.type === "connection" ||
         body.data.type === "camera-health" ||
-        body.data.type === "camera-framing") &&
+        body.data.type === "camera-framing" ||
+        body.data.type === "camera-zoom-status") &&
       body.data.role === authorization.access.role
     )
   )

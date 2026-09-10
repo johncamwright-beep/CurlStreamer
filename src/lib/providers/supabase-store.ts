@@ -243,6 +243,36 @@ function applyAction(game: GameState, action: z.infer<typeof actionSchema>) {
     game.cameraFraming ??= {};
     game.cameraFraming[action.role] = action.mode;
   }
+  if (action.type === "camera-zoom") {
+    game.cameraZoom ??= {};
+    const current = game.cameraZoom[action.role];
+    game.cameraZoom[action.role] = {
+      supported: current?.supported ?? false,
+      updatedAt: current?.updatedAt ?? now,
+      ...(current?.min !== undefined ? { min: current.min } : {}),
+      ...(current?.max !== undefined ? { max: current.max } : {}),
+      ...(current?.step !== undefined ? { step: current.step } : {}),
+      ...(current?.value !== undefined ? { value: current.value } : {}),
+      command: { id: action.commandId, value: action.value, requestedAt: now },
+    };
+  }
+  if (action.type === "camera-zoom-status") {
+    game.cameraZoom ??= {};
+    const command = game.cameraZoom[action.role]?.command;
+    game.cameraZoom[action.role] = {
+      supported: action.supported,
+      updatedAt: now,
+      ...(action.supported
+        ? {
+            min: action.min!,
+            max: action.max!,
+            step: action.step!,
+            value: action.value!,
+          }
+        : {}),
+      ...(command ? { command } : {}),
+    };
+  }
   if (action.type === "audio") game.audioMuted = action.muted;
   if (action.type === "broadcast") game.broadcast = action.value;
   if (action.type === "close-game") {
@@ -290,7 +320,9 @@ export async function updateGame(
   expectedAuthority?: ParticipantAuthority,
 ) {
   const retryable =
-    action.type === "camera-health" || action.type === "connection";
+    action.type === "camera-health" ||
+    action.type === "connection" ||
+    action.type === "camera-zoom-status";
   const attempts = retryable ? 3 : 1;
   let capturedClaim: string | undefined;
   let capturedGeneration: number | undefined;
@@ -305,7 +337,11 @@ export async function updateGame(
       throw new Error("This game is completed");
     }
     if (expectedAuthority) {
-      if ("role" in action && action.role !== expectedAuthority.role)
+      if (
+        "role" in action &&
+        action.role !== expectedAuthority.role &&
+        !(action.type === "camera-zoom" && expectedAuthority.role === "scorer")
+      )
         throw new GameStateConflictError("Participant role changed");
       const currentGeneration =
         game.claimGenerations?.[expectedAuthority.role] ?? 0;

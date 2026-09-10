@@ -13,8 +13,8 @@ const viewports = [
   { width: 1024, height: 768 },
 ];
 
-async function createBroadcast(page: Page) {
-  await installGameFixture(page);
+async function createBroadcast(page: Page, operator = false) {
+  await installGameFixture(page, operator);
   const id = testGameId;
   await page.goto(`/broadcast/${id}`);
   await expect(page.getByTestId("broadcast-canvas")).toBeVisible();
@@ -107,7 +107,6 @@ test("fits and centres the complete logical program across desktop viewports", a
   await createBroadcast(page);
   for (const viewport of viewports) {
     await page.setViewportSize(viewport);
-    await expect(page.getByTestId("back-to-scoring")).toBeVisible();
     const expectedScale = Math.min(
       viewport.width / PROGRAM_WIDTH,
       viewport.height / PROGRAM_HEIGHT,
@@ -157,7 +156,7 @@ test("authorized operator navigation stays outside the program without changing 
   context,
 }) => {
   await page.setViewportSize({ width: 1024, height: 768 });
-  const id = await createBroadcast(page);
+  const id = await createBroadcast(page, true);
   const before = await programMeasurements(page);
   const navigation = page.getByTestId("back-to-scoring");
   await expect(navigation).toBeVisible();
@@ -169,7 +168,11 @@ test("authorized operator navigation stays outside the program without changing 
       await navigation.elementHandle(),
     ),
   ).toBe(false);
-  assertFitted(before, 1024, 576);
+  expect(before.logical).toEqual({
+    width: PROGRAM_WIDTH,
+    height: PROGRAM_HEIGHT,
+  });
+  expect(before.rect.left).toBeGreaterThanOrEqual(260);
 
   const anonymous = await context.browser()!.newContext({
     viewport: { width: 1024, height: 768 },
@@ -184,11 +187,26 @@ test("authorized operator navigation stays outside the program without changing 
   });
   await expect(anonymousPage.getByTestId("back-to-scoring")).toHaveCount(0);
   const anonymousRect = await programMeasurements(anonymousPage);
-  expect(anonymousRect.rect).toEqual(before.rect);
+  assertFitted(anonymousRect, 1024, 576);
   await anonymous.close();
 
   await navigation.click({ force: true });
   await expect(page).toHaveURL(new RegExp(`/score/${id}$`), {
     timeout: 15_000,
   });
+});
+
+test("operator zoom rail reserves preview space without changing its logical canvas", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1024, height: 768 });
+  await createBroadcast(page, true);
+  await expect(page.getByTestId("camera-zoom-rail")).toBeVisible();
+  const result = await programMeasurements(page);
+  expect(result.logical).toEqual({
+    width: PROGRAM_WIDTH,
+    height: PROGRAM_HEIGHT,
+  });
+  expect(result.rect.right).toBeLessThanOrEqual(result.viewport.width + 1);
+  expect(result.rect.left).toBeGreaterThanOrEqual(260);
 });

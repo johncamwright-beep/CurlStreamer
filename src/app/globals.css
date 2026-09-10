@@ -264,6 +264,85 @@ button {
   min-height: 44px;
   box-shadow: 0 8px 24px rgb(0 0 0 / 55%);
 }
+.camera-zoom-rail {
+  position: fixed;
+  z-index: 100;
+  left: max(0.75rem, env(safe-area-inset-left));
+  top: 50%;
+  width: min(15rem, calc(100vw - 1.5rem));
+  padding: 0.8rem;
+  color: #e2e8f0;
+  background: rgb(15 23 42 / 94%);
+  border: 1px solid rgb(148 163 184 / 45%);
+  border-radius: 0.7rem;
+  transform: translateY(-50%);
+  max-height: calc(100dvh - 140px);
+  overflow-y: auto;
+}
+.camera-zoom-rail h2 {
+  margin: 0 0 0.6rem;
+  font-size: 0.95rem;
+}
+.camera-zoom-control + .camera-zoom-control {
+  margin-top: 0.8rem;
+  padding-top: 0.8rem;
+  border-top: 1px solid rgb(148 163 184 / 30%);
+}
+.camera-zoom-control h3,
+.camera-zoom-control p {
+  margin: 0;
+}
+.camera-zoom-control p {
+  min-height: 1.3rem;
+  color: #cbd5e1;
+  font-size: 0.8rem;
+}
+.camera-zoom-buttons {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.4rem;
+  margin: 0.45rem 0;
+}
+.camera-zoom-buttons button {
+  min-height: 44px;
+  font-size: 1.35rem;
+  border: 1px solid #43586c;
+  border-radius: 0.5rem;
+  background: #172b3c;
+}
+.camera-zoom-buttons button:disabled {
+  opacity: 0.4;
+}
+.camera-zoom-buttons button:not(:disabled):hover {
+  background: #205064;
+}
+.camera-zoom-control input {
+  accent-color: #60dbe7;
+}
+.camera-zoom-control input {
+  width: 100%;
+  min-height: 44px;
+}
+@media (max-width: 700px) {
+  .camera-zoom-rail {
+    top: auto;
+    bottom: max(4.5rem, env(safe-area-inset-bottom));
+    width: calc(100vw - 1.5rem);
+    max-height: 224px;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.6rem;
+    transform: none;
+  }
+  .camera-zoom-rail h2 {
+    display: none;
+  }
+  .camera-zoom-control + .camera-zoom-control {
+    margin: 0;
+    padding: 0;
+    border: 0;
+  }
+}
 .app-icon {
   width: 18px;
   height: 18px;

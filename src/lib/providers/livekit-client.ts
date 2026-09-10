@@ -82,10 +82,12 @@ export function hardwareZoomRange(
   track: MediaStreamTrack,
 ): ZoomRange | undefined {
   const zoom = (
-    track.getCapabilities?.() as MediaTrackCapabilities & {
-      zoom?: { min?: number; max?: number; step?: number };
-    }
-  ).zoom;
+    track.getCapabilities?.() as
+      | (MediaTrackCapabilities & {
+          zoom?: { min?: number; max?: number; step?: number };
+        })
+      | undefined
+  )?.zoom;
   if (zoom?.min === undefined || zoom.max === undefined || zoom.max <= zoom.min)
     return;
   return { min: zoom.min, max: zoom.max, step: zoom.step || 0.1 };
@@ -93,7 +95,9 @@ export function hardwareZoomRange(
 
 export function clampZoom(value: number, range: ZoomRange) {
   const clamped = Math.min(range.max, Math.max(range.min, value));
-  return Math.round(clamped / range.step) * range.step;
+  const stepped =
+    range.min + Math.round((clamped - range.min) / range.step) * range.step;
+  return Math.min(range.max, Math.max(range.min, stepped));
 }
 
 export type RearLens = {

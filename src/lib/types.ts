@@ -81,6 +81,7 @@ export interface GameState {
   connections: Record<Role, boolean>;
   cameraHealth?: Partial<Record<"camera-home" | "camera-away", CameraHealth>>;
   cameraFraming?: Partial<Record<"camera-home" | "camera-away", CameraFraming>>;
+  cameraZoom?: Partial<Record<"camera-home" | "camera-away", CameraZoomState>>;
   claims: Partial<Record<Role, string>>;
   /** Opaque server-issued authority epochs; absent means legacy generation 0. */
   claimGenerations?: Partial<Record<Role, number>>;
@@ -95,6 +96,17 @@ export interface GameState {
     mutedPrevious: boolean;
     muteDuring: boolean;
   };
+}
+
+/** Capability is reported by the assigned phone; commands are director intent. */
+export interface CameraZoomState {
+  supported: boolean;
+  updatedAt: number;
+  min?: number;
+  max?: number;
+  step?: number;
+  value?: number;
+  command?: { id: string; value: number; requestedAt: number };
 }
 
 export type CameraHealthPhase =

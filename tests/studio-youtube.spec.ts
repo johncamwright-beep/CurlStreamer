@@ -90,6 +90,13 @@ test("Studio YouTube sends game-scoped commands and expires live status", async 
   await expect(page.getByRole("link", { name: watchUrl })).toHaveCount(0);
   await report("fixture-game", true);
   await expect(page.getByRole("status")).toHaveText("● LIVE");
+  await expect(
+    page.getByRole("button", { name: "End Stream", exact: true }),
+  ).toBeEnabled();
+  await expect(page.getByRole("link", { name: watchUrl })).toHaveAttribute(
+    "target",
+    "_blank",
+  );
   await expect(page.getByRole("link", { name: watchUrl })).toHaveAttribute(
     "href",
     watchUrl,

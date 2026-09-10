@@ -89,13 +89,17 @@ export function GameSummaryPost({
             </button>
           </div>
           <p className="text-sm text-slate-400">
-            Connect social accounts in My Account once the Meta integration is
-            available. Saving here does not post to Facebook or Instagram.
+            Connect social accounts in Account &amp; Settings once the Meta
+            integration is available. Saving here does not post to Facebook or
+            Instagram.
           </p>
           {message && <p role="status">{message}</p>}
           {saved && (
-            <a className="min-h-11 text-cyan-300 underline" href="/account">
-              Edit this summary in My Account → Team news
+            <a
+              className="min-h-11 text-cyan-300 underline"
+              href="/account?section=news"
+            >
+              Edit this summary in Account &amp; Settings → News posts
             </a>
           )}
         </div>

@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { z } from "zod";
 import { randomUUID } from "node:crypto";
 import { createAdminSupabaseClient } from "@/lib/supabase/admin";
 import {
@@ -44,6 +45,22 @@ export async function PATCH(request: Request) {
         { error: parsed.error.issues[0]?.message ?? "Check the team details." },
         { status: 400 },
       );
+    if (parsed.data.photo) {
+      const prefix = createAdminSupabaseClient()
+        .storage.from("team-public-media")
+        .getPublicUrl(auth.organizationId + "/").data.publicUrl;
+      if (
+        !parsed.data.photo.startsWith(prefix) ||
+        !/^[a-f0-9-]+\.(png|jpg|jpeg|webp)$/.test(
+          parsed.data.photo.slice(prefix.length),
+        )
+      ) {
+        return NextResponse.json(
+          { error: "Use a photo uploaded to this team." },
+          { status: 400 },
+        );
+      }
+    }
     const { error } = await createAdminSupabaseClient().rpc(
       "update_team_public_profile",
       { p_org: auth.organizationId, p_settings: parsed.data },
@@ -77,7 +94,9 @@ export async function POST(request: Request) {
         { error: "Team administrator access is required." },
         { status: 403 },
       );
-    const file = (await request.formData()).get("file");
+    const form = await request.formData();
+    const kind = z.enum(["logo", "photo"]).parse(form.get("kind") ?? "logo");
+    const file = form.get("file");
     if (!(file instanceof File))
       return NextResponse.json(
         { error: "Choose a team logo." },
@@ -100,15 +119,23 @@ export async function POST(request: Request) {
     if (error) throw Error("Logo upload failed.");
     const logo = db.storage.from("team-public-media").getPublicUrl(path)
       .data.publicUrl;
-    const updated = await db
-      .from("team_public_profiles")
-      .update({ logo_url: logo })
-      .eq("organization_id", auth.organizationId);
+    const updated =
+      kind === "photo"
+        ? await db.rpc("update_team_public_profile", {
+            p_org: auth.organizationId,
+            p_settings: { ...current.settings, photo: logo },
+          })
+        : await db
+            .from("team_public_profiles")
+            .update({ logo_url: logo })
+            .eq("organization_id", auth.organizationId);
     if (updated.error) {
       await db.storage.from("team-public-media").remove([path]);
       throw Error("Logo could not be saved.");
     }
-    return NextResponse.json({ logo }, { headers });
+    return NextResponse.json(kind === "photo" ? { photo: logo } : { logo }, {
+      headers,
+    });
   } catch {
     return NextResponse.json(
       {

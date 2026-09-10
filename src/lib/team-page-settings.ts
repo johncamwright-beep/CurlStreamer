@@ -44,6 +44,7 @@ export const teamPageSettingsSchema = z
         "Choose a different team address.",
       ),
     description: z.string().trim().max(1000),
+    photo: z.union([z.literal(""), z.string().url().max(1000)]).default(""),
     published: z.boolean(),
     results: z.boolean(),
     upcoming: z.boolean(),
@@ -63,6 +64,7 @@ export function defaultTeamPageSettings(name: string): TeamPageSettings {
       .replace(/[^a-z0-9]+/g, "-")
       .replace(/^-|-$/g, ""),
     description: "",
+    photo: "",
     published: false,
     results: true,
     upcoming: true,

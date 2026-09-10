@@ -76,6 +76,13 @@ export default async function PublicTeamPage({
           )}
         </div>
       </header>
+      {s.photo && (
+        <img
+          src={s.photo}
+          alt={s.name + " team photo"}
+          className="mb-5 max-h-96 w-full rounded-xl object-contain"
+        />
+      )}
       {!!sponsors.length && (
         <section className="panel mb-5">
           <h2 className="mb-4 text-xl font-bold">Thank you to our sponsors</h2>

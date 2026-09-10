@@ -1,16 +1,34 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-const mocks = vi.hoisted(() => ({ context: vi.fn(), rpc: vi.fn() }));
+const mocks = vi.hoisted(() => ({
+  context: vi.fn(),
+  rpc: vi.fn(),
+  read: vi.fn(),
+  validate: vi.fn(),
+  upload: vi.fn(),
+  remove: vi.fn(),
+}));
 vi.mock("@/lib/providers/team-settings", () => ({
   teamSettingsContext: mocks.context,
-  readTeamSettings: vi.fn(),
+  readTeamSettings: mocks.read,
 }));
 vi.mock("@/lib/supabase/admin", () => ({
-  createAdminSupabaseClient: () => ({ rpc: mocks.rpc }),
+  createAdminSupabaseClient: () => ({
+    rpc: mocks.rpc,
+    storage: {
+      from: () => ({
+        upload: mocks.upload,
+        remove: mocks.remove,
+        getPublicUrl: (path: string) => ({
+          data: { publicUrl: "https://storage.test/team-public-media/" + path },
+        }),
+      }),
+    },
+  }),
 }));
 vi.mock("@/lib/providers/sponsor-library", () => ({
-  validateSponsorImage: vi.fn(),
+  validateSponsorImage: mocks.validate,
 }));
-import { PATCH } from "./route";
+import { PATCH, POST } from "./route";
 import { defaultTeamPageSettings } from "@/lib/team-page-settings";
 beforeEach(() => {
   vi.clearAllMocks();
@@ -84,5 +102,56 @@ describe("team settings writes", () => {
       saved: true,
       settings: { slug: "team-benning", published: true },
     });
+  });
+});
+
+it("rejects a photo belonging to a different organization", async () => {
+  mocks.context.mockResolvedValue({ organizationId: "trusted-org" });
+  const response = await PATCH(
+    new Request("https://test/api/account/team", {
+      method: "PATCH",
+      body: JSON.stringify({
+        ...defaultTeamPageSettings("Team Benning"),
+        photo: "https://storage.test/team-public-media/other-org/123.png",
+      }),
+    }),
+  );
+  expect(response.status).toBe(400);
+  expect(mocks.rpc).not.toHaveBeenCalled();
+});
+it("stores the validated team photo separately from the logo in the authorized profile", async () => {
+  mocks.context.mockResolvedValue({ organizationId: "trusted-org" });
+  mocks.read.mockResolvedValue({
+    settings: defaultTeamPageSettings("Team Benning"),
+    logo: "existing-logo",
+  });
+  mocks.rpc.mockResolvedValue({ error: null });
+  mocks.upload.mockResolvedValue({ error: null });
+  mocks.validate.mockResolvedValue({
+    extension: "png",
+    bytes: Buffer.from("validated image"),
+    mime: "image/png",
+  });
+  const form = new FormData();
+  form.set("kind", "photo");
+  form.set("file", new File(["test"], "team.png", { type: "image/png" }));
+  const response = await POST(
+    new Request("https://test/api/account/team", {
+      method: "POST",
+      body: form,
+    }),
+  );
+  expect(response.status).toBe(200);
+  const body = await response.json();
+  expect(body.photo).toMatch(
+    /^https:\/\/storage.test\/team-public-media\/trusted-org\/[a-f0-9-]+\.png$/,
+  );
+  expect(mocks.validate).toHaveBeenCalledOnce();
+  expect(mocks.rpc).toHaveBeenLastCalledWith("update_team_public_profile", {
+    p_org: "trusted-org",
+    p_settings: {
+      ...defaultTeamPageSettings("Team Benning"),
+      photo: body.photo,
+    },
   });
 });

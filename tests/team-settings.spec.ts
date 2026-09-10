@@ -22,8 +22,13 @@ test("team settings save visibility and social profiles without publishing by de
   await page.getByRole("button", { name: "Sign in", exact: true }).click();
   await page.waitForURL("**/account");
   await expect(page.getByText("Display name", { exact: true })).toHaveCount(0);
+  await page
+    .getByRole("button", { name: "Public team page", exact: true })
+    .click();
   await expect(page.getByLabel("Publish team page")).not.toBeChecked();
+  await page.getByRole("button", { name: "Team info", exact: true }).click();
   await page.getByLabel("About the team").fill("Curling together.");
+  await page.getByRole("button", { name: "Social media", exact: true }).click();
   await page
     .getByLabel("Facebook Page link")
     .fill("https://www.facebook.com/teambenning");
@@ -75,6 +80,9 @@ test("public page link follows saved publication and slug, and navigates in this
   await page.getByLabel("Password").fill("playwright-password");
   await page.getByRole("button", { name: "Sign in", exact: true }).click();
   await page.waitForURL("**/account");
+  await page
+    .getByRole("button", { name: "Public team page", exact: true })
+    .click();
   const link = page.getByRole("link", { name: "View saved public page" });
   await expect(link).toHaveAttribute("href", "/teams/team-benning");
   await page.getByLabel("Team subdomain").fill("new-team");
@@ -140,6 +148,7 @@ test("team news drafts, edits and removal stay compact and explicit", async ({
   await page.getByLabel("Password").fill("playwright-password");
   await page.getByRole("button", { name: "Sign in", exact: true }).click();
   await page.waitForURL("**/account");
+  await page.getByRole("button", { name: "News posts", exact: true }).click();
   const news = page.getByRole("region", { name: "Manage team news" });
   await news.getByRole("button", { name: "New post", exact: true }).click();
   await expect(news.getByLabel("Publish this post")).not.toBeChecked();
@@ -162,4 +171,74 @@ test("team news drafts, edits and removal stay compact and explicit", async ({
       () => document.documentElement.scrollWidth <= window.innerWidth,
     ),
   ).toBe(true);
+});
+
+test("account sections preserve edits, support back navigation and save a team photo", async ({
+  page,
+}, testInfo) => {
+  let settings = defaultTeamPageSettings("Team Benning");
+  const photo = "https://media.test/team-photo.png";
+  await page.route("https://media.test/**", (route) =>
+    route.fulfill({
+      contentType: "image/svg+xml",
+      body: '<svg xmlns="http://www.w3.org/2000/svg" width="600" height="300"><rect width="600" height="300" fill="#164e63"/></svg>',
+    }),
+  );
+  await page.route("**/api/account/team", async (route) => {
+    if (route.request().method() === "POST") {
+      settings = { ...settings, photo };
+      return route.fulfill({ json: { photo } });
+    }
+    if (route.request().method() === "PATCH") {
+      settings = route.request().postDataJSON();
+      return route.fulfill({ json: { saved: true, settings } });
+    }
+    return route.fulfill({ json: { settings, logo: null, canEdit: true } });
+  });
+  await page.goto("/login?next=/account");
+  await page.getByLabel("Email address").fill("admin@youtube.test");
+  await page.getByLabel("Password").fill("playwright-password");
+  await page.getByRole("button", { name: "Sign in", exact: true }).click();
+  await page.waitForURL("**/account");
+  const menu = page.getByRole("navigation", {
+    name: "Account settings sections",
+  });
+  await expect(page.getByLabel("Sign-in email")).toBeVisible();
+  await menu.getByRole("button", { name: "Team info", exact: true }).click();
+  await page.getByLabel("About the team").fill("Our team biography.");
+  await page.getByLabel("Upload team photo").setInputFiles({
+    name: "team.png",
+    mimeType: "image/png",
+    buffer: Buffer.from("fixture upload intercepted"),
+  });
+  await expect(page.getByText("Team photo saved.")).toBeVisible();
+  await menu
+    .getByRole("button", { name: "Public team page", exact: true })
+    .click();
+  await expect(page.getByLabel("About the team")).toBeHidden();
+  await page.goBack();
+  await expect(page.getByLabel("About the team")).toHaveValue(
+    "Our team biography.",
+  );
+  await expect(
+    page.getByAltText("Team photo", { exact: true }),
+  ).toHaveAttribute("src", photo);
+  await page.getByRole("button", { name: "Save changes", exact: true }).click();
+  await expect(page.getByText("Team settings saved.")).toBeVisible();
+  await page.reload();
+  await expect(page.getByLabel("About the team")).toHaveValue(
+    "Our team biography.",
+  );
+  await expect(
+    page.getByAltText("Team photo", { exact: true }),
+  ).toHaveAttribute("src", photo);
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= window.innerWidth,
+    ),
+  ).toBe(true);
+  await page.screenshot({
+    path: testInfo.outputPath("account-settings.png"),
+    fullPage: true,
+  });
 });

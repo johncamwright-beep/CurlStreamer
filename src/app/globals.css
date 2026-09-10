@@ -488,3 +488,53 @@ button {
   outline: 2px solid #67e8f9;
   outline-offset: 2px;
 }
+
+.account-workspace {
+  display: grid;
+  grid-template-columns: 210px minmax(0, 1fr);
+  gap: 1.25rem;
+  align-items: start;
+}
+.account-sidebar {
+  position: sticky;
+  top: 1rem;
+  display: grid;
+  gap: 0.3rem;
+  padding: 0.5rem;
+}
+.account-sidebar button {
+  min-height: 44px;
+  border-radius: 0.65rem;
+  padding: 0.7rem 0.8rem;
+  text-align: left;
+  color: #cbd5e1;
+}
+.account-sidebar button:hover {
+  background: #1e293b;
+}
+.account-sidebar button[aria-current="page"] {
+  background: #164e63;
+  color: #67e8f9;
+  font-weight: 700;
+}
+.account-sidebar button:focus-visible {
+  outline: 2px solid #67e8f9;
+  outline-offset: 2px;
+}
+.account-settings-group:not([hidden]) {
+  display: grid;
+  align-content: start;
+  gap: 0.75rem;
+}
+.account-workspace [hidden] {
+  display: none !important;
+}
+@media (max-width: 700px) {
+  .account-workspace {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .account-sidebar {
+    position: static;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}

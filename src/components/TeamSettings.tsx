@@ -5,7 +5,13 @@ import {
   teamPageSettingsSchema,
   type TeamPageSettings,
 } from "@/lib/team-page-settings";
-export function TeamSettings({ name }: { name: string }) {
+export function TeamSettings({
+  name,
+  section = "team",
+}: {
+  name: string;
+  section?: "team" | "public" | "social";
+}) {
   const [settings, setSettings] = useState(defaultTeamPageSettings(name)),
     [savedSettings, setSavedSettings] = useState<TeamPageSettings | null>(null),
     [logo, setLogo] = useState<string | null>(null),
@@ -60,20 +66,25 @@ export function TeamSettings({ name }: { name: string }) {
       setBusy(false);
     }
   }
-  async function upload(file: File | undefined) {
+  async function upload(
+    file: File | undefined,
+    kind: "logo" | "photo" = "logo",
+  ) {
     if (!file) return;
     setBusy(true);
     try {
       const form = new FormData();
       form.append("file", file);
+      form.append("kind", kind);
       const response = await fetch("/api/account/team", {
         method: "POST",
         body: form,
       });
       const body = await response.json();
       if (!response.ok) throw Error(body.error);
-      setLogo(body.logo);
-      setMessage("Team logo saved.");
+      if (kind === "logo") setLogo(body.logo);
+      else change("photo", body.photo);
+      setMessage(kind === "logo" ? "Team logo saved." : "Team photo saved.");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Upload failed.");
     } finally {
@@ -83,7 +94,13 @@ export function TeamSettings({ name }: { name: string }) {
   return (
     <section className="grid gap-4" aria-label="Team settings">
       <div className="flex items-center justify-between">
-        <h2 className="text-xl font-bold">Team settings</h2>
+        <h2 className="text-xl font-bold">
+          {section === "team"
+            ? "Team info"
+            : section === "public"
+              ? "Public team page"
+              : "Social media"}
+        </h2>
         <button
           type="button"
           className="btn"
@@ -99,12 +116,8 @@ export function TeamSettings({ name }: { name: string }) {
           Reload team settings
         </button>
       )}
-      <fieldset
-        disabled={!ready || !canEdit || busy}
-        className="grid gap-4 md:grid-cols-2"
-      >
-        <div className="panel grid content-start gap-3">
-          <h3 className="font-bold">Team details</h3>
+      <fieldset disabled={!ready || !canEdit || busy} className="grid gap-4">
+        <div hidden={section !== "team"} className="account-settings-group">
           <label>
             Team name
             <input
@@ -143,9 +156,28 @@ export function TeamSettings({ name }: { name: string }) {
             PNG, JPEG or WebP, up to 4 MB. This artwork can appear on your
             broadcasts and public team page.
           </p>
+          {settings.photo && (
+            <img
+              src={settings.photo}
+              alt="Team photo"
+              className="max-h-64 w-full object-contain"
+            />
+          )}
+          <label>
+            Upload team photo
+            <input
+              type="file"
+              accept="image/png,image/jpeg,image/webp"
+              className="mt-2 block min-h-11 w-full"
+              onChange={(e) => void upload(e.target.files?.[0], "photo")}
+            />
+          </label>
+          <p className="text-sm text-slate-400">
+            PNG, JPEG or WebP, up to 4 MB. Your team photo appears on your
+            published team page.
+          </p>
         </div>
-        <div className="panel grid content-start gap-3">
-          <h3 className="font-bold">Public team page</h3>
+        <div hidden={section !== "public"} className="account-settings-group">
           <label>
             Team address
             <div className="flex items-center gap-1">
@@ -201,8 +233,7 @@ export function TeamSettings({ name }: { name: string }) {
             </p>
           )}
         </div>
-        <div className="panel grid gap-3 md:col-span-2">
-          <h3 className="font-bold">Social media</h3>
+        <div hidden={section !== "social"} className="account-settings-group">
           <div className="grid gap-4 md:grid-cols-2">
             <label>
               Facebook Page link

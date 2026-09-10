@@ -259,11 +259,10 @@ export function AppNavigation({
               <h2 className="app-navigation-heading">Account</h2>
               <ul>
                 {renderLinks([
-                  { href: "/account", label: "My account", icon: "account" },
                   {
-                    href: "/settings/youtube",
-                    label: "YouTube Settings",
-                    icon: "broadcast",
+                    href: "/account",
+                    label: "Account & Settings",
+                    icon: "account",
                   },
                 ])}
               </ul>

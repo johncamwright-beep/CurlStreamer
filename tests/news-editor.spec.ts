@@ -57,6 +57,7 @@ test("formatted news and inline photos survive save and reopen", async ({
   await page.getByLabel("Password").fill("playwright-password");
   await page.getByRole("button", { name: "Sign in", exact: true }).click();
   await page.waitForURL("**/account");
+  await page.getByRole("button", { name: "News posts", exact: true }).click();
   const news = page.getByRole("region", { name: "Manage team news" });
   await news.getByRole("button", { name: "New post", exact: true }).click();
   const editor = news.getByLabel("News text", { exact: true });

@@ -196,6 +196,14 @@ internal sealed class Workspace : Form
         var gameId = runningGame; busy = true; youtubeError = "";
         try {
             if (start) {
+                Dictionary<string, object> previous;
+                using (var response = await local.GetAsync(localAddress + "/state")) { response.EnsureSuccessStatusCode(); previous = json.Deserialize<Dictionary<string, object>>(await response.Content.ReadAsStringAsync()); }
+                if (WorkspacePolicy.RestartYouTube(TextValue(previous, "pairing"), TextValue(previous, "streaming"))) {
+                    // Grants and output sinks are single-use. Require confirmed cleanup before replacing them.
+                    status.Text = "Reconnecting Studio for a new YouTube broadcast…";
+                    await CloseController();
+                    await ConnectProgram(gameId);
+                }
                 var prepared = await WebsiteYouTube(gameId, "", new { action = "prepare" });
                 if (prepared != "prepared") throw new InvalidDataException();
                 Dictionary<string, object> state;
@@ -212,16 +220,22 @@ internal sealed class Workspace : Form
                 ApplyState(await Command(new { action = "stop-stream" }));
                 await WebsiteYouTube(gameId, "", new { action = "stop" });
             }
-        } catch {
-            youtubeError = "YouTube setup could not finish. Check the YouTube account connection before trying again.";
+        } catch (Exception error) {
+            youtubeError = error is WorkspaceFailure ? error.Message : "Studio could not start YouTube. Close and reopen Studio, then try Broadcast to YouTube again.";
             if (WorkspacePolicy.Game(web.CoreWebView2.Source, origin) == gameId)
-                web.ExecuteScriptAsync("window.dispatchEvent(new CustomEvent('studio-youtube-status',{detail:" + json.Serialize(new { gameId = gameId, available = true, busy = false, streaming = "failed", live = false, receiving = false, message = "YouTube setup could not finish. Check the YouTube account connection before trying again." }) + "}));");
+                web.ExecuteScriptAsync("window.dispatchEvent(new CustomEvent('studio-youtube-status',{detail:" + json.Serialize(new { gameId = gameId, available = true, busy = false, streaming = "failed", live = false, receiving = false, message = youtubeError }) + "}));");
         } finally { busy = false; UpdateButtons(); }
     }
     private async Task StartRecording() {
         if (busy || closing || recording || selectedGame == null) return;
         busy = true; UpdateButtons(); var gameId = selectedGame;
         try {
+            await ConnectProgram(gameId);
+        } catch (WorkspaceFailure e) { status.Text = e.Message; }
+        catch { status.Text = "Cameras could not connect. Check your connection and Studio installation, then try again."; }
+        finally { busy = false; UpdateButtons(); }
+    }
+    private async Task ConnectProgram(string gameId) {
             status.Text = "Checking this PC and connecting your game…";
             if (child != null && (child.HasExited || runningGame != gameId)) await CloseController();
             if (child == null) await StartController(gameId);
@@ -232,9 +246,6 @@ internal sealed class Workspace : Form
             status.Text = "Connecting cameras…";
             ApplyState(await Command(new { action = "start-program", invitation = code }));
             if (!recording) throw new WorkspaceFailure("Cameras could not connect. Your game and camera assignments are retained. Try Connect cameras again.");
-        } catch (WorkspaceFailure e) { status.Text = e.Message; }
-        catch { status.Text = "Cameras could not connect. Check your connection and Studio installation, then try again."; }
-        finally { busy = false; UpdateButtons(); }
     }
     private async Task StopRecording() {
         if (busy || !recording) return;

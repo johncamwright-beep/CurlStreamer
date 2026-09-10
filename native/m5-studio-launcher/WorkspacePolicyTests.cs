@@ -18,6 +18,11 @@ internal static class WorkspacePolicyTests
         }
         Assert(WorkspacePolicy.Loopback("http://127.0.0.1:12345"));
         foreach (var address in new[] { "http://localhost:12345", "https://127.0.0.1:12345", "http://127.0.0.1:12345/command", "http://user@127.0.0.1:12345", "http://127.0.0.1:12345?secret=x" }) Assert(!WorkspacePolicy.Loopback(address));
+        Assert(WorkspacePolicy.RestartYouTube("stopped", "stopped"));
+        Assert(WorkspacePolicy.RestartYouTube("failed", "idle"));
+        Assert(WorkspacePolicy.RestartYouTube("paired", "failed"));
+        Assert(!WorkspacePolicy.RestartYouTube("unpaired", "idle"));
+        Assert(!WorkspacePolicy.RestartYouTube("paired", "armed"));
         Assert(ProgramPreview.Read(null) == null);
         Assert(ProgramPreview.Read("Local\\OtherProgram") == null);
         var mappingName = "Local\\CurlStreamerPreview-" + Guid.NewGuid().ToString("N");

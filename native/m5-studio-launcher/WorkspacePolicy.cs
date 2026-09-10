@@ -24,6 +24,10 @@ internal static class WorkspacePolicy
             return result.Substring(4);
         }
     }
+    internal static bool RestartYouTube(string pairing, string streaming)
+    {
+        return pairing == "stopped" || pairing == "failed" || streaming == "stopped" || streaming == "failed";
+    }
     internal static bool SameOrigin(string value, string origin)
     {
         Uri url;

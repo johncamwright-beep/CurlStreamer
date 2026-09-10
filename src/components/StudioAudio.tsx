@@ -77,7 +77,12 @@ export function StudioAudio({
           );
         })}
       </div>
-      <StudioUsbAudio />
+      <details className="mt-2">
+        <summary className="min-h-11 flex items-center cursor-pointer text-sm">
+          USB microphone setup
+        </summary>
+        <StudioUsbAudio />
+      </details>
     </section>
   );
 }

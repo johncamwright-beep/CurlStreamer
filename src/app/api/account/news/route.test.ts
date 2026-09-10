@@ -110,6 +110,60 @@ it("rejects empty text and malformed publication flags", async () => {
   expect((await POST(request("POST", { published: "yes" }))).status).toBe(400);
   expect(m.rpc).not.toHaveBeenCalled();
 });
+it("validates rich content and derives the stored summary from it", async () => {
+  const content = {
+    type: "doc",
+    content: [
+      {
+        type: "paragraph",
+        content: [{ type: "text", text: "Formatted update" }],
+      },
+    ],
+  };
+  expect(
+    (
+      await POST(
+        request("POST", {
+          summary: "forged",
+          content: JSON.stringify(content),
+        }),
+      )
+    ).status,
+  ).toBe(200);
+  expect(m.rpc).toHaveBeenCalledWith(
+    "manage_team_news",
+    expect.objectContaining({
+      p_summary: "Formatted update",
+      p_content: content,
+      p_delete: false,
+    }),
+  );
+});
+it("rejects unsafe rich links and oversized raw JSON before writing", async () => {
+  const malicious = {
+    type: "doc",
+    content: [
+      {
+        type: "paragraph",
+        content: [
+          {
+            type: "text",
+            text: "Click",
+            marks: [{ type: "link", attrs: { href: "javascript:alert(1)" } }],
+          },
+        ],
+      },
+    ],
+  };
+  expect(
+    (await POST(request("POST", { content: JSON.stringify(malicious) })))
+      .status,
+  ).toBe(400);
+  expect(
+    (await POST(request("POST", { content: "x".repeat(40001) }))).status,
+  ).toBe(400);
+  expect(m.rpc).not.toHaveBeenCalled();
+});
 it("removes only the authenticated team's post with a matching revision", async () => {
   expect(
     (

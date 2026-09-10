@@ -66,4 +66,23 @@ describe("team settings writes", () => {
     ).toBe(400);
     expect(mocks.rpc).not.toHaveBeenCalled();
   });
+  it("returns the normalized saved address for public-page navigation", async () => {
+    mocks.context.mockResolvedValue({ organizationId: "trusted-org" });
+    mocks.rpc.mockResolvedValue({ error: null });
+    const response = await PATCH(
+      new Request("https://test/api/account/team", {
+        method: "PATCH",
+        body: JSON.stringify({
+          ...defaultTeamPageSettings("Team Benning"),
+          slug: "  Team-Benning  ",
+          published: true,
+        }),
+      }),
+    );
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      saved: true,
+      settings: { slug: "team-benning", published: true },
+    });
+  });
 });

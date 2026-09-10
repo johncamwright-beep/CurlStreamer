@@ -41,6 +41,64 @@ test("team settings save visibility and social profiles without publishing by de
   ).toBeDisabled();
 });
 
+test("public page link follows saved publication and slug, and navigates in this tab", async ({
+  page,
+}) => {
+  let settings = {
+    ...defaultTeamPageSettings("Team Benning"),
+    published: true,
+  };
+  let rejectSave = false;
+  await page.route("**/api/account/team", async (route) => {
+    if (route.request().method() === "PATCH") {
+      if (rejectSave)
+        return route.fulfill({
+          status: 409,
+          json: { error: "That team address is already taken." },
+        });
+      settings = route.request().postDataJSON();
+      return route.fulfill({ json: { saved: true, settings } });
+    }
+    return route.fulfill({ json: { settings, logo: null, canEdit: true } });
+  });
+  await page.route("**/api/account/news", (route) =>
+    route.fulfill({ json: { posts: [] } }),
+  );
+  await page.route("**/teams/new-team", (route) =>
+    route.fulfill({
+      contentType: "text/html",
+      body: "<h1>Public team page</h1>",
+    }),
+  );
+  await page.goto("/login?next=/account");
+  await page.getByLabel("Email address").fill("admin@youtube.test");
+  await page.getByLabel("Password").fill("playwright-password");
+  await page.getByRole("button", { name: "Sign in", exact: true }).click();
+  await page.waitForURL("**/account");
+  const link = page.getByRole("link", { name: "View saved public page" });
+  await expect(link).toHaveAttribute("href", "/teams/team-benning");
+  await page.getByLabel("Team subdomain").fill("new-team");
+  await expect(link).toHaveAttribute("href", "/teams/team-benning");
+  rejectSave = true;
+  await page.getByRole("button", { name: "Save changes" }).click();
+  await expect(
+    page.getByText("That team address is already taken."),
+  ).toBeVisible();
+  await expect(link).toHaveAttribute("href", "/teams/team-benning");
+  rejectSave = false;
+  await page.getByLabel("Publish team page").uncheck();
+  await page.getByRole("button", { name: "Save changes" }).click();
+  await expect(link).toHaveCount(0);
+  await page.getByLabel("Publish team page").check();
+  await page.getByRole("button", { name: "Save changes" }).click();
+  await expect(link).toHaveAttribute("href", "/teams/new-team");
+  await link.click();
+  await expect(page).toHaveURL(/\/teams\/new-team$/);
+  await expect(
+    page.getByRole("heading", { name: "Public team page" }),
+  ).toBeVisible();
+});
+
 test("team news drafts, edits and removal stay compact and explicit", async ({
   page,
 }) => {

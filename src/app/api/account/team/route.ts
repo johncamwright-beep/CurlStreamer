@@ -58,7 +58,10 @@ export async function PATCH(request: Request) {
         },
         { status: error.code === "23505" ? 409 : 503 },
       );
-    return NextResponse.json({ saved: true }, { headers });
+    return NextResponse.json(
+      { saved: true, settings: parsed.data },
+      { headers },
+    );
   } catch {
     return NextResponse.json(
       { error: "Team settings could not be saved." },

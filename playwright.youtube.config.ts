@@ -10,6 +10,7 @@ export default defineConfig({
     "dashboard.spec.ts",
     "game-setup.spec.ts",
     "team-settings.spec.ts",
+    "news-editor.spec.ts",
   ],
   fullyParallel: false,
   webServer: [

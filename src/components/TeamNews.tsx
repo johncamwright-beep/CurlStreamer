@@ -1,9 +1,18 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
+import { NewsContent } from "@/components/NewsContent";
+import { NewsRichEditor } from "@/components/NewsRichEditor";
+import {
+  legacyNewsContent,
+  newsContentSchema,
+  newsPlainText,
+  type NewsContent as NewsDocument,
+} from "@/lib/news-content";
 type Post = {
   id: string;
   revision: number;
   summary: string;
+  content: unknown;
   photo_url: string | null;
   published: boolean;
   created_at: string;
@@ -17,12 +26,14 @@ export function TeamNews() {
   const [editor, setEditor] = useState<{ id: string; revision: number } | null>(
       null,
     ),
-    [summary, setSummary] = useState(""),
+    [content, setContent] = useState<NewsDocument>(legacyNewsContent("")),
     [photo, setPhoto] = useState<File>(),
     [existingPhoto, setExistingPhoto] = useState<string | null>(null),
     [removePhoto, setRemovePhoto] = useState(false),
     [published, setPublished] = useState(false),
-    [removing, setRemoving] = useState<string | null>(null);
+    [preview, setPreview] = useState(false),
+    [removing, setRemoving] = useState<string | null>(null),
+    [inlineUploading, setInlineUploading] = useState(false);
   const lock = useRef(false);
   async function load() {
     try {
@@ -45,16 +56,25 @@ export function TeamNews() {
       id: post?.id ?? crypto.randomUUID(),
       revision: post?.revision ?? 0,
     });
-    setSummary(post?.summary ?? "");
+    const parsed = newsContentSchema.safeParse(post?.content);
+    setContent(
+      parsed.success ? parsed.data : legacyNewsContent(post?.summary ?? ""),
+    );
     setPhoto(undefined);
     setExistingPhoto(post?.photo_url ?? null);
     setRemovePhoto(false);
     setPublished(post?.published ?? false);
+    setPreview(false);
     setMessage("");
     setRemoving(null);
   }
   async function save() {
-    if (!editor || lock.current) return;
+    if (!editor || lock.current || inlineUploading) return;
+    const summary = newsPlainText(content);
+    if (!summary) {
+      setMessage("Add some text before saving this post.");
+      return;
+    }
     lock.current = true;
     setBusy(true);
     setMessage("");
@@ -63,6 +83,7 @@ export function TeamNews() {
       form.append("id", editor.id);
       form.append("revision", String(editor.revision));
       form.append("summary", summary);
+      form.append("content", JSON.stringify(content));
       form.append("published", String(published));
       form.append("removePhoto", String(removePhoto));
       if (photo) form.append("photo", photo);
@@ -119,14 +140,14 @@ export function TeamNews() {
         <div className="flex gap-2">
           <button
             className="btn-secondary"
-            disabled={busy}
+            disabled={busy || inlineUploading}
             onClick={() => void load()}
           >
             Reload news
           </button>
           <button
             className="btn"
-            disabled={!ready || busy}
+            disabled={!ready || busy || inlineUploading}
             onClick={() => edit()}
           >
             New post
@@ -134,29 +155,43 @@ export function TeamNews() {
         </div>
       </div>
       <p className="text-sm text-slate-400">
-        Write team updates, thank sponsors, or manage your game summaries. Posts
-        appear newest first. This publishes to your team page; Facebook and
-        Instagram posting is still pending.
+        Write team updates, thank sponsors, or manage game summaries. Posts
+        appear newest first.
       </p>
       {message && <p role="status">{message}</p>}
       {editor && (
         <fieldset
-          disabled={busy}
+          disabled={busy || inlineUploading}
           className="grid gap-3 rounded-lg border border-slate-600 p-3"
         >
           <legend>
             {editor.revision ? "Edit news post" : "New news post"}
           </legend>
-          <label>
+          <div>
             News text
-            <textarea
-              className="input mt-1 w-full"
-              maxLength={3000}
-              rows={5}
-              value={summary}
-              onChange={(e) => setSummary(e.target.value)}
+            <NewsRichEditor
+              key={editor.id}
+              initialContent={content}
+              onChange={setContent}
+              onUploadingChange={setInlineUploading}
+              disabled={busy}
             />
-          </label>
+          </div>
+          <button
+            type="button"
+            className="btn-secondary w-fit"
+            onClick={() => setPreview(!preview)}
+          >
+            {preview ? "Edit" : "Preview"}
+          </button>
+          {preview && (
+            <div
+              className="rounded-lg border border-slate-700 p-3"
+              aria-label="News preview"
+            >
+              <NewsContent content={content} summary={newsPlainText(content)} />
+            </div>
+          )}
           {existingPhoto && !removePhoto && (
             <img
               src={existingPhoto}
@@ -171,11 +206,11 @@ export function TeamNews() {
                 checked={removePhoto}
                 onChange={(e) => setRemovePhoto(e.target.checked)}
               />
-              Remove current photo
+              Remove current cover photo
             </label>
           )}
           <label>
-            Post photo (optional)
+            Cover photo (optional)
             <input
               key={editor.id + ":" + editor.revision}
               type="file"
@@ -184,10 +219,6 @@ export function TeamNews() {
               onChange={(e) => setPhoto(e.target.files?.[0])}
             />
           </label>
-          <p className="text-sm text-slate-400">
-            PNG, JPEG or WebP, up to 4 MB. Uploaded photos use public image
-            links; keep private images out of drafts.
-          </p>
           <label className="flex min-h-11 items-center gap-3">
             <input
               type="checkbox"
@@ -199,12 +230,16 @@ export function TeamNews() {
           <div className="flex gap-3">
             <button
               className="btn"
-              disabled={!summary.trim()}
+              disabled={inlineUploading || !newsPlainText(content)}
               onClick={() => void save()}
             >
               {busy ? "Saving…" : published ? "Save and publish" : "Save draft"}
             </button>
-            <button className="btn-secondary" onClick={() => setEditor(null)}>
+            <button
+              className="btn-secondary"
+              disabled={inlineUploading}
+              onClick={() => setEditor(null)}
+            >
               Cancel
             </button>
           </div>
@@ -226,7 +261,7 @@ export function TeamNews() {
                 {new Date(post.created_at).toLocaleDateString()}
               </time>
             </div>
-            <p className="whitespace-pre-wrap break-words">{post.summary}</p>
+            <NewsContent content={post.content} summary={post.summary} />
             {post.photo_url && (
               <img
                 src={post.photo_url}
@@ -237,14 +272,14 @@ export function TeamNews() {
             <div className="flex flex-wrap gap-2">
               <button
                 className="btn-secondary"
-                disabled={busy}
+                disabled={busy || inlineUploading}
                 onClick={() => edit(post)}
               >
                 Edit post
               </button>
               <button
                 className="btn-secondary"
-                disabled={busy}
+                disabled={busy || inlineUploading}
                 onClick={() => setRemoving(post.id)}
               >
                 Remove post
@@ -255,14 +290,14 @@ export function TeamNews() {
                 <span>Remove this post from team news?</span>
                 <button
                   className="btn-secondary"
-                  disabled={busy}
+                  disabled={busy || inlineUploading}
                   onClick={() => void remove(post)}
                 >
                   Confirm removal
                 </button>
                 <button
                   className="btn-secondary"
-                  disabled={busy}
+                  disabled={busy || inlineUploading}
                   onClick={() => setRemoving(null)}
                 >
                   Keep post

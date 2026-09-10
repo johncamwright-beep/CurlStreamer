@@ -2,10 +2,12 @@
 import { useEffect, useState } from "react";
 import {
   defaultTeamPageSettings,
+  teamPageSettingsSchema,
   type TeamPageSettings,
 } from "@/lib/team-page-settings";
 export function TeamSettings({ name }: { name: string }) {
   const [settings, setSettings] = useState(defaultTeamPageSettings(name)),
+    [savedSettings, setSavedSettings] = useState<TeamPageSettings | null>(null),
     [logo, setLogo] = useState<string | null>(null),
     [ready, setReady] = useState(false),
     [canEdit, setCanEdit] = useState(false),
@@ -13,10 +15,11 @@ export function TeamSettings({ name }: { name: string }) {
     [message, setMessage] = useState("");
   async function load() {
     try {
-      const response = await fetch("/api/account/team");
+      const response = await fetch("/api/account/team", { cache: "no-store" });
       const body = await response.json();
       if (!response.ok) throw Error(body.error);
       setSettings(body.settings);
+      setSavedSettings(body.settings);
       setLogo(body.logo);
       setCanEdit(body.canEdit);
       setReady(true);
@@ -47,6 +50,9 @@ export function TeamSettings({ name }: { name: string }) {
       });
       const body = await response.json();
       if (!response.ok) throw Error(body.error);
+      const saved = teamPageSettingsSchema.parse(body.settings ?? settings);
+      setSettings(saved);
+      setSavedSettings(saved);
       setMessage("Team settings saved.");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Save failed.");
@@ -182,14 +188,18 @@ export function TeamSettings({ name }: { name: string }) {
               {label}
             </label>
           ))}
-          <a
-            href={"https://" + settings.slug + ".curlstreamer.app"}
-            target="_blank"
-            rel="noreferrer"
-            className="min-h-11 text-cyan-300 underline"
-          >
-            View saved public page
-          </a>
+          {savedSettings?.published ? (
+            <a
+              href={"/teams/" + encodeURIComponent(savedSettings.slug)}
+              className="flex min-h-11 items-center text-cyan-300 underline"
+            >
+              View saved public page
+            </a>
+          ) : (
+            <p className="text-sm text-slate-400">
+              Publish your team page and save changes to view it.
+            </p>
+          )}
         </div>
         <div className="panel grid gap-3 md:col-span-2">
           <h3 className="font-bold">Social media</h3>

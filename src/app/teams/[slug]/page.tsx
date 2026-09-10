@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import { createAdminSupabaseClient } from "@/lib/supabase/admin";
 import { teamPageSettingsSchema } from "@/lib/team-page-settings";
 import { gameLibrarySponsors } from "@/lib/providers/sponsor-library";
+import { NewsContent } from "@/components/NewsContent";
 export const dynamic = "force-dynamic";
 export default async function PublicTeamPage({
   params,
@@ -26,9 +27,10 @@ export default async function PublicTeamPage({
   const { data: news } = s.news
     ? await db
         .from("team_news")
-        .select("id,summary,photo_url,created_at")
+        .select("id,summary,content,photo_url,created_at")
         .eq("organization_id", profile.organization_id)
         .eq("published", true)
+        .is("deleted_at", null)
         .order("created_at", { ascending: false })
         .limit(30)
     : { data: [] };
@@ -97,7 +99,7 @@ export default async function PublicTeamPage({
               <time className="text-sm text-slate-400">
                 {new Date(item.created_at).toLocaleDateString("en-CA")}
               </time>
-              <p className="mt-3 whitespace-pre-wrap">{item.summary}</p>
+              <NewsContent content={item.content} summary={item.summary} />
               {item.photo_url && (
                 <img
                   src={item.photo_url}

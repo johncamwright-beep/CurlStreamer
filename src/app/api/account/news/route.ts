@@ -4,12 +4,18 @@ import { z } from "zod";
 import { teamSettingsContext } from "@/lib/providers/team-settings";
 import { createAdminSupabaseClient } from "@/lib/supabase/admin";
 import { validateSponsorImage } from "@/lib/providers/sponsor-library";
+import {
+  legacyNewsContent,
+  newsContentSchema,
+  newsPlainText,
+} from "@/lib/news-content";
 const headers = { "Cache-Control": "private, no-store" };
 const inputSchema = z.object({
   id: z.uuid(),
   revision: z.coerce.number().int().min(0),
   gameId: z.uuid().nullable(),
   summary: z.string().trim().min(1).max(3000),
+  content: z.string().max(40000).optional(),
   published: z.enum(["true", "false"]).transform((v) => v === "true"),
   removePhoto: z.enum(["true", "false"]).transform((v) => v === "true"),
 });
@@ -23,7 +29,9 @@ export async function GET() {
       );
     const { data, error } = await createAdminSupabaseClient()
       .from("team_news")
-      .select("id,summary,photo_url,published,created_at,revision,game_id")
+      .select(
+        "id,summary,content,photo_url,published,created_at,revision,game_id",
+      )
       .eq("organization_id", auth.organizationId)
       .is("deleted_at", null)
       .order("created_at", { ascending: false })
@@ -54,11 +62,17 @@ async function write(request: Request, editing: boolean) {
       revision: form.get("revision") ?? 0,
       gameId: form.get("gameId") || null,
       summary: form.get("summary"),
+      content: form.get("content")?.toString(),
       published: form.get("published") ?? "false",
       removePhoto: form.get("removePhoto") ?? "false",
     });
     if (editing ? input.revision < 1 : input.revision !== 0)
       throw Error("Invalid revision");
+    const content = input.content
+      ? newsContentSchema.parse(JSON.parse(input.content))
+      : legacyNewsContent(input.summary);
+    const summary = input.content ? newsPlainText(content) : input.summary;
+    if (!summary) throw Error("News content needs text.");
     db = createAdminSupabaseClient();
     let photo: string | null = null;
     const file = form.get("photo");
@@ -78,11 +92,13 @@ async function write(request: Request, editing: boolean) {
       p_user: auth.user.id,
       p_id: input.id,
       p_revision: input.revision,
-      p_summary: input.summary,
+      p_summary: summary,
       p_photo: photo,
       p_replace_photo: !!photo || input.removePhoto,
       p_published: input.published,
       p_game: input.gameId,
+      p_delete: false,
+      p_content: content,
     });
     if (error) {
       // A transport failure may arrive after commit. Keep that image available.

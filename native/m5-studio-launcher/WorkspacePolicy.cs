@@ -34,6 +34,11 @@ internal static class WorkspacePolicy
         return Uri.TryCreate(value, UriKind.Absolute, out url) && url.Scheme == "https" &&
             url.UserInfo.Length == 0 && url.GetLeftPart(UriPartial.Authority) == origin;
     }
+    internal static bool Microphone(string request, string page, string origin, string selectedGame, bool userInitiated)
+    {
+        return userInitiated && selectedGame != null && SameOrigin(request, origin) &&
+            Game(page, origin) == selectedGame && new Uri(page).AbsolutePath == "/score/" + selectedGame;
+    }
     internal static bool ExternalYouTube(string value)
     {
         Uri url;

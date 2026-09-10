@@ -6,6 +6,12 @@ internal static class WorkspacePolicyTests
     private static int Main()
     {
         const string origin = "https://studio.example", id = "11111111-1111-4111-8111-111111111111";
+        Assert(WorkspacePolicy.Microphone(origin, origin + "/score/" + id, origin, id, true));
+        Assert(!WorkspacePolicy.Microphone(origin, origin + "/score/" + id, origin, id, false));
+        Assert(!WorkspacePolicy.Microphone("https://other.example", origin + "/score/" + id, origin, id, true));
+        Assert(!WorkspacePolicy.Microphone(origin, origin + "/dashboard", origin, id, true));
+        Assert(!WorkspacePolicy.Microphone(origin, origin + "/score/" + id, origin, null, true));
+        Assert(!WorkspacePolicy.Microphone(origin, "https://other.example/score/" + id, origin, id, true));
         foreach (var path in new[] { "/games/" + id, "/games/" + id + "/studio", "/score/" + id, "/games/" + id + "/edit", "/broadcast/" + id })
             Assert(WorkspacePolicy.Game(origin + path, origin) == id);
         foreach (var value in new[] { "https://studio.example.attacker/games/" + id, "http://studio.example/games/" + id, origin + ":444/games/" + id, "https://user:pass@studio.example/games/" + id, origin + "/games/new", origin + "/games/not-a-game", origin + "/studio-m3/" + id + "/program" })

@@ -133,7 +133,14 @@ internal sealed class Workspace : Form
                 UpdateButtons();
             };
             core.NewWindowRequested += (s, e) => { e.Handled = true; if (WorkspacePolicy.SameOrigin(e.Uri, origin)) Navigate(new Uri(e.Uri).PathAndQuery + new Uri(e.Uri).Fragment); else { if (WorkspacePolicy.ExternalYouTube(e.Uri)) Process.Start(new ProcessStartInfo(new Uri(e.Uri).AbsoluteUri) { UseShellExecute = true }); else status.Text = "External account connections are available from the website in your browser."; } };
-            core.PermissionRequested += (s, e) => { e.State = CoreWebView2PermissionState.Deny; };
+            core.PermissionRequested += (s, e) => {
+                e.SavesInProfile = false;
+                e.State = !closing && e.PermissionKind == CoreWebView2PermissionKind.Microphone &&
+                    WorkspacePolicy.Microphone(e.Uri, core.Source, origin, selectedGame, e.IsUserInitiated)
+                    ? CoreWebView2PermissionState.Allow : CoreWebView2PermissionState.Deny;
+            };
+            // Earlier builds persisted a blanket denial. Reset only this site's microphone permission.
+            await core.Profile.SetPermissionStateAsync(CoreWebView2PermissionKind.Microphone, origin, CoreWebView2PermissionState.Default);
             core.WebMessageReceived += ReceiveGrant;
             var initialId = launchGame == null ? null : WorkspacePolicy.Game(launchGame, origin);
             core.Navigate(initialId != null ? origin + "/score/" + initialId : origin + "/dashboard");

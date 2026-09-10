@@ -9,6 +9,7 @@ export async function POST(
   request: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
+  let verifiedInvitation = false;
   try {
     const { id } = await params;
     const client =
@@ -28,6 +29,7 @@ export async function POST(
       !claims.exp
     )
       throw new Error();
+    verifiedInvitation = true;
     const authorization = await authorizeGame(
       new Request(request.url, {
         headers: { authorization: `Bearer ${body.token}` },
@@ -38,6 +40,14 @@ export async function POST(
         tokenAllowed: (access) => access.purpose === "invitation",
       },
     );
+    if (!authorization.ok && authorization.reason === "unavailable")
+      return NextResponse.json(
+        {
+          error:
+            "The game connection is temporarily unavailable. Try connecting again shortly.",
+        },
+        { status: 503 },
+      );
     if (!authorization.ok)
       return NextResponse.json(
         {
@@ -66,6 +76,14 @@ export async function POST(
           expiresIn: 21_600,
         });
   } catch {
+    if (verifiedInvitation)
+      return NextResponse.json(
+        {
+          error:
+            "The game connection is temporarily unavailable. Try connecting again shortly.",
+        },
+        { status: 503 },
+      );
     return NextResponse.json(
       { error: "This link is invalid or expired." },
       { status: 401 },

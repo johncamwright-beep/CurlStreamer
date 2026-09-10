@@ -1,4 +1,3 @@
-import { formatEventGameLabel } from "../game-title";
 import "server-only";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { randomUUID } from "crypto";
@@ -127,27 +126,14 @@ export async function prepareRoleInvitation(
 async function getGameRecord(id: string) {
   const { data, error } = await supabase()
     .from("game_states")
-    .select("state, version, games(game_number)")
+    // API roles may read game_states, but direct reads/joins of games are revoked.
+    // Keep the stored config unchanged: writes use this same versioned snapshot.
+    .select("state, version")
     .eq("game_id", id)
     .maybeSingle();
   if (error) databaseError("game lookup", error);
   if (!data) return undefined;
-  const state = data.state as GameState;
-  const parent = data.games as { game_number?: number | null } | null;
-  const projected =
-    parent && "game_number" in parent
-      ? {
-          ...state,
-          config: {
-            ...state.config,
-            eventName: formatEventGameLabel(
-              state.config.eventName,
-              parent.game_number,
-            ),
-          },
-        }
-      : state;
-  return { state: projected, version: data.version as number };
+  return { state: data.state as GameState, version: data.version as number };
 }
 
 export async function claimRole(

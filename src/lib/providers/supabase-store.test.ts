@@ -11,9 +11,13 @@ vi.mock("@supabase/supabase-js", () => ({
   createClient: () => ({
     rpc: mocks.rpc,
     from: () => ({
-      select: () => ({
-        eq: () => ({ maybeSingle: mocks.maybeSingle }),
-      }),
+      select: (columns: string) => {
+        if (columns.includes("games("))
+          throw new Error("permission denied for table games");
+        return {
+          eq: () => ({ maybeSingle: mocks.maybeSingle }),
+        };
+      },
     }),
   }),
 }));
@@ -21,6 +25,7 @@ vi.mock("@supabase/supabase-js", () => ({
 import {
   claimRole,
   createGame,
+  getGame,
   listCameraIdentityGenerations,
   prepareRoleInvitation,
   releaseRole,
@@ -80,6 +85,16 @@ describe("Supabase game creation", () => {
       p_config: config,
       p_state: game,
     });
+  });
+
+  it("reads the versioned snapshot without accessing the protected games table", async () => {
+    const game = storedGame();
+    game.config.eventName = "Orion · Game 3";
+    mocks.maybeSingle.mockResolvedValue({
+      data: { state: game, version: 2 },
+      error: null,
+    });
+    expect(await getGame(game.id)).toEqual(game);
   });
 
   it("redacts credentials from logged database errors", async () => {

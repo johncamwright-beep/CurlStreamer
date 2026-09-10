@@ -36,6 +36,39 @@ describe("scheduled game state persistence", () => {
     mocks.rpc.mockReset().mockResolvedValue({ data: null, error: null });
   });
 
+  it("identifies an occupied event game number without mislabelling other conflicts", async () => {
+    mocks.rpc.mockResolvedValueOnce({
+      error: {
+        code: "23505",
+        message:
+          'duplicate key value violates unique constraint "games_event_game_number_unique"',
+      },
+    });
+    await expect(
+      updateScheduledTeamGame(
+        user,
+        "33333333-3333-4333-8333-333333333333",
+        schedule,
+        config,
+      ),
+    ).resolves.toEqual({ ok: false, kind: "gameNumberConflict" });
+    mocks.rpc.mockResolvedValueOnce({
+      error: {
+        code: "23505",
+        message:
+          'duplicate key value violates unique constraint "other_unique"',
+      },
+    });
+    await expect(
+      updateScheduledTeamGame(
+        user,
+        "33333333-3333-4333-8333-333333333333",
+        schedule,
+        config,
+      ),
+    ).resolves.toEqual({ ok: false, kind: "conflict" });
+  });
+
   it("sends the config snapshot through the atomic schedule RPC", async () => {
     const result = await updateScheduledTeamGame(
       user,

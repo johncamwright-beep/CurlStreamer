@@ -123,7 +123,7 @@ export function ProgramComposition({
             <img
               src="/branding/curlstreamer-logo.png"
               alt="Curl Streamer"
-              className="absolute left-0 top-1/2 w-full -translate-y-1/2"
+              className="h-full w-full object-contain"
             />
           </div>
           {showStatus && (

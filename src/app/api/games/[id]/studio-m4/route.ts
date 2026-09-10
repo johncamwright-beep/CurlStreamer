@@ -5,7 +5,7 @@ import {
   type CompletionCredential,
 } from "@/lib/game-completion";
 import { readAccessToken } from "@/lib/tokens";
-import { participantUrl } from "@/lib/participant-links";
+import { studioOrigin } from "@/lib/studio-origin";
 import { youtubeWatchUrlSchema } from "@/lib/youtube-watch";
 import {
   readM4Session,
@@ -155,12 +155,10 @@ export async function POST(request: Request, context: Context) {
     );
   let trustedOrigin: string;
   try {
-    trustedOrigin = new URL(
-      participantUrl(request, "/", {
-        NODE_ENV: "production",
-        APP_BASE_URL: process.env.APP_BASE_URL,
-      }),
-    ).origin;
+    trustedOrigin = studioOrigin(request, {
+      ...process.env,
+      NODE_ENV: "production",
+    });
   } catch {
     return failure(null);
   }

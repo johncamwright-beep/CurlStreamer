@@ -3,7 +3,7 @@ import { z } from "zod";
 import { authorizeGame, authorizationError } from "@/lib/game-authorization";
 import { broadcastGame, type BroadcastGame } from "@/lib/game-projection";
 import type { Sponsor } from "@/lib/types";
-import { participantUrl } from "@/lib/participant-links";
+import { studioOrigin } from "@/lib/studio-origin";
 import { readGame } from "@/lib/providers/game-read";
 import { gameBroadcastSponsors } from "@/lib/providers/sponsor-library";
 import {
@@ -120,12 +120,7 @@ export async function POST(
   try {
     // The public HTTPS origin is deployment configuration, never a proxy header.
     // Next may see loopback HTTP behind the local Cloudflare tunnel.
-    trustedOrigin = new URL(
-      participantUrl(request, "/", {
-        NODE_ENV: process.env.NODE_ENV,
-        APP_BASE_URL: process.env.APP_BASE_URL,
-      }),
-    ).origin;
+    trustedOrigin = studioOrigin(request);
   } catch {
     return response({ error: "Program service unavailable." }, 503);
   }

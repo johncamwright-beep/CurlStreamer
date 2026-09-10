@@ -20,6 +20,46 @@ async function fillGame(page: import("@playwright/test").Page) {
   await page.getByLabel("Scheduled date (UTC)").fill("2026-10-20");
   await page.getByLabel("Scheduled time (UTC)").fill("18:30");
 }
+test("duplicate game number can be cleared without losing the game details", async ({
+  page,
+}) => {
+  await page
+    .getByRole("combobox", { name: "Event", exact: true })
+    .selectOption({ label: "Autumn Club Championship" });
+  await page
+    .getByLabel("Team 2 — Opponent", { exact: true })
+    .selectOption({ label: "Team Wright" });
+  await page.locator('input[name="scheduledDate"]').fill("2026-09-12");
+  await page.locator('input[name="scheduledTime"]').fill("18:30");
+  await page.getByLabel("Game number (optional)").fill("5");
+  const payloads: { gameNumber: number | null; opponentId?: string }[] = [];
+  await page.route("**/api/team-schedule", async (route) => {
+    payloads.push(route.request().postDataJSON());
+    await route.fulfill({
+      status: 409,
+      json: {
+        error:
+          "That game number is already used in this event. Choose another number or leave the optional game number blank.",
+      },
+    });
+  });
+  await page
+    .getByRole("button", { name: "Schedule game", exact: true })
+    .click();
+  await expect(
+    page.getByRole("alert").filter({ hasText: "game number is already used" }),
+  ).toContainText("game number is already used");
+  await page.getByRole("button", { name: "Leave game unnumbered" }).click();
+  await expect(page.getByLabel("Game number (optional)")).toHaveValue("");
+  await page
+    .getByRole("button", { name: "Schedule game", exact: true })
+    .click();
+  await expect.poll(() => payloads.length).toBe(2);
+  expect(payloads[1]).toMatchObject({
+    gameNumber: null,
+    opponentId: payloads[0].opponentId,
+  });
+});
 test("summary and saved payload preserve colours, schedule and YouTube settings", async ({
   page,
 }, info) => {

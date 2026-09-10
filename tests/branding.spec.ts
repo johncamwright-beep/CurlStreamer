@@ -11,9 +11,15 @@ test("uses the full mark for sign-in and keeps the app badge out of program outp
   ).toBeVisible();
   await expect(page.getByTestId("curlstreamer-app-brand")).toHaveCount(0);
 
-  await page.goto(`/studio-m3/${gameId}`);
+  await page.goto(`/score/${gameId}`);
   await expect(page.getByTestId("curlstreamer-app-brand")).toBeVisible();
 
+  const menu = await page
+    .getByRole("button", { name: "Open navigation menu" })
+    .boundingBox();
+  const badge = await page.getByTestId("curlstreamer-app-brand").boundingBox();
+  expect(badge!.x).toBeGreaterThanOrEqual(menu!.x + menu!.width);
+  expect(Math.abs(badge!.y - menu!.y)).toBeLessThan(2);
   await page.goto(`/studio-m3/${gameId}/program`);
   await expect(page.getByTestId("curlstreamer-app-brand")).toHaveCount(0);
 });

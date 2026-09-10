@@ -19,7 +19,12 @@ type Result<T> =
   | { ok: true; value: T }
   | {
       ok: false;
-      kind: "authorization" | "validation" | "conflict" | "service";
+      kind:
+        | "authorization"
+        | "validation"
+        | "conflict"
+        | "gameNumberConflict"
+        | "service";
       issues?: unknown;
     };
 
@@ -39,6 +44,11 @@ function failure(
   operation: string,
 ): Result<never> {
   diagnostic(operation, error);
+  if (
+    error.code === "23505" &&
+    error.message?.includes('"games_event_game_number_unique"')
+  )
+    return { ok: false, kind: "gameNumberConflict" };
   if (error.code === "42501") return { ok: false, kind: "authorization" };
   if (
     ["23505", "23514", "PT409", "40001", "P0001", "P0002"].includes(

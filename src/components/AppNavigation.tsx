@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { CurlStreamerAppBadge } from "./CurlStreamerBrand";
 import { usePathname } from "next/navigation";
 import { useEffect, useId, useRef, useState } from "react";
 import { signOut } from "@/app/account/actions";
@@ -193,6 +194,7 @@ export function AppNavigation({
         <span aria-hidden="true">☰</span>
         <span className="sr-only">Menu</span>
       </button>
+      <CurlStreamerAppBadge />
       {open && (
         <button
           type="button"

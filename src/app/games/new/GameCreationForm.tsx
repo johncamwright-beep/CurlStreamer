@@ -69,6 +69,16 @@ export function GameCreationForm({
   const [gameNumberText, setGameNumberText] = useState(
     editing?.gameNumber?.toString() ?? "",
   );
+  const numberInUse = Boolean(
+    eventId &&
+    gameNumberText &&
+    games.some(
+      (game) =>
+        game.id !== editing?.id &&
+        game.eventId === eventId &&
+        game.gameNumber === Number(gameNumberText),
+    ),
+  );
   const [opponentChoice, setOpponentChoice] = useState(
     editing ? (editing.opponentId ?? "__tbd") : opponents.length ? "" : "__new",
   );
@@ -530,18 +540,45 @@ export function GameCreationForm({
                 </p>
               )}
               {eventId && (
-                <label>
-                  Game number (optional)
-                  <input
-                    name="gameNumber"
-                    type="number"
-                    min="1"
-                    value={gameNumberText}
-                    onChange={(e) => setGameNumberText(e.target.value)}
-                    placeholder="Leave blank if not needed"
-                    className="mt-1 w-full rounded-lg bg-slate-800 p-3"
-                  />
-                </label>
+                <div>
+                  <label>
+                    Game number (optional)
+                    <input
+                      name="gameNumber"
+                      type="number"
+                      min="1"
+                      value={gameNumberText}
+                      aria-describedby={
+                        numberInUse ? "game-number-conflict" : undefined
+                      }
+                      onChange={(e) => setGameNumberText(e.target.value)}
+                      placeholder="Leave blank if not needed"
+                      className="mt-1 w-full rounded-lg bg-slate-800 p-3"
+                    />
+                  </label>
+                  {numberInUse && (
+                    <p
+                      id="game-number-conflict"
+                      role="status"
+                      className="mt-2 text-amber-300"
+                    >
+                      Game {gameNumberText} is already used in this event.
+                      Choose another number or leave it blank.
+                    </p>
+                  )}
+                  {gameNumberText && (
+                    <button
+                      type="button"
+                      className="mt-1 min-h-11 text-cyan-300"
+                      onClick={() => {
+                        setGameNumberText("");
+                        setError("");
+                      }}
+                    >
+                      Leave game unnumbered
+                    </button>
+                  )}
+                </div>
               )}
             </div>
           </section>

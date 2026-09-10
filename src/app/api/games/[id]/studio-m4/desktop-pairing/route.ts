@@ -4,7 +4,7 @@ import {
   type CompletionCredential,
 } from "@/lib/game-completion";
 import { readAccessToken } from "@/lib/tokens";
-import { participantUrl } from "@/lib/participant-links";
+import { studioOrigin } from "@/lib/studio-origin";
 import {
   approveM4DesktopPairing,
   m4DesktopEnabled,
@@ -49,12 +49,10 @@ export async function POST(request: Request, context: Context) {
     const body = bodySchema.safeParse(await input(request));
     if (!id.success || !body.success) return unavailable(400);
     if (!m4DesktopEnabled()) return unavailable();
-    const canonical = new URL(
-      participantUrl(request, "/", {
-        NODE_ENV: "production",
-        APP_BASE_URL: process.env.APP_BASE_URL,
-      }),
-    ).origin;
+    const canonical = studioOrigin(request, {
+      ...process.env,
+      NODE_ENV: "production",
+    });
     const origin = request.headers.get("origin");
     if (
       request.headers.get("sec-fetch-site") === "cross-site" ||

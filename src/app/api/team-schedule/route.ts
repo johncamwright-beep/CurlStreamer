@@ -75,6 +75,10 @@ const messages = {
   authorization: [403, "You do not have permission to make this change."],
   validation: [400, "Check the entered details and try again."],
   conflict: [409, "That change conflicts with existing team data."],
+  gameNumberConflict: [
+    409,
+    "That game number is already used in this event. Choose another number or leave the optional game number blank.",
+  ],
   service: [503, "The team schedule is temporarily unavailable."],
 } as const;
 

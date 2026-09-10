@@ -70,6 +70,17 @@ function request(
 }
 
 describe("team schedule timezone boundary", () => {
+  it("explains how to recover from a duplicate game number", async () => {
+    mocks.createScheduledTeamGame.mockResolvedValue({
+      ok: false,
+      kind: "gameNumberConflict",
+    });
+    const response = await POST(request("createGame", "2026-10-20", "18:30"));
+    expect(response.status).toBe(409);
+    expect((await response.json()).error).toContain(
+      "leave the optional game number blank",
+    );
+  });
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.getUser.mockResolvedValue({

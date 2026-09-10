@@ -1,5 +1,4 @@
 import "./globals.css";
-import { CurlStreamerAppBadge } from "@/components/CurlStreamerBrand";
 export const metadata = {
   title: "Curl Streamer",
   description: "Three-phone curling broadcasts, simply.",
@@ -14,10 +13,7 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
-      <body>
-        <CurlStreamerAppBadge />
-        {children}
-      </body>
+      <body>{children}</body>
     </html>
   );
 }

@@ -9,8 +9,8 @@
 .appBadge {
   display: flex;
   flex-shrink: 0;
-  width: 44px;
-  height: 44px;
+  width: 52px;
+  height: 52px;
   align-items: center;
   justify-content: center;
   pointer-events: none;

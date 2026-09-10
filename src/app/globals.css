@@ -33,7 +33,7 @@ body {
   align-items: center;
   gap: 8px;
   flex-shrink: 0;
-  width: 96px;
+  width: 104px;
   height: 44px;
 }
 .app-navigation-trigger,
@@ -202,7 +202,8 @@ button {
 }
 .sponsor-frame-bounds-sidebar {
   flex: 1 1 auto;
-  margin-top: 18px;
+  margin-top: 12px;
+  align-items: start;
 }
 .broadcast-camera-deck[data-camera-count="1"] .broadcast-camera-panel {
   height: 100%;
@@ -425,4 +426,29 @@ button {
   border-bottom: 2px solid rgb(34 211 238);
   color: rgb(103 232 249);
   font-weight: 700;
+}
+
+.account-shortcut {
+  position: fixed;
+  z-index: 190;
+  top: max(1rem, env(safe-area-inset-top));
+  right: max(0.75rem, env(safe-area-inset-right));
+  display: grid;
+  place-items: center;
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  color: #67e8f9;
+  border: 1px solid #475569;
+  background: #0f1c2b;
+}
+.account-shortcut img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  border-radius: 50%;
+}
+.account-shortcut:focus-visible {
+  outline: 3px solid #67e8f9;
+  outline-offset: 3px;
 }

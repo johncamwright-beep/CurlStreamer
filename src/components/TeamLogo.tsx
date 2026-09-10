@@ -2,6 +2,9 @@
 const teamLogos: Record<string, string> = {
   "team benning": "/branding/team-benning.png",
 };
+export function teamLogoSource(teamName: string) {
+  return teamLogos[teamName.trim().replace(/\s+/g, " ").toLowerCase()] ?? null;
+}
 export function TeamLogo({
   teamName,
   className = "h-10 w-10",
@@ -9,7 +12,7 @@ export function TeamLogo({
   teamName: string;
   className?: string;
 }) {
-  const src = teamLogos[teamName.trim().replace(/\s+/g, " ").toLowerCase()];
+  const src = teamLogoSource(teamName);
   if (!src) return null;
   // eslint-disable-next-line @next/next/no-img-element
   return (

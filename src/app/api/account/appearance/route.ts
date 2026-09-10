@@ -1,0 +1,23 @@
+import { NextResponse } from "next/server";
+import { createServerSupabaseClient } from "@/lib/supabase/server";
+import { getAccountContext } from "@/lib/auth/account";
+import { teamLogoSource } from "@/components/TeamLogo";
+export async function GET() {
+  const headers = { "Cache-Control": "private, no-store" };
+  try {
+    const db = await createServerSupabaseClient();
+    const {
+      data: { user },
+    } = await db.auth.getUser();
+    if (!user?.email_confirmed_at)
+      return NextResponse.json({ logo: null }, { headers });
+    const result = await getAccountContext(user);
+    const team = result.ok ? result.account.membership?.teamName : undefined;
+    return NextResponse.json(
+      { logo: team ? teamLogoSource(team) : null },
+      { headers },
+    );
+  } catch {
+    return NextResponse.json({ logo: null }, { headers });
+  }
+}

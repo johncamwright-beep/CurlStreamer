@@ -395,7 +395,7 @@
 .scoring-desktop .scoring-navigation {
   margin-bottom: 12px;
 }
-.scoring-desktop .scoring-navigation > :last-child {
+.scoring-desktop .scoring-navigation > :last-child:not(.app-navigation) {
   display: none;
 }
 .scoring-desktop .scoring-page-heading {
@@ -626,7 +626,7 @@
 .scoring-workspace:not(.scoring-desktop) .scoring-navigation {
   width: 100%;
 }
-.scoring-desktop .scoring-navigation > :last-child {
+.scoring-desktop .scoring-navigation > :last-child:not(.app-navigation) {
   display: block;
 }
 .scoring-desktop .scoring-page-heading {

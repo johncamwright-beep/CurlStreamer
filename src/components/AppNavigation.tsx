@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { AccountShortcut } from "./AccountShortcut";
 import { CurlStreamerAppBadge } from "./CurlStreamerBrand";
 import { usePathname } from "next/navigation";
 import { useEffect, useId, useRef, useState } from "react";
@@ -195,6 +196,7 @@ export function AppNavigation({
         <span className="sr-only">Menu</span>
       </button>
       <CurlStreamerAppBadge />
+      <AccountShortcut />
       {open && (
         <button
           type="button"

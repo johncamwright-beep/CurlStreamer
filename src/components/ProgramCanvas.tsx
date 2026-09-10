@@ -95,17 +95,17 @@ export function ProgramComposition({
           className="broadcast-information-rail flex min-w-0 flex-col rounded-2xl border border-white/10 bg-slate-950/45"
         >
           <div>
-            <div className="mb-[.6cqw] flex justify-end">
+            <div className="mb-[.6cqw] flex items-center justify-between gap-[.8cqw]">
+              {eventTitle && (
+                <h1 className="min-w-0 flex-1 text-[1.75cqw] font-black leading-tight">
+                  {eventTitle}
+                </h1>
+              )}
               <TeamLogo
                 teamName={game.config.homeName}
-                className="h-[5.5cqw] w-[5.5cqw] rounded-lg"
+                className="ml-auto h-[5.5cqw] w-[5.5cqw] rounded-lg"
               />
             </div>
-            {eventTitle && (
-              <h1 className="mt-[.45cqw] truncate text-[1.75cqw] font-black leading-tight">
-                {eventTitle}
-              </h1>
-            )}
             <Scoreboard game={game} compact broadcast />
           </div>
           {m.active && m.style === "fullscreen" && sponsor && (
@@ -117,7 +117,7 @@ export function ProgramComposition({
           )}
           <div
             className="relative mt-auto w-full shrink-0 overflow-hidden"
-            style={{ aspectRatio: "6 / 1" }}
+            style={{ aspectRatio: "4 / 1" }}
           >
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img

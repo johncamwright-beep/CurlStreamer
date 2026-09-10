@@ -212,4 +212,40 @@ describe("StudioAudioInput", () => {
       "more than 32 channels",
     );
   });
+
+  it("does not resurrect a graph after stop occurs during context resume", async () => {
+    const inputStream = stream(2);
+    const context = new FakeContext();
+    let releaseResume: (() => void) | undefined;
+    let signalResume: (() => void) | undefined;
+    const resumeEntered = new Promise<void>((resolve) => {
+      signalResume = resolve;
+    });
+    context.resume = () =>
+      new Promise((resolve) => {
+        signalResume?.();
+        releaseResume = () => {
+          context.state = "running";
+          resolve();
+        };
+      });
+    const input = new StudioAudioInput({
+      mediaDevices: {
+        enumerateDevices: async () => [],
+        getUserMedia: async () => inputStream,
+      },
+      createAudioContext: () => context,
+    });
+
+    const starting = input.start("mic");
+    await resumeEntered;
+    await input.stop();
+    releaseResume?.();
+    await starting;
+
+    expect(input.monoMediaStream).toBeNull();
+    expect(inputStream.track.stopped).toBe(true);
+    expect(context.source.connections).toHaveLength(0);
+    expect(context.closed).toBe(true);
+  });
 });

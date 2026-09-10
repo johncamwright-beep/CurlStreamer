@@ -35,6 +35,7 @@ export function StudioUsbAudio({
   const [inputState, setInputState] =
     useState<StudioAudioInputState>(idleState);
   const [checking, setChecking] = useState(false);
+  const [discovering, setDiscovering] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const stopCurrent = useCallback(async () => {
@@ -65,7 +66,6 @@ export function StudioUsbAudio({
 
   useEffect(() => {
     mountedRef.current = true;
-    void refreshDevices();
     const onDeviceChange = () => {
       void refreshDevices();
     };
@@ -113,6 +113,34 @@ export function StudioUsbAudio({
       inputRef.current = null;
       setChecking(false);
       setError(errorMessage(cause));
+    }
+  }
+
+  async function findMicrophones() {
+    if (discovering) return;
+    const operation = ++operationRef.current;
+    setError(null);
+    setDiscovering(true);
+    let discoveryStream: MediaStream | null = null;
+    try {
+      if (!navigator.mediaDevices?.getUserMedia) {
+        throw new Error("This browser cannot request microphone access.");
+      }
+      discoveryStream = await navigator.mediaDevices.getUserMedia({
+        audio: true,
+        video: false,
+      });
+      discoveryStream.getTracks().forEach((track) => track.stop());
+      await refreshDevices();
+    } catch (cause) {
+      if (mountedRef.current && operation === operationRef.current) {
+        setError(errorMessage(cause));
+      }
+    } finally {
+      discoveryStream?.getTracks().forEach((track) => track.stop());
+      if (mountedRef.current && operation === operationRef.current) {
+        setDiscovering(false);
+      }
     }
   }
 
@@ -171,6 +199,18 @@ export function StudioUsbAudio({
           </option>
         ))}
       </select>
+      <button
+        type="button"
+        className="min-h-11 rounded border border-slate-500 px-3 text-white disabled:opacity-50"
+        onClick={() => void findMicrophones()}
+        disabled={discovering || checking}
+      >
+        Find microphones
+      </button>
+      <p className="text-sm text-slate-300">
+        Discovery requests microphone access only to reveal available inputs; it
+        is not sent to YouTube.
+      </p>
       <div className="flex gap-2">
         <button
           type="button"

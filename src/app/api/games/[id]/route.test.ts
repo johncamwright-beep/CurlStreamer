@@ -351,6 +351,10 @@ describe("GET /api/games/[id] over HTTP", () => {
       broadcast: "live",
       audioMuted: false,
       cameraFraming: { "camera-home": "contain", "camera-away": "contain" },
+      cameraAudio: {
+        "camera-home": { enabled: false },
+        "camera-away": { enabled: false },
+      },
       sponsors: [
         {
           id: "broadcast-sponsor-0",

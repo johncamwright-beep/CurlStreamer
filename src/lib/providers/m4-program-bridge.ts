@@ -38,7 +38,11 @@ export async function createM4ProgramBridge(
     drain(role: CameraRole): Promise<unknown>;
     close(): Promise<void>;
   },
-  rendererAssets?: { directory: string; sponsorStorageOrigin?: string },
+  rendererAssets?: {
+    directory: string;
+    sponsorStorageOrigin?: string;
+    sponsorCacheDirectory?: string;
+  },
 ) {
   const key = randomBytes(32).toString("base64url");
   const cameraFrames = new Map<
@@ -201,6 +205,7 @@ export async function createM4ProgramBridge(
           sponsorAssets ??= createM4SponsorAssets({
             storageOrigin: rendererAssets.sponsorStorageOrigin,
             organizationId,
+            cacheDirectory: rendererAssets.sponsorCacheDirectory,
           });
         }
         const sponsors = sponsorAssets

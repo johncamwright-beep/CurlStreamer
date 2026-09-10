@@ -1,4 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { createM4SponsorAssets } from "./m4-sponsor-assets";
 
 const organizationId = "11111111-1111-4111-8111-111111111111";
@@ -11,6 +14,107 @@ const response = (
 ) => new Response(body, { status: 200, headers });
 
 describe("M4 sponsor asset proxy", () => {
+  it("reuses a persistent stable-path cache across instances but fetches a replacement path", async () => {
+    const directory = mkdtempSync(join(tmpdir(), "curlcast-sponsors-"));
+    const fetcher = vi.fn(async () => response("pixels"));
+    try {
+      const first = createM4SponsorAssets({
+        storageOrigin: "https://storage.invalid",
+        organizationId,
+        fetcher,
+        cacheDirectory: directory,
+      });
+      await first.sync([sponsor]);
+      first.close();
+      const second = createM4SponsorAssets({
+        storageOrigin: "https://storage.invalid",
+        organizationId,
+        fetcher,
+        cacheDirectory: directory,
+      });
+      await second.sync([
+        {
+          ...sponsor,
+          dataUrl: signed.replace("token=private", "token=rotated"),
+        },
+      ]);
+      expect(fetcher).toHaveBeenCalledOnce();
+      await second.sync([
+        {
+          ...sponsor,
+          dataUrl: signed.replace(
+            `${sponsorId}.webp`,
+            "33333333-3333-4333-8333-333333333333.webp",
+          ),
+        },
+      ]);
+      expect(fetcher).toHaveBeenCalledTimes(2);
+      second.close();
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
+
+  it("falls back after a corrupt persistent entry and does not serve removed membership", async () => {
+    const directory = mkdtempSync(join(tmpdir(), "curlcast-sponsors-"));
+    const fetcher = vi.fn(async () => response("pixels"));
+    try {
+      const first = createM4SponsorAssets({
+        storageOrigin: "https://storage.invalid",
+        organizationId,
+        fetcher,
+        cacheDirectory: directory,
+      });
+      await first.sync([sponsor]);
+      first.close();
+      const meta = (await import("node:fs/promises")).readdir(directory);
+      const name = (await meta).find((value) => value.endsWith(".json"))!;
+      writeFileSync(join(directory, name), "not-json");
+      const second = createM4SponsorAssets({
+        storageOrigin: "https://storage.invalid",
+        organizationId,
+        fetcher,
+        cacheDirectory: directory,
+      });
+      const projected = await second.sync([sponsor]);
+      expect(fetcher).toHaveBeenCalledTimes(2);
+      await second.sync([]);
+      expect(second.get(projected[0].dataUrl)).toBeUndefined();
+      second.close();
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
+
+  it("isolates persistent entries by organization", async () => {
+    const directory = mkdtempSync(join(tmpdir(), "curlcast-sponsors-"));
+    const fetcher = vi.fn(async () => response("pixels"));
+    const other = "44444444-4444-4444-8444-444444444444";
+    try {
+      const first = createM4SponsorAssets({
+        storageOrigin: "https://storage.invalid",
+        organizationId,
+        fetcher,
+        cacheDirectory: directory,
+      });
+      await first.sync([sponsor]);
+      first.close();
+      const second = createM4SponsorAssets({
+        storageOrigin: "https://storage.invalid",
+        organizationId: other,
+        fetcher,
+        cacheDirectory: directory,
+      });
+      await second.sync([
+        { ...sponsor, dataUrl: signed.replace(organizationId, other) },
+      ]);
+      expect(fetcher).toHaveBeenCalledTimes(2);
+      second.close();
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
+
   it("aborts queued loads before fetch and closes despite a stalled body cancellation", async () => {
     vi.useFakeTimers();
     const cancel = vi.fn(() => new Promise<void>(() => undefined));

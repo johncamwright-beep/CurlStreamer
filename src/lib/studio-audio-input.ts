@@ -138,6 +138,11 @@ export class StudioAudioInput {
       context = this.dependencies.createAudioContext();
       const audioContext = context;
       await audioContext.resume();
+      if (session !== this.session) {
+        stopTracks(stream);
+        await audioContext.close();
+        return this.getState();
+      }
       if (audioContext.state !== "running") {
         throw new Error("Audio processing could not be started.");
       }
@@ -175,8 +180,10 @@ export class StudioAudioInput {
       return this.getState();
     } catch (error) {
       if (stream) stopTracks(stream);
-      if (context && this.context !== context) await context.close();
-      await this.stop();
+      if (context && this.context !== context) {
+        await context.close();
+      }
+      if (session === this.session) await this.stop();
       throw error;
     }
   }

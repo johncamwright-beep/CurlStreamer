@@ -15,6 +15,6 @@ The Audio tile currently provides an explicitly labelled USB input check, not se
 
 ## Cost and cleanup
 
-Stable sponsor images are cached for 15 minutes instead of one minute, bounded to 32 MB. Removed sponsors are evicted on the next authorized projection; a new object path reloads immediately. Replacing content at the same path can take up to 15 minutes to appear. Full-game control polling remains a further egress improvement.
+Studio keeps sponsor image versions in its persistent SponsorAssets cache, bounded to 128 MB on disk and 32 MB in memory. Reopening Studio reuses the local copy; signed URL rotation does not download it again. Uploading a replacement creates a new object path and downloads the new version. Removed sponsors stop being served on the next authorized projection. This reduces image bandwidth, not cloud storage capacity. Full-game control polling remains a further egress improvement.
 
 The retired M1 Supabase project raavodkuvcbbkddfpwet was deleted at John's request on September 9. Installed Studio uses hoogvyhuxevihttbutwl. The old local .env.local is archived under ignored work/retired-m1.env.local and its development listener was stopped. Active project credentials were unchanged. No SQL migration is needed: generation checks make old mic intent inert after release.

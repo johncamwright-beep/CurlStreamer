@@ -77,6 +77,7 @@ export async function startM4ProgramHost(input: z.input<typeof optionsSchema>) {
     bridge = await createM4ProgramBridge(client, realtime, {
       directory: rendererRoot,
       sponsorStorageOrigin: options.realtimeUrl,
+      sponsorCacheDirectory: join(cacheRoot, "SponsorAssets"),
     });
     recorder = await startM4StudioRecorder({
       executable: options.executable,

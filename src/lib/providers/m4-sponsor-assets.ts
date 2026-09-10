@@ -1,8 +1,19 @@
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
+import {
+  mkdir,
+  readFile,
+  readdir,
+  rename,
+  stat,
+  unlink,
+  writeFile,
+} from "node:fs/promises";
+import { basename, dirname, isAbsolute, join, resolve } from "node:path";
 import { z } from "zod";
 const id = z.uuid(),
   max = 4 * 1024 * 1024,
   totalMax = 32 * 1024 * 1024,
+  diskMax = 128 * 1024 * 1024,
   // Signed URLs rotate independently of object identity. Reuse verified bytes
   // for a bounded period when the organization-scoped storage path is stable.
   // A same-path replacement can take up to this interval to appear locally.
@@ -21,6 +32,7 @@ type Pending = {
   abort: AbortController;
   promise: Promise<void>;
 };
+type DiskEntry = { mime: string; bytes: Buffer };
 const wait = <T>(p: Promise<T>, abort: AbortController) => {
   p.catch(() => undefined);
   if (abort.signal.aborted) return Promise.reject(new Error());
@@ -51,6 +63,8 @@ export function createM4SponsorAssets(options: {
   storageOrigin: string;
   organizationId: string;
   fetcher?: typeof fetch;
+  /** Persistent explicit directory; files contain bytes and MIME metadata, never URLs. */
+  cacheDirectory?: string;
 }) {
   let origin: URL;
   try {
@@ -64,6 +78,14 @@ export function createM4SponsorAssets(options: {
     !id.safeParse(options.organizationId).success
   )
     throw Error("m4_sponsor_asset_unavailable");
+  const diskDirectory = options.cacheDirectory
+    ? resolve(options.cacheDirectory)
+    : undefined;
+  if (
+    diskDirectory &&
+    (!isAbsolute(diskDirectory) || dirname(diskDirectory) === diskDirectory)
+  )
+    throw Error("m4_sponsor_asset_unavailable");
   const assets = new Map<string, Asset>(),
     pending = new Map<string, Pending>(),
     allowed = new Map<string, string>(),
@@ -72,6 +94,92 @@ export function createM4SponsorAssets(options: {
     used = 0,
     running = 0;
   const queue: Array<() => void> = [];
+  const cacheKey = (source: string) =>
+    createHash("sha256")
+      .update(`${origin.origin}\n${options.organizationId}\n${source}`)
+      .digest("hex");
+  const diskPaths = (key: string) => {
+    if (!diskDirectory || !/^[a-f0-9]{64}$/.test(key)) return;
+    return {
+      data: join(diskDirectory, `${key}.bin`),
+      meta: join(diskDirectory, `${key}.json`),
+    };
+  };
+  const safeDiskPath = (path: string) =>
+    Boolean(diskDirectory) &&
+    dirname(resolve(path)) === diskDirectory &&
+    /^[a-f0-9]{64}\.(bin|json)$/.test(basename(path));
+  const readDisk = async (source: string): Promise<DiskEntry | undefined> => {
+    const paths = diskPaths(cacheKey(source));
+    if (!paths) return;
+    try {
+      const [metaInfo, dataInfo] = await Promise.all([
+        stat(paths.meta),
+        stat(paths.data),
+      ]);
+      if (
+        !metaInfo.isFile() ||
+        metaInfo.size > 256 ||
+        !dataInfo.isFile() ||
+        dataInfo.size > max
+      )
+        return;
+      const [raw, bytes] = await Promise.all([
+        readFile(paths.meta, "utf8"),
+        readFile(paths.data),
+      ]);
+      const meta = z
+        .object({ mime: z.string() })
+        .strict()
+        .parse(JSON.parse(raw));
+      if (!mimes.has(meta.mime) || !bytes.length || bytes.length > max)
+        throw Error();
+      return { mime: meta.mime, bytes };
+    } catch {
+      return;
+    }
+  };
+  const writeDisk = async (source: string, entry: DiskEntry) => {
+    const paths = diskPaths(cacheKey(source));
+    if (!paths) return;
+    try {
+      await mkdir(diskDirectory!, { recursive: true });
+      const entries = await readdir(diskDirectory!, { withFileTypes: true });
+      const files = await Promise.all(
+        entries
+          .filter(
+            (entry) => entry.isFile() && /^[a-f0-9]{64}\.bin$/.test(entry.name),
+          )
+          .map(async (entry) => {
+            const path = join(diskDirectory!, entry.name),
+              info = await stat(path);
+            return { path, size: info.size, at: info.mtimeMs };
+          }),
+      );
+      let usedDisk = files.reduce((sum, file) => sum + file.size, 0);
+      usedDisk -= files.find((file) => file.path === paths.data)?.size ?? 0;
+      for (const file of files.sort((a, b) => a.at - b.at)) {
+        if (usedDisk + entry.bytes.length <= diskMax) break;
+        if (!safeDiskPath(file.path) || file.path === paths.data) continue;
+        await unlink(file.path).catch(() => undefined);
+        const meta = file.path.replace(/\.bin$/, ".json");
+        if (safeDiskPath(meta)) await unlink(meta).catch(() => undefined);
+        usedDisk -= file.size;
+      }
+      if (usedDisk + entry.bytes.length > diskMax) return;
+      const suffix = `.${process.pid}.${randomBytes(8).toString("hex")}.tmp`;
+      const dataTemp = paths.data + suffix,
+        metaTemp = paths.meta + suffix;
+      await writeFile(dataTemp, entry.bytes, { mode: 0o600 });
+      await writeFile(metaTemp, JSON.stringify({ mime: entry.mime }), {
+        mode: 0o600,
+      });
+      await rename(dataTemp, paths.data);
+      await rename(metaTemp, paths.meta);
+    } catch {
+      // Disk reuse is optional; never fail a live program for a cache fault.
+    }
+  };
   const take = () =>
       new Promise<void>((resolve) =>
         running < 4
@@ -94,13 +202,15 @@ export function createM4SponsorAssets(options: {
     if (!id.safeParse(s.id).success) return;
     try {
       const u = new URL(s.dataUrl),
-        pre = `/storage/v1/object/sign/organization-sponsors/${options.organizationId}/${s.id}.`;
+        pre = `/storage/v1/object/sign/organization-sponsors/${options.organizationId}/`;
       if (
         u.origin !== origin.origin ||
         u.username ||
         u.password ||
         !u.pathname.startsWith(pre) ||
-        !/^(?:jpe?g|png|webp)$/.test(u.pathname.slice(pre.length)) ||
+        !/^[0-9a-f-]{36}\.(?:jpe?g|png|webp)$/.test(
+          u.pathname.slice(pre.length),
+        ) ||
         !u.searchParams.has("token")
       )
         return;
@@ -120,6 +230,25 @@ export function createM4SponsorAssets(options: {
       const deadline = setTimeout(() => abort.abort(), 5000);
       try {
         if (closed || abort.signal.aborted) throw new Error();
+        const disk = await readDisk(url.pathname);
+        if (disk && !closed && !abort.signal.aborted) {
+          if (allowed.get(s.id) !== url.pathname) return;
+          if (
+            used - (assets.get(s.id)?.bytes.length ?? 0) + disk.bytes.length >
+            totalMax
+          )
+            return;
+          drop(s.id);
+          assets.set(s.id, {
+            bytes: disk.bytes,
+            mime: disk.mime,
+            source: url.pathname,
+            at: Date.now(),
+            path: `/sponsors/upload/${randomBytes(16).toString("hex")}`,
+          });
+          used += disk.bytes.length;
+          return;
+        }
         const response = await wait(
           fetcher(url, {
             redirect: "error",
@@ -170,6 +299,10 @@ export function createM4SponsorAssets(options: {
             path: `/sponsors/upload/${randomBytes(16).toString("hex")}`,
           });
           used += bytes.length;
+          await writeDisk(url.pathname, {
+            mime: type,
+            bytes: Buffer.from(bytes),
+          });
         } finally {
           void reader.cancel().catch(() => undefined);
           for (const c of chunks) c.fill(0);

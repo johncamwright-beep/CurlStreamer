@@ -442,6 +442,110 @@ describe("M1 direct media boundary", () => {
     await peer.inspect();
     expect(pc.close).toHaveBeenCalled();
   });
+  it("keeps mixed-order audio and video separate and releases both only after direct verification", async () => {
+    class Stream {
+      constructor(readonly tracks: MediaStreamTrack[]) {}
+      getTracks() {
+        return this.tracks;
+      }
+    }
+    vi.stubGlobal("MediaStream", Stream);
+    const pc = {
+      addTransceiver: vi.fn(),
+      close: vi.fn(),
+      connectionState: "connected" as RTCPeerConnectionState,
+      getStats: vi.fn().mockResolvedValue(
+        stats("host", "host", [
+          {
+            type: "inbound-rtp",
+            kind: "audio",
+            framesDecoded: 999,
+            packetsLost: 3,
+          },
+        ]),
+      ),
+      ontrack: null as unknown as (event: { track: MediaStreamTrack }) => void,
+    };
+    const onVideo = vi.fn(),
+      onAudio = vi.fn();
+    const peer = new DirectPeer({
+      side: "receiver",
+      createPeer: () => pc as unknown as RTCPeerConnection,
+      send: vi.fn(),
+      onVideo,
+      onAudio,
+      onFailure: vi.fn(),
+    });
+    expect(pc.addTransceiver).toHaveBeenNthCalledWith(1, "video", {
+      direction: "recvonly",
+    });
+    expect(pc.addTransceiver).toHaveBeenNthCalledWith(2, "audio", {
+      direction: "recvonly",
+    });
+    const audio = {
+      kind: "audio",
+      stop: vi.fn(),
+    } as unknown as MediaStreamTrack;
+    const video = {
+      kind: "video",
+      stop: vi.fn(),
+    } as unknown as MediaStreamTrack;
+    pc.ontrack({ track: audio });
+    pc.ontrack({ track: video });
+    expect(onVideo).not.toHaveBeenCalled();
+    expect(onAudio).not.toHaveBeenCalled();
+    expect(await peer.inspect()).toMatchObject({
+      direct: true,
+      framesDecoded: 0,
+      packetsLost: 0,
+    });
+    expect(onVideo).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ tracks: [video] }),
+    );
+    expect(onAudio).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ tracks: [audio] }),
+    );
+    await peer.inspect();
+    expect(onVideo).toHaveBeenCalledOnce();
+    expect(onAudio).toHaveBeenCalledOnce();
+    peer.close();
+  });
+  it("reserves a camera audio sender and can replace its optional track", async () => {
+    vi.stubGlobal(
+      "MediaStream",
+      class {
+        constructor(readonly tracks: MediaStreamTrack[]) {}
+      },
+    );
+    const videoSender = {
+      getParameters: vi.fn(() => ({})),
+      setParameters: vi.fn().mockResolvedValue(undefined),
+    };
+    const audioSender = { replaceTrack: vi.fn().mockResolvedValue(undefined) };
+    const pc = {
+      addTrack: vi.fn(() => videoSender),
+      addTransceiver: vi.fn(() => ({ sender: audioSender })),
+      close: vi.fn(),
+    };
+    const video = { kind: "video", contentHint: "" } as MediaStreamTrack;
+    const audio = { kind: "audio" } as MediaStreamTrack;
+    const peer = new DirectPeer({
+      side: "camera",
+      track: video,
+      createPeer: () => pc as unknown as RTCPeerConnection,
+      send: vi.fn(),
+      onVideo: vi.fn(),
+      onFailure: vi.fn(),
+    });
+    expect(pc.addTransceiver).toHaveBeenCalledWith("audio", {
+      direction: "sendonly",
+    });
+    await peer.replaceAudioTrack(audio);
+    expect(audioSender.replaceTrack).toHaveBeenCalledExactlyOnceWith(audio);
+    await peer.replaceAudioTrack(null);
+    expect(audioSender.replaceTrack).toHaveBeenLastCalledWith(null);
+    peer.close();
+  });
   it.each(["camera", "receiver"] as const)(
     "handles duplicate descriptions on the %s without renegotiating and rejects conflicting replacements",
     async (side) => {

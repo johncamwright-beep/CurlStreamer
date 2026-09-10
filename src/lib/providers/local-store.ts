@@ -217,6 +217,7 @@ export function releaseRole(
     delete game.claims[role];
     game.connections[role] = false;
     if (game.cameraHealth) delete game.cameraHealth[role];
+    if (game.cameraAudio) delete game.cameraAudio[role];
     for (const [key, invitation] of invitations)
       if (
         invitation.gameId === id &&
@@ -262,7 +263,10 @@ export function updateGame(
       if (
         "role" in action &&
         action.role !== expectedAuthority.role &&
-        !(action.type === "camera-zoom" && expectedAuthority.role === "scorer")
+        !(
+          (action.type === "camera-zoom" || action.type === "camera-audio") &&
+          expectedAuthority.role === "scorer"
+        )
       )
         throw new GameStateConflictError("Participant role changed");
       const currentGeneration =
@@ -324,6 +328,25 @@ export function updateGame(
           : {}),
         ...(command ? { command } : {}),
       };
+    }
+    if (action.type === "camera-audio") {
+      game.cameraAudio ??= {};
+      game.cameraAudio[action.role] = {
+        enabled: action.enabled,
+        status: action.enabled ? "pending" : "off",
+        updatedAt: now,
+        generation: game.claimGenerations?.[action.role] ?? 0,
+      };
+    }
+    if (action.type === "camera-audio-status") {
+      game.cameraAudio ??= {};
+      const current = game.cameraAudio[action.role];
+      if (current)
+        game.cameraAudio[action.role] = {
+          ...current,
+          status: action.status,
+          updatedAt: now,
+        };
     }
     if (action.type === "audio") game.audioMuted = action.muted;
     if (action.type === "broadcast") game.broadcast = action.value;

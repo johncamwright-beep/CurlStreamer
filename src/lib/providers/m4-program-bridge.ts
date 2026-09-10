@@ -45,6 +45,10 @@ export async function createM4ProgramBridge(
     CameraRole,
     { frames: number; advancedAt: number }
   >();
+  const phoneAudio = new Map<
+    CameraRole,
+    { peak: number; rms: number; receiving: boolean; observedAt: number }
+  >();
   const rendererCookie = randomBytes(32).toString("base64url");
   const expected = Buffer.from(`Bearer ${key}`);
   const expectedRendererCookie = Buffer.from(`m4_program=${rendererCookie}`);
@@ -279,6 +283,27 @@ export async function createM4ProgramBridge(
         reply(200, { ok: true });
         return;
       }
+      const audioObservation = z
+        .object({
+          action: z.literal("audio-observe"),
+          cameraRole: cameraRoleSchema,
+          peak: z.number().finite().min(0).max(1),
+          rms: z.number().finite().min(0).max(1),
+          receiving: z.boolean(),
+        })
+        .strict()
+        .safeParse(parsed);
+      if (audioObservation.success && rendererAllowed) {
+        const { cameraRole, peak, rms, receiving } = audioObservation.data;
+        phoneAudio.set(cameraRole, {
+          peak,
+          rms,
+          receiving,
+          observedAt: Date.now(),
+        });
+        reply(200, { ok: true });
+        return;
+      }
       const connect = z
         .object({ action: z.literal("connect"), cameraRole: cameraRoleSchema })
         .strict()
@@ -326,6 +351,26 @@ export async function createM4ProgramBridge(
           !closed &&
             Date.now() - (cameraFrames.get(role)?.advancedAt ?? 0) < 5000,
         ]),
+      ),
+    audioStatus: () =>
+      Object.fromEntries(
+        (["camera-home", "camera-away"] as const).map((role) => {
+          const value = phoneAudio.get(role);
+          const fresh =
+            !closed &&
+            value !== undefined &&
+            Date.now() - value.observedAt < 6000;
+          return [
+            role,
+            fresh
+              ? {
+                  peak: value.peak,
+                  rms: value.rms,
+                  receiving: value.receiving,
+                }
+              : { peak: 0, rms: 0, receiving: false },
+          ];
+        }),
       ),
     rendererUrl: address + "/",
     // Owner-only transport capability. Never log or put in a URL/config file.

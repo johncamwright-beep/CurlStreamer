@@ -284,7 +284,14 @@ export async function connectStudio(options: {
       ready = setInterval(announce, 2_000);
       announce();
     }
-    return { stop };
+    return {
+      stop,
+      /** The phone owns capture; this only swaps the reserved WebRTC sender. */
+      replaceAudioTrack: async (track: MediaStreamTrack | null) => {
+        if (closed) throw Error("Studio connection has ended.");
+        await peer.replaceAudioTrack(track);
+      },
+    };
   } catch (cause) {
     stop();
     throw cause;

@@ -292,7 +292,11 @@ export class DirectPeer {
   private cancelGathering: (() => void) | undefined;
   private queue = Promise.resolve();
   private configured: Promise<void> = Promise.resolve();
-  private stream: MediaStream | undefined;
+  private videoStream: MediaStream | undefined;
+  private audioStream: MediaStream | undefined;
+  private audioSender: RTCRtpSender | undefined;
+  private presentedVideo = false;
+  private presentedAudio = false;
   private appliedRemote: { type: "offer" | "answer"; sdp: string } | undefined;
   private advertised = { local: new Set<string>(), remote: new Set<string>() };
   private handshake = {
@@ -306,8 +310,10 @@ export class DirectPeer {
     private options: {
       side: StudioSide;
       track?: MediaStreamTrack;
+      audioTrack?: MediaStreamTrack;
       send: (signal: StudioSignal) => Promise<void>;
       onVideo: (stream: MediaStream) => void;
+      onAudio?: (stream: MediaStream) => void;
       onFailure: (reason: string, metrics?: DirectMetrics) => void;
       createPeer?: (config: RTCConfiguration) => RTCPeerConnection;
     },
@@ -321,16 +327,24 @@ export class DirectPeer {
     });
     if (options.track) {
       options.track.contentHint = "detail";
-      const sender = this.pc.addTrack(
-        options.track,
-        new MediaStream([options.track]),
-      );
+      const stream = new MediaStream([options.track]);
+      const sender = this.pc.addTrack(options.track, stream);
       const parameters = sender.getParameters();
       parameters.degradationPreference = "maintain-resolution";
       this.configured = sender
         .setParameters(parameters)
         .catch(() => this.fail("Browser rejected camera encoding settings."));
-    } else this.pc.addTransceiver("video", { direction: "recvonly" });
+      if (options.audioTrack) {
+        this.audioSender = this.pc.addTrack(options.audioTrack, stream);
+      } else {
+        this.audioSender = this.pc.addTransceiver("audio", {
+          direction: "sendonly",
+        }).sender;
+      }
+    } else {
+      this.pc.addTransceiver("video", { direction: "recvonly" });
+      this.pc.addTransceiver("audio", { direction: "recvonly" });
+    }
     this.pc.onicecandidate = (event) => {
       if (!event.candidate || this.closed) return;
       if (!hostCandidate(event.candidate.candidate)) {
@@ -343,8 +357,14 @@ export class DirectPeer {
       // Send candidates together in the completed local SDP, not separate broadcasts.
     };
     this.pc.ontrack = (event) => {
-      this.stream = new MediaStream([event.track]);
-      this.presented = false;
+      // Older test doubles omit kind; retain their established video behavior.
+      if (event.track.kind === "audio") {
+        this.audioStream = new MediaStream([event.track]);
+        this.presentedAudio = false;
+      } else {
+        this.videoStream = new MediaStream([event.track]);
+        this.presentedVideo = false;
+      }
     };
     this.pc.onconnectionstatechange = () => {
       if (this.closed) return;
@@ -441,6 +461,12 @@ export class DirectPeer {
   private receiverConfirmedAt = -Infinity;
   private lastConfirmationAt = -Infinity;
   private hiddenPathSince: number | undefined;
+  /** Replace the reserved optional audio sender without renegotiating media authority. */
+  async replaceAudioTrack(track: MediaStreamTrack | null) {
+    if (this.closed || !this.audioSender)
+      throw Error("Audio sender is unavailable for this peer.");
+    await this.audioSender.replaceTrack(track);
+  }
   async inspect() {
     const report = await this.pc.getStats();
     const metrics = reduceDirectStats(report, this.advertised);
@@ -508,9 +534,15 @@ export class DirectPeer {
         `Path check stopped: local=${metrics.localCandidateType} (${metrics.localEndpointIssue}), remote=${metrics.remoteCandidateType} (${metrics.remoteEndpointIssue}), relay bytes=${metrics.relayBytes}.`,
         metrics,
       );
-    if (!this.closed && metrics.direct && this.stream && !this.presented) {
-      this.presented = true;
-      this.options.onVideo(this.stream);
+    if (!this.closed && metrics.direct) {
+      if (this.videoStream && !this.presentedVideo) {
+        this.presentedVideo = true;
+        this.options.onVideo(this.videoStream);
+      }
+      if (this.audioStream && !this.presentedAudio && this.options.onAudio) {
+        this.presentedAudio = true;
+        this.options.onAudio(this.audioStream);
+      }
     }
     return metrics;
   }
@@ -573,7 +605,8 @@ export class DirectPeer {
     this.advertised.local.clear();
     this.advertised.remote.clear();
     this.pc.close();
-    this.stream?.getTracks().forEach((track) => track.stop());
+    this.videoStream?.getTracks().forEach((track) => track.stop());
+    this.audioStream?.getTracks().forEach((track) => track.stop());
   }
   private clearDisconnectTimer() {
     clearTimeout(this.disconnectTimer);

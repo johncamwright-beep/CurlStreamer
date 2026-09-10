@@ -214,12 +214,23 @@ export async function PATCH(
       (body.data.type === "connection" ||
         body.data.type === "camera-health" ||
         body.data.type === "camera-framing" ||
-        body.data.type === "camera-zoom-status") &&
+        body.data.type === "camera-zoom-status" ||
+        body.data.type === "camera-audio-status") &&
       body.data.role === authorization.access.role
     )
   )
     return gameResponse(
       { error: "This role cannot make that update" },
+      { status: 403 },
+    );
+  if (
+    body.data.type === "camera-audio-status" &&
+    authorization.via === "token" &&
+    authorization.access.purpose === "participant" &&
+    authorization.access.role !== body.data.role
+  )
+    return gameResponse(
+      { error: "Only the assigned camera can report microphone status" },
       { status: 403 },
     );
   if (

@@ -1,8 +1,20 @@
-# DJI Mic 3 audio test
+# Managed audio — current build
 
-1. Configure the receiver for Mono and connect it over USB-C before opening the browser.
-2. Use HTTPS, grant microphone permission, enumerate inputs, and explicitly select the entry labelled DJI/USB/external. iOS Safari may not expose device labels or permit deterministic input selection; never infer success from permission alone.
-3. Speak into all four transmitters, confirm each appears on the live meter, monitor for clipping/dropout, then mute/unmute and unplug/reconnect the receiver.
-4. If the chosen device disappears, warn immediately and keep scoring available. Do not silently select the built-in microphone. Re-run the test after any browser/background/network transition.
+Phone mic switches are on the scoring camera cards. Audio defaults off and is bound to the camera assignment generation. Permission failures leave video running; grant permission explicitly on the phone when needed. DirectPeer carries an optional audio track to the private OBS renderer. Peak/RMS observations remain local and expire after six seconds.
 
-External audio selection, publication, and the diagnostic page are Milestone 5 work; mock mode displays that limitation rather than claiming a receiver is live.
+An isolated native Browser Source tone test proved nonzero 48 kHz stereo AAC output: peak 0.10021236, RMS 0.07068347, 191882 nonzero samples in two seconds. This proves the native audio bus, not physical phone capture or DJI delivery. Phone-to-YouTube audio and synchronization still need a short physical check.
+
+## DJI receiver
+
+Use USB and Q (Quadraphonic) mode for four independent channels. Studio can meter those before mixing to mono. Receiver Mono mode combines the transmitters upstream and cannot provide four independent software meters. DJI lists Windows Audacity as compatible; browser four-channel support remains to be verified on this hardware.
+
+- https://www.dji.com/mic-3/faq
+- https://dl.djicdn.com/downloads/DJI%20Mic%203/20250828/COMPATIBILITY_LIST/DJI_Mic_3_Quadraphonic_Computer_Software_Compatibility_List_EN.pdf
+
+The Audio tile currently provides an explicitly labelled USB input check, not sent to YouTube yet. Select the device, grant permission, and speak into each transmitter separately. Only actual reported channels get meters. The diagnostic mono mix has mute and headroom, no speaker monitoring, and stops on device removal or teardown. Native Windows four-channel input and connection to the outgoing broadcast remain to implement.
+
+## Cost and cleanup
+
+Stable sponsor images are cached for 15 minutes instead of one minute, bounded to 32 MB. Removed sponsors are evicted on the next authorized projection; a new object path reloads immediately. Replacing content at the same path can take up to 15 minutes to appear. Full-game control polling remains a further egress improvement.
+
+The retired M1 Supabase project raavodkuvcbbkddfpwet was deleted at John's request on September 9. Installed Studio uses hoogvyhuxevihttbutwl. The old local .env.local is archived under ignored work/retired-m1.env.local and its development listener was stopped. Active project credentials were unchanged. No SQL migration is needed: generation checks make old mic intent inert after release.

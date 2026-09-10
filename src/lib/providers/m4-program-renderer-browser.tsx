@@ -9,9 +9,11 @@ import {
 import type { BroadcastGame } from "@/lib/game-projection";
 import type { DirectMetrics } from "./direct-peer";
 import { connectM4ProgramCamera } from "./m4-program-camera";
+import { ProgramPhoneAudio } from "@/components/ProgramPhoneAudio";
 
 type CameraState = {
   stream?: MediaStream;
+  audio?: MediaStream;
   metrics?: DirectMetrics;
   message: string;
 };
@@ -152,6 +154,11 @@ function ProgramRenderer() {
                 message: "Verified direct camera",
               },
             })),
+          onAudio: (audio) =>
+            setCameras((current) => ({
+              ...current,
+              [role]: { ...current[role], audio },
+            })),
           onMetrics: (metrics) => {
             void request(
               "/camera",
@@ -214,12 +221,22 @@ function ProgramRenderer() {
 
   const verified = roles.filter((role) => cameras[role].metrics?.direct).length;
   return (
-    <ProgramCanvas
-      game={game}
-      renderCamera={(role) => <CameraVideo state={cameras[role]} />}
-      statusLabel={game.broadcast === "live" ? "LIVE" : programMessage}
-      audioStatus={`${verified}/2 direct cameras verified · Video only`}
-    />
+    <>
+      {roles.map((role) => (
+        <ProgramPhoneAudio
+          key={role}
+          role={role}
+          stream={cameras[role].audio}
+          enabled={game.cameraAudio?.[role]?.enabled === true}
+        />
+      ))}
+      <ProgramCanvas
+        game={game}
+        renderCamera={(role) => <CameraVideo state={cameras[role]} />}
+        statusLabel={game.broadcast === "live" ? "LIVE" : programMessage}
+        audioStatus={`${verified}/2 direct cameras verified`}
+      />
+    </>
   );
 }
 

@@ -1,4 +1,5 @@
 import { deriveScore } from "./scoring";
+import { cameraAudioEnabled } from "./camera-audio";
 import { hasSafeSponsorContent } from "./schema";
 import type { GameConfig, GameState, Sponsor, Team } from "./types";
 
@@ -16,6 +17,9 @@ export interface BroadcastGame {
   layout: GameState["layout"];
   broadcast: GameState["broadcast"];
   audioMuted: boolean;
+  cameraAudio?: Partial<
+    Record<"camera-home" | "camera-away", { enabled: boolean }>
+  >;
   cameraFraming: GameState["cameraFraming"];
   sponsors: Sponsor[];
   sponsorMode: Pick<
@@ -62,6 +66,14 @@ export function broadcastGame(
     layout: game.layout,
     broadcast: game.broadcast,
     audioMuted: game.audioMuted,
+    cameraAudio: {
+      "camera-home": {
+        enabled: cameraAudioEnabled(game, "camera-home"),
+      },
+      "camera-away": {
+        enabled: cameraAudioEnabled(game, "camera-away"),
+      },
+    },
     cameraFraming: {
       "camera-home": game.cameraFraming?.["camera-home"] ?? "contain",
       "camera-away": game.cameraFraming?.["camera-away"] ?? "contain",

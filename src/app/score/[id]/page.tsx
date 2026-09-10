@@ -20,6 +20,8 @@ import type {
 } from "@/lib/game-completion";
 import { StudioDeviceCards } from "@/components/StudioDeviceCards";
 import { StudioYouTube } from "@/components/StudioYouTube";
+import { StudioAudio } from "@/components/StudioAudio";
+import { cameraAudioEnabled } from "@/lib/camera-audio";
 import { BroadcastControl } from "@/components/BroadcastControl";
 export default function Scorer({
   params,
@@ -119,6 +121,17 @@ export default function Scorer({
       </main>
     );
   if (!game) return <main className="p-8">Loading controls…</main>;
+  const cameraAudio = Object.fromEntries(
+    (["camera-home", "camera-away"] as const).map((role) => [
+      role,
+      {
+        ...game.cameraAudio?.[role],
+        enabled: cameraAudioEnabled(game, role),
+        status: game.cameraAudio?.[role]?.status ?? "off",
+        updatedAt: game.cameraAudio?.[role]?.updatedAt ?? 0,
+      },
+    ]),
+  );
   if (game.config.awayName === "Opponent TBD")
     return (
       <main className="mx-auto max-w-xl p-5">
@@ -575,6 +588,9 @@ export default function Scorer({
             </>
           )}
           {desktop && canEndGame && <StudioYouTube id={id} />}
+          {desktop && canEndGame && (
+            <StudioAudio id={id} cameraAudio={cameraAudio} />
+          )}
           {!desktop && canEndGame && (
             <div className="scoring-card scoring-finish">
               {!desktop && (
@@ -608,6 +624,10 @@ export default function Scorer({
               <StudioDeviceCards
                 id={id}
                 claims={game.claims}
+                cameraAudio={cameraAudio}
+                onAudio={async (role, enabled) => {
+                  await act({ type: "camera-audio", role, enabled });
+                }}
                 onChanged={refresh}
                 enabled
               />

@@ -109,7 +109,7 @@ describe("M4 sponsor asset proxy", () => {
     expect(assets.get(projected[0].dataUrl)).toBeUndefined();
   });
 
-  it("revalidates retained bytes after a bounded freshness interval", async () => {
+  it("reuses a stable object path across signed-URL rotation for 15 minutes", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-01-01T00:00:00Z"));
     const fetcher = vi.fn(async () => response("pixels"));
@@ -120,9 +120,14 @@ describe("M4 sponsor asset proxy", () => {
     });
     try {
       await assets.sync([sponsor]);
+      await assets.sync([
+        { ...sponsor, dataUrl: signed.replace("token=private", "token=rotated") },
+      ]);
+      expect(fetcher).toHaveBeenCalledOnce();
+      vi.advanceTimersByTime(15 * 60_000 - 1);
       await assets.sync([sponsor]);
       expect(fetcher).toHaveBeenCalledOnce();
-      vi.advanceTimersByTime(60_000);
+      vi.advanceTimersByTime(1);
       await assets.sync([sponsor]);
       expect(fetcher).toHaveBeenCalledTimes(2);
     } finally {

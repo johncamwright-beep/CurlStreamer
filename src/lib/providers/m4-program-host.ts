@@ -121,6 +121,7 @@ export async function startM4ProgramHost(input: z.input<typeof optionsSchema>) {
     closed,
     rendererAddress: bridge.address,
     cameraStatus: bridge.cameraStatus,
+    audioStatus: bridge.audioStatus,
     previewMapping:
       "Local\\CurlStreamerPreview-" + basename(cacheDirectory).slice(20),
     ...(recorder.stream ? { stream: recorder.stream } : {}),

@@ -4,7 +4,7 @@ import { organizerAccessToken } from "@/lib/access-session";
 import QRCode from "qrcode";
 import { useEffect, useRef, useState } from "react";
 import { z } from "zod";
-import type { Role } from "@/lib/types";
+import type { Role, GameState } from "@/lib/types";
 import { invitationRoles, issueInvitation } from "./GameInvitations";
 import "./studio-devices.css";
 
@@ -16,6 +16,8 @@ function DeviceCard({
   enabled,
   onChanged,
   connectionStatus,
+  micEnabled,
+  onAudio,
 }: {
   id: string;
   role: Role;
@@ -23,6 +25,11 @@ function DeviceCard({
   claimed: boolean;
   enabled: boolean;
   onChanged?: () => Promise<unknown>;
+  micEnabled?: boolean;
+  onAudio?: (
+    role: "camera-home" | "camera-away",
+    enabled: boolean,
+  ) => Promise<unknown>;
   connectionStatus?: {
     receiverReady: boolean;
     phoneOnline: boolean;
@@ -218,6 +225,26 @@ function DeviceCard({
           </p>
         </div>
       </header>
+      {role !== "scorer" && onAudio && claimed && (
+        <button
+          className="studio-device-action secondary"
+          aria-pressed={micEnabled === true}
+          disabled={busy || !enabled}
+          onClick={async () => {
+            setBusy(true);
+            setError("");
+            try {
+              await onAudio(role, !micEnabled);
+            } catch {
+              setError("Could not change the phone microphone. Try again.");
+            } finally {
+              setBusy(false);
+            }
+          }}
+        >
+          {micEnabled ? "Turn mic off" : "Turn mic on"}
+        </button>
+      )}
       {claimed ? (
         <>
           {scorer && (
@@ -374,11 +401,18 @@ export function StudioDeviceCards({
   claims,
   enabled,
   onChanged,
+  cameraAudio,
+  onAudio,
 }: {
   id: string;
   claims: Partial<Record<Role, string>>;
   enabled: boolean;
   onChanged?: () => Promise<unknown>;
+  cameraAudio?: GameState["cameraAudio"];
+  onAudio?: (
+    role: "camera-home" | "camera-away",
+    enabled: boolean,
+  ) => Promise<unknown>;
 }) {
   const [received, setReceived] = useState<Record<string, boolean>>({});
   useEffect(() => {
@@ -456,6 +490,8 @@ export function StudioDeviceCards({
           claimed={Boolean(claims[role])}
           enabled={enabled}
           onChanged={onChanged}
+          micEnabled={role !== "scorer" && cameraAudio?.[role]?.enabled}
+          onAudio={onAudio}
           connectionStatus={
             connections?.[role]
               ? { ...connections[role], videoReceiving: received[role] }

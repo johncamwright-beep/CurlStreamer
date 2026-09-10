@@ -298,6 +298,9 @@ internal sealed class Workspace : Form
         object cameraStatus;
         if (web.CoreWebView2 != null && WorkspacePolicy.SameOrigin(web.CoreWebView2.Source, origin) && selectedGame == runningGame && state.TryGetValue("cameraStatus", out cameraStatus))
             web.CoreWebView2.ExecuteScriptAsync("window.dispatchEvent(new CustomEvent('studio-camera-status',{detail:" + json.Serialize(new { gameId = runningGame, cameras = cameraStatus }) + "}));");
+        object phoneAudio;
+        if (web.CoreWebView2 != null && WorkspacePolicy.SameOrigin(web.CoreWebView2.Source, origin) && selectedGame == runningGame && state.TryGetValue("phoneAudio", out phoneAudio))
+            web.CoreWebView2.ExecuteScriptAsync("window.dispatchEvent(new CustomEvent('studio-audio-status',{detail:" + json.Serialize(new { gameId = runningGame, cameras = phoneAudio }) + "}));");
         if (web.CoreWebView2 != null && WorkspacePolicy.SameOrigin(web.CoreWebView2.Source, origin) && selectedGame == runningGame) {
             object available; var enabled = state.TryGetValue("streamingAvailable", out available) && available is bool && (bool)available;
             web.CoreWebView2.ExecuteScriptAsync("window.dispatchEvent(new CustomEvent('studio-youtube-status',{detail:" + json.Serialize(new { gameId = runningGame, available = enabled, busy = busy, streaming = TextValue(state, "streaming") ?? "idle", live = TextValue(state, "broadcast") == "live", receiving = TextValue(state, "youtubeReception") == "confirmed", message = enabled ? youtubeError : "YouTube streaming is not enabled in this Studio installation." }) + "}));");

@@ -73,3 +73,29 @@ describe("camera hardware zoom validation", () => {
     ).toBe(false);
   });
 });
+
+describe("camera microphone actions", () => {
+  it("accepts bounded operator intent and phone-only status values", () => {
+    expect(
+      actionSchema.safeParse({
+        type: "camera-audio",
+        role: "camera-home",
+        enabled: true,
+      }).success,
+    ).toBe(true);
+    expect(
+      actionSchema.safeParse({
+        type: "camera-audio-status",
+        role: "camera-home",
+        status: "permission-required",
+      }).success,
+    ).toBe(true);
+    expect(
+      actionSchema.safeParse({
+        type: "camera-audio-status",
+        role: "scorer",
+        status: "active",
+      }).success,
+    ).toBe(false);
+  });
+});

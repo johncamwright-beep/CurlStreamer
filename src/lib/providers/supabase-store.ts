@@ -273,6 +273,25 @@ function applyAction(game: GameState, action: z.infer<typeof actionSchema>) {
       ...(command ? { command } : {}),
     };
   }
+  if (action.type === "camera-audio") {
+    game.cameraAudio ??= {};
+    game.cameraAudio[action.role] = {
+      enabled: action.enabled,
+      status: action.enabled ? "pending" : "off",
+      updatedAt: now,
+      generation: game.claimGenerations?.[action.role] ?? 0,
+    };
+  }
+  if (action.type === "camera-audio-status") {
+    game.cameraAudio ??= {};
+    const current = game.cameraAudio[action.role];
+    if (current)
+      game.cameraAudio[action.role] = {
+        ...current,
+        status: action.status,
+        updatedAt: now,
+      };
+  }
   if (action.type === "audio") game.audioMuted = action.muted;
   if (action.type === "broadcast") game.broadcast = action.value;
   if (action.type === "close-game") {
@@ -322,7 +341,8 @@ export async function updateGame(
   const retryable =
     action.type === "camera-health" ||
     action.type === "connection" ||
-    action.type === "camera-zoom-status";
+    action.type === "camera-zoom-status" ||
+    action.type === "camera-audio-status";
   const attempts = retryable ? 3 : 1;
   let capturedClaim: string | undefined;
   let capturedGeneration: number | undefined;
@@ -340,7 +360,10 @@ export async function updateGame(
       if (
         "role" in action &&
         action.role !== expectedAuthority.role &&
-        !(action.type === "camera-zoom" && expectedAuthority.role === "scorer")
+        !(
+          (action.type === "camera-zoom" || action.type === "camera-audio") &&
+          expectedAuthority.role === "scorer"
+        )
       )
         throw new GameStateConflictError("Participant role changed");
       const currentGeneration =

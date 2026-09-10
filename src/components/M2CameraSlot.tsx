@@ -30,6 +30,8 @@ import {
   enduranceStorageKey,
 } from "@/lib/providers/m2-endurance-recorder";
 import { shouldApplyCameraZoomCommand } from "@/lib/camera-zoom-command";
+import type { CameraAudioStatus } from "@/lib/types";
+import { cameraAudioEnabled } from "@/lib/camera-audio";
 
 export function M2CameraSlot({
   id,
@@ -109,7 +111,21 @@ export function M2CameraSlot({
   }
   const video = useRef<HTMLVideoElement>(null);
   const track = useRef<MediaStreamTrack | undefined>(undefined);
-  const connection = useRef<{ stop: () => void } | undefined>(undefined);
+  const connection = useRef<
+    | {
+        stop: () => void;
+        replaceAudioTrack: (track: MediaStreamTrack | null) => Promise<void>;
+      }
+    | undefined
+  >(undefined);
+  const audioTrack = useRef<MediaStreamTrack | undefined>(undefined);
+  const audioIntent = useRef(false);
+  const audioFlight = useRef(false);
+  const audioAttemptBlocked = useRef(false);
+  const audioPollFlight = useRef(false);
+  const audioStatusRef = useRef<CameraAudioStatus>("off");
+  const [audioStatus, setAudioStatus] = useState<CameraAudioStatus>("off");
+  const [audioConnectionVersion, setAudioConnectionVersion] = useState(0);
   const wake = useRef<OptionalScreenWakeLock | undefined>(undefined);
   const epoch = useRef(0);
   const setupAbort = useRef<AbortController | undefined>(undefined);
@@ -165,6 +181,101 @@ export function M2CameraSlot({
     last?: DirectMetrics;
   }>({ startedAt: 0, samples: 0, verifiedSamples: 0, maxRelayBytes: 0 });
 
+  async function reportAudio(
+    status: CameraAudioStatus,
+    reportEpoch = epoch.current,
+  ) {
+    if (side !== "camera") return;
+    if (reportEpoch !== epoch.current) return;
+    audioStatusRef.current = status;
+    setAudioStatus(status);
+    const token = cameraPublishAccessToken(localStorage, id, cameraRole);
+    const response = await fetch(`/api/games/${id}`, {
+      method: "PATCH",
+      headers: {
+        "content-type": "application/json",
+        ...(token ? { authorization: `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify({
+        type: "camera-audio-status",
+        role: cameraRole,
+        status,
+      }),
+      signal: AbortSignal.timeout(5_000),
+    });
+    if (!response.ok) throw Error("microphone status rejected");
+  }
+  async function disableAudio(report = true) {
+    const current = audioTrack.current;
+    audioTrack.current = undefined;
+    if (current) {
+      try {
+        await connection.current?.replaceAudioTrack(null);
+      } catch {
+        // The video session may already be stopping. Always release the device track.
+      }
+    }
+    current?.stop();
+    if (report && audioStatusRef.current !== "off")
+      void reportAudio("off").catch(() => undefined);
+  }
+  async function synchronizeAudio(fromGesture = false) {
+    if (
+      side !== "camera" ||
+      audioFlight.current ||
+      (audioAttemptBlocked.current && !fromGesture)
+    )
+      return;
+    if (!audioIntent.current) {
+      await disableAudio();
+      return;
+    }
+    if (audioTrack.current?.readyState === "live") return;
+    if (!connection.current) return;
+    audioFlight.current = true;
+    const audioEpoch = epoch.current;
+    let next: MediaStreamTrack | undefined;
+    // iOS requires this call itself to be in the button's activation stack.
+    const acquisition = fromGesture
+      ? navigator.mediaDevices.getUserMedia({ audio: true, video: false })
+      : undefined;
+    try {
+      await reportAudio("pending", audioEpoch).catch(() => undefined);
+      const stream = await (acquisition ??
+        navigator.mediaDevices.getUserMedia({ audio: true, video: false }));
+      next = stream.getAudioTracks()[0];
+      if (!next) throw Error("No microphone track was returned.");
+      if (
+        audioEpoch !== epoch.current ||
+        !audioIntent.current ||
+        !connection.current
+      ) {
+        next.stop();
+        return;
+      }
+      await connection.current.replaceAudioTrack(next);
+      if (audioEpoch !== epoch.current || !audioIntent.current) {
+        next.stop();
+        await connection.current.replaceAudioTrack(null).catch(() => undefined);
+        return;
+      }
+      audioTrack.current?.stop();
+      audioTrack.current = next;
+      await reportAudio("active");
+    } catch (error) {
+      next?.stop();
+      if (audioEpoch !== epoch.current || !audioIntent.current) return;
+      const name = error instanceof DOMException ? error.name : "";
+      audioAttemptBlocked.current = true;
+      await reportAudio(
+        name === "NotAllowedError" ? "permission-required" : "error",
+        audioEpoch,
+      ).catch(() => undefined);
+    } finally {
+      audioFlight.current = false;
+    }
+  }
+
   const request = async (
     body: Omit<Parameters<StudioRequest>[0], "cameraRole">,
   ) => {
@@ -218,11 +329,16 @@ export function M2CameraSlot({
     setupAbort.current?.abort();
     setupAbort.current = undefined;
     active.current = false;
+    audioIntent.current = false;
+    audioAttemptBlocked.current = false;
+    audioStatusRef.current = "off";
+    setAudioStatus("off");
     setPreviewReady(false);
     setZoomRange(undefined);
     zoomCommand.current = undefined;
     zoomCaptureStartedAt.current = 0;
     onReady?.(cameraRole, false);
+    void disableAudio(false);
     connection.current?.stop();
     connection.current = undefined;
     if (track.current) {
@@ -502,8 +618,47 @@ export function M2CameraSlot({
       return;
     }
     connection.current = handle;
+    setAudioConnectionVersion((value) => value + 1);
     setStatus("Connecting to Studio…");
   }
+  useEffect(() => {
+    if (side !== "camera" || !connection.current) return;
+    let cancelled = false;
+    const pollIntent = async () => {
+      if (audioPollFlight.current) return;
+      audioPollFlight.current = true;
+      try {
+        const token = cameraPublishAccessToken(localStorage, id, cameraRole);
+        const response = await fetch(`/api/games/${id}`, {
+          headers: token ? { authorization: `Bearer ${token}` } : {},
+          cache: "no-store",
+          signal: AbortSignal.timeout(5_000),
+        });
+        if (cancelled || !response.ok) return;
+        const game = (await response.json().catch(() => null)) as
+          Parameters<typeof cameraAudioEnabled>[0] | null;
+        const enabled = game ? cameraAudioEnabled(game, cameraRole) : false;
+        if (cancelled) return;
+        const changed = enabled !== audioIntent.current;
+        if (changed) {
+          audioIntent.current = enabled;
+          audioAttemptBlocked.current = false;
+          if (enabled) void synchronizeAudio();
+          else void disableAudio();
+        }
+      } catch {
+        // A later poll can restore the scoped microphone intent.
+      } finally {
+        audioPollFlight.current = false;
+      }
+    };
+    void pollIntent();
+    const timer = setInterval(() => void pollIntent(), 2_000);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [id, side, cameraRole, audioConnectionVersion]);
   useEffect(() => {
     if (side !== "camera" || !zoomRange || !track.current) return;
     let cancelled = false;
@@ -766,6 +921,22 @@ export function M2CameraSlot({
               ? "Disconnect phone"
               : "Connect phone"}
         </button>
+        {audioStatus === "permission-required" && (
+          <button
+            className="btn-secondary w-full"
+            onClick={() => {
+              audioAttemptBlocked.current = false;
+              void synchronizeAudio(true);
+            }}
+          >
+            Grant microphone permission
+          </button>
+        )}
+        {audioIntent.current && (
+          <p role="status">
+            Microphone {audioStatus === "active" ? "on" : audioStatus}.
+          </p>
+        )}
         <p role="status" aria-live="polite">
           {status.startsWith("Path check stopped:")
             ? "Studio could not verify this phone’s connection. Reload this phone page, then tap Connect phone. Keep Studio open."

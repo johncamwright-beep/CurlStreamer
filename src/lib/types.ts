@@ -82,6 +82,10 @@ export interface GameState {
   cameraHealth?: Partial<Record<"camera-home" | "camera-away", CameraHealth>>;
   cameraFraming?: Partial<Record<"camera-home" | "camera-away", CameraFraming>>;
   cameraZoom?: Partial<Record<"camera-home" | "camera-away", CameraZoomState>>;
+  /** Director microphone intent and the assigned phone's reported capture state. */
+  cameraAudio?: Partial<
+    Record<"camera-home" | "camera-away", CameraAudioState>
+  >;
   claims: Partial<Record<Role, string>>;
   /** Opaque server-issued authority epochs; absent means legacy generation 0. */
   claimGenerations?: Partial<Record<Role, number>>;
@@ -107,6 +111,17 @@ export interface CameraZoomState {
   step?: number;
   value?: number;
   command?: { id: string; value: number; requestedAt: number };
+}
+
+export type CameraAudioStatus =
+  "off" | "pending" | "active" | "permission-required" | "error";
+
+export interface CameraAudioState {
+  enabled: boolean;
+  status: CameraAudioStatus;
+  updatedAt: number;
+  /** Assignment epoch targeted by this operator intent. Missing legacy state is inert. */
+  generation?: number;
 }
 
 export type CameraHealthPhase =

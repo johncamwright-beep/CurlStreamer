@@ -66,6 +66,54 @@ describe("private loopback program API", () => {
       clock.mockRestore();
     }
   });
+  it("accepts finite renderer-only phone audio observations and clears stale meters", async () => {
+    const { bridge, headers } = await setup();
+    const page = await fetch(bridge.rendererUrl);
+    const cookie = page.headers.get("set-cookie")!.split(";")[0];
+    let now = Date.now();
+    const clock = vi.spyOn(Date, "now").mockImplementation(() => now);
+    const observe = (body: unknown, renderer = true) =>
+      fetch(bridge.address + "/camera", {
+        method: "POST",
+        headers: renderer
+          ? {
+              origin: bridge.address,
+              cookie,
+              "content-type": "application/json",
+            }
+          : headers,
+        body: JSON.stringify(body),
+      });
+    const body = {
+      action: "audio-observe",
+      cameraRole: "camera-home",
+      peak: 0.8,
+      rms: 0.25,
+      receiving: true,
+    };
+    try {
+      expect((await observe(body, false)).status).toBe(409);
+      for (const invalid of [
+        { ...body, peak: 1.01 },
+        { ...body, rms: -0.01 },
+        { ...body, receiving: "true" },
+        { ...body, extra: true },
+      ])
+        expect((await observe(invalid)).status).toBe(409);
+      expect((await observe(body)).status).toBe(200);
+      expect(bridge.audioStatus()).toEqual({
+        "camera-home": { peak: 0.8, rms: 0.25, receiving: true },
+        "camera-away": { peak: 0, rms: 0, receiving: false },
+      });
+      now += 6000;
+      expect(bridge.audioStatus()).toEqual({
+        "camera-home": { peak: 0, rms: 0, receiving: false },
+        "camera-away": { peak: 0, rms: 0, receiving: false },
+      });
+    } finally {
+      clock.mockRestore();
+    }
+  });
   it("returns only public connection metadata and scoped events", async () => {
     const client = new M4ProgramClient(
       "11111111-1111-4111-8111-111111111111",

@@ -39,6 +39,56 @@ afterEach(() => {
 });
 
 describe("local-store shared assignment authority", () => {
+  it("limits microphone reports to the assigned phone and clears intent on release", async () => {
+    const store = await loadFreshStore();
+    const game = store.createGame(config);
+    const claimant = "55555555-5555-4555-8555-555555555555";
+    const expiresAt = new Date(Date.now() + 60_000).toISOString();
+    expect(
+      store.prepareRoleInvitation(
+        game.id,
+        "camera-home",
+        "audio-invitation",
+        expiresAt,
+      ),
+    ).toEqual({ generation: 1 });
+    expect(
+      store.claimRole(game.id, "camera-home", claimant, {
+        id: "audio-invitation",
+        expectedGeneration: 1,
+        expiresAt,
+      }),
+    ).toMatchObject({ generation: 1 });
+
+    expect(() =>
+      store.updateGame(
+        game.id,
+        { type: "camera-audio-status", role: "camera-away", status: "active" },
+        { role: "camera-home", claim: claimant, generation: 1 },
+      ),
+    ).toThrow("Participant role changed");
+    store.updateGame(game.id, {
+      type: "camera-audio",
+      role: "camera-home",
+      enabled: true,
+    });
+    expect(
+      store.updateGame(
+        game.id,
+        { type: "camera-audio-status", role: "camera-home", status: "active" },
+        { role: "camera-home", claim: claimant, generation: 1 },
+      )?.cameraAudio?.["camera-home"],
+    ).toMatchObject({ enabled: true, status: "active" });
+    expect(
+      store.releaseRole(game.id, "camera-home", claimant, 1),
+    ).toMatchObject({
+      released: true,
+    });
+    expect(
+      store.getGame(game.id)?.cameraAudio?.["camera-home"],
+    ).toBeUndefined();
+  });
+
   it("persists positive-generation invitations across module instances", async () => {
     const firstWorker = await loadFreshStore();
     const game = firstWorker.createGame(config);

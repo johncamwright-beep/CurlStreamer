@@ -19,6 +19,7 @@ export async function connectM4ProgramCamera(options: {
   ): Promise<unknown>;
   signal?: AbortSignal;
   onVideo(stream: MediaStream): void;
+  onAudio?(stream: MediaStream): void;
   onMetrics(metrics: DirectMetrics): void;
   onStop(reason: string): void;
 }) {
@@ -79,6 +80,9 @@ export async function connectM4ProgramCamera(options: {
       },
       onVideo: (stream) => {
         if (!closed) options.onVideo(stream);
+      },
+      onAudio: (stream) => {
+        if (!closed) options.onAudio?.(stream);
       },
       onFailure: (reason, metrics) => {
         if (closed) return;

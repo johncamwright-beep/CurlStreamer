@@ -291,6 +291,9 @@ describe("local operator HTTP boundary", () => {
       stop,
       closed,
       rendererAddress: "http://127.0.0.1:4000",
+      audioStatus: () => ({
+        "camera-home": { peak: 0.5, rms: 0.2, receiving: true },
+      }),
     }));
     const app = await createM4OperatorServer({
       gameId,
@@ -336,6 +339,9 @@ describe("local operator HTTP boundary", () => {
       expect(running).toMatchObject({
         programAvailable: true,
         program: "recording",
+        phoneAudio: {
+          "camera-home": { peak: 0.5, rms: 0.2, receiving: true },
+        },
       });
       expect(JSON.stringify(running)).not.toContain(invitation);
       expect(start).toHaveBeenCalledOnce();

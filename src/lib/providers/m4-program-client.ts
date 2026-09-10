@@ -58,6 +58,12 @@ const projectedGame = z.object({
   layout: z.enum(["split", "home", "away"]),
   broadcast: z.enum(["idle", "live"]),
   audioMuted: z.boolean(),
+  cameraAudio: z
+    .object({
+      "camera-home": z.object({ enabled: z.boolean() }).optional(),
+      "camera-away": z.object({ enabled: z.boolean() }).optional(),
+    })
+    .optional(),
   cameraFraming: z
     .object({
       "camera-home": z.enum(["fill", "contain"]).optional(),

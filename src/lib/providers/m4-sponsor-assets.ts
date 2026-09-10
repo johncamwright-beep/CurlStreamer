@@ -3,7 +3,10 @@ import { z } from "zod";
 const id = z.uuid(),
   max = 4 * 1024 * 1024,
   totalMax = 32 * 1024 * 1024,
-  fresh = 60_000,
+  // Signed URLs rotate independently of object identity. Reuse verified bytes
+  // for a bounded period when the organization-scoped storage path is stable.
+  // A same-path replacement can take up to this interval to appear locally.
+  fresh = 15 * 60_000,
   mimes = new Set(["image/jpeg", "image/png", "image/webp"]);
 type Sponsor = { id: string; dataUrl: string; enabled: boolean };
 type Asset = {

@@ -1,0 +1,11 @@
+{
+  "recording": "C:\\Users\\john\\Documents\\Codex\\CurlStreamer-internal-network-pilot\\work\\native-audio-proof\\usb-3L23Dg\\program-usb-440hz.mkv",
+  "samples": 542720,
+  "peak": 0.37989145517349243,
+  "rms": 0.115836919940933,
+  "lastAudible": 168022,
+  "tailSamples": 374698,
+  "tailRms": 0.0000789153380744262,
+  "toneHz": 440,
+  "generationStop": 2
+}

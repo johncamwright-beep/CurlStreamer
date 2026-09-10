@@ -182,7 +182,7 @@ internal sealed class UsbAudio : IDisposable
             }
             client.Stop();
         } catch (Exception ex) {
-            lock (gate) { error = "USB audio capture stopped: " + SafeMessage(ex); }
+            lock (gate) { running = false; error = "USB audio capture stopped: " + SafeMessage(ex); }
             try { var lost = DeviceLost; if (lost != null) lost(ex); } catch { }
             lock (gate) { if (ready != null) ready.Set(); }
         } finally {

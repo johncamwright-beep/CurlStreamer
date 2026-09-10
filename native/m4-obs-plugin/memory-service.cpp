@@ -526,7 +526,9 @@ extern "C" __declspec(dllexport) bool m4_bind_output(obs_service_t *service, obs
   if (state->owned || state->attached || state->armed || state->revoked || state->shutdown) return false;
   state->owned = obs_output_get_weak_output(output);
   if (!state->owned) return false;
-  obs_output_set_reconnect_settings(output, 0, 0);
+  // Retry transient transport failures on the same broadcast. The authority
+  // watchdog still force-stops output on Stop, revocation, or lease expiry.
+  obs_output_set_reconnect_settings(output, 20, 2);
   signal_handler_connect(obs_output_get_signal_handler(output), "start", output_start, state.get());
   signal_handler_connect(obs_output_get_signal_handler(output), "stop", output_stop, state.get());
   return true;

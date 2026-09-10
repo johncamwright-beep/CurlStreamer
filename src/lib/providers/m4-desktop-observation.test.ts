@@ -65,6 +65,7 @@ describe("M4 desktop output observation", () => {
     expect(mocks.rpc.mock.calls.map((call) => call[0])).toEqual([
       "assert_m4_output_delivery",
       "assert_m4_output_delivery",
+      "record_m4_live_evidence",
     ]);
     expect(mocks.rpc.mock.invocationCallOrder[0]).toBeLessThan(
       mocks.decrypt.mock.invocationCallOrder[0],

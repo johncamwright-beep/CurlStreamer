@@ -550,6 +550,7 @@ describe("M4 explicit automatic go-live", () => {
       desiredState: "live",
       status: "prepared",
       watchUrl,
+      phase: "starting",
     });
     expect(mocks.transition).toHaveBeenCalledWith(
       "private-access",
@@ -569,7 +570,9 @@ describe("M4 explicit automatic go-live", () => {
       broadcastStatus: "ready",
       broadcastLive: false,
     });
-    await expect(goLiveM4Session(gameId, credential)).rejects.toThrow();
+    await expect(goLiveM4Session(gameId, credential)).resolves.toMatchObject({
+      phase: "waiting-video",
+    });
     expect(mocks.transition).not.toHaveBeenCalled();
     state({ ...prepared(), desiredState: "stopped" });
     await expect(goLiveM4Session(gameId, credential)).rejects.toThrow();

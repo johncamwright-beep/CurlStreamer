@@ -80,6 +80,13 @@ test("Studio YouTube sends game-scoped commands and expires live status", async 
   await report("fixture-game", false, true);
   await expect.poll(() => requests.length).toBe(1);
   expect(requests).toEqual([{ action: "go-live" }]);
+  await expect(
+    page.getByRole("button", { name: "Go live", exact: true }),
+  ).toHaveCount(0);
+  // YouTube may acknowledge the request before it finishes going live.
+  await page.clock.fastForward(11000);
+  await report("fixture-game", false, true);
+  await expect.poll(() => requests.length).toBe(2);
   await expect(page.getByRole("link", { name: watchUrl })).toHaveCount(0);
   await report("fixture-game", true);
   await expect(page.getByRole("status")).toHaveText("● LIVE");

@@ -1,5 +1,6 @@
 import "server-only";
 import { randomUUID } from "node:crypto";
+import { youtubeLifecycle } from "./youtube-lifecycle";
 import { z } from "zod";
 import {
   completionActorParameters,
@@ -163,19 +164,14 @@ export async function goLiveM4Session(
     if (current[key] !== initial[key])
       throw Object.assign(Error("m4_operation_fenced"), { code: "55000" });
   if (!m4Configuration()) throw Error("m4_provider_unavailable");
-  if (
-    observation.broadcastLive ||
-    observation.broadcastStatus === "liveStarting"
-  )
-    return safe(current);
-  if (
-    observation.streamStatus !== "active" ||
-    !["ready", "testing"].includes(observation.broadcastStatus)
-  )
-    throw Object.assign(Error("m4_not_ready"), { code: "55000" });
+  const phase = youtubeLifecycle(
+    observation.broadcastStatus,
+    observation.streamStatus,
+  );
+  if (phase !== "go-live") return { ...safe(current), phase };
   await transitionYouTubeBroadcast(token, initial.youtubeBroadcastId, "live");
   // A successful transition request is not proof that the broadcast is live.
-  return safe(current);
+  return { ...safe(current), phase: "starting" };
 }
 async function claim(
   gameId: string,

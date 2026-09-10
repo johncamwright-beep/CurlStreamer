@@ -21,10 +21,13 @@ export function StudioYouTube({ id }: { id: string }) {
   const [copied, setCopied] = useState(false);
   const [copyError, setCopyError] = useState("");
   const flight = useRef(false);
+  const nextCheck = useRef(0);
+  const failures = useRef(0);
+  const halted = useRef(false);
   async function goLive() {
     if (flight.current) return;
     flight.current = true;
-    setAutoGoLive(false);
+    nextCheck.current = Date.now() + 10000;
     setGoingLive(true);
     setError("");
     try {
@@ -34,18 +37,53 @@ export function StudioYouTube({ id }: { id: string }) {
         body: JSON.stringify({ action: "go-live" }),
         signal: AbortSignal.timeout(30000),
       });
-      if (!result.ok) throw Error();
+      if (!result.ok) {
+        if ([400, 401, 403, 409].includes(result.status)) halted.current = true;
+        throw Error();
+      }
+      failures.current = 0;
+      const response = await result.json();
+      const messages: Record<string, string> = {
+        ended:
+          "This YouTube broadcast has ended. Stop YouTube before starting a new broadcast.",
+        removed:
+          "YouTube removed this broadcast. Check your channel in YouTube Studio.",
+        "setup-required":
+          "YouTube reports incomplete broadcast settings. Check your YouTube account.",
+        "stream-error":
+          "YouTube reports a video stream problem. Studio is checking again…",
+        "waiting-video": "Waiting for YouTube to receive video…",
+        reconnecting:
+          "YouTube is live, but video reception is interrupted. Checking connection…",
+        unknown: "Checking YouTube’s broadcast status…",
+      };
+      halted.current = ["ended", "removed", "setup-required"].includes(
+        response.phase,
+      );
+      setError(messages[response.phase] ?? "");
     } catch {
       setError(
-        "YouTube has not confirmed going live. Keep Studio open and try Go live again.",
+        halted.current
+          ? "YouTube needs attention. Stop YouTube, check the account, then start again."
+          : "YouTube status is temporarily unavailable. Retrying automatically…",
       );
+      nextCheck.current =
+        Date.now() +
+        Math.min(60000, 5000 * 2 ** Math.min(++failures.current, 4));
     } finally {
       flight.current = false;
       setGoingLive(false);
     }
   }
   useEffect(() => {
-    if (autoGoLive && state?.receiving && !state.live && !state.busy)
+    if (
+      (autoGoLive || state?.streaming === "armed") &&
+      state?.receiving &&
+      !state.live &&
+      !state.busy &&
+      !halted.current &&
+      Date.now() >= nextCheck.current
+    )
       void goLive();
   }, [autoGoLive, state]);
   useEffect(() => {
@@ -112,6 +150,9 @@ export function StudioYouTube({ id }: { id: string }) {
     ).chrome?.webview;
     if (!bridge || pending || !state || state.busy) return;
     setAutoGoLive(action === "start");
+    halted.current = action === "stop";
+    nextCheck.current = 0;
+    failures.current = 0;
     setError("");
     setPending(true);
     bridge.postMessage({ type: `studio-youtube-${action}`, gameId: id });
@@ -162,13 +203,9 @@ export function StudioYouTube({ id }: { id: string }) {
       </div>
       {state?.receiving && !state.live && (
         <div className="mt-2 flex items-center gap-2 text-sm">
-          {goingLive || autoGoLive ? (
-            "Going live on YouTube…"
-          ) : (
-            <button className="btn-secondary" onClick={() => void goLive()}>
-              Go live
-            </button>
-          )}
+          {!error && (goingLive || autoGoLive || state.streaming === "armed")
+            ? "Going live on YouTube…"
+            : null}
         </div>
       )}
       {error && !state?.live && (

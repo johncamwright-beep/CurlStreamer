@@ -118,6 +118,18 @@ export async function observeM4DesktopOutput(
     ] as const)
       if (current[key] !== initial[key]) throw new Error();
     if (!m4DesktopObservationEnabled()) throw new Error();
+    if (observation.broadcastLive) {
+      const { error } = await createAdminSupabaseClient().rpc(
+        "record_m4_live_evidence",
+        {
+          p_game_id: gameId,
+          p_generation: current.broadcast_generation,
+          p_broadcast_id: current.youtube_broadcast_id,
+          p_stream_id: current.youtube_stream_id,
+        },
+      );
+      if (error) throw new Error("live_evidence_unavailable");
+    }
     return m4DesktopObservationResultSchema.parse({
       intentId,
       sessionId: current.session_id,

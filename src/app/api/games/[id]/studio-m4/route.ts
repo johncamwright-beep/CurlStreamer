@@ -21,6 +21,19 @@ const bodySchema = z
   .object({ action: z.enum(["prepare", "stop", "go-live"]) })
   .strict();
 const safeSessionSchema = z.object({
+  phase: z
+    .enum([
+      "ended",
+      "removed",
+      "live",
+      "reconnecting",
+      "starting",
+      "setup-required",
+      "stream-error",
+      "waiting-video",
+      "unknown",
+    ])
+    .optional(),
   desiredState: z.enum(["live", "stopped"]),
   status: z.enum([
     "idle",

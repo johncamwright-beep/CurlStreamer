@@ -121,7 +121,10 @@ describe("M4 sponsor asset proxy", () => {
     try {
       await assets.sync([sponsor]);
       await assets.sync([
-        { ...sponsor, dataUrl: signed.replace("token=private", "token=rotated") },
+        {
+          ...sponsor,
+          dataUrl: signed.replace("token=private", "token=rotated"),
+        },
       ]);
       expect(fetcher).toHaveBeenCalledOnce();
       vi.advanceTimersByTime(15 * 60_000 - 1);

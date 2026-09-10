@@ -16,6 +16,7 @@ const mocks = vi.hoisted(() => ({
   obs: vi.fn(),
   channel: vi.fn(),
   verifyRetirement: vi.fn(),
+  observe: vi.fn(),
 }));
 vi.mock("@/lib/supabase/admin", () => ({
   createAdminSupabaseClient: () => ({ rpc: mocks.rpc }),
@@ -34,6 +35,9 @@ vi.mock("./youtube", () => ({
 vi.mock("./m4-provider-retirement", () => ({
   verifyM4ProviderRetirement: mocks.verifyRetirement,
 }));
+vi.mock("./m4-provider-observation", () => ({
+  observeM4YouTubeProvider: mocks.observe,
+}));
 vi.mock("./youtube-live", () => ({
   findOrCreateYouTubeBroadcast: mocks.broadcast,
   findOrCreateYouTubeStream: mocks.stream,
@@ -49,6 +53,7 @@ import {
   prepareM4Session,
   readM4Session,
   stopM4Session,
+  goLiveM4Session,
 } from "./m4-youtube-session";
 const gameId = "11111111-1111-4111-8111-111111111111";
 const credential = { kind: "organizer" as const, token: "private-organizer" };
@@ -523,5 +528,75 @@ describe("M4 provider orchestration", () => {
       "M4 preparation unavailable",
     );
     expect(mocks.rpc).not.toHaveBeenCalled();
+  });
+});
+
+describe("M4 explicit automatic go-live", () => {
+  const prepared = () =>
+    session({
+      status: "prepared",
+      youtubeBroadcastId: "broadcast-id",
+      youtubeStreamId: "stream-id",
+      watchUrl,
+    });
+  it("verifies active video and rechecks authority before requesting live", async () => {
+    state(prepared());
+    mocks.observe.mockResolvedValue({
+      streamStatus: "active",
+      broadcastStatus: "ready",
+      broadcastLive: false,
+    });
+    await expect(goLiveM4Session(gameId, credential)).resolves.toEqual({
+      desiredState: "live",
+      status: "prepared",
+      watchUrl,
+    });
+    expect(mocks.transition).toHaveBeenCalledWith(
+      "private-access",
+      "broadcast-id",
+      "live",
+    );
+    expect(
+      mocks.rpc.mock.calls.filter(
+        ([name]) => name === "get_m4_broadcast_session",
+      ),
+    ).toHaveLength(2);
+  });
+  it("does not transition inactive video or a stopped session", async () => {
+    state(prepared());
+    mocks.observe.mockResolvedValue({
+      streamStatus: "inactive",
+      broadcastStatus: "ready",
+      broadcastLive: false,
+    });
+    await expect(goLiveM4Session(gameId, credential)).rejects.toThrow();
+    expect(mocks.transition).not.toHaveBeenCalled();
+    state({ ...prepared(), desiredState: "stopped" });
+    await expect(goLiveM4Session(gameId, credential)).rejects.toThrow();
+    expect(mocks.transition).not.toHaveBeenCalled();
+  });
+  it("fences a concurrent stop or replacement during provider verification", async () => {
+    mocks.rpc
+      .mockResolvedValueOnce({ data: prepared() })
+      .mockResolvedValueOnce({ data: { ...prepared(), generation: 2 } });
+    mocks.observe.mockResolvedValue({
+      streamStatus: "active",
+      broadcastStatus: "ready",
+      broadcastLive: false,
+    });
+    await expect(goLiveM4Session(gameId, credential)).rejects.toThrow(
+      "m4_operation_fenced",
+    );
+    expect(mocks.transition).not.toHaveBeenCalled();
+  });
+  it("accepts an already live broadcast without repeating the transition", async () => {
+    state(prepared());
+    mocks.observe.mockResolvedValue({
+      streamStatus: "active",
+      broadcastStatus: "live",
+      broadcastLive: true,
+    });
+    await goLiveM4Session(gameId, credential);
+    expect(mocks.transition).not.toHaveBeenCalled();
   });
 });

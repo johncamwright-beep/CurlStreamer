@@ -6,6 +6,7 @@ const mocks = vi.hoisted(() => ({
   prepare: vi.fn(),
   stop: vi.fn(),
   config: vi.fn(),
+  goLive: vi.fn(),
 }));
 vi.mock("@/lib/game-completion", () => ({
   verifiedCompletionAccount: mocks.verified,
@@ -16,6 +17,7 @@ vi.mock("@/lib/providers/m4-youtube-session", () => ({
   prepareM4Session: mocks.prepare,
   stopM4Session: mocks.stop,
   m4Configuration: mocks.config,
+  goLiveM4Session: mocks.goLive,
 }));
 import { GET, POST } from "./route";
 const id = "11111111-1111-4111-8111-111111111111";
@@ -41,6 +43,35 @@ beforeEach(() => {
 });
 afterEach(() => vi.unstubAllEnvs());
 describe("M4 private preparation and cleanup API", () => {
+  it("requires account and same-origin authority for explicit go-live", async () => {
+    mocks.goLive.mockResolvedValue({
+      desiredState: "live",
+      status: "prepared",
+    });
+    expect(
+      (
+        await POST(
+          request({ action: "go-live" }, { origin: "https://pilot.example" }),
+          context,
+        )
+      ).status,
+    ).toBe(200);
+    expect(mocks.goLive).toHaveBeenCalledWith(id, account);
+    mocks.goLive.mockClear();
+    expect(
+      (
+        await POST(
+          request({ action: "go-live" }, { origin: "https://other.example" }),
+          context,
+        )
+      ).status,
+    ).toBe(403);
+    mocks.verified.mockResolvedValue({ ok: false });
+    expect((await POST(request({ action: "go-live" }), context)).status).toBe(
+      403,
+    );
+    expect(mocks.goLive).not.toHaveBeenCalled();
+  });
   it("uses verified account authority behind canonical HTTPS loopback proxy", async () => {
     const result = await POST(
       request(

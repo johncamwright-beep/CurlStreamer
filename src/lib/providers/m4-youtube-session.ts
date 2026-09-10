@@ -14,6 +14,7 @@ import {
   loadOwnedYouTubeChannel,
 } from "./youtube";
 import { verifyM4ProviderRetirement } from "./m4-provider-retirement";
+import { observeM4YouTubeProvider } from "./m4-provider-observation";
 import {
   bindYouTubeBroadcast,
   deleteYouTubeStream,
@@ -22,6 +23,7 @@ import {
   findYouTubeBroadcast,
   findYouTubeStream,
   finishYouTubeBroadcast,
+  transitionYouTubeBroadcast,
 } from "./youtube-live";
 
 export const m4ErrorCodeSchema = z.enum([
@@ -120,6 +122,60 @@ export async function readM4Session(
       await rpc("get_m4_broadcast_session", await actor(gameId, credential)),
     ),
   );
+}
+
+/** Explicit organizer start, after verifying YouTube reception and current authority. */
+export async function goLiveM4Session(
+  gameId: string,
+  credential: CompletionCredential,
+) {
+  if (!m4Configuration()) throw Error("m4_provider_unavailable");
+  const read = async () =>
+    sessionSchema.parse(
+      await rpc("get_m4_broadcast_session", await actor(gameId, credential)),
+    );
+  const initial = await read();
+  if (
+    initial.status !== "prepared" ||
+    initial.desiredState !== "live" ||
+    !initial.youtubeBroadcastId ||
+    !initial.youtubeStreamId ||
+    !initial.channelId
+  )
+    throw Object.assign(Error("m4_not_ready"), { code: "55000" });
+  const token = await accessToken(initial);
+  const observation = await observeM4YouTubeProvider(token, {
+    channelId: initial.channelId,
+    streamId: initial.youtubeStreamId,
+    broadcastId: initial.youtubeBroadcastId,
+  });
+  const current = await read();
+  for (const key of [
+    "generation",
+    "status",
+    "desiredState",
+    "youtubeBroadcastId",
+    "youtubeStreamId",
+    "channelId",
+    "connectionVersion",
+    "encryptedCredentials",
+  ] as const)
+    if (current[key] !== initial[key])
+      throw Object.assign(Error("m4_operation_fenced"), { code: "55000" });
+  if (!m4Configuration()) throw Error("m4_provider_unavailable");
+  if (
+    observation.broadcastLive ||
+    observation.broadcastStatus === "liveStarting"
+  )
+    return safe(current);
+  if (
+    observation.streamStatus !== "active" ||
+    !["ready", "testing"].includes(observation.broadcastStatus)
+  )
+    throw Object.assign(Error("m4_not_ready"), { code: "55000" });
+  await transitionYouTubeBroadcast(token, initial.youtubeBroadcastId, "live");
+  // A successful transition request is not proof that the broadcast is live.
+  return safe(current);
 }
 async function claim(
   gameId: string,

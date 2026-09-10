@@ -12,11 +12,14 @@ import {
   prepareM4Session,
   stopM4Session,
   m4Configuration,
+  goLiveM4Session,
 } from "@/lib/providers/m4-youtube-session";
 
 export const dynamic = "force-dynamic";
 const paramsSchema = z.object({ id: z.uuid() }).strict();
-const bodySchema = z.object({ action: z.enum(["prepare", "stop"]) }).strict();
+const bodySchema = z
+  .object({ action: z.enum(["prepare", "stop", "go-live"]) })
+  .strict();
 const safeSessionSchema = z.object({
   desiredState: z.enum(["live", "stopped"]),
   status: z.enum([
@@ -165,7 +168,9 @@ export async function POST(request: Request, context: Context) {
     return safeResponse(
       body.data.action === "prepare"
         ? await prepareM4Session(parsed.data.id, authority)
-        : await stopM4Session(parsed.data.id, authority),
+        : body.data.action === "go-live"
+          ? await goLiveM4Session(parsed.data.id, authority)
+          : await stopM4Session(parsed.data.id, authority),
     );
   } catch (error) {
     return failure(error);

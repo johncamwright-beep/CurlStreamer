@@ -193,7 +193,7 @@ function DeviceCard({
     : !connectionStatus
       ? "Status unavailable"
       : online
-        ? "Video receiving"
+        ? "Receiving video"
         : connectionStatus.phoneOnline
           ? "Phone online · Waiting for video"
           : !connectionStatus.receiverReady

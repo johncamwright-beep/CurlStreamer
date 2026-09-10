@@ -130,6 +130,20 @@ describe("private loopback program API", () => {
     });
     expect(asset.status).toBe(200);
     expect(asset.headers.get("content-type")).toContain("text/javascript");
+    const logo = await fetch(
+      bridge.address + "/branding/curlstreamer-logo.png",
+      {
+        headers: { cookie: cookie!, "sec-fetch-site": "same-origin" },
+      },
+    );
+    expect(logo.status).toBe(200);
+    expect(logo.headers.get("content-type")).toBe("image/png");
+    expect(new Uint8Array(await logo.arrayBuffer()).slice(0, 4)).toEqual(
+      new Uint8Array([137, 80, 78, 71]),
+    );
+    expect(
+      (await fetch(bridge.address + "/branding/curlstreamer-logo.png")).status,
+    ).toBe(403);
     for (const candidate of [
       {},
       { ...headers, origin: "https://attacker.invalid" },

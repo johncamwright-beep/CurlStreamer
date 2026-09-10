@@ -3,9 +3,18 @@ import {
   canonicalTitleFromConfig,
   formatCanonicalGameTitle,
   formatYouTubeScheduledTitle,
+  formatBroadcastRailTitle,
 } from "./game-title";
 
 describe("scheduled game titles", () => {
+  it("omits the generic single-game label from the program while retaining event names", () => {
+    expect(formatBroadcastRailTitle("Single Game")).toBe("");
+    expect(formatBroadcastRailTitle(" single   game ")).toBe("");
+    expect(formatBroadcastRailTitle(undefined)).toBe("");
+    expect(formatBroadcastRailTitle(" Shorty Jenkins Tournament ")).toBe(
+      "Shorty Jenkins Tournament",
+    );
+  });
   it("formats event and single games without scheduling metadata", () => {
     expect(
       formatCanonicalGameTitle({

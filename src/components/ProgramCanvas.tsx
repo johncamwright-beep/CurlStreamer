@@ -28,14 +28,11 @@ export function ProgramComposition({
   containMedia = false,
   showStatus = true,
 }: ProgramCanvasProps & { containMedia?: boolean; showStatus?: boolean }) {
-  const camera = (role: ProgramCameraRole, label: string) => (
+  const camera = (role: ProgramCameraRole) => (
     <div
       data-testid={`camera-panel-${role}`}
       className="portrait-camera-panel broadcast-camera-panel rounded-2xl border border-white/20 bg-gradient-to-b from-cyan-950 via-slate-700 to-blue-950"
     >
-      <span className="absolute left-4 top-4 rounded bg-slate-950/70 px-3 py-2 font-bold">
-        {label}
-      </span>
       {renderCamera(role)}
     </div>
   );
@@ -68,6 +65,7 @@ export function ProgramComposition({
   const showHome = game.layout !== "away",
     showAway = game.layout !== "home";
   const cameraCount = showHome && showAway ? 2 : 1;
+  const eventTitle = formatBroadcastRailTitle(game.config.eventName);
   return (
     <div
       data-testid="broadcast-canvas"
@@ -80,8 +78,8 @@ export function ProgramComposition({
           data-camera-count={cameraCount}
           className="broadcast-camera-deck"
         >
-          {showHome && camera("camera-home", "CAMERA 1")}
-          {showAway && camera("camera-away", "CAMERA 2")}
+          {showHome && camera("camera-home")}
+          {showAway && camera("camera-away")}
           {visibleSponsorOverlay && sponsor && (
             <SponsorFrame
               sponsors={sponsors}
@@ -95,12 +93,22 @@ export function ProgramComposition({
           className="broadcast-information-rail flex min-w-0 flex-col rounded-2xl border border-white/10 bg-slate-950/45"
         >
           <div>
-            <p className="text-[1.25cqw] font-bold tracking-[.25em] text-cyan-300">
-              CURLCAST
-            </p>
-            <h1 className="mt-[.45cqw] truncate text-[1.75cqw] font-black leading-tight">
-              {formatBroadcastRailTitle(game.config.eventName)}
-            </h1>
+            <div
+              className="relative mb-[.6cqw] w-full overflow-hidden"
+              style={{ aspectRatio: "6 / 1" }}
+            >
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src="/branding/curlstreamer-logo.png"
+                alt="Curl Streamer"
+                className="absolute left-0 top-1/2 w-full -translate-y-1/2"
+              />
+            </div>
+            {eventTitle && (
+              <h1 className="mt-[.45cqw] truncate text-[1.75cqw] font-black leading-tight">
+                {eventTitle}
+              </h1>
+            )}
             <Scoreboard game={game} compact broadcast />
           </div>
           {m.active && m.style === "fullscreen" && sponsor && (

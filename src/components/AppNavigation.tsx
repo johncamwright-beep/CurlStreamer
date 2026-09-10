@@ -210,7 +210,7 @@ export function AppNavigation({
         inert={!open ? true : undefined}
       >
         <div className="app-navigation-brand">
-          <strong>CurlCast</strong>
+          <strong>Curl Streamer</strong>
           <button
             type="button"
             className="app-navigation-close"

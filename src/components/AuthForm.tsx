@@ -2,6 +2,7 @@
 import { useActionState } from "react";
 import Link from "next/link";
 import type { AuthFormState } from "@/app/signup/actions";
+import { CurlStreamerLogo } from "@/components/CurlStreamerBrand";
 
 export function AuthForm({
   mode,
@@ -17,7 +18,7 @@ export function AuthForm({
   return (
     <main className="mx-auto min-h-screen max-w-md p-5 md:py-12">
       <form action={formAction} className="panel grid gap-4" noValidate>
-        <p className="font-bold tracking-widest text-cyan-300">CURLSTREAMER</p>
+        <CurlStreamerLogo />
         <h1 className="text-3xl font-black">
           {mode === "signup" ? "Create account" : "Sign in"}
         </h1>

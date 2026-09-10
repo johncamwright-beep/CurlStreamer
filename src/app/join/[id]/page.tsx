@@ -90,7 +90,7 @@ export default function Join({ params }: { params: Promise<{ id: string }> }) {
     return (
       <main className="mx-auto max-w-md p-5">
         <div className="panel">
-          <h1 className="text-3xl font-black">Join CurlCast</h1>
+          <h1 className="text-3xl font-black">Join Curl Streamer</h1>
           <p className="my-4">
             This secure link assigns this phone its game role.
           </p>

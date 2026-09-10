@@ -1,7 +1,11 @@
 import "./globals.css";
+import { CurlStreamerAppBadge } from "@/components/CurlStreamerBrand";
 export const metadata = {
-  title: "CurlCast",
+  title: "Curl Streamer",
   description: "Three-phone curling broadcasts, simply.",
+  icons: {
+    icon: "/branding/curlstreamer-icon.png",
+  },
 };
 export default function RootLayout({
   children,
@@ -10,7 +14,10 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
-      <body>{children}</body>
+      <body>
+        <CurlStreamerAppBadge />
+        {children}
+      </body>
     </html>
   );
 }

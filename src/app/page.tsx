@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { login } from "@/app/login/actions";
 import { AuthForm } from "@/components/AuthForm";
+import { CurlStreamerLogo } from "@/components/CurlStreamerBrand";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 
 export default async function HomePage() {
@@ -22,7 +23,7 @@ function AuthenticationUnavailable() {
   return (
     <main className="mx-auto min-h-screen max-w-md p-5 md:py-12">
       <section className="panel grid gap-4" role="alert" aria-live="polite">
-        <p className="font-bold tracking-widest text-cyan-300">CURLSTREAMER</p>
+        <CurlStreamerLogo />
         <h1 className="text-3xl font-black">
           Sign in is temporarily unavailable
         </h1>

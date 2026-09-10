@@ -42,7 +42,8 @@ export function canonicalTitleFromConfig<
 }
 
 export function formatBroadcastRailTitle(eventName?: string | null) {
-  return normalizeTitleWhitespace(eventName) || "Single Game";
+  const title = normalizeTitleWhitespace(eventName);
+  return /^single game$/i.test(title) ? "" : title;
 }
 
 export function formatYouTubeScheduledTitle(

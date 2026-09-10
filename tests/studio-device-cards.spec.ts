@@ -168,7 +168,7 @@ test("camera cards share a row on a tablet and reconnect QR collapses when onlin
       ),
     testGameId,
   );
-  await expect(first.getByRole("status")).toHaveText("Video receiving");
+  await expect(first.getByRole("status")).toHaveText("Receiving video");
   await expect(first.getByRole("img")).toHaveCount(0);
   online = false;
   await page.clock.fastForward(6500);
@@ -254,7 +254,7 @@ test("release stays on the game and requires an explicit confirmation", async ({
       ),
     testGameId,
   );
-  await expect(card.getByRole("status")).toHaveText("Video receiving");
+  await expect(card.getByRole("status")).toHaveText("Receiving video");
   await expect(
     card.getByRole("button", { name: "Show reconnect QR" }),
   ).toHaveCount(0);

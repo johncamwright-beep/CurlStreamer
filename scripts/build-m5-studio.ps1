@@ -28,6 +28,8 @@ try {
   if ($LASTEXITCODE -ne 0) { throw "Renderer build failed." }
   & $node node_modules/tailwindcss/lib/cli.js -i src/app/globals.css -o "$destinationPath/renderer/m4-program-renderer.css" --minify
   if ($LASTEXITCODE -ne 0) { throw "Stylesheet build failed." }
+  New-Item -ItemType Directory -Path "$destinationPath/renderer/branding" -Force | Out-Null
+  Copy-Item -LiteralPath (Join-Path $repository 'public/branding/curlstreamer-logo.png') -Destination "$destinationPath/renderer/branding/curlstreamer-logo.png"
   Copy-Item -LiteralPath $node -Destination (Join-Path $destinationPath "node/node.exe")
   # Re-serialize only the public allowlist. No environment file or OBS profile is copied.
   [ordered]@{ version = 1; website = $settings.website; realtimeUrl = $settings.realtimeUrl; realtimeKey = $settings.realtimeKey; streamingEnabled = ($settings.streamingEnabled -eq $true) } |

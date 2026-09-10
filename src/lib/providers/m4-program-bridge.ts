@@ -138,12 +138,16 @@ export async function createM4ProgramBridge(
     if (
       request.method === "GET" &&
       (request.url === "/m4-program-renderer.js" ||
-        request.url === "/m4-program-renderer.css")
+        request.url === "/m4-program-renderer.css" ||
+        request.url === "/branding/curlstreamer-logo.png")
     ) {
       try {
-        const file = request.url.endsWith(".js")
-          ? "m4-program-renderer.js"
-          : "m4-program-renderer.css";
+        const file =
+          request.url === "/branding/curlstreamer-logo.png"
+            ? "branding/curlstreamer-logo.png"
+            : request.url.endsWith(".js")
+              ? "m4-program-renderer.js"
+              : "m4-program-renderer.css";
         const value = await readFile(
           join(
             rendererAssets?.directory ?? join(process.cwd(), "public"),
@@ -152,9 +156,11 @@ export async function createM4ProgramBridge(
         );
         if (value.length > 1024 * 1024) throw new Error();
         response.writeHead(200, {
-          "content-type": file.endsWith(".js")
-            ? "text/javascript; charset=utf-8"
-            : "text/css; charset=utf-8",
+          "content-type": file.endsWith(".png")
+            ? "image/png"
+            : file.endsWith(".js")
+              ? "text/javascript; charset=utf-8"
+              : "text/css; charset=utf-8",
         });
         response.end(value);
       } catch {

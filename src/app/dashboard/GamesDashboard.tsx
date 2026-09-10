@@ -215,12 +215,6 @@ export function GamesDashboard({
           />
         )}
       </section>
-      {!broadcasts.available && (
-        <p className="dashboard-notice" role="status">
-          Broadcast status is temporarily unavailable. Your schedule and saved
-          results are still available. <a href={href(tab)}>Refresh status</a>
-        </p>
-      )}
       {!!groups.broadcasting.length && (
         <section
           className="dashboard-activity"

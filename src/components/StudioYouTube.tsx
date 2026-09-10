@@ -198,7 +198,7 @@ export function StudioYouTube({ id }: { id: string }) {
               : "Broadcast to YouTube"}
         </button>
         <a className="btn-secondary" href="/settings/youtube">
-          YouTube account
+          YouTube settings
         </a>
       </div>
       {state?.receiving && !state.live && (

@@ -260,7 +260,21 @@ export async function prepareM4Session(
 ): Promise<SafeM4Session> {
   if (!m4Configuration())
     throw Object.assign(Error("M4 preparation unavailable"), { code: "55000" });
-  let s = await claim(gameId, credential, "prepared");
+  let s: Session;
+  try {
+    s = await claim(gameId, credential, "prepared");
+  } catch (error) {
+    if ((error as { code?: string })?.code !== "55000") throw error;
+    const cleanup = sessionSchema.parse(
+      await rpc("claim_abandoned_m4_cleanup", {
+        ...(await actor(gameId, credential)),
+        p_operation_token: randomUUID(),
+      }),
+    );
+    const retired = await finishM4Session(gameId, credential, cleanup);
+    if (retired.status !== "stopped") return retired;
+    s = await claim(gameId, credential, "prepared");
+  }
   if (s.action !== "run") return safe(s);
   let creating: "broadcast" | "stream" | undefined;
   try {
@@ -336,7 +350,17 @@ export async function stopM4Session(
   gameId: string,
   credential: CompletionCredential,
 ): Promise<SafeM4Session> {
-  let s = await claim(gameId, credential, "stopped");
+  return finishM4Session(
+    gameId,
+    credential,
+    await claim(gameId, credential, "stopped"),
+  );
+}
+async function finishM4Session(
+  gameId: string,
+  credential: CompletionCredential,
+  s: Session,
+): Promise<SafeM4Session> {
   if (s.action !== "run") return safe(s);
   try {
     if (!s.sessionKey) throw Error("m4_operation_fenced");

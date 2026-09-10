@@ -151,6 +151,38 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 describe("M4 provider orchestration", () => {
+  it("retries preparation only after abandoned-session cleanup is confirmed", async () => {
+    mocks.rpc
+      .mockResolvedValueOnce({ error: { code: "55000" } })
+      .mockResolvedValueOnce({
+        data: session({
+          action: "none",
+          status: "stopped",
+          desiredState: "stopped",
+        }),
+      })
+      .mockResolvedValueOnce({
+        data: session({ action: "none", status: "prepared" }),
+      });
+    expect(await prepareM4Session(gameId, credential)).toMatchObject({
+      status: "prepared",
+    });
+    expect(mocks.rpc.mock.calls.map(([name]) => name)).toEqual([
+      "claim_m4_broadcast_operation",
+      "claim_abandoned_m4_cleanup",
+      "claim_m4_broadcast_operation",
+    ]);
+  });
+  it("does not stop an active desktop when abandoned cleanup is refused", async () => {
+    mocks.rpc
+      .mockResolvedValueOnce({ error: { code: "55000" } })
+      .mockResolvedValueOnce({ error: { code: "55000" } });
+    await expect(prepareM4Session(gameId, credential)).rejects.toMatchObject({
+      code: "55000",
+    });
+    expect(mocks.transition).not.toHaveBeenCalled();
+    expect(mocks.rpc).toHaveBeenCalledTimes(2);
+  });
   it("prepares manual provider resources in durable order without starting OBS or transitioning live", async () => {
     state(session());
     const result = await prepareM4Session(gameId, credential);

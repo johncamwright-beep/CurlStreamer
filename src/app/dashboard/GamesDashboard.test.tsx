@@ -42,7 +42,7 @@ describe("dashboard role controls", () => {
   it("keeps viewer access read-only while status failure leaves games readable", () => {
     const html = render("viewer");
     expect(html).toContain('href="/games/one"');
-    expect(html).toContain("Broadcast status is temporarily unavailable");
+    expect(html).not.toContain("Broadcast status is temporarily unavailable");
     expect(html).not.toContain('href="/score/one"');
     expect(html).not.toContain('href="/games/new"');
     expect(html).not.toContain("More actions");

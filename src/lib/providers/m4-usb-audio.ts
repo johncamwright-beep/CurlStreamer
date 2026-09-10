@@ -1,0 +1,45 @@
+const sampleRate = 48_000;
+const maxQueuedBytes = (sampleRate / 2) * Float32Array.BYTES_PER_ELEMENT;
+
+/** A short-lived mono PCM transport. It deliberately has no persistence: a
+ * slow or disconnected renderer loses oldest audio instead of adding delay. */
+export function createM4UsbAudioQueue() {
+  let chunks: Buffer[] = [];
+  let bytes = 0;
+  let generation = 0;
+
+  const reset = () => {
+    for (const chunk of chunks) chunk.fill(0);
+    chunks = [];
+    bytes = 0;
+    generation++;
+  };
+  const push = (pcm: Buffer) => {
+    if (!pcm.length) return reset();
+    if (pcm.length % Float32Array.BYTES_PER_ELEMENT)
+      throw new Error("invalid_pcm");
+    for (
+      let index = 0;
+      index < pcm.length;
+      index += Float32Array.BYTES_PER_ELEMENT
+    ) {
+      if (!Number.isFinite(pcm.readFloatLE(index)))
+        throw new Error("invalid_pcm");
+    }
+    chunks.push(Buffer.from(pcm));
+    bytes += pcm.length;
+    while (bytes > maxQueuedBytes && chunks.length) {
+      const oldest = chunks.shift()!;
+      bytes -= oldest.length;
+      oldest.fill(0);
+    }
+  };
+  const drain = () => {
+    if (!chunks.length) return { generation, pcm: Buffer.alloc(0) };
+    const pcm = Buffer.concat(chunks);
+    chunks = [];
+    bytes = 0;
+    return { generation, pcm };
+  };
+  return { push, drain, reset };
+}

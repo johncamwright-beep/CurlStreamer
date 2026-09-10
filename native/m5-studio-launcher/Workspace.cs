@@ -30,11 +30,21 @@ internal sealed class Workspace : Form
     private TaskCompletionSource<bool> exited;
     private TaskCompletionSource<Dictionary<string, object>> handoff;
     private bool busy, polling, closing, mayClose, cleanupConfirmed, recording, controllerReady, startupFailed;
+    private readonly UsbAudio usbAudio = new UsbAudio();
+    private readonly object usbLock = new object();
+    private readonly List<float> usbSamples = new List<float>();
+    private readonly System.Windows.Forms.Timer usbTimer = new System.Windows.Forms.Timer { Interval = 100 };
+    private Task usbSend = Task.FromResult(true);
+    private string usbGame, usbError;
+    private bool usbBusy;
+    private object usbDevices = new object[0];
 
     internal Workspace(string initialGame, string node, string controller, string configuration, string testProfile = null)
     {
         launchGame = initialGame; nodeHash = node; controllerHash = controller; configurationHash = configuration;
         profileDirectory = testProfile;
+        usbTimer.Tick += (s, e) => { if (!usbBusy && !closing && usbSend.IsCompleted) usbSend = SendUsbAudio(); };
+        usbTimer.Start();
         root = AppDomain.CurrentDomain.BaseDirectory;
         Text = "CurlStreamer Studio — Workspace Preview";
         ClientSize = new Size(1180, 820); MinimumSize = new Size(940, 680);
@@ -102,6 +112,7 @@ internal sealed class Workspace : Form
             core.Settings.AreHostObjectsAllowed = false;
             core.Settings.UserAgent += " CurlStreamerStudio/0.3";
             core.Settings.UserAgent += " StudioProgramPreview/1";
+            core.Settings.UserAgent += " StudioNativeAudio/1";
             core.AddWebResourceRequestedFilter(origin + "/__studio-preview/*", CoreWebView2WebResourceContext.Image);
             core.WebResourceRequested += (s, e) => {
                 if (e.ResourceContext != CoreWebView2WebResourceContext.Image || !e.Request.Uri.StartsWith(origin + "/__studio-preview/")) return;
@@ -125,7 +136,7 @@ internal sealed class Workspace : Form
                 if (!WorkspacePolicy.SameOrigin(e.Uri, origin)) { e.Cancel = true; status.Text = "Use the website in your browser for external account connections."; }
                 selectedGame = null; UpdateButtons();
             };
-            core.SourceChanged += (s, e) => { selectedGame = WorkspacePolicy.Game(core.Source, origin); if (selectedGame != null) lastGame = selectedGame; UpdateButtons(); };
+            core.SourceChanged += (s, e) => { selectedGame = WorkspacePolicy.Game(core.Source, origin); if (selectedGame != null) lastGame = selectedGame; if (usbGame != null && usbGame != selectedGame) { var ignored = StopUsbAudio(); } UpdateButtons(); };
             core.NavigationCompleted += (s, e) => {
                 selectedGame = WorkspacePolicy.Game(core.Source, origin);
                 if (!e.IsSuccess && !recording) status.Text = "The workspace could not load. Check your internet connection and choose Refresh.";
@@ -156,6 +167,9 @@ internal sealed class Workspace : Form
             var raw = args.WebMessageAsJson;
             if (raw.Length > 4096) return;
             var value = json.Deserialize<Dictionary<string, object>>(raw);
+            if (TextValue(value, "type") != null && TextValue(value, "type").StartsWith("studio-usb-")) {
+                await UsbCommand(value); return;
+            }
             if (value.Count == 2 && TextValue(value, "gameId") == selectedGame && selectedGame != null && !busy && !closing) {
                 var type = TextValue(value, "type");
                 if (type == "studio-youtube-start" || type == "studio-youtube-stop") { await YouTube(type == "studio-youtube-start"); return; }
@@ -255,6 +269,7 @@ internal sealed class Workspace : Form
             if (!recording) throw new WorkspaceFailure("Cameras could not connect. Your game and camera assignments are retained. Try Connect cameras again.");
     }
     private async Task StopRecording() {
+        await StopUsbAudio();
         if (busy || !recording) return;
         busy = true; UpdateButtons(); status.Text = "Disconnecting cameras…";
         try { ApplyState(await Command(new { action = "stop-program" })); }
@@ -322,7 +337,78 @@ internal sealed class Workspace : Form
         catch { if (!busy) status.Text = "Recording status is unavailable. Keep Studio open while checking the recording."; }
         finally { polling = false; }
     }
+    private async Task UsbCommand(Dictionary<string, object> value) {
+        if (usbBusy || closing || selectedGame == null || TextValue(value, "gameId") != selectedGame ||
+            !WorkspacePolicy.Microphone(origin, web.CoreWebView2.Source, origin, selectedGame, true)) return;
+        var type = TextValue(value, "type");
+        usbBusy = true;
+        try {
+            usbError = null;
+            if (type == "studio-usb-list" && value.Count == 2) usbDevices = UsbAudio.Enumerate();
+            else if (type == "studio-usb-stop" && value.Count == 2) await StopUsbAudio();
+            else if (type == "studio-usb-start" && value.Count == 3) {
+                var deviceId = TextValue(value, "deviceId");
+                if (String.IsNullOrEmpty(deviceId) || deviceId.Length > 1024 || !recording || selectedGame != runningGame)
+                    throw new InvalidOperationException("Open a game and wait for Studio before enabling USB audio.");
+                await StopUsbAudio();
+                usbGame = selectedGame;
+                usbAudio.Start(deviceId, (samples, rate) => {
+                    lock (usbLock) {
+                        if (usbGame == null) return;
+                        if (rate != 48000) { usbError = "Set the USB receiver to 48 kHz in Windows audio settings."; return; }
+                        if (usbSamples.Count + samples.Length > 24000) usbSamples.Clear();
+                        usbSamples.AddRange(samples);
+                    }
+                });
+            } else if (type == "studio-usb-channel" && value.Count == 5 && usbGame == selectedGame) {
+                object channel, muted, level;
+                if (!value.TryGetValue("channel", out channel) || !(channel is int) || !value.TryGetValue("muted", out muted) || !(muted is bool) || !value.TryGetValue("level", out level) || !(level is decimal || level is double || level is int)) throw new InvalidDataException();
+                var gain = Convert.ToDouble(level);
+                if (Double.IsNaN(gain) || Double.IsInfinity(gain) || gain < 0 || gain > 1) throw new InvalidDataException();
+                usbAudio.SetChannel((int)channel, (bool)muted, (float)gain);
+            }
+        } catch { usbError = "USB audio could not start or update. Check the receiver connection and selected input."; }
+        finally { usbBusy = false; PublishUsbStatus(); }
+    }
+    private async Task StopUsbAudio() {
+        usbGame = null;
+        usbAudio.Stop();
+        lock (usbLock) usbSamples.Clear();
+        try { await usbSend; } catch { }
+        if (local != null && WorkspacePolicy.Loopback(localAddress)) {
+            try { await PostUsbAudio(new byte[0]); } catch { }
+        }
+    }
+    private async Task PostUsbAudio(byte[] bytes) {
+        if (local == null || !WorkspacePolicy.Loopback(localAddress)) throw new InvalidDataException();
+        using (var request = new HttpRequestMessage(HttpMethod.Post, localAddress + "/usb-audio"))
+        using (var timeout = new System.Threading.CancellationTokenSource(2000)) {
+            request.Headers.Add("Origin", localAddress);
+            request.Content = new ByteArrayContent(bytes);
+            request.Content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/octet-stream");
+            using (var result = await local.SendAsync(request, timeout.Token)) result.EnsureSuccessStatusCode();
+        }
+    }
+    private async Task SendUsbAudio() {
+        if (usbGame == null) return;
+        if (!recording || usbGame != runningGame) { usbAudio.Stop(); usbGame = null; return; }
+        float[] samples;
+        lock (usbLock) { var count = Math.Min(4800, usbSamples.Count); samples = usbSamples.GetRange(0, count).ToArray(); usbSamples.RemoveRange(0, count); }
+        try {
+            if (samples.Length > 0) {
+                var bytes = new byte[samples.Length * 4]; Buffer.BlockCopy(samples, 0, bytes, 0, bytes.Length);
+                await PostUsbAudio(bytes);
+            }
+        } catch { usbError = "USB audio delivery interrupted. Turn USB audio off and on to retry."; usbAudio.Stop(); usbGame = null; lock (usbLock) usbSamples.Clear(); }
+        PublishUsbStatus();
+    }
+    private void PublishUsbStatus() {
+        if (closing || web.CoreWebView2 == null || selectedGame == null || !WorkspacePolicy.SameOrigin(web.CoreWebView2.Source, origin)) return;
+        var snapshot = usbAudio.Snapshot();
+        web.CoreWebView2.ExecuteScriptAsync("window.dispatchEvent(new CustomEvent('studio-usb-status',{detail:" + json.Serialize(new { gameId = selectedGame, devices = usbDevices, running = snapshot.running, error = usbError ?? snapshot.error, channels = snapshot.channels }) + "}));");
+    }
     private async Task CloseController() {
+        await StopUsbAudio();
         if (child == null) return;
         status.Text = "Stopping output and disconnecting cameras…";
         if (!child.HasExited) { child.StandardInput.WriteLine("close"); child.StandardInput.Flush(); }

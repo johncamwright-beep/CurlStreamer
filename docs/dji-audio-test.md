@@ -11,7 +11,11 @@ Use USB and Q (Quadraphonic) mode for four independent channels. Studio can mete
 - https://www.dji.com/mic-3/faq
 - https://dl.djicdn.com/downloads/DJI%20Mic%203/20250828/COMPATIBILITY_LIST/DJI_Mic_3_Quadraphonic_Computer_Software_Compatibility_List_EN.pdf
 
-The Audio tile currently provides an explicitly labelled USB input check, not sent to YouTube yet. Select the device, grant permission, and speak into each transmitter separately. Only actual reported channels get meters. The diagnostic mono mix has mute and headroom, no speaker monitoring, and stops on device removal or teardown. Native Windows four-channel input and connection to the outgoing broadcast remain to implement.
+The new native Studio build uses shared-mode WASAPI instead of WebView2 for USB input. Find microphones enumerates active Windows inputs without opening capture. Use USB audio explicitly starts the selected input for the current game. Actual channels receive independent meters, mute and level controls. A fixed channel-count divisor mixes to mono, followed by 0.5 renderer gain for program headroom. This version requires 48 kHz. Windows microphone privacy permission still applies.
+
+Mono float PCM travels over the authenticated local operator connection into a bounded private-renderer queue; no USB audio is stored or uploaded to Supabase. Empty packets flush playback, and changing games or closing Studio stops capture. The OBS renderer adds this mix to outgoing audio. Older Studio builds retain the browser-only input diagnostic until the native update is installed.
+
+Synthetic native tests cover PCM16/24/32 and float decoding, four distinct channel meters, mute and mono mixing. Read-only endpoint enumeration passed. Physical DJI capture, channel identity and end-to-end microphone delivery remain unverified. The update is staged under work/studio-native-usb; do not replace the running app while Studio/OBS are active.
 
 ## Cost and cleanup
 

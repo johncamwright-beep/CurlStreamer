@@ -36,8 +36,16 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Workspace test compilation failed' }
           & $proof
           if ($LASTEXITCODE -ne 0) { throw 'Workspace boundary tests failed' }
-          & $compiler /nologo /target:winexe /platform:x64 /define:WORKSPACE /reference:System.Windows.Forms.dll /reference:System.Drawing.dll /reference:System.Net.Http.dll /reference:System.Web.Extensions.dll "/reference:$sdk/lib/net462/Microsoft.Web.WebView2.Core.dll" "/reference:$sdk/lib/net462/Microsoft.Web.WebView2.WinForms.dll" "/out:$env:RUNNER_TEMP/Workspace.exe" (Join-Path $PWD 'native\m5-studio-launcher\Studio.cs') (Join-Path $PWD 'native\m5-studio-launcher\Workspace.cs') (Join-Path $PWD 'native\m5-studio-launcher\WorkspacePolicy.cs')
+          & $compiler /nologo /target:winexe /platform:x64 /define:WORKSPACE /reference:System.Windows.Forms.dll /reference:System.Drawing.dll /reference:System.Net.Http.dll /reference:System.Web.Extensions.dll "/reference:$sdk/lib/net462/Microsoft.Web.WebView2.Core.dll" "/reference:$sdk/lib/net462/Microsoft.Web.WebView2.WinForms.dll" "/out:$env:RUNNER_TEMP/Workspace.exe" (Join-Path $PWD 'native\m5-studio-launcher\Studio.cs') (Join-Path $PWD 'native\m5-studio-launcher\Workspace.cs') (Join-Path $PWD 'native\m5-studio-launcher\WorkspacePolicy.cs') (Join-Path $PWD 'native\m5-studio-launcher\UsbAudio.cs')
           if ($LASTEXITCODE -ne 0) { throw 'Workspace compilation failed' }
+      - name: Check native USB PCM decoding and mixing
+        shell: pwsh
+        run: |
+          $proof = Join-Path $env:RUNNER_TEMP 'usb-audio-tests.exe'
+          & "$env:WINDIR\Microsoft.NET\Framework64\v4.0.30319\csc.exe" /nologo /platform:x64 "/out:$proof" (Join-Path $PWD 'native\m5-studio-launcher\UsbAudio.cs') (Join-Path $PWD 'native\m5-studio-launcher\UsbAudioTests.cs')
+          if ($LASTEXITCODE -ne 0) { throw 'USB audio test compilation failed' }
+          & $proof
+          if ($LASTEXITCODE -ne 0) { throw 'USB audio tests failed' }
   web:
     runs-on: ubuntu-latest
     timeout-minutes: 25

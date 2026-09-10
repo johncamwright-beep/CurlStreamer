@@ -4,6 +4,7 @@ import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { z } from "zod";
 import { createM4SponsorAssets } from "./m4-sponsor-assets";
+import { createM4UsbAudioQueue } from "./m4-usb-audio";
 import type { M4ProgramClient } from "./m4-program-client";
 import {
   cameraRoleSchema,
@@ -54,6 +55,7 @@ export async function createM4ProgramBridge(
     { peak: number; rms: number; receiving: boolean; observedAt: number }
   >();
   const rendererCookie = randomBytes(32).toString("base64url");
+  const usbAudio = createM4UsbAudioQueue();
   const expected = Buffer.from(`Bearer ${key}`);
   const expectedRendererCookie = Buffer.from(`m4_program=${rendererCookie}`);
   let address = "",
@@ -225,6 +227,25 @@ export async function createM4ProgramBridge(
       }
       return;
     }
+    if (request.method === "GET" && request.url === "/usb-audio") {
+      // This is intentionally renderer-cookie-only. The owner capability is
+      // for Node-to-bridge control and must never be usable as an audio sink.
+      if (!rendererAllowed)
+        return reply(403, { error: "Program request denied" });
+      const { generation, pcm } = usbAudio.drain();
+      response.setHeader("x-m4-usb-audio-generation", String(generation));
+      if (!pcm.length) {
+        response.writeHead(204);
+        response.end();
+        return;
+      }
+      response.writeHead(200, {
+        "content-type": "application/octet-stream",
+        "content-length": pcm.length,
+      });
+      response.end(pcm, () => pcm.fill(0));
+      return;
+    }
     if (request.method === "GET" && request.url?.startsWith("/events/")) {
       const role = cameraRoleSchema.safeParse(
         request.url.slice("/events/".length),
@@ -377,12 +398,17 @@ export async function createM4ProgramBridge(
           ];
         }),
       ),
+    pushUsbAudio: (pcm: Buffer) => {
+      if (closed) throw new Error("m4_program_unavailable");
+      usbAudio.push(pcm);
+    },
     rendererUrl: address + "/",
     // Owner-only transport capability. Never log or put in a URL/config file.
     authorization: `Bearer ${key}`,
     close: () =>
       (closing ??= (async () => {
         closed = true;
+        usbAudio.reset();
         expected.fill(0);
         expectedRendererCookie.fill(0);
         client.close();

@@ -359,6 +359,134 @@ describe("local operator HTTP boundary", () => {
       await rm(directory, { recursive: true, force: true });
     }
   });
+  it("accepts bounded same-origin USB PCM only while the active program owns it", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "m4-operator-usb-"));
+    let finish!: (result: { finalized: boolean }) => void;
+    const pushUsbAudio = vi.fn();
+    const app = await createM4OperatorServer({
+      gameId,
+      origin: "https://pilot.invalid",
+      paths,
+      check: async () => undefined,
+      program: {
+        realtimeUrl: "https://realtime.invalid",
+        realtimeKey: "key",
+        recorder: "C:\\recorder.exe",
+        runtime: "C:\\runtime",
+        recordingRoot: join(directory, "recordings"),
+        cacheRoot: join(directory, "cache"),
+        rendererRoot: join(directory, "renderer"),
+        start: async () => ({
+          stop: async () => finish({ finalized: true }),
+          closed: new Promise((resolve) => (finish = resolve)),
+          rendererAddress: "http://127.0.0.1:4000",
+          pushUsbAudio,
+        }),
+      },
+    });
+    try {
+      const page = await fetch(app.address);
+      const cookie = page.headers.get("set-cookie")!.split(";")[0];
+      const headers = {
+        cookie,
+        origin: app.address,
+        "content-type": "application/octet-stream",
+      };
+      const pcm = Buffer.alloc(4);
+      pcm.writeFloatLE(0.25, 0);
+      expect(
+        (
+          await fetch(`${app.address}/usb-audio`, {
+            method: "POST",
+            headers,
+            body: pcm,
+          })
+        ).status,
+      ).toBe(403);
+      await fetch(`${app.address}/command`, {
+        method: "POST",
+        headers: {
+          cookie,
+          origin: app.address,
+          "content-type": "application/json",
+        },
+        body: '{"action":"check"}',
+      });
+      await fetch(`${app.address}/command`, {
+        method: "POST",
+        headers: {
+          cookie,
+          origin: app.address,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          action: "start-program",
+          invitation: "i".repeat(43),
+        }),
+      });
+      expect(
+        (
+          await fetch(`${app.address}/usb-audio`, {
+            method: "POST",
+            headers: { ...headers, origin: "https://evil.invalid" },
+            body: pcm,
+          })
+        ).status,
+      ).toBe(403);
+      expect(
+        (
+          await fetch(`${app.address}/usb-audio`, {
+            method: "POST",
+            headers,
+            body: pcm,
+          })
+        ).status,
+      ).toBe(204);
+      expect(pushUsbAudio).toHaveBeenLastCalledWith(expect.any(Buffer));
+      expect(
+        (
+          await fetch(`${app.address}/usb-audio`, {
+            method: "POST",
+            headers,
+            body: Buffer.alloc(0),
+          })
+        ).status,
+      ).toBe(204);
+      expect(pushUsbAudio).toHaveBeenLastCalledWith(
+        expect.objectContaining({ length: 0 }),
+      );
+      expect(
+        (
+          await fetch(`${app.address}/usb-audio`, {
+            method: "POST",
+            headers,
+            body: Buffer.alloc(19_201),
+          })
+        ).status,
+      ).toBe(400);
+      await fetch(`${app.address}/command`, {
+        method: "POST",
+        headers: {
+          cookie,
+          origin: app.address,
+          "content-type": "application/json",
+        },
+        body: '{"action":"stop-program"}',
+      });
+      expect(
+        (
+          await fetch(`${app.address}/usb-audio`, {
+            method: "POST",
+            headers,
+            body: pcm,
+          })
+        ).status,
+      ).toBe(403);
+    } finally {
+      await app.close();
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
 });
 describe.skipIf(!process.env.CURLCAST_TEST_STUDIO_HOST)(
   "real native PC check",

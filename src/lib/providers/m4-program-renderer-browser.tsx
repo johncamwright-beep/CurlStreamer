@@ -10,6 +10,7 @@ import type { BroadcastGame } from "@/lib/game-projection";
 import type { DirectMetrics } from "./direct-peer";
 import { connectM4ProgramCamera } from "./m4-program-camera";
 import { ProgramPhoneAudio } from "@/components/ProgramPhoneAudio";
+import { ProgramUsbAudio } from "@/components/ProgramUsbAudio";
 
 type CameraState = {
   stream?: MediaStream;
@@ -222,6 +223,7 @@ function ProgramRenderer() {
   const verified = roles.filter((role) => cameras[role].metrics?.direct).length;
   return (
     <>
+      <ProgramUsbAudio />
       {roles.map((role) => (
         <ProgramPhoneAudio
           key={role}

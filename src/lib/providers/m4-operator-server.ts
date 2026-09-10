@@ -56,8 +56,9 @@ function readProgramInvitation(value: string, origin: string, gameId: string) {
 }
 type ProgramHandle = Omit<
   Awaited<ReturnType<typeof startM4ProgramHost>>,
-  "stream" | "previewMapping" | "cameraStatus" | "audioStatus"
+  "stream" | "previewMapping" | "cameraStatus" | "audioStatus" | "pushUsbAudio"
 > & {
+  pushUsbAudio?: (pcm: Buffer) => void;
   previewMapping?: string;
   cameraStatus?: () => Record<string, boolean>;
   audioStatus?: () => Record<
@@ -104,6 +105,26 @@ async function body(request: IncomingMessage) {
   } finally {
     clearTimeout(timer);
     assembled?.fill(0);
+    for (const chunk of chunks) chunk.fill(0);
+  }
+}
+
+async function usbAudioBody(request: IncomingMessage) {
+  const chunks: Buffer[] = [];
+  let size = 0;
+  const timer = setTimeout(() => request.destroy(), 5000);
+  try {
+    for await (const chunk of request) {
+      size += chunk.length;
+      if (size > 19_200) {
+        chunk.fill(0);
+        throw new Error();
+      }
+      chunks.push(chunk);
+    }
+    return Buffer.concat(chunks);
+  } finally {
+    clearTimeout(timer);
     for (const chunk of chunks) chunk.fill(0);
   }
 }
@@ -335,6 +356,38 @@ export async function createM4OperatorServer(options: {
     }
     if (request.method === "GET" && request.url === "/state") {
       reply(200, snapshot());
+      return;
+    }
+    if (request.method === "POST" && request.url === "/usb-audio") {
+      if (
+        request.headers.origin !== address ||
+        request.headers["content-type"] !== "application/octet-stream" ||
+        program !== "recording" ||
+        !programHandle?.pushUsbAudio
+      ) {
+        reply(403, { error: "Request denied" });
+        return;
+      }
+      const handle = programHandle;
+      let pcm: Buffer | undefined;
+      try {
+        pcm = await usbAudioBody(request);
+        if (
+          closing ||
+          program !== "recording" ||
+          programHandle !== handle ||
+          !handle?.pushUsbAudio
+        ) {
+          reply(409, { error: "Program unavailable" });
+          return;
+        }
+        handle.pushUsbAudio(pcm);
+        reply(204, undefined);
+      } catch {
+        reply(400, { error: "Invalid audio" });
+      } finally {
+        pcm?.fill(0);
+      }
       return;
     }
     if (

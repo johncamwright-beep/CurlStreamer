@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { z } from "zod";
 import type { GameState } from "@/lib/types";
 import { StudioUsbAudio } from "./StudioUsbAudio";
+import { StudioNativeUsbAudio } from "./StudioNativeUsbAudio";
 
 const meter = z.object({
   peak: z.number().min(0).max(1),
@@ -16,6 +17,10 @@ export function StudioAudio({
   id: string;
   cameraAudio: GameState["cameraAudio"];
 }) {
+  const [nativeUsb, setNativeUsb] = useState(false);
+  useEffect(() => {
+    setNativeUsb(navigator.userAgent.includes("StudioNativeAudio/1"));
+  }, []);
   const [levels, setLevels] = useState<Record<string, z.infer<typeof meter>>>(
     {},
   );
@@ -81,7 +86,7 @@ export function StudioAudio({
         <summary className="min-h-11 flex items-center cursor-pointer text-sm">
           USB microphone setup
         </summary>
-        <StudioUsbAudio />
+        {nativeUsb ? <StudioNativeUsbAudio gameId={id} /> : <StudioUsbAudio />}
       </details>
     </section>
   );

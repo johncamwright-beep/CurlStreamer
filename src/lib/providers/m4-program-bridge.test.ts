@@ -21,6 +21,31 @@ async function setup() {
   return { client, action, bridge, headers };
 }
 describe("private loopback program API", () => {
+  it("drains USB PCM only to the claimed renderer and exposes flush generations", async () => {
+    const { bridge, headers } = await setup();
+    const page = await fetch(bridge.rendererUrl);
+    const cookie = page.headers.get("set-cookie")!.split(";")[0];
+    const pcm = Buffer.alloc(4);
+    pcm.writeFloatLE(0.25, 0);
+    bridge.pushUsbAudio(pcm);
+    expect(
+      (await fetch(bridge.address + "/usb-audio", { headers })).status,
+    ).toBe(403);
+    expect((await fetch(bridge.address + "/usb-audio")).status).toBe(403);
+    const accepted = await fetch(bridge.address + "/usb-audio", {
+      headers: { cookie, "sec-fetch-site": "same-origin" },
+    });
+    expect(accepted.status).toBe(200);
+    expect(
+      Buffer.from(await accepted.arrayBuffer()).readFloatLE(0),
+    ).toBeCloseTo(0.25);
+    bridge.pushUsbAudio(Buffer.alloc(0));
+    const flushed = await fetch(bridge.address + "/usb-audio", {
+      headers: { cookie, "sec-fetch-site": "same-origin" },
+    });
+    expect(flushed.status).toBe(204);
+    expect(flushed.headers.get("x-m4-usb-audio-generation")).toBe("1");
+  });
   it("reports advancing renderer frames, never a heartbeat or a stale counter", async () => {
     const { bridge, headers } = await setup();
     const page = await fetch(bridge.rendererUrl);

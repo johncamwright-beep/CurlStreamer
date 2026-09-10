@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 import { build } from "esbuild";
 
-test("native USB capture is opt-in with independent meters and scoped controls", async ({
+test("native USB capture is opt-in with compact independent dBFS meters", async ({
   page,
 }) => {
   const bundle = await build({
@@ -85,7 +85,7 @@ test("native USB capture is opt-in with independent meters and scoped controls",
           devices: [{ id: "receiver", name: "DJI" }],
           running: true,
           error: null,
-          channels: [0.1, 0.2, 0.3, 0.4].map((peak) => ({
+          channels: [0, 0.1, 0.3, 0.8].map((peak) => ({
             peak,
             rms: peak / 2,
             muted: false,
@@ -96,9 +96,28 @@ test("native USB capture is opt-in with independent meters and scoped controls",
     ),
   );
   await expect(page.getByRole("meter")).toHaveCount(4);
+  await expect(page.getByRole("combobox")).toHaveCount(0);
+  await expect(
+    page.getByRole("button", { name: "Find microphones" }),
+  ).toHaveCount(0);
   await expect(
     page.getByRole("meter", { name: "Mic 3 level" }),
-  ).toHaveAttribute("value", "0.3");
+  ).toHaveAttribute("aria-valuetext", "-10 dBFS");
+  await expect(
+    page.getByRole("meter", { name: "Mic 1 level" }),
+  ).toHaveAttribute("aria-valuetext", "-60 dBFS");
+  await expect(
+    page.getByRole("meter", { name: "Mic 1 level" }).locator("div"),
+  ).toHaveCSS("width", "0px");
+  await expect(
+    page.getByRole("meter", { name: "Mic 2 level" }).locator("div"),
+  ).toHaveClass(/bg-emerald-500/);
+  await expect(
+    page.getByRole("meter", { name: "Mic 3 level" }).locator("div"),
+  ).toHaveClass(/bg-amber-400/);
+  await expect(
+    page.getByRole("meter", { name: "Mic 4 level" }).locator("div"),
+  ).toHaveClass(/bg-red-500/);
   await page.getByRole("button", { name: "Mute", exact: true }).nth(2).click();
   expect(await page.evaluate(() => (window as any).messages.at(-1))).toEqual({
     type: "studio-usb-channel",
@@ -107,7 +126,7 @@ test("native USB capture is opt-in with independent meters and scoped controls",
     muted: true,
     level: 1,
   });
-  await page.getByRole("button", { name: "Turn off USB audio" }).click();
+  await page.getByRole("button", { name: "Disconnect" }).click();
   expect(await page.evaluate(() => (window as any).messages.at(-1))).toEqual({
     type: "studio-usb-stop",
     gameId: "game",

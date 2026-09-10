@@ -295,6 +295,7 @@ export class DirectPeer {
   private videoStream: MediaStream | undefined;
   private audioStream: MediaStream | undefined;
   private audioSender: RTCRtpSender | undefined;
+  private desiredAudioTrack: MediaStreamTrack | null = null;
   private presentedVideo = false;
   private presentedAudio = false;
   private appliedRemote: { type: "offer" | "answer"; sdp: string } | undefined;
@@ -335,6 +336,7 @@ export class DirectPeer {
         .setParameters(parameters)
         .catch(() => this.fail("Browser rejected camera encoding settings."));
       if (options.audioTrack) {
+        this.desiredAudioTrack = options.audioTrack;
         this.audioSender = this.pc.addTrack(options.audioTrack, stream);
       } else {
         this.audioSender = this.pc.addTransceiver("audio", {
@@ -437,6 +439,29 @@ export class DirectPeer {
           }
           await this.pc.setRemoteDescription(signal);
           if (this.closed) return;
+          if (signal.type === "offer" && this.options.side === "camera") {
+            // Explicitly created trackless transceivers are not reused when an
+            // incoming offer creates its audio section. Bind to that negotiated
+            // section before answering, rather than the unassociated placeholder.
+            const transceivers = this.pc.getTransceivers?.() ?? [];
+            const offeredAudio = transceivers.find(
+              (item) =>
+                item.mid !== null && item.receiver.track.kind === "audio",
+            );
+            if (offeredAudio) {
+              const unused = transceivers.find(
+                (item) =>
+                  item.sender === this.audioSender &&
+                  item !== offeredAudio &&
+                  item.mid === null,
+              );
+              offeredAudio.direction = "sendonly";
+              this.audioSender = offeredAudio.sender;
+              await this.audioSender.replaceTrack(this.desiredAudioTrack);
+              unused?.stop();
+              if (this.closed) return;
+            }
+          }
           this.appliedRemote = { type: signal.type, sdp: signal.sdp };
           for (const candidate of this.pending.splice(0)) {
             await this.pc.addIceCandidate(candidate);
@@ -465,6 +490,7 @@ export class DirectPeer {
   async replaceAudioTrack(track: MediaStreamTrack | null) {
     if (this.closed || !this.audioSender)
       throw Error("Audio sender is unavailable for this peer.");
+    this.desiredAudioTrack = track;
     await this.audioSender.replaceTrack(track);
   }
   async inspect() {

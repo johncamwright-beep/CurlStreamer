@@ -1,8 +1,16 @@
-/** Preserve quiet speech; control peaks after summing the independent USB inputs. */
+/** Lift quiet speech and reduce shouting before the final peak protection. */
 export function createProgramUsbMix(context: BaseAudioContext) {
+  const input = context.createGain();
+  input.gain.value = 4; // 12 dB speech lift, independent of the number of microphones.
+  const speech = context.createDynamicsCompressor();
+  speech.threshold.value = -22;
+  speech.knee.value = 12;
+  speech.ratio.value = 6;
+  speech.attack.value = 0.005;
+  speech.release.value = 0.35;
   const compressor = context.createDynamicsCompressor();
-  compressor.threshold.value = -6;
-  compressor.knee.value = 6;
+  compressor.threshold.value = -3;
+  compressor.knee.value = 0;
   compressor.ratio.value = 20;
   compressor.attack.value = 0.003;
   compressor.release.value = 0.15;
@@ -20,11 +28,15 @@ export function createProgramUsbMix(context: BaseAudioContext) {
         : 0.9 + 0.08 * Math.tanh((magnitude - 0.9) / 0.08));
   }
   safety.curve = curve;
+  input.connect(speech);
+  speech.connect(compressor);
   compressor.connect(safety);
   safety.connect(context.destination);
   return {
-    input: compressor,
+    input,
     disconnect() {
+      input.disconnect();
+      speech.disconnect();
       compressor.disconnect();
       safety.disconnect();
     },

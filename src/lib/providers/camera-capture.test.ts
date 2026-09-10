@@ -37,3 +37,40 @@ it("reports native landscape output honestly without forcing portrait constraint
   });
   expect(video.srcObject).toBe(stream);
 });
+
+it("can request microphone permission with the first camera capture without publishing it", async () => {
+  const videoTrack = {
+    getSettings: () => ({ width: 720, height: 1280 }),
+    getCapabilities: vi.fn(),
+    applyConstraints: vi.fn(),
+    stop: vi.fn(),
+  };
+  const audioTrack = { kind: "audio", stop: vi.fn() };
+  const stream = {
+    getVideoTracks: () => [videoTrack],
+    getAudioTracks: () => [audioTrack],
+    getTracks: () => [videoTrack, audioTrack],
+  };
+  const getUserMedia = vi.fn().mockResolvedValue(stream);
+  const video = {
+    readyState: 1,
+    videoWidth: 720,
+    videoHeight: 1280,
+    srcObject: null,
+  };
+
+  const result = await acquireRawPortraitCamera(
+    { getUserMedia },
+    video as unknown as HTMLVideoElement,
+    true,
+    undefined,
+    "native-hd",
+    true,
+  );
+
+  expect(getUserMedia).toHaveBeenCalledWith(
+    expect.objectContaining({ audio: true }),
+  );
+  expect(result.audioTrack).toBe(audioTrack);
+  expect(video.srcObject).toBe(stream);
+});

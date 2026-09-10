@@ -32,6 +32,7 @@ import {
 import { shouldApplyCameraZoomCommand } from "@/lib/camera-zoom-command";
 import type { CameraAudioStatus } from "@/lib/types";
 import { cameraAudioEnabled } from "@/lib/camera-audio";
+import { selectPhoneAudioTrack } from "@/lib/phone-audio-track";
 
 export function M2CameraSlot({
   id,
@@ -119,6 +120,9 @@ export function M2CameraSlot({
     | undefined
   >(undefined);
   const audioTrack = useRef<MediaStreamTrack | undefined>(undefined);
+  // The first Connect gesture establishes permission for both devices. Keep the
+  // microphone track disabled and local until Studio authorizes publication.
+  const warmAudioTrack = useRef<MediaStreamTrack | undefined>(undefined);
   const audioIntent = useRef(false);
   const audioFlight = useRef(false);
   const audioAttemptBlocked = useRef(false);
@@ -206,18 +210,35 @@ export function M2CameraSlot({
     if (!response.ok) throw Error("microphone status rejected");
   }
   async function disableAudio(report = true) {
+    const audioEpoch = epoch.current;
     const current = audioTrack.current;
     audioTrack.current = undefined;
     if (current) {
+      // Mute immediately; cleanup can now find the retained track even while
+      // replaceTrack is awaiting the browser.
+      current.enabled = false;
+      if (warmAudioTrack.current !== current) warmAudioTrack.current?.stop();
+      warmAudioTrack.current = current;
       try {
         await connection.current?.replaceAudioTrack(null);
       } catch {
         // The video session may already be stopping. Always release the device track.
       }
     }
-    current?.stop();
-    if (report && audioStatusRef.current !== "off")
+    if (
+      report &&
+      audioEpoch === epoch.current &&
+      audioStatusRef.current !== "off"
+    )
       void reportAudio("off").catch(() => undefined);
+  }
+  function releaseAudio() {
+    const published = audioTrack.current;
+    const warm = warmAudioTrack.current;
+    audioTrack.current = undefined;
+    warmAudioTrack.current = undefined;
+    published?.stop();
+    if (warm && warm !== published) warm.stop();
   }
   async function synchronizeAudio(fromGesture = false) {
     if (
@@ -230,40 +251,62 @@ export function M2CameraSlot({
       await disableAudio();
       return;
     }
-    if (audioTrack.current?.readyState === "live") return;
+    // A published warm track remains authoritative across polling cycles. Do
+    // not request or replace it again until it ends or Studio disables it.
+    const selected = selectPhoneAudioTrack(
+      audioTrack.current,
+      warmAudioTrack.current,
+    );
+    if (selected.alreadyPublished) return;
     if (!connection.current) return;
     audioFlight.current = true;
     const audioEpoch = epoch.current;
-    let next: MediaStreamTrack | undefined;
+    let next = selected.track;
+    if (!next && warmAudioTrack.current?.readyState !== "live") {
+      warmAudioTrack.current = undefined;
+    }
     // iOS requires this call itself to be in the button's activation stack.
-    const acquisition = fromGesture
-      ? navigator.mediaDevices.getUserMedia({ audio: true, video: false })
-      : undefined;
+    const acquisition =
+      fromGesture && !next
+        ? navigator.mediaDevices.getUserMedia({ audio: true, video: false })
+        : undefined;
     try {
       await reportAudio("pending", audioEpoch).catch(() => undefined);
-      const stream = await (acquisition ??
-        navigator.mediaDevices.getUserMedia({ audio: true, video: false }));
-      next = stream.getAudioTracks()[0];
+      const stream = next
+        ? undefined
+        : await (acquisition ??
+            navigator.mediaDevices.getUserMedia({ audio: true, video: false }));
+      next ??= stream?.getAudioTracks()[0];
       if (!next) throw Error("No microphone track was returned.");
-      if (
-        audioEpoch !== epoch.current ||
-        !audioIntent.current ||
-        !connection.current
-      ) {
+      if (audioEpoch !== epoch.current || !connection.current) {
         next.stop();
         return;
       }
-      await connection.current.replaceAudioTrack(next);
-      if (audioEpoch !== epoch.current || !audioIntent.current) {
-        next.stop();
-        await connection.current.replaceAudioTrack(null).catch(() => undefined);
+      if (!audioIntent.current) {
+        next.enabled = false;
+        warmAudioTrack.current = next;
         return;
       }
-      audioTrack.current?.stop();
+      const audioConnection = connection.current;
+      next.enabled = true;
+      await audioConnection.replaceAudioTrack(next);
+      if (audioEpoch !== epoch.current) {
+        next.stop();
+        return;
+      }
+      if (!audioIntent.current) {
+        next.enabled = false;
+        warmAudioTrack.current = next;
+        await audioConnection.replaceAudioTrack(null).catch(() => undefined);
+        return;
+      }
+      warmAudioTrack.current = undefined;
       audioTrack.current = next;
-      await reportAudio("active");
+      // A failed status update must not tear down an already working media track.
+      await reportAudio("active").catch(() => undefined);
     } catch (error) {
-      next?.stop();
+      if (next && next === warmAudioTrack.current) next.enabled = false;
+      else next?.stop();
       if (audioEpoch !== epoch.current || !audioIntent.current) return;
       const name = error instanceof DOMException ? error.name : "";
       audioAttemptBlocked.current = true;
@@ -338,7 +381,7 @@ export function M2CameraSlot({
     zoomCommand.current = undefined;
     zoomCaptureStartedAt.current = 0;
     onReady?.(cameraRole, false);
-    void disableAudio(false);
+    releaseAudio();
     connection.current?.stop();
     connection.current = undefined;
     if (track.current) {
@@ -497,24 +540,54 @@ export function M2CameraSlot({
         );
         return;
       }
-      const acquired = await acquireRawPortraitCamera(
-        navigator.mediaDevices,
-        video.current!,
-        deviceIsPortrait(screen.orientation, innerWidth, innerHeight),
-        (value) => {
-          if (attempt !== epoch.current) {
-            value.stop();
-            throw new DOMException("Capture cancelled", "AbortError");
-          }
-          track.current = value;
-        },
-        "native-hd",
-      );
+      let microphoneDenied = false;
+      const capture = (includeAudio: boolean) =>
+        acquireRawPortraitCamera(
+          navigator.mediaDevices,
+          video.current!,
+          deviceIsPortrait(screen.orientation, innerWidth, innerHeight),
+          (value) => {
+            if (attempt !== epoch.current) {
+              value.stop();
+              throw new DOMException("Capture cancelled", "AbortError");
+            }
+            track.current = value;
+          },
+          "native-hd",
+          includeAudio,
+        );
+      let acquired;
+      try {
+        // This is the Connect phone button's activation stack: ask for camera
+        // and microphone together, then leave the mic unpublished until Studio
+        // explicitly enables this camera role.
+        acquired = await capture(true);
+      } catch (error) {
+        if (
+          !(error instanceof DOMException) ||
+          error.name !== "NotAllowedError"
+        )
+          throw error;
+        microphoneDenied = true;
+        // A declined microphone must not prevent a video-only broadcast.
+        acquired = await capture(false);
+      }
       if (attempt !== epoch.current) {
         acquired.track.stop();
+        acquired.audioTrack?.stop();
         return;
       }
-      setWarning(acquired.report.warning ?? "");
+      // Permission is now established, but Studio retains publication control.
+      // Keep this track locally disabled; it is only attached to WebRTC after
+      // the remote camera-role intent becomes enabled.
+      acquired.audioTrack && (acquired.audioTrack.enabled = false);
+      warmAudioTrack.current?.stop();
+      warmAudioTrack.current = acquired.audioTrack;
+      setWarning(
+        microphoneDenied
+          ? "Microphone permission was declined. Video continues; enable it in Studio and grant microphone access to add audio."
+          : (acquired.report.warning ?? ""),
+      );
       setPreviewReady(true);
       const range =
         typeof acquired.track.getCapabilities === "function"

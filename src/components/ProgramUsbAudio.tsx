@@ -1,13 +1,13 @@
 "use client";
 
 import { useEffect } from "react";
-import { createProgramUsbMix } from "@/lib/program-usb-mix";
+import { acquireProgramAudioOutput } from "@/lib/program-audio-output";
 
 /** Receives Studio's local USB mix only inside the private OBS browser source. */
 export function ProgramUsbAudio() {
   useEffect(() => {
-    const context = new AudioContext({ sampleRate: 48_000 });
-    const mix = createProgramUsbMix(context);
+    const output = acquireProgramAudioOutput();
+    const context = output.context;
     const scheduled = new Set<AudioBufferSourceNode>();
     let generation = "",
       nextAt = 0,
@@ -95,7 +95,7 @@ export function ProgramUsbAudio() {
           buffer.copyToChannel(input, 0);
           const source = context.createBufferSource();
           source.buffer = buffer;
-          source.connect(mix.input);
+          source.connect(output.input);
           source.onended = () => {
             if (scheduled.delete(source))
               scheduledFrames = Math.max(0, scheduledFrames - input.length);
@@ -129,8 +129,7 @@ export function ProgramUsbAudio() {
       requestController?.abort();
       reportController?.abort();
       flush();
-      mix.disconnect();
-      void context.close();
+      output.release();
     };
   }, []);
   return null;

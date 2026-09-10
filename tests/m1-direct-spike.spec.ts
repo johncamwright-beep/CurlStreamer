@@ -85,9 +85,20 @@ test("actual DirectPeer transports synthetic portrait video over host-only WebRT
   page,
 }) => {
   // Synthetic browser transport evidence, explicitly not physical LAN/endurance proof.
+  await page.route("**/studio-spike/" + game, (route) =>
+    route.fulfill({
+      contentType: "text/html",
+      body: "<video autoplay muted playsinline></video>",
+    }),
+  );
   await page.goto("/studio-spike/" + game);
   const bundle = buildSync({
-    entryPoints: [path.resolve("src/lib/providers/direct-peer.ts")],
+    stdin: {
+      contents:
+        "export {DirectPeer} from './src/lib/providers/direct-peer'; export {createRemoteAudioPlayout} from './src/lib/remote-audio-playout';",
+      resolveDir: process.cwd(),
+      loader: "ts",
+    },
     bundle: true,
     write: false,
     format: "iife",
@@ -105,10 +116,17 @@ test("actual DirectPeer transports synthetic portrait video over host-only WebRT
         framesDecoded: number;
       }>;
       close: () => void;
+      replaceAudioTrack: (track: MediaStreamTrack | null) => Promise<void>;
       pc: RTCPeerConnection;
     };
     const global = window as unknown as {
-      M1Peer: { DirectPeer: new (options: Record<string, unknown>) => Peer };
+      M1Peer: {
+        DirectPeer: new (options: Record<string, unknown>) => Peer;
+        createRemoteAudioPlayout: (stream: MediaStream) => {
+          start: () => Promise<void>;
+          stop: () => void;
+        };
+      };
     };
     const canvas = document.createElement("canvas");
     canvas.width = 720;
@@ -123,6 +141,33 @@ test("actual DirectPeer transports synthetic portrait video over host-only WebRT
     }, 50);
     const track = canvas.captureStream(20).getVideoTracks()[0];
     const video = document.querySelector("video")!;
+    const audioContext = new AudioContext();
+    await audioContext.resume();
+    const tone = audioContext.createOscillator();
+    const toneLevel = audioContext.createGain();
+    toneLevel.gain.value = 0.1;
+    const microphone = audioContext.createMediaStreamDestination();
+    tone.connect(toneLevel);
+    const inputMeter = audioContext.createAnalyser();
+    toneLevel.connect(inputMeter);
+    toneLevel.connect(microphone);
+    tone.start();
+    const audioTrack = microphone.stream.getAudioTracks()[0];
+    const analyser = audioContext.createAnalyser();
+    const silentOutput = audioContext.createGain();
+    silentOutput.gain.value = 0;
+    analyser.connect(silentOutput);
+    silentOutput.connect(audioContext.destination);
+    let audioSource: MediaStreamAudioSourceNode | undefined;
+    let playout:
+      ReturnType<typeof global.M1Peer.createRemoteAudioPlayout> | undefined;
+    const samples = new Float32Array(analyser.fftSize);
+    const audioRms = () => {
+      analyser.getFloatTimeDomainData(samples);
+      return Math.sqrt(
+        samples.reduce((sum, value) => sum + value * value, 0) / samples.length,
+      );
+    };
     let camera: Peer,
       receiver: Peer,
       failed = false,
@@ -141,6 +186,14 @@ test("actual DirectPeer transports synthetic portrait video over host-only WebRT
     });
     receiver = new global.M1Peer.DirectPeer({
       side: "receiver",
+      onAudio: (stream: MediaStream) => {
+        playout?.stop();
+        playout = global.M1Peer.createRemoteAudioPlayout(stream);
+        void playout.start();
+        audioSource?.disconnect();
+        audioSource = audioContext.createMediaStreamSource(stream);
+        audioSource.connect(analyser);
+      },
       send: (signal: unknown) => {
         void camera.receive(signal);
         return Promise.resolve();
@@ -173,6 +226,37 @@ test("actual DirectPeer transports synthetic portrait video over host-only WebRT
         await new Promise((resolve) => setTimeout(resolve, 100));
       }
       const dimensions = { width: video.videoWidth, height: video.videoHeight };
+      // Enable a phone mic after video connects, using the reserved audio sender.
+      await camera.replaceAudioTrack(audioTrack);
+      const audioDeadline = Date.now() + 5000;
+      let receivedAudio = 0;
+      while (Date.now() < audioDeadline) {
+        await receiver.inspect();
+        await camera.inspect();
+        receivedAudio = audioRms();
+        if (receivedAudio > 0.01) break;
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      }
+      const audioStats: unknown[] = [];
+      for (const peer of [camera, receiver])
+        (await peer.pc.getStats()).forEach((s) => {
+          if (s.kind === "audio" || s.mediaType === "audio")
+            audioStats.push({
+              type: s.type,
+              bytesSent: s.bytesSent,
+              bytesReceived: s.bytesReceived,
+              energy: s.totalAudioEnergy,
+              audioLevel: s.audioLevel,
+              packets: s.packetsReceived,
+            });
+        });
+      inputMeter.getFloatTimeDomainData(samples);
+      const inputRms = Math.sqrt(
+        samples.reduce((sum, value) => sum + value * value, 0) / samples.length,
+      );
+      await camera.replaceAudioTrack(null);
+      await new Promise((resolve) => setTimeout(resolve, 500));
+      const mutedAudio = audioRms();
       await receiver.receive({
         type: "ice",
         candidate: {
@@ -186,6 +270,27 @@ test("actual DirectPeer transports synthetic portrait video over host-only WebRT
         dimensions,
         relayRejected: receiver.pc.connectionState === "closed",
         attached,
+        receivedAudio,
+        mutedAudio,
+        audioDiagnostics: {
+          inputRms,
+          audioStats,
+          context: audioContext.state,
+          sourceAttached: Boolean(audioSource),
+          camera: camera.pc.getTransceivers().map((t) => ({
+            mid: t.mid,
+            direction: t.direction,
+            current: t.currentDirection,
+            kind: t.sender.track?.kind,
+          })),
+          receiver: receiver.pc.getTransceivers().map((t) => ({
+            mid: t.mid,
+            direction: t.direction,
+            current: t.currentDirection,
+            kind: t.receiver.track.kind,
+            muted: t.receiver.track.muted,
+          })),
+        },
       };
     } finally {
       camera.close();
@@ -193,6 +298,11 @@ test("actual DirectPeer transports synthetic portrait video over host-only WebRT
       track.stop();
       clearInterval(draw);
       video.srcObject = null;
+      audioTrack.stop();
+      playout?.stop();
+      tone.stop();
+      audioSource?.disconnect();
+      await audioContext.close();
     }
   });
   expect(result.metrics?.direct).toBe(true);
@@ -201,4 +311,9 @@ test("actual DirectPeer transports synthetic portrait video over host-only WebRT
   expect(result.dimensions).toEqual({ width: 720, height: 1280 });
   expect(result.attached).toBe(true);
   expect(result.relayRejected).toBe(true);
+  expect(
+    result.receivedAudio,
+    JSON.stringify(result.audioDiagnostics),
+  ).toBeGreaterThan(0.01);
+  expect(result.mutedAudio).toBeLessThan(0.001);
 });

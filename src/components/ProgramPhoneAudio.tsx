@@ -1,5 +1,7 @@
 import { useEffect } from "react";
 import type { ProgramCameraRole } from "./ProgramCanvas";
+import { acquireProgramAudioOutput } from "@/lib/program-audio-output";
+import { createRemoteAudioPlayout } from "@/lib/remote-audio-playout";
 
 /** Only mounted inside the private OBS renderer. Its destination is OBS's
  * rerouted browser audio, never the scorer's laptop speaker output. */
@@ -15,23 +17,28 @@ export function ProgramPhoneAudio({
   useEffect(() => {
     if (!stream || !enabled) return;
     const abort = new AbortController();
-    const context = new AudioContext({ sampleRate: 48000 });
+    const output = acquireProgramAudioOutput();
+    const { context } = output;
+    const playout = createRemoteAudioPlayout(stream);
     const source = context.createMediaStreamSource(stream);
     const analyser = context.createAnalyser();
     analyser.fftSize = 2048;
     const gain = context.createGain();
-    gain.gain.value = 0.5;
+    // Phone sources join the renderer's one shared output graph. That graph
+    // owns speech protection and the final combined limiter with USB audio.
+    gain.gain.value = 1;
     gain.channelCount = 1;
     gain.channelCountMode = "explicit";
     source.connect(analyser);
     analyser.connect(gain);
-    gain.connect(context.destination);
+    gain.connect(output.input);
     const samples = new Float32Array(analyser.fftSize);
     let pending = false;
     const report = async () => {
       if (pending || abort.signal.aborted) return;
       pending = true;
       try {
+        void playout.start();
         if (context.state === "suspended") await context.resume();
         analyser.getFloatTimeDomainData(samples);
         let peak = 0,
@@ -72,11 +79,12 @@ export function ProgramPhoneAudio({
     return () => {
       abort.abort();
       clearInterval(timer);
+      playout.stop();
       gain.gain.value = 0;
       source.disconnect();
       analyser.disconnect();
       gain.disconnect();
-      void context.close();
+      output.release();
     };
   }, [stream, enabled, role]);
   return null;

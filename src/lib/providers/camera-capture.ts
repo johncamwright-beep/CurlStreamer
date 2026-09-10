@@ -154,18 +154,21 @@ export async function acquireRawPortraitCamera(
   onTrack?: (track: MediaStreamTrack) => void,
   mode:
     "portrait-constraints" | "native" | "native-hd" = "portrait-constraints",
+  includeAudio = false,
 ) {
   const stream = await mediaDevices.getUserMedia(
     mode !== "portrait-constraints"
       ? {
-          audio: false,
+          // Request both permissions from the initial phone gesture when asked.
+          // The caller still decides whether an audio track is ever published.
+          audio: includeAudio,
           video: {
             ...(mode === "native-hd" ? { width: { ideal: 1280 } } : {}),
             facingMode: { ideal: "environment" },
             frameRate: { ideal: 30 },
           },
         }
-      : portraitMediaConstraints,
+      : { ...portraitMediaConstraints, audio: includeAudio },
   );
   const mediaTrack = stream.getVideoTracks()[0];
   if (!mediaTrack) {
@@ -182,9 +185,13 @@ export async function acquireRawPortraitCamera(
       mode === "portrait-constraints",
     );
     report.captureMode = mode;
-    return { track: mediaTrack, report };
+    return {
+      track: mediaTrack,
+      audioTrack: stream.getAudioTracks?.()[0],
+      report,
+    };
   } catch (cause) {
-    mediaTrack.stop();
+    (stream.getTracks?.() ?? []).forEach((track) => track.stop());
     throw cause;
   }
 }

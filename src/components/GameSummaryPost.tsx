@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useRef, useState } from "react";
 export function GameSummaryPost({
   gameId,
   initialSummary,
@@ -8,14 +8,21 @@ export function GameSummaryPost({
   initialSummary: string;
 }) {
   const [open, setOpen] = useState(false),
+    [saved, setSaved] = useState(false),
     [summary, setSummary] = useState(initialSummary),
     [photo, setPhoto] = useState<File>(),
     [busy, setBusy] = useState(false),
     [message, setMessage] = useState("");
+  const postId = useRef<string | null>(null);
+  const saving = useRef(false);
   async function save() {
+    if (saving.current || saved) return;
+    saving.current = true;
     setBusy(true);
     try {
       const form = new FormData();
+      postId.current ??= crypto.randomUUID();
+      form.append("id", postId.current);
       form.append("gameId", gameId);
       form.append("summary", summary);
       form.append("published", "true");
@@ -26,6 +33,7 @@ export function GameSummaryPost({
       });
       const body = await response.json();
       if (!response.ok) throw Error(body.error);
+      setSaved(true);
       setMessage(
         "Summary posted to team news. It appears publicly when your team page and news section are enabled.",
       );
@@ -34,6 +42,7 @@ export function GameSummaryPost({
         error instanceof Error ? error.message : "Could not save summary.",
       );
     } finally {
+      saving.current = false;
       setBusy(false);
     }
   }
@@ -67,10 +76,10 @@ export function GameSummaryPost({
           <div className="flex flex-wrap gap-3">
             <button
               className="btn"
-              disabled={busy || !summary.trim()}
+              disabled={busy || saved || !summary.trim()}
               onClick={save}
             >
-              {busy ? "Posting…" : "Post summary"}
+              {saved ? "Summary posted" : busy ? "Posting…" : "Post summary"}
             </button>
             <button className="btn-secondary" disabled>
               Facebook not connected
@@ -84,6 +93,11 @@ export function GameSummaryPost({
             available. Saving here does not post to Facebook or Instagram.
           </p>
           {message && <p role="status">{message}</p>}
+          {saved && (
+            <a className="min-h-11 text-cyan-300 underline" href="/account">
+              Edit this summary in My Account → Team news
+            </a>
+          )}
         </div>
       )}
     </section>

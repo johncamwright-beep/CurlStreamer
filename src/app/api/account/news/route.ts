@@ -4,30 +4,64 @@ import { z } from "zod";
 import { teamSettingsContext } from "@/lib/providers/team-settings";
 import { createAdminSupabaseClient } from "@/lib/supabase/admin";
 import { validateSponsorImage } from "@/lib/providers/sponsor-library";
-export async function POST(request: Request) {
-  const auth = await teamSettingsContext(true);
-  if (!auth)
-    return NextResponse.json(
-      { error: "Sign in as a team administrator to post a summary." },
-      { status: 403 },
-    );
-  const db = createAdminSupabaseClient();
-  let path: string | undefined;
+const headers = { "Cache-Control": "private, no-store" };
+const inputSchema = z.object({
+  id: z.uuid(),
+  revision: z.coerce.number().int().min(0),
+  gameId: z.uuid().nullable(),
+  summary: z.string().trim().min(1).max(3000),
+  published: z.enum(["true", "false"]).transform((v) => v === "true"),
+  removePhoto: z.enum(["true", "false"]).transform((v) => v === "true"),
+});
+export async function GET() {
   try {
+    const auth = await teamSettingsContext(true);
+    if (!auth)
+      return NextResponse.json(
+        { error: "Team administrator access is required." },
+        { status: 403, headers },
+      );
+    const { data, error } = await createAdminSupabaseClient()
+      .from("team_news")
+      .select("id,summary,photo_url,published,created_at,revision,game_id")
+      .eq("organization_id", auth.organizationId)
+      .is("deleted_at", null)
+      .order("created_at", { ascending: false })
+      .limit(100);
+    if (error) throw error;
+    return NextResponse.json({ posts: data }, { headers });
+  } catch {
+    return NextResponse.json(
+      { error: "Team news could not be loaded." },
+      { status: 503, headers },
+    );
+  }
+}
+async function write(request: Request, editing: boolean) {
+  let path: string | undefined;
+  let submitted = false;
+  let db: ReturnType<typeof createAdminSupabaseClient> | undefined;
+  try {
+    const auth = await teamSettingsContext(true);
+    if (!auth)
+      return NextResponse.json(
+        { error: "Team administrator access is required." },
+        { status: 403, headers },
+      );
     const form = await request.formData();
-    const input = z
-      .object({
-        gameId: z.uuid(),
-        summary: z.string().trim().min(1).max(3000),
-        published: z.boolean(),
-      })
-      .parse({
-        gameId: form.get("gameId"),
-        summary: form.get("summary"),
-        published: form.get("published") === "true",
-      });
-    const file = form.get("photo");
+    const input = inputSchema.parse({
+      id: form.get("id") ?? randomUUID(),
+      revision: form.get("revision") ?? 0,
+      gameId: form.get("gameId") || null,
+      summary: form.get("summary"),
+      published: form.get("published") ?? "false",
+      removePhoto: form.get("removePhoto") ?? "false",
+    });
+    if (editing ? input.revision < 1 : input.revision !== 0)
+      throw Error("Invalid revision");
+    db = createAdminSupabaseClient();
     let photo: string | null = null;
+    const file = form.get("photo");
     if (file instanceof File && file.size) {
       const image = await validateSponsorImage(file);
       path = auth.organizationId + "/" + randomUUID() + "." + image.extension;
@@ -38,24 +72,89 @@ export async function POST(request: Request) {
       photo = db.storage.from("team-public-media").getPublicUrl(path)
         .data.publicUrl;
     }
-    const { error } = await db.rpc("save_team_game_news", {
+    submitted = true;
+    const { data, error } = await db.rpc("manage_team_news", {
       p_org: auth.organizationId,
       p_user: auth.user.id,
-      p_game: input.gameId,
+      p_id: input.id,
+      p_revision: input.revision,
       p_summary: input.summary,
       p_photo: photo,
+      p_replace_photo: !!photo || input.removePhoto,
       p_published: input.published,
+      p_game: input.gameId,
     });
-    if (error) throw error;
-    return NextResponse.json({ saved: true });
+    if (error) {
+      // A transport failure may arrive after commit. Keep that image available.
+      if (path && /^[0-9A-Z]{5}$/.test(error.code))
+        await db.storage.from("team-public-media").remove([path]);
+      path = undefined;
+      return NextResponse.json(
+        {
+          error:
+            error.code === "40001"
+              ? "This post changed or is no longer available. Reload team news before editing it again."
+              : "News could not be saved. A game summary must belong to a completed team game.",
+        },
+        { status: error.code === "40001" ? 409 : 400, headers },
+      );
+    }
+    if (path && data.photo_url !== photo)
+      await db.storage.from("team-public-media").remove([path]);
+    return NextResponse.json({ saved: true, post: data }, { headers });
   } catch {
-    if (path) await db.storage.from("team-public-media").remove([path]);
+    if (path && db && !submitted)
+      await db.storage.from("team-public-media").remove([path]);
     return NextResponse.json(
       {
         error:
-          "Summary could not be saved. Check that this is a completed team game and any photo is under 4 MB.",
+          "News could not be saved. Enter 1–3,000 characters and use a PNG, JPEG or WebP photo under 4 MB.",
       },
-      { status: 400 },
+      { status: 400, headers },
+    );
+  }
+}
+export const POST = (request: Request) => write(request, false);
+export const PATCH = (request: Request) => write(request, true);
+export async function DELETE(request: Request) {
+  try {
+    const auth = await teamSettingsContext(true);
+    if (!auth)
+      return NextResponse.json(
+        { error: "Team administrator access is required." },
+        { status: 403, headers },
+      );
+    const input = z
+      .object({ id: z.uuid(), revision: z.number().int().min(1) })
+      .strict()
+      .parse(await request.json());
+    const { error } = await createAdminSupabaseClient().rpc(
+      "manage_team_news",
+      {
+        p_org: auth.organizationId,
+        p_user: auth.user.id,
+        p_id: input.id,
+        p_revision: input.revision,
+        p_summary: "",
+        p_photo: null,
+        p_replace_photo: false,
+        p_published: false,
+        p_delete: true,
+      },
+    );
+    if (error)
+      return NextResponse.json(
+        {
+          error:
+            "This post changed or is no longer available. Reload team news.",
+        },
+        { status: 409, headers },
+      );
+    return NextResponse.json({ removed: true }, { headers });
+  } catch {
+    return NextResponse.json(
+      { error: "Post could not be removed." },
+      { status: 400, headers },
     );
   }
 }

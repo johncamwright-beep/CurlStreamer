@@ -1,5 +1,6 @@
 import { AccountEmail } from "@/components/AccountEmail";
 import { TeamSettings } from "@/components/TeamSettings";
+import { TeamNews } from "@/components/TeamNews";
 import { redirect } from "next/navigation";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { getAccountContext, readableTeamRole } from "@/lib/auth/account";
@@ -48,6 +49,11 @@ export default async function AccountPage() {
         {account.profile.status === "active" && account.membership && (
           <TeamSettings name={account.membership.teamName} />
         )}
+        {account.profile.status === "active" &&
+          account.membership &&
+          ["owner", "team_admin"].includes(account.membership.role) && (
+            <TeamNews />
+          )}
         <form action={signOut}>
           <button className="btn-secondary w-full">Sign Out</button>
         </form>

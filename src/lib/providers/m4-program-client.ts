@@ -55,7 +55,7 @@ const projectedGame = z.object({
     }),
     currentEnd: z.number().int().positive(),
   }),
-  layout: z.enum(["split", "home", "away"]),
+  layout: z.enum(["split", "home", "away", "none"]),
   broadcast: z.enum(["idle", "live"]),
   audioMuted: z.boolean(),
   cameraAudio: z

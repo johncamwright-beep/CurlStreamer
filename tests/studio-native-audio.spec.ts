@@ -39,6 +39,7 @@ test("native USB capture is opt-in with compact independent dBFS meters", async 
   });
   await page.goto("/native-audio");
   expect(await page.evaluate(() => (window as any).messages)).toEqual([]);
+  await page.getByRole("button", { name: "USB setup" }).click();
   await page.getByRole("button", { name: "Find microphones" }).click();
   expect(await page.evaluate(() => (window as any).messages)).toEqual([
     { type: "studio-usb-list", gameId: "game" },
@@ -126,6 +127,16 @@ test("native USB capture is opt-in with compact independent dBFS meters", async 
     muted: true,
     level: 1,
   });
+  // Collapsing the panel must keep capture and the stop control available.
+  const messagesBeforeCollapse = await page.evaluate(
+    () => (window as any).messages.length,
+  );
+  await page.getByRole("button", { name: "USB setup" }).click();
+  await expect(page.getByRole("meter")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Disconnect" })).toBeVisible();
+  expect(await page.evaluate(() => (window as any).messages.length)).toBe(
+    messagesBeforeCollapse,
+  );
   await page.getByRole("button", { name: "Disconnect" }).click();
   expect(await page.evaluate(() => (window as any).messages.at(-1))).toEqual({
     type: "studio-usb-stop",

@@ -1,6 +1,19 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+.studio-usb-audio {
+  container-type: inline-size;
+}
+.studio-usb-channels {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.5rem;
+}
+@container (min-width: 480px) {
+  .studio-usb-channels {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
 :root {
   color-scheme: dark;
 }

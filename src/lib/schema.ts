@@ -49,7 +49,7 @@ export const actionSchema = z.discriminatedUnion("type", [
   }),
   z.object({
     type: z.literal("layout"),
-    layout: z.enum(["split", "home", "away"]),
+    layout: z.enum(["split", "home", "away", "none"]),
   }),
   z.object({ type: z.literal("audio"), muted: z.boolean() }),
   z.object({

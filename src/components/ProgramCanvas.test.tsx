@@ -85,4 +85,18 @@ describe("provider-neutral program composition", () => {
     expect(markup).not.toContain("Local recording");
     expect(markup).not.toContain("OBS audio configured separately");
   });
+
+  it("hides both pictures while keeping the score and sponsors in the broadcast", () => {
+    const game = gameFixture();
+    game.layout = "none";
+    game.sponsorMode.style = "fullscreen";
+    const renderCamera = vi.fn(() => <video />);
+    const markup = renderToStaticMarkup(
+      <ProgramCanvas game={game} renderCamera={renderCamera} />,
+    );
+    expect(renderCamera).not.toHaveBeenCalled();
+    expect(markup).toContain('data-camera-count="0"');
+    expect(markup).toContain('data-testid="broadcast-scoreboard"');
+    expect(markup).toContain('data-testid="sponsor-sidebar"');
+  });
 });

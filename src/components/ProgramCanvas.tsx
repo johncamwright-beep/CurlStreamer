@@ -4,6 +4,7 @@ import { Scoreboard } from "./Scoreboard";
 import type { GameState } from "@/lib/types";
 import type { BroadcastGame } from "@/lib/game-projection";
 import { formatBroadcastRailTitle } from "@/lib/game-title";
+import { cameraIsShown } from "@/lib/camera-layout";
 
 import { SponsorFrame } from "./SponsorFrame";
 export type ProgramCameraRole = "camera-home" | "camera-away";
@@ -62,9 +63,9 @@ export function ProgramComposition({
     m.active && m.style === "overlay" && sponsor,
   );
 
-  const showHome = game.layout !== "away",
-    showAway = game.layout !== "home";
-  const cameraCount = showHome && showAway ? 2 : 1;
+  const showHome = cameraIsShown(game.layout, "home"),
+    showAway = cameraIsShown(game.layout, "away");
+  const cameraCount = Number(showHome) + Number(showAway);
   const eventTitle = formatBroadcastRailTitle(game.config.eventName);
   return (
     <div

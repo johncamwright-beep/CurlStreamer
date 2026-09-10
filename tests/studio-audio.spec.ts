@@ -1,9 +1,7 @@
 import { expect, test } from "@playwright/test";
 import { build } from "esbuild";
 
-test("phone microphone controls and meters distinguish intent from received audio", async ({
-  page,
-}) => {
+test("phone microphone controls stay on the camera cards", async ({ page }) => {
   const bundle = await build({
     bundle: true,
     write: false,
@@ -15,7 +13,7 @@ test("phone microphone controls and meters distinguish intent from received audi
     stdin: {
       loader: "tsx",
       resolveDir: process.cwd(),
-      contents: `import React,{useState} from 'react';import{createRoot}from'react-dom/client';import{StudioAudio}from'./src/components/StudioAudio';import{StudioDeviceCards}from'./src/components/StudioDeviceCards';function App(){const[a,set]=useState({});return <><StudioAudio id="game" cameraAudio={a}/><StudioDeviceCards id="game" claims={{'camera-home':'phone'}} enabled cameraAudio={a} onAudio={async(role,enabled)=>set({[role]:{enabled,status:enabled?'pending':'off',updatedAt:Date.now()}})}/></>};createRoot(document.getElementById('root')).render(<App/>);`,
+      contents: `import React,{useState} from 'react';import{createRoot}from'react-dom/client';import{StudioAudio}from'./src/components/StudioAudio';import{StudioDeviceCards}from'./src/components/StudioDeviceCards';function App(){const[a,set]=useState({});return <><StudioAudio id="game"/><StudioDeviceCards id="game" claims={{'camera-home':'phone'}} enabled cameraAudio={a} onAudio={async(role,enabled)=>set({[role]:{enabled,status:enabled?'pending':'off',updatedAt:Date.now()}})}/></>};createRoot(document.getElementById('root')).render(<App/>);`,
     },
   });
   await page.route("**/audio-fixture", (route) =>
@@ -43,37 +41,12 @@ test("phone microphone controls and meters distinguish intent from received audi
   ).toHaveCount(0);
   await page.getByRole("button", { name: "Turn mic on" }).click();
   await expect(
-    page.getByText("Waiting for audio", { exact: true }),
-  ).toBeVisible();
-  await page.evaluate(() =>
-    window.dispatchEvent(
-      new CustomEvent("studio-audio-status", {
-        detail: {
-          gameId: "other-game",
-          cameras: { "camera-home": { peak: 0.8, rms: 0.2, receiving: true } },
-        },
-      }),
-    ),
-  );
+    page.getByRole("button", { name: "Turn mic off" }),
+  ).toHaveAttribute("aria-pressed", "true");
+  const audio = page.getByRole("region", { name: "Audio", exact: true });
   await expect(
-    page.getByRole("meter", { name: "Camera 1 audio level" }),
-  ).toHaveAttribute("value", "0");
-  await page.evaluate(() =>
-    window.dispatchEvent(
-      new CustomEvent("studio-audio-status", {
-        detail: {
-          gameId: "game",
-          cameras: { "camera-home": { peak: 0.8, rms: 0.2, receiving: true } },
-        },
-      }),
-    ),
-  );
-  await expect(
-    page.getByText("Receiving audio", { exact: true }),
-  ).toBeVisible();
-  await expect(
-    page.getByRole("meter", { name: "Camera 1 audio level" }),
-  ).toHaveAttribute("value", "0.8");
+    audio.getByText(/Camera [12]|Mic off|mixed to mono/),
+  ).toHaveCount(0);
   await page.getByRole("button", { name: "Turn mic off" }).click();
   await expect(
     page.getByRole("meter", { name: "Camera 1 audio level" }),

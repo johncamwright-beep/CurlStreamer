@@ -578,6 +578,7 @@ export default function Scorer({
               {desktop && (
                 <div className="scoring-control-tiles">
                   <ScoringProgramControls game={game} act={act} compact />
+                  {canEndGame && <StudioYouTube id={id} />}
                 </div>
               )}
             </>
@@ -587,10 +588,7 @@ export default function Scorer({
               <ScoringProgramControls game={game} act={act} />
             </>
           )}
-          {desktop && canEndGame && <StudioYouTube id={id} />}
-          {desktop && canEndGame && (
-            <StudioAudio id={id} cameraAudio={cameraAudio} />
-          )}
+          {desktop && canEndGame && <StudioAudio id={id} />}
           {!desktop && canEndGame && (
             <div className="scoring-card scoring-finish">
               {!desktop && (
@@ -625,6 +623,10 @@ export default function Scorer({
                 id={id}
                 claims={game.claims}
                 cameraAudio={cameraAudio}
+                layout={game.layout}
+                onLayout={async (layout) => {
+                  await act({ type: "layout", layout });
+                }}
                 onAudio={async (role, enabled) => {
                   await act({ type: "camera-audio", role, enabled });
                 }}

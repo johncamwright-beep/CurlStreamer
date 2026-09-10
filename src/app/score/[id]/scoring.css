@@ -764,6 +764,87 @@
 .scoring-desktop .scoring-control-tiles {
   align-items: stretch;
 }
+.scoring-desktop .scoring-control-tiles .scoring-card {
+  padding: 8px 12px;
+}
+.scoring-desktop .scoring-control-tiles .scoring-section-heading {
+  min-height: 44px;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+.scoring-workspace .scoring-sponsor-toggle {
+  min-height: 44px;
+  padding: 6px 10px;
+  font-size: 12px;
+}
+.scoring-desktop .studio-youtube-actions {
+  display: grid;
+  grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr);
+  gap: 6px;
+}
+.scoring-desktop .studio-youtube-actions :is(button, a),
+.scoring-desktop .studio-youtube-watch button {
+  min-height: 44px;
+  padding: 6px 8px;
+  font-size: 12px;
+  text-align: center;
+}
+.scoring-desktop .studio-youtube-actions a,
+.scoring-desktop .studio-youtube-watch a {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+}
+.scoring-desktop .studio-youtube .scoring-section-heading > strong {
+  font-size: 12px;
+  text-align: right;
+}
+.studio-device-actions {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(90px, 1fr));
+  gap: 6px;
+}
+.studio-device-actions > p,
+.studio-device-release-confirm {
+  grid-column: 1 / -1;
+}
+.studio-device-connect {
+  order: 1;
+}
+.studio-device-visibility {
+  order: 2;
+}
+.studio-device-release {
+  order: 3;
+}
+.studio-device-release-confirm {
+  order: 4;
+}
+.scoring-device-dock .studio-device-actions {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(90px, 1fr));
+  gap: 6px;
+}
+.scoring-device-dock .studio-device-actions > p:not([role]) {
+  display: none;
+}
+.scoring-device-dock
+  .studio-device
+  .studio-device-actions
+  > .studio-device-action {
+  width: 100%;
+  min-width: 0;
+  margin: 0;
+  padding: 6px;
+  font-size: 12px;
+}
+.scoring-device-dock
+  .studio-device[data-scorer="true"]
+  > .studio-device-actions {
+  grid-column: 2;
+  grid-row: 1;
+}
 @media (min-width: 851px) {
   .scoring-desktop .scoring-entry > .scoring-action-row {
     grid-template-columns: repeat(4, minmax(0, 1fr));

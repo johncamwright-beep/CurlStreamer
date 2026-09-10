@@ -130,10 +130,10 @@ test("scoring updates the contained program and sponsor display with the local A
   ).toBeVisible();
   expect(game.scoreEvents).toHaveLength(1);
   await page
-    .getByRole("button", { name: "Start carousel", exact: true })
+    .getByRole("button", { name: "Start sponsors", exact: true })
     .click();
   await expect(
-    page.getByRole("button", { name: "Stop carousel", exact: true }),
+    page.getByRole("button", { name: "Stop sponsors", exact: true }),
   ).toBeVisible();
   await page.goto(`/broadcast/${testGameId}`);
   const canvas = page.getByTestId("broadcast-canvas");

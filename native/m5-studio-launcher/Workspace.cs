@@ -38,6 +38,12 @@ internal sealed class Workspace : Form
     private string usbGame, usbError;
     private bool usbBusy;
     private object usbDevices = new object[0];
+    // Count-only delivery diagnostics. They deliberately retain no PCM, endpoint
+    // identifier, or server response data.
+    private int usbPostedPackets, usbPostFailures;
+    private long usbPostedBytes;
+    private string usbLastPostError;
+    private DateTime usbDiagnosticsWrittenAt = DateTime.MinValue;
 
     internal Workspace(string initialGame, string node, string controller, string configuration, string testProfile = null)
     {
@@ -352,6 +358,7 @@ internal sealed class Workspace : Form
                     throw new InvalidOperationException("Open a game and wait for Studio before enabling USB audio.");
                 await StopUsbAudio();
                 usbGame = selectedGame;
+                lock (usbLock) { usbPostedPackets = usbPostFailures = 0; usbPostedBytes = 0; usbLastPostError = null; }
                 usbAudio.Start(deviceId, (samples, rate) => {
                     lock (usbLock) {
                         if (usbGame == null) return;
@@ -376,7 +383,7 @@ internal sealed class Workspace : Form
         lock (usbLock) usbSamples.Clear();
         try { await usbSend; } catch { }
         if (local != null && WorkspacePolicy.Loopback(localAddress)) {
-            try { await PostUsbAudio(new byte[0]); } catch { }
+            try { await PostUsbAudio(new byte[0]); } catch { NoteUsbPostFailure(); }
         }
     }
     private async Task PostUsbAudio(byte[] bytes) {
@@ -387,7 +394,11 @@ internal sealed class Workspace : Form
             request.Content = new ByteArrayContent(bytes);
             request.Content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/octet-stream");
             using (var result = await local.SendAsync(request, timeout.Token)) result.EnsureSuccessStatusCode();
+            lock (usbLock) { usbPostedPackets++; usbPostedBytes += bytes.Length; usbLastPostError = null; }
         }
+    }
+    private void NoteUsbPostFailure() {
+        lock (usbLock) { usbPostFailures++; usbLastPostError = "delivery-failed"; }
     }
     private async Task SendUsbAudio() {
         if (usbGame == null) return;
@@ -399,13 +410,28 @@ internal sealed class Workspace : Form
                 var bytes = new byte[samples.Length * 4]; Buffer.BlockCopy(samples, 0, bytes, 0, bytes.Length);
                 await PostUsbAudio(bytes);
             }
-        } catch { usbError = "USB audio delivery interrupted. Turn USB audio off and on to retry."; usbAudio.Stop(); usbGame = null; lock (usbLock) usbSamples.Clear(); }
+        } catch { NoteUsbPostFailure(); usbError = "USB audio delivery interrupted. Turn USB audio off and on to retry."; usbAudio.Stop(); usbGame = null; lock (usbLock) usbSamples.Clear(); }
         PublishUsbStatus();
     }
     private void PublishUsbStatus() {
         if (closing || web.CoreWebView2 == null || selectedGame == null || !WorkspacePolicy.SameOrigin(web.CoreWebView2.Source, origin)) return;
         var snapshot = usbAudio.Snapshot();
-        web.CoreWebView2.ExecuteScriptAsync("window.dispatchEvent(new CustomEvent('studio-usb-status',{detail:" + json.Serialize(new { gameId = selectedGame, devices = usbDevices, running = snapshot.running, error = usbError ?? snapshot.error, channels = snapshot.channels }) + "}));");
+        object diagnostics;
+        lock (usbLock) diagnostics = new { postedPackets = usbPostedPackets, postedBytes = usbPostedBytes, postFailures = usbPostFailures, latestPostError = usbLastPostError };
+        WriteUsbDeliverySnapshot(snapshot.running, diagnostics);
+        web.CoreWebView2.ExecuteScriptAsync("window.dispatchEvent(new CustomEvent('studio-usb-status',{detail:" + json.Serialize(new { gameId = selectedGame, devices = usbDevices, running = snapshot.running, error = usbError ?? snapshot.error, channels = snapshot.channels, diagnostics = diagnostics }) + "}));");
+    }
+    private void WriteUsbDeliverySnapshot(bool running, object diagnostics) {
+        var now = DateTime.UtcNow;
+        if (now - usbDiagnosticsWrittenAt < TimeSpan.FromSeconds(5)) return;
+        usbDiagnosticsWrittenAt = now;
+        try {
+            var path = profileDirectory == null
+                ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "CurlStreamer", "Studio", "usb-delivery.json")
+                : Path.Combine(profileDirectory, "usb-delivery.json");
+            Directory.CreateDirectory(Path.GetDirectoryName(path));
+            File.WriteAllText(path, json.Serialize(new { timestampUtc = now.ToString("o"), running = running, diagnostics = diagnostics }));
+        } catch { /* Diagnostics must never interrupt audio capture or delivery. */ }
     }
     private async Task CloseController() {
         await StopUsbAudio();

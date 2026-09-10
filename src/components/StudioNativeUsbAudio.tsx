@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useId, useState } from "react";
 import { z } from "zod";
 
 const MIN_DBFS = -60;
@@ -47,6 +47,11 @@ export function StudioNativeUsbAudio({ gameId }: { gameId: string }) {
   const [device, setDevice] = useState("");
   const [pending, setPending] = useState(false);
   const [stale, setStale] = useState(false);
+  const [expanded, setExpanded] = useState(false);
+  const controlsId = useId();
+  useEffect(() => {
+    if (state?.running) setExpanded(true);
+  }, [state?.running]);
   useEffect(() => {
     if (!pending) return;
     const timeout = setTimeout(() => {
@@ -82,13 +87,22 @@ export function StudioNativeUsbAudio({ gameId }: { gameId: string }) {
   }, [gameId]);
   const channels = state?.channels.slice(0, 4) ?? [];
   return (
-    <section aria-label="USB microphones" className="space-y-2">
-      <p className="text-sm">
-        USB microphones · mixed to mono for the broadcast
-      </p>
-      {state?.running ? (
-        <div className="flex min-h-11 items-center justify-between gap-2 rounded bg-slate-900 px-3 text-sm">
-          <span>USB audio connected · {channels.length} mics · mono mix</span>
+    <section
+      aria-label="USB microphones"
+      className="studio-usb-audio space-y-2"
+    >
+      <header className="flex min-h-11 flex-wrap items-center gap-2">
+        <h2 className="mr-auto font-bold">Audio</h2>
+        <button
+          type="button"
+          className="min-h-11 rounded px-2 text-sm hover:bg-slate-800"
+          aria-expanded={expanded}
+          aria-controls={controlsId}
+          onClick={() => setExpanded(!expanded)}
+        >
+          USB setup
+        </button>
+        {state?.running && (
           <button
             type="button"
             className="btn min-h-11 shrink-0"
@@ -100,47 +114,117 @@ export function StudioNativeUsbAudio({ gameId }: { gameId: string }) {
           >
             Disconnect
           </button>
-        </div>
-      ) : (
-        <div className="flex flex-wrap gap-2">
-          <select
-            aria-label="USB audio device"
-            className="min-h-11 min-w-0 flex-1 rounded bg-slate-900 p-2"
-            value={device}
-            disabled={pending}
-            onChange={(e) => setDevice(e.target.value)}
-          >
-            <option value="">Select USB receiver</option>
-            {state?.devices.map((d) => (
-              <option key={d.id} value={d.id}>
-                {d.name}
-              </option>
-            ))}
-          </select>
-          <button
-            type="button"
-            className="btn min-h-11"
-            disabled={pending}
-            onClick={() => {
-              setPending(true);
-              send("studio-usb-list");
-            }}
-          >
-            Find microphones
-          </button>
-          <button
-            type="button"
-            className="btn min-h-11"
-            disabled={pending || !device}
-            onClick={() => {
-              setPending(true);
-              send("studio-usb-start", { deviceId: device });
-            }}
-          >
-            Use USB audio
-          </button>
-        </div>
-      )}
+        )}
+      </header>
+      <div id={controlsId} hidden={!expanded} className="space-y-2">
+        {!state?.running && (
+          <div className="flex flex-wrap gap-2">
+            <select
+              aria-label="USB audio device"
+              className="min-h-11 min-w-0 flex-1 rounded bg-slate-900 p-2"
+              value={device}
+              disabled={pending}
+              onChange={(e) => setDevice(e.target.value)}
+            >
+              <option value="">Select USB receiver</option>
+              {state?.devices.map((d) => (
+                <option key={d.id} value={d.id}>
+                  {d.name}
+                </option>
+              ))}
+            </select>
+            <button
+              type="button"
+              className="btn min-h-11"
+              disabled={pending}
+              onClick={() => {
+                setPending(true);
+                send("studio-usb-list");
+              }}
+            >
+              Find microphones
+            </button>
+            <button
+              type="button"
+              className="btn min-h-11"
+              disabled={pending || !device}
+              onClick={() => {
+                setPending(true);
+                send("studio-usb-start", { deviceId: device });
+              }}
+            >
+              Use USB audio
+            </button>
+          </div>
+        )}
+        {state?.running && (
+          <div className="studio-usb-channels">
+            {channels.map((channel, index) => {
+              const meterPeak = stale ? 0 : channel.peak;
+              const dbfs = dbfsText(meterPeak);
+              return (
+                <div
+                  key={index}
+                  className="min-w-0 rounded bg-slate-900 p-2 text-sm"
+                >
+                  <div className="mb-1 flex items-center justify-between gap-2">
+                    <span>Mic {index + 1}</span>
+                    <span className="text-[10px] text-slate-300">{dbfs}</span>
+                  </div>
+                  <div
+                    role="meter"
+                    aria-label={`Mic ${index + 1} level`}
+                    aria-valuemin={MIN_DBFS}
+                    aria-valuemax={0}
+                    aria-valuenow={peakToDbfs(meterPeak)}
+                    aria-valuetext={dbfs}
+                    className="h-2 overflow-hidden rounded bg-slate-700"
+                  >
+                    <div
+                      className={`h-full ${meterColor(meterPeak)}`}
+                      style={{ width: `${dbfsMeterFill(meterPeak)}%` }}
+                    />
+                  </div>
+                  <div className="mt-1 flex items-center justify-between gap-1">
+                    <button
+                      type="button"
+                      className="btn min-h-11 min-w-11 !px-2 text-xs"
+                      aria-pressed={channel.muted}
+                      disabled={stale}
+                      onClick={() =>
+                        send("studio-usb-channel", {
+                          channel: index,
+                          muted: !channel.muted,
+                          level: channel.level,
+                        })
+                      }
+                    >
+                      {channel.muted ? "Unmute" : "Mute"}
+                    </button>
+                    <input
+                      aria-label={`Mic ${index + 1} volume`}
+                      type="range"
+                      min={0}
+                      max={1}
+                      step={0.05}
+                      value={channel.level}
+                      className="min-h-11 min-w-11 flex-1 w-11"
+                      disabled={stale}
+                      onChange={(e) =>
+                        send("studio-usb-channel", {
+                          channel: index,
+                          muted: channel.muted,
+                          level: Number(e.target.value),
+                        })
+                      }
+                    />
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
       {state?.error && (
         <p role="alert" className="text-sm text-amber-200">
           {state.error}
@@ -148,70 +232,6 @@ export function StudioNativeUsbAudio({ gameId }: { gameId: string }) {
       )}
       {stale && (
         <p role="status">Audio status unavailable. Keep Studio open.</p>
-      )}
-      {state?.running && (
-        <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
-          {channels.map((channel, index) => {
-            const meterPeak = stale ? 0 : channel.peak;
-            const dbfs = dbfsText(meterPeak);
-            return (
-              <div key={index} className="rounded bg-slate-900 p-2 text-sm">
-                <div className="mb-1 flex items-center justify-between gap-2">
-                  <span>Mic {index + 1}</span>
-                  <span className="text-[10px] text-slate-300">{dbfs}</span>
-                </div>
-                <div
-                  role="meter"
-                  aria-label={`Mic ${index + 1} level`}
-                  aria-valuemin={MIN_DBFS}
-                  aria-valuemax={0}
-                  aria-valuenow={peakToDbfs(meterPeak)}
-                  aria-valuetext={dbfs}
-                  className="h-2 overflow-hidden rounded bg-slate-700"
-                >
-                  <div
-                    className={`h-full ${meterColor(meterPeak)}`}
-                    style={{ width: `${dbfsMeterFill(meterPeak)}%` }}
-                  />
-                </div>
-                <div className="mt-1 flex items-center justify-between gap-1">
-                  <button
-                    type="button"
-                    className="btn min-h-11 px-2 text-xs"
-                    aria-pressed={channel.muted}
-                    disabled={stale}
-                    onClick={() =>
-                      send("studio-usb-channel", {
-                        channel: index,
-                        muted: !channel.muted,
-                        level: channel.level,
-                      })
-                    }
-                  >
-                    {channel.muted ? "Unmute" : "Mute"}
-                  </button>
-                  <input
-                    aria-label={`Mic ${index + 1} volume`}
-                    type="range"
-                    min={0}
-                    max={1}
-                    step={0.05}
-                    value={channel.level}
-                    className="min-h-11 min-w-0 flex-1 w-8"
-                    disabled={stale}
-                    onChange={(e) =>
-                      send("studio-usb-channel", {
-                        channel: index,
-                        muted: channel.muted,
-                        level: Number(e.target.value),
-                      })
-                    }
-                  />
-                </div>
-              </div>
-            );
-          })}
-        </div>
       )}
     </section>
   );

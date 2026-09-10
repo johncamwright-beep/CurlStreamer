@@ -112,6 +112,19 @@ describe("Node program authority", () => {
     expect(fetcher.mock.calls[1][1]).not.toHaveProperty("body");
     client.close();
   });
+  it("accepts a saved layout with both camera pictures hidden", async () => {
+    const hidden = { ...projected, layout: "none" };
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(exchange())
+      .mockResolvedValueOnce(new Response(JSON.stringify({ game: hidden })));
+    const client = new M4ProgramClient(game, origin, fetcher);
+    await client.exchange("a".repeat(43));
+    expect(await client.readGame()).toEqual(hidden);
+    expect(client.active).toBe(true);
+    client.close();
+  });
+
   it.each([
     { ...projected, id: session },
     { ...projected, score: { ...projected.score, currentEnd: "3" } },

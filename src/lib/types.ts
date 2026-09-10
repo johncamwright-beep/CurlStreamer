@@ -6,7 +6,7 @@ export type ParticipantAuthority = {
   /** Absent only for a generation-zero credential issued before migration 0019. */
   generation?: number;
 };
-export type Layout = "split" | "home" | "away";
+export type Layout = "split" | "home" | "away" | "none";
 export type SponsorStyle = "fullscreen" | "overlay";
 export type CameraFraming = "fill" | "contain";
 

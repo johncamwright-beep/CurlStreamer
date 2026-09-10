@@ -15,7 +15,13 @@ The new native Studio build uses shared-mode WASAPI instead of WebView2 for USB 
 
 Mono float PCM travels over the authenticated local operator connection into a bounded private-renderer queue; no USB audio is stored or uploaded to Supabase. Empty packets flush playback, and changing games or closing Studio stops capture. The OBS renderer adds this mix to outgoing audio. Older Studio builds retain the browser-only input diagnostic until the native update is installed.
 
-Synthetic native tests cover PCM16/24/32 and float decoding, four distinct channel meters, mute and mono mixing. Read-only endpoint enumeration passed. Physical DJI capture, channel identity and end-to-end microphone delivery remain unverified. The update is staged under work/studio-native-usb; do not replace the running app while Studio/OBS are active.
+Synthetic native tests cover PCM16/24/32 and float decoding, four distinct channel meters, mute and mono mixing. Read-only endpoint enumeration passed. John reports that all four physical microphone meters now respond independently, but that YouTube is silent. Physical microphone delivery to YouTube is still unresolved.
+
+The September 10 local check used the installed recorder and OBS runtime with the real private program bridge, including its cookie and CSP. A generated 440 Hz tone reached the AAC recording (peak 0.38025, RMS 0.14329); flushing the queue left a silent tail. Preview-only mode also fetched USB PCM successfully. These checks bypass physical capture and the native Workspace-to-operator POST, and do not establish YouTube reception. The earlier standalone tone fixture did not exercise the private bridge. Evidence and scripts remain under ignored `work/native-audio-proof`.
+
+The compact Audio panel puts USB setup and Disconnect in its header and retains the capture listener when collapsed. Camera microphone switches stay on the camera cards. Four microphone controls fit across a sufficiently wide panel; narrower panels use two columns to preserve usable volume sliders.
+
+John confirmed the YouTube player is unmuted and completely silent. Workspace now exposes count-only USB delivery diagnostics and writes the latest snapshot to `%LOCALAPPDATA%/CurlStreamer/Studio/usb-delivery.json` at most every five seconds. It records time, capture running state, accepted POST packets/bytes and generic failure counts, never microphone samples or credentials. Isolated profiles use their own directory. After the next installed-build test, use this to distinguish capture-only meters from accepted delivery to the local output process. Both local recording and RTMP currently share the native AAC encoder and audio track; no proven RTMP encoder defect has been found.
 
 ## Cost and cleanup
 

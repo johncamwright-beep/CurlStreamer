@@ -185,7 +185,7 @@ export function StudioYouTube({ id }: { id: string }) {
                 : "Not live"}
         </strong>
       </div>
-      <div className="flex flex-wrap gap-2">
+      <div className="studio-youtube-actions flex flex-wrap gap-2">
         <button
           className="btn"
           disabled={!state?.available || state.busy || pending}
@@ -214,9 +214,10 @@ export function StudioYouTube({ id }: { id: string }) {
         </p>
       )}
       {state?.live && watchUrl && (
-        <div className="mt-2 flex flex-wrap items-center gap-2 text-sm">
+        <div className="studio-youtube-watch mt-2 flex items-center gap-2 text-sm">
           <a
-            className="min-w-0 break-all underline"
+            className="min-w-0 flex-1 truncate underline"
+            title={watchUrl}
             href={watchUrl}
             target="_blank"
             rel="noreferrer"

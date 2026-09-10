@@ -8,8 +8,15 @@ async function setup(page: Page, desktop = false) {
   game.config.awayName = "Team Wright";
   const actions: Record<string, unknown>[] = [];
   await page.route(`**/api/games/${testGameId}`, async (route) => {
-    if (route.request().method() === "PATCH")
-      actions.push(route.request().postDataJSON());
+    if (route.request().method() === "PATCH") {
+      const action = route.request().postDataJSON();
+      actions.push(action);
+      if (action.type === "layout") game.layout = action.layout;
+      if (action.type === "sponsor-mode") {
+        game.sponsorMode.active = action.active;
+        if (action.style) game.sponsorMode.style = action.style;
+      }
+    }
     await route.fulfill({
       json: game,
       headers: {
@@ -184,7 +191,7 @@ test("an active carousel can be stopped after its sponsors are removed", async (
   const { game, actions } = await setup(page);
   game.sponsors = [];
   await page.reload();
-  await page.getByRole("button", { name: "Stop carousel" }).click();
+  await page.getByRole("button", { name: "Stop sponsors" }).click();
   expect(actions).toEqual([{ type: "sponsor-mode", active: false }]);
 });
 
@@ -195,10 +202,49 @@ test("desktop game day keeps scoring primary and settings available on demand", 
     await page.setViewportSize({ width: 1280, height: 850 });
   await page.addInitScript(() =>
     Object.defineProperty(navigator, "userAgent", {
-      value: "CurlStreamerStudio/0.3",
+      value: "CurlStreamerStudio/0.3 StudioNativeAudio/1",
     }),
   );
-  const { actions } = await setup(page, true);
+  const { game, actions } = await setup(page, true);
+  await expect(
+    page.getByRole("region", { name: "USB microphones", exact: true }),
+  ).toBeVisible();
+  await page.evaluate((gameId) => {
+    window.dispatchEvent(
+      new CustomEvent("studio-usb-status", {
+        detail: {
+          gameId,
+          devices: [],
+          running: true,
+          error: null,
+          channels: [0.1, 0.3, 0.05, 0.2].map((peak) => ({
+            peak,
+            rms: peak / 2,
+            muted: false,
+            level: 1,
+          })),
+        },
+      }),
+    );
+  }, testGameId);
+  const usb = page.getByRole("region", {
+    name: "USB microphones",
+    exact: true,
+  });
+  await expect(usb.getByRole("meter")).toHaveCount(4);
+  await expect(usb.getByRole("button", { name: "Disconnect" })).toBeVisible();
+  if (info.project.name !== "mobile") {
+    expect((await usb.boundingBox())!.height).toBeLessThan(190);
+    const youtube = await page
+      .getByRole("region", { name: "YouTube broadcast", exact: true })
+      .boundingBox();
+    const sponsors = await page
+      .getByRole("region", { name: "Sponsors", exact: true })
+      .boundingBox();
+    expect(sponsors!.height).toBeLessThanOrEqual(166);
+    expect(sponsors!.y).toBe(youtube!.y);
+    expect(sponsors!.height).toBe(youtube!.height);
+  }
   await expect(
     page.getByRole("button", { name: "Save 1 point", exact: true }),
   ).toBeEnabled();
@@ -216,13 +262,15 @@ test("desktop game day keeps scoring primary and settings available on demand", 
     page.getByRole("region", { name: "YouTube broadcast" }),
   ).toBeVisible();
   await expect(
-    page.getByRole("button", { name: "Both cameras", exact: true }),
-  ).toBeVisible();
+    page.getByRole("region", { name: "Cameras", exact: true }),
+  ).toHaveCount(0);
   await expect(
     page.getByRole("button", { name: "Stop sponsors", exact: true }),
   ).toBeVisible();
   await expect(
-    page.getByRole("button", { name: "Both cameras", exact: true }),
+    page
+      .getByRole("region", { name: "Camera 1", exact: true })
+      .getByRole("button", { name: "Hide camera", exact: true }),
   ).toBeVisible();
   expect(actions).toEqual([]);
   await expect(
@@ -267,4 +315,53 @@ test("desktop game day keeps scoring primary and settings available on demand", 
     .getByRole("button", { name: "Stop sponsors", exact: true })
     .click();
   expect(actions[1]).toEqual({ type: "sponsor-mode", active: false });
+  const sponsors = page.getByRole("region", { name: "Sponsors", exact: true });
+  await expect(
+    sponsors.getByRole("button", { name: /^(Previous|Pause|Resume|Next)$/ }),
+  ).toHaveCount(0);
+  await sponsors
+    .getByRole("button", { name: "Side panel", exact: true })
+    .click();
+  expect(actions[2]).toEqual({
+    type: "sponsor-mode",
+    active: false,
+    style: "fullscreen",
+  });
+  await page.reload();
+  await expect(
+    sponsors.getByRole("button", { name: "Side panel", exact: true }),
+  ).toHaveAttribute("aria-pressed", "true");
+  await sponsors.getByRole("button", { name: "Overlay", exact: true }).click();
+  expect(actions[3]).toEqual({
+    type: "sponsor-mode",
+    active: false,
+    style: "overlay",
+  });
+  const camera1 = page.getByRole("region", { name: "Camera 1", exact: true });
+  const camera2 = page.getByRole("region", { name: "Camera 2", exact: true });
+  await camera1
+    .getByRole("button", { name: "Hide camera", exact: true })
+    .click();
+  await expect(
+    camera1.getByRole("button", { name: "Show camera", exact: true }),
+  ).toBeVisible();
+  await camera2
+    .getByRole("button", { name: "Hide camera", exact: true })
+    .click();
+  await expect(
+    camera2.getByRole("button", { name: "Show camera", exact: true }),
+  ).toBeVisible();
+  await camera1
+    .getByRole("button", { name: "Show camera", exact: true })
+    .click();
+  await camera2
+    .getByRole("button", { name: "Show camera", exact: true })
+    .click();
+  expect(actions.slice(4)).toEqual(
+    ["away", "none", "home", "split"].map((layout) => ({
+      type: "layout",
+      layout,
+    })),
+  );
+  expect(game.claims).toEqual(gameFixture().claims);
 });

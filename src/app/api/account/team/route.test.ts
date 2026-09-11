@@ -161,3 +161,35 @@ it.each(["photo", "gallery"])(
     });
   },
 );
+
+it("forwards publication confirmation only when explicitly supplied", async () => {
+  mocks.context.mockResolvedValue({ organizationId: "trusted-org" });
+  mocks.rpc.mockResolvedValue({ error: null });
+  const response = await PATCH(
+    new Request("https://test/api/account/team", {
+      method: "PATCH",
+      headers: { "X-Team-Publish": "confirm" },
+      body: JSON.stringify({
+        ...defaultTeamPageSettings("Team Benning"),
+        published: true,
+      }),
+    }),
+  );
+  expect(response.status).toBe(200);
+  expect(mocks.rpc).toHaveBeenCalledWith(
+    "update_team_public_profile",
+    expect.objectContaining({ p_publish: true, p_org: "trusted-org" }),
+  );
+});
+it("reports permanent-address conflicts without claiming a save", async () => {
+  mocks.context.mockResolvedValue({ organizationId: "trusted-org" });
+  mocks.rpc.mockResolvedValue({ error: { code: "23514" } });
+  const response = await PATCH(
+    new Request("https://test/api/account/team", {
+      method: "PATCH",
+      body: JSON.stringify(defaultTeamPageSettings("Team Benning")),
+    }),
+  );
+  expect(response.status).toBe(409);
+  expect((await response.json()).error).toContain("permanent");
+});

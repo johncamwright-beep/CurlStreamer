@@ -21,7 +21,8 @@ export function TeamSettings({
     [ready, setReady] = useState(false),
     [canEdit, setCanEdit] = useState(false),
     [busy, setBusy] = useState(false),
-    [message, setMessage] = useState("");
+    [message, setMessage] = useState(""),
+    [confirmPublish, setConfirmPublish] = useState(false);
   async function load() {
     try {
       const response = await fetch("/api/account/team", { cache: "no-store" });
@@ -48,21 +49,34 @@ export function TeamSettings({
   ) {
     setSettings((previous) => ({ ...previous, [key]: value }));
   }
-  async function save() {
+  async function save(publish = false) {
     setBusy(true);
     setMessage("");
     try {
       const response = await fetch("/api/account/team", {
         method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(settings),
+        headers: {
+          "Content-Type": "application/json",
+          ...(publish ? { "X-Team-Publish": "confirm" } : {}),
+        },
+        body: JSON.stringify(
+          publish ? { ...settings, published: true } : settings,
+        ),
       });
       const body = await response.json();
       if (!response.ok) throw Error(body.error);
-      const saved = teamPageSettingsSchema.parse(body.settings ?? settings);
+      const saved = teamPageSettingsSchema.parse(
+        body.settings ??
+          (publish ? { ...settings, published: true } : settings),
+      );
       setSettings(saved);
       setSavedSettings(saved);
-      setMessage("Team settings saved.");
+      setConfirmPublish(false);
+      setMessage(
+        publish
+          ? "Your team page is published. Its address is now permanent."
+          : "Team settings saved.",
+      );
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Save failed.");
     } finally {
@@ -122,7 +136,7 @@ export function TeamSettings({
           type="button"
           className="btn"
           disabled={!ready || !canEdit || busy}
-          onClick={save}
+          onClick={() => void save()}
         >
           {busy ? "Saving…" : "Save changes"}
         </button>
@@ -304,24 +318,59 @@ export function TeamSettings({
               <input
                 className="input min-w-0 flex-1"
                 value={settings.slug}
+                disabled={Boolean(savedSettings?.published)}
                 onChange={(e) => change("slug", e.target.value)}
                 aria-label="Team subdomain"
               />
               <span>.curlstreamer.app</span>
             </div>
           </label>
-          <p className="text-sm text-slate-400">
-            Publish your page to activate this address. Turn publication off to
-            hide it again.
-          </p>
-          <label className="flex min-h-11 items-center gap-3">
-            <input
-              type="checkbox"
-              checked={settings.published}
-              onChange={(e) => change("published", e.target.checked)}
-            />
-            Publish team page
-          </label>
+          {savedSettings?.published ? (
+            <p role="status">
+              Published. This team’s subdomain is permanent. You can continue
+              editing the page content.
+            </p>
+          ) : (
+            <div className="grid gap-3 rounded-lg border border-amber-500/50 p-3">
+              <p>
+                Each team can publish one subdomain. Once published, this
+                address cannot be changed or published again under another
+                address.
+              </p>
+              {!confirmPublish ? (
+                <button
+                  type="button"
+                  className="btn-primary"
+                  onClick={() => setConfirmPublish(true)}
+                >
+                  Publish team page
+                </button>
+              ) : (
+                <>
+                  <p>
+                    Publish <strong>{settings.slug}.curlstreamer.app</strong>{" "}
+                    permanently? This also saves your current page settings.
+                  </p>
+                  <div className="flex flex-wrap gap-3">
+                    <button
+                      type="button"
+                      className="btn-primary"
+                      onClick={() => void save(true)}
+                    >
+                      Confirm permanent address
+                    </button>
+                    <button
+                      type="button"
+                      className="btn-secondary"
+                      onClick={() => setConfirmPublish(false)}
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
+          )}
           {(
             [
               ["results", "Results and YouTube replays"],
@@ -344,14 +393,14 @@ export function TeamSettings({
           ))}
           {savedSettings?.published ? (
             <a
-              href={"/teams/" + encodeURIComponent(savedSettings.slug)}
+              href={"https://" + savedSettings.slug + ".curlstreamer.app"}
               className="flex min-h-11 items-center text-cyan-300 underline"
             >
-              View saved public page
+              Visit {savedSettings.slug}.curlstreamer.app
             </a>
           ) : (
             <p className="text-sm text-slate-400">
-              Publish your team page and save changes to view it.
+              Publish your team page to activate its permanent address.
             </p>
           )}
         </div>

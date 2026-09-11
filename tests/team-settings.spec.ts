@@ -25,7 +25,9 @@ test("team settings save visibility and social profiles without publishing by de
   await page
     .getByRole("button", { name: "Public team page", exact: true })
     .click();
-  await expect(page.getByLabel("Publish team page")).not.toBeChecked();
+  await expect(
+    page.getByRole("button", { name: "Publish team page", exact: true }),
+  ).toBeVisible();
   await page.getByLabel("Page background", { exact: true }).fill("#112233");
   await page.getByLabel("Panel background", { exact: true }).fill("#eeeeee");
   await page.getByLabel("Accent color", { exact: true }).fill("#bb0000");
@@ -50,35 +52,20 @@ test("team settings save visibility and social profiles without publishing by de
   ).toBeDisabled();
 });
 
-test("public page link follows saved publication and slug, and navigates in this tab", async ({
+test("publication requires confirmation then locks the subdomain and exposes its link", async ({
   page,
 }) => {
-  let settings = {
-    ...defaultTeamPageSettings("Team Benning"),
-    published: true,
-  };
-  let rejectSave = false;
+  let settings = defaultTeamPageSettings("Team Benning");
+  let writes = 0;
   await page.route("**/api/account/team", async (route) => {
     if (route.request().method() === "PATCH") {
-      if (rejectSave)
-        return route.fulfill({
-          status: 409,
-          json: { error: "That team address is already taken." },
-        });
+      writes++;
+      expect(route.request().headers()["x-team-publish"]).toBe("confirm");
       settings = route.request().postDataJSON();
-      return route.fulfill({ json: { saved: true, settings } });
+      return route.fulfill({ json: { settings, saved: true } });
     }
     return route.fulfill({ json: { settings, logo: null, canEdit: true } });
   });
-  await page.route(/\/api\/account\/news(?:\?.*)?$/, (route) =>
-    route.fulfill({ json: { posts: [] } }),
-  );
-  await page.route("**/teams/new-team", (route) =>
-    route.fulfill({
-      contentType: "text/html",
-      body: "<h1>Public team page</h1>",
-    }),
-  );
   await page.goto("/login?next=/account");
   await page.getByLabel("Email address").fill("admin@youtube.test");
   await page.getByLabel("Password").fill("playwright-password");
@@ -87,28 +74,25 @@ test("public page link follows saved publication and slug, and navigates in this
   await page
     .getByRole("button", { name: "Public team page", exact: true })
     .click();
-  const link = page.getByRole("link", { name: "View saved public page" });
-  await expect(link).toHaveAttribute("href", "/teams/team-benning");
   await page.getByLabel("Team subdomain").fill("new-team");
-  await expect(link).toHaveAttribute("href", "/teams/team-benning");
-  rejectSave = true;
-  await page.getByRole("button", { name: "Save changes" }).click();
+  await page
+    .getByRole("button", { name: "Publish team page", exact: true })
+    .click();
+  expect(writes).toBe(0);
   await expect(
-    page.getByText("That team address is already taken."),
+    page.getByText("Each team can publish one subdomain.", { exact: false }),
   ).toBeVisible();
-  await expect(link).toHaveAttribute("href", "/teams/team-benning");
-  rejectSave = false;
-  await page.getByLabel("Publish team page").uncheck();
-  await page.getByRole("button", { name: "Save changes" }).click();
-  await expect(link).toHaveCount(0);
-  await page.getByLabel("Publish team page").check();
-  await page.getByRole("button", { name: "Save changes" }).click();
-  await expect(link).toHaveAttribute("href", "/teams/new-team");
-  await link.click();
-  await expect(page).toHaveURL(/\/teams\/new-team$/);
+  await page.getByRole("button", { name: "Confirm permanent address" }).click();
+  await expect(page.getByLabel("Team subdomain")).toBeDisabled();
   await expect(
-    page.getByRole("heading", { name: "Public team page" }),
-  ).toBeVisible();
+    page.getByRole("button", { name: "Publish team page", exact: true }),
+  ).toHaveCount(0);
+  await expect(
+    page.getByRole("link", { name: "Visit new-team.curlstreamer.app" }),
+  ).toHaveAttribute("href", "https://new-team.curlstreamer.app");
+  await page.reload();
+  await expect(page.getByLabel("Team subdomain")).toBeDisabled();
+  expect(writes).toBe(1);
 });
 
 test("team news drafts, edits and removal stay compact and explicit", async ({

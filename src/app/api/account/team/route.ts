@@ -64,7 +64,13 @@ export async function PATCH(request: Request) {
     }
     const { error } = await createAdminSupabaseClient().rpc(
       "update_team_public_profile",
-      { p_org: auth.organizationId, p_settings: parsed.data },
+      {
+        p_org: auth.organizationId,
+        p_settings: parsed.data,
+        ...(request.headers.get("X-Team-Publish") === "confirm"
+          ? { p_publish: true }
+          : {}),
+      },
     );
     if (error)
       return NextResponse.json(
@@ -72,9 +78,15 @@ export async function PATCH(request: Request) {
           error:
             error.code === "23505"
               ? "That team address is already taken."
-              : "Team settings could not be saved.",
+              : error.code === "23514"
+                ? "Your published team address is permanent and cannot be changed or unpublished."
+                : error.code === "22023"
+                  ? "Use Publish team page and confirm the permanent address."
+                  : "Team settings could not be saved.",
         },
-        { status: error.code === "23505" ? 409 : 503 },
+        {
+          status: ["23505", "23514", "22023"].includes(error.code) ? 409 : 503,
+        },
       );
     return NextResponse.json(
       { saved: true, settings: parsed.data },

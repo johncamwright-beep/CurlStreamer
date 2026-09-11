@@ -67,6 +67,7 @@ internal sealed class Studio : Form
     private Studio(string launchGame)
     {
         Text = "CurlStreamer Studio — Preview";
+        Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath);
         ClientSize = new Size(650, 470);
         MinimumSize = new Size(650, 510);
         AutoScaleMode = AutoScaleMode.Dpi;

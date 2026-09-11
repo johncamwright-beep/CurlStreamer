@@ -53,6 +53,7 @@ internal sealed class Workspace : Form
         usbTimer.Start();
         root = AppDomain.CurrentDomain.BaseDirectory;
         Text = "CurlStreamer Studio — Workspace Preview";
+        Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath);
         ClientSize = new Size(1180, 820); MinimumSize = new Size(940, 680);
         AutoScaleMode = AutoScaleMode.Dpi; Font = new Font("Segoe UI", 10);
         BackColor = Color.FromArgb(10, 24, 40); ForeColor = Color.White;

@@ -169,7 +169,7 @@ export async function POST(request: Request) {
           : undefined;
       if (body.operation === "updateGame" && !existingGame)
         return hierarchyFailure({ kind: "authorization" });
-      const effectiveTimezone = selectedEvent?.timezone ?? body.timezone;
+      const effectiveTimezone = body.timezone;
       const scheduledStart = localDateTimeToUtc(
         body.scheduledDate,
         body.scheduledTime,
@@ -235,7 +235,7 @@ export async function POST(request: Request) {
         );
         if (
           result.ok &&
-          existing.status === "scheduled" &&
+          !["completed", "closed"].includes(existing.status) &&
           existing.scheduledYouTubeWatchUrl
         ) {
           const youtube = await provisionScheduledYouTubeBroadcast(user, {
@@ -249,7 +249,7 @@ export async function POST(request: Request) {
               scheduledStart,
               timezone: effectiveTimezone,
             },
-          }).catch(() => ({ status: "ready", thumbnailStatus: "pending" }));
+          }).catch(() => ({ status: "pending", thumbnailStatus: "pending" }));
           result = {
             ...result,
             value: { youtube },

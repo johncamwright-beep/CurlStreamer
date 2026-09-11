@@ -51,8 +51,8 @@ export function GameCreationForm({
     (event) => event.id === editing?.eventId && !event.archivedAt,
   );
   const initialTimezone =
-    editingEvent?.timezone ??
     editing?.timezone ??
+    editingEvent?.timezone ??
     preselected?.timezone ??
     DEFAULT_TIMEZONE;
   const initialSchedule = editing?.scheduledStart
@@ -130,7 +130,15 @@ export function GameCreationForm({
     editing?.timezone ?? DEFAULT_TIMEZONE,
   );
   const [titleCustomized, setTitleCustomized] = useState(
-    Boolean(editing?.config.youtubeTitle),
+    Boolean(
+      editing?.config.youtubeTitle &&
+      editing.config.youtubeTitle !==
+        formatYouTubeScheduledTitle(
+          editingTitle ?? "",
+          editing.scheduledStart,
+          initialTimezone,
+        ),
+    ),
   );
   const [customTitle, setCustomTitle] = useState(
     editing?.config.youtubeTitle ?? "",
@@ -139,7 +147,7 @@ export function GameCreationForm({
     (e) => e.seasonId === seasonId && !e.archivedAt,
   );
   const selectedEvent = availableEvents.find((e) => e.id === eventId);
-  const effectiveTimezone = selectedEvent?.timezone ?? timezone;
+  const effectiveTimezone = timezone;
   const canonicalTitle = formatCanonicalGameTitle({
     homeName: teamName,
     awayName: opponentTbd ? null : opponentSearch,
@@ -317,7 +325,7 @@ export function GameCreationForm({
               : { opponentName }),
         scheduledDate: date,
         scheduledTime: form.get("scheduledTime"),
-        timezone: selectedEvent?.timezone ?? form.get("timezone"),
+        timezone,
         gameNumber,
         config: {
           eventName: formatEventGameLabel(
@@ -347,6 +355,14 @@ export function GameCreationForm({
             ? (body.youtube?.status ?? "pending")
             : undefined,
         });
+        setBusy(false);
+        saving.current = false;
+        return;
+      }
+      if (editing && body.youtube?.status === "pending") {
+        setError(
+          "The game was saved, but YouTube’s time could not be updated. Please save changes again to retry.",
+        );
         setBusy(false);
         saving.current = false;
         return;
@@ -652,21 +668,15 @@ export function GameCreationForm({
                   className="mt-1 w-full rounded-lg bg-slate-800 p-3"
                 />
               </label>
-              {selectedEvent ? (
-                <p className="rounded-lg bg-slate-800 p-3 md:col-span-2">
-                  Event timezone: <strong>{selectedEvent.timezone}</strong>
-                </p>
-              ) : (
-                <label>
-                  Timezone
-                  <TimezoneSelect
-                    required
-                    name="timezone"
-                    value={timezone}
-                    onChange={(event) => setTimezone(event.target.value)}
-                  />
-                </label>
-              )}
+              <label>
+                Timezone
+                <TimezoneSelect
+                  required
+                  name="timezone"
+                  value={timezone}
+                  onChange={(event) => setTimezone(event.target.value)}
+                />
+              </label>
               <details className="setup-time-help md:col-span-2">
                 <summary>About timezones and daylight saving</summary>
                 <p>

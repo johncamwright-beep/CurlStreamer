@@ -62,7 +62,7 @@ function request(
       eventId,
       scheduledDate,
       scheduledTime,
-      timezone: "UTC",
+      timezone: "America/Toronto",
       gameNumber: 1,
       config,
     }),
@@ -155,7 +155,9 @@ describe("team schedule timezone boundary", () => {
     );
   });
 
-  it("uses the selected event timezone instead of the submitted timezone", async () => {
+  it("uses the chosen game timezone even when the event was saved in UTC", async () => {
+    const hierarchy = await mocks.loadTeamHierarchyData();
+    hierarchy.events[0].timezone = "UTC";
     const response = await POST(request("createGame", "2026-07-15", "19:30"));
 
     expect(response.status).toBe(201);

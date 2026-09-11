@@ -208,7 +208,7 @@ export function GamesDashboard({
                     </div>
                     <p className="dashboard-event-next">
                       {nextGame?.scheduledStart
-                        ? `Next: ${formatScheduledStart(nextGame.scheduledStart, event.timezone)}`
+                        ? `Next: ${formatScheduledStart(nextGame.scheduledStart, nextGame.timezone ?? event.timezone)}`
                         : "No upcoming games"}
                     </p>
                   </Link>
@@ -304,7 +304,7 @@ function GameCard({
     eventName: event?.name,
     gameNumber: game.gameNumber,
   });
-  const timezone = event?.timezone ?? game.timezone ?? "UTC";
+  const timezone = game.timezone ?? event?.timezone ?? "America/Toronto";
   const scheduledLabel = game.scheduledStart
     ? formatScheduledStart(game.scheduledStart, timezone)
     : "Schedule not set";

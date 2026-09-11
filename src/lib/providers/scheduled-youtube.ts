@@ -5,7 +5,10 @@ import { createAdminSupabaseClient } from "@/lib/supabase/admin";
 import { getYouTubeCredentials } from "@/lib/youtube-connection";
 import { decryptYouTubeRefreshToken } from "./youtube-credential-vault";
 import { refreshYouTubeAccessToken } from "./youtube";
-import { findOrCreateYouTubeBroadcast } from "./youtube-live";
+import {
+  findOrCreateYouTubeBroadcast,
+  updateScheduledYouTubeTime,
+} from "./youtube-live";
 import {
   uploadScheduledThumbnail,
   type ScheduledThumbnail,
@@ -77,6 +80,23 @@ export async function provisionScheduledYouTubeBroadcast(
   if (action === "none") {
     const watchUrl = claimed[0]?.watch_url;
     const videoId = watchUrl ? new URL(watchUrl).searchParams.get("v") : null;
+    if (videoId && values.thumbnail) {
+      try {
+        await updateScheduledYouTubeTime(
+          accessToken,
+          videoId,
+          values.gameId,
+          values.title,
+          values.scheduledStart,
+        );
+      } catch {
+        return {
+          status: "pending",
+          watchUrl: watchUrl ?? null,
+          errorCode: "youtube_schedule_update_pending",
+        } as const;
+      }
+    }
     return {
       status: "ready",
       watchUrl: claimed[0]?.watch_url ?? null,

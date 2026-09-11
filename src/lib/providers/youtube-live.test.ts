@@ -3,6 +3,7 @@ import {
   findOrCreateYouTubeBroadcast,
   findOrCreateYouTubeStream,
   finishYouTubeBroadcast,
+  updateScheduledYouTubeTime,
 } from "./youtube-live";
 
 function json(value: unknown, status = 200) {
@@ -13,6 +14,65 @@ function json(value: unknown, status = 200) {
 }
 
 describe("YouTube Live provider", () => {
+  it("updates the existing upcoming broadcast start without creating a new video", async () => {
+    const fetcher = vi
+      .fn()
+      .mockResolvedValueOnce(
+        json({
+          items: [
+            {
+              id: "video",
+              status: { lifeCycleStatus: "ready" },
+              snippet: { description: "CurlCast broadcast session game" },
+            },
+          ],
+        }),
+      )
+      .mockResolvedValueOnce(json({ id: "video" }));
+    await updateScheduledYouTubeTime(
+      "token",
+      "video",
+      "game",
+      "Game — 8:00 AM EDT",
+      "2026-09-17T12:00:00.000Z",
+      fetcher,
+    );
+    const init = fetcher.mock.calls[1][1];
+    expect(init.method).toBe("PUT");
+    expect(JSON.parse(init.body)).toMatchObject({
+      id: "video",
+      snippet: {
+        scheduledStartTime: "2026-09-17T12:00:00.000Z",
+        title: "Game — 8:00 AM EDT",
+      },
+    });
+  });
+  it("does not reschedule a live broadcast", async () => {
+    const fetcher = vi
+      .fn()
+      .mockResolvedValue(
+        json({
+          items: [
+            {
+              id: "video",
+              status: { lifeCycleStatus: "live" },
+              snippet: { description: "CurlCast broadcast session game" },
+            },
+          ],
+        }),
+      );
+    await expect(
+      updateScheduledYouTubeTime(
+        "token",
+        "video",
+        "game",
+        "Game",
+        "2026-09-17T12:00:00Z",
+        fetcher,
+      ),
+    ).rejects.toThrow("already_started");
+    expect(fetcher).toHaveBeenCalledTimes(1);
+  });
   const manualValues = {
     accessToken: "token",
     sessionKey: "manual-session",

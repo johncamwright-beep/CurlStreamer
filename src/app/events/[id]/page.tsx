@@ -95,7 +95,10 @@ export default async function EventPage({
                 )}
                 {game.scheduledStart && (
                   <p className="text-slate-300">
-                    {formatScheduledStart(game.scheduledStart, event.timezone)}{" "}
+                    {formatScheduledStart(
+                      game.scheduledStart,
+                      game.timezone ?? event.timezone,
+                    )}{" "}
                     · {game.status}
                   </p>
                 )}

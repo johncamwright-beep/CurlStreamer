@@ -60,6 +60,61 @@ function marker(sessionKey: string) {
   return `CurlCast broadcast session ${sessionKey}`;
 }
 
+export async function updateScheduledYouTubeTime(
+  accessToken: string,
+  broadcastId: string,
+  sessionKey: string,
+  title: string,
+  scheduledStartTime: string,
+  fetcher: typeof fetch = fetch,
+) {
+  const data = z
+    .object({
+      items: z.array(
+        z.object({
+          id: z.string(),
+          status: z.object({ lifeCycleStatus: z.string() }),
+          snippet: z.object({
+            description: z.string(),
+            scheduledEndTime: z.string().optional(),
+          }),
+        }),
+      ),
+    })
+    .parse(
+      await youtubeRequest(
+        `/liveBroadcasts?part=snippet,status&id=${encodeURIComponent(broadcastId)}`,
+        accessToken,
+        {},
+        fetcher,
+      ),
+    );
+  const broadcast = data.items[0];
+  if (!broadcast || broadcast.snippet.description !== marker(sessionKey))
+    throw new Error("youtube_broadcast_mismatch");
+  if (!["created", "ready"].includes(broadcast.status.lifeCycleStatus))
+    throw new Error("youtube_broadcast_already_started");
+  await youtubeRequest(
+    "/liveBroadcasts?part=snippet",
+    accessToken,
+    {
+      method: "PUT",
+      body: JSON.stringify({
+        id: broadcastId,
+        snippet: {
+          title,
+          description: broadcast.snippet.description,
+          scheduledStartTime,
+          ...(broadcast.snippet.scheduledEndTime
+            ? { scheduledEndTime: broadcast.snippet.scheduledEndTime }
+            : {}),
+        },
+      }),
+    },
+    fetcher,
+  );
+}
+
 async function pagedItems<T>(
   path: string,
   accessToken: string,

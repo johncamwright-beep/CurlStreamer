@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({
   decrypt: vi.fn(),
   broadcast: vi.fn(),
   thumbnail: vi.fn(),
+  update: vi.fn(),
 }));
 
 vi.mock("@/lib/supabase/admin", () => ({
@@ -21,6 +22,7 @@ vi.mock("./youtube-credential-vault", () => ({
 }));
 vi.mock("./youtube-live", () => ({
   findOrCreateYouTubeBroadcast: mocks.broadcast,
+  updateScheduledYouTubeTime: mocks.update,
 }));
 vi.mock("./youtube-thumbnail", () => ({
   uploadScheduledThumbnail: mocks.thumbnail,
@@ -32,6 +34,7 @@ describe("scheduled YouTube provisioning", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.thumbnail.mockResolvedValue(undefined);
+    mocks.update.mockResolvedValue(undefined);
     mocks.credentials.mockResolvedValue({
       encrypted_credentials: "encrypted",
       organization_id: "11111111-1111-4111-8111-111111111111",

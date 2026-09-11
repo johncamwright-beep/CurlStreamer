@@ -11,6 +11,18 @@ vi.mock("@supabase/ssr", () => ({
 import { middleware } from "./middleware";
 
 describe("middleware configuration boundary", () => {
+  it.each(["robots.txt", "sitemap.xml"])(
+    "serves team %s without an authentication request",
+    async (path) => {
+      const response = await middleware(
+        new NextRequest(`https://teambenning.curlstreamer.app/${path}`, {
+          headers: { host: "teambenning.curlstreamer.app" },
+        }),
+      );
+      expect(response.headers.get("x-middleware-next")).toBe("1");
+      expect(mocks.getUser).not.toHaveBeenCalled();
+    },
+  );
   beforeEach(() => {
     vi.resetAllMocks();
     vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", "http://127.0.0.1:9");

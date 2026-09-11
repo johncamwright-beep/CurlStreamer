@@ -3,6 +3,10 @@ import { login } from "@/app/login/actions";
 import { AuthForm } from "@/components/AuthForm";
 import { CurlStreamerLogo } from "@/components/CurlStreamerBrand";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
+export const metadata = {
+  robots: { index: true, follow: true },
+  alternates: { canonical: "https://www.curlstreamer.app/" },
+};
 
 export default async function HomePage() {
   try {

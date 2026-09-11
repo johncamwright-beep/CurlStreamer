@@ -96,7 +96,7 @@ export function PublicTeamGames({
         aria-label="Filtered games"
       >
         {filtered.map((g) => (
-          <article key={g.id} className="public-game-row">
+          <article key={g.id} id={`game-${g.id}`} className="public-game-row">
             <div className="min-w-0">
               <strong className="line-clamp-2" title={`${g.home} vs ${g.away}`}>
                 {g.home} vs {g.away}

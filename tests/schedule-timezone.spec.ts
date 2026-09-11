@@ -159,9 +159,9 @@ test("an unchanged Toronto edit round-trips in a Vancouver browser", async ({
 
   await expect(date).toHaveValue("2026-11-01");
   await expect(time).toHaveValue("01:30");
-  await expect(page.getByText("Event timezone:")).toContainText(
-    "America/Toronto",
-  );
+  await expect(
+    page.getByRole("combobox", { name: "Timezone", exact: true }),
+  ).toHaveValue("America/Toronto");
 
   await date.fill("2026-03-08");
   await time.fill("02:30");

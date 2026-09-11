@@ -74,7 +74,7 @@ async function scheduleGame(page: Page) {
       operation: "createGame",
       scheduledDate: "2026-11-01",
       scheduledTime: "13:00",
-      timezone: "UTC",
+      timezone: "America/Toronto",
       opponentName: "Stones",
     });
     game.config = { ...game.config, ...body.config };
@@ -92,12 +92,14 @@ async function scheduleGame(page: Page) {
   await page
     .getByRole("button", { name: "Schedule game", exact: true })
     .click();
+  await page.getByRole("button", { name: "No, I’m finished" }).click();
+  await page.getByRole("button", { name: "Yes, open game" }).click();
   await expect(page).toHaveURL(new RegExp(`/score/${testGameId}$`));
   expect(created).toBe(true);
   return game;
 }
 
-test("organizer schedules a game and opens Game Scoring directly", async ({
+test("organizer schedules a game and chooses to open Game Scoring", async ({
   page,
 }) => {
   await scheduleGame(page);

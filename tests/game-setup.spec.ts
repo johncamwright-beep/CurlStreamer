@@ -98,6 +98,11 @@ test("duplicate game number can be cleared without losing the game details", asy
     .getByRole("button", { name: "Schedule game", exact: true })
     .click();
   await expect(
+    page.getByRole("button", { name: "Yes, use this number" }),
+  ).toBeVisible();
+  expect(payloads).toHaveLength(0);
+  await page.getByRole("button", { name: "Yes, use this number" }).click();
+  await expect(
     page.getByRole("alert").filter({ hasText: "game number is already used" }),
   ).toContainText("game number is already used");
   await page.getByRole("button", { name: "Leave game unnumbered" }).click();

@@ -1,7 +1,12 @@
 import { PublicTeamGames } from "@/components/PublicTeamGames";
 import { notFound } from "next/navigation";
 import { createAdminSupabaseClient } from "@/lib/supabase/admin";
-import { teamPageSettingsSchema } from "@/lib/team-page-settings";
+import { readPublishedTeamProfile } from "@/lib/providers/public-team-profile";
+import {
+  teamMetadata,
+  teamStructuredData,
+  safeStructuredJson,
+} from "@/lib/team-seo";
 import { gameLibrarySponsors } from "@/lib/providers/sponsor-library";
 import { newsPostTitle } from "@/lib/news-content";
 import {
@@ -12,6 +17,17 @@ import { EventPhotoCarousel } from "@/components/EventPhotoCarousel";
 import { teamThemeStyle } from "@/lib/team-page-theme";
 import { NewsContent } from "@/components/NewsContent";
 export const dynamic = "force-dynamic";
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ slug: string }>;
+}) {
+  const { slug } = await params;
+  const profile = await readPublishedTeamProfile(slug);
+  return profile
+    ? teamMetadata(slug, profile.settings, profile.logo_url)
+    : { robots: { index: false, follow: false } };
+}
 export default async function PublicTeamPage({
   params,
 }: {
@@ -20,15 +36,9 @@ export default async function PublicTeamPage({
   const { slug } = await params;
   if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug)) notFound();
   const db = createAdminSupabaseClient();
-  const { data: profile, error } = await db
-    .from("team_public_profiles")
-    .select("organization_id,settings,logo_url")
-    .eq("slug", slug)
-    .maybeSingle();
-  if (error || !profile) notFound();
-  const parsed = teamPageSettingsSchema.safeParse(profile.settings);
-  if (!parsed.success || !parsed.data.published) notFound();
-  const s = parsed.data;
+  const profile = await readPublishedTeamProfile(slug);
+  if (!profile) notFound();
+  const s = profile.settings;
   const { data: games } = await db.rpc("read_public_team_games", {
     p_org: profile.organization_id,
   });
@@ -56,6 +66,14 @@ export default async function PublicTeamPage({
     : { data: [] };
   return (
     <div className="public-team-page" style={teamThemeStyle(s.theme)}>
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{
+          __html: safeStructuredJson(
+            teamStructuredData(slug, s, profile.logo_url, games ?? []),
+          ),
+        }}
+      />
       <main className="mx-auto max-w-6xl p-5">
         <header className="mb-5">
           <div className="flex items-center gap-4">

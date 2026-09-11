@@ -70,15 +70,20 @@ export function GameCreationForm({
   const [gameNumberText, setGameNumberText] = useState(
     editing?.gameNumber?.toString() ?? "",
   );
+  const gameForm = useRef<HTMLFormElement>(null);
+  const acceptedDuplicate = useRef("");
+  const [duplicatePrompt, setDuplicatePrompt] = useState(false);
+  const [newGameNumbers, setNewGameNumbers] = useState<string[]>([]);
   const numberInUse = Boolean(
     eventId &&
     gameNumberText &&
-    games.some(
-      (game) =>
-        game.id !== editing?.id &&
-        game.eventId === eventId &&
-        game.gameNumber === Number(gameNumberText),
-    ),
+    (newGameNumbers.includes(`${eventId}:${gameNumberText}`) ||
+      games.some(
+        (game) =>
+          game.id !== editing?.id &&
+          game.eventId === eventId &&
+          game.gameNumber === Number(gameNumberText),
+      )),
   );
   const [opponentChoice, setOpponentChoice] = useState(
     editing ? (editing.opponentId ?? "__tbd") : opponents.length ? "" : "__new",
@@ -299,6 +304,13 @@ export function GameCreationForm({
   }
   async function submit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
+    if (
+      numberInUse &&
+      acceptedDuplicate.current !== `${eventId}:${gameNumberText}`
+    ) {
+      setDuplicatePrompt(true);
+      return;
+    }
     if (saving.current) return;
     saving.current = true;
     setBusy(true);
@@ -348,6 +360,11 @@ export function GameCreationForm({
           body.organizerToken,
         );
       if (!editing) {
+        if (eventId && gameNumberText)
+          setNewGameNumbers((numbers) => [
+            ...numbers,
+            `${eventId}:${gameNumberText}`,
+          ]);
         setCreatedGame({
           id: body.game.id,
           thumbnailStatus: body.youtube?.thumbnailStatus,
@@ -455,6 +472,7 @@ export function GameCreationForm({
                 return;
               }
               creationGameId.current = crypto.randomUUID();
+              acceptedDuplicate.current = "";
               setCreatedGame(null);
               setScheduledTime("");
               setGameNumberText("");
@@ -502,6 +520,7 @@ export function GameCreationForm({
         </p>
       </header>
       <form
+        ref={gameForm}
         onSubmit={submit}
         className="setup-form"
         onInvalidCapture={(e) => {
@@ -715,8 +734,8 @@ export function GameCreationForm({
                       role="status"
                       className="mt-2 text-amber-300"
                     >
-                      Game {gameNumberText} is already used in this event.
-                      Choose another number or leave it blank.
+                      Game {gameNumberText} is already used in this event. You
+                      can use it again after confirming below.
                     </p>
                   )}
                   {gameNumberText && (
@@ -947,6 +966,39 @@ export function GameCreationForm({
           >
             {busy ? "Saving…" : editing ? "Save changes" : "Schedule game"}
           </button>
+          {duplicatePrompt && numberInUse && (
+            <div role="alert" className="setup-notice md:col-span-2">
+              <p>
+                You’ve already used game {gameNumberText} in this event. Use
+                this number again?
+              </p>
+              <div className="mt-3 flex flex-wrap gap-3">
+                <button
+                  type="button"
+                  className="btn"
+                  onClick={() => {
+                    acceptedDuplicate.current = `${eventId}:${gameNumberText}`;
+                    setDuplicatePrompt(false);
+                    gameForm.current?.requestSubmit();
+                  }}
+                >
+                  Yes, use this number
+                </button>
+                <button
+                  type="button"
+                  className="btn-secondary"
+                  onClick={() => {
+                    setDuplicatePrompt(false);
+                    gameForm.current
+                      ?.querySelector<HTMLInputElement>('input[type="number"]')
+                      ?.focus();
+                  }}
+                >
+                  No, change number
+                </button>
+              </div>
+            </div>
+          )}
           {error && (
             <p role="alert" className="text-red-300 md:col-span-2">
               {error}

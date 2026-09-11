@@ -60,7 +60,7 @@ describe("shared application navigation", () => {
     );
     expect(navigation).not.toMatch(/Administration/);
     expect(home).not.toContain("AppNavigation");
-    expect(home).toContain('<AuthForm mode="login" action={login} />');
+    expect(home).toContain("<MarketingHome />");
     expect(navigation).toContain("createBrowserSupabaseClient");
   });
 

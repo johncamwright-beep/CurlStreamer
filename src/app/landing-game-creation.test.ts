@@ -5,12 +5,12 @@ const source = (path: string) =>
   readFileSync(new URL(path, import.meta.url), "utf8");
 
 describe("account-based landing and game creation", () => {
-  it("uses the shared sign-in form at root and login without navigation", () => {
+  it("keeps marketing public and preserves the dedicated sign-in route", () => {
     const home = source("./page.tsx");
     const login = source("./login/page.tsx");
     const authForm = source("../components/AuthForm.tsx");
-    expect(home).toContain('redirect("/dashboard")');
-    expect(home).toContain('<AuthForm mode="login" action={login} />');
+    expect(home).toContain("<MarketingHome />");
+    expect(home).not.toContain("createServerSupabaseClient");
     expect(home).not.toContain("GameCreationForm");
     expect(home).not.toContain("AppNavigation");
     expect(login).toContain(

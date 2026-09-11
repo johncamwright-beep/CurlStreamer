@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { newsContentSchema } from "../src/lib/news-content";
 import { defaultTeamPageSettings } from "../src/lib/team-page-settings";
 
 test.skip(
@@ -45,7 +46,7 @@ test("formatted news and inline photos survive save and reopen", async ({
         summary: form.get("summary"),
         content: JSON.parse(String(form.get("content"))),
         photo_url: null,
-        published: false,
+        published: form.get("published") === "true",
         created_at: "2026-09-10T12:00:00Z",
         game_id: null,
       },
@@ -85,7 +86,9 @@ test("formatted news and inline photos survive save and reopen", async ({
   await news.getByRole("button", { name: "Apply link", exact: true }).click();
   await editor.press("ArrowRight");
   await editor.press("Enter");
-  await news.getByRole("button", { name: "Add photo", exact: true }).click();
+  await news
+    .getByRole("button", { name: "Insert image in post", exact: true })
+    .click();
   await news.getByLabel("Photo description").fill("Our team on the ice");
   await news
     .locator('input[type="file"]')
@@ -111,11 +114,15 @@ test("formatted news and inline photos survive save and reopen", async ({
       .filter({ hasText: "A great start to the season." }),
   ).toBeVisible();
   await news.screenshot({ path: testInfo.outputPath("news-editor.png") });
-  await news.getByRole("button", { name: "Save draft", exact: true }).click();
+  await news
+    .getByRole("button", { name: "Save and publish", exact: true })
+    .click();
   await expect(
     news.getByRole("link", { name: /Season opening update/ }),
   ).toBeVisible();
   await expect(news.locator("img")).toHaveCount(0);
+  expect(posts[0].published).toBe(true);
+  expect(newsContentSchema.safeParse(posts[0].content).success).toBe(true);
   expect(JSON.stringify(posts[0].content)).toContain('"bold"');
   expect(JSON.stringify(posts[0].content)).toContain(photo);
   expect(JSON.stringify(posts[0].content)).toContain("Georgia");

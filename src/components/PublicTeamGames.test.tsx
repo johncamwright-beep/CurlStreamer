@@ -15,6 +15,7 @@ const game = (
 ): PublicGame => ({
   id,
   event,
+  event_id: event,
   scheduled,
   completed,
   home: "Home",
@@ -48,4 +49,27 @@ it("does not render game categories that the team has hidden", () => {
   );
   expect(html).not.toContain("Hidden");
   expect(html).not.toContain('value="upcoming"');
+});
+it("only offers real event records, not standalone game titles", () => {
+  const html = renderToStaticMarkup(
+    <PublicTeamGames
+      games={[
+        { ...game("a", "Orion", "2026-10-01"), event_id: "event-1" },
+        { ...game("b", "Single Game", "2026-10-02"), event_id: null },
+        { ...game("c", "Orion · Game 7", "2026-10-03"), event_id: null },
+      ]}
+      upcoming
+      results
+    />,
+  );
+  expect(html).toContain('<option value="event-1">Orion</option>');
+  expect(html).not.toContain("<option>Single Game</option>");
+  expect(html).not.toContain("<option>Orion · Game 7</option>");
+  expect(
+    filterPublicGames(
+      [{ ...game("a", "Orion", "2026-10-01"), event_id: "event-1" }],
+      "upcoming",
+      "event-1",
+    ),
+  ).toHaveLength(1);
 });

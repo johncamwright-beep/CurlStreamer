@@ -10,6 +10,12 @@ type Post = {
   published: boolean;
 };
 export function TeamNews() {
+  const [saved, setSaved] = useState<string | null>(null);
+  const [publication, setPublication] = useState<{
+    published: boolean;
+    news: boolean;
+    slug: string;
+  } | null>(null);
   const [posts, setPosts] = useState<Post[]>([]),
     [ready, setReady] = useState(false),
     [message, setMessage] = useState("");
@@ -29,6 +35,13 @@ export function TeamNews() {
   }
   useEffect(() => {
     void load();
+    setSaved(new URLSearchParams(window.location.search).get("saved"));
+    void fetch("/api/account/team", { cache: "no-store" })
+      .then(async (response) =>
+        response.ok ? (await response.json()).settings : null,
+      )
+      .then(setPublication)
+      .catch(() => setPublication(null));
   }, []);
   return (
     <section className="grid gap-3" aria-label="Manage team news">
@@ -39,6 +52,33 @@ export function TeamNews() {
         </Link>
       </div>
       {message && <p role="status">{message}</p>}
+      {saved && (
+        <p role="status">
+          {saved === "published" ? "Post saved as published." : "Draft saved."}
+        </p>
+      )}
+      {publication &&
+        (publication.published && publication.news ? (
+          <a
+            className="inline-flex min-h-11 items-center text-cyan-300 underline"
+            href={`https://${publication.slug}.curlstreamer.app/#team-news`}
+            target="_blank"
+            rel="noreferrer"
+          >
+            View news on your team website
+          </a>
+        ) : (
+          <p>
+            Your website’s news is hidden.{" "}
+            <Link
+              className="text-cyan-300 underline"
+              href="/account?section=public"
+            >
+              Open Public team page settings
+            </Link>{" "}
+            to enable your page and news section.
+          </p>
+        ))}
       {!ready && (
         <button className="btn-secondary" onClick={() => void load()}>
           Reload news

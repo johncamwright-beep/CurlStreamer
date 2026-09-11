@@ -97,7 +97,7 @@ export function NewsPostEditor({ postId }: { postId: string }) {
     setMessage("");
     setRemoving(null);
   }
-  async function save() {
+  async function save(publish: boolean) {
     if (!editor || lock.current || inlineUploading || coverOptimizing) return;
     const summary = newsPlainText(content);
     if (!summary || !title.trim()) {
@@ -116,7 +116,7 @@ export function NewsPostEditor({ postId }: { postId: string }) {
         "content",
         JSON.stringify({ ...content, title: title.trim() }),
       );
-      form.append("published", String(published));
+      form.append("published", String(publish));
       form.append("removePhoto", String(removePhoto));
       if (photo) form.append("photo", photo);
       const response = await fetch("/api/account/news", {
@@ -127,11 +127,13 @@ export function NewsPostEditor({ postId }: { postId: string }) {
       if (!response.ok) throw Error(body.error);
       setDirty(false);
       setMessage(
-        published
+        publish
           ? "News saved. It appears publicly when your team page and news section are enabled."
           : "Draft saved. It is hidden from your public team page.",
       );
-      router.push("/account?section=news");
+      router.push(
+        "/account?section=news&saved=" + (publish ? "published" : "draft"),
+      );
     } catch (error) {
       setMessage(
         error instanceof Error ? error.message : "Could not save news.",
@@ -294,15 +296,12 @@ export function NewsPostEditor({ postId }: { postId: string }) {
               onChange={(e) => void chooseCoverPhoto(e.target.files?.[0])}
             />
           </label>
-          <label className="flex min-h-11 items-center gap-3">
-            <input
-              type="checkbox"
-              checked={published}
-              onChange={(e) => setPublished(e.target.checked)}
-            />
-            Publish this post
-          </label>
-          <div className="flex gap-3">
+          <p>
+            {published ? "Published post" : "Draft post"}. Save and publish
+            makes your changes public when your team page and news section are
+            enabled.
+          </p>
+          <div className="flex flex-wrap gap-3">
             <button
               className="btn"
               disabled={
@@ -311,9 +310,22 @@ export function NewsPostEditor({ postId }: { postId: string }) {
                 !newsPlainText(content) ||
                 !title.trim()
               }
-              onClick={() => void save()}
+              onClick={() => void save(true)}
             >
-              {busy ? "Saving…" : published ? "Save and publish" : "Save draft"}
+              {busy ? "Saving…" : "Save and publish"}
+            </button>
+            <button
+              type="button"
+              className="btn-secondary"
+              disabled={
+                inlineUploading ||
+                coverOptimizing ||
+                !newsPlainText(content) ||
+                !title.trim()
+              }
+              onClick={() => void save(false)}
+            >
+              Save draft
             </button>
             <button
               className="btn-secondary"

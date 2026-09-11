@@ -6,6 +6,7 @@ export type PublicGame = {
   home: string;
   away: string;
   event: string | null;
+  event_id?: string | null;
   number: number | null;
   scheduled: string | null;
   completed: string | null;
@@ -21,7 +22,7 @@ export function filterPublicGames(
     .filter(
       (g) =>
         Boolean(g.completed) === (mode === "results") &&
-        (!event || (g.event || "Single game") === event),
+        (!event || g.event_id === event),
     )
     .sort((a, b) => {
       const stamp = (g: PublicGame) =>
@@ -45,8 +46,12 @@ export function PublicTeamGames({
   if (!upcoming && !results) return null;
   const allowed = games.filter((g) => (g.completed ? results : upcoming));
   const events = [
-    ...new Set(allowed.map((g) => g.event || "Single game")),
-  ].sort();
+    ...new Map(
+      allowed
+        .filter((g) => g.event_id && g.event)
+        .map((g) => [g.event_id!, g.event!]),
+    ).entries(),
+  ].sort((a, b) => a[1].localeCompare(b[1]));
   const filtered = filterPublicGames(allowed, mode, event);
   return (
     <section id="games" className="panel mb-5" aria-label="Team games">
@@ -74,8 +79,10 @@ export function PublicTeamGames({
             onChange={(e) => setEvent(e.target.value)}
           >
             <option value="">All events</option>
-            {events.map((name) => (
-              <option key={name}>{name}</option>
+            {events.map(([id, name]) => (
+              <option key={id} value={id}>
+                {name}
+              </option>
             ))}
           </select>
         </label>

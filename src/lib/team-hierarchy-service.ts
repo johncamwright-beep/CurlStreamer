@@ -119,6 +119,8 @@ export function createEvent(user: User, input: EventInput) {
     p_location: value.location ?? "",
     p_timezone: value.timezone,
     p_result: value.result ?? null,
+    p_level: value.level ?? null,
+    p_show_level: value.showLevel ?? true,
   });
 }
 
@@ -146,6 +148,8 @@ export function updateEvent(user: User, eventId: string, input: EventInput) {
     p_location: value.location ?? "",
     p_timezone: value.timezone,
     ...(value.result !== undefined ? { p_result: value.result } : {}),
+    ...(value.level !== undefined ? { p_level: value.level } : {}),
+    ...(value.showLevel !== undefined ? { p_show_level: value.showLevel } : {}),
   });
 }
 export const archiveEvent = (user: User, eventId: string) =>

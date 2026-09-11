@@ -85,6 +85,7 @@ export function NewsRichEditor({
   const [alt, setAlt] = useState("");
   const [error, setError] = useState("");
   const input = useRef<HTMLInputElement>(null);
+  const imagePosition = useRef<number | null>(null);
   const initial = newsContentSchema.safeParse(initialContent);
   const editor = useEditor({
     immediatelyRender: false,
@@ -148,6 +149,7 @@ export function NewsRichEditor({
       editor
         .chain()
         .focus()
+        .setTextSelection(imagePosition.current ?? editor.state.selection.from)
         .setImage({ src: body.url, alt })
         .createParagraphNear()
         .run();
@@ -232,6 +234,24 @@ export function NewsRichEditor({
   ];
   return (
     <div className="news-composer">
+      <div className="flex flex-wrap items-center gap-3 border-b border-slate-700 p-3">
+        <button
+          type="button"
+          className="btn-secondary"
+          disabled={locked}
+          aria-expanded={panel === "photo"}
+          onClick={() => {
+            imagePosition.current = editor.state.selection.from;
+            setPanel(panel === "photo" ? null : "photo");
+            setError("");
+          }}
+        >
+          Insert image in post
+        </button>
+        <span className="text-sm text-slate-300">
+          Place the cursor in your text, then insert an image there.
+        </span>
+      </div>
       <div
         className="news-toolbar"
         role="group"
@@ -373,17 +393,6 @@ export function NewsRichEditor({
           }}
         >
           Link
-        </button>
-        <button
-          type="button"
-          disabled={locked}
-          aria-expanded={panel === "photo"}
-          onClick={() => {
-            setPanel(panel === "photo" ? null : "photo");
-            setError("");
-          }}
-        >
-          Add photo
         </button>
         <button
           type="button"

@@ -32,6 +32,8 @@ export function EventForm({
       endDate: form.get("endDate"),
       location: form.get("location") || undefined,
       result: form.get("result") || null,
+      level: form.get("level") || null,
+      showLevel: form.get("showLevel") === "on",
       timezone,
     };
     const response = await fetch("/api/team-schedule", {
@@ -123,6 +125,31 @@ export function EventForm({
           <option value="3rd">3rd place</option>
           <option value="qualified">Qualified</option>
         </select>
+      </label>
+      <label>
+        Level (optional)
+        <select
+          name="level"
+          defaultValue={event?.level ?? ""}
+          className="mt-1 min-h-11 w-full rounded-lg bg-slate-800 p-3"
+        >
+          <option value="">None</option>
+          <option value="U15">U15</option>
+          <option value="U18">U18</option>
+          <option value="U20">U20</option>
+          <option value="U25">U25</option>
+          <option value="Men’s">Men’s</option>
+          <option value="Women’s">Women’s</option>
+        </select>
+      </label>
+      <label className="flex min-h-11 items-center gap-3 sm:col-span-2">
+        <input
+          name="showLevel"
+          type="checkbox"
+          defaultChecked={event?.showLevel ?? true}
+          className="h-5 w-5"
+        />
+        Show the level in public accomplishments
       </label>
       <label>
         IANA timezone

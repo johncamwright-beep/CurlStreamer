@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import React, { useState } from "react";
 import {
   throwingPositions,
   type TeamPageSettings,
@@ -9,6 +9,8 @@ export type TeamAccomplishment = {
   name: string;
   end_date: string;
   result: "1st" | "2nd" | "3rd" | "qualified";
+  level: "U15" | "U18" | "U20" | "U25" | "Men’s" | "Women’s" | null;
+  show_level: boolean;
 };
 const medals = { "1st": "🥇", "2nd": "🥈", "3rd": "🥉", qualified: "★" };
 export function PublicTeamProfile({
@@ -95,7 +97,10 @@ export function PublicTeamProfile({
                   {medals[event.result]}
                 </span>
                 <div>
-                  <strong className="block">{event.name}</strong>
+                  <strong className="block">
+                    {event.name}
+                    {event.show_level && event.level ? ` · ${event.level}` : ""}
+                  </strong>
                   <span className="text-sm text-slate-300">
                     {event.result === "qualified"
                       ? "Qualified"

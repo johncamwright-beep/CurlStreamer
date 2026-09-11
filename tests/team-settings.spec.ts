@@ -140,15 +140,15 @@ test("team news drafts, edits and removal stay compact and explicit", async ({
   const news = page.getByRole("region", { name: "Manage team news" });
   await news.getByRole("link", { name: "New post", exact: true }).click();
   await news.getByLabel("Post title").fill("Sponsor thanks");
-  await expect(news.getByLabel("Publish this post")).not.toBeChecked();
+  await expect(news.getByText(/Draft post/)).toBeVisible();
   await news.getByLabel("News text").fill("Thank you to our sponsors!");
   await news.getByRole("button", { name: "Save draft", exact: true }).click();
   await news.getByRole("link", { name: /Thank you to our sponsors!/ }).click();
   await news.getByLabel("News text").fill("See you at the next game!");
-  await news.getByLabel("Publish this post").check();
+
   await news.getByRole("button", { name: "Save and publish" }).click();
   await news.getByRole("link", { name: /See you at the next game!/ }).click();
-  await expect(news.getByLabel("Publish this post")).toBeChecked();
+  await expect(news.getByText(/Published post/)).toBeVisible();
   await news.getByRole("button", { name: "Remove post", exact: true }).click();
   await expect(news.getByLabel("News text")).toBeVisible();
   await news.getByRole("button", { name: "Confirm removal" }).click();
@@ -308,7 +308,9 @@ test("public page filters games and keeps five rows in its scrolling tile", asyn
   const scroll = games.getByRole("region", { name: "Filtered games" });
   expect(await scroll.evaluate((el) => el.clientHeight)).toBe(540);
   expect(await scroll.evaluate((el) => el.scrollHeight)).toBeGreaterThan(540);
-  await games.getByLabel("Event", { exact: true }).selectOption("Orion");
+  await games
+    .getByLabel("Event", { exact: true })
+    .selectOption({ label: "Orion" });
   await expect(games.getByRole("article")).toHaveCount(3);
   await games.getByLabel("Show games").selectOption("results");
   await expect(games.getByRole("article")).toHaveCount(4);

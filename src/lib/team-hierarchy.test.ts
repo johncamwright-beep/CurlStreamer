@@ -83,6 +83,23 @@ describe("team hierarchy validation", () => {
     ).toBe(false);
   });
 
+  it("accepts supported optional event levels and public visibility", () => {
+    const event = {
+      seasonId: crypto.randomUUID(),
+      name: "Provincials",
+      eventType: "tournament",
+      startDate: "2026-10-01",
+      endDate: "2026-10-02",
+      timezone: "America/Toronto",
+    };
+    expect(
+      eventInputSchema.parse({ ...event, level: "U18", showLevel: false }),
+    ).toMatchObject({ level: "U18", showLevel: false });
+    expect(
+      eventInputSchema.safeParse({ ...event, level: "Open" }).success,
+    ).toBe(false);
+  });
+
   it("normalizes opponent case and runs of whitespace", () => {
     expect(normalizeOpponentName("  GRANITE   Club ")).toBe("granite club");
   });

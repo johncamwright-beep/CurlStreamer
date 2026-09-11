@@ -9,7 +9,11 @@ vi.mock("@/lib/supabase/admin", () => ({
 }));
 vi.mock("@/lib/tokens", () => ({ issueOrganizerToken: vi.fn() }));
 
-import { updateScheduledTeamGame } from "./team-hierarchy-service";
+import {
+  createEvent,
+  updateEvent,
+  updateScheduledTeamGame,
+} from "./team-hierarchy-service";
 
 const user = { id: "11111111-1111-4111-8111-111111111111" } as User;
 const config: GameConfig = {
@@ -120,5 +124,35 @@ describe("scheduled game state persistence", () => {
         config,
       ),
     ).resolves.toEqual({ ok: false, kind: "conflict" });
+  });
+});
+
+describe("event level persistence", () => {
+  beforeEach(() => {
+    mocks.rpc.mockReset().mockResolvedValue({ data: null, error: null });
+  });
+
+  const event = {
+    seasonId: "22222222-2222-4222-8222-222222222222",
+    name: "Provincials",
+    eventType: "tournament" as const,
+    startDate: "2026-10-01",
+    endDate: "2026-10-02",
+    timezone: "America/Toronto",
+    level: "U18" as const,
+    showLevel: false,
+  };
+
+  it("passes an event level and public visibility to create and update RPCs", async () => {
+    await createEvent(user, event);
+    expect(mocks.rpc).toHaveBeenLastCalledWith(
+      "create_event",
+      expect.objectContaining({ p_level: "U18", p_show_level: false }),
+    );
+    await updateEvent(user, "33333333-3333-4333-8333-333333333333", event);
+    expect(mocks.rpc).toHaveBeenLastCalledWith(
+      "update_event",
+      expect.objectContaining({ p_level: "U18", p_show_level: false }),
+    );
   });
 });

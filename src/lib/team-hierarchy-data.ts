@@ -8,6 +8,7 @@ import {
 } from "@/lib/team-hierarchy-service";
 import type {
   EventResult,
+  EventLevel,
   EventType,
   SeasonStatus,
 } from "@/lib/team-hierarchy";
@@ -30,6 +31,8 @@ export type EventRecord = {
   endDate: string;
   location: string | null;
   result?: EventResult | null;
+  level?: EventLevel | null;
+  showLevel?: boolean;
   timezone: string;
   archivedAt: string | null;
 };
@@ -83,7 +86,20 @@ export async function loadTeamHierarchyData(user: User) {
       };
     }) as SeasonRecord[],
     events: events.value.map((value) => {
-      const e = value as Record<string, string | null>;
+      const e = value as {
+        id: string;
+        season_id: string;
+        name: string;
+        event_type: string;
+        start_date: string;
+        end_date: string;
+        location: string | null;
+        result: string | null;
+        level: string | null;
+        show_level: boolean;
+        timezone: string;
+        archived_at: string | null;
+      };
       return {
         id: e.id,
         seasonId: e.season_id,
@@ -93,6 +109,8 @@ export async function loadTeamHierarchyData(user: User) {
         endDate: e.end_date,
         location: e.location,
         result: e.result as EventResult | null,
+        level: e.level as EventLevel | null,
+        showLevel: e.show_level as boolean,
         timezone: e.timezone,
         archivedAt: e.archived_at,
       };

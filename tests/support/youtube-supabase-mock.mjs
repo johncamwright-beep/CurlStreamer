@@ -87,6 +87,7 @@ const server = createServer((request, response) => {
         home: "Test Curling Club",
         away: "Opponent " + i,
         event: i % 2 ? "Orion" : "Shorty Jenkin",
+        event_id: i % 2 ? "orion-id" : "shorty-id",
         number: i + 1,
         scheduled: "2026-10-" + String(i + 1).padStart(2, "0") + "T12:00:00Z",
         completed:

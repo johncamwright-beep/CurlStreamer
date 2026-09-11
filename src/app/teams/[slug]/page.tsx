@@ -48,7 +48,7 @@ export default async function PublicTeamPage({
   const { data: accomplishments } = s.accomplishments
     ? await db
         .from("events")
-        .select("id,name,end_date,result")
+        .select("id,name,end_date,result,level,show_level")
         .eq("organization_id", profile.organization_id)
         .in("result", ["1st", "2nd", "3rd", "qualified"])
         .order("end_date", { ascending: false })
@@ -110,7 +110,7 @@ export default async function PublicTeamPage({
             )}
             {s.news && (
               <section id="team-news" className="panel mb-5 grid gap-2">
-                <h2 className="text-xl font-bold">Team news</h2>
+                <h2 className="text-xl font-bold">{s.name} News</h2>
                 {news?.map((item) => (
                   <details
                     className="border-b border-slate-700 py-2"

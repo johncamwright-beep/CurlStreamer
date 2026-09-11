@@ -48,19 +48,17 @@ describe("YouTube Live provider", () => {
     });
   });
   it("does not reschedule a live broadcast", async () => {
-    const fetcher = vi
-      .fn()
-      .mockResolvedValue(
-        json({
-          items: [
-            {
-              id: "video",
-              status: { lifeCycleStatus: "live" },
-              snippet: { description: "CurlCast broadcast session game" },
-            },
-          ],
-        }),
-      );
+    const fetcher = vi.fn().mockResolvedValue(
+      json({
+        items: [
+          {
+            id: "video",
+            status: { lifeCycleStatus: "live" },
+            snippet: { description: "CurlCast broadcast session game" },
+          },
+        ],
+      }),
+    );
     await expect(
       updateScheduledYouTubeTime(
         "token",

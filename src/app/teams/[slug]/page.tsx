@@ -75,7 +75,7 @@ export default async function PublicTeamPage({
         }}
       />
       <main className="mx-auto max-w-6xl p-5">
-        <header className="mb-5">
+        <header className="public-team-layout mb-5">
           <div className="flex items-center gap-4">
             {profile.logo_url && (
               <img
@@ -89,6 +89,17 @@ export default async function PublicTeamPage({
               {s.tagline && <p className="mt-2 text-lg">{s.tagline}</p>}
             </div>
           </div>
+          <a
+            href="https://curlstreamer.app/"
+            aria-label="Visit CurlStreamer"
+            className="inline-flex min-h-11 max-w-full items-center justify-self-end rounded-xl bg-slate-950 px-4 py-3"
+          >
+            <img
+              src="/branding/curlstreamer-logo.png"
+              alt="CurlStreamer"
+              className="w-52 max-w-full object-contain"
+            />
+          </a>
         </header>
         <div className="public-team-layout">
           <div className="public-team-content min-w-0">
@@ -203,13 +214,6 @@ export default async function PublicTeamPage({
             accomplishments={(accomplishments ?? []) as TeamAccomplishment[]}
           />
         </div>
-        <footer className="mt-8 flex justify-center">
-          <img
-            src="/branding/curlstreamer-logo.png"
-            alt="Curl Streamer"
-            className="w-60 rounded-xl bg-slate-950 p-4 object-contain"
-          />
-        </footer>
       </main>
     </div>
   );

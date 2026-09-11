@@ -22,7 +22,7 @@ test("dashboard separates reported broadcasts, upcoming games and unfinished gam
   ).toBeVisible();
   await expect(page.getByText("YouTube · reported live")).toBeVisible();
   await expect(
-    page.getByRole("link", { name: /Open YouTube/ }),
+    page.getByRole("link", { name: /Watch on YouTube/ }),
   ).toHaveAttribute("href", "https://www.youtube.com/watch?v=liveabcdefgh");
   await expect(page.getByRole("link", { name: /^Unfinished/ })).toBeVisible();
   await expect(

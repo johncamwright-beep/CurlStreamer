@@ -45,6 +45,21 @@ describe("YouTube Live provider", () => {
       fetcher.mock.calls.some(([url]) => String(url).includes("/transition")),
     ).toBe(false);
   });
+  it("uses the scheduled game instant for a reserved watch page", async () => {
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(json({ items: [] }))
+      .mockResolvedValueOnce(json(manualBroadcast));
+    await findOrCreateYouTubeBroadcast(
+      {
+        ...manualValues,
+        scheduledStartTime: "2026-11-01T06:30:00.000Z",
+      },
+      fetcher,
+    );
+    const body = JSON.parse(String(fetcher.mock.calls[1][1]?.body));
+    expect(body.snippet.scheduledStartTime).toBe("2026-11-01T06:30:00.000Z");
+  });
   it("reuses verified manual configuration without duplicate creation", async () => {
     const fetcher = vi
       .fn<typeof fetch>()

@@ -130,6 +130,7 @@ export async function findOrCreateYouTubeBroadcast(
     title: string;
     visibility: "private" | "unlisted" | "public";
     manualLifecycle?: boolean;
+    scheduledStartTime?: string;
   },
   fetcher: typeof fetch = fetch,
   allowCreate = true,
@@ -157,7 +158,9 @@ export async function findOrCreateYouTubeBroadcast(
             snippet: {
               title: values.title,
               description,
-              scheduledStartTime: new Date(Date.now() + 10_000).toISOString(),
+              scheduledStartTime:
+                values.scheduledStartTime ??
+                new Date(Date.now() + 10_000).toISOString(),
             },
             status: { privacyStatus: values.visibility },
             contentDetails: {

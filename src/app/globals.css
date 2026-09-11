@@ -546,8 +546,7 @@ button {
   align-items: start;
 }
 .public-team-profile {
-  position: sticky;
-  top: 1rem;
+  position: static;
 }
 @media (max-width: 800px) {
   .public-team-layout {
@@ -609,4 +608,12 @@ button {
 }
 .public-team-page .panel button.text-cyan-300 {
   color: var(--panel-link);
+}
+
+.public-team-page #team-news img {
+  aspect-ratio: 16 / 9;
+  height: auto;
+  max-height: none;
+  object-fit: cover;
+  object-position: center;
 }

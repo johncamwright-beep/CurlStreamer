@@ -153,7 +153,7 @@ export function NewsPostEditor({ postId }: { postId: string }) {
     setCoverOptimizing(true);
     setMessage("");
     try {
-      setPhoto(await optimizeUploadImage(file));
+      setPhoto(await optimizeUploadImage(file, { aspectRatio: 16 / 9 }));
       setDirty(true);
     } catch (error) {
       setMessage(

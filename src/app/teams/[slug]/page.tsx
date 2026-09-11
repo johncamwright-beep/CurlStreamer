@@ -71,37 +71,12 @@ export default async function PublicTeamPage({
               {s.tagline && <p className="mt-2 text-lg">{s.tagline}</p>}
             </div>
           </div>
-          <nav
-            aria-label="Team page sections"
-            className="mt-3 flex flex-wrap gap-x-5"
-          >
-            {s.news && (
-              <a
-                className="inline-flex min-h-11 items-center text-cyan-300"
-                href="#team-news"
-              >
-                News
-              </a>
-            )}
-            {(s.upcoming || s.results) && (
-              <a className="inline-flex min-h-11 items-center" href="#games">
-                Games
-              </a>
-            )}
-            {s.sponsors && (
-              <a
-                className="inline-flex min-h-11 items-center text-cyan-300"
-                href="#sponsors"
-              >
-                Sponsors
-              </a>
-            )}
-          </nav>
         </header>
         <div className="public-team-layout">
           <div className="public-team-content min-w-0">
             <PublicTeamGames
               games={games ?? []}
+              teamName={s.name}
               upcoming={s.upcoming}
               results={s.results}
             />
@@ -133,36 +108,41 @@ export default async function PublicTeamPage({
                 </div>
               </section>
             )}
-            {s.photo && (
-              <img
-                src={s.photo}
-                alt={s.name + " team photo"}
-                className="mb-5 max-h-96 w-full rounded-xl object-contain"
-              />
-            )}
             {s.news && (
-              <section id="team-news" className="mb-5 grid gap-3">
+              <section id="team-news" className="panel mb-5 grid gap-2">
                 <h2 className="text-xl font-bold">Team news</h2>
                 {news?.map((item) => (
-                  <article className="panel" key={item.id}>
-                    <time className="text-sm text-slate-400">
-                      {new Date(item.created_at).toLocaleDateString("en-CA")}
-                    </time>
-                    <h3 className="text-xl font-bold">
-                      {newsPostTitle(item.content, item.summary)}
-                    </h3>
-                    <NewsContent
-                      content={item.content}
-                      summary={item.summary}
-                    />
-                    {item.photo_url && (
-                      <img
-                        src={item.photo_url}
-                        alt="Team update"
-                        className="mt-3 max-h-96 w-full object-contain"
+                  <details
+                    className="border-b border-slate-700 py-2"
+                    key={item.id}
+                  >
+                    <summary className="min-h-11 cursor-pointer">
+                      <span className="inline-flex w-[calc(100%-1.5rem)] flex-wrap items-center justify-between gap-2 align-middle">
+                        <strong>
+                          {newsPostTitle(item.content, item.summary)}
+                        </strong>
+                        <time className="text-sm text-slate-400">
+                          {new Date(item.created_at).toLocaleDateString(
+                            "en-CA",
+                            { timeZone: "UTC" },
+                          )}
+                        </time>
+                      </span>
+                    </summary>
+                    <div className="mt-4">
+                      <NewsContent
+                        content={item.content}
+                        summary={item.summary}
                       />
-                    )}
-                  </article>
+                      {item.photo_url && (
+                        <img
+                          src={item.photo_url}
+                          alt="Team update"
+                          className="mt-3 aspect-video w-full object-cover object-center"
+                        />
+                      )}
+                    </div>
+                  </details>
                 ))}
                 {!news?.length && <p>No updates yet.</p>}
               </section>
@@ -170,7 +150,7 @@ export default async function PublicTeamPage({
             {!!sponsors.length && (
               <section id="sponsors" className="panel mb-5">
                 <h2 className="mb-4 text-xl font-bold">
-                  Thank you to our sponsors
+                  {s.name} is proudly sponsored by…
                 </h2>
                 <div className="grid grid-cols-2 gap-5 md:grid-cols-3">
                   {sponsors.map((sponsor) => (

@@ -52,6 +52,7 @@ const server = createServer((request, response) => {
         slug: "public-preview",
         description: "A curling team with a long story. ".repeat(12),
         tagline: "Together on the ice",
+        photo: "https://media.test/portrait.png",
         published: true,
         results: true,
         upcoming: true,
@@ -93,14 +94,40 @@ const server = createServer((request, response) => {
             ? "2026-10-" + String(i + 1).padStart(2, "0") + "T15:00:00Z"
             : null,
         result: i >= 7 ? { home: 8, away: 4 } : null,
-        youtube: i >= 7 ? "https://www.youtube.com/watch?v=test1234567" : null,
+        youtube:
+          i === 0 || i >= 7
+            ? "https://www.youtube.com/watch?v=test1234567"
+            : null,
       })),
     );
   if (url.pathname === "/rest/v1/events")
     return send(response, 200, [
       { id: "event", name: "Orion", end_date: "2026-09-10", result: "1st" },
     ]);
-  if (url.pathname === "/rest/v1/team_news") return send(response, 200, []);
+  if (url.pathname === "/rest/v1/team_news")
+    return send(response, 200, [
+      {
+        id: "news",
+        summary: "Full news story for the opening weekend.",
+        content: {
+          type: "doc",
+          title: "Opening weekend",
+          content: [
+            {
+              type: "paragraph",
+              content: [
+                {
+                  type: "text",
+                  text: "Full news story for the opening weekend.",
+                },
+              ],
+            },
+          ],
+        },
+        created_at: "2026-09-10T12:00:00Z",
+        photo_url: null,
+      },
+    ]);
   const dashboard = dashboardResponse(url);
   if (dashboard !== null) return send(response, 200, dashboard);
   if (url.pathname === "/auth/v1/token" && request.method === "POST")

@@ -268,9 +268,43 @@ test("account sections preserve edits, support back navigation and save a team p
 test("public page filters games and keeps five rows in its scrolling tile", async ({
   page,
 }, testInfo) => {
+  await page.route("https://media.test/portrait.png", (route) =>
+    route.fulfill({
+      contentType: "image/svg+xml",
+      body: '<svg xmlns="http://www.w3.org/2000/svg" width="400" height="800"><rect width="400" height="800" fill="teal"/><circle cx="200" cy="400" r="100" fill="white"/></svg>',
+    }),
+  );
   await page.goto("/teams/public-preview");
+  await expect(
+    page.getByRole("heading", { name: "Test Curling Club Games", exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("navigation", { name: "Team page sections" }),
+  ).toHaveCount(0);
+  await expect(page.getByText("7 games", { exact: true })).toHaveCount(0);
+  await expect(page.locator(".public-team-profile")).toHaveCSS(
+    "position",
+    "static",
+  );
+  const photo = page
+    .getByRole("complementary", { name: "Team profile" })
+    .getByAltText("Test Curling Club team photo");
+  await expect(photo).toHaveCSS("object-fit", "cover");
+  const box = await photo.boundingBox();
+  expect(box!.width / box!.height).toBeCloseTo(16 / 9, 1);
+  await expect(
+    page.getByText("Full news story for the opening weekend.", { exact: true }),
+  ).toBeHidden();
+  await page.locator("summary").filter({ hasText: "Opening weekend" }).click();
+  await expect(
+    page.getByText("Full news story for the opening weekend.", { exact: true }),
+  ).toBeVisible();
+
   const games = page.getByRole("region", { name: "Team games", exact: true });
   await expect(games.getByRole("article")).toHaveCount(7);
+  await expect(
+    games.getByRole("link", { name: "Watch on YouTube", exact: true }),
+  ).toHaveAttribute("href", "https://www.youtube.com/watch?v=test1234567");
   const scroll = games.getByRole("region", { name: "Filtered games" });
   expect(await scroll.evaluate((el) => el.clientHeight)).toBe(540);
   expect(await scroll.evaluate((el) => el.scrollHeight)).toBeGreaterThan(540);
@@ -281,7 +315,7 @@ test("public page filters games and keeps five rows in its scrolling tile", asyn
   await expect(games.getByRole("link", { name: "Watch replay" })).toHaveCount(
     4,
   );
-  await expect(page.getByText("Skip (third)", { exact: true })).toBeVisible();
+  await expect(page.getByText("Skip (Third)", { exact: true })).toBeVisible();
   await expect(
     page.getByText("1st place · 2026", { exact: true }),
   ).toBeVisible();

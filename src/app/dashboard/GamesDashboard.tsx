@@ -311,7 +311,9 @@ function GameCard({
   const completed = game.status === "completed";
   const closed = game.status === "closed";
   const parsedWatch = youtubeWatchUrlSchema.safeParse(
-    completed ? (game.youtubeWatchUrl ?? "") : (broadcast?.watchUrl ?? ""),
+    completed
+      ? (game.youtubeWatchUrl ?? "")
+      : (broadcast?.watchUrl ?? game.scheduledYouTubeWatchUrl ?? ""),
   );
   const watchUrl = parsedWatch.success ? parsedWatch.data : null;
   const label = completed
@@ -405,7 +407,10 @@ function GameCard({
           />
         )}
         {watchUrl &&
-          (completed || (!closed && broadcast?.status === "live")) && (
+          (completed ||
+            (!closed &&
+              (broadcast?.status === "live" ||
+                game.scheduledYouTubeStatus === "ready"))) && (
             <a
               className="dashboard-youtube-link"
               href={watchUrl}
@@ -416,7 +421,7 @@ function GameCard({
                 <rect width="24" height="18" rx="5" fill="#ff0033" />
                 <path d="m10 5 7 4-7 4Z" fill="white" />
               </svg>
-              {completed ? "Watch replay" : "Open YouTube"}
+              {completed ? "Watch replay" : "Watch on YouTube"}
               <span className="sr-only"> (opens in a new tab)</span>
             </a>
           )}

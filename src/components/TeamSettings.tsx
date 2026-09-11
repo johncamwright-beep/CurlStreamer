@@ -95,6 +95,7 @@ export function TeamSettings({
         "file",
         await optimizeUploadImage(file, {
           maxSide: kind === "logo" ? 800 : 1600,
+          aspectRatio: kind === "logo" ? undefined : 16 / 9,
         }),
       );
       form.append("kind", kind);
@@ -244,7 +245,7 @@ export function TeamSettings({
             <img
               src={settings.photo}
               alt="Team photo"
-              className="max-h-64 w-full object-contain"
+              className="aspect-video w-full object-cover object-center"
             />
           )}
           <label>
@@ -258,8 +259,8 @@ export function TeamSettings({
           </label>
           <p className="text-sm text-slate-400">
             PNG, JPEG or WebP, up to 20 MB. Resized to JPEG under 300 KB;
-            transparent areas become white. Your team photo appears on your
-            published team page.
+            transparent areas become white. Team photos use a centered
+            widescreen crop on your published team page.
           </p>
         </div>
         <div hidden={section !== "public"} className="account-settings-group">

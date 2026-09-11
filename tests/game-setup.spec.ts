@@ -60,7 +60,7 @@ test("duplicate game number can be cleared without losing the game details", asy
     opponentId: payloads[0].opponentId,
   });
 });
-test("summary and saved payload preserve colours, schedule and YouTube settings", async ({
+test("summary and saved payload reserve an unlisted YouTube watch page", async ({
   page,
 }, info) => {
   await fillGame(page);
@@ -72,10 +72,13 @@ test("summary and saved payload preserve colours, schedule and YouTube settings"
     .getByRole("radio", { name: "Team 1 rock colour: Yellow", exact: true })
     .check();
   await page.getByLabel("Scheduled ends").selectOption("10");
-  await page.getByText("YouTube broadcast settings", { exact: true }).click();
-  await page.getByLabel("Broadcast visibility").selectOption("private");
+  await page
+    .locator("summary")
+    .filter({ hasText: /^Streaming/ })
+    .click();
+  await page.getByRole("radio", { name: "Yes" }).check();
   await expect(review).toContainText("10 ends");
-  await expect(review).toContainText("Private");
+  await expect(review).toContainText("YouTube watch link will be reserved");
   const payloads: unknown[] = [];
   await page.route("**/api/team-schedule", async (route) => {
     payloads.push(route.request().postDataJSON());
@@ -101,14 +104,18 @@ test("summary and saved payload preserve colours, schedule and YouTube settings"
       homeColor: "#facc15",
       awayColor: "#2563eb",
       scheduledEnds: 10,
-      youtubeVisibility: "private",
+      youtubeEnabled: true,
+      youtubeVisibility: "unlisted",
     },
   });
   await expect(
     page.getByRole("button", { name: "Schedule game", exact: true }),
   ).toBeEnabled();
   await page.getByText("Rock colours & game length", { exact: true }).click();
-  await page.getByText("YouTube broadcast settings", { exact: true }).click();
+  await page
+    .locator("summary")
+    .filter({ hasText: /^Streaming/ })
+    .click();
   await page.screenshot({
     path: info.outputPath(`setup-summary-${info.project.name}.png`),
     fullPage: true,
@@ -124,10 +131,17 @@ test("unknown opponents are explained and invalid collapsed title settings reope
   await expect(
     page.getByRole("complementary", { name: "Review game" }),
   ).toContainText("Assign the opponent before scoring begins");
-  await page.getByText("YouTube broadcast settings", { exact: true }).click();
+  await page
+    .locator("summary")
+    .filter({ hasText: /^Streaming/ })
+    .click();
+  await page.getByRole("radio", { name: "Yes" }).check();
   await page.getByRole("button", { name: "Customize title" }).click();
   await page.getByLabel("YouTube title", { exact: false }).fill("");
-  await page.getByText("YouTube broadcast settings", { exact: true }).click();
+  await page
+    .locator("summary")
+    .filter({ hasText: /^Streaming/ })
+    .click();
   await page
     .getByRole("button", { name: "Schedule game", exact: true })
     .click();
@@ -139,7 +153,10 @@ test("expanded options stay inside the setup form on phones and small laptops", 
 }, info) => {
   await fillGame(page);
   await page.getByText("Rock colours & game length", { exact: true }).click();
-  await page.getByText("YouTube broadcast settings", { exact: true }).click();
+  await page
+    .locator("summary")
+    .filter({ hasText: /^Streaming/ })
+    .click();
   for (const width of [900, 320]) {
     await page.setViewportSize({ width, height: 850 });
     expect(

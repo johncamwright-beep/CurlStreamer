@@ -4,6 +4,7 @@ export const MAX_UPLOAD_IMAGE_SIDE = 1600;
 export type OptimizeUploadImageOptions = {
   maxBytes?: number;
   maxSide?: number;
+  aspectRatio?: number;
 };
 
 type DecodedImage = {
@@ -83,11 +84,17 @@ export async function optimizeUploadImage(
   {
     maxBytes = MAX_UPLOAD_IMAGE_BYTES,
     maxSide = MAX_UPLOAD_IMAGE_SIDE,
+    aspectRatio,
   }: OptimizeUploadImageOptions = {},
 ): Promise<File> {
   if (!file.type.startsWith("image/"))
     throw new Error(`${file.name}: choose a PNG, JPEG or WebP image.`);
-  if (maxBytes <= 0 || maxSide <= 0)
+  if (
+    maxBytes <= 0 ||
+    maxSide <= 0 ||
+    (aspectRatio !== undefined &&
+      (!Number.isFinite(aspectRatio) || aspectRatio <= 0))
+  )
     throw new Error("Image optimization has invalid limits.");
 
   const decoded = await decodeImage(file);
@@ -98,7 +105,8 @@ export async function optimizeUploadImage(
 
   const canvas = document.createElement("canvas");
   try {
-    let size = uploadImageDimensions(decoded.width, decoded.height, maxSide);
+    const crop = centeredImageCrop(decoded.width, decoded.height, aspectRatio);
+    let size = uploadImageDimensions(crop.width, crop.height, maxSide);
     const qualities = [0.88, 0.78, 0.68, 0.58, 0.48];
     for (;;) {
       canvas.width = size.width;
@@ -108,7 +116,17 @@ export async function optimizeUploadImage(
         throw new Error("Image optimization is unavailable in this browser.");
       context.fillStyle = "#fff";
       context.fillRect(0, 0, size.width, size.height);
-      context.drawImage(decoded.source, 0, 0, size.width, size.height);
+      context.drawImage(
+        decoded.source,
+        crop.x,
+        crop.y,
+        crop.width,
+        crop.height,
+        0,
+        0,
+        size.width,
+        size.height,
+      );
 
       for (const quality of qualities) {
         const blob = await canvasBlob(canvas, quality);
@@ -137,4 +155,20 @@ export async function optimizeUploadImage(
     canvas.height = 0;
     decoded.close();
   }
+}
+
+export function centeredImageCrop(
+  width: number,
+  height: number,
+  aspectRatio?: number,
+) {
+  if (!aspectRatio) return { x: 0, y: 0, width, height };
+  const cropWidth = Math.min(width, height * aspectRatio);
+  const cropHeight = Math.min(height, width / aspectRatio);
+  return {
+    x: (width - cropWidth) / 2,
+    y: (height - cropHeight) / 2,
+    width: cropWidth,
+    height: cropHeight,
+  };
 }

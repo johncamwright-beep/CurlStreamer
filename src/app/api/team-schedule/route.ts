@@ -26,6 +26,7 @@ import {
 import { gameSchema } from "@/lib/schema";
 import { initialGameState } from "@/lib/team-games";
 import { loadTeamHierarchyData } from "@/lib/team-hierarchy-data";
+import { provisionScheduledYouTubeBroadcast } from "@/lib/providers/scheduled-youtube";
 
 const id = z.uuid();
 const requestSchema = z.discriminatedUnion("operation", [
@@ -38,6 +39,7 @@ const requestSchema = z.discriminatedUnion("operation", [
     eventId: id,
     input: eventInputSchema,
   }),
+  z.object({ operation: z.literal("retryYouTube"), gameId: id }),
   z.object({ operation: z.literal("archiveEvent"), eventId: id }),
   z.object({
     operation: z.literal("createOpponent"),
@@ -59,7 +61,14 @@ const requestSchema = z.discriminatedUnion("operation", [
       scheduledTime: z.string().regex(/^\d{2}:\d{2}$/),
       timezone: z.string().min(1).max(100),
       gameNumber: z.number().int().positive().nullable(),
-      config: gameSchema,
+      config: gameSchema.refine(
+        (value) =>
+          !value.youtubeEnabled || value.youtubeVisibility === "unlisted",
+        {
+          message: "Scheduled Studio broadcasts must be unlisted.",
+          path: ["youtubeVisibility"],
+        },
+      ),
     })
     .refine(
       (value) =>
@@ -226,7 +235,7 @@ export async function POST(request: Request) {
         );
         break;
       }
-      const gameId = randomUUID();
+      const gameId = body.gameId ?? randomUUID();
       const config = {
         ...body.config,
         eventName: formatEventGameLabel(
@@ -250,7 +259,44 @@ export async function POST(request: Request) {
         config,
         state,
       );
+      if (result.ok && config.youtubeEnabled) {
+        const youtube = await provisionScheduledYouTubeBroadcast(user, {
+          gameId,
+          title: config.youtubeTitle,
+          scheduledStart,
+        }).catch(() => ({
+          status: "pending" as const,
+          watchUrl: null,
+          errorCode: "youtube_provider_unavailable",
+        }));
+        result = {
+          ...result,
+          value: { ...result.value, youtube },
+        };
+      }
       break;
+    }
+    case "retryYouTube": {
+      const hierarchy = await loadTeamHierarchyData(user);
+      const game = hierarchy.ok
+        ? hierarchy.games.find((candidate) => candidate.id === body.gameId)
+        : undefined;
+      if (!game)
+        return hierarchyFailure({
+          kind: hierarchy.ok ? "authorization" : "service",
+        });
+      if (!game.config.youtubeEnabled || !game.scheduledStart)
+        return hierarchyFailure({ kind: "validation" });
+      const youtube = await provisionScheduledYouTubeBroadcast(user, {
+        gameId: game.id,
+        title: game.config.youtubeTitle,
+        scheduledStart: game.scheduledStart,
+      }).catch(() => ({
+        status: "pending" as const,
+        watchUrl: null,
+        errorCode: "youtube_provider_unavailable",
+      }));
+      return NextResponse.json({ game: { id: game.id }, youtube });
     }
   }
   if (!result.ok) return hierarchyFailure(result);

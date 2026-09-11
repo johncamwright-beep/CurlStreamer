@@ -134,7 +134,9 @@ export function NewsRichEditor({
     setUploading(true);
     onUploadingChange?.(true);
     try {
-      const optimized = await optimizeUploadImage(file);
+      const optimized = await optimizeUploadImage(file, {
+        aspectRatio: 16 / 9,
+      });
       const form = new FormData();
       form.append("image", optimized);
       const response = await fetch("/api/account/news/upload", {

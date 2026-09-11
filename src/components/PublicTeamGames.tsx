@@ -31,10 +31,12 @@ export function filterPublicGames(
 }
 export function PublicTeamGames({
   games,
+  teamName = "Team",
   upcoming,
   results,
 }: {
   games: PublicGame[];
+  teamName?: string;
   upcoming: boolean;
   results: boolean;
 }) {
@@ -49,7 +51,9 @@ export function PublicTeamGames({
   return (
     <section id="games" className="panel mb-5" aria-label="Team games">
       <div className="mb-3 flex flex-wrap items-end gap-3">
-        <h2 className="mr-auto self-center text-xl font-bold">Games</h2>
+        <h2 className="mr-auto self-center text-2xl font-black">
+          {teamName} Games
+        </h2>
         <label className="grid gap-1 text-sm">
           Show games
           <select
@@ -76,10 +80,7 @@ export function PublicTeamGames({
           </select>
         </label>
       </div>
-      <p className="mb-2 text-sm" aria-live="polite">
-        {filtered.length} {filtered.length === 1 ? "game" : "games"}
-        {filtered.length > 5 ? " · Scroll for more" : ""}
-      </p>
+
       <div
         key={`${mode}-${event}`}
         className="public-games-scroll"
@@ -120,7 +121,7 @@ export function PublicTeamGames({
                     target="_blank"
                     rel="noreferrer"
                   >
-                    Watch replay
+                    {g.completed ? "Watch replay" : "Watch on YouTube"}
                   </a>
                 )}
             </div>

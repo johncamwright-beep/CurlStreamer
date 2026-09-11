@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   optimizeUploadImage,
+  centeredImageCrop,
   uploadImageDimensions,
 } from "./optimize-upload-image";
 
@@ -88,5 +89,20 @@ describe("optimizeUploadImage", () => {
         new File(["broken"], "broken.png", { type: "image/png" }),
       ),
     ).rejects.toThrow("Image optimization is unavailable in this browser.");
+  });
+});
+
+it("crops portrait photos equally at the top and bottom and preserves uncropped logos", () => {
+  expect(centeredImageCrop(900, 1600, 16 / 9)).toEqual({
+    x: 0,
+    y: 546.875,
+    width: 900,
+    height: 506.25,
+  });
+  expect(centeredImageCrop(900, 1600)).toEqual({
+    x: 0,
+    y: 0,
+    width: 900,
+    height: 1600,
   });
 });

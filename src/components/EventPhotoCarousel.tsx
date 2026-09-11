@@ -16,7 +16,7 @@ export function EventPhotoCarousel({
         <img
           src={current.url}
           alt={current.caption || "Team event photo"}
-          className="h-80 w-full rounded-lg object-contain"
+          className="aspect-video w-full rounded-lg object-cover object-center"
         />
         {current.caption && (
           <figcaption className="mt-3 text-center">

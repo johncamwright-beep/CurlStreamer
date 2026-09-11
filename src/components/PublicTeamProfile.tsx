@@ -51,6 +51,13 @@ export function PublicTeamProfile({
           )}
         </section>
       )}
+      {s.photo && (
+        <img
+          src={s.photo}
+          alt={s.name + " team photo"}
+          className="mt-5 aspect-video w-full rounded-lg object-cover object-center"
+        />
+      )}
       {throwingPositions.some((position) => s.roster[position]) && (
         <section className="mt-5 border-t border-slate-700 pt-4">
           <h3 className="mb-3 font-bold">Players</h3>
@@ -64,7 +71,10 @@ export function PublicTeamProfile({
                 >
                   <dt className="text-sm text-slate-400">
                     {s.roster.skip === position
-                      ? "Skip (" + position + ")"
+                      ? "Skip (" +
+                        position[0].toUpperCase() +
+                        position.slice(1) +
+                        ")"
                       : position[0].toUpperCase() + position.slice(1)}
                   </dt>
                   <dd className="break-words font-semibold">

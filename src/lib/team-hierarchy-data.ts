@@ -47,6 +47,8 @@ export type ScheduledGameRecord = {
   config: GameConfig;
   completionResult?: CompletionResult | null;
   youtubeWatchUrl?: string | null;
+  scheduledYouTubeWatchUrl?: string | null;
+  scheduledYouTubeStatus?: "none" | "pending" | "intent" | "ready" | "failed";
 };
 
 export async function loadTeamHierarchyData(user: User) {
@@ -112,6 +114,12 @@ export async function loadTeamHierarchyData(user: User) {
         completionResult:
           (g.completion_result as CompletionResult | null) ?? null,
         youtubeWatchUrl: (g.youtube_watch_url as string | null) ?? null,
+        scheduledYouTubeWatchUrl:
+          (g.youtube_scheduled_watch_url as string | null) ?? null,
+        scheduledYouTubeStatus:
+          (g.youtube_scheduled_status as
+            "none" | "pending" | "intent" | "ready" | "failed" | undefined) ??
+          "none",
       };
     }) as ScheduledGameRecord[],
   };

@@ -68,6 +68,22 @@ export function ProgramComposition({
     showAway = cameraIsShown(game.layout, "away");
   const cameraCount = Number(showHome) + Number(showAway);
   const eventTitle = formatBroadcastRailTitle(game.config.eventName);
+  let scheduleLabel = "";
+  if (game.broadcastSchedule) {
+    try {
+      scheduleLabel = new Intl.DateTimeFormat("en-US", {
+        timeZone: game.broadcastSchedule.timezone,
+        year: "numeric",
+        month: "short",
+        day: "numeric",
+        hour: "numeric",
+        minute: "2-digit",
+        timeZoneName: "short",
+      }).format(new Date(game.broadcastSchedule.scheduledStart));
+    } catch {
+      /* Older or unscheduled games do not invent a date. */
+    }
+  }
   return (
     <div
       data-testid="broadcast-canvas"
@@ -96,11 +112,18 @@ export function ProgramComposition({
         >
           <div>
             <div className="mb-[.6cqw] flex items-center justify-between gap-[.8cqw]">
-              {eventTitle && (
-                <h1 className="min-w-0 flex-1 text-[1.75cqw] font-black leading-tight">
-                  {eventTitle}
-                </h1>
-              )}
+              <div className="min-w-0 flex-1">
+                {eventTitle && (
+                  <h1 className="min-w-0 flex-1 text-[1.75cqw] font-black leading-tight">
+                    {eventTitle}
+                  </h1>
+                )}
+                {scheduleLabel && (
+                  <p className="mt-[.3cqw] text-[1cqw] leading-snug text-slate-300">
+                    {scheduleLabel}
+                  </p>
+                )}
+              </div>
               <TeamLogo
                 teamName={game.config.homeName}
                 imageUrl={game.config.homeLogoUrl}
@@ -114,18 +137,26 @@ export function ProgramComposition({
               sponsors={sponsors}
               desiredIndex={idx}
               mode="sidebar"
+              teamName={game.config.homeName}
             />
           )}
           <div
             className="relative mt-auto w-full shrink-0 overflow-hidden"
-            style={{ aspectRatio: "4 / 1" }}
+            style={{ aspectRatio: "1558 / 340" }}
           >
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src="/branding/curlstreamer-logo.png"
-              alt="Curl Streamer"
-              className="h-full w-full object-contain"
-            />
+            {/* Exclude only the source asset's transparent margins. */}
+            <svg
+              viewBox="35 79 1558 340"
+              role="img"
+              aria-label="Curl Streamer"
+              className="h-full w-full"
+            >
+              <image
+                href="/branding/curlstreamer-logo.png"
+                width="1975"
+                height="500"
+              />
+            </svg>
           </div>
           {showStatus && (
             <div

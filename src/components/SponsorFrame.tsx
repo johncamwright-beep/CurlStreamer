@@ -5,16 +5,18 @@ import { fitSponsorRectangle, sponsorFrameRectangle } from "@/lib/sponsor-fit";
 import { DecodedSponsorImage } from "./DecodedSponsorImage";
 
 const PADDING = 14;
-const SIDEBAR_LABEL_HEIGHT = 26;
+const SIDEBAR_LABEL_HEIGHT = 48;
 
 export function SponsorFrame({
   sponsors,
   desiredIndex,
   mode,
+  teamName,
 }: {
   sponsors: Sponsor[];
   desiredIndex: number;
   mode: "sidebar" | "overlay";
+  teamName?: string;
 }) {
   const boundsRef = useRef<HTMLDivElement>(null);
   const [bounds, setBounds] = useState({ width: 0, height: 0 });
@@ -51,7 +53,9 @@ export function SponsorFrame({
         }}
       >
         {mode === "sidebar" && (
-          <p className="sponsor-frame-label">PRESENTED BY</p>
+          <p className="sponsor-frame-label">
+            {teamName || "This team"} is sponsored by
+          </p>
         )}
         <DecodedSponsorImage
           sponsors={sponsors}

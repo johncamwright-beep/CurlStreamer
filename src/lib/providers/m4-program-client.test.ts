@@ -81,6 +81,11 @@ describe("Node program authority", () => {
   it("reads only its fixed game and strips unknown fields at every projection level", async () => {
     const upstream = {
       ...projected,
+      broadcastSchedule: {
+        scheduledStart: "2026-10-20T22:30:00Z",
+        timezone: "America/Toronto",
+        private: "not for the renderer",
+      },
       secret: "private",
       config: { ...projected.config, youtubeTitle: "private" },
       score: {
@@ -100,7 +105,13 @@ describe("Node program authority", () => {
       );
     const client = new M4ProgramClient(game, origin, fetcher);
     await client.exchange("a".repeat(43));
-    expect(await client.readGame()).toEqual(projected);
+    expect(await client.readGame()).toEqual({
+      ...projected,
+      broadcastSchedule: {
+        scheduledStart: "2026-10-20T22:30:00Z",
+        timezone: "America/Toronto",
+      },
+    });
     expect(fetcher.mock.calls[1][0]).toBe(
       `${origin}/api/games/${game}/studio-m3`,
     );

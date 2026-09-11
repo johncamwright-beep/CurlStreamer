@@ -378,6 +378,33 @@ describe("GET /api/games/[id] over HTTP", () => {
     expect(mocks.gameBroadcastSponsors).toHaveBeenCalledWith(testGameId);
     expect(mocks.gameLibrarySponsors).not.toHaveBeenCalled();
   });
+  it("returns the canonical broadcast schedule to public and authorized game views", async () => {
+    game.broadcastSchedule = {
+      scheduledStart: "2026-10-20T22:30:00Z",
+      timezone: "America/Toronto",
+    };
+    anonymous();
+    const publicResponse = await request("broadcast");
+    expect((await publicResponse.json()).broadcastSchedule).toEqual(
+      game.broadcastSchedule,
+    );
+
+    mocks.getUser.mockResolvedValue({
+      data: { user: { id: "same-team-user" } },
+    });
+    mocks.loadActiveTeam.mockResolvedValue({
+      kind: "ready",
+      team: { organizationId: "same-team", role: "owner" },
+    });
+    mocks.listTeamGames.mockResolvedValue({
+      ok: true,
+      games: [{ game_id: testGameId, game_status: "active" }],
+    });
+    const accountResponse = await request();
+    expect((await accountResponse.json()).broadcastSchedule).toEqual(
+      game.broadcastSchedule,
+    );
+  });
   it("publishes short-lived renderable sponsor output without stored sponsor metadata", async () => {
     anonymous();
     mocks.gameBroadcastSponsors.mockResolvedValue([

@@ -9,6 +9,20 @@ import {
 } from "@/lib/game-completion";
 
 const logoCache = new Map<string, { expires: number; url?: string }>();
+function validTimezone(timezone: string) {
+  try {
+    Intl.DateTimeFormat(undefined, { timeZone: timezone });
+    return true;
+  } catch {
+    return false;
+  }
+}
+const broadcastScheduleSchema = z
+  .object({
+    scheduledStart: z.string().datetime({ offset: true }),
+    timezone: z.string().trim().min(1).max(100).refine(validTimezone),
+  })
+  .strict();
 
 export type GameRead =
   | { kind: "active"; game: GameState }
@@ -43,7 +57,20 @@ export async function readGame(id: string): Promise<GameRead> {
   }
   if (row.outcome !== "active" || !row.state)
     throw new Error("Game read unavailable");
-  const game = row.state as GameState;
+  // JSON state is mutable and may retain a stale/forged copy. Schedule display
+  // metadata comes exclusively from the canonical games row in this RPC.
+  const { broadcastSchedule: _storedSchedule, ...state } =
+    row.state as GameState;
+  const scheduledStart = row.scheduled_start ?? null;
+  const timezone = row.schedule_timezone ?? null;
+  const schedule = broadcastScheduleSchema.safeParse({
+    scheduledStart,
+    timezone,
+  });
+  const game = {
+    ...state,
+    ...(schedule.success ? { broadcastSchedule: schedule.data } : {}),
+  };
   let logo = logoCache.get(id);
   if (!logo || logo.expires < Date.now()) {
     const result = await Promise.resolve(

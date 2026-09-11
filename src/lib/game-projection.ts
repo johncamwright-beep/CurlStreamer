@@ -5,6 +5,7 @@ import type { GameConfig, GameState, Sponsor, Team } from "./types";
 
 export interface BroadcastGame {
   id: string;
+  broadcastSchedule?: GameState["broadcastSchedule"];
   config: Pick<
     GameConfig,
     | "eventName"
@@ -56,6 +57,14 @@ export function broadcastGame(
       );
   return {
     id: game.id,
+    ...(game.broadcastSchedule
+      ? {
+          broadcastSchedule: {
+            scheduledStart: game.broadcastSchedule.scheduledStart,
+            timezone: game.broadcastSchedule.timezone,
+          },
+        }
+      : {}),
     config: {
       ...(game.config.homeLogoUrl
         ? { homeLogoUrl: game.config.homeLogoUrl }

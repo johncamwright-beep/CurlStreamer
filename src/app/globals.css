@@ -239,12 +239,13 @@ button {
   padding: 14px;
 }
 .sponsor-frame-label {
-  height: 26px;
+  height: 48px;
   flex: none;
   color: rgb(51 65 85);
-  font-size: 15px;
+  font-size: 18px;
   font-weight: 700;
-  line-height: 18px;
+  line-height: 22px;
+  overflow: hidden;
   text-align: center;
 }
 .sponsor-fitted-image {

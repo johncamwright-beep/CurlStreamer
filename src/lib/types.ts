@@ -77,6 +77,11 @@ export interface LibrarySponsor {
 export interface GameState {
   id: string;
   config: GameConfig;
+  /** Server-derived from the games row; absent for unscheduled or legacy games. */
+  broadcastSchedule?: {
+    scheduledStart: string;
+    timezone: string;
+  };
   createdAt: number;
   scoreEvents: ScoreEvent[];
   layout: Layout;

@@ -14,6 +14,18 @@ beforeEach(() => vi.stubGlobal("React", React));
 afterEach(() => vi.unstubAllGlobals());
 
 describe("provider-neutral program composition", () => {
+  it("shows the scheduled date and time in the game timezone", () => {
+    const game = gameFixture();
+    game.broadcastSchedule = {
+      scheduledStart: "2026-10-20T22:30:00Z",
+      timezone: "America/Toronto",
+    };
+    const markup = renderToStaticMarkup(
+      <ProgramCanvas game={game} renderCamera={() => null} />,
+    );
+    expect(markup).toContain("Oct 20, 2026");
+    expect(markup).toContain("6:30 PM EDT");
+  });
   it("renders direct feeds with the saved score and honest local video status", () => {
     const game = gameFixture();
     game.sponsors = [];
@@ -81,7 +93,7 @@ describe("provider-neutral program composition", () => {
       />,
     );
     expect(markup).toContain('data-testid="sponsor-sidebar"');
-    expect(markup).toContain("PRESENTED BY");
+    expect(markup).toContain("Rocks is sponsored by");
     expect(markup).not.toContain("Local recording");
     expect(markup).not.toContain("OBS audio configured separately");
   });

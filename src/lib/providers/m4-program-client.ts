@@ -36,10 +36,24 @@ const sponsorUrl = z
       return false;
     }
   });
+function validTimezone(timezone: string) {
+  try {
+    Intl.DateTimeFormat(undefined, { timeZone: timezone });
+    return true;
+  } catch {
+    return false;
+  }
+}
 // Every object projects declared fields, including nested objects. Server-only
 // fields accidentally added upstream must never enter the local renderer.
 const projectedGame = z.object({
   id: z.uuid(),
+  broadcastSchedule: z
+    .object({
+      scheduledStart: z.string().datetime({ offset: true }),
+      timezone: z.string().min(1).max(100).refine(validTimezone),
+    })
+    .optional(),
   config: gameSchema.pick({
     eventName: true,
     homeName: true,

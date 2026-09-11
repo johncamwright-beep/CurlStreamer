@@ -11,6 +11,7 @@ export default defineConfig({
     "game-setup.spec.ts",
     "team-settings.spec.ts",
     "news-editor.spec.ts",
+    "news-image-upload.spec.ts",
   ],
   fullyParallel: false,
   webServer: [

@@ -33,7 +33,14 @@ test("program uses the full logo, event-only heading, and clean camera pictures"
   const logo = page.getByRole("img", { name: "Curl Streamer", exact: true });
   await expect(logo).toBeVisible();
   await expect
-    .poll(() => logo.evaluate((img: HTMLImageElement) => img.naturalWidth))
+    .poll(() =>
+      logo.evaluate(async (svg) => {
+        const image = new Image();
+        image.src = svg.querySelector("image")!.getAttribute("href")!;
+        await image.decode();
+        return image.naturalWidth;
+      }),
+    )
     .toBeGreaterThan(0);
   await expect(page.getByText("Single Game", { exact: true })).toHaveCount(0);
   await expect(page.getByText(/CAMERA [12]/)).toHaveCount(0);

@@ -17,13 +17,35 @@ export const newsTextColors = [
   "#c084fc",
 ] as const;
 
-const textAlignment = z.enum(["left", "center", "right"]);
+// Clipboard HTML uses empty CSS values and browser-normalized RGB colours.
+// Keep supported presentation values; discard other styling, never the text.
+function pastedStyle<const T extends readonly [string, ...string[]]>(
+  values: T,
+) {
+  return z.preprocess((value) => {
+    if (typeof value !== "string") return value;
+    let normalized = value.trim().replace(/^["']|["']$/g, "");
+    const rgb = /^rgb\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*\)$/.exec(normalized);
+    if (rgb)
+      normalized =
+        "#" +
+        rgb
+          .slice(1)
+          .map((v) => Number(v).toString(16).padStart(2, "0"))
+          .join("");
+    if (!/^[\w\s#.%,-]*$/.test(normalized)) return value;
+    return (
+      values.find((v) => v.toLowerCase() === normalized.toLowerCase()) ?? null
+    );
+  }, z.enum(values).nullish());
+}
+const textAlignment = pastedStyle(["left", "center", "right"]);
 const textStyleMark = z.object({
   type: z.literal("textStyle"),
   attrs: z.object({
-    color: z.enum(newsTextColors).nullish(),
-    fontFamily: z.enum(newsFontFamilies).nullish(),
-    fontSize: z.enum(newsFontSizes).nullish(),
+    color: pastedStyle(newsTextColors),
+    fontFamily: pastedStyle(newsFontFamilies),
+    fontSize: pastedStyle(newsFontSizes),
   }),
 });
 const textNode = z.object({
@@ -60,7 +82,7 @@ const imageNode = z.object({
       .url()
       .max(2048)
       .refine((url) => /^https:\/\//.test(url), "HTTPS images only"),
-    alt: z.string().max(250).default(""),
+    alt: z.preprocess((value) => value ?? "", z.string().max(250)),
   }),
 });
 const inlineNode = z.union([

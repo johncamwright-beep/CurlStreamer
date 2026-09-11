@@ -11,9 +11,11 @@ import {
 export function TeamSettings({
   name,
   section = "team",
+  onSaved,
 }: {
   name: string;
   section?: "team" | "public" | "social" | "photos";
+  onSaved?: () => void;
 }) {
   const [settings, setSettings] = useState(defaultTeamPageSettings(name)),
     [savedSettings, setSavedSettings] = useState<TeamPageSettings | null>(null),
@@ -77,6 +79,7 @@ export function TeamSettings({
           ? "Your team page is published. Its address is now permanent."
           : "Team settings saved.",
       );
+      if (!publish) onSaved?.();
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Save failed.");
     } finally {
@@ -139,7 +142,7 @@ export function TeamSettings({
           disabled={!ready || !canEdit || busy}
           onClick={() => void save()}
         >
-          {busy ? "Saving…" : "Save changes"}
+          {busy ? "Saving…" : onSaved ? "Save and continue" : "Save changes"}
         </button>
       </div>
       {message && <p role="status">{message}</p>}

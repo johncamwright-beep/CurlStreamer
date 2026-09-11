@@ -28,8 +28,10 @@ export function GameCreationForm({
   opponents: initialOpponents,
   games,
   preselectedEventId,
+  preselectedSeasonId,
   editing,
   editingTitle,
+  onCreated,
 }: {
   teamName: string;
   seasons: SeasonRecord[];
@@ -37,11 +39,16 @@ export function GameCreationForm({
   opponents: Opponent[];
   games: ScheduledGameRecord[];
   preselectedEventId?: string;
+  preselectedSeasonId?: string;
   editing?: ScheduledGameRecord;
   editingTitle?: string;
+  onCreated?: (gameId: string) => void;
 }) {
   const router = useRouter();
   const current =
+    initialSeasons.find(
+      (s) => s.id === preselectedSeasonId && s.status !== "archived",
+    ) ??
     initialSeasons.find((s) => s.status === "active") ??
     initialSeasons.find((s) => s.status !== "archived");
   const preselected = initialEvents.find(
@@ -374,6 +381,7 @@ export function GameCreationForm({
         });
         setBusy(false);
         saving.current = false;
+        onCreated?.(body.game.id);
         return;
       }
       if (editing && body.youtube?.status === "pending") {

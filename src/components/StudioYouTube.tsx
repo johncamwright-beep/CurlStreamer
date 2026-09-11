@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import { z } from "zod";
+import { WindowsStudioRequired } from "./WindowsStudioRequired";
 
 const stateSchema = z.object({
   gameId: z.string(),
@@ -20,12 +21,24 @@ export function StudioYouTube({ id }: { id: string }) {
   const [watchUrl, setWatchUrl] = useState("");
   const [copied, setCopied] = useState(false);
   const [copyError, setCopyError] = useState("");
+  const [bridgeAvailable, setBridgeAvailable] = useState(false);
   const flight = useRef(false);
   const nextCheck = useRef(0);
   const failures = useRef(0);
   const halted = useRef(false);
+  useEffect(() => {
+    setBridgeAvailable(
+      Boolean(
+        (
+          window as unknown as {
+            chrome?: { webview?: { postMessage(value: unknown): void } };
+          }
+        ).chrome?.webview,
+      ),
+    );
+  }, []);
   async function goLive() {
-    if (flight.current) return;
+    if (!bridgeAvailable || flight.current) return;
     flight.current = true;
     nextCheck.current = Date.now() + 10000;
     setGoingLive(true);
@@ -85,7 +98,7 @@ export function StudioYouTube({ id }: { id: string }) {
       Date.now() >= nextCheck.current
     )
       void goLive();
-  }, [autoGoLive, state]);
+  }, [autoGoLive, bridgeAvailable, state]);
   useEffect(() => {
     setWatchUrl("");
     setCopied(false);
@@ -159,6 +172,7 @@ export function StudioYouTube({ id }: { id: string }) {
   }
   const active =
     state && ["starting", "armed", "stopping"].includes(state.streaming);
+  if (!bridgeAvailable) return <WindowsStudioRequired gameId={id} />;
   return (
     <section
       className="scoring-card studio-youtube"

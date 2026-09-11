@@ -139,13 +139,12 @@ export function StudioSetup({
                 className="game-control-card"
                 aria-labelledby="open-studio-heading"
               >
-                <h2 id="open-studio-heading">
-                  1. Open Studio on the recording PC
-                </h2>
+                <h2 id="open-studio-heading">Requires Windows Studio</h2>
                 <p>
-                  Use the Windows PC connected to the camera network. Opening
-                  Studio fills in this game; choose Open Studio in its window to
-                  continue.
+                  Streaming starts only in CurlStreamer Studio on the Windows
+                  recording PC. Install the pilot Windows installer supplied by
+                  your CurlStreamer contact, then open Studio with this game.
+                  There is no public installer download yet.
                 </p>
                 <div className="game-entry-actions">
                   {gameUrl.startsWith("https://") && (
@@ -202,15 +201,18 @@ export function StudioSetup({
               <h2>
                 {desktop
                   ? "Cameras & remote scoring"
-                  : "2. Connect cameras and recording"}
+                  : "Connect the travel router, cameras and recording PC"}
               </h2>
               {directCameras ? (
                 <>
                   {!desktop && (
                     <p>
-                      In Studio’s local controls, choose Check this PC. Create
-                      camera invitations below, then prepare a private program
-                      link and paste it into Studio to start recording.
+                      Connect the recording PC and camera phones to the same
+                      travel router before opening Studio. Keep client isolation
+                      off, connect the PC by Ethernet when possible, and give it
+                      internet access for YouTube. In Studio’s local controls,
+                      choose Check this PC, then create camera invitations
+                      below.
                     </p>
                   )}
                   <details className="mt-4">

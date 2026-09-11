@@ -9,7 +9,11 @@ export function FirstTeamForm() {
   return (
     <form action={action} className="panel grid gap-4" noValidate>
       <h1 className="text-3xl font-black">Create your team</h1>
-      <p className="text-slate-300">Set up your first CurlStreamer team.</p>
+      <p className="text-slate-300">
+        Start with your team name. Next, we will walk through your team profile,
+        public page, season, event, broadcast setup, and first game. You can
+        save your progress and finish later.
+      </p>
       <label>
         Team name
         <input

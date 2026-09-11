@@ -12,6 +12,7 @@ export default defineConfig({
     "team-settings.spec.ts",
     "news-editor.spec.ts",
     "news-image-upload.spec.ts",
+    "onboarding.spec.ts",
   ],
   fullyParallel: false,
   webServer: [

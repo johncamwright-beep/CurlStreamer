@@ -7,6 +7,7 @@ async function setup(page: Page, desktop = false) {
   game.config.homeName = "Northern Ontario Curling Club";
   game.config.awayName = "Team Wright";
   const actions: Record<string, unknown>[] = [];
+  let legacyBroadcastRequests = 0;
   await page.route(`**/api/games/${testGameId}`, async (route) => {
     if (route.request().method() === "PATCH") {
       const action = route.request().postDataJSON();
@@ -26,16 +27,21 @@ async function setup(page: Page, desktop = false) {
       },
     });
   });
-  await page.route(`**/api/games/${testGameId}/broadcast`, (route) =>
-    route.fulfill({ json: { status: "idle", desiredState: "stopped" } }),
-  );
+  await page.route(`**/api/games/${testGameId}/broadcast`, (route) => {
+    legacyBroadcastRequests += 1;
+    return route.fulfill({ json: { status: "idle", desiredState: "stopped" } });
+  });
   await page.goto(`/score/${testGameId}`);
   await expect(
     desktop
       ? page.getByRole("heading", { level: 1, name: /Northern Ontario/ })
       : page.getByRole("heading", { name: "Scoring", exact: true }),
   ).toBeVisible();
-  return { game, actions };
+  return {
+    game,
+    actions,
+    legacyBroadcastRequests: () => legacyBroadcastRequests,
+  };
 }
 
 test("score entry preserves selected team and points in one saved intent", async ({
@@ -89,8 +95,8 @@ test("camera and demo audio status stay separate from YouTube status", async ({
     "Sponsor overlay is keeping demo audio muted.",
   );
   await expect(
-    page.getByRole("region", { name: "YouTube broadcast" }),
-  ).toContainText("Not started");
+    page.getByRole("heading", { name: "Requires Windows Studio" }),
+  ).toBeVisible();
   await page.route(`**/api/games/${testGameId}`, (route) =>
     route.request().method() === "PATCH"
       ? route.fulfill({ status: 503, json: { error: "temporary_failure" } })
@@ -172,20 +178,22 @@ test("an unavailable scoring page retains navigation and recovery", async ({
   );
 });
 
-test("an unreadable broadcast response leaves scoring usable", async ({
+test("browser scoring keeps stream start in Windows Studio", async ({
   page,
 }) => {
-  await setup(page);
-  await page.route(`**/api/games/${testGameId}/broadcast`, (route) =>
-    route.fulfill({ status: 200, body: "not json", contentType: "text/plain" }),
-  );
-  await page.reload();
+  const { legacyBroadcastRequests } = await setup(page);
   await expect(
-    page.getByRole("region", { name: "YouTube broadcast" }),
-  ).toContainText("Status unavailable");
+    page.getByRole("heading", { name: "Requires Windows Studio" }),
+  ).toBeVisible();
   await expect(
-    page.getByRole("button", { name: "Retry status" }),
-  ).toBeEnabled();
+    page.getByText("The pilot Windows installer is supplied separately", {
+      exact: false,
+    }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Start broadcast" }),
+  ).toHaveCount(0);
+  expect(legacyBroadcastRequests()).toBe(0);
   await expect(
     page.getByRole("button", { name: "Save 1 point" }),
   ).toBeEnabled();
@@ -211,6 +219,12 @@ test("desktop game day keeps scoring primary and settings available on demand", 
       value: "CurlStreamerStudio/0.3 StudioNativeAudio/1",
     }),
   );
+  await page.addInitScript(() => {
+    Object.defineProperty(window, "chrome", {
+      configurable: true,
+      value: { webview: { postMessage() {} } },
+    });
+  });
   const { game, actions } = await setup(page, true);
   await expect(
     page.getByRole("region", { name: "USB microphones", exact: true }),

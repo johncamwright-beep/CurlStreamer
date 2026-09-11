@@ -7,6 +7,8 @@ import type { GamesTab } from "@/lib/game-hub";
 import { loadDashboardBroadcasts } from "@/lib/dashboard-broadcasts";
 import { GamesDashboard } from "./GamesDashboard";
 import "./dashboard.css";
+import Link from "next/link";
+import { readSetupProgress } from "@/lib/onboarding";
 
 export default async function GamesPage({
   searchParams,
@@ -17,12 +19,8 @@ export default async function GamesPage({
     data: { user },
   } = await (await createServerSupabaseClient()).auth.getUser();
   if (!user?.email_confirmed_at) redirect("/login");
-  const [result, hierarchy] = await Promise.all([
-    getAccountContext(user),
-    loadTeamHierarchyData(user),
-  ]);
+  const result = await getAccountContext(user);
   if (!result.ok) return <AccountServiceUnavailable />;
-  if (!hierarchy.ok) return <AccountServiceUnavailable />;
   if (result.account.profile.status !== "active")
     return (
       <main className="mx-auto max-w-xl p-5">
@@ -34,6 +32,8 @@ export default async function GamesPage({
     );
   const membership = result.account.membership;
   if (!membership) redirect("/onboarding");
+  const hierarchy = await loadTeamHierarchyData(user);
+  if (!hierarchy.ok) return <AccountServiceUnavailable />;
   const {
     tab: requestedTab,
     season: requestedSeason,
@@ -57,15 +57,35 @@ export default async function GamesPage({
       .map((g) => g.id),
   );
   return (
-    <GamesDashboard
-      account={result.account}
-      games={games}
-      events={events}
-      seasons={hierarchy.seasons}
-      season={season}
-      tab={tab}
-      selectedEvent={requestedEvent}
-      broadcasts={broadcasts}
-    />
+    <>
+      {membership.role === "owner" &&
+        (() => {
+          const setup = readSetupProgress(
+            user.user_metadata?.team_setup,
+            membership.organization_id,
+          );
+          return setup && !setup.complete ? (
+            <aside
+              className="mx-auto mt-4 flex max-w-6xl flex-wrap items-center justify-between gap-3 rounded-xl border border-cyan-600 bg-cyan-950 p-4"
+              aria-label="Team setup"
+            >
+              <p>Finish setting up your team · Step {setup.step} of 6</p>
+              <Link className="btn" href="/onboarding">
+                Resume team setup
+              </Link>
+            </aside>
+          ) : null;
+        })()}
+      <GamesDashboard
+        account={result.account}
+        games={games}
+        events={events}
+        seasons={hierarchy.seasons}
+        season={season}
+        tab={tab}
+        selectedEvent={requestedEvent}
+        broadcasts={broadcasts}
+      />
+    </>
   );
 }

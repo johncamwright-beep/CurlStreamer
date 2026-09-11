@@ -23,7 +23,7 @@ import { StudioDeviceCards } from "@/components/StudioDeviceCards";
 import { StudioYouTube } from "@/components/StudioYouTube";
 import { StudioAudio } from "@/components/StudioAudio";
 import { cameraAudioEnabled } from "@/lib/camera-audio";
-import { BroadcastControl } from "@/components/BroadcastControl";
+import { WindowsStudioRequired } from "@/components/WindowsStudioRequired";
 export default function Scorer({
   params,
 }: {
@@ -599,7 +599,7 @@ export default function Scorer({
               </>
             ) : (
               <>
-                {canEndGame && <BroadcastControl gameId={id} enabled />}
+                <WindowsStudioRequired gameId={id} />
                 <ScoringProgramControls game={game} act={act} />
               </>
             )}

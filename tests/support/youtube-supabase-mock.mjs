@@ -1,4 +1,5 @@
 import { createServer } from "node:http";
+import { randomUUID } from "node:crypto";
 import { dashboardResponse } from "./dashboard-fixtures.mjs";
 
 const userId = "11111111-1111-4111-8111-111111111111";
@@ -27,6 +28,7 @@ const jwt = [
   ).toString("base64url"),
   "playwright-signature",
 ].join(".");
+const sessionUsers = new Map();
 
 function send(response, status, body) {
   response.writeHead(status, {
@@ -37,7 +39,7 @@ function send(response, status, body) {
   response.end(JSON.stringify(body));
 }
 
-const server = createServer((request, response) => {
+const server = createServer(async (request, response) => {
   const url = new URL(request.url ?? "/", "http://127.0.0.1:3101");
   if (request.method === "OPTIONS") return send(response, 204, {});
   if (
@@ -131,19 +133,33 @@ const server = createServer((request, response) => {
     ]);
   const dashboard = dashboardResponse(url);
   if (dashboard !== null) return send(response, 200, dashboard);
-  if (url.pathname === "/auth/v1/token" && request.method === "POST")
+  if (url.pathname === "/auth/v1/token" && request.method === "POST") {
+    const token = jwt.replace(/[^.]+$/, randomUUID());
+    sessionUsers.set(token, structuredClone(user));
     return send(response, 200, {
-      access_token: jwt,
+      access_token: token,
       token_type: "bearer",
       expires_in: 3600,
       expires_at: Math.floor(Date.now() / 1000) + 3600,
       refresh_token: "playwright-refresh",
       user,
     });
-  if (url.pathname === "/auth/v1/user")
-    return send(response, 200, {
-      ...user,
-    });
+  }
+  if (url.pathname === "/auth/v1/user") {
+    const token = String(request.headers.authorization).replace(
+      /^Bearer /i,
+      "",
+    );
+    const current = sessionUsers.get(token) ?? structuredClone(user);
+    if (request.method === "PUT") {
+      let raw = "";
+      for await (const chunk of request) raw += chunk;
+      const input = JSON.parse(raw || "{}");
+      current.user_metadata = { ...current.user_metadata, ...input.data };
+      sessionUsers.set(token, current);
+    }
+    return send(response, 200, current);
+  }
   if (url.pathname === "/rest/v1/user_profiles") {
     if (request.method === "POST")
       return send(response, 200, [{ display_name: "Test Administrator" }]);

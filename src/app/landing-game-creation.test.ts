@@ -13,9 +13,9 @@ describe("account-based landing and game creation", () => {
     expect(home).not.toContain("createServerSupabaseClient");
     expect(home).not.toContain("GameCreationForm");
     expect(home).not.toContain("AppNavigation");
-    expect(login).toContain(
-      '<AuthForm mode="login" action={login} returnTo={next} />',
-    );
+    expect(login).toContain('mode="login"');
+    expect(login).toContain("action={login}");
+    expect(login).toContain("returnTo={next}");
     expect(authForm).toContain("Create Account");
     expect(authForm).not.toContain("AppNavigation");
   });

@@ -15,8 +15,15 @@ export async function GET(request: Request) {
   const publicOrigin = new URL(confirmationUrl()).origin;
   const next = approvedRedirect(url.searchParams.get("next"));
   const code = url.searchParams.get("code");
+  const oauthError = url.searchParams.get("error");
   const token_hash = url.searchParams.get("token_hash");
   const type = url.searchParams.get("type") as EmailOtpType | null;
+  if (oauthError) {
+    const outcome = oauthError === "access_denied" ? "cancelled" : "failed";
+    return NextResponse.redirect(
+      new URL(`/login?oauth=${outcome}`, publicOrigin),
+    );
+  }
   const supabase = await createServerSupabaseClient();
   const result = code
     ? await supabase.auth.exchangeCodeForSession(code)

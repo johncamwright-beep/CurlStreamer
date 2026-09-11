@@ -54,4 +54,15 @@ describe("confirmation behind a reverse proxy", () => {
       type: "signup",
     });
   });
+  it("turns OAuth cancellation into a readable login result", async () => {
+    const response = await GET(
+      new Request(
+        "https://localhost:3000/auth/confirm?error=access_denied&error_description=cancelled",
+      ),
+    );
+    expect(response.headers.get("location")).toBe(
+      "https://test.example.com/login?oauth=cancelled",
+    );
+    expect(exchangeCodeForSession).not.toHaveBeenCalled();
+  });
 });

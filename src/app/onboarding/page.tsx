@@ -22,9 +22,6 @@ export default async function OnboardingPage() {
       <div className="mb-4">
         <AppNavigation signedIn />
       </div>
-      <div className="mb-4">
-        <AppNavigation signedIn />
-      </div>
       <FirstTeamForm />
     </main>
   );

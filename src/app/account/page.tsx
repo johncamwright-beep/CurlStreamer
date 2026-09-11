@@ -9,6 +9,7 @@ import Link from "next/link";
 import { signOut } from "./actions";
 import { AccountServiceUnavailable } from "@/components/AccountServiceUnavailable";
 import { AppNavigation } from "@/components/AppNavigation";
+import { AccountPasswordForm } from "@/components/AccountPasswordForm";
 export default async function AccountPage({
   searchParams,
 }: {
@@ -51,6 +52,9 @@ export default async function AccountPage({
           <div className="grid gap-4">
             <h2 className="text-xl font-bold">Account info</h2>
             <AccountEmail email={user.email ?? ""} />
+            {user.identities?.some(
+              (identity) => identity.provider === "google",
+            ) && <AccountPasswordForm />}
             {account.profile.status !== "active" ? (
               <p role="alert" className="text-red-300">
                 This account is not currently active.

@@ -233,6 +233,28 @@ export async function POST(request: Request) {
           },
           snapshotConfig,
         );
+        if (
+          result.ok &&
+          existing.status === "scheduled" &&
+          existing.scheduledYouTubeWatchUrl
+        ) {
+          const youtube = await provisionScheduledYouTubeBroadcast(user, {
+            gameId: existing.id,
+            title: snapshotConfig.youtubeTitle,
+            scheduledStart,
+            thumbnail: {
+              homeName: snapshotConfig.homeName,
+              awayName: snapshotConfig.awayName,
+              eventName: snapshotConfig.eventName,
+              scheduledStart,
+              timezone: effectiveTimezone,
+            },
+          }).catch(() => ({ status: "ready", thumbnailStatus: "pending" }));
+          result = {
+            ...result,
+            value: { youtube },
+          };
+        }
         break;
       }
       const gameId = body.gameId ?? randomUUID();
@@ -264,6 +286,13 @@ export async function POST(request: Request) {
           gameId,
           title: config.youtubeTitle,
           scheduledStart,
+          thumbnail: {
+            homeName: config.homeName,
+            awayName: config.awayName,
+            eventName: config.eventName,
+            scheduledStart,
+            timezone: effectiveTimezone,
+          },
         }).catch(() => ({
           status: "pending" as const,
           watchUrl: null,
@@ -291,6 +320,13 @@ export async function POST(request: Request) {
         gameId: game.id,
         title: game.config.youtubeTitle,
         scheduledStart: game.scheduledStart,
+        thumbnail: {
+          homeName: game.config.homeName,
+          awayName: game.config.awayName,
+          eventName: game.config.eventName,
+          scheduledStart: game.scheduledStart,
+          timezone: game.timezone ?? "America/Toronto",
+        },
       }).catch(() => ({
         status: "pending" as const,
         watchUrl: null,

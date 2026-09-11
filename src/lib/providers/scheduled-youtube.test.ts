@@ -6,6 +6,7 @@ const mocks = vi.hoisted(() => ({
   refresh: vi.fn(),
   decrypt: vi.fn(),
   broadcast: vi.fn(),
+  thumbnail: vi.fn(),
 }));
 
 vi.mock("@/lib/supabase/admin", () => ({
@@ -21,12 +22,16 @@ vi.mock("./youtube-credential-vault", () => ({
 vi.mock("./youtube-live", () => ({
   findOrCreateYouTubeBroadcast: mocks.broadcast,
 }));
+vi.mock("./youtube-thumbnail", () => ({
+  uploadScheduledThumbnail: mocks.thumbnail,
+}));
 
 import { provisionScheduledYouTubeBroadcast } from "./scheduled-youtube";
 
 describe("scheduled YouTube provisioning", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mocks.thumbnail.mockResolvedValue(undefined);
     mocks.credentials.mockResolvedValue({
       encrypted_credentials: "encrypted",
       organization_id: "11111111-1111-4111-8111-111111111111",
@@ -91,6 +96,46 @@ describe("scheduled YouTube provisioning", () => {
     );
     expect(result.status).toBe("pending");
     expect(mocks.rpc).not.toHaveBeenCalled();
+  });
+
+  it("retains a ready watch page when thumbnail upload fails and retries without another broadcast", async () => {
+    mocks.rpc.mockResolvedValue({
+      data: [
+        {
+          action: "none",
+          watch_url: "https://www.youtube.com/watch?v=abcdefghijk",
+        },
+      ],
+      error: null,
+    });
+    mocks.thumbnail.mockRejectedValueOnce(
+      new Error("youtube_provider_rejected"),
+    );
+    const values = {
+      gameId: "game",
+      title: "Game",
+      scheduledStart: "2026-10-20T22:30:00Z",
+      thumbnail: {
+        homeName: "Team A",
+        awayName: "Team B",
+        eventName: "Orion · Game 1",
+        scheduledStart: "2026-10-20T22:30:00Z",
+        timezone: "America/Toronto",
+      },
+    };
+    const user = { id: "user" } as never;
+    await expect(
+      provisionScheduledYouTubeBroadcast(user, values),
+    ).resolves.toMatchObject({ status: "ready", thumbnailStatus: "pending" });
+    await expect(
+      provisionScheduledYouTubeBroadcast(user, values),
+    ).resolves.toMatchObject({ status: "ready", thumbnailStatus: "ready" });
+    expect(mocks.broadcast).not.toHaveBeenCalled();
+    expect(mocks.thumbnail).toHaveBeenCalledWith(
+      "access",
+      "abcdefghijk",
+      values.thumbnail,
+    );
   });
 
   it("returns the saved URL without another provider call when ready", async () => {

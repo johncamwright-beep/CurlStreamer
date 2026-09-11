@@ -116,6 +116,7 @@ export function GameCreationForm({
   const [createdGame, setCreatedGame] = useState<{
     id: string;
     youtubeStatus?: string;
+    thumbnailStatus?: string;
   } | null>(null);
   const [finishedScheduling, setFinishedScheduling] = useState(false);
   const [error, setError] = useState("");
@@ -341,6 +342,7 @@ export function GameCreationForm({
       if (!editing) {
         setCreatedGame({
           id: body.game.id,
+          thumbnailStatus: body.youtube?.thumbnailStatus,
           youtubeStatus: youtubeEnabled
             ? (body.youtube?.status ?? "pending")
             : undefined,
@@ -374,7 +376,11 @@ export function GameCreationForm({
         setBusy(false);
         return;
       }
-      setCreatedGame({ ...createdGame, youtubeStatus: "ready" });
+      setCreatedGame({
+        ...createdGame,
+        youtubeStatus: "ready",
+        thumbnailStatus: body.youtube?.thumbnailStatus,
+      });
       setBusy(false);
     } catch (e) {
       setError(
@@ -396,21 +402,25 @@ export function GameCreationForm({
           {selectedEvent?.name ?? "Single game"} ·{" "}
           {formatScheduledStart(scheduledInstant!, effectiveTimezone)}
         </p>
-        {createdGame.youtubeStatus && createdGame.youtubeStatus !== "ready" && (
-          <div className="setup-notice" role="status">
-            <p>
-              The game was saved, but its YouTube watch page is still pending.
-            </p>
-            <button
-              type="button"
-              className="btn-secondary mt-2"
-              disabled={busy}
-              onClick={retryYouTube}
-            >
-              {busy ? "Retrying YouTube…" : "Retry YouTube"}
-            </button>
-          </div>
-        )}
+        {createdGame.youtubeStatus &&
+          (createdGame.youtubeStatus !== "ready" ||
+            createdGame.thumbnailStatus === "pending") && (
+            <div className="setup-notice" role="status">
+              <p>
+                {createdGame.youtubeStatus === "ready"
+                  ? "Your watch link is ready, but YouTube could not accept its preview image. You can retry or continue scheduling."
+                  : "The game was saved, but its YouTube watch page is still pending."}
+              </p>
+              <button
+                type="button"
+                className="btn-secondary mt-2"
+                disabled={busy}
+                onClick={retryYouTube}
+              >
+                {busy ? "Retrying YouTube…" : "Retry YouTube"}
+              </button>
+            </div>
+          )}
         <h2 className="text-xl font-bold">
           {finishedScheduling
             ? "Open the last game?"

@@ -6,6 +6,10 @@ import { getYouTubeCredentials } from "@/lib/youtube-connection";
 import { decryptYouTubeRefreshToken } from "./youtube-credential-vault";
 import { refreshYouTubeAccessToken } from "./youtube";
 import { findOrCreateYouTubeBroadcast } from "./youtube-live";
+import {
+  uploadScheduledThumbnail,
+  type ScheduledThumbnail,
+} from "./youtube-thumbnail";
 
 function providerError(error: unknown) {
   const message = error instanceof Error ? error.message : "";
@@ -17,7 +21,12 @@ function providerError(error: unknown) {
 /** Reserve a game watch page after its database transaction commits. */
 export async function provisionScheduledYouTubeBroadcast(
   user: User,
-  values: { gameId: string; title: string; scheduledStart: string },
+  values: {
+    gameId: string;
+    title: string;
+    scheduledStart: string;
+    thumbnail?: ScheduledThumbnail;
+  },
 ) {
   const db = createAdminSupabaseClient();
   // Do this before claiming provider creation intent. A disconnected channel
@@ -54,11 +63,26 @@ export async function provisionScheduledYouTubeBroadcast(
     watch_url?: string | null;
   }[];
   const action = claimed[0]?.action;
-  if (action === "none")
+  async function thumbnail(videoId: string) {
+    if (!values.thumbnail) return {};
+    try {
+      await uploadScheduledThumbnail(accessToken, videoId, values.thumbnail);
+      return { thumbnailStatus: "ready" as const };
+    } catch {
+      // The watch page is already saved. A thumbnail failure must never create
+      // another broadcast or prevent the game from being scheduled.
+      return { thumbnailStatus: "pending" as const };
+    }
+  }
+  if (action === "none") {
+    const watchUrl = claimed[0]?.watch_url;
+    const videoId = watchUrl ? new URL(watchUrl).searchParams.get("v") : null;
     return {
       status: "ready",
       watchUrl: claimed[0]?.watch_url ?? null,
+      ...(videoId ? await thumbnail(videoId) : {}),
     } as const;
+  }
   if (action !== "run" && action !== "discover")
     return {
       status: "failed",
@@ -95,6 +119,7 @@ export async function provisionScheduledYouTubeBroadcast(
     return {
       status: row?.status === "ready" ? "ready" : "failed",
       watchUrl: row?.watch_url ?? null,
+      ...(row?.status === "ready" ? await thumbnail(broadcast.id) : {}),
     } as const;
   } catch (error) {
     const code = providerError(error);

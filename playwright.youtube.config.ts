@@ -9,6 +9,7 @@ export default defineConfig({
     "youtube-settings.spec.ts",
     "dashboard.spec.ts",
     "game-setup.spec.ts",
+    "opponent-links.spec.ts",
     "team-settings.spec.ts",
     "news-editor.spec.ts",
     "news-image-upload.spec.ts",

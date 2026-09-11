@@ -331,6 +331,7 @@ export default function Scorer({
                   gameId={id}
                   homeName={game.config.homeName}
                   awayName={game.config.awayName}
+                  sharedYoutubeWatchUrl={game.config.sharedYoutubeWatchUrl}
                   enabled
                   disabled={scoringLocked}
                   onCompleted={(value, cleanup) => {
@@ -619,6 +620,7 @@ export default function Scorer({
                   gameId={id}
                   homeName={game.config.homeName}
                   awayName={game.config.awayName}
+                  sharedYoutubeWatchUrl={game.config.sharedYoutubeWatchUrl}
                   enabled
                   disabled={scoringLocked}
                   onCompleted={(value, cleanup) => {

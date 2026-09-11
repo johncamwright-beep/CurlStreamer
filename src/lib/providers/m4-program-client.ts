@@ -54,12 +54,12 @@ const projectedGame = z.object({
       timezone: z.string().min(1).max(100).refine(validTimezone),
     })
     .optional(),
-  config: gameSchema.pick({
-    eventName: true,
-    homeName: true,
-    awayName: true,
-    homeColor: true,
-    awayColor: true,
+  config: z.object({
+    eventName: gameSchema.shape.eventName,
+    homeName: gameSchema.shape.homeName,
+    awayName: gameSchema.shape.awayName,
+    homeColor: gameSchema.shape.homeColor,
+    awayColor: gameSchema.shape.awayColor,
   }),
   score: z.object({
     hammer: z.enum(["home", "away"]).nullable(),

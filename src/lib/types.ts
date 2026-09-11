@@ -20,6 +20,8 @@ export interface GameConfig {
   scheduledEnds: 8 | 10;
   /** Whether this scheduled game should reserve a YouTube watch page. */
   youtubeEnabled?: boolean;
+  /** An existing watch page supplied by an opponent or event organizer. */
+  sharedYoutubeWatchUrl?: string | null;
   /** Present on games created before hammer was selected on the scoring page. */
   initialHammer?: Team;
   youtubeTitle: string;

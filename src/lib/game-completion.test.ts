@@ -117,6 +117,33 @@ describe("internal game completion boundary", () => {
     );
   });
 
+  it("persists a validated shared watch link with the completion review", async () => {
+    mocks.rpc.mockResolvedValue({ data: [], error: null });
+    await reviewGameCompletion(
+      gameId,
+      await account(),
+      "https://youtu.be/abcdefghijk",
+    );
+
+    expect(mocks.rpc).toHaveBeenCalledWith(
+      "review_game_completion_with_link",
+      expect.objectContaining({
+        p_youtube_watch_url: "https://youtu.be/abcdefghijk",
+      }),
+    );
+  });
+
+  it("does not send an invalid shared watch link to the completion RPC", async () => {
+    expect(
+      await reviewGameCompletion(
+        gameId,
+        await account(),
+        "https://example.com",
+      ),
+    ).toEqual({ ok: false, kind: "service" });
+    expect(mocks.rpc).not.toHaveBeenCalled();
+  });
+
   it.each([
     () => issueOrganizerToken("44444444-4444-4444-8444-444444444444"),
     () => issueParticipantToken(gameId, "scorer", crypto.randomUUID()),

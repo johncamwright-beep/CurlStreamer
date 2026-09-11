@@ -350,6 +350,7 @@ export default function GameLobby({
               gameId={id}
               homeName={game.config.homeName}
               awayName={game.config.awayName}
+              sharedYoutubeWatchUrl={game.config.sharedYoutubeWatchUrl}
               enabled={canManageCompletion(accountRole, organizerAccess)}
               onCompleted={(value, cleanup) => {
                 setFinished(value);

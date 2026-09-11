@@ -6,6 +6,7 @@ const mocks = vi.hoisted(() => ({
   updateScheduledTeamGame: vi.fn(),
   createScheduledTeamGame: vi.fn(),
   listOpponents: vi.fn(),
+  provisionScheduledYouTubeBroadcast: vi.fn(),
 }));
 
 vi.mock("@/lib/supabase/server", () => ({
@@ -30,6 +31,9 @@ vi.mock("@/lib/team-hierarchy-service", () => ({
   updateEvent: vi.fn(),
   updateScheduledTeamGame: mocks.updateScheduledTeamGame,
 }));
+vi.mock("@/lib/providers/scheduled-youtube", () => ({
+  provisionScheduledYouTubeBroadcast: mocks.provisionScheduledYouTubeBroadcast,
+}));
 
 import { POST } from "./route";
 
@@ -51,6 +55,7 @@ function request(
   operation: "createGame" | "updateGame",
   scheduledDate: string,
   scheduledTime: string,
+  gameConfig: Record<string, unknown> = config,
 ) {
   return new Request("http://localhost/api/team-schedule", {
     method: "POST",
@@ -64,7 +69,7 @@ function request(
       scheduledTime,
       timezone: "America/Toronto",
       gameNumber: 1,
-      config,
+      config: gameConfig,
     }),
   });
 }
@@ -170,6 +175,7 @@ describe("team schedule timezone boundary", () => {
       expect.anything(),
       expect.anything(),
     );
+    expect(mocks.provisionScheduledYouTubeBroadcast).not.toHaveBeenCalled();
   });
 
   it("rejects a nonexistent spring-forward wall time", async () => {
@@ -180,5 +186,63 @@ describe("team schedule timezone boundary", () => {
       error: "Choose a valid local date and time for the event timezone.",
     });
     expect(mocks.updateScheduledTeamGame).not.toHaveBeenCalled();
+  });
+
+  it("saves a shared YouTube link without enabling a team broadcast", async () => {
+    const sharedConfig = {
+      ...config,
+      sharedYoutubeWatchUrl: "https://youtu.be/abcdefghijk",
+    };
+    const response = await POST(
+      request("createGame", "2026-10-20", "18:30", sharedConfig),
+    );
+
+    expect(response.status).toBe(201);
+    expect(mocks.createScheduledTeamGame).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.anything(),
+      expect.objectContaining({
+        sharedYoutubeWatchUrl: "https://youtu.be/abcdefghijk",
+      }),
+      expect.anything(),
+    );
+  });
+
+  it("rejects combining a shared link with team YouTube provisioning", async () => {
+    const response = await POST(
+      request("createGame", "2026-10-20", "18:30", {
+        ...config,
+        youtubeEnabled: true,
+        sharedYoutubeWatchUrl: "https://youtu.be/abcdefghijk",
+      }),
+    );
+
+    expect(response.status).toBe(400);
+    expect(mocks.createScheduledTeamGame).not.toHaveBeenCalled();
+  });
+
+  it("does not update a prior team broadcast after an edit switches to a shared link", async () => {
+    const hierarchy = await mocks.loadTeamHierarchyData();
+    hierarchy.games[0].config = { ...config, youtubeEnabled: true };
+    hierarchy.games[0].scheduledYouTubeWatchUrl =
+      "https://www.youtube.com/watch?v=abcdefghijk";
+    const response = await POST(
+      request("updateGame", "2026-11-01", "01:30", {
+        ...config,
+        sharedYoutubeWatchUrl: "https://youtu.be/abcdefghijk",
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    expect(mocks.updateScheduledTeamGame).toHaveBeenCalledWith(
+      expect.anything(),
+      gameId,
+      expect.anything(),
+      expect.objectContaining({
+        youtubeEnabled: undefined,
+        sharedYoutubeWatchUrl: "https://youtu.be/abcdefghijk",
+      }),
+    );
+    expect(mocks.provisionScheduledYouTubeBroadcast).not.toHaveBeenCalled();
   });
 });

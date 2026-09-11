@@ -1,15 +1,28 @@
 import { z } from "zod";
-export const gameSchema = z.object({
-  eventName: z.string().trim().min(2).max(100),
-  homeName: z.string().trim().min(1).max(50),
-  awayName: z.string().trim().min(1).max(50),
-  homeColor: z.string().regex(/^#[0-9a-fA-F]{6}$/),
-  awayColor: z.string().regex(/^#[0-9a-fA-F]{6}$/),
-  scheduledEnds: z.union([z.literal(8), z.literal(10)]),
-  youtubeEnabled: z.boolean().optional(),
-  youtubeTitle: z.string().trim().min(2).max(100),
-  youtubeVisibility: z.enum(["unlisted", "private", "public"]),
-});
+import { youtubeWatchUrlSchema } from "@/lib/youtube-watch";
+export const gameSchema = z
+  .object({
+    eventName: z.string().trim().min(2).max(100),
+    homeName: z.string().trim().min(1).max(50),
+    awayName: z.string().trim().min(1).max(50),
+    homeColor: z.string().regex(/^#[0-9a-fA-F]{6}$/),
+    awayColor: z.string().regex(/^#[0-9a-fA-F]{6}$/),
+    scheduledEnds: z.union([z.literal(8), z.literal(10)]),
+    youtubeEnabled: z.boolean().optional(),
+    /** A watch page hosted by an opponent or event organizer. */
+    sharedYoutubeWatchUrl: youtubeWatchUrlSchema.nullish(),
+    youtubeTitle: z.string().trim().min(2).max(100),
+    youtubeVisibility: z.enum(["unlisted", "private", "public"]),
+  })
+  .superRefine((value, context) => {
+    if (value.youtubeEnabled && value.sharedYoutubeWatchUrl)
+      context.addIssue({
+        code: "custom",
+        path: ["sharedYoutubeWatchUrl"],
+        message:
+          "Choose either your team YouTube stream or a shared watch link.",
+      });
+  });
 const scoringIntent = {
   intentId: z.uuid(),
   expectedLastEventId: z.string().min(1).max(100).nullable(),

@@ -1,10 +1,13 @@
 "use client";
 import React, { useState } from "react";
+import { youtubeWatchUrlSchema } from "@/lib/youtube-watch";
 
 export type PublicGame = {
   id: string;
   home: string;
   away: string;
+  opponent_slug?: string | null;
+  opponent_logo?: string | null;
   event: string | null;
   event_id?: string | null;
   number: number | null;
@@ -99,7 +102,25 @@ export function PublicTeamGames({
           <article key={g.id} id={`game-${g.id}`} className="public-game-row">
             <div className="min-w-0">
               <strong className="line-clamp-2" title={`${g.home} vs ${g.away}`}>
-                {g.home} vs {g.away}
+                {g.home} vs{" "}
+                {g.opponent_slug &&
+                /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(g.opponent_slug) ? (
+                  <a
+                    className="inline-flex min-h-11 items-center gap-2 underline"
+                    href={`https://${g.opponent_slug}.curlstreamer.app`}
+                  >
+                    {g.opponent_logo && (
+                      <img
+                        src={g.opponent_logo}
+                        alt=""
+                        className="h-6 w-6 object-contain"
+                      />
+                    )}
+                    {g.away}
+                  </a>
+                ) : (
+                  g.away
+                )}
               </strong>
               <p className="truncate">
                 {g.event || "Single game"}
@@ -121,7 +142,7 @@ export function PublicTeamGames({
                 </strong>
               )}
               {g.youtube &&
-                /^https:\/\/www.youtube.com\/watch\?v=/.test(g.youtube) && (
+                youtubeWatchUrlSchema.safeParse(g.youtube).success && (
                   <a
                     className="inline-flex min-h-11 items-center underline"
                     href={g.youtube}

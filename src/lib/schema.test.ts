@@ -1,5 +1,34 @@
 import { describe, expect, it } from "vitest";
-import { actionSchema, hasSafeSponsorContent } from "./schema";
+import { actionSchema, gameSchema, hasSafeSponsorContent } from "./schema";
+
+it("round-trips saved games with empty or shared watch links", () => {
+  const base = {
+    eventName: "Winter event",
+    homeName: "Home",
+    awayName: "Away",
+    homeColor: "#000000",
+    awayColor: "#ffffff",
+    scheduledEnds: 8,
+    youtubeTitle: "Winter game",
+    youtubeVisibility: "unlisted",
+  };
+  for (const sharedYoutubeWatchUrl of [
+    undefined,
+    null,
+    "",
+    "https://youtu.be/abcdefghijk",
+  ]) {
+    const saved = gameSchema.parse({ ...base, sharedYoutubeWatchUrl });
+    expect(gameSchema.parse(saved)).toEqual(saved);
+  }
+  expect(
+    gameSchema.safeParse({
+      ...base,
+      youtubeEnabled: true,
+      sharedYoutubeWatchUrl: "https://youtu.be/abcdefghijk",
+    }).success,
+  ).toBe(false);
+});
 
 describe("sponsor content validation", () => {
   it("accepts supported signatures and bundled mock assets", () => {

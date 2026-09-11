@@ -73,3 +73,22 @@ it("only offers real event records, not standalone game titles", () => {
     ),
   ).toHaveLength(1);
 });
+it("links an opponent only when its published slug is safe", () => {
+  const html = renderToStaticMarkup(
+    <PublicTeamGames
+      games={[
+        {
+          ...game("a", "Orion", "2026-10-01"),
+          opponent_slug: "team-wright",
+          opponent_logo: "https://cdn.example/team-wright.png",
+        },
+        { ...game("b", "Orion", "2026-10-02"), opponent_slug: "bad/slug" },
+      ]}
+      upcoming
+      results
+    />,
+  );
+  expect(html).toContain('href="https://team-wright.curlstreamer.app"');
+  expect(html).toContain('src="https://cdn.example/team-wright.png"');
+  expect(html).not.toContain("https://bad/slug.curlstreamer.app");
+});

@@ -2,6 +2,7 @@ import type { TeamPageSettings } from "./team-page-settings";
 import { throwingPositions } from "./team-page-settings";
 import type { Metadata } from "next";
 import type { PublicGame } from "@/components/PublicTeamGames";
+import { youtubeWatchUrlSchema } from "@/lib/youtube-watch";
 
 export function teamMetadata(
   slug: string,
@@ -84,7 +85,9 @@ export function teamStructuredData(
                 name: `${g.home} vs ${g.away}${g.event ? ` — ${g.event}` : ""}${g.number ? ` · Game ${g.number}` : ""}`,
                 startDate: g.scheduled,
                 url: `${url}#game-${g.id}`,
-                ...(g.youtube ? { sameAs: g.youtube } : {}),
+                ...(youtubeWatchUrlSchema.safeParse(g.youtube).success
+                  ? { sameAs: g.youtube }
+                  : {}),
                 competitor: [
                   { "@type": "SportsTeam", name: g.home },
                   { "@type": "SportsTeam", name: g.away },

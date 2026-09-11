@@ -311,9 +311,10 @@ function GameCard({
   const completed = game.status === "completed";
   const closed = game.status === "closed";
   const parsedWatch = youtubeWatchUrlSchema.safeParse(
-    completed
-      ? (game.youtubeWatchUrl ?? "")
-      : (broadcast?.watchUrl ?? game.scheduledYouTubeWatchUrl ?? ""),
+    game.config.sharedYoutubeWatchUrl ||
+      (completed
+        ? (game.youtubeWatchUrl ?? "")
+        : (broadcast?.watchUrl ?? game.scheduledYouTubeWatchUrl ?? "")),
   );
   const watchUrl = parsedWatch.success ? parsedWatch.data : null;
   const label = completed

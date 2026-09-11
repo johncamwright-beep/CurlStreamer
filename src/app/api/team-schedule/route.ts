@@ -214,6 +214,9 @@ export async function POST(request: Request) {
             body.eventId ? body.gameNumber : null,
           ),
           youtubeTitle: body.config.youtubeTitle,
+          youtubeEnabled: body.config.youtubeEnabled,
+          youtubeVisibility: body.config.youtubeVisibility,
+          sharedYoutubeWatchUrl: body.config.sharedYoutubeWatchUrl,
           homeName: existing.config.homeName,
           awayName:
             existing.opponentId === (opponentId ?? null)
@@ -236,6 +239,8 @@ export async function POST(request: Request) {
         if (
           result.ok &&
           !["completed", "closed"].includes(existing.status) &&
+          snapshotConfig.youtubeEnabled &&
+          !snapshotConfig.sharedYoutubeWatchUrl &&
           existing.scheduledYouTubeWatchUrl
         ) {
           const youtube = await provisionScheduledYouTubeBroadcast(user, {
@@ -281,7 +286,7 @@ export async function POST(request: Request) {
         config,
         state,
       );
-      if (result.ok && config.youtubeEnabled) {
+      if (result.ok && config.youtubeEnabled && !config.sharedYoutubeWatchUrl) {
         const youtube = await provisionScheduledYouTubeBroadcast(user, {
           gameId,
           title: config.youtubeTitle,

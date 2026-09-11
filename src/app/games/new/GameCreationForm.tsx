@@ -17,6 +17,7 @@ import {
   formatScheduledStart,
 } from "@/lib/team-hierarchy";
 import { RockColourSelector } from "@/components/RockColourSelector";
+import { OpponentProfilePicker } from "@/components/OpponentProfilePicker";
 import { DEFAULT_TIMEZONE, TimezoneSelect } from "@/components/TimezoneSelect";
 
 type Opponent = { id: string; display_name: string };
@@ -124,6 +125,9 @@ export function GameCreationForm({
   );
   const [youtubeEnabled, setYoutubeEnabled] = useState(
     editing?.config.youtubeEnabled ?? false,
+  );
+  const [sharedYoutubeWatchUrl, setSharedYoutubeWatchUrl] = useState(
+    editing?.config.sharedYoutubeWatchUrl ?? "",
   );
   const [createdGame, setCreatedGame] = useState<{
     id: string;
@@ -357,6 +361,7 @@ export function GameCreationForm({
           awayColor: form.get("awayColor"),
           scheduledEnds: Number(form.get("scheduledEnds")),
           youtubeEnabled,
+          sharedYoutubeWatchUrl,
           youtubeTitle,
           youtubeVisibility: youtubeEnabled ? "unlisted" : visibility,
         },
@@ -659,6 +664,25 @@ export function GameCreationForm({
                   Choose a saved team or select “Add new opponent”. You can
                   assign an unknown opponent later.
                 </p>
+                {opponentChoice !== "__tbd" && (
+                  <OpponentProfilePicker
+                    key={opponentChoice}
+                    opponentId={
+                      opponentChoice && opponentChoice !== "__new"
+                        ? opponentChoice
+                        : undefined
+                    }
+                    initialQuery={opponentSearch}
+                    onLinked={(saved) => {
+                      setOpponents((items) => [
+                        ...items.filter((item) => item.id !== saved.id),
+                        saved,
+                      ]);
+                      setOpponentChoice(saved.id);
+                      setOpponentSearch(saved.display_name);
+                    }}
+                  />
+                )}
               </div>
             </div>
           </section>
@@ -800,7 +824,9 @@ export function GameCreationForm({
               <span>
                 {youtubeEnabled
                   ? "Yes · reserve an unlisted YouTube watch link"
-                  : "No · no YouTube event will be created"}
+                  : sharedYoutubeWatchUrl
+                    ? "Shared YouTube watch link"
+                    : "No · no YouTube event will be created"}
               </span>
             </summary>
             <p className="setup-help">
@@ -818,6 +844,7 @@ export function GameCreationForm({
                       checked={youtubeEnabled}
                       onChange={() => {
                         setYoutubeEnabled(true);
+                        setSharedYoutubeWatchUrl("");
                         setVisibility("unlisted");
                       }}
                     />{" "}
@@ -830,10 +857,29 @@ export function GameCreationForm({
                       checked={!youtubeEnabled}
                       onChange={() => setYoutubeEnabled(false)}
                     />{" "}
-                    No
+                    No / shared link
                   </label>
                 </div>
               </fieldset>
+              <label className="md:col-span-2">
+                Shared YouTube watch link (optional)
+                <input
+                  type="url"
+                  name="sharedYoutubeWatchUrl"
+                  value={sharedYoutubeWatchUrl}
+                  onChange={(event) => {
+                    setSharedYoutubeWatchUrl(event.target.value);
+                    if (event.target.value.trim()) setYoutubeEnabled(false);
+                  }}
+                  placeholder="https://youtube.com/watch?v=..."
+                  className="mt-1 w-full rounded-lg bg-slate-800 p-3"
+                />
+                <span className="setup-help">
+                  Use an opponent or event organizer’s YouTube watch link. It
+                  appears on the game and team pages; CurlStreamer will not
+                  create a YouTube event.
+                </span>
+              </label>
               {youtubeEnabled && (
                 <>
                   <label>
@@ -883,9 +929,11 @@ export function GameCreationForm({
                 </>
               )}
             </div>
-            <LinkText href="/settings/youtube">
-              Manage your team’s YouTube connection →
-            </LinkText>
+            {youtubeEnabled && (
+              <LinkText href="/settings/youtube">
+                Manage your team’s YouTube connection →
+              </LinkText>
+            )}
           </details>
         </fieldset>
         <aside
@@ -937,9 +985,17 @@ export function GameCreationForm({
               <dd>
                 {youtubeEnabled
                   ? "YouTube watch link will be reserved"
-                  : "No YouTube stream"}
+                  : sharedYoutubeWatchUrl
+                    ? "Shared YouTube watch link"
+                    : "No YouTube stream"}
               </dd>
             </div>
+            {sharedYoutubeWatchUrl && (
+              <div>
+                <dt>Shared YouTube link</dt>
+                <dd className="break-all">{sharedYoutubeWatchUrl}</dd>
+              </div>
+            )}
             {youtubeEnabled && (
               <div>
                 <dt>YouTube title</dt>

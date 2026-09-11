@@ -17,6 +17,7 @@ import {
   formatScheduledStart,
 } from "@/lib/team-hierarchy";
 import { RockColourSelector } from "@/components/RockColourSelector";
+import { DEFAULT_TIMEZONE, TimezoneSelect } from "@/components/TimezoneSelect";
 
 type Opponent = { id: string; display_name: string };
 type Dialog = "season" | "event" | null;
@@ -53,7 +54,7 @@ export function GameCreationForm({
     editingEvent?.timezone ??
     editing?.timezone ??
     preselected?.timezone ??
-    "UTC";
+    DEFAULT_TIMEZONE;
   const initialSchedule = editing?.scheduledStart
     ? scheduledStartToLocalInput(editing.scheduledStart, initialTimezone)
     : null;
@@ -116,6 +117,7 @@ export function GameCreationForm({
     id: string;
     youtubeStatus?: string;
   } | null>(null);
+  const [finishedScheduling, setFinishedScheduling] = useState(false);
   const [error, setError] = useState("");
   const [scheduledDate, setScheduledDate] = useState(
     initialSchedule?.date ?? "",
@@ -123,7 +125,9 @@ export function GameCreationForm({
   const [scheduledTime, setScheduledTime] = useState(
     initialSchedule?.time ?? "",
   );
-  const [timezone, setTimezone] = useState(editing?.timezone ?? "UTC");
+  const [timezone, setTimezone] = useState(
+    editing?.timezone ?? DEFAULT_TIMEZONE,
+  );
   const [titleCustomized, setTitleCustomized] = useState(
     Boolean(editing?.config.youtubeTitle),
   );
@@ -334,16 +338,18 @@ export function GameCreationForm({
           `curlcast-access-${body.game.id}`,
           body.organizerToken,
         );
-      if (!editing && body.youtube?.status !== "ready" && youtubeEnabled) {
+      if (!editing) {
         setCreatedGame({
           id: body.game.id,
-          youtubeStatus: body.youtube?.status,
+          youtubeStatus: youtubeEnabled
+            ? (body.youtube?.status ?? "pending")
+            : undefined,
         });
         setBusy(false);
         saving.current = false;
         return;
       }
-      router.push(editing ? "/dashboard" : `/score/${body.game.id}`);
+      router.push("/dashboard");
       router.refresh();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Game could not be saved.");
@@ -368,8 +374,8 @@ export function GameCreationForm({
         setBusy(false);
         return;
       }
-      router.push(`/score/${createdGame.id}`);
-      router.refresh();
+      setCreatedGame({ ...createdGame, youtubeStatus: "ready" });
+      setBusy(false);
     } catch (e) {
       setError(
         e instanceof Error ? e.message : "YouTube could not be reached.",
@@ -377,6 +383,83 @@ export function GameCreationForm({
       setBusy(false);
     }
   }
+  if (createdGame)
+    return (
+      <section
+        className="panel mx-auto max-w-xl space-y-5"
+        aria-labelledby="game-saved-heading"
+      >
+        <h1 id="game-saved-heading" className="text-2xl font-bold">
+          Game scheduled
+        </h1>
+        <p>
+          {selectedEvent?.name ?? "Single game"} ·{" "}
+          {formatScheduledStart(scheduledInstant!, effectiveTimezone)}
+        </p>
+        {createdGame.youtubeStatus && createdGame.youtubeStatus !== "ready" && (
+          <div className="setup-notice" role="status">
+            <p>
+              The game was saved, but its YouTube watch page is still pending.
+            </p>
+            <button
+              type="button"
+              className="btn-secondary mt-2"
+              disabled={busy}
+              onClick={retryYouTube}
+            >
+              {busy ? "Retrying YouTube…" : "Retry YouTube"}
+            </button>
+          </div>
+        )}
+        <h2 className="text-xl font-bold">
+          {finishedScheduling
+            ? "Open the last game?"
+            : selectedEvent
+              ? "Schedule another game for this event?"
+              : "Schedule another game?"}
+        </h2>
+        <div className="flex flex-wrap gap-3">
+          <button
+            type="button"
+            className="btn"
+            disabled={busy}
+            onClick={() => {
+              if (finishedScheduling) {
+                router.push(`/score/${createdGame.id}`);
+                return;
+              }
+              creationGameId.current = crypto.randomUUID();
+              setCreatedGame(null);
+              setScheduledTime("");
+              setGameNumberText("");
+              setTitleCustomized(false);
+              setError("");
+            }}
+          >
+            {finishedScheduling ? "Yes, open game" : "Yes, schedule another"}
+          </button>
+          <button
+            type="button"
+            className="btn-secondary"
+            disabled={busy}
+            onClick={() => {
+              if (finishedScheduling) {
+                router.push("/dashboard");
+                return;
+              }
+              setFinishedScheduling(true);
+            }}
+          >
+            {finishedScheduling ? "No, view all games" : "No, I’m finished"}
+          </button>
+        </div>
+        {error && (
+          <p role="alert" className="text-red-300">
+            {error}
+          </p>
+        )}
+      </section>
+    );
   return (
     <>
       <nav aria-label="Breadcrumb" className="setup-breadcrumb">
@@ -566,13 +649,11 @@ export function GameCreationForm({
               ) : (
                 <label>
                   Timezone
-                  <input
+                  <TimezoneSelect
                     required
                     name="timezone"
                     value={timezone}
                     onChange={(event) => setTimezone(event.target.value)}
-                    placeholder="America/Edmonton"
-                    className="mt-1 w-full rounded-lg bg-slate-800 p-3"
                   />
                 </label>
               )}
@@ -851,28 +932,10 @@ export function GameCreationForm({
               {error}
             </p>
           )}
-          {createdGame && (
-            <div role="status" className="setup-notice md:col-span-2">
-              <p>
-                The game was saved, but its YouTube watch page is still pending.
-              </p>
-              <button
-                type="button"
-                className="btn-secondary mt-2"
-                disabled={busy}
-                onClick={retryYouTube}
-              >
-                {busy ? "Retrying YouTube…" : "Retry YouTube"}
-              </button>
-              <LinkText href={`/score/${createdGame.id}`}>
-                Continue without the link →
-              </LinkText>
-            </div>
-          )}
           <p className="setup-help">
             {editing
               ? "Your changes update this game’s teams, schedule and settings."
-              : "Next: open Game Scoring and connect your cameras."}
+              : "Next: schedule another game or choose where to go."}
           </p>
         </aside>
       </form>
@@ -970,13 +1033,8 @@ export function GameCreationForm({
                     Show the level in public accomplishments
                   </label>
                   <label>
-                    IANA timezone
-                    <input
-                      required
-                      name="timezone"
-                      defaultValue="UTC"
-                      className="mt-1 w-full rounded-lg bg-slate-800 p-3"
-                    />
+                    Timezone
+                    <TimezoneSelect required name="timezone" />
                   </label>
                 </>
               ) : (

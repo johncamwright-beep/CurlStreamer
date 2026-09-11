@@ -1,5 +1,6 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useState } from "react";
+import { DEFAULT_TIMEZONE, TimezoneSelect } from "./TimezoneSelect";
 import { useRouter } from "next/navigation";
 import type { EventRecord } from "@/lib/team-hierarchy-data";
 
@@ -11,13 +12,9 @@ export function EventForm({
   event?: EventRecord;
 }) {
   const router = useRouter();
-  const [timezone, setTimezone] = useState(event?.timezone ?? "");
+  const [timezone, setTimezone] = useState(event?.timezone ?? DEFAULT_TIMEZONE);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
-  useEffect(() => {
-    if (!event)
-      setTimezone(Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC");
-  }, [event]);
   async function submit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setBusy(true);
@@ -152,14 +149,12 @@ export function EventForm({
         Show the level in public accomplishments
       </label>
       <label>
-        IANA timezone
-        <input
+        Timezone
+        <TimezoneSelect
           name="timezone"
           required
           value={timezone}
           onChange={(e) => setTimezone(e.target.value)}
-          placeholder="America/Toronto"
-          className="mt-1 w-full rounded-lg bg-slate-800 p-3"
         />
       </label>
       <button disabled={busy} className="btn sm:col-span-2">

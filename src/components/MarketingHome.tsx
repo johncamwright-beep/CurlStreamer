@@ -3,6 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { PilotWaitlistForm } from "./PilotWaitlistForm";
+import { MarketingAudio } from "./MarketingAudio";
 import "./MarketingHome.css";
 
 const features = {
@@ -133,7 +134,7 @@ export function MarketingHome() {
         <div className="wrap strip">
           <span>Two camera views</span>
           <span>Live scoring</span>
-          <span>Team &amp; camera audio</span>
+          <span>On-ice audio &amp; commentary</span>
           <span>Sponsor visibility</span>
           <span>Your own team page</span>
         </div>
@@ -256,11 +257,12 @@ export function MarketingHome() {
                 </p>
               </article>
               <article>
-                <h3>Optional wireless audio</h3>
+                <h3>DJI Mic 3 audio</h3>
                 <p>
-                  A compatible USB receiver and player microphones. Camera
-                  microphones can provide ambience. Use headphones to check the
-                  mix.
+                  Add up to four on-ice microphones or a commentary setup.
+                  Connect the receiver to Studio by USB and use headphones to
+                  check the mix.{" "}
+                  <a href="#audio">Explore both audio setups →</a>
                 </p>
               </article>
             </div>
@@ -271,6 +273,7 @@ export function MarketingHome() {
             </small>
           </div>
         </section>
+        <MarketingAudio />
         <section className="section dark">
           <div className="wrap split">
             <div>

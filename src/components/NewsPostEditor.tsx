@@ -301,6 +301,14 @@ export function NewsPostEditor({ postId }: { postId: string }) {
             makes your changes public when your team page and news section are
             enabled.
           </p>
+          {message && (
+            <p
+              role="alert"
+              className="rounded-lg border border-amber-500/50 p-3 text-amber-200"
+            >
+              {message}
+            </p>
+          )}
           <div className="flex flex-wrap gap-3">
             <button
               className="btn"

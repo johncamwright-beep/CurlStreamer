@@ -54,6 +54,7 @@ export async function GET(request: Request) {
   }
 }
 async function write(request: Request, editing: boolean) {
+  let phase = "validation";
   let path: string | undefined;
   let submitted = false;
   let db: ReturnType<typeof createAdminSupabaseClient> | undefined;
@@ -85,16 +86,21 @@ async function write(request: Request, editing: boolean) {
     let photo: string | null = null;
     const file = form.get("photo");
     if (file instanceof File && file.size) {
+      phase = "image";
       const image = await validateSponsorImage(file);
       path = auth.organizationId + "/" + randomUUID() + "." + image.extension;
       const { error } = await db.storage
         .from("team-public-media")
         .upload(path, image.bytes, { contentType: image.mime });
-      if (error) throw error;
+      if (error)
+        throw Error(
+          "The cover photo could not be uploaded. Please try saving without the cover photo.",
+        );
       photo = db.storage.from("team-public-media").getPublicUrl(path)
         .data.publicUrl;
     }
     submitted = true;
+    phase = "save";
     const { data, error } = await db.rpc("manage_team_news", {
       p_org: auth.organizationId,
       p_user: auth.user.id,
@@ -126,13 +132,21 @@ async function write(request: Request, editing: boolean) {
     if (path && data.photo_url !== photo)
       await db.storage.from("team-public-media").remove([path]);
     return NextResponse.json({ saved: true, post: data }, { headers });
-  } catch {
+  } catch (cause) {
     if (path && db && !submitted)
       await db.storage.from("team-public-media").remove([path]);
     return NextResponse.json(
       {
         error:
-          "News could not be saved. Enter 1–3,000 characters and use a PNG, JPEG or WebP photo under 4 MB.",
+          cause instanceof z.ZodError
+            ? "The post contains unsupported formatting. " +
+              cause.issues
+                .map((issue) => `${issue.path.join(".")}: ${issue.message}`)
+                .slice(0, 2)
+                .join("; ")
+            : phase === "image" && cause instanceof Error
+              ? cause.message
+              : "News could not be saved. Please try again. Your changes are still in the editor.",
       },
       { status: 400, headers },
     );

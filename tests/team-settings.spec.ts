@@ -4,6 +4,48 @@ test.skip(
   process.env.YOUTUBE_SETTINGS_E2E !== "1",
   "Uses isolated authenticated account fixture",
 );
+
+test("team trial code activates with a visible expiry and no payment authorization", async ({
+  page,
+}) => {
+  let active = false;
+  await page.route("**/api/account/trial", async (route) => {
+    if (route.request().method() === "POST") {
+      expect(route.request().postDataJSON()).toEqual({
+        code: "CURL-01234567-89ABCDEF-01234567-89ABCDEF",
+      });
+      active = true;
+    }
+    await route.fulfill({
+      json: {
+        status: active ? "active" : "none",
+        expiresAt: active ? "2027-01-01T05:00:00Z" : null,
+      },
+    });
+  });
+  await page.goto("/login?next=/account");
+  await page.getByLabel("Email address").fill("admin@youtube.test");
+  await page.getByLabel("Password").fill("playwright-password");
+  await page.getByRole("button", { name: "Sign in", exact: true }).click();
+  await page.waitForURL("**/account");
+  await page
+    .getByRole("button", { name: "Trial & subscription", exact: true })
+    .click();
+  await page
+    .getByLabel("Trial code", { exact: true })
+    .fill("CURL-01234567-89ABCDEF-01234567-89ABCDEF");
+  await page.getByRole("button", { name: "Activate team trial" }).click();
+  await expect(
+    page.getByText("Your team’s trial is active.", { exact: true }),
+  ).toBeVisible();
+  await expect(page.getByText(/Trial ends: December 31, 2026/)).toBeVisible();
+  await expect(
+    page.getByText(/does not authorize automatic charges/),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Activate team trial" }),
+  ).toHaveCount(0);
+});
 test("team settings save visibility and social profiles without publishing by default", async ({
   page,
 }) => {

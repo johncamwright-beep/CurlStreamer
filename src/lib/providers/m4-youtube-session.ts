@@ -1,4 +1,5 @@
 import "server-only";
+import { requireTeamBroadcastAccess } from "./team-access";
 import { getGame } from "./supabase-store";
 import { randomUUID } from "node:crypto";
 import { youtubeLifecycle } from "./youtube-lifecycle";
@@ -137,6 +138,7 @@ export async function goLiveM4Session(
       await rpc("get_m4_broadcast_session", await actor(gameId, credential)),
     );
   const initial = await read();
+  await requireTeamBroadcastAccess(initial.organizationId);
   if (
     initial.status !== "prepared" ||
     initial.desiredState !== "live" ||
@@ -152,6 +154,7 @@ export async function goLiveM4Session(
     broadcastId: initial.youtubeBroadcastId,
   });
   const current = await read();
+  await requireTeamBroadcastAccess(current.organizationId);
   for (const key of [
     "generation",
     "status",

@@ -29,6 +29,15 @@ export function unavailable(status = 503) {
 }
 export function failure(error: unknown) {
   const code = (error as { code?: unknown } | null)?.code;
+  if (code === "P0402")
+    return reply(
+      {
+        error:
+          "Activate your team trial or subscription in Account & Settings before broadcasting.",
+        code: "subscription_required",
+      },
+      402,
+    );
   return unavailable(code === "42501" ? 403 : code === "55000" ? 409 : 503);
 }
 export async function input(request: Request): Promise<unknown> {

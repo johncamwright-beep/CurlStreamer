@@ -103,6 +103,15 @@ async function credential(
 }
 function failure(error: unknown) {
   const code = (error as { code?: unknown } | null)?.code;
+  if (code === "P0402")
+    return response(
+      {
+        error:
+          "An active trial or subscription is required to broadcast. Open Account & Settings → Trial & subscription.",
+        code: "subscription_required",
+      },
+      402,
+    );
   if (code === "42501")
     return response(
       { error: "Broadcast administrator access is required." },

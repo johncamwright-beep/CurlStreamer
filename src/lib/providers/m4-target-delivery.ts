@@ -1,4 +1,5 @@
 import "server-only";
+import { requireTeamBroadcastAccess } from "./team-access";
 import { createHash } from "node:crypto";
 import { z } from "zod";
 import { createAdminSupabaseClient } from "@/lib/supabase/admin";
@@ -89,6 +90,7 @@ export async function deliverM4Target(
     }
     // Consuming commits sticky quarantine before decrypting provider credentials.
     const consumed = await read("consume_m4_output_delivery");
+    await requireTeamBroadcastAccess(consumed.organization_id);
     const token = await refreshYouTubeAccessToken(
       decryptYouTubeRefreshToken(
         consumed.encrypted_credentials,
@@ -101,6 +103,7 @@ export async function deliverM4Target(
     );
     // Slow network work may outlive stop, account removal, channel replacement or lease.
     const current = await read("assert_m4_output_delivery");
+    await requireTeamBroadcastAccess(current.organization_id);
     for (const key of [
       "intent_id",
       "session_id",
@@ -129,7 +132,7 @@ export async function deliverM4Target(
     const code = (error as { code?: unknown } | null)?.code;
     throw Object.assign(
       new Error("m4_target_delivery_unavailable"),
-      code === "42501" || code === "55000" ? { code } : {},
+      code === "42501" || code === "55000" || code === "P0402" ? { code } : {},
     );
   }
 }

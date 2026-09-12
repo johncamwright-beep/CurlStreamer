@@ -1,4 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+vi.mock("./team-access", () => ({
+  requireTeamBroadcastAccess: vi.fn().mockResolvedValue(undefined),
+}));
 const mocks = vi.hoisted(() => ({
   rpc: vi.fn(),
   game: vi.fn(),

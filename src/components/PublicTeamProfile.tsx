@@ -8,6 +8,7 @@ export type TeamAccomplishment = {
   id: string;
   name: string;
   end_date: string;
+  accomplishment_year?: number;
   result: "1st" | "2nd" | "3rd" | "qualified";
   level: "U15" | "U18" | "U20" | "U25" | "Men’s" | "Women’s" | null;
   show_level: boolean;
@@ -105,7 +106,11 @@ export function PublicTeamProfile({
                     {event.result === "qualified"
                       ? "Qualified"
                       : event.result + " place"}
-                    {event.end_date ? " · " + event.end_date.slice(0, 4) : ""}
+                    {event.accomplishment_year
+                      ? " · " + event.accomplishment_year
+                      : event.end_date
+                        ? " · " + event.end_date.slice(0, 4)
+                        : ""}
                   </span>
                 </div>
               </li>

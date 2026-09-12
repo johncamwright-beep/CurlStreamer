@@ -321,9 +321,13 @@ test("public page filters games and keeps five rows in its scrolling tile", asyn
   await expect(
     page.getByText("1st place · 2026", { exact: true }),
   ).toBeVisible();
-  await expect(page.locator(".public-team-page")).toHaveCSS(
+  await expect(page.locator(".public-team-content-area")).toHaveCSS(
     "background-color",
     "rgb(237, 242, 247)",
+  );
+  await expect(page.locator(".public-team-app-bar")).toHaveCSS(
+    "background-color",
+    "rgb(7, 17, 31)",
   );
   await page.getByRole("button", { name: "More…", exact: true }).click();
   await expect(

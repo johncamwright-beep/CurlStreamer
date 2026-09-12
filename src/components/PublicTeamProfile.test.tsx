@@ -8,6 +8,7 @@ const accomplishment = {
   id: "event-1",
   name: "Provincials",
   end_date: "2026-02-01",
+  accomplishment_year: 2024,
   result: "1st" as const,
   level: "U18" as const,
 };
@@ -33,6 +34,8 @@ it("renders an accomplishment level only when that event permits it", () => {
   );
 
   expect(visible).toContain("Provincials · U18");
+  expect(visible).toContain("2024");
+  expect(visible).not.toContain("2026");
   expect(hidden).toContain("Provincials");
   expect(hidden).not.toContain("U18");
 });

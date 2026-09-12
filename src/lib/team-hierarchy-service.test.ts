@@ -141,18 +141,27 @@ describe("event level persistence", () => {
     timezone: "America/Toronto",
     level: "U18" as const,
     showLevel: false,
+    accomplishmentYear: 2024,
   };
 
   it("passes an event level and public visibility to create and update RPCs", async () => {
     await createEvent(user, event);
     expect(mocks.rpc).toHaveBeenLastCalledWith(
       "create_event",
-      expect.objectContaining({ p_level: "U18", p_show_level: false }),
+      expect.objectContaining({
+        p_level: "U18",
+        p_show_level: false,
+        p_accomplishment_year: 2024,
+      }),
     );
     await updateEvent(user, "33333333-3333-4333-8333-333333333333", event);
     expect(mocks.rpc).toHaveBeenLastCalledWith(
       "update_event",
-      expect.objectContaining({ p_level: "U18", p_show_level: false }),
+      expect.objectContaining({
+        p_level: "U18",
+        p_show_level: false,
+        p_accomplishment_year: 2024,
+      }),
     );
   });
 });

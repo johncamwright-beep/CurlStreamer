@@ -51,6 +51,7 @@ export const eventInputSchema = z
     endDate: calendarDate,
     location: z.string().trim().min(1).max(200).optional(),
     result: z.enum(eventResults).nullable().optional(),
+    accomplishmentYear: z.number().int().min(1900).max(2100).optional(),
     level: z.enum(eventLevels).nullable().optional(),
     showLevel: z.boolean().optional(),
     timezone: z.string().trim().min(1).max(100).refine(isIanaTimezone, {

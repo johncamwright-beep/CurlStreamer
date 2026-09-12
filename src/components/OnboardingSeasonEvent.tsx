@@ -1,4 +1,5 @@
 "use client";
+import { AccomplishmentYearSelect } from "./AccomplishmentYearSelect";
 
 import { useEffect, useMemo, useState } from "react";
 import { DEFAULT_TIMEZONE, TimezoneSelect } from "./TimezoneSelect";
@@ -160,6 +161,7 @@ export function OnboardingSeasonEvent({
           endDate: form.get("endDate"),
           location: form.get("location") || undefined,
           result: form.get("result") || null,
+          accomplishmentYear: Number(form.get("accomplishmentYear")),
           level: form.get("level") || null,
           showLevel: form.get("showLevel") === "on",
           timezone,
@@ -398,6 +400,7 @@ function EventFields({
         />
         Show the level in public accomplishments
       </label>
+      <AccomplishmentYearSelect />
       <label className="sm:col-span-2">
         Timezone
         <TimezoneSelect

@@ -33,6 +33,7 @@ export type EventRecord = {
   result?: EventResult | null;
   level?: EventLevel | null;
   showLevel?: boolean;
+  accomplishmentYear?: number;
   timezone: string;
   archivedAt: string | null;
 };
@@ -97,6 +98,7 @@ export async function loadTeamHierarchyData(user: User) {
         result: string | null;
         level: string | null;
         show_level: boolean;
+        accomplishment_year: number;
         timezone: string;
         archived_at: string | null;
       };
@@ -111,6 +113,7 @@ export async function loadTeamHierarchyData(user: User) {
         result: e.result as EventResult | null,
         level: e.level as EventLevel | null,
         showLevel: e.show_level as boolean,
+        accomplishmentYear: e.accomplishment_year,
         timezone: e.timezone,
         archivedAt: e.archived_at,
       };

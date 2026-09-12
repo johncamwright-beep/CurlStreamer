@@ -1,5 +1,6 @@
 "use client";
 import { useState } from "react";
+import { AccomplishmentYearSelect } from "./AccomplishmentYearSelect";
 import { DEFAULT_TIMEZONE, TimezoneSelect } from "./TimezoneSelect";
 import { useRouter } from "next/navigation";
 import type { EventRecord } from "@/lib/team-hierarchy-data";
@@ -29,6 +30,7 @@ export function EventForm({
       endDate: form.get("endDate"),
       location: form.get("location") || undefined,
       result: form.get("result") || null,
+      accomplishmentYear: Number(form.get("accomplishmentYear")),
       level: form.get("level") || null,
       showLevel: form.get("showLevel") === "on",
       timezone,
@@ -123,6 +125,12 @@ export function EventForm({
           <option value="qualified">Qualified</option>
         </select>
       </label>
+      <AccomplishmentYearSelect
+        year={
+          event?.accomplishmentYear ??
+          (event?.endDate ? Number(event.endDate.slice(0, 4)) : undefined)
+        }
+      />
       <label>
         Level (optional)
         <select

@@ -121,6 +121,9 @@ export function createEvent(user: User, input: EventInput) {
     p_result: value.result ?? null,
     p_level: value.level ?? null,
     p_show_level: value.showLevel ?? true,
+    ...(value.accomplishmentYear !== undefined
+      ? { p_accomplishment_year: value.accomplishmentYear }
+      : {}),
   });
 }
 
@@ -150,6 +153,9 @@ export function updateEvent(user: User, eventId: string, input: EventInput) {
     ...(value.result !== undefined ? { p_result: value.result } : {}),
     ...(value.level !== undefined ? { p_level: value.level } : {}),
     ...(value.showLevel !== undefined ? { p_show_level: value.showLevel } : {}),
+    ...(value.accomplishmentYear !== undefined
+      ? { p_accomplishment_year: value.accomplishmentYear }
+      : {}),
   });
 }
 export const archiveEvent = (user: User, eventId: string) =>

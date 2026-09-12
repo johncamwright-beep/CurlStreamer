@@ -106,6 +106,12 @@ const server = createServer(async (request, response) => {
   if (url.pathname === "/rest/v1/events")
     return send(response, 200, [
       { id: "event", name: "Orion", end_date: "2026-09-10", result: "1st" },
+      {
+        id: "past-event",
+        name: "Past championship",
+        end_date: "2020-10-01",
+        result: "2nd",
+      },
     ]);
   if (url.pathname === "/rest/v1/team_news")
     return send(response, 200, [

@@ -21,45 +21,6 @@ async function fillGame(page: import("@playwright/test").Page) {
   await page.locator('input[name="scheduledTime"]').fill("18:30");
 }
 
-test("accomplishment year defaults to current year and saves a chosen past year", async ({
-  page,
-}) => {
-  await expect(
-    page.getByLabel("Team 2 — Opponent", { exact: true }),
-  ).toBeVisible();
-  await page.goto(
-    new URL("/seasons/33333333-3333-4333-8333-333333333333", page.url()).href,
-  );
-  await expect(
-    page.getByRole("heading", { name: "Create an event" }),
-  ).toBeVisible();
-  const year = page.getByRole("combobox", {
-    name: "Accomplishment year",
-    exact: true,
-  });
-  await expect(year).toHaveValue(
-    new Intl.DateTimeFormat("en", {
-      year: "numeric",
-      timeZone: "America/Toronto",
-    }).format(new Date()),
-  );
-  await year.selectOption("2021");
-  await page.getByLabel("Event name", { exact: true }).fill("Past achievement");
-  await page.getByLabel("Start date", { exact: true }).fill("2026-10-01");
-  await page.getByLabel("End date", { exact: true }).fill("2026-10-02");
-  await page
-    .getByRole("combobox", { name: "Result (optional)", exact: true })
-    .selectOption("1st");
-  let saved: any;
-  await page.route("**/api/team-schedule", async (route) => {
-    saved = route.request().postDataJSON();
-    await route.fulfill({ json: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa" });
-  });
-  await page.getByRole("button", { name: "Create event", exact: true }).click();
-  await expect.poll(() => saved?.input?.accomplishmentYear).toBe(2021);
-  expect(saved.input.result).toBe("1st");
-});
-
 test("schedules multiple games with the same event and distinct save keys", async ({
   page,
 }) => {

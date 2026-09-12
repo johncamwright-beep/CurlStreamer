@@ -58,10 +58,9 @@ export default async function PublicTeamPage({
   const { data: accomplishments } = s.accomplishments
     ? await db
         .from("events")
-        .select("id,name,end_date,result,level,show_level,accomplishment_year")
+        .select("id,name,end_date,result,level,show_level")
         .eq("organization_id", profile.organization_id)
         .in("result", ["1st", "2nd", "3rd", "qualified"])
-        .order("accomplishment_year", { ascending: false })
         .order("end_date", { ascending: false })
         .limit(50)
     : { data: [] };

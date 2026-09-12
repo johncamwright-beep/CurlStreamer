@@ -318,6 +318,26 @@ test("public page filters games and keeps five rows in its scrolling tile", asyn
     4,
   );
   await expect(page.getByText("Skip (Third)", { exact: true })).toBeVisible();
+  const accomplishmentYear = page.getByRole("combobox", {
+    name: "Accomplishments year",
+  });
+  await expect(accomplishmentYear).toHaveValue(
+    new Intl.DateTimeFormat("en", {
+      year: "numeric",
+      timeZone: "America/Toronto",
+    }).format(new Date()),
+  );
+  await accomplishmentYear.selectOption("2020");
+  await expect(
+    page.getByText("Past championship", { exact: true }),
+  ).toBeVisible();
+  await expect(page.getByText("1st place · 2026", { exact: true })).toHaveCount(
+    0,
+  );
+  await accomplishmentYear.selectOption("all");
+  await expect(
+    page.getByText("Past championship", { exact: true }),
+  ).toBeVisible();
   await expect(
     page.getByText("1st place · 2026", { exact: true }),
   ).toBeVisible();

@@ -8,7 +8,6 @@ export type TeamAccomplishment = {
   id: string;
   name: string;
   end_date: string;
-  accomplishment_year?: number;
   result: "1st" | "2nd" | "3rd" | "qualified";
   level: "U15" | "U18" | "U20" | "U25" | "Men’s" | "Women’s" | null;
   show_level: boolean;
@@ -24,6 +23,20 @@ export function PublicTeamProfile({
   accomplishments: TeamAccomplishment[];
 }) {
   const [expanded, setExpanded] = useState(false);
+  const currentYear = new Intl.DateTimeFormat("en", {
+    year: "numeric",
+    timeZone: "America/Toronto",
+  }).format(new Date());
+  const [year, setYear] = useState(currentYear);
+  const years = Array.from(
+    new Set([
+      currentYear,
+      ...accomplishments.map((event) => event.end_date.slice(0, 4)),
+    ]),
+  ).sort((a, b) => Number(b) - Number(a));
+  const visibleAccomplishments = accomplishments.filter(
+    (event) => year === "all" || event.end_date.slice(0, 4) === year,
+  );
   const long = s.description.length > 220;
   return (
     <aside className="public-team-profile panel" aria-label="Team profile">
@@ -91,8 +104,29 @@ export function PublicTeamProfile({
       {s.accomplishments && accomplishments.length > 0 && (
         <section className="mt-5 border-t border-slate-700 pt-4">
           <h3 className="mb-3 font-bold">Accomplishments</h3>
+          <label className="mb-4 block text-sm">
+            Year
+            <select
+              aria-label="Accomplishments year"
+              className="mt-1 min-h-11 w-full rounded-lg border border-slate-500 bg-slate-900 px-3 text-white"
+              value={year}
+              onChange={(event) => setYear(event.target.value)}
+            >
+              {years.map((value) => (
+                <option key={value} value={value}>
+                  {value}
+                </option>
+              ))}
+              <option value="all">All years</option>
+            </select>
+          </label>
+          {visibleAccomplishments.length === 0 && (
+            <p className="text-sm" role="status">
+              No accomplishments recorded for {year}.
+            </p>
+          )}
           <ul className="grid gap-4">
-            {accomplishments.map((event) => (
+            {visibleAccomplishments.map((event) => (
               <li key={event.id} className="flex items-start gap-3">
                 <span className="text-2xl" aria-hidden="true">
                   {medals[event.result]}
@@ -106,11 +140,7 @@ export function PublicTeamProfile({
                     {event.result === "qualified"
                       ? "Qualified"
                       : event.result + " place"}
-                    {event.accomplishment_year
-                      ? " · " + event.accomplishment_year
-                      : event.end_date
-                        ? " · " + event.end_date.slice(0, 4)
-                        : ""}
+                    {event.end_date ? " · " + event.end_date.slice(0, 4) : ""}
                   </span>
                 </div>
               </li>

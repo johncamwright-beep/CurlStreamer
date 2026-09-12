@@ -7,8 +7,11 @@ import { PublicTeamProfile } from "./PublicTeamProfile";
 const accomplishment = {
   id: "event-1",
   name: "Provincials",
-  end_date: "2026-02-01",
-  accomplishment_year: 2024,
+  end_date:
+    new Intl.DateTimeFormat("en", {
+      year: "numeric",
+      timeZone: "America/Toronto",
+    }).format(new Date()) + "-02-01",
   result: "1st" as const,
   level: "U18" as const,
 };
@@ -34,8 +37,31 @@ it("renders an accomplishment level only when that event permits it", () => {
   );
 
   expect(visible).toContain("Provincials · U18");
-  expect(visible).toContain("2024");
-  expect(visible).not.toContain("2026");
+  expect(visible).toContain("1st place");
   expect(hidden).toContain("Provincials");
   expect(hidden).not.toContain("U18");
+});
+
+it("defaults to this year while offering past event years", () => {
+  const html = renderToStaticMarkup(
+    <PublicTeamProfile
+      settings={{
+        ...defaultTeamPageSettings("Team Wright"),
+        accomplishments: true,
+      }}
+      logo={null}
+      accomplishments={[
+        {
+          ...accomplishment,
+          name: "Past championship",
+          end_date: "2020-10-01",
+          show_level: true,
+        },
+      ]}
+    />,
+  );
+  expect(html).toContain('value="2020"');
+  expect(html).toContain("All years");
+  expect(html).toContain("No accomplishments recorded for");
+  expect(html).not.toContain("Past championship");
 });

@@ -15,7 +15,7 @@ The script does not send messages or connect to the database. Raw codes are not 
 
 ## Paid subscriptions — pending business setup
 
-Paid checkout and automatic billing are not enabled. Pricing, currency, interval and payment-provider account must be selected before adding checkout. A future payment integration must update access from verified server-side payment events, handle cancellation and failed renewals, and never grant paid access from a browser redirect alone. Until then, teams see that paid subscriptions are not yet available.
+Paid checkout and automatic billing are not enabled. An administrator-only Stripe test integration is available once sandbox credentials and a test price are configured; see [Stripe sandbox setup](STRIPE_TEST_SETUP.md). Sandbox subscriptions are stored separately and do not change trial access. Launch pricing and live payment setup remain pending. Live paid access must use verified server-side payment events and handle cancellation and failed renewals, never a browser redirect alone.
 
 ## Validation
 

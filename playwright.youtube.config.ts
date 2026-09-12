@@ -12,6 +12,7 @@ export default defineConfig({
     "game-setup.spec.ts",
     "opponent-links.spec.ts",
     "team-settings.spec.ts",
+    "billing.spec.ts",
     "news-editor.spec.ts",
     "news-image-upload.spec.ts",
     "onboarding.spec.ts",

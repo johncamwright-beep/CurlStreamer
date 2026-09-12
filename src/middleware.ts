@@ -15,7 +15,11 @@ export async function middleware(request: NextRequest) {
     return NextResponse.rewrite(destination);
   }
   // Public marketing and interest collection do not need an Auth round trip.
-  if (["/", "/api/pilot-waitlist"].includes(request.nextUrl.pathname))
+  if (
+    ["/", "/api/pilot-waitlist", "/api/stripe/webhook"].includes(
+      request.nextUrl.pathname,
+    )
+  )
     return NextResponse.next();
   let response = NextResponse.next({ request });
   const { url, key } = publicSupabaseConfig(

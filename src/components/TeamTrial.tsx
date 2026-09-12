@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
+import { TeamBilling } from "./TeamBilling";
 type Trial = {
   status: "none" | "active" | "expired";
   expiresAt: string | null;
@@ -118,10 +119,7 @@ export function TeamTrial({ canManage }: { canManage: boolean }) {
                 Ask your team owner or administrator to enter your trial code.
               </p>
             ))}
-          <p className="text-slate-300">
-            Paid subscriptions are not available yet. Pricing and checkout will
-            appear here when available.
-          </p>
+          <TeamBilling canManage={canManage} />
         </>
       )}
     </div>

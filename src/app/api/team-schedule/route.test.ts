@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   getUser: vi.fn(),
+  getAccountContext: vi.fn(),
   loadTeamHierarchyData: vi.fn(),
   updateScheduledTeamGame: vi.fn(),
   createScheduledTeamGame: vi.fn(),
@@ -16,6 +17,9 @@ vi.mock("@/lib/supabase/server", () => ({
 }));
 vi.mock("@/lib/team-hierarchy-data", () => ({
   loadTeamHierarchyData: mocks.loadTeamHierarchyData,
+}));
+vi.mock("@/lib/auth/account", () => ({
+  getAccountContext: mocks.getAccountContext,
 }));
 vi.mock("@/lib/team-hierarchy-service", () => ({
   archiveEvent: vi.fn(),
@@ -96,6 +100,17 @@ describe("team schedule timezone boundary", () => {
         },
       },
     });
+    mocks.getAccountContext.mockResolvedValue({
+      ok: true,
+      account: {
+        profile: { status: "active" },
+        membership: {
+          role: "owner",
+          organization_id: "team",
+          teamName: "Rocks",
+        },
+      },
+    });
     mocks.loadTeamHierarchyData.mockResolvedValue({
       ok: true,
       teamName: "Rocks",
@@ -141,9 +156,20 @@ describe("team schedule timezone boundary", () => {
     mocks.updateScheduledTeamGame.mockResolvedValue({ ok: true, value: null });
     mocks.createScheduledTeamGame.mockResolvedValue({
       ok: true,
-      value: { game: { id: gameId }, organizerToken: "token" },
+      value: { game: { id: gameId } },
     });
   });
+
+  it.each(["owner", "team_admin", "game_operator"])(
+    "returns a scheduled game for %s without independent bearer access",
+    async (role) => {
+      const account = await mocks.getAccountContext();
+      account.account.membership.role = role;
+      const response = await POST(request("createGame", "2026-10-20", "18:30"));
+      expect(response.status).toBe(201);
+      expect(await response.json()).toEqual({ game: { id: gameId } });
+    },
+  );
 
   it("preserves the later fall-back instant on an unchanged edit", async () => {
     const response = await POST(request("updateGame", "2026-11-01", "01:30"));

@@ -7,6 +7,7 @@ export default defineConfig({
   testDir: "./tests",
   testMatch: [
     "youtube-settings.spec.ts",
+    "admin-access.spec.ts",
     "dashboard.spec.ts",
     "game-setup.spec.ts",
     "opponent-links.spec.ts",

@@ -366,11 +366,6 @@ export function GameCreationForm({
           youtubeVisibility: youtubeEnabled ? "unlisted" : visibility,
         },
       });
-      if (!editing)
-        localStorage.setItem(
-          `curlcast-access-${body.game.id}`,
-          body.organizerToken,
-        );
       if (!editing) {
         if (eventId && gameNumberText)
           setNewGameNumbers((numbers) => [

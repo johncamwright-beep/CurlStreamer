@@ -58,7 +58,9 @@ export default function GameLobby({
       !completion &&
       (organizerAccess ||
         scoringAccess ||
-        ["owner", "team_admin", "scorer"].includes(accountRole))
+        ["owner", "team_admin", "game_operator", "scorer"].includes(
+          accountRole,
+        ))
     )
       router.replace("/score/" + id);
   }, [
@@ -115,7 +117,7 @@ export default function GameLobby({
     !completed &&
     (organizerAccess ||
       scoringAccess ||
-      ["owner", "team_admin", "scorer"].includes(accountRole))
+      ["owner", "team_admin", "game_operator", "scorer"].includes(accountRole))
   )
     return <GameReadScreen label="Opening game" retry={refreshContext} />;
   if (completed)
@@ -142,7 +144,8 @@ export default function GameLobby({
     game.config.awayName === "Opponent TBD",
   );
   const canInvite =
-    organizerAccess || ["owner", "team_admin", "scorer"].includes(accountRole);
+    organizerAccess ||
+    ["owner", "team_admin", "game_operator", "scorer"].includes(accountRole);
   return (
     <main className="game-control-page">
       <div className="game-control-inner">

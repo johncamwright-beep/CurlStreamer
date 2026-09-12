@@ -13,7 +13,6 @@ import {
   type SeasonInput,
 } from "@/lib/team-hierarchy";
 import type { GameConfig, GameState } from "@/lib/types";
-import { issueOrganizerToken } from "@/lib/tokens";
 
 type Result<T> =
   | { ok: true; value: T }
@@ -223,7 +222,7 @@ export async function createScheduledTeamGame(
   if (!created.ok) return created;
   return {
     ok: true as const,
-    value: { game: state, organizerToken: await issueOrganizerToken(state.id) },
+    value: { game: state },
   };
 }
 

@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 import { gameSchema } from "@/lib/schema";
 import { rateLimit } from "@/lib/rate-limit";
-import { issueOrganizerToken } from "@/lib/tokens";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { createAuthenticatedTeamGame } from "@/lib/team-games";
 export async function POST(request: Request) {
@@ -61,8 +60,5 @@ export async function POST(request: Request) {
     }
     game = result.game;
   }
-  return NextResponse.json(
-    { ...game, organizerToken: await issueOrganizerToken(game.id) },
-    { status: 201 },
-  );
+  return NextResponse.json(game, { status: 201 });
 }

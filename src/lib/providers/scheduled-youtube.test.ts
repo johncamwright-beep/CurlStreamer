@@ -13,8 +13,8 @@ const mocks = vi.hoisted(() => ({
 vi.mock("@/lib/supabase/admin", () => ({
   createAdminSupabaseClient: () => ({ rpc: mocks.rpc }),
 }));
-vi.mock("@/lib/youtube-connection", () => ({
-  getYouTubeCredentials: mocks.credentials,
+vi.mock("./scheduled-youtube-credentials", () => ({
+  getScheduledYouTubeCredentials: mocks.credentials,
 }));
 vi.mock("./youtube", () => ({ refreshYouTubeAccessToken: mocks.refresh }));
 vi.mock("./youtube-credential-vault", () => ({
@@ -79,6 +79,7 @@ describe("scheduled YouTube provisioning", () => {
       true,
       false,
     ]);
+    expect(mocks.credentials).toHaveBeenCalledWith(user, values.gameId);
     expect(mocks.broadcast.mock.calls[0][0]).toMatchObject({
       sessionKey: values.gameId,
       scheduledStartTime: values.scheduledStart,

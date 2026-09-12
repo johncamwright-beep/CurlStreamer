@@ -20,7 +20,7 @@ describe("account-based landing and game creation", () => {
     expect(authForm).not.toContain("AppNavigation");
   });
 
-  it("protects the new-game page and preserves organizer-token storage", () => {
+  it("protects the new-game page without storing organizer bearer tokens", () => {
     const page = source("./games/new/page.tsx");
     const form = source("./games/new/GameCreationForm.tsx");
     expect(page).toContain('redirect("/login?next=%2Fgames%2Fnew")');
@@ -29,7 +29,7 @@ describe("account-based landing and game creation", () => {
     expect(page).toContain('team.kind === "unavailable"');
     expect(page).toContain('data.role === "viewer"');
     expect(form).toContain('fetch("/api/team-schedule"');
-    expect(form).toContain("localStorage.setItem(");
-    expect(form).toContain("`curlcast-access-${body.game.id}`");
+    expect(form).not.toContain("localStorage.setItem(");
+    expect(form).not.toContain("organizerToken");
   });
 });

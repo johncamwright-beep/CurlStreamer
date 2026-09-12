@@ -47,7 +47,7 @@ describe("POST /api/games team ownership", () => {
     expect(mocks.createTeam).not.toHaveBeenCalled();
     expect(mocks.issueToken).not.toHaveBeenCalled();
   });
-  it.each(["owner", "team_admin", "scorer"])(
+  it.each(["owner", "team_admin", "game_operator", "scorer"])(
     "creates for a signed-in %s",
     async (role) => {
       const user = { id: "server-user", email_confirmed_at: "now" };
@@ -59,7 +59,9 @@ describe("POST /api/games team ownership", () => {
       const response = await POST(request({ userId: "browser-attacker" }));
       expect(mocks.createTeam).toHaveBeenCalledWith(user, config);
       expect(mocks.createLegacy).not.toHaveBeenCalled();
-      expect((await response.json()).organizerToken).toBe("organizer-token");
+      expect(response.status).toBe(201);
+      expect(await response.json()).toEqual({ id: `${role}-game`, config });
+      expect(mocks.issueToken).not.toHaveBeenCalled();
     },
   );
   it("does not trust a failed server identity verification", async () => {

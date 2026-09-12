@@ -26,6 +26,7 @@ import {
 import { gameSchema } from "@/lib/schema";
 import { initialGameState } from "@/lib/team-games";
 import { loadTeamHierarchyData } from "@/lib/team-hierarchy-data";
+import { getAccountContext } from "@/lib/auth/account";
 import { provisionScheduledYouTubeBroadcast } from "@/lib/providers/scheduled-youtube";
 
 const id = z.uuid();
@@ -110,6 +111,16 @@ export async function POST(request: Request) {
       { status: 400 },
     );
   const body = parsed.data;
+  const account = await getAccountContext(user);
+  if (!account.ok || !account.account.membership)
+    return hierarchyFailure({ kind: "authorization" });
+  if (
+    account.account.membership.role === "game_operator" &&
+    !["createGame", "updateGame", "retryYouTube", "createOpponent"].includes(
+      body.operation,
+    )
+  )
+    return hierarchyFailure({ kind: "authorization" });
   let result;
   switch (body.operation) {
     case "createSeason":

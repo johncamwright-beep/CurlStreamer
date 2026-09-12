@@ -51,12 +51,16 @@ describe("M2 studio route", () => {
     mocks.studioAction.mockResolvedValue(ticket);
     mocks.issueStudioTicket.mockResolvedValue({ ...ticket, token: "scoped" });
   });
-  it("registers with only owner/admin or a same-game organizer boundary", async () => {
+  it("registers with a game operator or a same-game organizer boundary", async () => {
     const response = await call({ action: "register", side: "receiver" });
     expect(response.status).toBe(200);
     const [, game, options] = mocks.authorizeGame.mock.calls[0];
     expect(game).toBe(id);
-    expect(options.accountRoles).toEqual(["owner", "team_admin"]);
+    expect(options.accountRoles).toEqual([
+      "owner",
+      "team_admin",
+      "game_operator",
+    ]);
     expect(options.tokenAllowed({ purpose: "organizer" })).toBe(true);
     expect(
       options.tokenAllowed({ purpose: "participant", role: "scorer" }),

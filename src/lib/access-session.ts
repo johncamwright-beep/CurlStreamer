@@ -110,7 +110,10 @@ export function canManageCompletion(
   accountRole: string,
   hasOrganizerToken: boolean,
 ) {
-  return hasOrganizerToken || ["owner", "team_admin"].includes(accountRole);
+  return (
+    hasOrganizerToken ||
+    ["owner", "team_admin", "game_operator"].includes(accountRole)
+  );
 }
 
 export function preserveAndStoreParticipantAccess(

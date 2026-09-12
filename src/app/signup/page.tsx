@@ -8,7 +8,12 @@ import {
   isWindowsStudioBrowser,
 } from "@/lib/providers/google-auth";
 import { headers } from "next/headers";
-export default async function SignupPage() {
+export default async function SignupPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ next?: string }>;
+}) {
+  const { next } = await searchParams;
   const requestHeaders = await headers();
   const host = requestHeaders.get("host");
   const protocol = requestHeaders.get("x-forwarded-proto") ?? "https";
@@ -18,7 +23,7 @@ export default async function SignupPage() {
   const googleEnabled = googleAuthEnabled();
   const canonicalGoogleLogin =
     googleEnabled && !isGoogleOAuthOrigin(host ? `${protocol}://${host}` : null)
-      ? googleLoginUrl(null)
+      ? googleLoginUrl(next ?? null)
       : undefined;
   return (
     <AuthForm
@@ -32,6 +37,7 @@ export default async function SignupPage() {
           ? "Google sign-in is available on the website. Use email and password in Windows Studio."
           : undefined
       }
+      returnTo={next}
     />
   );
 }

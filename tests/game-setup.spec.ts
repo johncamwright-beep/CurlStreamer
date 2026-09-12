@@ -34,7 +34,7 @@ test("schedules multiple games with the same event and distinct save keys", asyn
     const payload = route.request().postDataJSON();
     payloads.push(payload);
     await route.fulfill({
-      json: { game: { id: payload.gameId }, organizerToken: "fixture-token" },
+      json: { game: { id: payload.gameId } },
     });
   });
   await page

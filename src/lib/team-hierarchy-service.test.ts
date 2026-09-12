@@ -1,16 +1,17 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { User } from "@supabase/supabase-js";
-import type { GameConfig } from "@/lib/types";
+import type { GameConfig, GameState } from "@/lib/types";
 
-const mocks = vi.hoisted(() => ({ rpc: vi.fn() }));
+const mocks = vi.hoisted(() => ({ rpc: vi.fn(), issueToken: vi.fn() }));
 
 vi.mock("@/lib/supabase/admin", () => ({
   createAdminSupabaseClient: () => ({ rpc: mocks.rpc }),
 }));
-vi.mock("@/lib/tokens", () => ({ issueOrganizerToken: vi.fn() }));
+vi.mock("@/lib/tokens", () => ({ issueOrganizerToken: mocks.issueToken }));
 
 import {
   createEvent,
+  createScheduledTeamGame,
   updateEvent,
   updateScheduledTeamGame,
 } from "./team-hierarchy-service";
@@ -38,6 +39,21 @@ const schedule = {
 describe("scheduled game state persistence", () => {
   beforeEach(() => {
     mocks.rpc.mockReset().mockResolvedValue({ data: null, error: null });
+    mocks.issueToken.mockReset();
+  });
+
+  it("creates a scheduled game without issuing independent organizer access", async () => {
+    const state = {
+      id: "33333333-3333-4333-8333-333333333333",
+      config,
+    } as GameState;
+    const result = await createScheduledTeamGame(user, schedule, config, state);
+    expect(result).toEqual({ ok: true, value: { game: state } });
+    expect(mocks.issueToken).not.toHaveBeenCalled();
+    expect(mocks.rpc).toHaveBeenCalledWith(
+      "create_scheduled_team_game",
+      expect.objectContaining({ p_user_id: user.id, p_game_id: state.id }),
+    );
   });
 
   it("identifies an occupied event game number without mislabelling other conflicts", async () => {

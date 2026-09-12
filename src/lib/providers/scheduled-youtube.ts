@@ -2,7 +2,7 @@ import "server-only";
 
 import type { User } from "@supabase/supabase-js";
 import { createAdminSupabaseClient } from "@/lib/supabase/admin";
-import { getYouTubeCredentials } from "@/lib/youtube-connection";
+import { getScheduledYouTubeCredentials } from "./scheduled-youtube-credentials";
 import { decryptYouTubeRefreshToken } from "./youtube-credential-vault";
 import { refreshYouTubeAccessToken } from "./youtube";
 import {
@@ -37,7 +37,7 @@ export async function provisionScheduledYouTubeBroadcast(
   let credentials;
   let accessToken: string;
   try {
-    credentials = await getYouTubeCredentials(user);
+    credentials = await getScheduledYouTubeCredentials(user, values.gameId);
     accessToken = await refreshYouTubeAccessToken(
       decryptYouTubeRefreshToken(
         credentials.encrypted_credentials,

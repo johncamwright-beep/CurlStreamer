@@ -48,7 +48,10 @@ export async function POST(
   try {
     requireStudioConfiguration();
     const authorization = await authorizeGame(request, game.data, {
-      accountRoles: body.side === "receiver" ? ["owner", "team_admin"] : [],
+      accountRoles:
+        body.side === "receiver"
+          ? ["owner", "team_admin", "game_operator"]
+          : [],
       tokenAllowed: (access) =>
         body.side === "receiver"
           ? access.purpose === "organizer"

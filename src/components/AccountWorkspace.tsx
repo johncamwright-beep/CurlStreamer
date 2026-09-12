@@ -3,11 +3,13 @@ import { useEffect, useState, type ReactNode } from "react";
 import { TeamSettings } from "./TeamSettings";
 import { TeamNews } from "./TeamNews";
 import { TeamTrial } from "./TeamTrial";
+import { TeamMembers } from "./TeamMembers";
 import { SponsorLibrary } from "@/app/sponsors/SponsorLibrary";
 const sections = [
   ["account", "Account info"],
   ["subscription", "Trial & subscription"],
   ["team", "Team info"],
+  ["members", "Team access"],
   ["youtube", "YouTube Settings"],
   ["public", "Public team page"],
   ["social", "Social media"],
@@ -109,6 +111,9 @@ export function AccountWorkspace({
                         : "team"
                 }
               />
+            </div>
+            <div hidden={current !== "members"}>
+              {visited.has("members") && <TeamMembers />}
             </div>
             <div hidden={current !== "youtube"}>
               {visited.has("youtube") && youtube}

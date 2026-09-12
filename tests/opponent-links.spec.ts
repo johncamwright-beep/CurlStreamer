@@ -90,7 +90,7 @@ test("creates a linked opponent and saves its shared YouTube watch link", async 
     const payload = route.request().postDataJSON();
     schedules.push(payload);
     await route.fulfill({
-      json: { game: { id: payload.gameId }, organizerToken: "fixture-token" },
+      json: { game: { id: payload.gameId } },
     });
   });
   await page

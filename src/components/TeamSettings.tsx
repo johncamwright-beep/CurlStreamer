@@ -12,10 +12,14 @@ export function TeamSettings({
   name,
   section = "team",
   onSaved,
+  apiUrl = "/api/account/team",
+  readOnly = false,
 }: {
   name: string;
   section?: "team" | "public" | "social" | "photos";
   onSaved?: () => void;
+  apiUrl?: string;
+  readOnly?: boolean;
 }) {
   const [settings, setSettings] = useState(defaultTeamPageSettings(name)),
     [savedSettings, setSavedSettings] = useState<TeamPageSettings | null>(null),
@@ -27,13 +31,13 @@ export function TeamSettings({
     [confirmPublish, setConfirmPublish] = useState(false);
   async function load() {
     try {
-      const response = await fetch("/api/account/team", { cache: "no-store" });
+      const response = await fetch(apiUrl, { cache: "no-store" });
       const body = await response.json();
       if (!response.ok) throw Error(body.error);
       setSettings(body.settings);
       setSavedSettings(body.settings);
       setLogo(body.logo);
-      setCanEdit(body.canEdit);
+      setCanEdit(body.canEdit && !readOnly);
       setReady(true);
       setMessage("");
     } catch {
@@ -55,7 +59,7 @@ export function TeamSettings({
     setBusy(true);
     setMessage("");
     try {
-      const response = await fetch("/api/account/team", {
+      const response = await fetch(apiUrl, {
         method: "PATCH",
         headers: {
           "Content-Type": "application/json",
@@ -102,7 +106,7 @@ export function TeamSettings({
         }),
       );
       form.append("kind", kind);
-      const response = await fetch("/api/account/team", {
+      const response = await fetch(apiUrl, {
         method: "POST",
         body: form,
       });

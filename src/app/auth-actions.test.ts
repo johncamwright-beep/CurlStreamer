@@ -25,8 +25,6 @@ vi.mock("next/navigation", () => ({ redirect: mocks.redirect }));
 vi.mock("next/headers", () => ({ headers: mocks.headers }));
 vi.mock("@/lib/auth/validation", async (original) => ({
   ...(await original<typeof import("@/lib/auth/validation")>()),
-  confirmationUrl: () =>
-    "https://curlstreamer.vercel.app/auth/confirm?next=/account",
 }));
 import { signup } from "./signup/actions";
 import { login } from "./login/actions";
@@ -60,6 +58,37 @@ describe("account actions", () => {
     );
     expect((await signup({}, signupData())).message).toMatch(
       /check your email/i,
+    );
+  });
+  it("carries a safe signup destination through email confirmation", async () => {
+    vi.stubEnv("APP_BASE_URL", "https://curlstreamer.vercel.app");
+    mocks.signUp.mockResolvedValue({ error: null });
+    const data = signupData();
+    data.set("next", "/join-team?token=invite-token");
+    await signup({}, data);
+    expect(mocks.signUp).toHaveBeenCalledWith({
+      email: "john@example.com",
+      password: "long-password",
+      options: {
+        data: { display_name: "John" },
+        emailRedirectTo:
+          "https://curlstreamer.vercel.app/auth/confirm?next=%2Fjoin-team%3Ftoken%3Dinvite-token",
+      },
+    });
+  });
+  it("uses the account destination when signup next is unsafe", async () => {
+    vi.stubEnv("APP_BASE_URL", "https://curlstreamer.vercel.app");
+    mocks.signUp.mockResolvedValue({ error: null });
+    const data = signupData();
+    data.set("next", "https://evil.example/join-team");
+    await signup({}, data);
+    expect(mocks.signUp).toHaveBeenCalledWith(
+      expect.objectContaining({
+        options: expect.objectContaining({
+          emailRedirectTo:
+            "https://curlstreamer.vercel.app/auth/confirm?next=%2Faccount",
+        }),
+      }),
     );
   });
   it("reports generic failed login without exposing provider details", async () => {

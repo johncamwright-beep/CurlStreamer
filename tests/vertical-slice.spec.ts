@@ -1,10 +1,7 @@
 // Real scheduling/scoring/program components with explicit local API fixtures.
 import { build } from "esbuild";
 import { test, expect, type Page } from "@playwright/test";
-import {
-  fixtureOrganizer,
-  installGameFixture,
-} from "./support/game-browser-fixture";
+import { installGameFixture } from "./support/game-browser-fixture";
 import { testGameId } from "../src/test/game-fixture";
 
 let scheduleBundle: string;
@@ -80,7 +77,7 @@ async function scheduleGame(page: Page) {
     game.config = { ...game.config, ...body.config };
     created = true;
     await route.fulfill({
-      json: { game: { id: testGameId }, organizerToken: fixtureOrganizer },
+      json: { game: { id: testGameId } },
     });
   });
   await page.goto("/games/new");
@@ -95,6 +92,12 @@ async function scheduleGame(page: Page) {
   await page.getByRole("button", { name: "No, I’m finished" }).click();
   await page.getByRole("button", { name: "Yes, open game" }).click();
   await expect(page).toHaveURL(new RegExp(`/score/${testGameId}$`));
+  expect(
+    await page.evaluate(
+      (id) => localStorage.getItem(`curlcast-access-${id}`),
+      testGameId,
+    ),
+  ).toBeNull();
   expect(created).toBe(true);
   return game;
 }

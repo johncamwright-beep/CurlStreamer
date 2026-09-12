@@ -179,6 +179,8 @@ const server = createServer(async (request, response) => {
     );
   }
   if (url.pathname === "/rest/v1/audit_events") return send(response, 201, {});
+  if (url.pathname === "/rest/v1/rpc/is_platform_admin")
+    return send(response, 200, true);
   if (url.pathname === "/rest/v1/team_memberships")
     return send(response, 200, [
       {

@@ -45,7 +45,7 @@ export function gameEntryCapabilities(
 ) {
   const role = organizer
     ? "organizer"
-    : ["owner", "team_admin", "scorer"].includes(accountRole)
+    : ["owner", "team_admin", "game_operator", "scorer"].includes(accountRole)
       ? accountRole
       : scorer
         ? "scorer"

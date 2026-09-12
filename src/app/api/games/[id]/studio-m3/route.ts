@@ -139,7 +139,7 @@ export async function POST(
     requireStudioConfiguration();
     if (body.action === "prepare") {
       const auth = await authorizeGame(request, id.data, {
-        accountRoles: ["owner", "team_admin"],
+        accountRoles: ["owner", "team_admin", "game_operator"],
         tokenAllowed: (access) => access.purpose === "organizer",
       });
       if (!auth.ok) {

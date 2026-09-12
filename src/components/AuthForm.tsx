@@ -145,9 +145,7 @@ export function AuthForm({
                 ? "Create account"
                 : "Sign in"}
           </button>
-          {mode === "login" && returnTo && (
-            <input type="hidden" name="next" value={returnTo} />
-          )}
+          {returnTo && <input type="hidden" name="next" value={returnTo} />}
           {notice && (
             <p role="status" className="text-slate-200">
               {notice}
@@ -169,7 +167,15 @@ export function AuthForm({
         </form>
         <Link
           className="min-h-11 py-3 text-cyan-300"
-          href={mode === "signup" ? "/" : "/signup"}
+          href={
+            mode === "signup"
+              ? returnTo
+                ? `/login?next=${encodeURIComponent(returnTo)}`
+                : "/"
+              : returnTo
+                ? `/signup?next=${encodeURIComponent(returnTo)}`
+                : "/signup"
+          }
         >
           {mode === "signup" ? "Return to Sign In" : "Create Account"}
         </Link>

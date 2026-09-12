@@ -56,7 +56,8 @@ export function StudioSetup({
         light
       />
     );
-  const allowed = organizer || ["owner", "team_admin"].includes(accountRole);
+  const allowed =
+    organizer || ["owner", "team_admin", "game_operator"].includes(accountRole);
   if (desktop)
     return (
       <main className="studio-connect-page">

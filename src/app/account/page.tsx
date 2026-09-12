@@ -10,6 +10,7 @@ import { signOut } from "./actions";
 import { AccountServiceUnavailable } from "@/components/AccountServiceUnavailable";
 import { AppNavigation } from "@/components/AppNavigation";
 import { AccountPasswordForm } from "@/components/AccountPasswordForm";
+import { platformAdminContext } from "@/lib/providers/platform-admin";
 export default async function AccountPage({
   searchParams,
 }: {
@@ -24,12 +25,21 @@ export default async function AccountPage({
   const result = await getAccountContext(user);
   if (!result.ok) return <AccountServiceUnavailable />;
   const account = result.account;
+  const administrator = await platformAdminContext().catch(() => null);
   return (
     <main className="mx-auto min-h-screen max-w-5xl p-5 md:py-12">
       <div className="mb-4">
         <AppNavigation signedIn />
       </div>
       <h1 className="mb-5 text-3xl font-black">Account &amp; Settings</h1>
+      {administrator && (
+        <Link
+          href="/admin"
+          className="btn-secondary mb-5 inline-flex min-h-11 items-center"
+        >
+          Platform administration
+        </Link>
+      )}
       <AccountWorkspace
         initialSection={query.section ?? "account"}
         teamName={

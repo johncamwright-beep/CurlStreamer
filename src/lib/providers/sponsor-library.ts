@@ -3,6 +3,7 @@ import { randomUUID } from "crypto";
 import type { User } from "@supabase/supabase-js";
 import { createAdminSupabaseClient } from "@/lib/supabase/admin";
 import type { LibrarySponsor, Sponsor } from "@/lib/types";
+import { normalizeUploadImage } from "./upload-image";
 
 const BUCKET = "organization-sponsors";
 const SIGNED_URL_SECONDS = 12 * 60 * 60;
@@ -156,6 +157,10 @@ export async function gameBroadcastSponsors(
 
 export type ValidImage = { bytes: Uint8Array; mime: string; extension: string };
 export function validateSponsorImage(file: File): Promise<ValidImage> {
+  if (!file.size || file.size > MAX_UPLOAD_BYTES)
+    return Promise.reject(
+      new Error(`${file.name}: images must be no larger than 4 MB.`),
+    );
   return file.arrayBuffer().then((buffer) => {
     const bytes = new Uint8Array(buffer);
     if (!bytes.length || bytes.length > MAX_UPLOAD_BYTES)
@@ -187,7 +192,7 @@ export function validateSponsorImage(file: File): Promise<ValidImage> {
       throw new Error(
         `${file.name}: file contents are not a supported JPEG, PNG, or WebP image.`,
       );
-    return { bytes, mime: detected[0], extension: detected[1] };
+    return normalizeUploadImage(bytes);
   });
 }
 

@@ -30,6 +30,24 @@ const request = () =>
   });
 
 describe("atomic role claim route", () => {
+  it("returns a retryable outage without accepting claims when the limiter fails", async () => {
+    mocks.rateLimit.mockRejectedValue(new Error("offline"));
+    const response = await POST(request(), {
+      params: Promise.resolve({ id: "game-1" }),
+    });
+    expect(response.status).toBe(503);
+    expect(mocks.claimRole).not.toHaveBeenCalled();
+    expect(mocks.readAccessToken).not.toHaveBeenCalled();
+  });
+  it("returns 429 and a retry interval when shared attempts are exhausted", async () => {
+    mocks.rateLimit.mockResolvedValue(false);
+    const response = await POST(request(), {
+      params: Promise.resolve({ id: "game-1" }),
+    });
+    expect(response.status).toBe(429);
+    expect(response.headers.get("retry-after")).toBe("60");
+    expect(mocks.claimRole).not.toHaveBeenCalled();
+  });
   beforeEach(() => {
     vi.resetAllMocks();
     mocks.rateLimit.mockReturnValue(true);

@@ -5,6 +5,7 @@ const mocks = vi.hoisted(() => ({
   createLegacy: vi.fn(),
   createTeam: vi.fn(),
   issueToken: vi.fn().mockResolvedValue("organizer-token"),
+  rateLimit: vi.fn(),
 }));
 vi.mock("@/lib/supabase/server", () => ({
   createServerSupabaseClient: async () => ({
@@ -16,7 +17,7 @@ vi.mock("@/lib/team-games", () => ({
   createAuthenticatedTeamGame: mocks.createTeam,
 }));
 vi.mock("@/lib/tokens", () => ({ issueOrganizerToken: mocks.issueToken }));
-vi.mock("@/lib/rate-limit", () => ({ rateLimit: () => true }));
+vi.mock("@/lib/rate-limit", () => ({ rateLimit: mocks.rateLimit }));
 import { POST } from "./route";
 
 const config = {
@@ -37,7 +38,27 @@ const request = (extra = {}) =>
   });
 
 describe("POST /api/games team ownership", () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.rateLimit.mockResolvedValue(true);
+  });
+  it.each([false, "offline"])(
+    "does not create games when the limiter returns %s",
+    async (outcome) => {
+      mocks.getUser.mockResolvedValue({
+        data: {
+          user: { id: "verified-user", email_confirmed_at: "2026-01-01" },
+        },
+        error: null,
+      });
+      if (outcome === false) mocks.rateLimit.mockResolvedValue(false);
+      else mocks.rateLimit.mockRejectedValue(new Error("offline"));
+      const response = await POST(request());
+      expect(response.status).toBe(outcome === false ? 429 : 503);
+      expect(mocks.rateLimit).toHaveBeenCalledWith("create:verified-user", 10);
+      expect(mocks.createTeam).not.toHaveBeenCalled();
+    },
+  );
   it("rejects anonymous creation without invoking the legacy provider", async () => {
     mocks.getUser.mockResolvedValue({ data: { user: null }, error: null });
     mocks.createLegacy.mockResolvedValue({ id: "legacy-game", config });

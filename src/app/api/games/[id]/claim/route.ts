@@ -14,10 +14,24 @@ export async function POST(
     const { id } = await params;
     const client =
       request.headers.get("x-forwarded-for")?.split(",")[0] ?? "local";
-    if (!rateLimit(`claim:${id}:${client}`, 20))
+    // Aggregate by client rather than an attacker-controlled game id. Allow
+    // multiple teams' phones to reconnect behind one curling-club router.
+    let allowed;
+    try {
+      allowed = await rateLimit(`claim:${client.trim()}`, 120);
+    } catch {
+      return NextResponse.json(
+        {
+          error:
+            "The game connection is temporarily unavailable. Try again shortly.",
+        },
+        { status: 503 },
+      );
+    }
+    if (!allowed)
       return NextResponse.json(
         { error: "Too many attempts. Wait a minute and try again." },
-        { status: 429 },
+        { status: 429, headers: { "Retry-After": "60" } },
       );
     const body = schema.parse(await request.json());
     const claims = await readAccessToken(body.token);

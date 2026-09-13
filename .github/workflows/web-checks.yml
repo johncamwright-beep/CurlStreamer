@@ -3,7 +3,7 @@ name: Web checks
 on:
   pull_request:
   push:
-    branches: [main]
+    branches: [main, codex/internal-network-pilot]
 
 permissions:
   contents: read
@@ -58,6 +58,8 @@ jobs:
           node-version: "22"
           cache: npm
       - run: npm ci
+      - name: Audit runtime dependencies
+        run: npm audit --omit=dev --audit-level=moderate
       - run: npm run typecheck
       - run: npm test
       - run: npm run format:check

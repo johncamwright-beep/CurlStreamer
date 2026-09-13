@@ -80,6 +80,8 @@ const server = createServer(async (request, response) => {
         ],
       },
     });
+  if (url.pathname === "/rest/v1/rpc/consume_request_limit")
+    return send(response, 200, true);
   if (url.pathname === "/rest/v1/rpc/read_public_team_games")
     return send(
       response,

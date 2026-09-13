@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import sharp from "sharp";
 
 const mocks = vi.hoisted(() => ({ rpc: vi.fn(), createSignedUrl: vi.fn() }));
 vi.mock("@/lib/supabase/admin", () => ({
@@ -14,27 +15,27 @@ import {
 } from "./sponsor-library";
 
 describe("sponsor image validation", () => {
-  it("accepts a matching PNG signature", async () => {
-    const file = new File(
-      [new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10])],
-      "logo.png",
-      { type: "image/png" },
+  const png = async () =>
+    new Uint8Array(
+      await sharp({
+        create: { width: 20, height: 40, channels: 4, background: "#00ffff80" },
+      })
+        .png()
+        .toBuffer(),
     );
+  it("accepts a matching PNG signature", async () => {
+    const file = new File([await png()], "logo.png", { type: "image/png" });
     await expect(validateSponsorImage(file)).resolves.toMatchObject({
-      mime: "image/png",
-      extension: "png",
+      mime: "image/webp",
+      extension: "webp",
     });
   });
   it.each(["image/png", "image/x-png", ""])(
     "normalizes PNG bytes reported as %s",
     async (type) => {
-      const file = new File(
-        [new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10])],
-        "team.png",
-        { type },
-      );
+      const file = new File([await png()], "team.png", { type });
       await expect(validateSponsorImage(file)).resolves.toMatchObject({
-        mime: "image/png",
+        mime: "image/webp",
       });
     },
   );

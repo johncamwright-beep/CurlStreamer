@@ -39,7 +39,27 @@ export function AppNavigation({
   const panel = useRef<HTMLElement>(null);
   const [open, setOpen] = useState(false);
   const [signedIn, setSignedIn] = useState(knownSignedIn ?? false);
+  const [platformAdmin, setPlatformAdmin] = useState(false);
   const [current, setCurrent] = useState<CurrentGameSelection | null>(null);
+
+  useEffect(() => {
+    setPlatformAdmin(false);
+    if (!open || !signedIn) return;
+    const controller = new AbortController();
+    void fetch("/api/account/navigation", {
+      cache: "no-store",
+      signal: controller.signal,
+    })
+      .then(async (response) => {
+        const data = response.ok ? await response.json() : null;
+        if (!controller.signal.aborted)
+          setPlatformAdmin(data?.platformAdmin === true);
+      })
+      .catch(() => {
+        if (!controller.signal.aborted) setPlatformAdmin(false);
+      });
+    return () => controller.abort();
+  }, [open, signedIn, pathname]);
 
   useEffect(() => {
     if (knownSignedIn !== undefined) return setSignedIn(knownSignedIn);
@@ -265,6 +285,14 @@ export function AppNavigation({
                     icon: "account",
                   },
                 ])}
+                {platformAdmin &&
+                  renderLinks([
+                    {
+                      href: "/admin",
+                      label: "Platform administration",
+                      icon: "account",
+                    },
+                  ])}
               </ul>
               <form action={signOut}>
                 <button className="app-navigation-link w-full text-left">

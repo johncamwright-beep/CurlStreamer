@@ -8,6 +8,36 @@ test.skip(
 const organizationId = "22222222-2222-4222-8222-222222222222";
 const invitationId = "44444444-4444-4444-8444-444444444444";
 
+test("main menu shows platform administration above sign out only while authorized", async ({
+  page,
+}) => {
+  let allowed = true;
+  await page.route("**/api/account/navigation", (route) =>
+    route.fulfill({ json: { platformAdmin: allowed } }),
+  );
+  await signIn(page, "/account");
+  await page.getByRole("button", { name: "Open navigation menu" }).click();
+  const menu = page.getByRole("navigation", {
+    name: "CurlStreamer navigation",
+  });
+  const link = menu.getByRole("link", { name: "Platform administration" });
+  await expect(link).toBeVisible();
+  await expect(link).toHaveAttribute("href", "/admin");
+  const adminBox = await link.boundingBox();
+  const signOutBox = await menu
+    .getByRole("button", { name: "Sign out" })
+    .boundingBox();
+  expect(adminBox!.height).toBeGreaterThanOrEqual(44);
+  expect(adminBox!.y + adminBox!.height).toBeLessThanOrEqual(signOutBox!.y + 1);
+  await menu.getByRole("button", { name: "Close navigation menu" }).click();
+  allowed = false;
+  const checked = page.waitForResponse("**/api/account/navigation");
+  await page.getByRole("button", { name: "Open navigation menu" }).click();
+  await checked;
+  await expect(link).toHaveCount(0);
+  await expect(menu.getByRole("button", { name: "Sign out" })).toBeVisible();
+});
+
 async function signIn(page: Page, next: string) {
   await page.goto(`/login?next=${encodeURIComponent(next)}`);
   await page.getByLabel("Email address").fill("admin@youtube.test");

@@ -110,7 +110,11 @@ export async function currentTestSubscription(
     currentPeriodEnd: item.current_period_end
       ? new Date(item.current_period_end * 1000).toISOString()
       : null,
-    cancelAtPeriodEnd: selected.cancel_at_period_end,
+    // The portal can set an explicit cancellation timestamp instead of the flag.
+    cancelAtPeriodEnd:
+      selected.cancel_at_period_end ||
+      (selected.cancel_at != null &&
+        selected.cancel_at === item.current_period_end),
   };
 }
 export async function createTestCheckout(

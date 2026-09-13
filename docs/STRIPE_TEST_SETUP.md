@@ -82,3 +82,31 @@ database checks passed before migration 0056 was applied. No real Stripe account
 or sandbox credentials were connected during these checks; checkout and portal
 browser tests use explicit fixtures, while webhook tests verify real signatures
 using the Stripe SDK.
+
+## Connected sandbox — September 12, 2026
+
+Stripe sandbox `acct_1UF2oOPgssc0VK35` is connected to the pilot website.
+The explicitly labelled test product uses price
+`price_1UF378Pgssc0VK35JvXR1SQv` (CAD 25/month, not launch pricing).
+Webhook destination `we_1UF3AKPgssc0VK35D1686VRB` listens to the eight events
+above using API version `2026-08-26.dahlia`. The portal permits period-end
+cancellation and does not permit switching plans.
+
+Server settings are stored in Vercel, including branch-specific settings for
+`codex/internal-network-pilot`, which currently serves the custom domains from
+a Preview deployment. Redeploy that branch; the project's default Production
+deployment is an older main-branch build. Never copy credentials into this file.
+
+A real sandbox Checkout using Stripe's 4242 test card returned successfully and
+the app displayed an active subscription. Checkout, invoice-paid and subscription
+notifications returned HTTP 200. One concurrent notification initially returned
+503 and Stripe automatically retried it successfully. The team trial remained
+December 31, 2026 at 11:59 p.m. Toronto time.
+
+Portal cancellation revealed that Stripe can use `cancel_at` equal to the item
+period end while `cancel_at_period_end` is false. The provider now recognizes
+either representation; regression cases also cover no cancellation and a
+cancellation outside the current period. Live payment access remains disabled.
+
+The follow-up cancellation fix passed formatting, type checks, a production
+build, 1,446 unit tests (85 skips), and 224 browser tests (64 fixture skips).

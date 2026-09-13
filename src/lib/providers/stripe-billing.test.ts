@@ -9,6 +9,7 @@ import {
   testPlan,
   reconcileTestEvent,
   createTestCheckout,
+  currentTestSubscription,
 } from "./stripe-billing";
 beforeEach(() => {
   vi.resetAllMocks();
@@ -18,6 +19,44 @@ beforeEach(() => {
   vi.stubEnv("STRIPE_WEBHOOK_SECRET", "whsec_example");
   vi.stubEnv("APP_BASE_URL", "https://www.curlstreamer.app");
 });
+it.each([
+  [false, 2000000000, true],
+  [true, null, true],
+  [false, null, false],
+  [false, 2000100000, false],
+])(
+  "recognizes portal cancellation at the current period end (flag=%s, timestamp=%s)",
+  async (flag, cancelAt, expected) => {
+    const stripe = {
+      subscriptions: {
+        list: vi.fn().mockResolvedValue({
+          has_more: false,
+          data: [
+            {
+              livemode: false,
+              status: "active",
+              cancel_at_period_end: flag,
+              cancel_at: cancelAt,
+              items: {
+                data: [
+                  {
+                    price: { id: "price_example" },
+                    current_period_end: 2000000000,
+                  },
+                ],
+              },
+            },
+          ],
+        }),
+      },
+    } as unknown as Stripe;
+    await expect(currentTestSubscription(stripe, "cus_1")).resolves.toEqual({
+      status: "active",
+      currentPeriodEnd: new Date(2000000000 * 1000).toISOString(),
+      cancelAtPeriodEnd: expected,
+    });
+  },
+);
 it("defaults off and refuses live keys even when enabled", () => {
   vi.stubEnv("STRIPE_TEST_ENABLED", "false");
   expect(stripeTestConfig()).toBeNull();

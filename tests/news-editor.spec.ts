@@ -84,8 +84,16 @@ test("formatted news and inline photos survive save and reopen", async ({
   await news.getByRole("button", { name: "Link", exact: true }).click();
   await news.getByLabel("Link address").fill("https://example.com/team");
   await news.getByRole("button", { name: "Apply link", exact: true }).click();
+  await expect(editor.locator("strong")).toHaveText(
+    "A great start to the season.",
+  );
   await editor.press("ArrowRight");
   await editor.press("Enter");
+  await expect(
+    editor
+      .locator("strong")
+      .filter({ hasText: "A great start to the season." }),
+  ).toBeVisible();
   await news
     .getByRole("button", { name: "Insert image in post", exact: true })
     .click();

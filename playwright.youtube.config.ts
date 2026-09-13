@@ -26,6 +26,7 @@ export default defineConfig({
     },
     {
       command: "npm run build && npm start",
+      timeout: 180_000,
       env: {
         ...process.env,
         ROLE_TOKEN_SECRET: "curlcast-playwright-only-secret-32-chars",
@@ -45,7 +46,9 @@ export default defineConfig({
   ],
   use: {
     baseURL: "http://localhost:3000",
-    ...(process.platform === "win32" ? { channel: "msedge" } : {}),
+    ...(process.platform === "win32" && !process.env.PLAYWRIGHT_BUNDLED_CHROMIUM
+      ? { channel: "msedge" }
+      : {}),
   },
   projects: [
     { name: "desktop", use: { ...devices["Desktop Chrome"] } },

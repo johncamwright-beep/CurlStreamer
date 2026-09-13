@@ -178,6 +178,9 @@ export function NewsRichEditor({
         .focus()
         .extendMarkRange("link")
         .setLink({ href: url.href })
+        // Finish link insertion with a caret, not selected text that the next
+        // Enter key could replace while the browser restores editor focus.
+        .setTextSelection(editor.state.selection.to)
         .run();
       setPanel(null);
       setError("");

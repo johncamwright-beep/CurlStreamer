@@ -217,6 +217,7 @@ export function releaseRole(
     delete game.claims[role];
     game.connections[role] = false;
     if (game.cameraHealth) delete game.cameraHealth[role];
+    if (game.cameraAudio) delete game.cameraAudio[role];
     for (const [key, invitation] of invitations)
       if (
         invitation.gameId === id &&
@@ -259,7 +260,14 @@ export function updateGame(
       throw new Error("This game is completed");
     }
     if (expectedAuthority) {
-      if ("role" in action && action.role !== expectedAuthority.role)
+      if (
+        "role" in action &&
+        action.role !== expectedAuthority.role &&
+        !(
+          (action.type === "camera-zoom" || action.type === "camera-audio") &&
+          expectedAuthority.role === "scorer"
+        )
+      )
         throw new GameStateConflictError("Participant role changed");
       const currentGeneration =
         game.claimGenerations?.[expectedAuthority.role] ?? 0;
@@ -286,6 +294,64 @@ export function updateGame(
     if (action.type === "camera-framing") {
       game.cameraFraming ??= {};
       game.cameraFraming[action.role] = action.mode;
+    }
+    if (action.type === "camera-zoom") {
+      game.cameraZoom ??= {};
+      const current = game.cameraZoom[action.role];
+      game.cameraZoom[action.role] = {
+        supported: current?.supported ?? false,
+        updatedAt: current?.updatedAt ?? now,
+        ...(current?.min !== undefined ? { min: current.min } : {}),
+        ...(current?.max !== undefined ? { max: current.max } : {}),
+        ...(current?.step !== undefined ? { step: current.step } : {}),
+        ...(current?.value !== undefined ? { value: current.value } : {}),
+        command: {
+          id: action.commandId,
+          value: action.value,
+          requestedAt: now,
+        },
+      };
+    }
+    if (action.type === "camera-zoom-status") {
+      game.cameraZoom ??= {};
+      const command = game.cameraZoom[action.role]?.command;
+      game.cameraZoom[action.role] = {
+        supported: action.supported,
+        updatedAt: now,
+        ...(action.supported
+          ? {
+              min: action.min!,
+              max: action.max!,
+              step: action.step!,
+              value: action.value!,
+            }
+          : {}),
+        ...(command ? { command } : {}),
+      };
+    }
+    if (action.type === "camera-audio") {
+      game.cameraAudio ??= {};
+      game.cameraAudio[action.role] = {
+        enabled: action.enabled,
+        volume: action.volume ?? game.cameraAudio[action.role]?.volume ?? 1,
+        status: action.enabled
+          ? game.cameraAudio[action.role]?.enabled
+            ? game.cameraAudio[action.role]!.status
+            : "pending"
+          : "off",
+        updatedAt: now,
+        generation: game.claimGenerations?.[action.role] ?? 0,
+      };
+    }
+    if (action.type === "camera-audio-status") {
+      game.cameraAudio ??= {};
+      const current = game.cameraAudio[action.role];
+      if (current)
+        game.cameraAudio[action.role] = {
+          ...current,
+          status: action.status,
+          updatedAt: now,
+        };
     }
     if (action.type === "audio") game.audioMuted = action.muted;
     if (action.type === "broadcast") game.broadcast = action.value;

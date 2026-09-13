@@ -1,4 +1,5 @@
 import { createServer } from "node:http";
+import { randomUUID } from "node:crypto";
 import { dashboardResponse } from "./dashboard-fixtures.mjs";
 
 const userId = "11111111-1111-4111-8111-111111111111";
@@ -27,6 +28,7 @@ const jwt = [
   ).toString("base64url"),
   "playwright-signature",
 ].join(".");
+const sessionUsers = new Map();
 
 function send(response, status, body) {
   response.writeHead(status, {
@@ -37,24 +39,133 @@ function send(response, status, body) {
   response.end(JSON.stringify(body));
 }
 
-const server = createServer((request, response) => {
+const server = createServer(async (request, response) => {
   const url = new URL(request.url ?? "/", "http://127.0.0.1:3101");
   if (request.method === "OPTIONS") return send(response, 204, {});
+  if (
+    url.pathname === "/rest/v1/team_public_profiles" &&
+    url.searchParams.get("slug") === "eq.public-preview"
+  )
+    return send(response, 200, {
+      organization_id: organizationId,
+      logo_url: "/branding/curlstreamer-icon.png",
+      settings: {
+        name: "Test Curling Club",
+        slug: "public-preview",
+        description: "A curling team with a long story. ".repeat(12),
+        tagline: "Together on the ice",
+        photo: "https://media.test/portrait.png",
+        published: true,
+        results: true,
+        upcoming: true,
+        news: true,
+        sponsors: true,
+        socials: true,
+        facebook: "https://www.facebook.com/test",
+        instagram: "",
+        roster: {
+          fourth: "Alex",
+          third: "Sam",
+          second: "Pat",
+          lead: "Jo",
+          skip: "third",
+        },
+        theme: { background: "#edf2f7", panel: "#ffffff", accent: "#006b54" },
+        gallery: [
+          {
+            id: "33333333-3333-4333-8333-333333333333",
+            url: "http://127.0.0.1:3000/branding/curlstreamer-logo.png",
+            caption: "Opening day",
+          },
+        ],
+      },
+    });
+  if (url.pathname === "/rest/v1/rpc/read_public_team_games")
+    return send(
+      response,
+      200,
+      Array.from({ length: 14 }, (_, i) => ({
+        id: String(i),
+        home: "Test Curling Club",
+        away: "Opponent " + i,
+        event: i % 2 ? "Orion" : "Shorty Jenkin",
+        event_id: i % 2 ? "orion-id" : "shorty-id",
+        number: i + 1,
+        scheduled: "2026-10-" + String(i + 1).padStart(2, "0") + "T12:00:00Z",
+        completed:
+          i >= 7
+            ? "2026-10-" + String(i + 1).padStart(2, "0") + "T15:00:00Z"
+            : null,
+        result: i >= 7 ? { home: 8, away: 4 } : null,
+        youtube:
+          i === 0 || i >= 7
+            ? "https://www.youtube.com/watch?v=test1234567"
+            : null,
+      })),
+    );
+  if (url.pathname === "/rest/v1/events")
+    return send(response, 200, [
+      { id: "event", name: "Orion", end_date: "2026-09-10", result: "1st" },
+      {
+        id: "past-event",
+        name: "Past championship",
+        end_date: "2020-10-01",
+        result: "2nd",
+      },
+    ]);
+  if (url.pathname === "/rest/v1/team_news")
+    return send(response, 200, [
+      {
+        id: "news",
+        summary: "Full news story for the opening weekend.",
+        content: {
+          type: "doc",
+          title: "Opening weekend",
+          content: [
+            {
+              type: "paragraph",
+              content: [
+                {
+                  type: "text",
+                  text: "Full news story for the opening weekend.",
+                },
+              ],
+            },
+          ],
+        },
+        created_at: "2026-09-10T12:00:00Z",
+        photo_url: null,
+      },
+    ]);
   const dashboard = dashboardResponse(url);
   if (dashboard !== null) return send(response, 200, dashboard);
-  if (url.pathname === "/auth/v1/token" && request.method === "POST")
+  if (url.pathname === "/auth/v1/token" && request.method === "POST") {
+    const token = jwt.replace(/[^.]+$/, randomUUID());
+    sessionUsers.set(token, structuredClone(user));
     return send(response, 200, {
-      access_token: jwt,
+      access_token: token,
       token_type: "bearer",
       expires_in: 3600,
       expires_at: Math.floor(Date.now() / 1000) + 3600,
       refresh_token: "playwright-refresh",
       user,
     });
-  if (url.pathname === "/auth/v1/user")
-    return send(response, 200, {
-      ...user,
-    });
+  }
+  if (url.pathname === "/auth/v1/user") {
+    const token = String(request.headers.authorization).replace(
+      /^Bearer /i,
+      "",
+    );
+    const current = sessionUsers.get(token) ?? structuredClone(user);
+    if (request.method === "PUT") {
+      let raw = "";
+      for await (const chunk of request) raw += chunk;
+      const input = JSON.parse(raw || "{}");
+      current.user_metadata = { ...current.user_metadata, ...input.data };
+      sessionUsers.set(token, current);
+    }
+    return send(response, 200, current);
+  }
   if (url.pathname === "/rest/v1/user_profiles") {
     if (request.method === "POST")
       return send(response, 200, [{ display_name: "Test Administrator" }]);
@@ -68,6 +179,8 @@ const server = createServer((request, response) => {
     );
   }
   if (url.pathname === "/rest/v1/audit_events") return send(response, 201, {});
+  if (url.pathname === "/rest/v1/rpc/is_platform_admin")
+    return send(response, 200, true);
   if (url.pathname === "/rest/v1/team_memberships")
     return send(response, 200, [
       {

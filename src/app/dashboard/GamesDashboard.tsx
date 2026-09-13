@@ -2,7 +2,7 @@ import Link from "next/link";
 import { AppNavigation } from "@/components/AppNavigation";
 import { TeamGameLinks } from "@/components/TeamGameLinks";
 import { GameDeletionControl } from "@/components/GameDeletionControl";
-import { readableTeamRole, type AccountContext } from "@/lib/auth/account";
+import { type AccountContext } from "@/lib/auth/account";
 import type {
   EventRecord,
   ScheduledGameRecord,
@@ -13,6 +13,7 @@ import { groupGames, type GamesTab } from "@/lib/game-hub";
 import { formatScheduledStart } from "@/lib/team-hierarchy";
 import { formatCanonicalGameTitle } from "@/lib/game-title";
 import { youtubeWatchUrlSchema } from "@/lib/youtube-watch";
+import { GameEventFilter } from "@/components/GameEventFilter";
 
 export function GamesDashboard({
   account,
@@ -22,6 +23,7 @@ export function GamesDashboard({
   season,
   tab,
   broadcasts,
+  selectedEvent,
 }: {
   account: AccountContext;
   games: ScheduledGameRecord[];
@@ -30,6 +32,7 @@ export function GamesDashboard({
   season?: SeasonRecord;
   tab: GamesTab;
   broadcasts: { available: boolean; sessions: DashboardBroadcast[] };
+  selectedEvent?: string;
 }) {
   const membership = account.membership!;
   const administrator = ["owner", "team_admin"].includes(membership.role);
@@ -38,9 +41,27 @@ export function GamesDashboard({
       .filter((s) => ["live", "preparing", "stopping"].includes(s.status))
       .map((s) => s.gameId),
   );
-  const groups = groupGames(games, events, Date.now(), activityIds);
+  const eventFilter =
+    selectedEvent === "single" ||
+    events.some((event) => event.id === selectedEvent)
+      ? selectedEvent!
+      : "";
+  const filteredGames = games.filter(
+    (game) =>
+      !eventFilter ||
+      (eventFilter === "single" ? !game.eventId : game.eventId === eventFilter),
+  );
+  const filteredEvents = events.filter(
+    (event) => !eventFilter || event.id === eventFilter,
+  );
+  const groups = groupGames(
+    filteredGames,
+    filteredEvents,
+    Date.now(),
+    activityIds,
+  );
   const href = (next: GamesTab) =>
-    `/dashboard?${new URLSearchParams({ tab: next, ...(season ? { season: season.id } : {}) })}`;
+    `/dashboard?${new URLSearchParams({ tab: next, ...(season ? { season: season.id } : {}), ...(eventFilter ? { event: eventFilter } : {}) })}`;
   const rows = (values: ScheduledGameRecord[]) => (
     <ul className="dashboard-game-grid">
       {values.map((game) => (
@@ -66,114 +87,54 @@ export function GamesDashboard({
           : groups.upcoming;
   return (
     <main className="games-dashboard">
-      <div className="dashboard-topbar">
-        <AppNavigation signedIn />
-        <span>
-          {account.profile.display_name} · {readableTeamRole(membership.role)}
-        </span>
-      </div>
       <header className="dashboard-heading">
-        <div>
-          <p className="dashboard-eyebrow">{membership.teamName}</p>
+        <AppNavigation signedIn />
+        <div className="dashboard-title">
+          <p className="dashboard-team-title">{membership.teamName}</p>
           <h1>Games</h1>
-          <p className="dashboard-subtitle">
-            Your schedule, match controls and results in one place.
-          </p>
+        </div>
+        <div className="dashboard-season-bar">
+          <div>
+            <span className="dashboard-eyebrow">Season</span>
+            <strong>{season?.name ?? "No season set up"}</strong>
+          </div>
+          {seasons.length > 1 && (
+            <form action="/dashboard" className="dashboard-season-form">
+              <label className="sr-only" htmlFor="dashboard-season">
+                Choose season
+              </label>
+              <select
+                id="dashboard-season"
+                name="season"
+                defaultValue={season?.id}
+              >
+                {seasons.map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.name}
+                    {item.status === "active" ? " · Current" : ""}
+                  </option>
+                ))}
+              </select>
+              <input type="hidden" name="tab" value={tab} />
+              <button className="btn-secondary">View season</button>
+            </form>
+          )}
+          {administrator && (
+            <Link href="/seasons">Manage seasons &amp; events →</Link>
+          )}
         </div>
         {membership.role !== "viewer" && (
           <Link className="btn dashboard-schedule" href="/games/new">
-            ＋ Schedule a game
+            ＋ Create game
           </Link>
         )}
       </header>
-      <div className="dashboard-season-bar">
-        <div>
-          <span className="dashboard-eyebrow">Season</span>
-          <strong>{season?.name ?? "No season set up"}</strong>
-        </div>
-        {seasons.length > 1 && (
-          <form action="/dashboard" className="dashboard-season-form">
-            <label className="sr-only" htmlFor="dashboard-season">
-              Choose season
-            </label>
-            <select
-              id="dashboard-season"
-              name="season"
-              defaultValue={season?.id}
-            >
-              {seasons.map((item) => (
-                <option key={item.id} value={item.id}>
-                  {item.name}
-                  {item.status === "active" ? " · Current" : ""}
-                </option>
-              ))}
-            </select>
-            <input type="hidden" name="tab" value={tab} />
-            <button className="btn-secondary">View season</button>
-          </form>
-        )}
-        {administrator && (
-          <Link href="/seasons">Manage seasons &amp; events →</Link>
-        )}
-      </div>
-      <div className="dashboard-overview" aria-label="Season overview">
-        <Link href={href("upcoming")}>
-          <strong>{groups.upcoming.length}</strong>
-          <span>Upcoming games</span>
-        </Link>
-        <Link href={href("past")}>
-          <strong>{groups.completed.length}</strong>
-          <span>Completed games</span>
-        </Link>
-        <Link href={href("events")}>
-          <strong>{events.length}</strong>
-          <span>Events</span>
-        </Link>
-      </div>
-      {!broadcasts.available && (
-        <p className="dashboard-notice" role="status">
-          Broadcast status is temporarily unavailable. Your schedule and saved
-          results are still available. <a href={href(tab)}>Refresh status</a>
-        </p>
-      )}
-      {!!groups.broadcasting.length && (
-        <section
-          className="dashboard-activity"
-          aria-labelledby="broadcast-activity"
-        >
-          <div className="dashboard-section-heading">
-            <div>
-              <h2 id="broadcast-activity">Broadcast activity</h2>
-              <p>
-                Last saved YouTube status. Open game controls for the latest
-                status.
-              </p>
-            </div>
-            <a className="btn-secondary" href={href(tab)}>
-              Refresh
-            </a>
-          </div>
-          {rows(groups.broadcasting)}
-        </section>
-      )}
-      {!!groups.unfinished.length && tab !== "unfinished" && (
-        <div className="dashboard-unfinished">
-          <div>
-            <strong>
-              {groups.unfinished.length} unfinished{" "}
-              {groups.unfinished.length === 1 ? "game" : "games"}
-            </strong>
-            <p>Past the scheduled start, or still waiting for a date.</p>
-          </div>
-          <Link href={href("unfinished")}>Review games →</Link>
-        </div>
-      )}
       <section aria-label="Browse games">
         <nav className="dashboard-tabs" aria-label="Browse games">
           {(
             [
               ["upcoming", "Upcoming", groups.upcoming.length],
-              ["events", "Events", events.length],
+              ["events", "Events", filteredEvents.length],
               ["past", "Results", results.length],
               ["unfinished", "Unfinished", groups.unfinished.length],
             ] as const
@@ -192,6 +153,12 @@ export function GamesDashboard({
             </Link>
           ))}
         </nav>
+        <GameEventFilter
+          events={events}
+          selected={eventFilter}
+          season={season?.id}
+          tab={tab}
+        />
         <div className="dashboard-section-heading dashboard-list-heading">
           <div>
             <h2>
@@ -241,7 +208,7 @@ export function GamesDashboard({
                     </div>
                     <p className="dashboard-event-next">
                       {nextGame?.scheduledStart
-                        ? `Next: ${formatScheduledStart(nextGame.scheduledStart, event.timezone)}`
+                        ? `Next: ${formatScheduledStart(nextGame.scheduledStart, nextGame.timezone ?? event.timezone)}`
                         : "No upcoming games"}
                     </p>
                   </Link>
@@ -266,15 +233,37 @@ export function GamesDashboard({
                   : "No upcoming games"
             }
             text={
-              tab === "past"
-                ? "End a game to save its final score and YouTube link."
-                : tab === "unfinished"
-                  ? "There are no unscheduled games or past starts waiting for a result."
-                  : "Schedule your next game to get its cameras, scoring and broadcast ready."
+              eventFilter
+                ? "No games match this event in this view. Choose All events to see the full list."
+                : tab === "past"
+                  ? "End a game to save its final score and YouTube link."
+                  : tab === "unfinished"
+                    ? "There are no unscheduled games or past starts waiting for a result."
+                    : "Schedule your next game to get its cameras, scoring and broadcast ready."
             }
           />
         )}
       </section>
+      {!!groups.broadcasting.length && (
+        <section
+          className="dashboard-activity"
+          aria-labelledby="broadcast-activity"
+        >
+          <div className="dashboard-section-heading">
+            <div>
+              <h2 id="broadcast-activity">Broadcast activity</h2>
+              <p>
+                Last saved YouTube status. Open game controls for the latest
+                status.
+              </p>
+            </div>
+            <a className="btn-secondary" href={href(tab)}>
+              Refresh
+            </a>
+          </div>
+          {rows(groups.broadcasting)}
+        </section>
+      )}
       {administrator && (
         <footer className="dashboard-footer">
           <Link href="/dashboard/trash">Recently deleted games →</Link>
@@ -313,15 +302,19 @@ function GameCard({
     homeName: game.config.homeName,
     awayName: game.opponentId ? game.config.awayName : null,
     eventName: event?.name,
+    gameNumber: game.gameNumber,
   });
-  const timezone = event?.timezone ?? game.timezone ?? "UTC";
+  const timezone = game.timezone ?? event?.timezone ?? "America/Toronto";
   const scheduledLabel = game.scheduledStart
     ? formatScheduledStart(game.scheduledStart, timezone)
     : "Schedule not set";
   const completed = game.status === "completed";
   const closed = game.status === "closed";
   const parsedWatch = youtubeWatchUrlSchema.safeParse(
-    completed ? (game.youtubeWatchUrl ?? "") : (broadcast?.watchUrl ?? ""),
+    game.config.sharedYoutubeWatchUrl ||
+      (completed
+        ? (game.youtubeWatchUrl ?? "")
+        : (broadcast?.watchUrl ?? game.scheduledYouTubeWatchUrl ?? "")),
   );
   const watchUrl = parsedWatch.success ? parsedWatch.data : null;
   const label = completed
@@ -415,7 +408,10 @@ function GameCard({
           />
         )}
         {watchUrl &&
-          (completed || (!closed && broadcast?.status === "live")) && (
+          (completed ||
+            (!closed &&
+              (broadcast?.status === "live" ||
+                game.scheduledYouTubeStatus === "ready"))) && (
             <a
               className="dashboard-youtube-link"
               href={watchUrl}
@@ -426,7 +422,7 @@ function GameCard({
                 <rect width="24" height="18" rx="5" fill="#ff0033" />
                 <path d="m10 5 7 4-7 4Z" fill="white" />
               </svg>
-              {completed ? "Watch replay" : "Open YouTube"}
+              {completed ? "Watch replay" : "Watch on YouTube"}
               <span className="sr-only"> (opens in a new tab)</span>
             </a>
           )}

@@ -9,134 +9,57 @@ import {
 
 export type CameraRole = "camera-home" | "camera-away";
 
-export const portraitMediaConstraints: MediaStreamConstraints = {
-  audio: false,
-  video: {
-    facingMode: { ideal: "environment" },
-    width: { ideal: 720 },
-    height: { ideal: 1280 },
-    aspectRatio: { ideal: 9 / 16 },
-    frameRate: { ideal: 30 },
-  },
-};
+import {
+  acquireRawPortraitCamera,
+  verifyPortraitTrack as verifyRawPortraitTrack,
+} from "./camera-capture";
+export {
+  portraitMediaConstraints,
+  deviceIsPortrait,
+  supportedPortraitConstraints,
+  waitForVideoMetadata,
+} from "./camera-capture";
+export type { PortraitCaptureReport } from "./camera-capture";
 
-export type PortraitCaptureReport = {
-  trackWidth?: number;
-  trackHeight?: number;
-  videoWidth: number;
-  videoHeight: number;
-  devicePortrait: boolean;
-  portrait: boolean;
-  constraintsApplied: boolean;
-  warning?: string;
-};
-
-export function deviceIsPortrait(
-  orientation: Pick<ScreenOrientation, "type"> | undefined,
-  viewportWidth: number,
-  viewportHeight: number,
-) {
-  if (orientation?.type.startsWith("portrait")) return true;
-  if (orientation?.type.startsWith("landscape")) return false;
-  return viewportHeight >= viewportWidth;
-}
-
-function isPortrait(width?: number, height?: number) {
-  return width !== undefined && height !== undefined && height > width;
-}
-
-export function supportedPortraitConstraints(
-  capabilities: MediaTrackCapabilities,
-): MediaTrackConstraints | undefined {
-  const width = capabilities.width;
-  const height = capabilities.height;
-  if (
-    width?.min === undefined ||
-    width.max === undefined ||
-    height?.min === undefined ||
-    height.max === undefined ||
-    width.min > 720 ||
-    height.max < 1280
-  )
-    return;
-  const constraints: MediaTrackConstraints = {
-    width: { ideal: 720, max: Math.min(720, width.max) },
-    height: { ideal: 1280, min: Math.max(1280, height.min) },
-    frameRate: { ideal: 30 },
-  };
-  const ratio = capabilities.aspectRatio;
-  if (
-    ratio?.min !== undefined &&
-    ratio.max !== undefined &&
-    ratio.min <= 9 / 16 &&
-    ratio.max >= 9 / 16
-  )
-    constraints.aspectRatio = { exact: 9 / 16 };
-  return constraints;
-}
-
-export async function waitForVideoMetadata(video: HTMLVideoElement) {
-  if (video.readyState >= 1 && video.videoWidth) return;
-  await new Promise<void>((resolve) =>
-    video.addEventListener("loadedmetadata", () => resolve(), { once: true }),
-  );
-}
-
-async function waitForNextVideoFrame(video: HTMLVideoElement) {
-  if (video.requestVideoFrameCallback) {
-    await new Promise<void>((resolve) =>
-      video.requestVideoFrameCallback(() => resolve()),
-    );
-  } else {
-    await new Promise<void>((resolve) =>
-      requestAnimationFrame(() => resolve()),
-    );
-  }
-}
-
-/** Verify the raw browser track before it is wrapped or published. */
-export async function verifyPortraitTrack(
-  mediaTrack: MediaStreamTrack,
+/** Preserve the LiveKit wrapper and its existing presentation contract. */
+export async function acquireVerifiedPortraitCamera(
+  mediaDevices: Pick<MediaDevices, "getUserMedia">,
   video: HTMLVideoElement,
   devicePortrait: boolean,
-): Promise<PortraitCaptureReport> {
-  await waitForVideoMetadata(video);
-  let settings = mediaTrack.getSettings();
-  let constraintsApplied = false;
-  if (
-    devicePortrait &&
-    (!isPortrait(settings.width, settings.height) ||
-      !isPortrait(video.videoWidth, video.videoHeight))
-  ) {
-    const portraitConstraints = supportedPortraitConstraints(
-      typeof mediaTrack.getCapabilities === "function"
-        ? mediaTrack.getCapabilities()
-        : {},
-    );
-    if (portraitConstraints) {
-      try {
-        await mediaTrack.applyConstraints(portraitConstraints);
-        constraintsApplied = true;
-        await waitForNextVideoFrame(video);
-        settings = mediaTrack.getSettings();
-      } catch {
-        // A capability range can still be rejected by a particular camera mode.
-        // Keep the original uncropped track and report it accurately below.
-      }
-    }
-  }
-  const portrait =
-    isPortrait(settings.width, settings.height) &&
-    isPortrait(video.videoWidth, video.videoHeight);
-  return {
-    trackWidth: settings.width,
-    trackHeight: settings.height,
-    videoWidth: video.videoWidth,
-    videoHeight: video.videoHeight,
+  onTrack?: (track: MediaStreamTrack) => void,
+) {
+  const { track, report } = await acquireRawPortraitCamera(
+    mediaDevices,
+    video,
     devicePortrait,
-    portrait,
-    constraintsApplied,
-    ...(!portrait
+    onTrack,
+  );
+  try {
+    return {
+      track: new LocalVideoTrack(track),
+      report: {
+        ...report,
+        ...(!report.portrait
+          ? {
+              warning:
+                "This browser provides landscape camera frames. Portrait Crop is active; Show full frame is available.",
+            }
+          : {}),
+      },
+    };
+  } catch (cause) {
+    track.stop();
+    throw cause;
+  }
+}
+
+export async function verifyPortraitTrack(
+  ...args: Parameters<typeof verifyRawPortraitTrack>
+) {
+  const report = await verifyRawPortraitTrack(...args);
+  return {
+    ...report,
+    ...(!report.portrait
       ? {
           warning:
             "This browser provides landscape camera frames. Portrait Crop is active; Show full frame is available.",
@@ -144,29 +67,6 @@ export async function verifyPortraitTrack(
       : {}),
   };
 }
-
-/** Capture exactly once, verify, then give LiveKit that same browser track. */
-export async function acquireVerifiedPortraitCamera(
-  mediaDevices: Pick<MediaDevices, "getUserMedia">,
-  video: HTMLVideoElement,
-  devicePortrait: boolean,
-  onTrack?: (track: MediaStreamTrack) => void,
-) {
-  const stream = await mediaDevices.getUserMedia(portraitMediaConstraints);
-  const mediaTrack = stream.getVideoTracks()[0];
-  if (!mediaTrack)
-    throw new DOMException("No video track returned", "NotFoundError");
-  try {
-    onTrack?.(mediaTrack);
-    video.srcObject = stream;
-    const report = await verifyPortraitTrack(mediaTrack, video, devicePortrait);
-    return { track: new LocalVideoTrack(mediaTrack), report };
-  } catch (cause) {
-    mediaTrack.stop();
-    throw cause;
-  }
-}
-
 export function sourcePresentation(width: number, height: number) {
   return width > height
     ? ({
@@ -182,10 +82,12 @@ export function hardwareZoomRange(
   track: MediaStreamTrack,
 ): ZoomRange | undefined {
   const zoom = (
-    track.getCapabilities?.() as MediaTrackCapabilities & {
-      zoom?: { min?: number; max?: number; step?: number };
-    }
-  ).zoom;
+    track.getCapabilities?.() as
+      | (MediaTrackCapabilities & {
+          zoom?: { min?: number; max?: number; step?: number };
+        })
+      | undefined
+  )?.zoom;
   if (zoom?.min === undefined || zoom.max === undefined || zoom.max <= zoom.min)
     return;
   return { min: zoom.min, max: zoom.max, step: zoom.step || 0.1 };
@@ -193,7 +95,9 @@ export function hardwareZoomRange(
 
 export function clampZoom(value: number, range: ZoomRange) {
   const clamped = Math.min(range.max, Math.max(range.min, value));
-  return Math.round(clamped / range.step) * range.step;
+  const stepped =
+    range.min + Math.round((clamped - range.min) / range.step) * range.step;
+  return Math.min(range.max, Math.max(range.min, stepped));
 }
 
 export type RearLens = {

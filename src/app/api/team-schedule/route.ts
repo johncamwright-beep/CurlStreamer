@@ -1,3 +1,4 @@
+import { formatEventGameLabel } from "@/lib/game-title";
 import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
 import { z } from "zod";
@@ -25,6 +26,8 @@ import {
 import { gameSchema } from "@/lib/schema";
 import { initialGameState } from "@/lib/team-games";
 import { loadTeamHierarchyData } from "@/lib/team-hierarchy-data";
+import { getAccountContext } from "@/lib/auth/account";
+import { provisionScheduledYouTubeBroadcast } from "@/lib/providers/scheduled-youtube";
 
 const id = z.uuid();
 const requestSchema = z.discriminatedUnion("operation", [
@@ -37,6 +40,7 @@ const requestSchema = z.discriminatedUnion("operation", [
     eventId: id,
     input: eventInputSchema,
   }),
+  z.object({ operation: z.literal("retryYouTube"), gameId: id }),
   z.object({ operation: z.literal("archiveEvent"), eventId: id }),
   z.object({
     operation: z.literal("createOpponent"),
@@ -58,7 +62,14 @@ const requestSchema = z.discriminatedUnion("operation", [
       scheduledTime: z.string().regex(/^\d{2}:\d{2}$/),
       timezone: z.string().min(1).max(100),
       gameNumber: z.number().int().positive().nullable(),
-      config: gameSchema,
+      config: gameSchema.refine(
+        (value) =>
+          !value.youtubeEnabled || value.youtubeVisibility === "unlisted",
+        {
+          message: "Scheduled Studio broadcasts must be unlisted.",
+          path: ["youtubeVisibility"],
+        },
+      ),
     })
     .refine(
       (value) =>
@@ -74,6 +85,10 @@ const messages = {
   authorization: [403, "You do not have permission to make this change."],
   validation: [400, "Check the entered details and try again."],
   conflict: [409, "That change conflicts with existing team data."],
+  gameNumberConflict: [
+    409,
+    "That game number is already used in this event. Choose another number or leave the optional game number blank.",
+  ],
   service: [503, "The team schedule is temporarily unavailable."],
 } as const;
 
@@ -96,6 +111,16 @@ export async function POST(request: Request) {
       { status: 400 },
     );
   const body = parsed.data;
+  const account = await getAccountContext(user);
+  if (!account.ok || !account.account.membership)
+    return hierarchyFailure({ kind: "authorization" });
+  if (
+    account.account.membership.role === "game_operator" &&
+    !["createGame", "updateGame", "retryYouTube", "createOpponent"].includes(
+      body.operation,
+    )
+  )
+    return hierarchyFailure({ kind: "authorization" });
   let result;
   switch (body.operation) {
     case "createSeason":
@@ -155,7 +180,7 @@ export async function POST(request: Request) {
           : undefined;
       if (body.operation === "updateGame" && !existingGame)
         return hierarchyFailure({ kind: "authorization" });
-      const effectiveTimezone = selectedEvent?.timezone ?? body.timezone;
+      const effectiveTimezone = body.timezone;
       const scheduledStart = localDateTimeToUtc(
         body.scheduledDate,
         body.scheduledTime,
@@ -193,10 +218,16 @@ export async function POST(request: Request) {
         const existing = existingGame!;
         const snapshotConfig = {
           ...existing.config,
-          eventName:
+          eventName: formatEventGameLabel(
             existing.eventId === body.eventId
               ? existing.config.eventName
               : (selectedEvent?.name ?? "Single Game"),
+            body.eventId ? body.gameNumber : null,
+          ),
+          youtubeTitle: body.config.youtubeTitle,
+          youtubeEnabled: body.config.youtubeEnabled,
+          youtubeVisibility: body.config.youtubeVisibility,
+          sharedYoutubeWatchUrl: body.config.sharedYoutubeWatchUrl,
           homeName: existing.config.homeName,
           awayName:
             existing.opponentId === (opponentId ?? null)
@@ -216,12 +247,39 @@ export async function POST(request: Request) {
           },
           snapshotConfig,
         );
+        if (
+          result.ok &&
+          !["completed", "closed"].includes(existing.status) &&
+          snapshotConfig.youtubeEnabled &&
+          !snapshotConfig.sharedYoutubeWatchUrl &&
+          existing.scheduledYouTubeWatchUrl
+        ) {
+          const youtube = await provisionScheduledYouTubeBroadcast(user, {
+            gameId: existing.id,
+            title: snapshotConfig.youtubeTitle,
+            scheduledStart,
+            thumbnail: {
+              homeName: snapshotConfig.homeName,
+              awayName: snapshotConfig.awayName,
+              eventName: snapshotConfig.eventName,
+              scheduledStart,
+              timezone: effectiveTimezone,
+            },
+          }).catch(() => ({ status: "pending", thumbnailStatus: "pending" }));
+          result = {
+            ...result,
+            value: { youtube },
+          };
+        }
         break;
       }
-      const gameId = randomUUID();
+      const gameId = body.gameId ?? randomUUID();
       const config = {
         ...body.config,
-        eventName: selectedEvent?.name ?? "Single Game",
+        eventName: formatEventGameLabel(
+          selectedEvent?.name ?? "Single Game",
+          body.eventId ? body.gameNumber : null,
+        ),
         homeName: hierarchy.teamName,
         awayName: opponentName ?? "Opponent TBD",
       };
@@ -239,7 +297,58 @@ export async function POST(request: Request) {
         config,
         state,
       );
+      if (result.ok && config.youtubeEnabled && !config.sharedYoutubeWatchUrl) {
+        const youtube = await provisionScheduledYouTubeBroadcast(user, {
+          gameId,
+          title: config.youtubeTitle,
+          scheduledStart,
+          thumbnail: {
+            homeName: config.homeName,
+            awayName: config.awayName,
+            eventName: config.eventName,
+            scheduledStart,
+            timezone: effectiveTimezone,
+          },
+        }).catch(() => ({
+          status: "pending" as const,
+          watchUrl: null,
+          errorCode: "youtube_provider_unavailable",
+        }));
+        result = {
+          ...result,
+          value: { ...result.value, youtube },
+        };
+      }
       break;
+    }
+    case "retryYouTube": {
+      const hierarchy = await loadTeamHierarchyData(user);
+      const game = hierarchy.ok
+        ? hierarchy.games.find((candidate) => candidate.id === body.gameId)
+        : undefined;
+      if (!game)
+        return hierarchyFailure({
+          kind: hierarchy.ok ? "authorization" : "service",
+        });
+      if (!game.config.youtubeEnabled || !game.scheduledStart)
+        return hierarchyFailure({ kind: "validation" });
+      const youtube = await provisionScheduledYouTubeBroadcast(user, {
+        gameId: game.id,
+        title: game.config.youtubeTitle,
+        scheduledStart: game.scheduledStart,
+        thumbnail: {
+          homeName: game.config.homeName,
+          awayName: game.config.awayName,
+          eventName: game.config.eventName,
+          scheduledStart: game.scheduledStart,
+          timezone: game.timezone ?? "America/Toronto",
+        },
+      }).catch(() => ({
+        status: "pending" as const,
+        watchUrl: null,
+        errorCode: "youtube_provider_unavailable",
+      }));
+      return NextResponse.json({ game: { id: game.id }, youtube });
     }
   }
   if (!result.ok) return hierarchyFailure(result);

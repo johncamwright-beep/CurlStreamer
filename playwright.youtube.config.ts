@@ -7,8 +7,15 @@ export default defineConfig({
   testDir: "./tests",
   testMatch: [
     "youtube-settings.spec.ts",
+    "admin-access.spec.ts",
     "dashboard.spec.ts",
     "game-setup.spec.ts",
+    "opponent-links.spec.ts",
+    "team-settings.spec.ts",
+    "billing.spec.ts",
+    "news-editor.spec.ts",
+    "news-image-upload.spec.ts",
+    "onboarding.spec.ts",
   ],
   fullyParallel: false,
   webServer: [

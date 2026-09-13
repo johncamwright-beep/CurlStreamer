@@ -1,0 +1,87 @@
+name: Web checks
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: web-checks-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  windows-launch:
+    runs-on: windows-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check Windows launch protocol input
+        shell: pwsh
+        run: |
+          $proof = Join-Path $env:RUNNER_TEMP 'studio-launch-tests.exe'
+          & "$env:WINDIR\Microsoft.NET\Framework64\v4.0.30319\csc.exe" /nologo /target:exe /main:LaunchLinkTests /reference:System.Windows.Forms.dll /reference:System.Drawing.dll "/out:$proof" (Join-Path $PWD 'native\m5-studio-launcher\Studio.cs') (Join-Path $PWD 'native\m5-studio-launcher\LaunchLinkTests.cs')
+          if ($LASTEXITCODE -ne 0) { throw 'Launcher test compilation failed' }
+          & $proof
+          if ($LASTEXITCODE -ne 0) { throw 'Launcher protocol tests failed' }
+      - name: Check integrated workspace boundaries and compile
+        shell: pwsh
+        run: |
+          $sdk = & ./scripts/get-studio-webview2.ps1 -CacheRoot $env:RUNNER_TEMP
+          $compiler = "$env:WINDIR\Microsoft.NET\Framework64\v4.0.30319\csc.exe"
+          $proof = Join-Path $env:RUNNER_TEMP 'workspace-tests.exe'
+          & $compiler /nologo /target:exe "/out:$proof" (Join-Path $PWD 'native\m5-studio-launcher\WorkspacePolicy.cs') (Join-Path $PWD 'native\m5-studio-launcher\WorkspacePolicyTests.cs')
+          if ($LASTEXITCODE -ne 0) { throw 'Workspace test compilation failed' }
+          & $proof
+          if ($LASTEXITCODE -ne 0) { throw 'Workspace boundary tests failed' }
+          & $compiler /nologo /target:winexe /platform:x64 /define:WORKSPACE /reference:System.Windows.Forms.dll /reference:System.Drawing.dll /reference:System.Net.Http.dll /reference:System.Web.Extensions.dll "/reference:$sdk/lib/net462/Microsoft.Web.WebView2.Core.dll" "/reference:$sdk/lib/net462/Microsoft.Web.WebView2.WinForms.dll" "/out:$env:RUNNER_TEMP/Workspace.exe" (Join-Path $PWD 'native\m5-studio-launcher\Studio.cs') (Join-Path $PWD 'native\m5-studio-launcher\Workspace.cs') (Join-Path $PWD 'native\m5-studio-launcher\WorkspacePolicy.cs') (Join-Path $PWD 'native\m5-studio-launcher\UsbAudio.cs')
+          if ($LASTEXITCODE -ne 0) { throw 'Workspace compilation failed' }
+      - name: Check native USB PCM decoding and mixing
+        shell: pwsh
+        run: |
+          $proof = Join-Path $env:RUNNER_TEMP 'usb-audio-tests.exe'
+          & "$env:WINDIR\Microsoft.NET\Framework64\v4.0.30319\csc.exe" /nologo /platform:x64 "/out:$proof" (Join-Path $PWD 'native\m5-studio-launcher\UsbAudio.cs') (Join-Path $PWD 'native\m5-studio-launcher\UsbAudioTests.cs')
+          if ($LASTEXITCODE -ne 0) { throw 'USB audio test compilation failed' }
+          & $proof
+          if ($LASTEXITCODE -ne 0) { throw 'USB audio tests failed' }
+  web:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      NEXT_TELEMETRY_DISABLED: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run format:check
+      - run: npm run build:m4-renderer
+      - name: Build mock website
+        run: npm run build
+        env:
+          CURLCAST_MODE: mock
+          NEXT_PUBLIC_CURLCAST_MODE: mock
+          ROLE_TOKEN_SECRET: curlcast-playwright-only-secret-32-chars
+          NEXT_PUBLIC_SUPABASE_URL: http://127.0.0.1:9
+          NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: playwright-public-placeholder
+          SUPABASE_SECRET_KEY: playwright-server-placeholder
+      - name: Install Chromium test dependencies
+        run: |
+          # Playwright downloads its pinned Chromium separately. An unrelated
+          # Chrome apt feed on hosted runners has returned mismatched indexes.
+          # Keep verification enabled and use Ubuntu's dependency repositories.
+          for source in /etc/apt/sources.list.d/google-chrome.list /etc/apt/sources.list.d/google-chrome.sources; do
+            if [ -f "$source" ]; then sudo mv -- "$source" "$source.disabled"; fi
+          done
+          npx playwright install --with-deps chromium
+      - name: Browser integration with local API fixtures
+        run: npm run test:e2e
+        env:
+          CURLCAST_MODE: mock
+          NEXT_PUBLIC_CURLCAST_MODE: mock

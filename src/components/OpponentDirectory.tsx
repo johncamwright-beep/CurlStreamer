@@ -1,6 +1,7 @@
 "use client";
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import { OpponentProfilePicker } from "./OpponentProfilePicker";
 
 type Opponent = {
   id: string;
@@ -54,6 +55,12 @@ export function OpponentDirectory({
         />
       </label>
       {canEdit && (
+        <OpponentProfilePicker
+          initialQuery={search}
+          onLinked={() => router.refresh()}
+        />
+      )}
+      {canEdit && (
         <form
           className="flex flex-col gap-2 sm:flex-row"
           onSubmit={(e) => {
@@ -97,6 +104,12 @@ export function OpponentDirectory({
                     ? ` · Last played ${new Date(opponent.last_played_at).toLocaleDateString()}`
                     : ""}
                 </p>
+                <OpponentProfilePicker
+                  opponentId={opponent.id}
+                  initialQuery={opponent.display_name}
+                  canEdit={canEdit && !opponent.archived_at}
+                  onLinked={() => router.refresh()}
+                />
               </div>
               {canEdit && (
                 <button

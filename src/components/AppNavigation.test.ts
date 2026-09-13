@@ -41,13 +41,13 @@ describe("shared application navigation", () => {
       '{ href: "/dashboard", label: "Games", icon: "game" }',
     );
     expect(navigation).toContain(
-      '{ href: "/games/new", label: "Schedule a game", icon: "calendar" }',
+      '{ href: "/games/new", label: "Create game", icon: "calendar" }',
     );
-    expect(navigation).toContain(
-      '{ href: "/account", label: "Account", icon: "account" }',
+    expect(navigation).toMatch(
+      /href: "\/account",\s*label: "Account & Settings",\s*icon: "account"/,
     );
-    expect(navigation).toContain('href: "/settings/youtube"');
-    expect(navigation).toContain('label: "YouTube Settings"');
+    expect(navigation).not.toContain('href: "/settings/youtube"');
+    expect(navigation).not.toContain('label: "YouTube Settings"');
     expect(navigation).toContain(
       '{ href: "/login", label: "Sign in", icon: "account" }',
     );
@@ -60,7 +60,7 @@ describe("shared application navigation", () => {
     );
     expect(navigation).not.toMatch(/Administration/);
     expect(home).not.toContain("AppNavigation");
-    expect(home).toContain('<AuthForm mode="login" action={login} />');
+    expect(home).toContain("<MarketingHome />");
     expect(navigation).toContain("createBrowserSupabaseClient");
   });
 
@@ -70,7 +70,8 @@ describe("shared application navigation", () => {
       "selectCurrentGame(localStorage, synchronized)",
     );
     expect(navigation).toContain("CURRENT_GAME_EVENT");
-    expect(navigation).toContain("href: `/games/${current.id}`");
+    expect(navigation).not.toContain("href: `/games/${current.id}`");
+    expect(navigation).toContain('label: "Game Scoring"');
     expect(navigation).toContain("href: `/score/${current.id}`");
     expect(navigation).toContain("href: `/broadcast/${current.id}`");
     expect(navigation).toContain("current.capabilities.assignOpponent");

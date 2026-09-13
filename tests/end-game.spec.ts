@@ -113,9 +113,13 @@ test("End Game reviews the score and replaces controls with the saved result", a
     page.getByRole("link", { name: "Watch on YouTube" }),
   ).toHaveAttribute("href", "https://youtu.be/abcdefghijk");
   await expect(page.getByRole("button", { name: "End Game" })).toHaveCount(0);
+  await expect.poll(() => cleanupRetries).toBe(1);
+  await expect(
+    page.getByText("Live video shutdown has not been confirmed."),
+  ).toHaveCount(0);
   await expect(
     page.getByText("LiveKit accepted all room shutdown requests."),
-  ).toBeVisible();
+  ).toHaveCount(0);
   expect(cleanupRetries).toBe(1);
   await page.screenshot({
     path: testInfo.outputPath("completed-summary.png"),

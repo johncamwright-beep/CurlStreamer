@@ -351,6 +351,10 @@ describe("GET /api/games/[id] over HTTP", () => {
       broadcast: "live",
       audioMuted: false,
       cameraFraming: { "camera-home": "contain", "camera-away": "contain" },
+      cameraAudio: {
+        "camera-home": { enabled: false, volume: 1 },
+        "camera-away": { enabled: false, volume: 1 },
+      },
       sponsors: [
         {
           id: "broadcast-sponsor-0",
@@ -373,6 +377,33 @@ describe("GET /api/games/[id] over HTTP", () => {
     expect(response.headers.has("x-curlcast-account-role")).toBe(false);
     expect(mocks.gameBroadcastSponsors).toHaveBeenCalledWith(testGameId);
     expect(mocks.gameLibrarySponsors).not.toHaveBeenCalled();
+  });
+  it("returns the canonical broadcast schedule to public and authorized game views", async () => {
+    game.broadcastSchedule = {
+      scheduledStart: "2026-10-20T22:30:00Z",
+      timezone: "America/Toronto",
+    };
+    anonymous();
+    const publicResponse = await request("broadcast");
+    expect((await publicResponse.json()).broadcastSchedule).toEqual(
+      game.broadcastSchedule,
+    );
+
+    mocks.getUser.mockResolvedValue({
+      data: { user: { id: "same-team-user" } },
+    });
+    mocks.loadActiveTeam.mockResolvedValue({
+      kind: "ready",
+      team: { organizationId: "same-team", role: "owner" },
+    });
+    mocks.listTeamGames.mockResolvedValue({
+      ok: true,
+      games: [{ game_id: testGameId, game_status: "active" }],
+    });
+    const accountResponse = await request();
+    expect((await accountResponse.json()).broadcastSchedule).toEqual(
+      game.broadcastSchedule,
+    );
   });
   it("publishes short-lived renderable sponsor output without stored sponsor metadata", async () => {
     anonymous();
@@ -751,6 +782,76 @@ describe("GET /api/games/[id] over HTTP", () => {
         claim: claimant,
         generation: undefined,
       },
+    );
+  });
+
+  it("accepts only an assigned camera's own zoom status report", async () => {
+    anonymous();
+    const claimant = game.claims["camera-home"]!;
+    const response = await PATCH(
+      new Request(`${origin}/api/games/${testGameId}`, {
+        method: "PATCH",
+        headers: {
+          authorization: `Bearer ${await issueParticipantToken(testGameId, "camera-home", claimant)}`,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          type: "camera-zoom-status",
+          role: "camera-away",
+          supported: false,
+        }),
+      }),
+      { params: Promise.resolve({ id: testGameId }) },
+    );
+    expect(response.status).toBe(403);
+
+    const own = await PATCH(
+      new Request(`${origin}/api/games/${testGameId}`, {
+        method: "PATCH",
+        headers: {
+          authorization: `Bearer ${await issueParticipantToken(testGameId, "camera-home", claimant)}`,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          type: "camera-zoom-status",
+          role: "camera-home",
+          supported: false,
+        }),
+      }),
+      { params: Promise.resolve({ id: testGameId }) },
+    );
+    expect(own.status).toBe(200);
+    expect(mocks.updateGame).toHaveBeenLastCalledWith(
+      testGameId,
+      { type: "camera-zoom-status", role: "camera-home", supported: false },
+      expect.objectContaining({ role: "camera-home", claim: claimant }),
+    );
+  });
+
+  it("keeps scorer zoom commands bound to the scorer assignment", async () => {
+    anonymous();
+    const claimant = game.claims.scorer!;
+    const response = await PATCH(
+      new Request(`${origin}/api/games/${testGameId}`, {
+        method: "PATCH",
+        headers: {
+          authorization: `Bearer ${await issueParticipantToken(testGameId, "scorer", claimant)}`,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          type: "camera-zoom",
+          role: "camera-home",
+          commandId: "10000000-0000-4000-8000-000000000014",
+          value: 2,
+        }),
+      }),
+      { params: Promise.resolve({ id: testGameId }) },
+    );
+    expect(response.status).toBe(200);
+    expect(mocks.updateGame).toHaveBeenLastCalledWith(
+      testGameId,
+      expect.objectContaining({ type: "camera-zoom" }),
+      expect.objectContaining({ role: "scorer", claim: claimant }),
     );
   });
 

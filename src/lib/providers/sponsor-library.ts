@@ -17,6 +17,7 @@ type SponsorRow = {
   storage_path: string;
   position: number;
   archived_at?: string | null;
+  website?: string | null;
 };
 type BroadcastSponsorCacheEntry = {
   stateKey: string;
@@ -34,6 +35,7 @@ function broadcastSponsorStateKey(rows: SponsorRow[]) {
       row.storage_path,
       row.position,
       row.archived_at ?? null,
+      row.website ?? null,
     ]),
   );
 }
@@ -54,6 +56,7 @@ async function presentOne(
     imageUrl: data.signedUrl,
     archived: Boolean(row.archived_at),
     position: row.position,
+    website: row.website ?? undefined,
   };
 }
 
@@ -113,6 +116,7 @@ export async function gameLibrarySponsors(
     dataUrl: s.imageUrl,
     enabled: true,
     rotation: 0,
+    website: s.website,
   }));
 }
 
@@ -139,6 +143,7 @@ export async function gameBroadcastSponsors(
     dataUrl: sponsor.imageUrl,
     enabled: true,
     rotation: 0,
+    website: sponsor.website,
   }));
   if (presented.complete)
     broadcastSponsorCache.set(gameId, {
@@ -189,7 +194,13 @@ export function validateSponsorImage(file: File): Promise<ValidImage> {
 export async function createSponsors(
   user: User,
   organizationId: string,
-  inputs: { file: File; name: string; altText: string; id?: string }[],
+  inputs: {
+    file: File;
+    name: string;
+    altText: string;
+    website?: string;
+    id?: string;
+  }[],
 ) {
   // Validation is deliberately complete before the first storage/database write.
   const validated = await Promise.all(
@@ -219,6 +230,7 @@ export async function createSponsors(
         p_path: path,
         p_mime: input.image.mime,
         p_size: input.image.bytes.length,
+        p_website: input.website ?? null,
       });
       if (error) {
         await db.storage.from(BUCKET).remove([path]);
@@ -241,17 +253,32 @@ export async function createSponsors(
 
 export async function updateSponsor(
   user: User,
-  input: { id: string; name: string; altText: string; archived: boolean },
+  input: {
+    id: string;
+    name: string;
+    altText: string;
+    archived: boolean;
+    website?: string;
+  },
 ) {
+  const params: {
+    p_user_id: string;
+    p_id: string;
+    p_name: string;
+    p_alt: string;
+    p_archived: boolean;
+    p_website?: string | null;
+  } = {
+    p_user_id: user.id,
+    p_id: input.id,
+    p_name: input.name,
+    p_alt: input.altText,
+    p_archived: input.archived,
+  };
+  if ("website" in input) params.p_website = input.website ?? null;
   const { error } = await createAdminSupabaseClient().rpc(
     "update_organization_sponsor",
-    {
-      p_user_id: user.id,
-      p_id: input.id,
-      p_name: input.name,
-      p_alt: input.altText,
-      p_archived: input.archived,
-    },
+    params,
   );
   if (error) throw new Error("Sponsor update failed");
   return listSponsorLibrary(user);

@@ -1,6 +1,8 @@
 "use client";
 
 import Link from "next/link";
+import { AccountShortcut } from "./AccountShortcut";
+import { CurlStreamerAppBadge, CurlStreamerLogo } from "./CurlStreamerBrand";
 import { usePathname } from "next/navigation";
 import { useEffect, useId, useRef, useState } from "react";
 import { signOut } from "@/app/account/actions";
@@ -16,7 +18,7 @@ import { createBrowserSupabaseClient } from "@/lib/supabase/browser";
 type NavLink = { href: string; label: string; icon: AppIconName };
 const plan: NavLink[] = [
   { href: "/dashboard", label: "Games", icon: "game" },
-  { href: "/games/new", label: "Schedule a game", icon: "calendar" },
+  { href: "/games/new", label: "Create game", icon: "calendar" },
   { href: "/seasons", label: "Seasons & events", icon: "list" },
   { href: "/opponents", label: "Opponents", icon: "opponent" },
   { href: "/sponsors", label: "Sponsors", icon: "sponsor" },
@@ -37,7 +39,27 @@ export function AppNavigation({
   const panel = useRef<HTMLElement>(null);
   const [open, setOpen] = useState(false);
   const [signedIn, setSignedIn] = useState(knownSignedIn ?? false);
+  const [platformAdmin, setPlatformAdmin] = useState(false);
   const [current, setCurrent] = useState<CurrentGameSelection | null>(null);
+
+  useEffect(() => {
+    setPlatformAdmin(false);
+    if (!open || !signedIn) return;
+    const controller = new AbortController();
+    void fetch("/api/account/navigation", {
+      cache: "no-store",
+      signal: controller.signal,
+    })
+      .then(async (response) => {
+        const data = response.ok ? await response.json() : null;
+        if (!controller.signal.aborted)
+          setPlatformAdmin(data?.platformAdmin === true);
+      })
+      .catch(() => {
+        if (!controller.signal.aborted) setPlatformAdmin(false);
+      });
+    return () => controller.abort();
+  }, [open, signedIn, pathname]);
 
   useEffect(() => {
     if (knownSignedIn !== undefined) return setSignedIn(knownSignedIn);
@@ -124,15 +146,6 @@ export function AppNavigation({
 
   const gameLinks: NavLink[] = current
     ? [
-        ...(current.capabilities.control
-          ? [
-              {
-                href: `/games/${current.id}`,
-                label: "Game control",
-                icon: "control" as const,
-              },
-            ]
-          : []),
         ...(current.capabilities.assignOpponent
           ? [
               {
@@ -145,7 +158,7 @@ export function AppNavigation({
             ? [
                 {
                   href: `/score/${current.id}`,
-                  label: "Scoring",
+                  label: "Game Scoring",
                   icon: "score" as const,
                 },
               ]
@@ -154,7 +167,7 @@ export function AppNavigation({
           ? [
               {
                 href: `/broadcast/${current.id}`,
-                label: "Broadcast preview",
+                label: "Show broadcast",
                 icon: "broadcast" as const,
               },
             ]
@@ -202,6 +215,8 @@ export function AppNavigation({
         <span aria-hidden="true">☰</span>
         <span className="sr-only">Menu</span>
       </button>
+      <CurlStreamerAppBadge />
+      <AccountShortcut />
       {open && (
         <button
           type="button"
@@ -219,7 +234,7 @@ export function AppNavigation({
         inert={!open ? true : undefined}
       >
         <div className="app-navigation-brand">
-          <strong>CurlCast</strong>
+          <CurlStreamerLogo className="app-navigation-logo" />
           <button
             type="button"
             className="app-navigation-close"
@@ -264,13 +279,20 @@ export function AppNavigation({
               <h2 className="app-navigation-heading">Account</h2>
               <ul>
                 {renderLinks([
-                  { href: "/account", label: "Account", icon: "account" },
                   {
-                    href: "/settings/youtube",
-                    label: "YouTube Settings",
-                    icon: "broadcast",
+                    href: "/account",
+                    label: "Account & Settings",
+                    icon: "account",
                   },
                 ])}
+                {platformAdmin &&
+                  renderLinks([
+                    {
+                      href: "/admin",
+                      label: "Platform administration",
+                      icon: "account",
+                    },
+                  ])}
               </ul>
               <form action={signOut}>
                 <button className="app-navigation-link w-full text-left">

@@ -2,6 +2,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { requireYouTubeManager } from "@/lib/youtube-route-auth";
 import {
+  youtubeOAuthCallback,
+  youtubeOAuthOrigin,
+} from "@/lib/youtube-oauth-origin";
+import {
   completeYouTubeConnection,
   consumeYouTubeOAuth,
 } from "@/lib/youtube-connection";
@@ -25,24 +29,33 @@ const querySchema = z.object({
   error: z.string().max(100).optional(),
 });
 
-function settingsRedirect(request: Request, result: string) {
-  const target = new URL("/settings/youtube", request.url);
+function settingsRedirect(origin: string, result: string) {
+  const target = new URL("/settings/youtube", origin);
   target.searchParams.set("result", result);
   return NextResponse.redirect(target);
 }
 
 export async function GET(request: NextRequest) {
+  let origin: string;
+  try {
+    origin = youtubeOAuthOrigin(request);
+  } catch {
+    return NextResponse.json(
+      { error: "YouTube connection is not configured for this environment" },
+      { status: 503 },
+    );
+  }
   const user = await requireYouTubeManager();
-  if (!user) return settingsRedirect(request, "forbidden");
+  if (!user) return settingsRedirect(origin, "forbidden");
   let result = "connection_failed";
   try {
     const configuration = youtubeConfiguration();
-    const configuredCallback = new URL(configuration.redirectUri);
+    const configuredCallback = youtubeOAuthCallback(
+      configuration.redirectUri,
+      origin,
+    );
     const receivedCallback = new URL(request.url);
-    if (
-      configuredCallback.origin !== receivedCallback.origin ||
-      configuredCallback.pathname !== receivedCallback.pathname
-    )
+    if (configuredCallback.pathname !== receivedCallback.pathname)
       throw new Error("youtube_configuration_unavailable");
     const query = querySchema.parse(
       Object.fromEntries(receivedCallback.searchParams.entries()),
@@ -95,11 +108,11 @@ export async function GET(request: NextRequest) {
         ? error.message.replace("youtube_", "")
         : "connection_failed";
   }
-  const response = settingsRedirect(request, result);
+  const response = settingsRedirect(origin, result);
   response.cookies.set(YOUTUBE_OAUTH_COOKIE, "", {
     httpOnly: true,
     sameSite: "lax",
-    secure: new URL(request.url).protocol === "https:",
+    secure: new URL(origin).protocol === "https:",
     path: "/api/settings/youtube/oauth/callback",
     maxAge: 0,
   });

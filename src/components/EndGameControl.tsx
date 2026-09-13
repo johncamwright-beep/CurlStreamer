@@ -11,6 +11,7 @@ export function EndGameControl({
   gameId,
   homeName,
   awayName,
+  sharedYoutubeWatchUrl = null,
   enabled,
   disabled = false,
   onCompleted,
@@ -18,6 +19,7 @@ export function EndGameControl({
   gameId: string;
   homeName: string;
   awayName: string;
+  sharedYoutubeWatchUrl?: string | null;
   enabled: boolean;
   disabled?: boolean;
   onCompleted: (
@@ -26,7 +28,7 @@ export function EndGameControl({
   ) => void;
 }) {
   const [open, setOpen] = useState(false);
-  const [watchUrl, setWatchUrl] = useState("");
+  const [watchUrl, setWatchUrl] = useState(sharedYoutubeWatchUrl ?? "");
   const [review, setReview] = useState<CompletionReview>();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -120,7 +122,8 @@ export function EndGameControl({
                   placeholder="https://www.youtube.com/watch?v=…"
                 />
                 <span className="mt-2 block text-sm font-normal text-slate-400">
-                  Visible to viewers on the completed-game page.
+                  Visible to viewers on the completed-game page. A shared link
+                  from game setup is filled in automatically.
                 </span>
               </label>
               <div className="mt-4 flex flex-wrap gap-3">

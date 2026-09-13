@@ -6,7 +6,7 @@ import type { GameConfig, GameState } from "@/lib/types";
 
 export type ActiveTeam = {
   organizationId: string;
-  role: "owner" | "team_admin" | "scorer" | "viewer";
+  role: "owner" | "team_admin" | "game_operator" | "scorer" | "viewer";
 };
 
 export type TeamGameSummary = {

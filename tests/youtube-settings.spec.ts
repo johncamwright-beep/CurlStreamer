@@ -12,11 +12,15 @@ test("team administrator can inspect and disconnect the saved YouTube channel", 
   await page.getByLabel("Email address").fill("admin@youtube.test");
   await page.getByLabel("Password").fill("playwright-password");
   await page.getByRole("button", { name: "Sign in" }).click();
-  await page.waitForURL("**/settings/youtube");
+  await page.waitForURL("**/account?section=youtube");
   await expect(
     page.getByRole("heading", { name: "YouTube Settings" }),
   ).toBeVisible();
-  await expect(page.getByText("Test Curling Club")).toBeVisible();
+  await expect(
+    page.getByText("Connect one YouTube channel for Test Curling Club", {
+      exact: false,
+    }),
+  ).toBeVisible();
   await expect(page.getByText("Test Club TV")).toBeVisible();
   await expect(page.getByText("UC_TEST_CHANNEL")).toBeVisible();
   await expect(
@@ -35,7 +39,7 @@ test("team administrator can inspect and disconnect the saved YouTube channel", 
 
   await page.getByRole("button", { name: "Open navigation menu" }).click();
   await expect(
-    page.getByRole("link", { name: "YouTube Settings" }),
+    page.getByRole("link", { name: "Account & Settings" }),
   ).toBeVisible();
   await page.locator(".app-navigation-close").click();
 

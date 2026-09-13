@@ -26,6 +26,7 @@ export function useGame<V extends GameView = undefined>(
   const [error, setError] = useState("");
   const [accountOperator, setAccountOperator] = useState(false);
   const [accountRole, setAccountRole] = useState("");
+  const [m1Pilot, setM1Pilot] = useState(false);
   const [navigationMetadata, setNavigationMetadata] =
     useState<GameNavigationMetadata>();
   const refreshGate = useRef(new GameRefreshGate());
@@ -91,6 +92,7 @@ export function useGame<V extends GameView = undefined>(
         }
         setAccountOperator(r.headers.get("x-curlcast-operator") === "true");
         setAccountRole(r.headers.get("x-curlcast-account-role") ?? "");
+        setM1Pilot(r.headers.get("x-curlcast-m1-pilot") === "true");
         setError("");
       } else {
         const body = await r.json().catch(() => null);
@@ -104,6 +106,7 @@ export function useGame<V extends GameView = undefined>(
         setCompletion(undefined);
         setAccountOperator(false);
         setAccountRole("");
+        setM1Pilot(false);
         setNavigationMetadata(undefined);
         if (nextLifecycle) setLifecycle(nextLifecycle);
         if ([401, 404, 410].includes(r.status))
@@ -123,6 +126,7 @@ export function useGame<V extends GameView = undefined>(
     setError("");
     setAccountOperator(false);
     setAccountRole("");
+    setM1Pilot(false);
     setNavigationMetadata(undefined);
     // Routine state reads must recover even if initial context enrichment stalls.
     // Their responses have separate ordering and never request schedule metadata.
@@ -169,6 +173,7 @@ export function useGame<V extends GameView = undefined>(
     refresh,
     accountOperator,
     accountRole,
+    m1Pilot,
     navigationMetadata,
     refreshContext: () => refresh(true),
   };

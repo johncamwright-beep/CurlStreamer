@@ -4,6 +4,8 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
+    "build:m4-renderer": "esbuild src/lib/providers/m4-program-renderer-browser.tsx --bundle --platform=browser --format=iife --target=chrome120 --jsx=automatic --minify --outfile=public/m4-program-renderer.js && tailwindcss -i src/app/globals.css -o public/m4-program-renderer.css --minify",
+    "check:m4-renderer": "vite-node scripts/m4-program-renderer-check.ts",
     "build": "next build",
     "start": "next start",
     "lint": "eslint .",
@@ -16,6 +18,10 @@
     "@livekit/components-react": "^2.9.14",
     "@supabase/ssr": "0.12.5",
     "@supabase/supabase-js": "^2.57.4",
+    "@tiptap/extension-image": "3.7.2",
+    "@tiptap/extension-link": "3.7.2",
+    "@tiptap/react": "3.7.2",
+    "@tiptap/starter-kit": "3.7.2",
     "jose": "^6.1.0",
     "livekit-client": "^2.15.6",
     "livekit-server-sdk": "2.18.0",
@@ -23,6 +29,7 @@
     "qrcode": "^1.5.4",
     "react": "^19.1.1",
     "react-dom": "^19.1.1",
+    "stripe": "22.6.2",
     "zod": "^4.1.5"
   },
   "devDependencies": {
@@ -35,6 +42,7 @@
     "@types/react": "^19.1.12",
     "@types/react-dom": "^19.1.9",
     "autoprefixer": "^10.4.21",
+    "esbuild": "0.28.2",
     "eslint": "^9.35.0",
     "eslint-config-next": "^15.5.2",
     "postcss": "^8.5.6",

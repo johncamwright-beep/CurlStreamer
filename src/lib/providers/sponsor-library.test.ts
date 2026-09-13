@@ -91,6 +91,7 @@ describe("anonymous Broadcast sponsors", () => {
           "https://storage.example/object/sign/logo.png?token=short-lived",
         enabled: true,
         rotation: 0,
+        website: undefined,
       },
     ]);
     expect(mocks.rpc).toHaveBeenCalledWith("list_game_organization_sponsors", {
@@ -100,6 +101,21 @@ describe("anonymous Broadcast sponsors", () => {
       "organization/private/logo.png",
       300,
     );
+  });
+
+  it("passes a sponsor website through public game metadata", async () => {
+    mocks.rpc.mockResolvedValue({
+      data: [sponsorRow({ website: "https://sponsor.example" })],
+      error: null,
+    });
+    mocks.createSignedUrl.mockResolvedValue({
+      data: { signedUrl: "https://storage.example/signed/logo" },
+      error: null,
+    });
+
+    await expect(gameBroadcastSponsors("website-game")).resolves.toEqual([
+      expect.objectContaining({ website: "https://sponsor.example" }),
+    ]);
   });
 
   it("reuses stable signed URLs across repeated one-second polls", async () => {

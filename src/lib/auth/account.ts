@@ -7,7 +7,7 @@ export type AccountContext = {
   profile: { display_name: string; status: string };
   membership: null | {
     organization_id: string;
-    role: "owner" | "team_admin" | "scorer" | "viewer";
+    role: "owner" | "team_admin" | "game_operator" | "scorer" | "viewer";
     teamName: string;
   };
 };
@@ -76,6 +76,7 @@ export const readableTeamRole = (role: string) =>
   ({
     owner: "Owner",
     team_admin: "Team administrator",
+    game_operator: "Game operator",
     scorer: "Scorer",
     viewer: "Viewer",
   })[role] ?? role;

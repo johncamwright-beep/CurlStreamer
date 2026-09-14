@@ -20,7 +20,9 @@ Writes use UUID request IDs and expected revisions; concurrent changes fail safe
 
 ## Rollout and remaining validation
 
-Migration `supabase/migrations/0058_curlcoach.sql` is prepared locally and has not been applied to a shared database. It adds only linked private module tables and service-only RPCs. Its PostgreSQL integration suite passed on an isolated clone, including two-coach isolation. Before activation, apply the migration through the normal reviewed release path and validate the deployed UI with two separate coach accounts. Confirm that each can access only their own notes, then enable the flag for the pilot. Grant the pilot team entitlement and each intended coach's explicit access in Platform administration.
+Released September 14, 2026: migration `supabase/migrations/0058_curlcoach.sql` was applied transactionally to the shared Supabase database. RLS and denial of authenticated direct table reads were verified. Commit `34f48f2` was deployed through `codex/internal-network-pilot`, which serves www and team subdomains. Vercel deployment `6ZtpntpmRTb6eiJZKYx8JskJiNew` is Ready. `CURLCOACH_ENABLED=true` is scoped only to that preview branch; local lab mode remains disabled. Team Benning and its existing owner received explicit pilot entitlement/access through December 31, 2026 (expiry January 1, 2027 05:00 UTC).
+
+Live smoke checks confirmed the existing owner can load real events, games, roster and charting controls, and sees Private coaching in the main menu. Anonymous access returns disabled/403 with private, no-store responses. No sample attempts were written to production. Two-coach isolation and finish/reopen were tested against the isolated PostgreSQL clone; a two-account live pilot walkthrough remains outstanding. Native Studio was not rebuilt for this web release.
 
 Stripe test payments do not grant a paid CurlCoach entitlement. Commercial Stripe product/pricing and live webhook entitlement fulfillment remain a later billing rollout; manual entitlement grants support the pilot.
 

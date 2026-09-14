@@ -35,3 +35,6 @@ pnpm-workspace.yaml
 *.log
 *.pem
 *.key
+
+.curlcoach-local/
+

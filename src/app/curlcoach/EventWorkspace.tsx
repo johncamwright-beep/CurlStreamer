@@ -482,6 +482,24 @@ export default function EventWorkspace({
   mode?: "lab" | "streamer";
   initialEventId?: string;
 }) {
+  const [platformAdmin, setPlatformAdmin] = useState(false);
+  useEffect(() => {
+    if (mode !== "streamer") return;
+    const controller = new AbortController();
+    void fetch("/api/account/navigation", {
+      cache: "no-store",
+      signal: controller.signal,
+    })
+      .then(async (response) => {
+        const account = response.ok ? await response.json() : null;
+        if (!controller.signal.aborted)
+          setPlatformAdmin(account?.platformAdmin === true);
+      })
+      .catch(() => {
+        if (!controller.signal.aborted) setPlatformAdmin(false);
+      });
+    return () => controller.abort();
+  }, [mode]);
   const [open, setOpen] = useState(unlocked),
     [view, setView] = useState<Page>("Setup"),
     [source, setSource] = useState<"sample" | "streamer">(
@@ -592,20 +610,22 @@ export default function EventWorkspace({
         </a>
         <p>Event workspace</p>
         <nav aria-label="CurlCoach pages">
-          {pages.map((page, i) => (
+          {pages.map((page) => (
             <a
               href={`#${slug(page)}`}
               aria-current={view === page ? "page" : undefined}
               key={page}
             >
-              <span>0{i + 1}</span>
               {page}
             </a>
           ))}
         </nav>
         <div className="event-sidebar-footer">
           {mode === "streamer" ? (
-            "Private coach workspace"
+            <nav aria-label="Account">
+              <a href="/account">Account &amp; Settings</a>
+              {platformAdmin && <a href="/admin">Platform administration</a>}
+            </nav>
           ) : (
             <>
               Local development

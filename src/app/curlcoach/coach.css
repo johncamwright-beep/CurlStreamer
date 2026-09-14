@@ -134,7 +134,7 @@
   position: sticky;
   top: 0;
   height: 100vh;
-  padding: 34px 20px;
+  padding: 20px 15px;
   background: #0d1b2b;
   border-right: 1px solid #263b50;
   display: flex;
@@ -154,15 +154,15 @@
 .event-sidebar > p {
   color: #9daec0;
   font-size: 13px;
-  margin: 0 0 30px;
+  margin: 0 0 16px;
 }
 .event-sidebar nav {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 2px;
 }
 .event-sidebar nav a {
-  min-height: 48px;
+  min-height: 44px;
   display: flex;
   align-items: center;
   gap: 14px;
@@ -178,8 +178,9 @@
   font-size: 11px;
 }
 .event-sidebar nav a[aria-current="page"] {
-  color: #99f6e4;
-  background: #143d40;
+  color: #67e8f9;
+  background: #1e293b;
+  box-shadow: inset 3px 0 #22d3ee;
 }
 .event-sidebar-footer {
   margin-top: auto;
@@ -464,8 +465,7 @@
     height: auto;
     padding: 18px;
   }
-  .event-sidebar > p,
-  .event-sidebar-footer {
+  .event-sidebar > p {
     display: none;
   }
   .event-sidebar nav {
@@ -626,4 +626,25 @@
   .coach-scoring .coach-summary {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+}
+
+.event-sidebar-footer {
+  padding-top: 16px;
+  border-top: 1px solid #334155;
+}
+.coach-time-presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.coach-time-presets button {
+  min-width: 44px;
+  background: #17283b;
+  color: #e2e8f0;
+}
+.coach-time-presets button[aria-pressed="true"] {
+  background: #164e63;
+  border-color: #67e8f9;
+  color: #67e8f9;
 }

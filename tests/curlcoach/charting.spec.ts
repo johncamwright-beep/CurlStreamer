@@ -63,7 +63,32 @@ test("scoped local lab charts, corrects and audits a synthetic shot", async ({
   await expect(attempt).toHaveCount(0);
   await page.getByLabel("End", { exact: true }).fill("19");
   await page.getByLabel("Flag shot for review").check();
-  await page.getByLabel("Go back (seconds)").fill("45");
+  for (const [label, seconds] of [
+    ["30s", "30"],
+    ["45s", "45"],
+    ["60s", "60"],
+    ["90s", "90"],
+    ["2m", "120"],
+    ["3m", "180"],
+    ["4m", "240"],
+  ]) {
+    await page.getByRole("button", { name: label, exact: true }).click();
+    await expect(page.getByLabel("Go back (seconds)")).toHaveValue(seconds);
+  }
+  await page.getByLabel("Go back (seconds)").fill("31");
+  await expect(
+    page.getByRole("button", { name: "30s", exact: true }),
+  ).toHaveAttribute("aria-pressed", "false");
+  await page.getByRole("button", { name: "45s", exact: true }).click();
+  await page
+    .getByRole("combobox", { name: "Turn / target", exact: true })
+    .selectOption({
+      label:
+        "CW C IO — Clockwise; broom inside four-foot lines; away from centre",
+    });
+  await expect(
+    page.getByRole("combobox", { name: "Turn / target", exact: true }),
+  ).toHaveValue("CW C IO");
   await page.getByLabel("Private coaching note").fill("Review the line call");
   await page
     .getByRole("combobox", { name: "Stone", exact: true })

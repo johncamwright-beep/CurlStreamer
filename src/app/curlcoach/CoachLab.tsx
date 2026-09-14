@@ -17,6 +17,11 @@ import "./coach.css";
 import { nextTurn } from "@/lib/curlcoach/next-turn";
 import ReviewSummary from "./ReviewSummary";
 
+function turnLabel(value: string) {
+  const [turn, target, direction] = value.split(" ");
+  return `${value} — ${turn === "CW" ? "Clockwise" : "Counterclockwise"}; broom ${target === "C" ? "inside" : "outside"} four-foot lines; ${direction === "IO" ? "away from" : "towards"} centre`;
+}
+
 const blank: Shot = {
   playerId: "lead",
   position: "Lead",
@@ -249,7 +254,9 @@ export default function CoachLab({
         >
           {field !== "position" && <option value="">Not recorded</option>}
           {options.map((value) => (
-            <option key={value}>{value}</option>
+            <option key={value} value={value}>
+              {field === "turn" ? turnLabel(value) : value}
+            </option>
           ))}
         </select>
       </label>
@@ -471,6 +478,35 @@ export default function CoachLab({
                   </label>
                   {(draft.flagged ?? !!draft.review) && (
                     <div className="coach-video-fields">
+                      <div
+                        className="coach-time-presets"
+                        role="group"
+                        aria-label="Go back presets"
+                      >
+                        {[30, 45, 60, 90, 120, 180, 240].map((seconds) => (
+                          <button
+                            key={seconds}
+                            type="button"
+                            aria-pressed={
+                              (draft.videoReview?.lookBackSeconds ?? 30) ===
+                              seconds
+                            }
+                            onClick={() =>
+                              setDraft({
+                                ...draft,
+                                videoReview: {
+                                  url: "",
+                                  positionSeconds: null,
+                                  ...draft.videoReview,
+                                  lookBackSeconds: seconds,
+                                },
+                              })
+                            }
+                          >
+                            {seconds < 120 ? `${seconds}s` : `${seconds / 60}m`}
+                          </button>
+                        ))}
+                      </div>
                       <label>
                         Go back (seconds)
                         <input

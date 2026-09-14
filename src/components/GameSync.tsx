@@ -4,6 +4,7 @@ import type { GameState } from "@/lib/types";
 import type { BroadcastGame, JoinGame } from "@/lib/game-projection";
 import { clearCurrentGameIfMatching } from "@/lib/current-game";
 import type { SafeGameCompletion } from "@/lib/game-completion";
+import { gamePollDelay } from "@/lib/game-polling";
 import { GameRefreshGate } from "@/lib/game-refresh-gate";
 import { fetchGameWithSelectedAccess } from "@/lib/media-access-client";
 import type { GameNavigationMetadata } from "@/lib/game-entry";
@@ -19,6 +20,7 @@ export function useGame<V extends GameView = undefined>(
   view?: V,
   invitation?: string | null,
   includeContext = false,
+  keepLiveWhenHidden = view === "broadcast",
 ) {
   const [game, setGame] = useState<ViewState<V>>();
   const [completion, setCompletion] = useState<SafeGameCompletion>();
@@ -29,6 +31,8 @@ export function useGame<V extends GameView = undefined>(
   const [m1Pilot, setM1Pilot] = useState(false);
   const [navigationMetadata, setNavigationMetadata] =
     useState<GameNavigationMetadata>();
+  const pollingState = useRef({ lifecycle, error });
+  pollingState.current = { lifecycle, error };
   const refreshGate = useRef(new GameRefreshGate());
   const contextGate = useRef(new GameRefreshGate());
   const refresh = useCallback(
@@ -45,7 +49,8 @@ export function useGame<V extends GameView = undefined>(
           view,
           invitation,
           localStorage,
-          fetch,
+          (input, init) =>
+            fetch(input, { ...init, signal: AbortSignal.timeout(10_000) }),
           includeNavigationMetadata && includeContext && view !== "join",
         );
       } catch {
@@ -131,15 +136,52 @@ export function useGame<V extends GameView = undefined>(
     // Routine state reads must recover even if initial context enrichment stalls.
     // Their responses have separate ordering and never request schedule metadata.
     void refresh(includeContext);
-    const timer = setInterval(() => void refresh(), 1000);
+    let stopped = false;
+    let running = false;
+    let timer: ReturnType<typeof setTimeout>;
+    const schedule = () => {
+      if (stopped) return;
+      timer = setTimeout(
+        poll,
+        gamePollDelay({
+          ...pollingState.current,
+          hidden: document.hidden,
+          keepLiveWhenHidden,
+        }),
+      );
+    };
+    const poll = async () => {
+      if (stopped || (running && !keepLiveWhenHidden)) return;
+      running = true;
+      clearTimeout(timer);
+      // Live receivers must still observe terminal state if an older read stalls.
+      if (keepLiveWhenHidden) schedule();
+      try {
+        await refresh();
+      } finally {
+        running = false;
+        if (!keepLiveWhenHidden) schedule();
+      }
+    };
+    const onVisibility = () => {
+      if (!document.hidden) void poll();
+      else if (!running) {
+        clearTimeout(timer);
+        schedule();
+      }
+    };
+    schedule();
+    document.addEventListener("visibilitychange", onVisibility);
     const channel = new BroadcastChannel(`curlcast-${id}`);
-    channel.onmessage = () => void refresh();
+    channel.onmessage = () => void poll();
     return () => {
-      clearInterval(timer);
+      stopped = true;
+      clearTimeout(timer);
+      document.removeEventListener("visibilitychange", onVisibility);
       currentContextGate.reset();
       channel.close();
     };
-  }, [id, refresh, includeContext]);
+  }, [id, refresh, includeContext, keepLiveWhenHidden]);
   const act = useCallback(
     async (action: unknown) => {
       const token = localStorage.getItem(`curlcast-access-${id}`);
@@ -160,7 +202,9 @@ export function useGame<V extends GameView = undefined>(
       }
       const next = await r.json();
       setGame(next);
-      new BroadcastChannel(`curlcast-${id}`).postMessage("update");
+      const channel = new BroadcastChannel(`curlcast-${id}`);
+      channel.postMessage("update");
+      channel.close();
     },
     [id, refresh],
   );

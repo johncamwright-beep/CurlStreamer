@@ -7,6 +7,7 @@ import {
   turns,
   executions,
   deficiencies,
+  type RosterEntry,
   type Shot,
   type State,
 } from "./model";
@@ -25,6 +26,7 @@ export type CoachGame = {
   initialHammer: Team | null;
   ends: { end: number; us: number; them: number; hammer: boolean | null }[];
   scoreboardAvailable: boolean;
+  roster?: RosterEntry[];
   state: State;
 };
 export type CoachEvent = {
@@ -182,6 +184,7 @@ export function sampleEvent(id: string): CoachEvent {
                 },
               });
             }
+      state.revision = state.events.length;
       return {
         id: gameId,
         eventId: id,

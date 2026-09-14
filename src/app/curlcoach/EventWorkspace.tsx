@@ -473,11 +473,23 @@ function Scoreboard({ event, game }: { event: CoachEvent; game: CoachGame }) {
     </>
   );
 }
-export default function EventWorkspace({ unlocked }: { unlocked: boolean }) {
+export default function EventWorkspace({
+  unlocked,
+  mode = "lab",
+  initialEventId,
+}: {
+  unlocked: boolean;
+  mode?: "lab" | "streamer";
+  initialEventId?: string;
+}) {
   const [open, setOpen] = useState(unlocked),
     [view, setView] = useState<Page>("Setup"),
-    [source, setSource] = useState<"sample" | "streamer">("sample"),
-    [eventId, setEventId] = useState("shorty-example"),
+    [source, setSource] = useState<"sample" | "streamer">(
+      mode === "streamer" ? "streamer" : "sample",
+    ),
+    [eventId, setEventId] = useState(
+      initialEventId ?? (mode === "streamer" ? "" : "shorty-example"),
+    ),
     [gameId, setGameId] = useState(""),
     [player, setPlayer] = useState("all"),
     [data, setData] = useState<Workspace | null>(null),
@@ -485,15 +497,16 @@ export default function EventWorkspace({ unlocked }: { unlocked: boolean }) {
     [busy, setBusy] = useState(false);
   useEffect(() => {
     const query = new URLSearchParams(location.search);
-    if (query.get("source") === "streamer") setSource("streamer");
-    if (query.get("event")) setEventId(query.get("event")!);
+    if (mode !== "streamer" && query.get("source") === "streamer")
+      setSource("streamer");
+    if (!initialEventId && query.get("event")) setEventId(query.get("event")!);
     if (query.get("game")) setGameId(query.get("game")!);
     const read = () =>
       setView(pages.find((p) => slug(p) === location.hash.slice(1)) ?? "Setup");
     read();
     window.addEventListener("hashchange", read);
     return () => window.removeEventListener("hashchange", read);
-  }, []);
+  }, [initialEventId, mode]);
   const refresh = useCallback(
     async (signal?: AbortSignal) => {
       setBusy(true);
@@ -591,9 +604,15 @@ export default function EventWorkspace({ unlocked }: { unlocked: boolean }) {
           ))}
         </nav>
         <div className="event-sidebar-footer">
-          Local development
-          <br />
-          Add-on disabled in production
+          {mode === "streamer" ? (
+            "Private coach workspace"
+          ) : (
+            <>
+              Local development
+              <br />
+              Add-on disabled in production
+            </>
+          )}
         </div>
       </aside>
       <main className="event-main">
@@ -604,26 +623,30 @@ export default function EventWorkspace({ unlocked }: { unlocked: boolean }) {
           </div>
           {open && (
             <div className="event-selectors">
-              <label>
-                Data source
-                <select
-                  value={source}
-                  onChange={(e) => {
-                    setData(null);
-                    setSource(e.target.value as typeof source);
-                    remember(
-                      e.target.value,
-                      e.target.value === "sample" ? "shorty-example" : "",
-                    );
-                    setEventId(
-                      e.target.value === "sample" ? "shorty-example" : "",
-                    );
-                  }}
-                >
-                  <option value="sample">Local examples</option>
-                  <option value="streamer">Streamer · local connection</option>
-                </select>
-              </label>
+              {mode === "lab" && (
+                <label>
+                  Data source
+                  <select
+                    value={source}
+                    onChange={(e) => {
+                      setData(null);
+                      setSource(e.target.value as typeof source);
+                      remember(
+                        e.target.value,
+                        e.target.value === "sample" ? "shorty-example" : "",
+                      );
+                      setEventId(
+                        e.target.value === "sample" ? "shorty-example" : "",
+                      );
+                    }}
+                  >
+                    <option value="sample">Local examples</option>
+                    <option value="streamer">
+                      Streamer · local connection
+                    </option>
+                  </select>
+                </label>
+              )}
               <label>
                 Event
                 <select
@@ -665,9 +688,9 @@ export default function EventWorkspace({ unlocked }: { unlocked: boolean }) {
             <h2>Event data is unavailable</h2>
             <p>{error || "Loading the selected event."}</p>
             <p>
-              Use Local examples to explore the seven-game Shorty Jenkins
-              workspace. A Streamer connection needs a disposable local service
-              and a verified team administrator.
+              {mode === "streamer"
+                ? "The selected Streamer game is unavailable to this coach."
+                : "Use Local examples to explore the seven-game Shorty Jenkins workspace."}
             </p>
           </section>
         ) : (
@@ -681,6 +704,12 @@ export default function EventWorkspace({ unlocked }: { unlocked: boolean }) {
                   : "STREAMER · READ ONLY SCOREBOARD"}
               </span>
             </div>
+            {mode === "streamer" && game && (
+              <p className="event-notice">
+                Private coaching data is separate from the shared game.{" "}
+                <a href={`/score/${game.id}`}>Open shared score (read-only)</a>
+              </p>
+            )}
             {(
               ["Scoring", "Game analysis", "Scoreboard analysis"] as Page[]
             ).includes(view) && (
@@ -725,7 +754,11 @@ export default function EventWorkspace({ unlocked }: { unlocked: boolean }) {
                     </div>
                     <div>
                       <dt>Charted side</dt>
-                      <dd>Home team in Streamer</dd>
+                      <dd>
+                        {event.games[0]?.side === "away"
+                          ? "Away team"
+                          : "Home team"}
+                      </dd>
                     </div>
                     <div>
                       <dt>Last refreshed</dt>
@@ -759,11 +792,11 @@ export default function EventWorkspace({ unlocked }: { unlocked: boolean }) {
                   <h3>Charting roster</h3>
                   <p>
                     {event.source === "streamer"
-                      ? "Streamer game records provide team names, but no player roster. These are provisional position identities; confirm player mapping before using reports for real coaching."
+                      ? "This private coaching roster is a stable snapshot for this game. It does not change the shared Streamer roster or scoreboard."
                       : "Synthetic roster shared across the event. The alternate retains a separate identity when substituting."}
                   </p>
                   <div className="event-roster">
-                    {roster.map((p) => (
+                    {(game?.roster ?? game?.state.roster ?? roster).map((p) => (
                       <div key={p.id}>{p.name}</div>
                     ))}
                   </div>
@@ -779,6 +812,7 @@ export default function EventWorkspace({ unlocked }: { unlocked: boolean }) {
                     source,
                     eventId: event.id,
                     gameId: game.id,
+                    roster: game.roster ?? game.state.roster,
                     initialState: game.state,
                     onSaved: saved,
                   }}
@@ -798,7 +832,7 @@ export default function EventWorkspace({ unlocked }: { unlocked: boolean }) {
                 >
                   Whole team
                 </button>
-                {roster.map((p) => (
+                {(game?.roster ?? game?.state.roster ?? roster).map((p) => (
                   <button
                     key={p.id}
                     aria-pressed={player === p.id}
@@ -815,7 +849,17 @@ export default function EventWorkspace({ unlocked }: { unlocked: boolean }) {
                 <h2>
                   {player === "all"
                     ? "Whole team"
-                    : roster.find((p) => p.id === player)?.name}{" "}
+                    : (
+                        event.games.find((g) =>
+                          (g.roster ?? g.state.roster)?.some(
+                            (p) => p.id === player,
+                          ),
+                        )?.roster ??
+                        event.games.find((g) =>
+                          g.state.roster?.some((p) => p.id === player),
+                        )?.state.roster ??
+                        roster
+                      ).find((p) => p.id === player)?.name}{" "}
                   · all {event.games.length} games
                 </h2>
                 <PlayerAnalysis
@@ -832,19 +876,24 @@ export default function EventWorkspace({ unlocked }: { unlocked: boolean }) {
                     {game.label} · vs {game.opponent}
                   </h2>
                   <Summary shots={gameShots(game)} />
-                  <ReviewSummary shots={gameShots(game)} />
+                  <ReviewSummary
+                    shots={gameShots(game)}
+                    players={game.roster ?? game.state.roster ?? roster}
+                  />
                   <Table
                     title="Player performance"
                     columns={["Graded", "Missing", "Shooting"]}
-                    rows={roster.map((p) => {
-                      const r = report(
-                        gameShots(game).filter((s) => s.playerId === p.id),
-                      );
-                      return {
-                        label: p.name,
-                        values: [r.scored, r.missing, pct(r.percent)],
-                      };
-                    })}
+                    rows={(game.roster ?? game.state.roster ?? roster).map(
+                      (p) => {
+                        const r = report(
+                          gameShots(game).filter((s) => s.playerId === p.id),
+                        );
+                        return {
+                          label: p.name,
+                          values: [r.scored, r.missing, pct(r.percent)],
+                        };
+                      },
+                    )}
                   />
                   <Table
                     title="End performance"

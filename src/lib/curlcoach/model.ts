@@ -4,10 +4,10 @@ import { videoReviewSchema } from "./review";
 export const organizationId = "curlcoach-synthetic-org";
 export const gameId = "curlcoach-synthetic-game";
 export const roster = [
-  { id: "lead", name: "Alex (Lead)" },
-  { id: "second", name: "Blair (Second)" },
-  { id: "third", name: "Casey (Third)" },
-  { id: "fourth", name: "Drew (Fourth)" },
+  { id: "lead", name: "Alex (Lead)", position: "Lead" },
+  { id: "second", name: "Blair (Second)", position: "Second" },
+  { id: "third", name: "Casey (Third)", position: "Third" },
+  { id: "fourth", name: "Drew (Fourth)", position: "Fourth" },
   { id: "alternate", name: "Ellis (Alternate)" },
 ] as const;
 export const shotTypes = [
@@ -45,7 +45,7 @@ export const reviews = ["Team", "Player", "Strategy", "Highlight"] as const;
 export const exclusions = ["Pick", "Burnt rock", "Throw-through"] as const;
 export const shotSchema = z
   .object({
-    playerId: z.enum(["lead", "second", "third", "fourth", "alternate"]),
+    playerId: z.string().min(1).max(100),
     position: z.enum(["Lead", "Second", "Third", "Fourth"]),
     end: z.number().int().min(1).max(20),
     stone: z.number().int().min(1).max(2),
@@ -84,6 +84,21 @@ export const commandSchema = z
   })
   .strict();
 export type Command = z.infer<typeof commandSchema>;
+export const rosterEntrySchema = z
+  .object({
+    id: z.string().min(1).max(100),
+    name: z.string().trim().min(1).max(200),
+    position: z.enum(["Lead", "Second", "Third", "Fourth"]).optional(),
+  })
+  .strict();
+export type RosterEntry = z.infer<typeof rosterEntrySchema>;
+export const lifecycleSchema = z
+  .object({
+    action: z.enum(["finish", "reopen"]),
+    requestId: z.string().uuid(),
+    expectedRevision: z.number().int().nonnegative(),
+  })
+  .strict();
 export type ShotEvent = Command & {
   revision: number;
   at: string;
@@ -94,6 +109,10 @@ export type State = {
   gameId: string;
   profile: "tracker-provisional-v1";
   events: ShotEvent[];
+  /** Present on private persisted sessions; optional for legacy sample fixtures. */
+  revision?: number;
+  status?: "open" | "closed";
+  roster?: RosterEntry[];
 };
 export const stateSchema = z
   .object({
@@ -107,6 +126,9 @@ export const stateSchema = z
         actor: z.string().min(1),
       }),
     ),
+    revision: z.number().int().nonnegative().optional(),
+    status: z.enum(["open", "closed"]).optional(),
+    roster: z.array(rosterEntrySchema).optional(),
   })
   .strict();
 export function emptyState(): State {
@@ -115,6 +137,9 @@ export function emptyState(): State {
     gameId,
     profile: "tracker-provisional-v1",
     events: [],
+    revision: 0,
+    status: "open",
+    roster: [...roster],
   };
 }
 export function currentShots(events: ShotEvent[]) {
@@ -143,7 +168,8 @@ export function append(state: State, command: Command, actor: string): State {
       throw new Error("Request ID already used");
     return state;
   }
-  if (state.events.length !== command.expectedRevision)
+  const revision = state.revision ?? state.events.length;
+  if (revision !== command.expectedRevision)
     throw new Error("Report changed. Reload before correcting it.");
   const shots = currentShots(state.events);
   if (!command.shot && !shots.some((s) => s.id === command.shotId))
@@ -168,10 +194,11 @@ export function append(state: State, command: Command, actor: string): State {
       {
         ...command,
         actor,
-        revision: state.events.length + 1,
+        revision: revision + 1,
         at: new Date().toISOString(),
       },
     ],
+    revision: revision + 1,
   };
 }
 export function report(shots: Shot[]) {

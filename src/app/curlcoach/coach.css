@@ -244,6 +244,15 @@
   opacity: 0.5;
   cursor: wait;
 }
+
+.event-notice button,
+.coach-finish {
+  margin: 0.75rem 0 0;
+}
+
+.coach-finish {
+  background: #4b1d28;
+}
 .coach-workspace :focus-visible {
   outline: 3px solid #facc15;
   outline-offset: 3px;

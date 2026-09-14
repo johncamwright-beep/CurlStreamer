@@ -14,6 +14,15 @@ export async function middleware(request: NextRequest) {
     destination.pathname = "/teams/" + teamHost[1];
     return NextResponse.rewrite(destination);
   }
+  if (
+    (request.nextUrl.pathname === "/curlcoach" ||
+      request.nextUrl.pathname.startsWith("/api/curlcoach/")) &&
+    process.env.NODE_ENV !== "production" &&
+    process.env.CURLCOACH_ENABLED === "true" &&
+    process.env.CURLCOACH_LOCAL_LAB === "true" &&
+    (process.env.CURLCOACH_LAB_SECRET?.length ?? 0) >= 32
+  )
+    return NextResponse.next();
   // Public marketing and interest collection do not need an Auth round trip.
   if (
     ["/", "/api/pilot-waitlist", "/api/stripe/webhook"].includes(

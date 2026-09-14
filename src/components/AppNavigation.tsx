@@ -40,8 +40,24 @@ export function AppNavigation({
   const [open, setOpen] = useState(false);
   const [signedIn, setSignedIn] = useState(knownSignedIn ?? false);
   const [platformAdmin, setPlatformAdmin] = useState(false);
+  const [coachAccess, setCoachAccess] = useState(false);
   const [current, setCurrent] = useState<CurrentGameSelection | null>(null);
 
+  useEffect(() => {
+    setCoachAccess(false);
+    if (!open || !signedIn) return;
+    const controller = new AbortController();
+    void fetch("/api/curlcoach/access", {
+      cache: "no-store",
+      signal: controller.signal,
+    })
+      .then(async (response) => (response.ok ? response.json() : null))
+      .then((data) => {
+        if (!controller.signal.aborted) setCoachAccess(data?.enabled === true);
+      })
+      .catch(() => {});
+    return () => controller.abort();
+  }, [open, signedIn, pathname]);
   useEffect(() => {
     setPlatformAdmin(false);
     if (!open || !signedIn) return;
@@ -248,7 +264,17 @@ export function AppNavigation({
           <>
             <section>
               <h2 className="app-navigation-heading">Plan &amp; Schedule</h2>
-              <ul>{renderLinks(plan)}</ul>
+              <ul>
+                {renderLinks(plan)}
+                {coachAccess &&
+                  renderLinks([
+                    {
+                      href: "/curlcoach",
+                      label: "Private coaching",
+                      icon: "list",
+                    },
+                  ])}
+              </ul>
             </section>
             <section className="app-navigation-current">
               <h2 className="app-navigation-heading">Current Game</h2>

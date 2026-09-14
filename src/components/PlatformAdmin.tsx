@@ -3,6 +3,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { TeamSettings } from "./TeamSettings";
 import { TeamMembers } from "./TeamMembers";
+import { CurlCoachAdminPanel } from "./CurlCoachAdminPanel";
 import { localDateTimeToUtc } from "@/lib/team-hierarchy";
 type Account = { id: string; email: string; status: string; createdAt: string };
 type Team = {
@@ -99,6 +100,7 @@ export function PlatformAdmin() {
         You are working as the platform administrator. Support changes are
         recorded with your identity.
       </p>
+      <CurlCoachAdminPanel />
       {error && (
         <p role="alert" className="mb-4 text-red-300">
           {error}

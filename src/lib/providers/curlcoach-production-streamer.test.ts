@@ -1,0 +1,91 @@
+import { beforeEach, expect, it, vi } from "vitest";
+const m = vi.hoisted(() => ({
+  account: vi.fn(),
+  auth: vi.fn(),
+  settings: vi.fn(),
+  events: vi.fn(),
+  games: vi.fn(),
+  rpc: vi.fn(),
+}));
+vi.mock("@/lib/curlcoach/production-access", () => ({
+  requireCoachAccount: m.account,
+}));
+vi.mock("@/lib/supabase/server", () => ({
+  createServerSupabaseClient: async () => ({ auth: { getUser: m.auth } }),
+}));
+vi.mock("@/lib/supabase/admin", () => ({
+  createAdminSupabaseClient: () => ({ rpc: m.rpc }),
+}));
+vi.mock("@/lib/providers/team-settings", () => ({
+  readTeamSettings: m.settings,
+}));
+vi.mock("@/lib/team-hierarchy-service", () => ({
+  listEvents: m.events,
+  listTeamHierarchyGames: m.games,
+}));
+import { loadProductionStreamerEvent } from "./curlcoach-production-streamer";
+const eid = "00000000-0000-4000-8000-000000000001",
+  gid = "00000000-0000-4000-8000-000000000002";
+beforeEach(() => {
+  vi.clearAllMocks();
+  m.account.mockResolvedValue({ userId: "coach", organizationId: "org" });
+  m.auth.mockResolvedValue({ data: { user: { id: "coach" } }, error: null });
+  m.settings.mockResolvedValue({
+    settings: {
+      roster: { lead: "Real Player", second: "", third: "", fourth: "" },
+    },
+  });
+  m.events.mockResolvedValue({
+    ok: true,
+    value: [{ id: eid, name: "Our event" }],
+  });
+  m.games.mockResolvedValue({
+    ok: true,
+    value: [
+      {
+        id: gid,
+        event_id: eid,
+        game_number: 1,
+        game_label: null,
+        game_status: "completed",
+        config: {
+          eventName: "Our event",
+          homeName: "Us",
+          awayName: "Them",
+          scheduledEnds: 8,
+          initialHammer: "home",
+        },
+        completion_result: {
+          ends: [{ end: 1, team: "away", points: 2, blank: false }],
+        },
+      },
+    ],
+  });
+});
+it("denies before reading shared games or roster", async () => {
+  m.account.mockResolvedValue(null);
+  await expect(loadProductionStreamerEvent()).rejects.toThrow("access");
+  expect(m.games).not.toHaveBeenCalled();
+  expect(m.settings).not.toHaveBeenCalled();
+});
+it("links completed scoreboard and real roster without writing shared state", async () => {
+  const result = await loadProductionStreamerEvent(eid);
+  expect(result.event.games[0].ends).toEqual([
+    { end: 1, us: 0, them: 2, hammer: true },
+  ]);
+  expect(result.event.games[0].state.roster).toEqual([
+    { id: expect.any(String), name: "Real Player", position: "Lead" },
+  ]);
+  expect(result.event.games[0].state.roster?.[0].id).not.toBe("lead");
+  expect(m.rpc).not.toHaveBeenCalled();
+});
+it("refuses another event and supports eventless games", async () => {
+  await expect(loadProductionStreamerEvent("another-event")).rejects.toThrow(
+    "organization",
+  );
+  const rows = await m.games();
+  rows.value[0].event_id = null;
+  m.games.mockResolvedValue(rows);
+  const result = await loadProductionStreamerEvent("standalone");
+  expect(result.event.games[0].id).toBe(gid);
+});

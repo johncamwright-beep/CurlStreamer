@@ -12,16 +12,16 @@ Details!H7 credits Renee Sonnenberg with a curling.ca email; H8 acknowledges Sea
 
 The Lead input block is Game 1!A10:K32. Corresponding blocks begin at M, Y and AK for the other positions. Identifiers such as 1A/1B denote the lead's first and second attempts in end 1; 1C/1D, 1E/1F and 1G/1H follow for the other positions.
 
-| Source field | Exact supported values or meaning | CurlCoach representation |
-| --- | --- | --- |
-| Turn/Target (B11:B32) | CW C, CW S, CCW C, CCW S, CW C IO, CW S IO, CCW C IO, CCW S IO | Preserve the code; present understandable labels and an optional diagram |
-| Draw Type (C11:C32) | Guard/Front Stone, Draw, Come Around, Angle/Freeze, Tap/Split | Draw family with one subtype |
-| Hit Type (E11:E32) | Hit & Stay, Hit & Roll, Finesse Hit, Peel, Runback/Multiple | Hit family with one subtype |
-| Execution (G11:G32) | Make, Partial, Limited, Xmiss | Separate categorical outcome |
-| Shot Score (H11:H32) | 0, 1, 2, 3, 4, 5 | Separate nullable integer grade |
-| Deficiency (I11:I32) | Make, Light, Heavy, Undercurl, Overcurl, Management | Primary diagnostic category |
-| Mark for Review (J11:J32) | Team, Player, Strategy, Highlight | Flag category linked to shot, player, notes and video interval |
-| Note (K11:K32) | Free text | Persistent private coaching note |
+| Source field              | Exact supported values or meaning                              | CurlCoach representation                                                 |
+| ------------------------- | -------------------------------------------------------------- | ------------------------------------------------------------------------ |
+| Turn/Target (B11:B32)     | CW C, CW S, CCW C, CCW S, CW C IO, CW S IO, CCW C IO, CCW S IO | Preserve the code; present understandable labels and an optional diagram |
+| Draw Type (C11:C32)       | Guard/Front Stone, Draw, Come Around, Angle/Freeze, Tap/Split  | Draw family with one subtype                                             |
+| Hit Type (E11:E32)        | Hit & Stay, Hit & Roll, Finesse Hit, Peel, Runback/Multiple    | Hit family with one subtype                                              |
+| Execution (G11:G32)       | Make, Partial, Limited, Xmiss                                  | Separate categorical outcome                                             |
+| Shot Score (H11:H32)      | 0, 1, 2, 3, 4, 5                                               | Separate nullable integer grade                                          |
+| Deficiency (I11:I32)      | Make, Light, Heavy, Undercurl, Overcurl, Management            | Primary diagnostic category                                              |
+| Mark for Review (J11:J32) | Team, Player, Strategy, Highlight                              | Flag category linked to shot, player, notes and video interval           |
+| Note (K11:K32)            | Free text                                                      | Persistent private coaching note                                         |
 
 `Select` is a placeholder throughout, not a real category or zero score. Draw Tag and Hit Tag are formula helpers identifying the selected family; they should not become manual coach inputs.
 

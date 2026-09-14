@@ -3,8 +3,10 @@ import { reviewLink, reviewStart, videoTime } from "@/lib/curlcoach/review";
 
 export default function ReviewSummary({
   shots,
+  players = roster,
 }: {
   shots: (Shot & { id: string })[];
+  players?: readonly { id: string; name: string }[];
 }) {
   const flagged = shots
     .filter((shot) => shot.flagged ?? !!shot.review)
@@ -32,8 +34,9 @@ export default function ReviewSummary({
               End {shot.end} · {shot.position} · Stone {shot.stone}
             </h3>
             <p>
-              {roster.find((player) => player.id === shot.playerId)?.name} ·{" "}
-              {shot.type ?? "Type not recorded"}
+              {players.find((player) => player.id === shot.playerId)?.name ??
+                shot.playerId}{" "}
+              · {shot.type ?? "Type not recorded"}
               {shot.review ? ` · ${shot.review}` : ""}
             </p>
             <p>{shot.note || "No notes added."}</p>

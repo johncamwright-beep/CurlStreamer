@@ -31,6 +31,9 @@ const blank: Shot = {
   excluded: null,
   note: "",
 };
+function blankDraft(playerId: string): Shot {
+  return { ...blank, playerId };
+}
 export default function CoachLab({
   unlocked,
   context,
@@ -40,6 +43,7 @@ export default function CoachLab({
     source: "sample" | "streamer";
     eventId: string;
     gameId: string;
+    roster?: State["roster"];
     initialState: State;
     onSaved: (state: State) => void;
   };
@@ -48,11 +52,22 @@ export default function CoachLab({
   const [state, setState] = useState<State | null>(
     context?.initialState ?? null,
   );
-  const [draft, setDraft] = useState<Shot>(blank);
+  const initialPlayers =
+    context?.initialState.roster ?? context?.roster ?? roster;
+  const [draft, setDraft] = useState<Shot>(() =>
+    blankDraft(initialPlayers[0]?.id ?? ""),
+  );
   const [editing, setEditing] = useState<string | null>(null);
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
   const [history, setHistory] = useState(false);
+  const players = state?.roster ?? context?.roster ?? roster;
+  const closed = state?.status === "closed";
+  const rosterReady = players.length > 0;
+  useEffect(() => {
+    if (rosterReady && !players.some((player) => player.id === draft.playerId))
+      setDraft((current) => ({ ...current, playerId: players[0].id }));
+  }, [draft.playerId, players, rosterReady]);
   const load = useCallback(async () => {
     try {
       const response = await fetch(
@@ -103,7 +118,7 @@ export default function CoachLab({
     try {
       const command = {
         requestId: crypto.randomUUID(),
-        expectedRevision: state.events.length,
+        expectedRevision: state.revision ?? state.events.length,
         shotId: id,
         shot,
       };
@@ -135,7 +150,11 @@ export default function CoachLab({
           : "Attempt removed by an audited revision.",
       );
       if (shot && advance) {
-        const next = nextTurn(shot, currentShots(data.events));
+        const next = nextTurn(
+          shot,
+          currentShots(data.events),
+          data.roster ?? players,
+        );
         if (next) {
           const existing = currentShots(data.events).find(
             (attempt) =>
@@ -174,6 +193,41 @@ export default function CoachLab({
         error instanceof Error
           ? error.message
           : "Save not confirmed. Reload before retrying.",
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
+  async function lifecycle(action: "finish" | "reopen") {
+    if (!context || !state) return;
+    setBusy(true);
+    try {
+      const response = await fetch("/api/curlcoach/workspace", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          source: context.source,
+          eventId: context.eventId,
+          gameId: context.gameId,
+          action,
+          requestId: crypto.randomUUID(),
+          expectedRevision: state.revision ?? state.events.length,
+        }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error);
+      setState(data);
+      context.onSaved(data);
+      setMessage(
+        action === "finish"
+          ? "Private coaching session closed. Shared game scoring continues normally."
+          : "Private coaching session reopened.",
+      );
+    } catch (error) {
+      setMessage(
+        error instanceof Error
+          ? error.message
+          : "Session update was not confirmed.",
       );
     } finally {
       setBusy(false);
@@ -257,6 +311,25 @@ export default function CoachLab({
               <strong>{team.excluded}</strong>
             </div>
           </section>
+          {closed && (
+            <section
+              className="event-notice"
+              aria-label="Closed coaching session"
+            >
+              <strong>Private coaching session closed.</strong> Review remains
+              available. Reopen this private session to chart or correct
+              attempts; this never completes the shared game or stops its
+              stream.
+              {context?.source === "streamer" && (
+                <button
+                  disabled={busy}
+                  onClick={() => void lifecycle("reopen")}
+                >
+                  Reopen coaching session
+                </button>
+              )}
+            </section>
+          )}
           <p>
             Percentage = numeric points ÷ (5 × scored attempts). Zero counts;
             missing grades and exclusions do not. Execution categories are
@@ -275,7 +348,7 @@ export default function CoachLab({
                   void save(draft, editing ?? crypto.randomUUID(), advance);
                 }}
               >
-                <fieldset disabled={busy || !state}>
+                <fieldset disabled={busy || !state || closed || !rosterReady}>
                   <div className="coach-fields">
                     <label>
                       Player
@@ -288,7 +361,7 @@ export default function CoachLab({
                           })
                         }
                       >
-                        {roster.map((p) => (
+                        {players.map((p) => (
                           <option value={p.id} key={p.id}>
                             {p.name}
                           </option>
@@ -447,7 +520,7 @@ export default function CoachLab({
                     <button
                       type="submit"
                       value="next"
-                      disabled={!nextTurn(draft, shots)}
+                      disabled={!nextTurn(draft, shots, players)}
                       title="Save this attempt and move to the next turn"
                     >
                       Next turn →
@@ -458,7 +531,7 @@ export default function CoachLab({
                         type="button"
                         onClick={() => {
                           setEditing(null);
-                          setDraft(blank);
+                          setDraft(blankDraft(players[0]?.id ?? ""));
                         }}
                       >
                         Cancel correction
@@ -470,7 +543,7 @@ export default function CoachLab({
             </section>
             <section className="coach-panel">
               <h2>Player report</h2>
-              {roster.map((player) => {
+              {players.map((player) => {
                 const r = report(shots.filter((s) => s.playerId === player.id));
                 return (
                   <div className="coach-player" key={player.id}>
@@ -486,15 +559,21 @@ export default function CoachLab({
                 );
               })}
               <p>
-                Roster snapshot includes one alternate. Select their throwing
-                position for substitutions; reports retain individual player
-                identity.
+                Roster identity is saved with this private coaching session.
+                Select the throwing position for substitutions; reports retain
+                player identity.
               </p>
               <button disabled={busy} onClick={() => void load()}>
                 Reload local data
               </button>
             </section>
           </div>
+          {!rosterReady && context?.source === "streamer" && (
+            <section className="event-notice" aria-label="Roster required">
+              Add your team roster before charting attempts.{" "}
+              <a href="/account">Open Account team setup</a>
+            </section>
+          )}
           <section className="coach-panel">
             <h2>Recorded attempts</h2>
             {!shots.length && (
@@ -510,8 +589,9 @@ export default function CoachLab({
                     End {shot.end} · {shot.position} · Stone {shot.stone}
                   </strong>
                   <p>
-                    {roster.find((p) => p.id === shot.playerId)?.name} ·{" "}
-                    {shot.type ?? "Type not recorded"} ·{" "}
+                    {players.find((p) => p.id === shot.playerId)?.name ??
+                      shot.playerId}{" "}
+                    · {shot.type ?? "Type not recorded"} ·{" "}
                     {shot.excluded ??
                       (shot.grade === null ? "Not graded" : `${shot.grade}/5`)}
                   </p>
@@ -521,7 +601,7 @@ export default function CoachLab({
                   )}
                 </div>
                 <button
-                  disabled={busy}
+                  disabled={busy || closed}
                   onClick={() => {
                     const { id, ...value } = shot;
                     setEditing(id);
@@ -534,7 +614,7 @@ export default function CoachLab({
                   Correct
                 </button>
                 <button
-                  disabled={busy}
+                  disabled={busy || closed}
                   onClick={() => void save(null, shot.id)}
                 >
                   Remove attempt
@@ -542,10 +622,10 @@ export default function CoachLab({
               </article>
             ))}
           </section>
-          <ReviewSummary shots={shots} />
+          <ReviewSummary shots={shots} players={players} />
           <section className="coach-panel">
             <button
-              disabled={busy || !state?.events.length}
+              disabled={busy || closed || !state?.events.length}
               onClick={() => {
                 if (!state?.events.length) return;
                 const latest = state.events[state.events.length - 1];
@@ -574,7 +654,7 @@ export default function CoachLab({
                         End {event.shot.end} · {event.shot.position} · Stone{" "}
                         {event.shot.stone} ·{" "}
                         {
-                          roster.find(
+                          players.find(
                             (player) => player.id === event.shot?.playerId,
                           )?.name
                         }
@@ -611,6 +691,15 @@ export default function CoachLab({
                   </li>
                 ))}
               </ol>
+            )}
+            {context?.source === "streamer" && !closed && (
+              <button
+                className="coach-finish"
+                disabled={busy}
+                onClick={() => void lifecycle("finish")}
+              >
+                Finish private coaching session
+              </button>
             )}
           </section>
         </>

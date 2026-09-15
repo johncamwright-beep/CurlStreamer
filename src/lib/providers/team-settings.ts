@@ -38,3 +38,14 @@ export async function readTeamSettings(organizationId: string) {
     logo: profile.data?.logo_url ?? null,
   };
 }
+
+/** Read only branding after the caller has established active team membership. */
+export async function readTeamLogo(organizationId: string) {
+  const { data, error } = await createAdminSupabaseClient()
+    .from("team_public_profiles")
+    .select("logo_url")
+    .eq("organization_id", organizationId)
+    .maybeSingle();
+  if (error) throw Error("Team logo is temporarily unavailable.");
+  return data?.logo_url ?? null;
+}

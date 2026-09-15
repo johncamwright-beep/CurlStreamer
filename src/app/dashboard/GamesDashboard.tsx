@@ -17,6 +17,7 @@ import { GameEventFilter } from "@/components/GameEventFilter";
 
 export function GamesDashboard({
   account,
+  accountLogo,
   games,
   events,
   seasons,
@@ -26,6 +27,7 @@ export function GamesDashboard({
   selectedEvent,
 }: {
   account: AccountContext;
+  accountLogo?: string | null;
   games: ScheduledGameRecord[];
   events: EventRecord[];
   seasons: SeasonRecord[];
@@ -88,7 +90,7 @@ export function GamesDashboard({
   return (
     <main className="games-dashboard">
       <header className="dashboard-heading">
-        <AppNavigation signedIn />
+        <AppNavigation signedIn accountLogo={accountLogo} />
         <div className="dashboard-title">
           <p className="dashboard-team-title">{membership.teamName}</p>
           <h1>Games</h1>

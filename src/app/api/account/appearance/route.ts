@@ -1,4 +1,4 @@
-import { readTeamSettings } from "@/lib/providers/team-settings";
+import { readTeamLogo } from "@/lib/providers/team-settings";
 import { NextResponse } from "next/server";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { getAccountContext } from "@/lib/auth/account";
@@ -16,12 +16,12 @@ export async function GET() {
     const team = result.ok ? result.account.membership?.teamName : undefined;
     const saved =
       result.ok && result.account.membership
-        ? await readTeamSettings(
-            result.account.membership.organization_id,
-          ).catch(() => null)
+        ? await readTeamLogo(result.account.membership.organization_id).catch(
+            () => null,
+          )
         : null;
     return NextResponse.json(
-      { logo: saved?.logo || (team ? teamLogoSource(team) : null) },
+      { logo: saved || (team ? teamLogoSource(team) : null) },
       { headers },
     );
   } catch {

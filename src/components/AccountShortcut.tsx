@@ -2,8 +2,12 @@
 import Link from "next/link";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-export function AccountShortcut() {
-  const [logo, setLogo] = useState<string | null>(null);
+export function AccountShortcut({
+  initialLogo,
+}: {
+  initialLogo?: string | null;
+}) {
+  const [logo, setLogo] = useState<string | null>(initialLogo ?? null);
   const marker = useRef<HTMLSpanElement>(null);
   const [placement, setPlacement] = useState<{
     main: HTMLElement;
@@ -54,6 +58,10 @@ export function AccountShortcut() {
     };
   }, []);
   useEffect(() => {
+    if (initialLogo !== undefined) {
+      setLogo(initialLogo);
+      return;
+    }
     const controller = new AbortController();
     void fetch("/api/account/appearance", { signal: controller.signal })
       .then((response) => (response.ok ? response.json() : null))
@@ -69,7 +77,7 @@ export function AccountShortcut() {
     return () => {
       controller.abort();
     };
-  }, []);
+  }, [initialLogo]);
   const shortcut = (
     <Link
       href="/account"

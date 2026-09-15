@@ -405,3 +405,60 @@ test("public page filters games and keeps five rows in its scrolling tile", asyn
     ),
   ).toBe(true);
 });
+
+test("owners can transfer one coaching seat and assign two with two licences", async ({
+  page,
+}) => {
+  let seats = 1;
+  let selected = ["owner-member"];
+  await page.route("**/api/account/curlcoach", async (route) => {
+    if (route.request().method() === "POST")
+      selected = route.request().postDataJSON().membershipIds;
+    await route.fulfill({
+      json: {
+        available: true,
+        enabled: true,
+        seats,
+        canManage: true,
+        members: [
+          {
+            id: "owner-member",
+            email: "owner@coach.test",
+            role: "owner",
+            assigned: selected.includes("owner-member"),
+          },
+          {
+            id: "other-member",
+            email: "coach@coach.test",
+            role: "game_operator",
+            assigned: selected.includes("other-member"),
+          },
+        ],
+      },
+    });
+  });
+  await page.goto("/login?next=/account?section=members");
+  await page.getByLabel("Email address").fill("admin@youtube.test");
+  await page.getByLabel("Password").fill("playwright-password");
+  await page.getByRole("button", { name: "Sign in", exact: true }).click();
+  const licences = page.getByRole("region", { name: "CurlCoach licences" });
+  await expect(licences).toBeVisible();
+  await expect(
+    licences.getByLabel("coach@coach.test", { exact: true }),
+  ).toBeDisabled();
+  await licences.getByLabel("owner@coach.test (owner)").uncheck();
+  await licences.getByLabel("coach@coach.test", { exact: true }).check();
+  await licences
+    .getByRole("button", { name: "Save coaching assignments" })
+    .click();
+  await expect(licences.getByRole("status")).toContainText("saved");
+  expect(selected).toEqual(["other-member"]);
+  seats = 2;
+  await licences.getByRole("button", { name: "Reload licences" }).click();
+  await licences.getByLabel("owner@coach.test (owner)").check();
+  await licences
+    .getByRole("button", { name: "Save coaching assignments" })
+    .click();
+  await expect(licences.getByRole("status")).toContainText("saved");
+  expect(selected).toHaveLength(2);
+});

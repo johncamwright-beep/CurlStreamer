@@ -1,3 +1,4 @@
+import { createAdminSupabaseClient } from "@/lib/supabase/admin";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import {
@@ -17,6 +18,13 @@ const reply = (body: unknown, status = 200) =>
   });
 
 const schema = z.discriminatedUnion("action", [
+  z
+    .object({
+      action: z.literal("seats"),
+      organizationId: z.uuid(),
+      seats: z.number().int().min(1).max(100),
+    })
+    .strict(),
   z.object({
     action: z.literal("entitlement"),
     organizationId: z.uuid(),
@@ -65,7 +73,17 @@ export async function POST(request: Request) {
       return reply({ error: "Check the entered details." }, 400);
 
     const body = parsed.data;
-    if (body.action === "entitlement") {
+    if (body.action === "seats") {
+      const { error } = await createAdminSupabaseClient().rpc(
+        "set_curlcoach_seats",
+        {
+          p_actor: user.id,
+          p_organization_id: body.organizationId,
+          p_seats: body.seats,
+        },
+      );
+      if (error) throw error;
+    } else if (body.action === "entitlement") {
       await setCurlCoachEntitlement({
         actorUserId: user.id,
         organizationId: body.organizationId,

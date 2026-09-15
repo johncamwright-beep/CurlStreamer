@@ -1,6 +1,7 @@
 import { beforeEach, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
+  rpc: vi.fn(),
   auth: vi.fn(),
   enabled: vi.fn(),
   change: vi.fn(),
@@ -15,6 +16,9 @@ vi.mock("@/lib/providers/curlcoach-admin", () => ({
   curlCoachAdminEnabled: mocks.enabled,
   changeCurlCoachAccess: mocks.change,
   setCurlCoachEntitlement: mocks.entitlement,
+}));
+vi.mock("@/lib/supabase/admin", () => ({
+  createAdminSupabaseClient: () => ({ rpc: mocks.rpc }),
 }));
 import { GET, POST } from "./route";
 
@@ -86,4 +90,25 @@ it("sends entitlement changes to the audited organization RPC", async () => {
     organizationId: id,
     expiresAt: undefined,
   });
+});
+
+it("only sends validated licensed seat counts with the authenticated admin actor", async () => {
+  mocks.auth.mockResolvedValue({ id: "verified-admin" });
+  mocks.rpc.mockResolvedValue({ error: null });
+  expect(
+    (await POST(request({ action: "seats", organizationId: id, seats: 2 })))
+      .status,
+  ).toBe(200);
+  expect(mocks.rpc).toHaveBeenCalledWith("set_curlcoach_seats", {
+    p_actor: "verified-admin",
+    p_organization_id: id,
+    p_seats: 2,
+  });
+  mocks.rpc.mockClear();
+  for (const seats of [0, 101, 1.5])
+    expect(
+      (await POST(request({ action: "seats", organizationId: id, seats })))
+        .status,
+    ).toBe(400);
+  expect(mocks.rpc).not.toHaveBeenCalled();
 });

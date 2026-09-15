@@ -1,5 +1,6 @@
 "use client";
 
+import { TeamCoachLicences } from "./TeamCoachLicences";
 import { useEffect, useState } from "react";
 
 type Role = "owner" | "team_admin" | "game_operator";
@@ -327,6 +328,7 @@ export function TeamMembers({
           )}
         </>
       )}
+      {apiUrl === "/api/account/members" && <TeamCoachLicences />}
     </section>
   );
 }

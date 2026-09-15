@@ -26,10 +26,12 @@ const plan: NavLink[] = [
 
 export function AppNavigation({
   signedIn: knownSignedIn,
+  accountLogo,
   gameContext,
   className = "",
 }: {
   signedIn?: boolean;
+  accountLogo?: string | null;
   gameContext?: CurrentGameSelection;
   className?: string;
 }) {
@@ -232,7 +234,7 @@ export function AppNavigation({
         <span className="sr-only">Menu</span>
       </button>
       <CurlStreamerAppBadge />
-      <AccountShortcut />
+      <AccountShortcut initialLogo={accountLogo} />
       {open && (
         <button
           type="button"
@@ -270,7 +272,7 @@ export function AppNavigation({
                   renderLinks([
                     {
                       href: "/curlcoach",
-                      label: "Private coaching",
+                      label: "CurlCoach",
                       icon: "list",
                     },
                   ])}

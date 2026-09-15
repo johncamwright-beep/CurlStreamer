@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 const field = "input mt-1 block w-full";
 export function CurlCoachAdminPanel() {
   const [available, setAvailable] = useState<boolean | null>(null);
+  const [seats, setSeats] = useState(1);
   const [organizationId, setOrganizationId] = useState("");
   const [targetUserId, setTargetUserId] = useState("");
   const [expiresAt, setExpiresAt] = useState("");
@@ -22,7 +23,7 @@ export function CurlCoachAdminPanel() {
       }
     })();
   }, []);
-  async function save(body: Record<string, string | undefined>) {
+  async function save(body: Record<string, string | number | undefined>) {
     setBusy(true);
     setError("");
     setMessage("");
@@ -113,6 +114,33 @@ export function CurlCoachAdminPanel() {
               void save({ action: "grant", targetUserId, ...expiry });
             }}
           >
+            <h3 className="font-bold">Licensed coaching seats</h3>
+            <label>
+              Seat count
+              <input
+                className={field}
+                type="number"
+                min="1"
+                max="100"
+                value={seats}
+                onChange={(e) => setSeats(Number(e.target.value))}
+              />
+            </label>
+            <p>
+              Set the organization entitlement first. Increase seats only for
+              purchased licences or an approved pilot grant. Unassign excess
+              coaches before reducing seats.
+            </p>
+            <button
+              type="button"
+              className="btn-secondary"
+              disabled={busy || !organizationId}
+              onClick={() =>
+                void save({ action: "seats", organizationId, seats })
+              }
+            >
+              Save licensed seat count
+            </button>
             <h3 className="font-bold">Coach access for an active member</h3>
             <label>
               Member user ID

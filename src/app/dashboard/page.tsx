@@ -1,3 +1,5 @@
+import { readTeamLogo } from "@/lib/providers/team-settings";
+import { teamLogoSource } from "@/components/TeamLogo";
 import { redirect } from "next/navigation";
 import { getAccountContext } from "@/lib/auth/account";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
@@ -32,6 +34,9 @@ export default async function GamesPage({
     );
   const membership = result.account.membership;
   if (!membership) redirect("/onboarding");
+  const logoPromise = readTeamLogo(membership.organization_id)
+    .then((logo) => logo || teamLogoSource(membership.teamName))
+    .catch(() => undefined);
   const hierarchy = await loadTeamHierarchyData(user);
   if (!hierarchy.ok) return <AccountServiceUnavailable />;
   const {
@@ -78,6 +83,7 @@ export default async function GamesPage({
         })()}
       <GamesDashboard
         account={result.account}
+        accountLogo={await logoPromise}
         games={games}
         events={events}
         seasons={hierarchy.seasons}

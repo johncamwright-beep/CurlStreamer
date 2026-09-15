@@ -1,6 +1,10 @@
 import { z } from "zod";
 
 const email = z.string().trim().email("Enter a valid email address.");
+const internalRedirectSchema = z
+  .string()
+  .max(2048)
+  .refine((value) => value.startsWith("/") && !value.startsWith("//"));
 export const signupSchema = z
   .object({
     displayName: z.string().trim().min(1, "Enter your display name.").max(100),
@@ -13,6 +17,15 @@ export const signupSchema = z
     message: "Passwords do not match.",
   });
 export const loginSchema = z.object({ email, password: z.string().min(1) });
+export const studioPasswordSchema = z
+  .object({
+    password: z.string().min(12, "Password must be at least 12 characters."),
+    passwordConfirmation: z.string(),
+  })
+  .refine((value) => value.password === value.passwordConfirmation, {
+    path: ["passwordConfirmation"],
+    message: "Passwords do not match.",
+  });
 export const firstTeamSchema = z.object({
   teamName: z
     .string()
@@ -23,10 +36,10 @@ export const firstTeamSchema = z.object({
 });
 
 export function approvedRedirect(value: string | null, fallback = "/account") {
-  if (!value || !value.startsWith("/") || value.startsWith("//"))
-    return fallback;
+  const parsed = internalRedirectSchema.safeParse(value);
+  if (!parsed.success) return fallback;
   try {
-    const url = new URL(value, "https://local.invalid");
+    const url = new URL(parsed.data, "https://local.invalid");
     return url.origin === "https://local.invalid"
       ? url.pathname + url.search
       : fallback;
@@ -36,6 +49,10 @@ export function approvedRedirect(value: string | null, fallback = "/account") {
 }
 
 export function confirmationUrl(environment = process.env) {
+  return authCallbackUrl("/account", environment);
+}
+
+export function authCallbackUrl(next: string, environment = process.env) {
   const origin =
     environment.NODE_ENV === "production"
       ? environment.APP_BASE_URL
@@ -44,5 +61,7 @@ export function confirmationUrl(environment = process.env) {
   const parsed = new URL(origin);
   if (parsed.protocol !== "https:" && parsed.hostname !== "localhost")
     throw new Error("Invalid environment variable: APP_BASE_URL");
-  return new URL("/auth/confirm?next=/account", parsed).toString();
+  const callback = new URL("/auth/confirm", parsed);
+  callback.searchParams.set("next", approvedRedirect(next));
+  return callback.toString();
 }

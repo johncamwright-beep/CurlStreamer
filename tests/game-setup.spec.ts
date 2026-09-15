@@ -17,10 +17,106 @@ async function fillGame(page: import("@playwright/test").Page) {
   await page
     .getByLabel("Team 2 — Opponent", { exact: true })
     .selectOption({ label: "Team Wright" });
-  await page.getByLabel("Scheduled date (UTC)").fill("2026-10-20");
-  await page.getByLabel("Scheduled time (UTC)").fill("18:30");
+  await page.locator('input[name="scheduledDate"]').fill("2026-10-20");
+  await page.locator('input[name="scheduledTime"]').fill("18:30");
 }
-test("summary and saved payload preserve colours, schedule and YouTube settings", async ({
+
+test("schedules multiple games with the same event and distinct save keys", async ({
+  page,
+}) => {
+  await page
+    .getByRole("combobox", { name: "Event", exact: true })
+    .selectOption({ label: "Autumn Club Championship" });
+  await fillGame(page);
+  await page.locator('input[name="scheduledDate"]').fill("2026-09-12");
+  const payloads: Record<string, any>[] = [];
+  await page.route("**/api/team-schedule", async (route) => {
+    const payload = route.request().postDataJSON();
+    payloads.push(payload);
+    await route.fulfill({
+      json: { game: { id: payload.gameId } },
+    });
+  });
+  await page
+    .getByRole("button", { name: "Schedule game", exact: true })
+    .click();
+  await expect(
+    page.getByRole("heading", { name: "Game scheduled", exact: true }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "Yes, schedule another" }).click();
+  await expect(
+    page.getByRole("combobox", { name: "Event", exact: true }),
+  ).toHaveValue(payloads[0].eventId);
+  await expect(page.locator('input[name="scheduledDate"]')).toHaveValue(
+    "2026-09-12",
+  );
+  await expect(page.locator('input[name="scheduledTime"]')).toHaveValue("");
+  await page.locator('input[name="scheduledTime"]').fill("20:30");
+  await page
+    .getByRole("button", { name: "Schedule game", exact: true })
+    .click();
+  await expect(
+    page.getByRole("heading", { name: "Game scheduled", exact: true }),
+  ).toBeVisible();
+  expect(payloads).toHaveLength(2);
+  expect(payloads[1].gameId).not.toBe(payloads[0].gameId);
+  expect(payloads[1].eventId).toBe(payloads[0].eventId);
+  expect(payloads[1].config).toMatchObject({
+    scheduledEnds: payloads[0].config.scheduledEnds,
+  });
+  await page.getByRole("button", { name: "No, I’m finished" }).click();
+  await expect(
+    page.getByRole("heading", { name: "Open the last game?" }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "No, view all games" }).click();
+  await expect(page).toHaveURL(/\/dashboard$/);
+});
+test("duplicate game number can be cleared without losing the game details", async ({
+  page,
+}) => {
+  await page
+    .getByRole("combobox", { name: "Event", exact: true })
+    .selectOption({ label: "Autumn Club Championship" });
+  await page
+    .getByLabel("Team 2 — Opponent", { exact: true })
+    .selectOption({ label: "Team Wright" });
+  await page.locator('input[name="scheduledDate"]').fill("2026-09-12");
+  await page.locator('input[name="scheduledTime"]').fill("18:30");
+  await page.getByLabel("Game number (optional)").fill("5");
+  const payloads: { gameNumber: number | null; opponentId?: string }[] = [];
+  await page.route("**/api/team-schedule", async (route) => {
+    payloads.push(route.request().postDataJSON());
+    await route.fulfill({
+      status: 409,
+      json: {
+        error:
+          "That game number is already used in this event. Choose another number or leave the optional game number blank.",
+      },
+    });
+  });
+  await page
+    .getByRole("button", { name: "Schedule game", exact: true })
+    .click();
+  await expect(
+    page.getByRole("button", { name: "Yes, use this number" }),
+  ).toBeVisible();
+  expect(payloads).toHaveLength(0);
+  await page.getByRole("button", { name: "Yes, use this number" }).click();
+  await expect(
+    page.getByRole("alert").filter({ hasText: "game number is already used" }),
+  ).toContainText("game number is already used");
+  await page.getByRole("button", { name: "Leave game unnumbered" }).click();
+  await expect(page.getByLabel("Game number (optional)")).toHaveValue("");
+  await page
+    .getByRole("button", { name: "Schedule game", exact: true })
+    .click();
+  await expect.poll(() => payloads.length).toBe(2);
+  expect(payloads[1]).toMatchObject({
+    gameNumber: null,
+    opponentId: payloads[0].opponentId,
+  });
+});
+test("summary and saved payload reserve an unlisted YouTube watch page", async ({
   page,
 }, info) => {
   await fillGame(page);
@@ -32,10 +128,13 @@ test("summary and saved payload preserve colours, schedule and YouTube settings"
     .getByRole("radio", { name: "Team 1 rock colour: Yellow", exact: true })
     .check();
   await page.getByLabel("Scheduled ends").selectOption("10");
-  await page.getByText("YouTube broadcast settings", { exact: true }).click();
-  await page.getByLabel("Broadcast visibility").selectOption("private");
+  await page
+    .locator("summary")
+    .filter({ hasText: /^Streaming/ })
+    .click();
+  await page.getByRole("radio", { name: "Yes" }).check();
   await expect(review).toContainText("10 ends");
-  await expect(review).toContainText("Private");
+  await expect(review).toContainText("YouTube watch link will be reserved");
   const payloads: unknown[] = [];
   await page.route("**/api/team-schedule", async (route) => {
     payloads.push(route.request().postDataJSON());
@@ -56,19 +155,23 @@ test("summary and saved payload preserve colours, schedule and YouTube settings"
     opponentId: "77777777-7777-4777-8777-777777777777",
     scheduledDate: "2026-10-20",
     scheduledTime: "18:30",
-    timezone: "UTC",
+    timezone: "America/Toronto",
     config: {
       homeColor: "#facc15",
       awayColor: "#2563eb",
       scheduledEnds: 10,
-      youtubeVisibility: "private",
+      youtubeEnabled: true,
+      youtubeVisibility: "unlisted",
     },
   });
   await expect(
     page.getByRole("button", { name: "Schedule game", exact: true }),
   ).toBeEnabled();
   await page.getByText("Rock colours & game length", { exact: true }).click();
-  await page.getByText("YouTube broadcast settings", { exact: true }).click();
+  await page
+    .locator("summary")
+    .filter({ hasText: /^Streaming/ })
+    .click();
   await page.screenshot({
     path: info.outputPath(`setup-summary-${info.project.name}.png`),
     fullPage: true,
@@ -78,14 +181,23 @@ test("unknown opponents are explained and invalid collapsed title settings reope
   page,
 }) => {
   await fillGame(page);
-  await page.getByLabel("Opponent TBD", { exact: true }).check();
+  await page
+    .getByLabel("Team 2 — Opponent", { exact: true })
+    .selectOption("__tbd");
   await expect(
     page.getByRole("complementary", { name: "Review game" }),
   ).toContainText("Assign the opponent before scoring begins");
-  await page.getByText("YouTube broadcast settings", { exact: true }).click();
+  await page
+    .locator("summary")
+    .filter({ hasText: /^Streaming/ })
+    .click();
+  await page.getByRole("radio", { name: "Yes" }).check();
   await page.getByRole("button", { name: "Customize title" }).click();
   await page.getByLabel("YouTube title", { exact: false }).fill("");
-  await page.getByText("YouTube broadcast settings", { exact: true }).click();
+  await page
+    .locator("summary")
+    .filter({ hasText: /^Streaming/ })
+    .click();
   await page
     .getByRole("button", { name: "Schedule game", exact: true })
     .click();
@@ -97,7 +209,10 @@ test("expanded options stay inside the setup form on phones and small laptops", 
 }, info) => {
   await fillGame(page);
   await page.getByText("Rock colours & game length", { exact: true }).click();
-  await page.getByText("YouTube broadcast settings", { exact: true }).click();
+  await page
+    .locator("summary")
+    .filter({ hasText: /^Streaming/ })
+    .click();
   for (const width of [900, 320]) {
     await page.setViewportSize({ width, height: 850 });
     expect(
@@ -139,8 +254,8 @@ test("new opponents and TBD save the intended opponent without a stale selection
   expect(payloads[0]).toMatchObject({ opponentName: "Team Granite" });
   expect(payloads[0]).not.toHaveProperty("opponentId");
   await expect(save).toBeEnabled();
-  await page.getByLabel("Opponent TBD", { exact: true }).check();
-  await expect(picker).toBeDisabled();
+  await picker.selectOption("__tbd");
+  await expect(picker).toBeEnabled();
   await save.click();
   await expect.poll(() => payloads.length).toBe(2);
   expect(payloads[1]).not.toHaveProperty("opponentId");
@@ -175,5 +290,54 @@ test("edit game preserves the current opponent and allows selecting a saved team
   expect(payloads[1]).toMatchObject({
     operation: "updateGame",
     opponentId: "77777777-7777-4777-8777-777777777777",
+  });
+});
+
+test("saving a new opponent adds it to the dropdown and leaving TBD restores selection", async ({
+  page,
+}) => {
+  await fillGame(page);
+  const picker = page.getByLabel("Team 2 — Opponent", { exact: true });
+  await picker.selectOption("__new");
+  await page.getByLabel("New opponent name").fill("  Team   Granite  ");
+  const payloads: Record<string, unknown>[] = [];
+  await page.route("**/api/team-schedule", async (route) => {
+    const payload = route.request().postDataJSON();
+    payloads.push(payload);
+    if (payload.operation === "createOpponent") {
+      await route.fulfill({
+        status: 201,
+        json: [
+          {
+            opponent_id: "88888888-8888-4888-8888-888888888888",
+            display_name: "Team Granite",
+          },
+        ],
+      });
+    } else
+      await route.fulfill({
+        status: 503,
+        json: { error: "Try again shortly." },
+      });
+  });
+  await page
+    .getByRole("button", { name: "Save opponent", exact: true })
+    .click();
+  await expect(picker).toHaveValue("88888888-8888-4888-8888-888888888888");
+  expect(payloads[0]).toEqual({
+    operation: "createOpponent",
+    input: { displayName: "Team Granite" },
+  });
+  await expect(page.getByLabel("New opponent name")).toHaveCount(0);
+  await picker.selectOption("__tbd");
+  await expect(picker).toBeEnabled();
+  await picker.selectOption({ label: "Team Granite" });
+  await page
+    .getByRole("button", { name: "Schedule game", exact: true })
+    .click();
+  await expect.poll(() => payloads.length).toBe(2);
+  expect(payloads[1]).toMatchObject({
+    opponentId: "88888888-8888-4888-8888-888888888888",
+    config: { awayName: "Team Granite" },
   });
 });

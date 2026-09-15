@@ -74,7 +74,10 @@ export function gameCapabilities(
   opponentTbd: boolean,
 ): GameNavigationCapabilities {
   const organizer =
-    role === "owner" || role === "team_admin" || role === "organizer";
+    role === "owner" ||
+    role === "team_admin" ||
+    role === "game_operator" ||
+    role === "organizer";
   const scorer = organizer || role === "scorer";
   return {
     control: organizer,

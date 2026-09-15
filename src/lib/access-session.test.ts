@@ -65,6 +65,7 @@ describe("browser access sessions", () => {
   it.each([
     ["owner", false, true],
     ["team_admin", false, true],
+    ["game_operator", false, true],
     ["scorer", false, false],
     ["viewer", false, false],
     ["", true, true],

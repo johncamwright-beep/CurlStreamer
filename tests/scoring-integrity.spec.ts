@@ -120,6 +120,14 @@ test.beforeAll(async () => {
               "@/components/CompletedGameSummary",
               "export function CompletedGameSummary() { return null; }",
             ],
+            [
+              "@/components/EndGameControl",
+              "export function EndGameControl({ enabled, disabled }) { return enabled ? <button disabled={disabled}>End Game</button> : null; }",
+            ],
+            [
+              "@/components/BroadcastControl",
+              "export function BroadcastControl() { return null; }",
+            ],
           ]);
           builder.onResolve({ filter: /.*/ }, (args) =>
             stubs.has(args.path)

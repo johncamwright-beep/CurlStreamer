@@ -3,6 +3,33 @@ import { NextResponse, type NextRequest } from "next/server";
 import { publicSupabaseConfig } from "@/lib/supabase/config";
 
 export async function middleware(request: NextRequest) {
+  const host = (request.headers.get("host") ?? "").toLowerCase().split(":")[0];
+  const teamHost = /^([a-z0-9]+(?:-[a-z0-9]+)*)\.curlstreamer\.app$/.exec(host);
+  if (["/robots.txt", "/sitemap.xml"].includes(request.nextUrl.pathname))
+    return NextResponse.next();
+  if (teamHost && teamHost[1] !== "www") {
+    if (request.nextUrl.pathname !== "/")
+      return new NextResponse("Not found", { status: 404 });
+    const destination = request.nextUrl.clone();
+    destination.pathname = "/teams/" + teamHost[1];
+    return NextResponse.rewrite(destination);
+  }
+  if (
+    (request.nextUrl.pathname === "/curlcoach" ||
+      request.nextUrl.pathname.startsWith("/api/curlcoach/")) &&
+    process.env.NODE_ENV !== "production" &&
+    process.env.CURLCOACH_ENABLED === "true" &&
+    process.env.CURLCOACH_LOCAL_LAB === "true" &&
+    (process.env.CURLCOACH_LAB_SECRET?.length ?? 0) >= 32
+  )
+    return NextResponse.next();
+  // Public marketing and interest collection do not need an Auth round trip.
+  if (
+    ["/", "/api/pilot-waitlist", "/api/stripe/webhook"].includes(
+      request.nextUrl.pathname,
+    )
+  )
+    return NextResponse.next();
   let response = NextResponse.next({ request });
   const { url, key } = publicSupabaseConfig(
     process.env.NEXT_PUBLIC_SUPABASE_URL,

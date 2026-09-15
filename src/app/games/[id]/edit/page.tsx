@@ -32,6 +32,7 @@ export default async function EditGamePage({
     homeName: game.config.homeName,
     awayName: game.opponentId ? game.config.awayName : null,
     eventName: game.eventId ? game.config.eventName : null,
+    gameNumber: game.gameNumber,
   });
   return (
     <main className="game-setup-page">

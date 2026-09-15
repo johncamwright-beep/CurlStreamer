@@ -83,6 +83,7 @@ export default async function EventPage({
               homeName: game.config.homeName,
               awayName: game.opponentId ? game.config.awayName : null,
               eventName: game.config.eventName,
+              gameNumber: game.gameNumber,
             });
             return (
               <article className="panel" key={game.id}>
@@ -94,7 +95,10 @@ export default async function EventPage({
                 )}
                 {game.scheduledStart && (
                   <p className="text-slate-300">
-                    {formatScheduledStart(game.scheduledStart, event.timezone)}{" "}
+                    {formatScheduledStart(
+                      game.scheduledStart,
+                      game.timezone ?? event.timezone,
+                    )}{" "}
                     · {game.status}
                   </p>
                 )}

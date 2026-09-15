@@ -1,3 +1,15 @@
+.dashboard-event-filter {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin: 16px 0;
+  font-size: 14px;
+}
+.dashboard-event-filter select {
+  width: min(100%, 340px);
+  min-width: 0;
+}
 .games-dashboard {
   max-width: 1152px;
   margin: 0 auto;
@@ -8,7 +20,7 @@
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  margin-bottom: 28px;
+  margin-bottom: 16px;
 }
 .dashboard-topbar > span {
   color: #aabdd0;
@@ -70,7 +82,7 @@
   flex-wrap: wrap;
   align-items: center;
   gap: 16px;
-  padding: 16px 20px;
+  padding: 8px 16px;
   border: 1px solid #293b50;
   border-radius: 12px;
   background: #0e1b2b;
@@ -473,5 +485,117 @@
   }
   .dashboard-season-form select {
     flex: 1;
+  }
+}
+.games-dashboard {
+  max-width: 1500px;
+  padding: 12px 20px 24px;
+}
+.games-dashboard .dashboard-heading {
+  gap: 14px;
+  margin-bottom: 14px;
+}
+.games-dashboard .dashboard-heading > div:first-of-type {
+  flex: 1;
+}
+.games-dashboard .dashboard-heading h1 {
+  font-size: 24px;
+  margin: 0;
+}
+.games-dashboard .dashboard-season-bar {
+  gap: 8px;
+  padding: 6px 10px;
+}
+.games-dashboard .dashboard-season-bar > a {
+  display: none;
+}
+.games-dashboard .dashboard-list-heading {
+  margin-top: 12px;
+  margin-bottom: 10px;
+}
+.games-dashboard .dashboard-list-heading p {
+  display: none;
+}
+.games-dashboard .dashboard-game-grid,
+.games-dashboard .dashboard-event-grid {
+  gap: 10px;
+}
+.games-dashboard .dashboard-game-card,
+.games-dashboard .dashboard-event-card {
+  padding: 14px;
+  border-radius: 12px;
+}
+.games-dashboard .dashboard-card-meta {
+  margin-bottom: 8px;
+}
+.games-dashboard .dashboard-game-date,
+.games-dashboard .dashboard-actions {
+  margin-top: 8px;
+}
+@media (max-width: 850px) {
+  .games-dashboard .dashboard-heading {
+    flex-wrap: wrap;
+  }
+}
+.games-dashboard .dashboard-heading > div:first-of-type {
+  flex: 0 0 auto;
+}
+.games-dashboard .dashboard-heading > .dashboard-title {
+  flex: 1;
+  min-width: 0;
+}
+.dashboard-team-title {
+  font-size: 24px;
+  font-weight: 750;
+  line-height: 1.2;
+}
+.games-dashboard .dashboard-title h1 {
+  font-size: 16px;
+  color: #b7c7d9;
+  margin-top: 3px;
+}
+.games-dashboard .dashboard-game-grid {
+  grid-template-columns: minmax(0, 1fr);
+}
+@media (min-width: 701px) {
+  .games-dashboard .dashboard-game-card {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    gap: 4px 18px;
+    align-items: center;
+    padding: 10px 14px;
+  }
+  .games-dashboard .dashboard-card-meta {
+    grid-column: 1;
+    justify-content: flex-start;
+    margin: 0;
+  }
+  .games-dashboard .dashboard-matchup {
+    grid-column: 1;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 24px;
+  }
+  .games-dashboard .dashboard-game-date,
+  .games-dashboard .dashboard-outcome,
+  .games-dashboard .dashboard-saved-status {
+    grid-column: 1;
+    margin: 0;
+  }
+  .games-dashboard .dashboard-actions {
+    grid-column: 2;
+    grid-row: 1 / span 3;
+    margin: 0;
+  }
+  .games-dashboard .dashboard-more {
+    grid-column: 3;
+    grid-row: 1 / span 3;
+    border: 0;
+    margin: 0;
+    max-width: 240px;
+  }
+  .games-dashboard .dashboard-more summary {
+    min-height: 44px;
+    padding: 12px 0;
   }
 }

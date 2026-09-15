@@ -1,5 +1,5 @@
 import type { GameConfig } from "./types";
-import { canonicalTitleFromConfig } from "./game-title";
+import { canonicalTitleFromConfig, formatEventGameLabel } from "./game-title";
 import { formatScheduledStart } from "./team-hierarchy";
 import { gameCapabilities } from "./current-game";
 
@@ -16,10 +16,13 @@ export function gameEntryPresentation(
   config: Pick<GameConfig, "eventName" | "homeName" | "awayName">,
   metadata?: GameNavigationMetadata,
 ) {
-  const number = metadata?.state === "available" ? metadata.gameNumber : null;
-  const legacyNumber = config.eventName.match(/\s+[—-]\s+Game\s+(\d+)$/iu)?.[1];
-  const gameNumber = number ?? (legacyNumber ? Number(legacyNumber) : null);
-  const title = `${canonicalTitleFromConfig(config)}${gameNumber ? ` · Game ${gameNumber}` : ""}`;
+  const title = canonicalTitleFromConfig({
+    ...config,
+    eventName: formatEventGameLabel(
+      config.eventName,
+      metadata?.state === "available" ? metadata.gameNumber : undefined,
+    ),
+  });
   let scheduledLabel = "Schedule unavailable";
   if (metadata?.state === "available") {
     if (metadata.scheduledStart === null) scheduledLabel = "Unscheduled";
@@ -42,7 +45,7 @@ export function gameEntryCapabilities(
 ) {
   const role = organizer
     ? "organizer"
-    : ["owner", "team_admin", "scorer"].includes(accountRole)
+    : ["owner", "team_admin", "game_operator", "scorer"].includes(accountRole)
       ? accountRole
       : scorer
         ? "scorer"

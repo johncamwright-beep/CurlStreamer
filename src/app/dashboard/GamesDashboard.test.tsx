@@ -23,14 +23,17 @@ const game: ScheduledGameRecord = {
   gameLabel: null,
   createdAt: "2026-09-01T00:00:00Z",
 };
-function render(role: NonNullable<AccountContext["membership"]>["role"]) {
+function render(
+  role: NonNullable<AccountContext["membership"]>["role"],
+  games: ScheduledGameRecord[] = [game],
+) {
   return renderToStaticMarkup(
     <GamesDashboard
       account={{
         profile: { display_name: "User", status: "active" },
         membership: { role, organization_id: "org", teamName: "Club" },
       }}
-      games={[game]}
+      games={games}
       events={[]}
       seasons={[]}
       tab="upcoming"
@@ -42,7 +45,7 @@ describe("dashboard role controls", () => {
   it("keeps viewer access read-only while status failure leaves games readable", () => {
     const html = render("viewer");
     expect(html).toContain('href="/games/one"');
-    expect(html).toContain("Broadcast status is temporarily unavailable");
+    expect(html).not.toContain("Broadcast status is temporarily unavailable");
     expect(html).not.toContain('href="/score/one"');
     expect(html).not.toContain('href="/games/new"');
     expect(html).not.toContain("More actions");
@@ -51,9 +54,24 @@ describe("dashboard role controls", () => {
   it("gives scorers scoring access and reserves administrative actions for admins", () => {
     const scorer = render("scorer");
     expect(scorer).toContain('href="/score/one"');
+    expect(scorer).not.toContain("Season overview");
+    expect(scorer).not.toContain("Scoring:");
     expect(scorer).not.toContain("More actions");
     const admin = render("team_admin");
     expect(admin).toContain("More actions");
     expect(admin).toContain('href="/dashboard/trash"');
+  });
+  it("falls back to an existing scheduled watch link when the shared field is empty", () => {
+    const html = render("owner", [
+      {
+        ...game,
+        config: { ...game.config, sharedYoutubeWatchUrl: "" },
+        scheduledYouTubeWatchUrl: "https://www.youtube.com/watch?v=abcdefghijk",
+        scheduledYouTubeStatus: "ready",
+      },
+    ]);
+    expect(html).toContain(
+      'href="https://www.youtube.com/watch?v=abcdefghijk"',
+    );
   });
 });

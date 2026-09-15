@@ -7,8 +7,15 @@ export default defineConfig({
   testDir: "./tests",
   testMatch: [
     "youtube-settings.spec.ts",
+    "admin-access.spec.ts",
     "dashboard.spec.ts",
     "game-setup.spec.ts",
+    "opponent-links.spec.ts",
+    "team-settings.spec.ts",
+    "billing.spec.ts",
+    "news-editor.spec.ts",
+    "news-image-upload.spec.ts",
+    "onboarding.spec.ts",
   ],
   fullyParallel: false,
   webServer: [
@@ -19,6 +26,7 @@ export default defineConfig({
     },
     {
       command: "npm run build && npm start",
+      timeout: 180_000,
       env: {
         ...process.env,
         ROLE_TOKEN_SECRET: "curlcast-playwright-only-secret-32-chars",
@@ -38,7 +46,9 @@ export default defineConfig({
   ],
   use: {
     baseURL: "http://localhost:3000",
-    ...(process.platform === "win32" ? { channel: "msedge" } : {}),
+    ...(process.platform === "win32" && !process.env.PLAYWRIGHT_BUNDLED_CHROMIUM
+      ? { channel: "msedge" }
+      : {}),
   },
   projects: [
     { name: "desktop", use: { ...devices["Desktop Chrome"] } },

@@ -1,0 +1,7 @@
+cmake_minimum_required(VERSION 4.2)
+project(m4_transport_validation LANGUAGES C)
+find_package(libobs 32.2.2 EXACT CONFIG REQUIRED)
+add_executable(m4_transport_validation host.c)
+target_link_libraries(m4_transport_validation PRIVATE OBS::libobs)
+target_compile_definitions(m4_transport_validation PRIVATE WIN32_LEAN_AND_MEAN)
+target_compile_options(m4_transport_validation PRIVATE /W4 /WX)

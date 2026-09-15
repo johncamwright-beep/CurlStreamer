@@ -13,13 +13,17 @@ import {
   type SeasonInput,
 } from "@/lib/team-hierarchy";
 import type { GameConfig, GameState } from "@/lib/types";
-import { issueOrganizerToken } from "@/lib/tokens";
 
 type Result<T> =
   | { ok: true; value: T }
   | {
       ok: false;
-      kind: "authorization" | "validation" | "conflict" | "service";
+      kind:
+        | "authorization"
+        | "validation"
+        | "conflict"
+        | "gameNumberConflict"
+        | "service";
       issues?: unknown;
     };
 
@@ -39,8 +43,17 @@ function failure(
   operation: string,
 ): Result<never> {
   diagnostic(operation, error);
+  if (
+    error.code === "23505" &&
+    error.message?.includes('"games_event_game_number_unique"')
+  )
+    return { ok: false, kind: "gameNumberConflict" };
   if (error.code === "42501") return { ok: false, kind: "authorization" };
-  if (["23505", "23514", "40001", "P0001", "P0002"].includes(error.code ?? ""))
+  if (
+    ["23505", "23514", "PT409", "40001", "P0001", "P0002"].includes(
+      error.code ?? "",
+    )
+  )
     return { ok: false, kind: "conflict" };
   if (error.code === "22023" || error.code === "22P02")
     return { ok: false, kind: "validation" };
@@ -104,6 +117,9 @@ export function createEvent(user: User, input: EventInput) {
     p_end_date: value.endDate,
     p_location: value.location ?? "",
     p_timezone: value.timezone,
+    p_result: value.result ?? null,
+    p_level: value.level ?? null,
+    p_show_level: value.showLevel ?? true,
   });
 }
 
@@ -130,6 +146,9 @@ export function updateEvent(user: User, eventId: string, input: EventInput) {
     p_end_date: value.endDate,
     p_location: value.location ?? "",
     p_timezone: value.timezone,
+    ...(value.result !== undefined ? { p_result: value.result } : {}),
+    ...(value.level !== undefined ? { p_level: value.level } : {}),
+    ...(value.showLevel !== undefined ? { p_show_level: value.showLevel } : {}),
   });
 }
 export const archiveEvent = (user: User, eventId: string) =>
@@ -203,7 +222,7 @@ export async function createScheduledTeamGame(
   if (!created.ok) return created;
   return {
     ok: true as const,
-    value: { game: state, organizerToken: await issueOrganizerToken(state.id) },
+    value: { game: state },
   };
 }
 

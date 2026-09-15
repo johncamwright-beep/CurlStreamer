@@ -1,15 +1,20 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { User } from "@supabase/supabase-js";
-import type { GameConfig } from "@/lib/types";
+import type { GameConfig, GameState } from "@/lib/types";
 
-const mocks = vi.hoisted(() => ({ rpc: vi.fn() }));
+const mocks = vi.hoisted(() => ({ rpc: vi.fn(), issueToken: vi.fn() }));
 
 vi.mock("@/lib/supabase/admin", () => ({
   createAdminSupabaseClient: () => ({ rpc: mocks.rpc }),
 }));
-vi.mock("@/lib/tokens", () => ({ issueOrganizerToken: vi.fn() }));
+vi.mock("@/lib/tokens", () => ({ issueOrganizerToken: mocks.issueToken }));
 
-import { updateScheduledTeamGame } from "./team-hierarchy-service";
+import {
+  createEvent,
+  createScheduledTeamGame,
+  updateEvent,
+  updateScheduledTeamGame,
+} from "./team-hierarchy-service";
 
 const user = { id: "11111111-1111-4111-8111-111111111111" } as User;
 const config: GameConfig = {
@@ -34,6 +39,54 @@ const schedule = {
 describe("scheduled game state persistence", () => {
   beforeEach(() => {
     mocks.rpc.mockReset().mockResolvedValue({ data: null, error: null });
+    mocks.issueToken.mockReset();
+  });
+
+  it("creates a scheduled game without issuing independent organizer access", async () => {
+    const state = {
+      id: "33333333-3333-4333-8333-333333333333",
+      config,
+    } as GameState;
+    const result = await createScheduledTeamGame(user, schedule, config, state);
+    expect(result).toEqual({ ok: true, value: { game: state } });
+    expect(mocks.issueToken).not.toHaveBeenCalled();
+    expect(mocks.rpc).toHaveBeenCalledWith(
+      "create_scheduled_team_game",
+      expect.objectContaining({ p_user_id: user.id, p_game_id: state.id }),
+    );
+  });
+
+  it("identifies an occupied event game number without mislabelling other conflicts", async () => {
+    mocks.rpc.mockResolvedValueOnce({
+      error: {
+        code: "23505",
+        message:
+          'duplicate key value violates unique constraint "games_event_game_number_unique"',
+      },
+    });
+    await expect(
+      updateScheduledTeamGame(
+        user,
+        "33333333-3333-4333-8333-333333333333",
+        schedule,
+        config,
+      ),
+    ).resolves.toEqual({ ok: false, kind: "gameNumberConflict" });
+    mocks.rpc.mockResolvedValueOnce({
+      error: {
+        code: "23505",
+        message:
+          'duplicate key value violates unique constraint "other_unique"',
+      },
+    });
+    await expect(
+      updateScheduledTeamGame(
+        user,
+        "33333333-3333-4333-8333-333333333333",
+        schedule,
+        config,
+      ),
+    ).resolves.toEqual({ ok: false, kind: "conflict" });
   });
 
   it("sends the config snapshot through the atomic schedule RPC", async () => {
@@ -87,5 +140,35 @@ describe("scheduled game state persistence", () => {
         config,
       ),
     ).resolves.toEqual({ ok: false, kind: "conflict" });
+  });
+});
+
+describe("event level persistence", () => {
+  beforeEach(() => {
+    mocks.rpc.mockReset().mockResolvedValue({ data: null, error: null });
+  });
+
+  const event = {
+    seasonId: "22222222-2222-4222-8222-222222222222",
+    name: "Provincials",
+    eventType: "tournament" as const,
+    startDate: "2026-10-01",
+    endDate: "2026-10-02",
+    timezone: "America/Toronto",
+    level: "U18" as const,
+    showLevel: false,
+  };
+
+  it("passes an event level and public visibility to create and update RPCs", async () => {
+    await createEvent(user, event);
+    expect(mocks.rpc).toHaveBeenLastCalledWith(
+      "create_event",
+      expect.objectContaining({ p_level: "U18", p_show_level: false }),
+    );
+    await updateEvent(user, "33333333-3333-4333-8333-333333333333", event);
+    expect(mocks.rpc).toHaveBeenLastCalledWith(
+      "update_event",
+      expect.objectContaining({ p_level: "U18", p_show_level: false }),
+    );
   });
 });

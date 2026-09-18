@@ -24,6 +24,11 @@ internal static class WorkspacePolicyTests
         }
         Assert(WorkspacePolicy.Loopback("http://127.0.0.1:12345"));
         foreach (var address in new[] { "http://localhost:12345", "https://127.0.0.1:12345", "http://127.0.0.1:12345/command", "http://user@127.0.0.1:12345", "http://127.0.0.1:12345?secret=x" }) Assert(!WorkspacePolicy.Loopback(address));
+        Assert(WorkspacePolicy.YouTubeAccountConnection(origin + "/api/settings/youtube/oauth/start", origin));
+        foreach (var value in new[] { "https://attacker.example/api/settings/youtube/oauth/start", origin + "/api/settings/youtube/oauth/start?redirect=evil", origin + "/api/settings/youtube/oauth/start#secret", origin + "/api/settings/youtube/oauth/callback", "https://user@studio.example/api/settings/youtube/oauth/start" })
+            Assert(!WorkspacePolicy.YouTubeAccountConnection(value, origin));
+        Assert(WorkspacePolicy.YouTubeFailure("youtube_reconnect_required").Contains("regular browser"));
+        Assert(!WorkspacePolicy.YouTubeFailure("secret-token").Contains("secret-token"));
         Assert(WorkspacePolicy.RestartYouTube("stopped", "stopped"));
         Assert(WorkspacePolicy.ExternalYouTube("https://www.youtube.com/watch?v=abcdefgh_-1"));
         Assert(WorkspacePolicy.ExternalYouTube("https://studio.youtube.com/channel/example"));

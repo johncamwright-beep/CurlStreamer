@@ -140,6 +140,15 @@ internal sealed class Workspace : Form
             core.Settings.AreDevToolsEnabled = false; core.Settings.IsStatusBarEnabled = false;
             core.NavigationStarting += (s, e) => {
                 if (busy || closing) { e.Cancel = true; return; }
+                if (WorkspacePolicy.YouTubeAccountConnection(e.Uri, origin)) {
+                    e.Cancel = true;
+                    // Start a fresh browser session; never transfer Studio cookies or OAuth state.
+                    try {
+                        Process.Start(new ProcessStartInfo(origin + "/account?section=youtube") { UseShellExecute = true });
+                        status.Text = "YouTube Settings opened in your browser. Sign in if needed, reconnect the existing channel, then return to Studio.";
+                    } catch { status.Text = "Open " + origin + "/account?section=youtube in your browser to reconnect YouTube."; }
+                    return;
+                }
                 if (!WorkspacePolicy.SameOrigin(e.Uri, origin)) { e.Cancel = true; status.Text = "Use the website in your browser for external account connections."; }
                 selectedGame = null; UpdateButtons();
             };
@@ -209,12 +218,13 @@ internal sealed class Workspace : Form
     private async Task<string> WebsiteYouTube(string gameId, string suffix, object body) {
         if (WorkspacePolicy.Game(web.CoreWebView2.Source, origin) != gameId) throw new InvalidDataException();
         handoffNonce = Guid.NewGuid().ToString("N"); handoff = new TaskCompletionSource<Dictionary<string, object>>();
-        var script = "(async()=>{let status=0,sourceUrl='';try{const r=await fetch(" + json.Serialize("/api/games/" + gameId + "/studio-m4" + suffix) + ",{method:'POST',headers:{'content-type':'application/json'},body:" + json.Serialize(json.Serialize(body)) + ",signal:AbortSignal.timeout(30000)});status=r.status;if(r.ok){const v=await r.json();sourceUrl=v.code||v.status||'';}}catch{}window.chrome.webview.postMessage({nonce:" + json.Serialize(handoffNonce) + ",status,sourceUrl});})();";
+        var script = "(async()=>{let status=0,sourceUrl='';try{const r=await fetch(" + json.Serialize("/api/games/" + gameId + "/studio-m4" + suffix) + ",{method:'POST',headers:{'content-type':'application/json'},body:" + json.Serialize(json.Serialize(body)) + ",signal:AbortSignal.timeout(30000)});status=r.status;const v=await r.json();sourceUrl=v.lastErrorCode||v.code||v.status||'';}catch{}window.chrome.webview.postMessage({nonce:" + json.Serialize(handoffNonce) + ",status,sourceUrl});})();";
         try {
             await web.ExecuteScriptAsync(script);
             if (await Task.WhenAny(handoff.Task, Task.Delay(35000)) != handoff.Task) throw new InvalidDataException();
             var result = await handoff.Task;
-            if (Convert.ToInt32(result["status"]) != 200 || WorkspacePolicy.Game(web.CoreWebView2.Source, origin) != gameId) throw new InvalidDataException();
+            if (WorkspacePolicy.Game(web.CoreWebView2.Source, origin) != gameId) throw new InvalidDataException();
+            if (Convert.ToInt32(result["status"]) != 200) throw new WorkspaceFailure(WorkspacePolicy.YouTubeFailure(TextValue(result, "sourceUrl")));
             return TextValue(result, "sourceUrl");
         } finally { handoff = null; handoffNonce = null; }
     }
@@ -233,7 +243,7 @@ internal sealed class Workspace : Form
                     await ConnectProgram(gameId);
                 }
                 var prepared = await WebsiteYouTube(gameId, "", new { action = "prepare" });
-                if (prepared != "prepared") throw new InvalidDataException();
+                if (prepared != "prepared") throw new WorkspaceFailure(WorkspacePolicy.YouTubeFailure(prepared));
                 Dictionary<string, object> state;
                 using (var response = await local.GetAsync(localAddress + "/state")) { response.EnsureSuccessStatusCode(); state = json.Deserialize<Dictionary<string, object>>(await response.Content.ReadAsStringAsync()); }
                 if (TextValue(state, "pairing") == "unpaired") {

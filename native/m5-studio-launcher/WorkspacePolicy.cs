@@ -39,6 +39,26 @@ internal static class WorkspacePolicy
         return userInitiated && selectedGame != null && SameOrigin(request, origin) &&
             Game(page, origin) == selectedGame && new Uri(page).AbsolutePath == "/score/" + selectedGame;
     }
+    internal static bool YouTubeAccountConnection(string value, string origin)
+    {
+        return SameOrigin(value, origin) &&
+            new Uri(value).AbsolutePath == "/api/settings/youtube/oauth/start" &&
+            new Uri(value).Query.Length == 0 && new Uri(value).Fragment.Length == 0;
+    }
+    internal static string YouTubeFailure(string code)
+    {
+        switch (code) {
+            case "youtube_reconnect_required":
+                return "Reconnect your existing YouTube channel in Account & Settings > YouTube Settings using your regular browser, then try again.";
+            case "subscription_required":
+                return "Broadcast access is required. Open Account & Settings > Trial & subscription.";
+            case "broadcast_operation_uncertain":
+            case "broadcast_discovery_incomplete":
+                return "YouTube broadcast recovery is pending. Check the game's YouTube status before trying again.";
+            default:
+                return "YouTube could not prepare this broadcast. Test the connection in Account & Settings > YouTube Settings before retrying.";
+        }
+    }
     internal static bool ExternalYouTube(string value)
     {
         Uri url;

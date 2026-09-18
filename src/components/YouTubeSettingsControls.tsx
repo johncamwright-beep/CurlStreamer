@@ -132,6 +132,10 @@ export function YouTubeSettingsControls({
         Checks that CurlStreamer can access your saved YouTube channel. No live
         broadcast is started.
       </p>
+      <p className="text-sm text-slate-400">
+        In Windows Studio, connect or reconnect through this settings page in
+        Edge or Chrome. Return to Studio after Google confirms the connection.
+      </p>
       {message && <p role="status">{message}</p>}
     </div>
   );

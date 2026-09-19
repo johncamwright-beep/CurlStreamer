@@ -744,7 +744,7 @@ export default function CoachLab({
             ))}
           </section>
           <ReviewSummary shots={shots} players={players} />
-          <section className="coach-panel">
+          <section className="coach-panel" hidden={!!actionsTarget && !history}>
             {actionsTarget
               ? createPortal(sessionActions, actionsTarget)
               : sessionActions}

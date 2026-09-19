@@ -22,15 +22,15 @@ import {
   type CoachGame,
   type Workspace,
 } from "@/lib/curlcoach/event";
+import { preferredGame } from "@/lib/current-game";
 import CoachLab from "./CoachLab";
 import ReviewSummary from "./ReviewSummary";
 import "./coach.css";
 const pages = [
-  "Setup",
   "Scoring",
-  "Data tables",
-  "Scoreboard analysis",
-  "Team",
+  "Shot breakdown",
+  "End-by-end scores",
+  "Team statistics",
   "Game analysis",
 ] as const;
 type Page = (typeof pages)[number];
@@ -485,8 +485,11 @@ export default function EventWorkspace({
   initialEventId?: string;
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
+  const [actionsTarget, setActionsTarget] = useState<HTMLDivElement | null>(
+    null,
+  );
   const drafts = useRef(
-    new Map<string, { draft: Shot; editing: string | null }>(),
+    new Map<string, { draft: Shot; editing: string | null; current?: Shot }>(),
   );
   const [platformAdmin, setPlatformAdmin] = useState(false);
   useEffect(() => {
@@ -507,7 +510,7 @@ export default function EventWorkspace({
     return () => controller.abort();
   }, [mode]);
   const [open, setOpen] = useState(unlocked),
-    [view, setView] = useState<Page>("Setup"),
+    [view, setView] = useState<Page>("Scoring"),
     [source, setSource] = useState<"sample" | "streamer">(
       mode === "streamer" ? "streamer" : "sample",
     ),
@@ -526,7 +529,17 @@ export default function EventWorkspace({
     if (!initialEventId && query.get("event")) setEventId(query.get("event")!);
     if (query.get("game")) setGameId(query.get("game")!);
     const read = () =>
-      setView(pages.find((p) => slug(p) === location.hash.slice(1)) ?? "Setup");
+      setView(
+        pages.find(
+          (p) =>
+            slug(p) ===
+            ({
+              "data-tables": "shot-breakdown",
+              team: "team-statistics",
+              "scoreboard-analysis": "end-by-end-scores",
+            }[location.hash.slice(1)] ?? location.hash.slice(1)),
+        ) ?? "Scoring",
+      );
     read();
     window.addEventListener("hashchange", read);
     return () => window.removeEventListener("hashchange", read);
@@ -546,7 +559,7 @@ export default function EventWorkspace({
         setGameId((current) =>
           result.event.games.some((g: CoachGame) => g.id === current)
             ? current
-            : (result.event.games[0]?.id ?? ""),
+            : (preferredGame<CoachGame>(result.event.games)?.id ?? ""),
         );
       } catch (e) {
         if (!signal?.aborted) {
@@ -614,7 +627,7 @@ export default function EventWorkspace({
         <button
           type="button"
           className="coach-menu-toggle"
-          aria-label="CurlCoach menu"
+          aria-label="Shot Tracker menu"
           aria-expanded={menuOpen}
           aria-controls="coach-menu"
           onClick={() => setMenuOpen(!menuOpen)}
@@ -633,11 +646,10 @@ export default function EventWorkspace({
             }
           }}
         >
-          <a className="event-brand" href="#setup">
-            CURL<span>COACH</span>
+          <a className="event-brand" href="#scoring">
+            SHOT <span>TRACKER</span>
           </a>
-          <p>Event workspace</p>
-          <nav aria-label="CurlCoach pages">
+          <nav aria-label="Shot Tracker pages">
             {pages.map((page) => (
               <a
                 href={`#${slug(page)}`}
@@ -649,6 +661,11 @@ export default function EventWorkspace({
               </a>
             ))}
           </nav>
+          <div
+            ref={setActionsTarget}
+            hidden={view !== "Scoring"}
+            className="coach-menu-actions"
+          />
           <div className="event-sidebar-footer">
             {mode === "streamer" ? (
               <nav aria-label="Account">
@@ -668,9 +685,18 @@ export default function EventWorkspace({
       <main className="event-main">
         <header className="event-header">
           <div>
-            <p className="coach-eyebrow">{event?.name ?? "CURLCOACH"}</p>
             <h1>{view}</h1>
           </div>
+          {open && (
+            <button
+              aria-label="Refresh event"
+              title="Refresh event"
+              disabled={busy}
+              onClick={() => void refresh()}
+            >
+              <span aria-hidden="true">↻</span>
+            </button>
+          )}
           {open && (
             <div className="event-selectors">
               {mode === "lab" && (
@@ -715,9 +741,6 @@ export default function EventWorkspace({
                   ))}
                 </select>
               </label>
-              <button disabled={busy} onClick={() => void refresh()}>
-                Refresh event
-              </button>
             </div>
           )}
         </header>
@@ -745,23 +768,9 @@ export default function EventWorkspace({
           </section>
         ) : (
           <>
-            <div className="event-scope">
-              <strong>{event.name}</strong>
-              <span>{event.games.length} games in event</span>
-              <span>
-                {event.source === "sample"
-                  ? "SYNTHETIC EXAMPLE"
-                  : "STREAMER · READ ONLY SCOREBOARD"}
-              </span>
-            </div>
-            {mode === "streamer" && game && (
-              <p className="event-notice">
-                Private coaching data is separate from the shared game.{" "}
-                <a href={`/score/${game.id}`}>Open shared score (read-only)</a>
-              </p>
-            )}
+            {event.source === "sample" && <p>SYNTHETIC EXAMPLE</p>}
             {(
-              ["Scoring", "Game analysis", "Scoreboard analysis"] as Page[]
+              ["Scoring", "Game analysis", "End-by-end scores"] as Page[]
             ).includes(view) && (
               <label className="event-game-picker">
                 Game
@@ -780,84 +789,12 @@ export default function EventWorkspace({
                 </select>
               </label>
             )}
-            {view === "Setup" && (
-              <>
-                <section className="event-card">
-                  <h2>One event. Every game.</h2>
-                  <p>
-                    Scoring records one game at a time. Data tables and Team
-                    combine every game in this event; Game analysis lets you
-                    inspect each game separately.
-                  </p>
-                  <dl className="event-facts">
-                    <div>
-                      <dt>Team</dt>
-                      <dd>{event.games[0]?.teamName ?? "No games"}</dd>
-                    </div>
-                    <div>
-                      <dt>Source</dt>
-                      <dd>
-                        {event.source === "sample"
-                          ? "Synthetic example · not live data"
-                          : "Streamer event and game records"}
-                      </dd>
-                    </div>
-                    <div>
-                      <dt>Charted side</dt>
-                      <dd>
-                        {event.games[0]?.side === "away"
-                          ? "Away team"
-                          : "Home team"}
-                      </dd>
-                    </div>
-                    <div>
-                      <dt>Last refreshed</dt>
-                      <dd>
-                        {new Date(data!.refreshedAt).toLocaleTimeString()}
-                      </dd>
-                    </div>
-                  </dl>
-                </section>
-                <Table
-                  title="Event games"
-                  columns={[
-                    "Opponent",
-                    "Ends",
-                    "Status",
-                    "Scored attempts",
-                    "Scoreboard",
-                  ]}
-                  rows={event.games.map((g) => ({
-                    label: g.label,
-                    values: [
-                      g.opponent,
-                      g.scheduledEnds,
-                      g.status,
-                      report(gameShots(g)).scored,
-                      g.scoreboardAvailable ? "Available" : "Unavailable",
-                    ],
-                  }))}
-                />
-                <section className="event-card">
-                  <h3>Charting roster</h3>
-                  <p>
-                    {event.source === "streamer"
-                      ? "This private coaching roster is a stable snapshot for this game. It does not change the shared Streamer roster or scoreboard."
-                      : "Synthetic roster shared across the event. The alternate retains a separate identity when substituting."}
-                  </p>
-                  <div className="event-roster">
-                    {(game?.roster ?? game?.state.roster ?? roster).map((p) => (
-                      <div key={p.id}>{p.name}</div>
-                    ))}
-                  </div>
-                </section>
-              </>
-            )}
             <div hidden={view !== "Scoring"}>
               {game ? (
                 <CoachLab
                   key={`${source}:${event.id}:${game.id}`}
                   unlocked
+                  actionsTarget={actionsTarget}
                   resume={drafts.current.get(
                     source + ":" + event.id + ":" + game.id,
                   )}
@@ -880,7 +817,7 @@ export default function EventWorkspace({
                 <p>No games in this event.</p>
               )}
             </div>
-            {(view === "Data tables" || view === "Team") && (
+            {(view === "Shot breakdown" || view === "Team statistics") && (
               <div
                 className="event-player-tabs"
                 role="group"
@@ -903,8 +840,8 @@ export default function EventWorkspace({
                 ))}
               </div>
             )}
-            {view === "Data tables" && <DataTables shots={selected} />}
-            {view === "Team" && (
+            {view === "Shot breakdown" && <DataTables shots={selected} />}
+            {view === "Team statistics" && (
               <>
                 <h2>
                   {player === "all"
@@ -980,7 +917,7 @@ export default function EventWorkspace({
               ) : (
                 <p>No games in this event.</p>
               ))}
-            {view === "Scoreboard analysis" &&
+            {view === "End-by-end scores" &&
               (game ? (
                 <Scoreboard event={event} game={game} />
               ) : (

@@ -18,6 +18,9 @@ test("scoped local lab charts, corrects and audits a synthetic shot", async ({
   ).toBeEnabled();
   await page.getByLabel("End", { exact: true }).fill("20");
   await page
+    .getByRole("combobox", { name: "Stone", exact: true })
+    .selectOption("1");
+  await page
     .getByRole("combobox", { name: "Shot type", exact: true })
     .selectOption("Draw");
   await page.getByLabel("Numeric grade").selectOption("5");
@@ -28,10 +31,17 @@ test("scoped local lab charts, corrects and audits a synthetic shot", async ({
   const attempt = page.locator(".coach-attempt").filter({ hasText: "End 20" });
   await expect(attempt).toContainText("5/5");
   await attempt.getByRole("button", { name: "Correct", exact: true }).click();
+  await page.getByRole("button", { name: "Go to current shot" }).click();
+  await expect(
+    page.getByRole("combobox", { name: "Stone", exact: true }),
+  ).toHaveValue("2");
+  await attempt.getByRole("button", { name: "Correct", exact: true }).click();
   await page.getByLabel("Numeric grade").selectOption("0");
   await page.getByRole("button", { name: "Save correction" }).click();
   await expect(attempt).toContainText("0/5");
+  await page.getByRole("button", { name: "Shot Tracker menu" }).click();
   await page.getByRole("button", { name: /Revision history/ }).click();
+  await page.getByRole("button", { name: "Shot Tracker menu" }).click();
   await expect(
     page.locator("li").filter({ hasText: "Grade: 5/5" }).first(),
   ).toBeVisible();
@@ -49,7 +59,9 @@ test("scoped local lab charts, corrects and audits a synthetic shot", async ({
   });
   await attempt.getByRole("button", { name: "Remove attempt" }).click();
   await expect(attempt).toHaveCount(0);
+  await page.getByRole("button", { name: "Shot Tracker menu" }).click();
   await page.getByRole("button", { name: "Undo latest change" }).click();
+  await page.getByRole("button", { name: "Shot Tracker menu" }).click();
   await expect(attempt).toContainText("0/5");
   await page.reload();
   await expect(attempt).toContainText("0/5");
@@ -62,7 +74,7 @@ test("scoped local lab charts, corrects and audits a synthetic shot", async ({
   await attempt.getByRole("button", { name: "Remove attempt" }).click();
   await expect(attempt).toHaveCount(0);
   await page.getByLabel("End", { exact: true }).fill("19");
-  await page.getByLabel("Flag shot for review").check();
+  await page.getByLabel("Flag shot for review").selectOption("yes");
   for (const [label, seconds] of [
     ["30s", "30"],
     ["45s", "45"],
@@ -119,7 +131,7 @@ test("scoped local lab charts, corrects and audits a synthetic shot", async ({
     page.getByRole("combobox", { name: "Stone", exact: true }),
   ).toHaveValue("2");
   await expect(page.getByLabel("Numeric grade")).toHaveValue("");
-  await expect(page.getByLabel("Flag shot for review")).not.toBeChecked();
+  await expect(page.getByLabel("Flag shot for review")).toHaveValue("no");
   await expect(
     page.getByRole("region", { name: "Game review summary" }),
   ).toContainText("Review the line call");

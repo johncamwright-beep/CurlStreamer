@@ -1,3 +1,4 @@
+import { isCurrentGame, preferredGame } from "@/lib/current-game";
 import "server-only";
 import { z } from "zod";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
@@ -65,8 +66,60 @@ export async function loadProductionStreamerEvent(
     catalog.push({ id: "standalone", name: "Single games" });
   if (!catalog.length)
     catalog.push({ id: "no-games", name: "No scheduled games" });
+  const candidates = z
+    .array(
+      z.object({
+        id: z.string(),
+        event_id: z.string().nullable(),
+        game_status: z.string(),
+        scheduled_start: z.string().nullable().optional(),
+        timezone: z.string().nullable().optional(),
+      }),
+    )
+    .parse(games.value)
+    .filter((g) => g.game_status !== "deleted")
+    .map((g) => ({
+      ...g,
+      scheduledStart: g.scheduled_start,
+      status: g.game_status,
+    }));
+  const recommended = preferredGame(candidates);
+  const eventDates = z
+    .array(
+      z.object({
+        id: z.string(),
+        start_date: z.string().optional(),
+        end_date: z.string().optional(),
+        timezone: z.string().optional(),
+        archived_at: z.string().nullable().optional(),
+      }),
+    )
+    .parse(events.value);
+  const currentEvent = eventDates.find((e) => {
+    const today = new Intl.DateTimeFormat("en-CA", {
+      timeZone: e.timezone ?? "America/Toronto",
+    }).format(new Date());
+    return (
+      !e.archived_at &&
+      e.start_date &&
+      e.end_date &&
+      e.start_date <= today &&
+      e.end_date >= today
+    );
+  });
+  const defaultEvent =
+    recommended &&
+    isCurrentGame(
+      recommended.scheduledStart,
+      recommended.timezone ?? "America/Toronto",
+    )
+      ? (recommended.event_id ?? "standalone")
+      : (currentEvent?.id ??
+        (recommended
+          ? (recommended.event_id ?? "standalone")
+          : catalog[0]?.id));
   const selected = catalog.find(
-    (event) => event.id === (eventId || catalog[0]?.id),
+    (event) => event.id === (eventId || defaultEvent),
   );
   if (!selected) throw new Error("Event unavailable for this organization.");
   const rows = z
@@ -74,6 +127,8 @@ export async function loadProductionStreamerEvent(
       z.object({
         id: z.string().uuid(),
         event_id: z.string().uuid().nullable(),
+        scheduled_start: z.string().nullable().optional(),
+        timezone: z.string().nullable().optional(),
         game_number: z.number().nullable(),
         game_label: z.string().nullable(),
         game_status: z.string(),
@@ -160,6 +215,8 @@ export async function loadProductionStreamerEvent(
       teamName: row.config.homeName,
       opponent: row.config.awayName,
       scheduledEnds: row.config.scheduledEnds,
+      scheduledStart: row.scheduled_start,
+      timezone: row.timezone,
       status: row.game_status,
       // The scheduling form stores the owning team in homeName.
       side: "home",

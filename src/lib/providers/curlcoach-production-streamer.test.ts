@@ -112,3 +112,35 @@ it("a shot save reads only the selected authorized game's scoreboard", async () 
   ).toEqual([]);
   expect(m.rpc).not.toHaveBeenCalled();
 });
+
+it("opens the current tournament instead of an old empty event or distant upcoming game", async () => {
+  const old = "00000000-0000-4000-8000-000000000099";
+  vi.useFakeTimers();
+  vi.setSystemTime(new Date("2026-09-19T16:00:00Z"));
+  try {
+    m.events.mockResolvedValue({
+      ok: true,
+      value: [
+        {
+          id: old,
+          name: "Old",
+          start_date: "2026-01-01",
+          end_date: "2026-01-02",
+        },
+        {
+          id: eid,
+          name: "Current",
+          start_date: "2026-09-17",
+          end_date: "2026-09-20",
+          timezone: "America/Toronto",
+        },
+      ],
+    });
+    const result = await loadProductionStreamerEvent();
+    expect(result.event.id).toBe(eid);
+    const explicit = await loadProductionStreamerEvent(old);
+    expect(explicit.event.id).toBe(old);
+  } finally {
+    vi.useRealTimers();
+  }
+});

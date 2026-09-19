@@ -42,7 +42,7 @@ function unavailable() {
   return reply(
     {
       available: false,
-      error: "CurlCoach is not enabled for this deployment.",
+      error: "Shot Tracker is not enabled for this deployment.",
     },
     404,
   );
@@ -56,7 +56,7 @@ export async function GET() {
     if (!curlCoachAdminEnabled()) return unavailable();
     return reply({ available: true });
   } catch {
-    return reply({ error: "CurlCoach administration is unavailable." }, 503);
+    return reply({ error: "Shot Tracker administration is unavailable." }, 503);
   }
 }
 
@@ -99,6 +99,6 @@ export async function POST(request: Request) {
     }
     return reply({ saved: true });
   } catch {
-    return reply({ error: "The CurlCoach change could not be saved." }, 409);
+    return reply({ error: "The Shot Tracker change could not be saved." }, 409);
   }
 }

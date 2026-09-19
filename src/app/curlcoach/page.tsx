@@ -21,8 +21,8 @@ export default async function CoachPage() {
         <AppNavigation />
         <h1 className="text-2xl font-bold">Private coaching</h1>
         <p>
-          CurlCoach requires an enabled team subscription and coach access for
-          your account.
+          Shot Tracker requires an enabled team subscription and coach access
+          for your account.
         </p>
         <Link
           className="inline-flex min-h-11 items-center underline"

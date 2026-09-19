@@ -441,7 +441,7 @@ test("owners can transfer one coaching seat and assign two with two licences", a
   await page.getByLabel("Email address").fill("admin@youtube.test");
   await page.getByLabel("Password").fill("playwright-password");
   await page.getByRole("button", { name: "Sign in", exact: true }).click();
-  const licences = page.getByRole("region", { name: "CurlCoach licences" });
+  const licences = page.getByRole("region", { name: "Shot Tracker licences" });
   await expect(licences).toBeVisible();
   await expect(
     licences.getByLabel("coach@coach.test", { exact: true }),

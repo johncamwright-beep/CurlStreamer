@@ -39,7 +39,7 @@ export async function POST(request: Request) {
         403,
       );
     if (!curlCoachAdminEnabled())
-      return reply({ error: "CurlCoach is unavailable." }, 404);
+      return reply({ error: "Shot Tracker is unavailable." }, 404);
     const parsed = schema.safeParse(await request.json().catch(() => null));
     if (!parsed.success)
       return reply({ error: "Choose accepted team members." }, 400);

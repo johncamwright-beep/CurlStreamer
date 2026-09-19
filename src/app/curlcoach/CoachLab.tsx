@@ -1,5 +1,5 @@
 "use client";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   currentShots,
   deficiencies,
@@ -14,6 +14,7 @@ import {
   type State,
 } from "@/lib/curlcoach/model";
 import "./coach.css";
+import { createPortal } from "react-dom";
 import { nextTurn } from "@/lib/curlcoach/next-turn";
 import ReviewSummary from "./ReviewSummary";
 
@@ -41,13 +42,19 @@ function blankDraft(playerId: string): Shot {
 }
 export default function CoachLab({
   unlocked,
+  actionsTarget,
   context,
   resume,
   onResume,
 }: {
   unlocked: boolean;
-  resume?: { draft: Shot; editing: string | null };
-  onResume?: (value: { draft: Shot; editing: string | null }) => void;
+  actionsTarget?: HTMLDivElement | null;
+  resume?: { draft: Shot; editing: string | null; current?: Shot };
+  onResume?: (value: {
+    draft: Shot;
+    editing: string | null;
+    current?: Shot;
+  }) => void;
   context?: {
     source: "sample" | "streamer";
     eventId: string;
@@ -86,9 +93,23 @@ export default function CoachLab({
   const [editing, setEditing] = useState<string | null>(
     resume?.editing ?? null,
   );
+  const currentDraft = useRef(resume?.current ?? draft);
   useEffect(() => {
-    onResume?.({ draft, editing });
+    onResume?.({
+      draft,
+      editing,
+      current: editing ? currentDraft.current : draft,
+    });
   }, [draft, editing, onResume]);
+  const entry = useRef<HTMLElement>(null);
+  useEffect(() => {
+    if (!editing) currentDraft.current = draft;
+  }, [draft, editing]);
+  function goToCurrent() {
+    setEditing(null);
+    setDraft(currentDraft.current);
+    entry.current?.scrollIntoView({ block: "start", behavior: "smooth" });
+  }
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
   const [history, setHistory] = useState(false);
@@ -207,7 +228,8 @@ export default function CoachLab({
             );
           }
         }
-      } else if (shot)
+      } else if (editing) setDraft(currentDraft.current);
+      else if (shot)
         setDraft({
           ...blank,
           end: shot.end,
@@ -290,11 +312,47 @@ export default function CoachLab({
   }
   const shots = state ? currentShots(state.events) : [];
   const team = report(shots);
+  const lastRevision = new Map(
+    state?.events.map((event, index) => [event.shotId, index]),
+  );
+  const recentShots = [...shots].sort(
+    (a, b) => (lastRevision.get(b.id) ?? 0) - (lastRevision.get(a.id) ?? 0),
+  );
+  const sessionActions = (
+    <>
+      {" "}
+      <button
+        disabled={busy || closed || !state?.events.length}
+        onClick={() => {
+          if (!state?.events.length) return;
+          const latest = state.events[state.events.length - 1];
+          const previous = [...state.events.slice(0, -1)]
+            .reverse()
+            .find((event) => event.shotId === latest.shotId);
+          void save(previous?.shot ?? null, latest.shotId);
+        }}
+      >
+        Undo latest change
+      </button>
+      <button onClick={() => setHistory(!history)} aria-expanded={history}>
+        Revision history ({state?.events.length ?? 0})
+      </button>
+      {context?.source === "streamer" && !closed && (
+        <button
+          className="coach-finish"
+          disabled={busy}
+          onClick={() => void lifecycle("finish")}
+        >
+          Finish private coaching session
+        </button>
+      )}
+    </>
+  );
   return (
     <section className={context ? "coach-lab coach-scoring" : "coach-lab"}>
       {!context && (
         <header>
-          <p className="coach-eyebrow">CURLCOACH / LOCAL LAB</p>
+          <p className="coach-eyebrow">SHOT TRACKER / LOCAL LAB</p>
           <h1>Every shot tells a story.</h1>
           <p>
             Synthetic practice game · Four-person curling · Provisional tracker
@@ -320,30 +378,6 @@ export default function CoachLab({
         </form>
       ) : (
         <>
-          <section className="coach-summary" aria-label="Team report">
-            <div>
-              <span>Team shooting</span>
-              <strong>
-                {team.percent === null
-                  ? "No data"
-                  : `${team.percent.toFixed(1)}%`}
-              </strong>
-            </div>
-            <div>
-              <span>Scored / recorded</span>
-              <strong>
-                {team.scored} / {team.attempts}
-              </strong>
-            </div>
-            <div>
-              <span>Missing grades</span>
-              <strong>{team.missing}</strong>
-            </div>
-            <div>
-              <span>Excluded</span>
-              <strong>{team.excluded}</strong>
-            </div>
-          </section>
           {closed && (
             <section
               className="event-notice"
@@ -363,13 +397,8 @@ export default function CoachLab({
               )}
             </section>
           )}
-          <p>
-            Percentage = numeric points ÷ (5 × scored attempts). Zero counts;
-            missing grades and exclusions do not. Execution categories are
-            independent of grades.
-          </p>
           <div className="coach-columns">
-            <section className="coach-panel">
+            <section ref={entry} className="coach-panel">
               <h2>{editing ? "Correct attempt" : "Chart an attempt"}</h2>
               <form
                 onSubmit={(e) => {
@@ -486,21 +515,24 @@ export default function CoachLab({
                       centre; other codes mean towards centre.
                     </p>
                   </details>
-                  <label className="coach-review-toggle">
-                    <input
-                      type="checkbox"
-                      checked={draft.flagged ?? !!draft.review}
+                  <label>
+                    Flag shot for review
+                    <select
+                      value={(draft.flagged ?? !!draft.review) ? "yes" : "no"}
                       onChange={(e) =>
                         setDraft({
                           ...draft,
-                          flagged: e.target.checked,
-                          flaggedAt: e.target.checked
-                            ? new Date().toISOString()
-                            : draft.flaggedAt,
+                          flagged: e.target.value === "yes",
+                          flaggedAt:
+                            e.target.value === "yes"
+                              ? new Date().toISOString()
+                              : draft.flaggedAt,
                         })
                       }
-                    />
-                    Flag shot for review
+                    >
+                      <option value="no">No</option>
+                      <option value="yes">Yes</option>
+                    </select>
                   </label>
                   {(draft.flagged ?? !!draft.review) && (
                     <div className="coach-video-fields">
@@ -564,6 +596,7 @@ export default function CoachLab({
                   <label>
                     Private coaching note
                     <textarea
+                      rows={4}
                       maxLength={1000}
                       value={draft.note}
                       onChange={(e) =>
@@ -587,13 +620,15 @@ export default function CoachLab({
                     >
                       {busy ? "Saving next turn…" : "Next turn →"}
                     </button>
-                    <span>Saves this attempt, then advances.</span>
+                    <button type="button" onClick={goToCurrent}>
+                      Go to current shot
+                    </button>
                     {editing && (
                       <button
                         type="button"
                         onClick={() => {
                           setEditing(null);
-                          setDraft(blankDraft(players[0]?.id ?? ""));
+                          setDraft(currentDraft.current);
                         }}
                       >
                         Cancel correction
@@ -630,6 +665,30 @@ export default function CoachLab({
               </button>
             </section>
           </div>
+          <section className="coach-summary" aria-label="Team report">
+            <div>
+              <span>Team shooting</span>
+              <strong>
+                {team.percent === null
+                  ? "No data"
+                  : `${team.percent.toFixed(1)}%`}
+              </strong>
+            </div>
+            <div>
+              <span>Scored / recorded</span>
+              <strong>
+                {team.scored} / {team.attempts}
+              </strong>
+            </div>
+            <div>
+              <span>Ungraded shots</span>
+              <strong>{team.missing}</strong>
+            </div>
+            <div>
+              <span>Excluded</span>
+              <strong>{team.excluded}</strong>
+            </div>
+          </section>
           {!rosterReady && context?.source === "streamer" && (
             <section className="event-notice" aria-label="Roster required">
               Add your team roster before charting attempts.{" "}
@@ -644,7 +703,7 @@ export default function CoachLab({
                 as misses.
               </p>
             )}
-            {shots.map((shot) => (
+            {recentShots.map((shot) => (
               <article className="coach-attempt" key={shot.id}>
                 <div>
                   <strong>
@@ -686,28 +745,12 @@ export default function CoachLab({
           </section>
           <ReviewSummary shots={shots} players={players} />
           <section className="coach-panel">
-            <button
-              disabled={busy || closed || !state?.events.length}
-              onClick={() => {
-                if (!state?.events.length) return;
-                const latest = state.events[state.events.length - 1];
-                const previous = [...state.events.slice(0, -1)]
-                  .reverse()
-                  .find((event) => event.shotId === latest.shotId);
-                void save(previous?.shot ?? null, latest.shotId);
-              }}
-            >
-              Undo latest change
-            </button>
-            <button
-              onClick={() => setHistory(!history)}
-              aria-expanded={history}
-            >
-              Revision history ({state?.events.length ?? 0})
-            </button>
+            {actionsTarget
+              ? createPortal(sessionActions, actionsTarget)
+              : sessionActions}
             {history && (
               <ol>
-                {state?.events.map((event) => (
+                {[...(state?.events ?? [])].reverse().map((event) => (
                   <li key={event.requestId}>
                     <strong>Revision {event.revision}</strong> ·{" "}
                     {new Date(event.at).toLocaleString()}
@@ -753,15 +796,6 @@ export default function CoachLab({
                   </li>
                 ))}
               </ol>
-            )}
-            {context?.source === "streamer" && !closed && (
-              <button
-                className="coach-finish"
-                disabled={busy}
-                onClick={() => void lifecycle("finish")}
-              >
-                Finish private coaching session
-              </button>
             )}
           </section>
         </>

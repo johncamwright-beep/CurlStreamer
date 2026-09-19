@@ -39,7 +39,7 @@ export function TeamCoachLicences() {
       );
       if (ids) {
         setMessage(
-          "Coaching assignments saved. Assigned members will see CurlCoach when they next open the menu.",
+          "Coaching assignments saved. Assigned members will see Shot Tracker when they next open the menu.",
         );
         window.dispatchEvent(new Event("curlcoach-access-changed"));
       }
@@ -56,8 +56,8 @@ export function TeamCoachLicences() {
   }, []);
   if (details && !details.available) return null;
   return (
-    <section className="panel grid gap-3" aria-label="CurlCoach licences">
-      <h3 className="text-xl font-bold">CurlCoach licences</h3>
+    <section className="panel grid gap-3" aria-label="Shot Tracker licences">
+      <h3 className="text-xl font-bold">Shot Tracker licences</h3>
       <p>
         Assign the team&apos;s licensed seats to yourself or accepted team
         members. Transferring access does not transfer anyone&apos;s private
@@ -83,7 +83,7 @@ export function TeamCoachLicences() {
           <p>
             {details.enabled
               ? `${selected.length} of ${details.seats} licensed coaching seats selected`
-              : "No active CurlCoach licence. A subscription or pilot entitlement is required."}
+              : "No active Shot Tracker licence. A subscription or pilot entitlement is required."}
           </p>
           {!details.canManage && (
             <p>The team owner manages these assignments.</p>

@@ -35,7 +35,7 @@ export function CurlCoachAdminPanel() {
       });
       const result = (await response.json()) as { error?: string };
       if (!response.ok) throw new Error(result.error || "Change unavailable.");
-      setMessage("CurlCoach access updated.");
+      setMessage("Shot Tracker access updated.");
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Change unavailable.");
     } finally {
@@ -52,7 +52,7 @@ export function CurlCoachAdminPanel() {
     >
       <div>
         <h2 id="curlcoach-admin-title" className="text-xl font-bold">
-          CurlCoach pilot access
+          Shot Tracker pilot access
         </h2>
         <p className="mt-1 text-slate-300">
           Access is explicit and audited. These controls never reveal a
@@ -60,10 +60,11 @@ export function CurlCoachAdminPanel() {
         </p>
       </div>
       {available === null ? (
-        <p className="text-slate-300">Checking CurlCoach availability…</p>
+        <p className="text-slate-300">Checking Shot Tracker availability…</p>
       ) : !available ? (
         <p className="text-slate-300">
-          CurlCoach is unavailable because this deployment has not enabled it.
+          Shot Tracker is unavailable because this deployment has not enabled
+          it.
         </p>
       ) : (
         <>

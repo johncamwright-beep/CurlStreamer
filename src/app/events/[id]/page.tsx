@@ -1,3 +1,4 @@
+import { EventDeletionControl } from "@/components/EventDeletionControl";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { AppNavigation } from "@/components/AppNavigation";
@@ -125,6 +126,13 @@ export default async function EventPage({
           })
         )}
       </section>
+      {["owner", "team_admin"].includes(data.role) && (
+        <EventDeletionControl
+          eventId={event.id}
+          name={event.name}
+          gameCount={games.length}
+        />
+      )}
     </main>
   );
 }

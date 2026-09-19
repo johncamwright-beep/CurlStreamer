@@ -272,7 +272,7 @@ export function AppNavigation({
                   renderLinks([
                     {
                       href: "/curlcoach",
-                      label: "CurlCoach",
+                      label: "Shot Tracker",
                       icon: "list",
                     },
                   ])}

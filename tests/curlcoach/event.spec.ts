@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-test.skip(!process.env.CURLCOACH_E2E, "Use the CurlCoach config");
+test.skip(!process.env.CURLCOACH_E2E, "Use the Shot Tracker config");
 test("seven-game workspace navigation, player/game filters and source availability", async ({
   page,
 }, info) => {
@@ -8,19 +8,24 @@ test("seven-game workspace navigation, player/game filters and source availabili
     .getByLabel("Local lab key")
     .fill("curlcoach-e2e-only-key-thirty-two-characters");
   await page.getByRole("button", { name: "Unlock lab" }).click();
-  await expect(page.getByText("7 games in event")).toBeVisible();
+  await expect(
+    page.getByRole("combobox", { name: "Game", exact: true }),
+  ).toBeVisible();
   await expect(
     page
-      .getByRole("navigation", { name: "CurlCoach pages", includeHidden: true })
+      .getByRole("navigation", {
+        name: "Shot Tracker pages",
+        includeHidden: true,
+      })
       .getByRole("link", { includeHidden: true }),
-  ).toHaveCount(6);
+  ).toHaveCount(5);
   await page.screenshot({
     path: `test-results/event-setup-${info.project.name}.png`,
   });
   await page
-    .getByRole("button", { name: "CurlCoach menu", exact: true })
+    .getByRole("button", { name: "Shot Tracker menu", exact: true })
     .click();
-  await page.getByRole("link", { name: /Data tables/ }).click();
+  await page.getByRole("link", { name: /Shot breakdown/ }).click();
   await expect(
     page.getByRole("heading", { name: "Turn / deficiency", exact: true }),
   ).toBeVisible();
@@ -28,9 +33,9 @@ test("seven-game workspace navigation, player/game filters and source availabili
   await page.getByRole("button", { name: "Alex (Lead)", exact: true }).click();
   await expect(page.locator(".event-metrics")).toContainText("112");
   await page
-    .getByRole("button", { name: "CurlCoach menu", exact: true })
+    .getByRole("button", { name: "Shot Tracker menu", exact: true })
     .click();
-  await page.getByRole("link", { name: /Team$/ }).click();
+  await page.getByRole("link", { name: /Team statistics$/ }).click();
   await expect(
     page.getByRole("heading", { name: "Alex (Lead) · all 7 games" }),
   ).toBeVisible();
@@ -39,7 +44,7 @@ test("seven-game workspace navigation, player/game filters and source availabili
     path: `test-results/event-team-${info.project.name}.png`,
   });
   await page
-    .getByRole("button", { name: "CurlCoach menu", exact: true })
+    .getByRole("button", { name: "Shot Tracker menu", exact: true })
     .click();
   await page.getByRole("link", { name: /Game analysis/ }).click();
   await page
@@ -49,9 +54,9 @@ test("seven-game workspace navigation, player/game filters and source availabili
     page.getByRole("heading", { name: "Game 7 · vs Example team 7" }),
   ).toBeVisible();
   await page
-    .getByRole("button", { name: "CurlCoach menu", exact: true })
+    .getByRole("button", { name: "Shot Tracker menu", exact: true })
     .click();
-  await page.getByRole("link", { name: /Scoreboard analysis/ }).click();
+  await page.getByRole("link", { name: /End-by-end scores/ }).click();
   await expect(
     page.getByRole("heading", { name: "Event score difference / hammer" }),
   ).toBeVisible();
@@ -97,19 +102,19 @@ test("scoring draft survives stats navigation without refetching the event", asy
       reads++;
   });
   for (const view of [
-    "Data tables",
-    "Team",
-    "Scoreboard analysis",
+    "Shot breakdown",
+    "Team statistics",
+    "End-by-end scores",
     "Scoring",
   ]) {
     await page
-      .getByRole("button", { name: "CurlCoach menu", exact: true })
+      .getByRole("button", { name: "Shot Tracker menu", exact: true })
       .click();
     await page.getByRole("link", { name: view, exact: true }).click();
     await expect(
       page.getByRole("heading", { name: view, exact: true }),
     ).toBeVisible();
-    if (view === "Data tables") {
+    if (view === "Shot breakdown") {
       await page
         .locator(".event-table-scroll")
         .first()

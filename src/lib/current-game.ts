@@ -87,3 +87,49 @@ export function gameCapabilities(
     assignOpponent: organizer && opponentTbd,
   };
 }
+
+export function isCurrentGame(
+  start: string | null | undefined,
+  timezone = "America/Toronto",
+  now = Date.now(),
+) {
+  if (!start || !Number.isFinite(Date.parse(start)) || Date.parse(start) > now)
+    return false;
+  const day = new Intl.DateTimeFormat("en-CA", { timeZone: timezone });
+  return day.format(new Date(start)) === day.format(new Date(now));
+}
+export function preferredGame<
+  T extends {
+    scheduledStart?: string | null;
+    timezone?: string | null;
+    status: string;
+  },
+>(games: T[], now = Date.now()): T | undefined {
+  const active = games.filter(
+    (g) => !["completed", "closed", "deleted"].includes(g.status),
+  );
+  const current = active
+    .filter((g) =>
+      isCurrentGame(g.scheduledStart, g.timezone ?? "America/Toronto", now),
+    )
+    .sort(
+      (a, b) => Date.parse(b.scheduledStart!) - Date.parse(a.scheduledStart!),
+    );
+  const future = active
+    .filter((g) => g.scheduledStart && Date.parse(g.scheduledStart) > now)
+    .sort(
+      (a, b) => Date.parse(a.scheduledStart!) - Date.parse(b.scheduledStart!),
+    );
+  const past = games
+    .filter((g) => g.status !== "deleted" && g.scheduledStart)
+    .sort(
+      (a, b) => Date.parse(b.scheduledStart!) - Date.parse(a.scheduledStart!),
+    );
+  return (
+    current[0] ??
+    future[0] ??
+    past[0] ??
+    active[0] ??
+    games.find((g) => g.status !== "deleted")
+  );
+}

@@ -746,3 +746,38 @@
     grid-column: 1 / -1;
   }
 }
+
+.coach-scoring textarea {
+  height: auto;
+  min-height: 110px;
+  resize: vertical;
+}
+.coach-menu-actions {
+  display: grid;
+  gap: 4px;
+}
+.coach-menu-actions[hidden] {
+  display: none;
+}
+.coach-menu-actions button {
+  text-align: left;
+  min-height: 44px;
+}
+
+.event-header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+}
+.event-header > .event-selectors {
+  grid-column: 1 / -1;
+  width: 100%;
+}
+.event-selectors label {
+  flex: 1;
+  min-width: 0;
+}
+.event-main > [role="status"]:empty,
+.coach-scoring > [role="status"]:empty {
+  display: none;
+}

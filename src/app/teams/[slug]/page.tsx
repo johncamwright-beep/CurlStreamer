@@ -59,6 +59,7 @@ export default async function PublicTeamPage({
     ? await db
         .from("events")
         .select("id,name,end_date,result,level,show_level")
+        .is("deleted_at", null)
         .eq("organization_id", profile.organization_id)
         .in("result", ["1st", "2nd", "3rd", "qualified"])
         .order("end_date", { ascending: false })

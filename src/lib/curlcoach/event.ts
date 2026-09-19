@@ -21,6 +21,8 @@ export type CoachGame = {
   opponent: string;
   teamName: string;
   scheduledEnds: number;
+  scheduledStart?: string | null;
+  timezone?: string | null;
   status: string;
   side: Team;
   initialHammer: Team | null;

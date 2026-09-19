@@ -131,6 +131,32 @@ export function GamesDashboard({
           </Link>
         )}
       </header>
+      {!!groups.broadcasting.length && (
+        <section
+          className="dashboard-activity"
+          aria-labelledby="broadcast-activity"
+        >
+          <div className="dashboard-section-heading">
+            <div>
+              <h2 id="broadcast-activity">Broadcast activity</h2>
+              <p>
+                Last saved YouTube status. Open game controls for the latest
+                status.
+              </p>
+            </div>
+            <a className="btn-secondary" href={href(tab)}>
+              Refresh
+            </a>
+          </div>
+          {rows(groups.broadcasting)}
+        </section>
+      )}
+      {!!groups.current.length && (
+        <section className="dashboard-activity" aria-label="Current games">
+          <h2>Current games</h2>
+          {rows(groups.current)}
+        </section>
+      )}
       <section aria-label="Browse games">
         <nav className="dashboard-tabs" aria-label="Browse games">
           {(
@@ -246,26 +272,6 @@ export function GamesDashboard({
           />
         )}
       </section>
-      {!!groups.broadcasting.length && (
-        <section
-          className="dashboard-activity"
-          aria-labelledby="broadcast-activity"
-        >
-          <div className="dashboard-section-heading">
-            <div>
-              <h2 id="broadcast-activity">Broadcast activity</h2>
-              <p>
-                Last saved YouTube status. Open game controls for the latest
-                status.
-              </p>
-            </div>
-            <a className="btn-secondary" href={href(tab)}>
-              Refresh
-            </a>
-          </div>
-          {rows(groups.broadcasting)}
-        </section>
-      )}
       {administrator && (
         <footer className="dashboard-footer">
           <Link href="/dashboard/trash">Recently deleted games →</Link>

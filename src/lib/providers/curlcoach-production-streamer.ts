@@ -8,6 +8,7 @@ import { readTeamSettings } from "@/lib/providers/team-settings";
 import { createHash } from "node:crypto";
 import {
   listEvents,
+  listSeasons,
   listTeamHierarchyGames,
 } from "@/lib/team-hierarchy-service";
 import { emptyState } from "@/lib/curlcoach/model";
@@ -24,6 +25,7 @@ const endSchema = z.object({
 export async function loadProductionStreamerEvent(
   eventId?: string,
   gameId?: string,
+  seasonId?: string,
 ) {
   const account = await requireCoachAccount();
   if (!account) throw new Error("Private coaching access is required.");
@@ -46,15 +48,29 @@ export async function loadProductionStreamerEvent(
       position: (position[0].toUpperCase() + position.slice(1)) as
         "Lead" | "Second" | "Third" | "Fourth",
     }));
-  const [events, games] = await Promise.all([
+  const [events, games, seasonResult] = await Promise.all([
     listEvents(data.user),
     listTeamHierarchyGames(data.user),
+    listSeasons(data.user),
   ]);
-  if (!events.ok || !games.ok)
+  if (!events.ok || !games.ok || !seasonResult.ok)
     throw new Error("Team event data is unavailable.");
-  const catalog = z
+  const seasons = z
     .array(z.object({ id: z.string().uuid(), name: z.string() }))
-    .parse(events.value);
+    .parse(seasonResult.value);
+  const catalog = z
+    .array(
+      z.object({
+        id: z.string().uuid(),
+        name: z.string(),
+        season_id: z.string().uuid().nullable().optional(),
+      }),
+    )
+    .parse(events.value)
+    .map(({ season_id, ...event }) => ({
+      ...event,
+      seasonId: season_id ?? "unassigned",
+    }));
   if (
     z
       .array(
@@ -63,9 +79,20 @@ export async function loadProductionStreamerEvent(
       .parse(games.value)
       .some((game) => game.event_id === null && game.game_status !== "deleted")
   )
-    catalog.push({ id: "standalone", name: "Single games" });
+    catalog.push({
+      id: "standalone",
+      name: "Single games",
+      seasonId: "unassigned",
+    });
   if (!catalog.length)
-    catalog.push({ id: "no-games", name: "No scheduled games" });
+    catalog.push({
+      id: "no-games",
+      name: "No scheduled games",
+      seasonId: "unassigned",
+    });
+  seasons.push({ id: "unassigned", name: "No season assigned" });
+  if (seasonId && !seasons.some((season) => season.id === seasonId))
+    throw new Error("Season unavailable for this organization.");
   const candidates = z
     .array(
       z.object({
@@ -118,15 +145,16 @@ export async function loadProductionStreamerEvent(
         (recommended
           ? (recommended.event_id ?? "standalone")
           : catalog[0]?.id));
-  const selected = catalog.find(
-    (event) => event.id === (eventId || defaultEvent),
-  );
+  const selected = seasonId
+    ? { id: "all", name: "All events", seasonId }
+    : catalog.find((event) => event.id === (eventId || defaultEvent));
   if (!selected) throw new Error("Event unavailable for this organization.");
   const rows = z
     .array(
       z.object({
         id: z.string().uuid(),
         event_id: z.string().uuid().nullable(),
+        season_id: z.string().uuid().nullable().optional(),
         scheduled_start: z.string().nullable().optional(),
         timezone: z.string().nullable().optional(),
         game_number: z.number().nullable(),
@@ -148,7 +176,12 @@ export async function loadProductionStreamerEvent(
     .parse(games.value)
     .filter(
       (game) =>
-        game.event_id === (selected.id === "standalone" ? null : selected.id) &&
+        (seasonId
+          ? (game.season_id ??
+              catalog.find((event) => event.id === game.event_id)?.seasonId ??
+              "unassigned") === seasonId
+          : game.event_id ===
+            (selected.id === "standalone" ? null : selected.id)) &&
         game.game_status !== "deleted" &&
         (!gameId || game.id === gameId),
     );
@@ -157,6 +190,7 @@ export async function loadProductionStreamerEvent(
     name: selected.name,
     source: "streamer",
     organizationId: account.organizationId,
+    seasonId: selected.seasonId,
     games: [],
   };
   for (const [index, row] of rows.entries()) {
@@ -210,7 +244,7 @@ export async function loadProductionStreamerEvent(
     }
     event.games.push({
       id: row.id,
-      eventId: selected.id,
+      eventId: row.event_id ?? "standalone",
       label: row.game_label || `Game ${row.game_number ?? index + 1}`,
       teamName: row.config.homeName,
       opponent: row.config.awayName,
@@ -233,5 +267,5 @@ export async function loadProductionStreamerEvent(
       },
     });
   }
-  return { event, catalog, actor: data.user.id };
+  return { event, catalog, seasons, actor: data.user.id };
 }

@@ -36,11 +36,13 @@ export type CoachEvent = {
   name: string;
   source: "sample" | "streamer";
   organizationId: string;
+  seasonId?: string;
   games: CoachGame[];
 };
 export type Workspace = {
   event: CoachEvent;
-  catalog: { id: string; name: string }[];
+  catalog: { id: string; name: string; seasonId?: string }[];
+  seasons?: { id: string; name: string }[];
   refreshedAt: string;
 };
 export function gameShots(game: CoachGame) {
@@ -147,6 +149,7 @@ export function sampleEvent(id: string): CoachEvent {
       id === "practice" ? "My practice session" : "Shorty Jenkins · example",
     source: "sample",
     organizationId: "curlcoach-synthetic-org",
+    seasonId: "sample-season",
     games: Array.from({ length: count }, (_, g) => {
       const gameId =
         id === "practice"
@@ -214,6 +217,10 @@ export function sampleEvent(id: string): CoachEvent {
   };
 }
 export const sampleCatalog = [
-  { id: "practice", name: "My practice session" },
-  { id: "shorty-example", name: "Shorty Jenkins · example (7 games)" },
+  { id: "practice", name: "My practice session", seasonId: "sample-season" },
+  {
+    id: "shorty-example",
+    name: "Shorty Jenkins · example (7 games)",
+    seasonId: "sample-season",
+  },
 ];

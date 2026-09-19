@@ -18,7 +18,7 @@ test("seven-game workspace navigation, player/game filters and source availabili
         includeHidden: true,
       })
       .getByRole("link", { includeHidden: true }),
-  ).toHaveCount(5);
+  ).toHaveCount(6);
   await page.screenshot({
     path: `test-results/event-setup-${info.project.name}.png`,
   });
@@ -29,6 +29,28 @@ test("seven-game workspace navigation, player/game filters and source availabili
   await expect(
     page.getByRole("heading", { name: "Turn / deficiency", exact: true }),
   ).toBeVisible();
+  async function checkShotDropdown() {
+    const selector = page.getByRole("combobox", {
+      name: "Shooting by shot type shot type",
+      exact: true,
+    });
+    const table = page.getByRole("region", {
+      name: "Shooting by shot type",
+      exact: true,
+    });
+    await expect(selector).toHaveValue("Overall");
+    await expect(table.locator("tbody tr")).toHaveCount(1);
+    for (const shot of ["Draws", "Hits", "Draw"]) {
+      await selector.selectOption(shot);
+      await expect(table.getByRole("rowheader")).toHaveText(shot);
+      await expect(table.locator("tbody tr")).toHaveCount(1);
+    }
+    await selector.selectOption("Overall");
+    expect(
+      await selector.evaluate((node) => node.getBoundingClientRect().height),
+    ).toBeGreaterThanOrEqual(44);
+  }
+  await checkShotDropdown();
   await expect(page.locator(".event-metrics")).toContainText("448");
   await page
     .getByRole("combobox", { name: "Team / player", exact: true })
@@ -76,6 +98,20 @@ test("seven-game workspace navigation, player/game filters and source availabili
     page.getByRole("heading", { name: "Team statistics", exact: true }),
   ).toBeVisible();
   await expect(page.locator(".event-bars > div")).toHaveCount(7);
+  await expect(
+    page.getByRole("combobox", { name: "Season", exact: true }),
+  ).toHaveValue("sample-season");
+  await page
+    .getByRole("combobox", { name: "Event", exact: true })
+    .selectOption("all");
+  await expect(page.locator(".event-bars > div")).toHaveCount(8);
+  await page
+    .getByRole("combobox", { name: "Event", exact: true })
+    .selectOption("shorty-example");
+  await page
+    .getByRole("combobox", { name: "Team / player", exact: true })
+    .selectOption("lead");
+  await checkShotDropdown();
   await page.screenshot({
     path: `test-results/event-team-${info.project.name}.png`,
   });
@@ -98,6 +134,7 @@ test("seven-game workspace navigation, player/game filters and source availabili
   await page
     .getByRole("combobox", { name: "Team / player", exact: true })
     .selectOption("lead");
+  await checkShotDropdown();
   await expect(page.locator(".event-metrics")).toHaveCount(1);
   await expect(page.locator(".event-metrics > div").nth(1)).toContainText("16");
   await page
@@ -147,7 +184,7 @@ test("seven-game workspace navigation, player/game filters and source availabili
   );
 });
 
-test("scoring draft survives stats navigation without refetching the event", async ({
+test("scoring draft survives stats navigation with one cached season read", async ({
   page,
 }, info) => {
   await page.goto("/curlcoach?event=practice#scoring");
@@ -204,10 +241,10 @@ test("scoring draft survives stats navigation without refetching the event", asy
   await expect(page.getByLabel("Private coaching note")).toHaveValue(
     "Keep this unsaved draft",
   );
-  expect(reads).toBe(0);
+  expect(reads).toBe(1);
   await page.getByRole("button", { name: "Next turn", exact: false }).click();
   await expect(page.locator(".coach-scoring [role=status]")).toContainText(
     "Saved. Next turn",
   );
-  expect(reads).toBe(0);
+  expect(reads).toBe(1);
 });

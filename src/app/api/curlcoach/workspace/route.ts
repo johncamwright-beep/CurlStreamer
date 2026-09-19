@@ -45,18 +45,34 @@ async function denial() {
       { status: 401 },
     );
 }
-async function source(input: z.infer<typeof selection>, gameId?: string) {
+async function source(
+  input: z.infer<typeof selection>,
+  gameId?: string,
+  seasonId?: string,
+) {
   if (!labEnabled()) {
     if (input.source !== "streamer")
       throw new Error("Sample data is only available in the local lab.");
     return gameId
       ? loadProductionStreamerEvent(input.eventId, gameId)
-      : loadProductionStreamerEvent(input.eventId);
+      : seasonId
+        ? loadProductionStreamerEvent(undefined, undefined, seasonId)
+        : loadProductionStreamerEvent(input.eventId);
   }
   return input.source === "sample"
     ? {
-        event: sampleEvent(input.eventId ?? "practice"),
+        event: seasonId
+          ? {
+              ...sampleEvent("shorty-example"),
+              id: "all",
+              name: "All events",
+              games: sampleCatalog.flatMap(
+                (entry) => sampleEvent(entry.id).games,
+              ),
+            }
+          : sampleEvent(input.eventId ?? "practice"),
         catalog: sampleCatalog,
+        seasons: [{ id: "sample-season", name: "2026–27" }],
         actor: "synthetic-coach",
       }
     : loadStreamerEvent(input.eventId);
@@ -64,16 +80,31 @@ async function source(input: z.infer<typeof selection>, gameId?: string) {
 export async function GET(request: Request) {
   const denied = await denial();
   if (denied) return denied;
-  const input = selection.safeParse(
-    Object.fromEntries(new URL(request.url).searchParams),
-  );
+  const input = selection
+    .extend({
+      seasonId: z
+        .union([
+          z.string().uuid(),
+          z.literal("unassigned"),
+          z.literal("sample-season"),
+        ])
+        .optional(),
+    })
+    .safeParse(Object.fromEntries(new URL(request.url).searchParams));
   if (!input.success)
     return NextResponse.json(
       { error: "Invalid event selection" },
       { status: 400 },
     );
   try {
-    const { event, catalog, actor } = await source(input.data);
+    if (
+      input.data.seasonId === "sample-season" &&
+      (!labEnabled() || input.data.source !== "sample")
+    )
+      throw new Error("Invalid season");
+    const result = await source(input.data, undefined, input.data.seasonId);
+    const { event, catalog, actor } = result;
+    const seasons = "seasons" in result ? result.seasons : [];
     event.games = await Promise.all(
       event.games.map(async (game) => ({
         ...game,
@@ -90,7 +121,7 @@ export async function GET(request: Request) {
       })),
     );
     return NextResponse.json(
-      { event, catalog, refreshedAt: new Date().toISOString() },
+      { event, catalog, seasons, refreshedAt: new Date().toISOString() },
       { headers: { "Cache-Control": "no-store" } },
     );
   } catch (error) {

@@ -25,6 +25,8 @@ import {
 import { preferredGame } from "@/lib/current-game";
 import CoachLab from "./CoachLab";
 import ReviewSummary from "./ReviewSummary";
+import MissAnalysis from "./MissAnalysis";
+import ScoringWakeLock from "./ScoringWakeLock";
 import "./coach.css";
 const pages = [
   "Scoring",
@@ -32,6 +34,7 @@ const pages = [
   "End-by-end scores",
   "Team statistics",
   "Game analysis",
+  "Miss analysis",
 ] as const;
 type Page = (typeof pages)[number];
 const slug = (page: string) => page.toLowerCase().replaceAll(" ", "-");
@@ -66,14 +69,39 @@ function Table({
   title,
   columns,
   rows,
+  shotSelector = false,
 }: {
   title: string;
   columns: readonly string[];
   rows: { label: string; values: (string | number)[] }[];
+  shotSelector?: boolean;
 }) {
+  const [shot, setShot] = useState("");
+  const selectedShot = rows.some((row) => row.label === shot)
+    ? shot
+    : (rows[0]?.label ?? "");
+  const visibleRows = shotSelector
+    ? rows.filter((row) => row.label === selectedShot)
+    : rows;
   return (
     <section className="event-card">
       <h3>{title}</h3>
+      {shotSelector && (
+        <label className="event-shot-selector">
+          Shot type
+          <select
+            aria-label={title + " shot type"}
+            value={selectedShot}
+            onChange={(event) => setShot(event.target.value)}
+          >
+            {rows.map((row) => (
+              <option key={row.label} value={row.label}>
+                {row.label}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
       <div
         className="event-table-scroll"
         tabIndex={0}
@@ -94,7 +122,7 @@ function Table({
             </tr>
           </thead>
           <tbody>
-            {rows.map((row) => (
+            {visibleRows.map((row) => (
               <tr key={row.label}>
                 <th scope="row">{row.label}</th>
                 {row.values.map((value, i) => (
@@ -119,6 +147,7 @@ function ShootingTable({ shots }: { shots: Shot[] }) {
   return (
     <Table
       title="Shooting by shot type"
+      shotSelector
       columns={[
         "Recorded",
         "Graded",
@@ -172,6 +201,7 @@ function DataTables({
       />
       <Table
         title="Shot type performance"
+        shotSelector
         columns={executions}
         rows={[
           ...matrix(
@@ -206,6 +236,7 @@ function DataTables({
       />
       <Table
         title="Result / draw type"
+        shotSelector
         columns={deficiencies}
         rows={matrix(
           shots,
@@ -217,6 +248,7 @@ function DataTables({
       />
       <Table
         title="Result / hit type"
+        shotSelector
         columns={deficiencies}
         rows={matrix(
           shots,
@@ -246,7 +278,7 @@ function PlayerAnalysis({
     <>
       <Summary shots={shots} />
       <section className="event-card">
-        <h3>Shooting across the event</h3>
+        <h3>Shooting by game</h3>
         <div className="event-bars">
           {games.map((game) => {
             const r = report(filtered(game));
@@ -302,6 +334,7 @@ function PlayerAnalysis({
       />
       <Table
         title="Shot-by-shot execution"
+        shotSelector
         columns={executions}
         rows={matrix(
           shots,
@@ -535,6 +568,37 @@ export default function EventWorkspace({
     window.addEventListener("hashchange", read);
     return () => window.removeEventListener("hashchange", read);
   }, [initialEventId, mode]);
+  const [seasonId, setSeasonId] = useState("");
+  const [statsEventId, setStatsEventId] = useState("");
+  const [statsData, setStatsData] = useState<Workspace | null>(null);
+  const [statsError, setStatsError] = useState("");
+  const statistics = view !== "Scoring";
+  const selectedSeason = seasonId || data?.event.seasonId || "unassigned";
+  const selectedEvent = statsEventId || data?.event.id || "all";
+  const statsReady = statsData?.event.seasonId === selectedSeason;
+  useEffect(() => {
+    if (!open || !statistics || !data || statsReady) return;
+    const controller = new AbortController();
+    setStatsError("");
+    void fetch(
+      "/api/curlcoach/workspace?" +
+        new URLSearchParams({ source, seasonId: selectedSeason }),
+      { cache: "no-store", signal: controller.signal },
+    )
+      .then(async (response) => {
+        const result = await response.json();
+        if (!response.ok)
+          throw new Error(result.error || "Statistics unavailable");
+        if (!controller.signal.aborted) setStatsData(result);
+      })
+      .catch((error) => {
+        if (!controller.signal.aborted)
+          setStatsError(
+            error instanceof Error ? error.message : "Statistics unavailable",
+          );
+      });
+    return () => controller.abort();
+  }, [open, statistics, data, statsReady, selectedSeason, source]);
   const refresh = useCallback(
     async (signal?: AbortSignal) => {
       setBusy(true);
@@ -547,6 +611,7 @@ export default function EventWorkspace({
         const result = await response.json();
         if (!response.ok) throw new Error(result.error);
         setData(result);
+        setStatsData(null);
         setGameId((current) =>
           result.event.games.some((g: CoachGame) => g.id === current)
             ? current
@@ -588,10 +653,23 @@ export default function EventWorkspace({
   }
   const event = data?.event,
     game = event?.games.find((g) => g.id === gameId),
-    analysisGames =
-      event?.games.filter(
-        (g) => analysisGame === "all" || g.id === analysisGame,
-      ) ?? [],
+    statsGames = statsReady
+      ? (statsData?.event.games ?? [])
+          .filter((g) => selectedEvent === "all" || g.eventId === selectedEvent)
+          .map((g) => ({
+            ...g,
+            label:
+              selectedEvent === "all"
+                ? (statsData?.catalog.find((e) => e.id === g.eventId)?.name ??
+                    "Single games") +
+                  " · " +
+                  g.label
+                : g.label,
+          }))
+      : [],
+    analysisGames = statsGames.filter(
+      (g) => analysisGame === "all" || g.id === analysisGame,
+    ),
     analysisPlayers = [
       ...new Map(
         analysisGames
@@ -600,7 +678,7 @@ export default function EventWorkspace({
       ).values(),
     ],
     all = event
-      ? eventShots(event).filter((s) =>
+      ? eventShots({ ...event, games: analysisGames }).filter((s) =>
           analysisGames.some((g) => g.id === s.gameId),
         )
       : [],
@@ -613,6 +691,7 @@ export default function EventWorkspace({
     );
   }
   function saved(state: State) {
+    setStatsData(null);
     setData((current) =>
       current
         ? {
@@ -729,31 +808,84 @@ export default function EventWorkspace({
                   </select>
                 </label>
               )}
-              <label>
-                Event
-                <select
-                  value={event?.id ?? eventId}
-                  disabled={!data}
-                  onChange={(e) => {
-                    setData(null);
-                    setEventId(e.target.value);
-                    setAnalysisGame("all");
-                    setPlayer("all");
-                    remember(source, e.target.value);
-                  }}
-                >
-                  {data?.catalog.map((e) => (
-                    <option key={e.id} value={e.id}>
-                      {e.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
+              {statistics ? (
+                <>
+                  <label>
+                    Season
+                    <select
+                      value={selectedSeason}
+                      disabled={!data}
+                      onChange={(e) => {
+                        setSeasonId(e.target.value);
+                        setStatsEventId("all");
+                        setAnalysisGame("all");
+                        setPlayer("all");
+                      }}
+                    >
+                      {(data?.seasons ?? []).map((season) => (
+                        <option key={season.id} value={season.id}>
+                          {season.name}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label>
+                    Event
+                    <select
+                      value={selectedEvent}
+                      disabled={!statsReady}
+                      onChange={(e) => {
+                        setStatsEventId(e.target.value);
+                        setAnalysisGame("all");
+                        setPlayer("all");
+                      }}
+                    >
+                      <option value="all">All events</option>
+                      {(statsData?.catalog ?? data?.catalog ?? [])
+                        .filter(
+                          (e) =>
+                            e.seasonId === selectedSeason ||
+                            e.id === "standalone",
+                        )
+                        .map((e) => (
+                          <option key={e.id} value={e.id}>
+                            {e.name}
+                          </option>
+                        ))}
+                    </select>
+                  </label>
+                </>
+              ) : (
+                <label>
+                  Event
+                  <select
+                    value={event?.id ?? eventId}
+                    disabled={!data}
+                    onChange={(e) => {
+                      setData(null);
+                      setEventId(e.target.value);
+                      setAnalysisGame("all");
+                      setPlayer("all");
+                      remember(source, e.target.value);
+                    }}
+                  >
+                    {data?.catalog.map((e) => (
+                      <option key={e.id} value={e.id}>
+                        {e.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
             </div>
           )}
         </header>
         <p role="status" aria-live="polite">
-          {busy ? "Loading event…" : error}
+          {statistics && !statsReady && !error
+            ? statsError || "Loading season statistics…"
+            : busy
+              ? "Loading event…"
+              : error}
         </p>
         {!open ? (
           <form className="event-card" action={unlock}>
@@ -777,6 +909,9 @@ export default function EventWorkspace({
         ) : (
           <>
             {event.source === "sample" && <p>SYNTHETIC EXAMPLE</p>}
+            <div hidden={view !== "Scoring"}>
+              <ScoringWakeLock active={open && !!game && view === "Scoring"} />
+            </div>
             {view === "Scoring" && (
               <label className="event-game-picker">
                 Game
@@ -835,7 +970,7 @@ export default function EventWorkspace({
                     }}
                   >
                     <option value="all">All games</option>
-                    {event.games.map((g) => (
+                    {statsGames.map((g) => (
                       <option key={g.id} value={g.id}>
                         {g.label} · vs {g.opponent}
                       </option>
@@ -858,6 +993,13 @@ export default function EventWorkspace({
                   </select>
                 </label>
               </div>
+            )}
+            {view === "Miss analysis" && (
+              <MissAnalysis
+                shots={selected}
+                games={analysisGames}
+                players={analysisPlayers}
+              />
             )}
             {view === "Shot breakdown" && <DataTables shots={selected} />}
             {view === "Team statistics" && (

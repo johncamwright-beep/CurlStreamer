@@ -4,6 +4,7 @@ const m = vi.hoisted(() => ({
   auth: vi.fn(),
   settings: vi.fn(),
   events: vi.fn(),
+  seasons: vi.fn(),
   games: vi.fn(),
   rpc: vi.fn(),
 }));
@@ -21,6 +22,7 @@ vi.mock("@/lib/providers/team-settings", () => ({
 }));
 vi.mock("@/lib/team-hierarchy-service", () => ({
   listEvents: m.events,
+  listSeasons: m.seasons,
   listTeamHierarchyGames: m.games,
 }));
 import { loadProductionStreamerEvent } from "./curlcoach-production-streamer";
@@ -35,6 +37,7 @@ beforeEach(() => {
       roster: { lead: "Real Player", second: "", third: "", fourth: "" },
     },
   });
+  m.seasons.mockResolvedValue({ ok: true, value: [] });
   m.events.mockResolvedValue({
     ok: true,
     value: [{ id: eid, name: "Our event" }],
@@ -143,4 +146,68 @@ it("opens the current tournament instead of an old empty event or distant upcomi
   } finally {
     vi.useRealTimers();
   }
+});
+
+it("season aggregation excludes other seasons, deleted games and unauthorized season IDs", async () => {
+  const firstSeason = "00000000-0000-4000-8000-000000000050";
+  const secondSeason = "00000000-0000-4000-8000-000000000051";
+  const otherEvent = "00000000-0000-4000-8000-000000000052";
+  m.seasons.mockResolvedValue({
+    ok: true,
+    value: [
+      { id: firstSeason, name: "2026–27" },
+      { id: secondSeason, name: "2025–26" },
+    ],
+  });
+  m.events.mockResolvedValue({
+    ok: true,
+    value: [
+      { id: eid, name: "Current", season_id: firstSeason },
+      { id: otherEvent, name: "Past", season_id: secondSeason },
+    ],
+  });
+  const { value } = await m.games();
+  m.games.mockResolvedValue({
+    ok: true,
+    value: [
+      { ...value[0], season_id: firstSeason },
+      {
+        ...value[0],
+        id: otherEvent,
+        event_id: otherEvent,
+        season_id: secondSeason,
+      },
+      {
+        ...value[0],
+        id: "00000000-0000-4000-8000-000000000053",
+        season_id: firstSeason,
+        game_status: "deleted",
+      },
+      {
+        ...value[0],
+        id: "00000000-0000-4000-8000-000000000054",
+        event_id: null,
+        season_id: firstSeason,
+      },
+    ],
+  });
+  const result = await loadProductionStreamerEvent(
+    undefined,
+    undefined,
+    firstSeason,
+  );
+  expect(result.event.seasonId).toBe(firstSeason);
+  expect(result.event.games.map((g) => g.id)).toEqual([
+    gid,
+    "00000000-0000-4000-8000-000000000054",
+  ]);
+  expect(result.event.games[0].eventId).toBe(eid);
+  expect(result.event.games[1].eventId).toBe("standalone");
+  await expect(
+    loadProductionStreamerEvent(
+      undefined,
+      undefined,
+      "00000000-0000-4000-8000-000000000099",
+    ),
+  ).rejects.toThrow("Season unavailable");
 });

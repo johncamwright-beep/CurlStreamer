@@ -781,3 +781,50 @@
 .coach-scoring > [role="status"]:empty {
   display: none;
 }
+
+.event-analysis-filters {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin: 12px 0;
+}
+.event-shot-metrics {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+}
+.event-shot-metrics > div {
+  padding: 12px 8px;
+}
+.event-shot-metrics span {
+  font-size: 11px;
+  margin-bottom: 6px;
+}
+.event-shot-metrics strong {
+  font-size: clamp(15px, 3.5vw, 24px);
+  font-variant-numeric: tabular-nums;
+}
+@media (max-width: 480px) {
+  .event-analysis-filters {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+}
+
+.coach-scoring .coach-summary {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+}
+.coach-scoring .coach-summary > div {
+  padding: 12px 8px;
+}
+.coach-scoring .coach-summary span {
+  font-size: 11px;
+}
+.coach-scoring .coach-summary strong {
+  font-size: clamp(15px, 3.5vw, 24px);
+}
+
+.event-shot-metrics span,
+.coach-scoring .coach-summary span {
+  min-height: 2.6em;
+}

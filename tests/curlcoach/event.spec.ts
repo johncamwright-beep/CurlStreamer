@@ -30,14 +30,50 @@ test("seven-game workspace navigation, player/game filters and source availabili
     page.getByRole("heading", { name: "Turn / deficiency", exact: true }),
   ).toBeVisible();
   await expect(page.locator(".event-metrics")).toContainText("448");
-  await page.getByRole("button", { name: "Alex (Lead)", exact: true }).click();
+  await page
+    .getByRole("combobox", { name: "Team / player", exact: true })
+    .selectOption("lead");
   await expect(page.locator(".event-metrics")).toContainText("112");
+  await page
+    .getByRole("combobox", { name: "Game", exact: true })
+    .selectOption("shorty-example-1");
+  await expect(page.locator(".event-metrics > div").nth(1)).toContainText("64");
+  await page
+    .getByRole("combobox", { name: "Team / player", exact: true })
+    .selectOption("lead");
+  await expect(page.locator(".event-metrics > div").nth(1)).toContainText("16");
+  expect(
+    await page
+      .locator(".event-metrics > div")
+      .evaluateAll(
+        (nodes) =>
+          new Set(nodes.map((n) => Math.round(n.getBoundingClientRect().top)))
+            .size,
+      ),
+  ).toBe(1);
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth,
+    ),
+  ).toBe(true);
+  await expect(
+    page.getByText("Shooting uses numerically graded", { exact: false }),
+  ).toHaveCount(0);
+  await page.screenshot({
+    path: "work-shot-filters-" + info.project.name + ".png",
+  });
+  await page
+    .getByRole("combobox", { name: "Game", exact: true })
+    .selectOption("all");
+  await page
+    .getByRole("combobox", { name: "Team / player", exact: true })
+    .selectOption("lead");
   await page
     .getByRole("button", { name: "Shot Tracker menu", exact: true })
     .click();
   await page.getByRole("link", { name: /Team statistics$/ }).click();
   await expect(
-    page.getByRole("heading", { name: "Alex (Lead) · all 7 games" }),
+    page.getByRole("heading", { name: "Team statistics", exact: true }),
   ).toBeVisible();
   await expect(page.locator(".event-bars > div")).toHaveCount(7);
   await page.screenshot({
@@ -47,12 +83,23 @@ test("seven-game workspace navigation, player/game filters and source availabili
     .getByRole("button", { name: "Shot Tracker menu", exact: true })
     .click();
   await page.getByRole("link", { name: /Game analysis/ }).click();
+  await expect(
+    page.getByRole("combobox", { name: "Game", exact: true }),
+  ).toHaveValue("all");
+  await expect(page.locator(".event-metrics > div").nth(1)).toContainText(
+    "112",
+  );
   await page
     .getByRole("combobox", { name: "Game", exact: true })
     .selectOption("shorty-example-7");
   await expect(
-    page.getByRole("heading", { name: "Game 7 · vs Example team 7" }),
+    page.getByRole("heading", { name: "Game analysis", exact: true }),
   ).toBeVisible();
+  await page
+    .getByRole("combobox", { name: "Team / player", exact: true })
+    .selectOption("lead");
+  await expect(page.locator(".event-metrics")).toHaveCount(1);
+  await expect(page.locator(".event-metrics > div").nth(1)).toContainText("16");
   await page
     .getByRole("button", { name: "Shot Tracker menu", exact: true })
     .click();
@@ -60,7 +107,27 @@ test("seven-game workspace navigation, player/game filters and source availabili
   await expect(
     page.getByRole("heading", { name: "Event score difference / hammer" }),
   ).toBeVisible();
-  await expect(page.getByText("Pending rule")).toBeVisible();
+  await expect(
+    page.getByRole("combobox", { name: "Team / player", exact: true }),
+  ).toBeDisabled();
+  await page
+    .getByRole("combobox", { name: "Game", exact: true })
+    .selectOption("all");
+  await expect(page.locator(".event-metrics > div").first()).toContainText("7");
+  await page
+    .getByRole("combobox", { name: "Game", exact: true })
+    .selectOption("shorty-example-7");
+  await expect(page.locator(".event-metrics > div").first()).toContainText("1");
+  await expect(page.locator(".event-metrics")).toHaveCount(1);
+  expect(
+    await page
+      .locator(".event-metrics > div")
+      .evaluateAll(
+        (nodes) =>
+          new Set(nodes.map((n) => Math.round(n.getBoundingClientRect().top)))
+            .size,
+      ),
+  ).toBe(1);
   expect(
     await page.evaluate(
       () => document.documentElement.scrollWidth <= innerWidth,

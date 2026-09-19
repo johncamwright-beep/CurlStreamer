@@ -11,6 +11,7 @@
 - No existing event or game was deleted to test production.
 
 Validation:
+
 - Formatting and TypeScript checks passed.
 - Full unit run: 1,547 passed, 91 environment-dependent skips; additional current-game, deletion-route, default-event and real PostgreSQL deletion tests passed.
 - Shot Tracker phone/tablet end-to-end suite: 6 passed.

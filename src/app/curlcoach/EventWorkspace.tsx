@@ -40,19 +40,19 @@ const pct = (value: number | null) =>
 function Summary({ shots }: { shots: Shot[] }) {
   const r = report(shots);
   return (
-    <div className="event-metrics">
+    <div className="event-metrics event-shot-metrics">
       <div>
         <span>Shooting</span>
         <strong>{pct(r.percent)}</strong>
       </div>
       <div>
-        <span>Scored / recorded</span>
+        <span>Graded / shots</span>
         <strong>
           {r.scored} / {r.attempts}
         </strong>
       </div>
       <div>
-        <span>Missing grades</span>
+        <span>Ungraded</span>
         <strong>{r.missing}</strong>
       </div>
       <div>
@@ -149,17 +149,16 @@ function ShootingTable({ shots }: { shots: Shot[] }) {
     />
   );
 }
-function DataTables({ shots }: { shots: Shot[] }) {
+function DataTables({
+  shots,
+  summary = true,
+}: {
+  shots: Shot[];
+  summary?: boolean;
+}) {
   return (
     <>
-      <Summary shots={shots} />
-      <p className="event-explainer">
-        Shooting uses numerically graded attempts only. Category counts exclude
-        picks, burnt rocks and throw-throughs. Missing categories are not
-        counted as zero grades. Workbook category % uses the original category
-        denominator, including typed attempts missing a grade; Shooting uses
-        graded attempts only.
-      </p>
+      {summary && <Summary shots={shots} />}
       <Table
         title="Turn / deficiency"
         columns={deficiencies}
@@ -248,10 +247,6 @@ function PlayerAnalysis({
       <Summary shots={shots} />
       <section className="event-card">
         <h3>Shooting across the event</h3>
-        <p>
-          Each bar uses graded attempts from that game. The event percentage
-          uses all underlying points.
-        </p>
         <div className="event-bars">
           {games.map((game) => {
             const r = report(filtered(game));
@@ -351,7 +346,7 @@ function PlayerAnalysis({
     </>
   );
 }
-function Scoreboard({ event, game }: { event: CoachEvent; game: CoachGame }) {
+function Scoreboard({ event }: { event: CoachEvent }) {
   const available = event.games.filter((g) => g.scoreboardAvailable);
   const timelines = available.flatMap((g) =>
     scoreTimeline(g).map((point) => ({ ...point, game: g.id })),
@@ -377,101 +372,96 @@ function Scoreboard({ event, game }: { event: CoachEvent; game: CoachGame }) {
       ),
     })),
   );
-  const timeline = scoreTimeline(game);
   return (
     <>
-      <div className="event-notice">
-        {event.source === "sample"
-          ? "Example scoreboard data. No live Streamer connection."
-          : "Read-only Streamer scoreboard. Shot grades never change end points."}
-      </div>
-      <div className="event-metrics">
+      <div className="event-metrics event-shot-metrics">
         <div>
-          <span>Games with scoreboard</span>
-          <strong>
-            {available.length} / {event.games.length}
-          </strong>
+          <span>Games</span>
+          <strong>{available.length}</strong>
         </div>
         <div>
-          <span>Completed ends</span>
+          <span>Ends</span>
           <strong>{available.reduce((n, g) => n + g.ends.length, 0)}</strong>
         </div>
         <div>
-          <span>Ends in advantage</span>
-          <strong>Pending rule</strong>
+          <span>Points for</span>
+          <strong>
+            {available.reduce(
+              (n, g) => n + g.ends.reduce((sum, e) => sum + e.us, 0),
+              0,
+            )}
+          </strong>
         </div>
         <div>
-          <span>Workbook target</span>
-          <strong>70%</strong>
+          <span>Against</span>
+          <strong>
+            {available.reduce(
+              (n, g) => n + g.ends.reduce((sum, e) => sum + e.them, 0),
+              0,
+            )}
+          </strong>
         </div>
       </div>
-      <p>
-        The workbook advantage totals are manual inputs. Its 70% target is shown
-        for reference; a score/hammer advantage rule must be confirmed before
-        calculating that rate. Final game positions are included below as
-        observations, not automatically counted as advantage opportunities.
-      </p>
       <Table
         title="Event score difference / hammer"
         columns={columns}
         rows={rows}
       />
-      <p>
-        Counts include all {available.length} available games. Unknown hammer is
-        omitted from the matrix. Four or more points are grouped as 4+; extra
-        ends are retained.
-      </p>
-      <section className="event-card">
-        <h3>
-          {game.label} · {game.teamName} vs {game.opponent}
-        </h3>
-        {!game.scoreboardAvailable ? (
-          <p>Streamer end-by-end scoring is unavailable for this game.</p>
-        ) : (
-          <Table
-            title="Game scoreboard"
-            columns={game.ends.map((e) => String(e.end)).concat("Total")}
-            rows={[
-              {
-                label: game.teamName,
-                values: game.ends
-                  .map((e) => e.us)
-                  .concat(game.ends.reduce((n, e) => n + e.us, 0)),
-              },
-              {
-                label: game.opponent,
-                values: game.ends
-                  .map((e) => e.them)
-                  .concat(game.ends.reduce((n, e) => n + e.them, 0)),
-              },
-            ]}
-          />
-        )}
-      </section>
-      {game.scoreboardAvailable && (
-        <Table
-          title="Game score / hammer timeline"
-          columns={[
-            "Our score",
-            "Their score",
-            "Difference",
-            "Hammer after end",
-          ]}
-          rows={timeline.map((p) => ({
-            label: p.end ? `After end ${p.end}` : "Start",
-            values: [
-              p.us,
-              p.them,
-              p.difference,
-              p.hammer === null
-                ? "Unknown"
-                : p.hammer
-                  ? "With us"
-                  : "With opponent",
-            ],
-          }))}
-        />
-      )}
+      {event.games.map((game) => (
+        <div key={game.id}>
+          <section className="event-card">
+            <h3>
+              {game.label} · {game.teamName} vs {game.opponent}
+            </h3>
+            {!game.scoreboardAvailable ? (
+              <p>Streamer end-by-end scoring is unavailable for this game.</p>
+            ) : (
+              <Table
+                title="Game scoreboard"
+                columns={game.ends.map((e) => String(e.end)).concat("Total")}
+                rows={[
+                  {
+                    label: game.teamName,
+                    values: game.ends
+                      .map((e) => e.us)
+                      .concat(game.ends.reduce((n, e) => n + e.us, 0)),
+                  },
+                  {
+                    label: game.opponent,
+                    values: game.ends
+                      .map((e) => e.them)
+                      .concat(game.ends.reduce((n, e) => n + e.them, 0)),
+                  },
+                ]}
+              />
+            )}
+          </section>
+          {game.scoreboardAvailable && (
+            <Table
+              title="Game score / hammer timeline"
+              columns={[
+                "Our score",
+                "Their score",
+                "Difference",
+                "Hammer after end",
+              ]}
+              rows={scoreTimeline(game).map((p) => ({
+                label: p.end ? `After end ${p.end}` : "Start",
+                values: [
+                  p.us,
+                  p.them,
+                  p.difference,
+                  p.hammer === null
+                    ? "Unknown"
+                    : p.hammer
+                      ? "With us"
+                      : "With opponent",
+                ],
+              }))}
+            />
+          )}
+        </div>
+      ))}
     </>
   );
 }
@@ -519,6 +509,7 @@ export default function EventWorkspace({
     ),
     [gameId, setGameId] = useState(""),
     [player, setPlayer] = useState("all"),
+    [analysisGame, setAnalysisGame] = useState("all"),
     [data, setData] = useState<Workspace | null>(null),
     [error, setError] = useState(""),
     [busy, setBusy] = useState(false);
@@ -597,7 +588,22 @@ export default function EventWorkspace({
   }
   const event = data?.event,
     game = event?.games.find((g) => g.id === gameId),
-    all = event ? eventShots(event) : [],
+    analysisGames =
+      event?.games.filter(
+        (g) => analysisGame === "all" || g.id === analysisGame,
+      ) ?? [],
+    analysisPlayers = [
+      ...new Map(
+        analysisGames
+          .flatMap((g) => g.roster ?? g.state.roster ?? roster)
+          .map((p) => [p.id, p]),
+      ).values(),
+    ],
+    all = event
+      ? eventShots(event).filter((s) =>
+          analysisGames.some((g) => g.id === s.gameId),
+        )
+      : [],
     selected = all.filter((s) => player === "all" || s.playerId === player);
   function remember(source: string, event: string, game = "") {
     history.replaceState(
@@ -731,6 +737,8 @@ export default function EventWorkspace({
                   onChange={(e) => {
                     setData(null);
                     setEventId(e.target.value);
+                    setAnalysisGame("all");
+                    setPlayer("all");
                     remember(source, e.target.value);
                   }}
                 >
@@ -769,9 +777,7 @@ export default function EventWorkspace({
         ) : (
           <>
             {event.source === "sample" && <p>SYNTHETIC EXAMPLE</p>}
-            {(
-              ["Scoring", "Game analysis", "End-by-end scores"] as Page[]
-            ).includes(view) && (
+            {view === "Scoring" && (
               <label className="event-game-picker">
                 Game
                 <select
@@ -817,91 +823,88 @@ export default function EventWorkspace({
                 <p>No games in this event.</p>
               )}
             </div>
-            {(view === "Shot breakdown" || view === "Team statistics") && (
-              <div
-                className="event-player-tabs"
-                role="group"
-                aria-label="Player analysis"
-              >
-                <button
-                  aria-pressed={player === "all"}
-                  onClick={() => setPlayer("all")}
-                >
-                  Whole team
-                </button>
-                {(game?.roster ?? game?.state.roster ?? roster).map((p) => (
-                  <button
-                    key={p.id}
-                    aria-pressed={player === p.id}
-                    onClick={() => setPlayer(p.id)}
+            {view !== "Scoring" && (
+              <div className="event-analysis-filters">
+                <label>
+                  Game
+                  <select
+                    value={analysisGame}
+                    onChange={(e) => {
+                      setAnalysisGame(e.target.value);
+                      setPlayer("all");
+                    }}
                   >
-                    {p.name}
-                  </button>
-                ))}
+                    <option value="all">All games</option>
+                    {event.games.map((g) => (
+                      <option key={g.id} value={g.id}>
+                        {g.label} · vs {g.opponent}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  Team / player
+                  <select
+                    disabled={view === "End-by-end scores"}
+                    value={view === "End-by-end scores" ? "all" : player}
+                    onChange={(e) => setPlayer(e.target.value)}
+                  >
+                    <option value="all">Whole team</option>
+                    {analysisPlayers.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
               </div>
             )}
             {view === "Shot breakdown" && <DataTables shots={selected} />}
             {view === "Team statistics" && (
               <>
-                <h2>
-                  {player === "all"
-                    ? "Whole team"
-                    : (
-                        event.games.find((g) =>
-                          (g.roster ?? g.state.roster)?.some(
-                            (p) => p.id === player,
-                          ),
-                        )?.roster ??
-                        event.games.find((g) =>
-                          g.state.roster?.some((p) => p.id === player),
-                        )?.state.roster ??
-                        roster
-                      ).find((p) => p.id === player)?.name}{" "}
-                  · all {event.games.length} games
-                </h2>
                 <PlayerAnalysis
                   shots={selected}
-                  games={event.games}
+                  games={analysisGames}
                   player={player}
                 />
               </>
             )}
             {view === "Game analysis" &&
-              (game ? (
+              (analysisGames.length ? (
                 <>
-                  <h2>
-                    {game.label} · vs {game.opponent}
-                  </h2>
-                  <Summary shots={gameShots(game)} />
+                  <Summary shots={selected} />
                   <ReviewSummary
-                    shots={gameShots(game)}
-                    players={game.roster ?? game.state.roster ?? roster}
+                    shots={selected}
+                    players={analysisPlayers.filter(
+                      (p) => player === "all" || p.id === player,
+                    )}
                   />
                   <Table
                     title="Player performance"
                     columns={["Graded", "Missing", "Shooting"]}
-                    rows={(game.roster ?? game.state.roster ?? roster).map(
-                      (p) => {
+                    rows={analysisPlayers
+                      .filter((p) => player === "all" || p.id === player)
+                      .map((p) => {
                         const r = report(
-                          gameShots(game).filter((s) => s.playerId === p.id),
+                          selected.filter((s) => s.playerId === p.id),
                         );
                         return {
                           label: p.name,
                           values: [r.scored, r.missing, pct(r.percent)],
                         };
-                      },
-                    )}
+                      })}
                   />
                   <Table
                     title="End performance"
                     columns={["Recorded", "Graded", "Shooting"]}
                     rows={grouped(
-                      gameShots(game),
+                      selected,
                       Array.from(
                         {
                           length: Math.max(
-                            game.scheduledEnds,
-                            ...gameShots(game).map((s) => s.end),
+                            8,
+                            ...analysisGames.map((g) => g.scheduledEnds),
+                            ...selected.map((s) => s.end),
                           ),
                         },
                         (_, i) => String(i + 1),
@@ -912,14 +915,14 @@ export default function EventWorkspace({
                       values: [r.attempts, r.scored, pct(r.percent)],
                     }))}
                   />
-                  <DataTables shots={gameShots(game)} />
+                  <DataTables shots={selected} summary={false} />
                 </>
               ) : (
                 <p>No games in this event.</p>
               ))}
             {view === "End-by-end scores" &&
-              (game ? (
-                <Scoreboard event={event} game={game} />
+              (analysisGames.length ? (
+                <Scoreboard event={{ ...event, games: analysisGames }} />
               ) : (
                 <p>No games in this event.</p>
               ))}

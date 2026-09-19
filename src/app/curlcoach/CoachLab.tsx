@@ -675,13 +675,13 @@ export default function CoachLab({
               </strong>
             </div>
             <div>
-              <span>Scored / recorded</span>
+              <span>Graded / shots</span>
               <strong>
                 {team.scored} / {team.attempts}
               </strong>
             </div>
             <div>
-              <span>Ungraded shots</span>
+              <span>Ungraded</span>
               <strong>{team.missing}</strong>
             </div>
             <div>

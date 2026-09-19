@@ -42,8 +42,12 @@ function blankDraft(playerId: string): Shot {
 export default function CoachLab({
   unlocked,
   context,
+  resume,
+  onResume,
 }: {
   unlocked: boolean;
+  resume?: { draft: Shot; editing: string | null };
+  onResume?: (value: { draft: Shot; editing: string | null }) => void;
   context?: {
     source: "sample" | "streamer";
     eventId: string;
@@ -57,12 +61,34 @@ export default function CoachLab({
   const [state, setState] = useState<State | null>(
     context?.initialState ?? null,
   );
+  useEffect(() => {
+    if (context) setState(context.initialState);
+  }, [context?.initialState]);
   const initialPlayers =
     context?.initialState.roster ?? context?.roster ?? roster;
-  const [draft, setDraft] = useState<Shot>(() =>
-    blankDraft(initialPlayers[0]?.id ?? ""),
+  const [draft, setDraft] = useState<Shot>(
+    () =>
+      resume?.draft ??
+      (() => {
+        const shots = currentShots(context?.initialState.events ?? []);
+        const positions = ["Lead", "Second", "Third", "Fourth"];
+        const latest = [...shots].sort(
+          (a, b) =>
+            b.end - a.end ||
+            positions.indexOf(b.position) - positions.indexOf(a.position) ||
+            b.stone - a.stone,
+        )[0];
+        return latest
+          ? (nextTurn(latest, shots, initialPlayers) ?? latest)
+          : blankDraft(initialPlayers[0]?.id ?? "");
+      })(),
   );
-  const [editing, setEditing] = useState<string | null>(null);
+  const [editing, setEditing] = useState<string | null>(
+    resume?.editing ?? null,
+  );
+  useEffect(() => {
+    onResume?.({ draft, editing });
+  }, [draft, editing, onResume]);
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
   const [history, setHistory] = useState(false);
@@ -97,8 +123,8 @@ export default function CoachLab({
     }
   }, [context]);
   useEffect(() => {
-    if (open) void load();
-  }, [open, load]);
+    if (open && !context) void load();
+  }, [open, load, context]);
   async function unlock(form: FormData) {
     setBusy(true);
     try {
@@ -559,7 +585,7 @@ export default function CoachLab({
                       disabled={!nextTurn(draft, shots, players)}
                       title="Save this attempt and move to the next turn"
                     >
-                      Next turn →
+                      {busy ? "Saving next turn…" : "Next turn →"}
                     </button>
                     <span>Saves this attempt, then advances.</span>
                     {editing && (

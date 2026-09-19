@@ -20,7 +20,10 @@ const endSchema = z.object({
   blank: z.boolean(),
 });
 /** Read-only integration. Revalidate account and event membership on every request. */
-export async function loadProductionStreamerEvent(eventId?: string) {
+export async function loadProductionStreamerEvent(
+  eventId?: string,
+  gameId?: string,
+) {
   const account = await requireCoachAccount();
   if (!account) throw new Error("Private coaching access is required.");
   const { data, error } = await (
@@ -91,7 +94,8 @@ export async function loadProductionStreamerEvent(eventId?: string) {
     .filter(
       (game) =>
         game.event_id === (selected.id === "standalone" ? null : selected.id) &&
-        game.game_status !== "deleted",
+        game.game_status !== "deleted" &&
+        (!gameId || game.id === gameId),
     );
   const event: CoachEvent = {
     id: selected.id,

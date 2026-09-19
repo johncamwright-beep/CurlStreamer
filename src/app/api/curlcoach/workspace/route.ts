@@ -45,11 +45,13 @@ async function denial() {
       { status: 401 },
     );
 }
-async function source(input: z.infer<typeof selection>) {
+async function source(input: z.infer<typeof selection>, gameId?: string) {
   if (!labEnabled()) {
     if (input.source !== "streamer")
       throw new Error("Sample data is only available in the local lab.");
-    return loadProductionStreamerEvent(input.eventId);
+    return gameId
+      ? loadProductionStreamerEvent(input.eventId, gameId)
+      : loadProductionStreamerEvent(input.eventId);
   }
   return input.source === "sample"
     ? {
@@ -131,7 +133,7 @@ export async function POST(request: Request) {
       { status: 400 },
     );
   try {
-    const { event, actor } = await source(input.data);
+    const { event, actor } = await source(input.data, input.data.gameId);
     const game = event.games.find((game) => game.id === input.data.gameId);
     if (!game)
       return NextResponse.json(

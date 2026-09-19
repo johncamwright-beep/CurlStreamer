@@ -89,3 +89,26 @@ it("refuses another event and supports eventless games", async () => {
   const result = await loadProductionStreamerEvent("standalone");
   expect(result.event.games[0].id).toBe(gid);
 });
+
+it("a shot save reads only the selected authorized game's scoreboard", async () => {
+  const { value } = await m.games();
+  const first = { ...value[0], game_status: "active", completion_result: null };
+  const second = { ...first, id: "00000000-0000-4000-8000-000000000009" };
+  m.games.mockResolvedValue({ ok: true, value: [first, second] });
+  m.rpc.mockResolvedValue({ data: [], error: null });
+  const result = await loadProductionStreamerEvent(eid, gid);
+  expect(result.event.games.map((g) => g.id)).toEqual([gid]);
+  expect(m.rpc).toHaveBeenCalledExactlyOnceWith("read_game_state", {
+    p_game_id: gid,
+  });
+  m.rpc.mockClear();
+  expect(
+    (
+      await loadProductionStreamerEvent(
+        eid,
+        "00000000-0000-4000-8000-000000000088",
+      )
+    ).event.games,
+  ).toEqual([]);
+  expect(m.rpc).not.toHaveBeenCalled();
+});

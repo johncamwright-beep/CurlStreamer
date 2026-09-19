@@ -1,5 +1,5 @@
 "use client";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   deficiencies,
   executions,
@@ -98,7 +98,9 @@ function Table({
               <tr key={row.label}>
                 <th scope="row">{row.label}</th>
                 {row.values.map((value, i) => (
-                  <td key={i}>{value}</td>
+                  <td key={i} data-label={columns[i]}>
+                    {value}
+                  </td>
                 ))}
               </tr>
             ))}
@@ -482,6 +484,10 @@ export default function EventWorkspace({
   mode?: "lab" | "streamer";
   initialEventId?: string;
 }) {
+  const [menuOpen, setMenuOpen] = useState(false);
+  const drafts = useRef(
+    new Map<string, { draft: Shot; editing: string | null }>(),
+  );
   const [platformAdmin, setPlatformAdmin] = useState(false);
   useEffect(() => {
     if (mode !== "streamer") return;
@@ -605,34 +611,58 @@ export default function EventWorkspace({
   return (
     <div className="coach-workspace">
       <aside className="event-sidebar">
-        <a className="event-brand" href="#setup">
-          CURL<span>COACH</span>
-        </a>
-        <p>Event workspace</p>
-        <nav aria-label="CurlCoach pages">
-          {pages.map((page) => (
-            <a
-              href={`#${slug(page)}`}
-              aria-current={view === page ? "page" : undefined}
-              key={page}
-            >
-              {page}
-            </a>
-          ))}
-        </nav>
-        <div className="event-sidebar-footer">
-          {mode === "streamer" ? (
-            <nav aria-label="Account">
-              <a href="/account">Account &amp; Settings</a>
-              {platformAdmin && <a href="/admin">Platform administration</a>}
-            </nav>
-          ) : (
-            <>
-              Local development
-              <br />
-              Add-on disabled in production
-            </>
-          )}
+        <button
+          type="button"
+          className="coach-menu-toggle"
+          aria-label="CurlCoach menu"
+          aria-expanded={menuOpen}
+          aria-controls="coach-menu"
+          onClick={() => setMenuOpen(!menuOpen)}
+        >
+          <span aria-hidden="true">☰</span> {view}
+        </button>
+        <div
+          id="coach-menu"
+          hidden={!menuOpen}
+          onKeyDown={(e) => {
+            if (e.key === "Escape") {
+              setMenuOpen(false);
+              document
+                .querySelector<HTMLButtonElement>(".coach-menu-toggle")
+                ?.focus();
+            }
+          }}
+        >
+          <a className="event-brand" href="#setup">
+            CURL<span>COACH</span>
+          </a>
+          <p>Event workspace</p>
+          <nav aria-label="CurlCoach pages">
+            {pages.map((page) => (
+              <a
+                href={`#${slug(page)}`}
+                onClick={() => setMenuOpen(false)}
+                aria-current={view === page ? "page" : undefined}
+                key={page}
+              >
+                {page}
+              </a>
+            ))}
+          </nav>
+          <div className="event-sidebar-footer">
+            {mode === "streamer" ? (
+              <nav aria-label="Account">
+                <a href="/account">Account &amp; Settings</a>
+                {platformAdmin && <a href="/admin">Platform administration</a>}
+              </nav>
+            ) : (
+              <>
+                Local development
+                <br />
+                Add-on disabled in production
+              </>
+            )}
+          </div>
         </div>
       </aside>
       <main className="event-main">
@@ -823,11 +853,20 @@ export default function EventWorkspace({
                 </section>
               </>
             )}
-            {view === "Scoring" &&
-              (game ? (
+            <div hidden={view !== "Scoring"}>
+              {game ? (
                 <CoachLab
                   key={`${source}:${event.id}:${game.id}`}
                   unlocked
+                  resume={drafts.current.get(
+                    source + ":" + event.id + ":" + game.id,
+                  )}
+                  onResume={(value) =>
+                    drafts.current.set(
+                      source + ":" + event.id + ":" + game.id,
+                      value,
+                    )
+                  }
                   context={{
                     source,
                     eventId: event.id,
@@ -839,7 +878,8 @@ export default function EventWorkspace({
                 />
               ) : (
                 <p>No games in this event.</p>
-              ))}
+              )}
+            </div>
             {(view === "Data tables" || view === "Team") && (
               <div
                 className="event-player-tabs"

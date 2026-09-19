@@ -7,6 +7,7 @@ import {
   roster,
   shotTypes,
   turns,
+  type RosterEntry,
   type Shot,
   type State,
 } from "@/lib/curlcoach/model";
@@ -673,7 +674,7 @@ export default function EventWorkspace({
     analysisPlayers = [
       ...new Map(
         analysisGames
-          .flatMap((g) => g.roster ?? g.state.roster ?? roster)
+          .flatMap<RosterEntry>((g) => g.roster ?? g.state.roster ?? roster)
           .map((p) => [p.id, p]),
       ).values(),
     ],

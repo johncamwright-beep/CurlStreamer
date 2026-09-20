@@ -73,6 +73,21 @@ export async function GET(request: Request) {
   } catch {
     const code = `youtube_oauth_start_${stage}`;
     console.error("YouTube OAuth start failed", { code });
+    if (request.headers.get("accept")?.includes("text/html")) {
+      try {
+        const target = new URL("/account", youtubeOAuthOrigin(request));
+        target.searchParams.set("section", "youtube");
+        target.searchParams.set(
+          "result",
+          stage === "configuration" || stage === "callback_origin"
+            ? "configuration_unavailable"
+            : "start_failed",
+        );
+        return NextResponse.redirect(target);
+      } catch {
+        /* Untrusted origins still fail closed below. */
+      }
+    }
     return NextResponse.json(
       {
         error: "YouTube connection is not configured for this environment",

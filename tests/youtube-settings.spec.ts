@@ -43,6 +43,24 @@ test("team administrator can inspect and disconnect the saved YouTube channel", 
   ).toBeVisible();
   await page.locator(".app-navigation-close").click();
 
-  await page.getByRole("button", { name: "Disconnect" }).click();
+  await expect(
+    page.getByRole("region", { name: "YouTube connection instructions" }),
+  ).toContainText("Use another account");
+  await page.getByText("Need help connecting?", { exact: true }).click();
+  await expect(
+    page.getByText("Changing channels:", { exact: true }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "Disconnect", exact: true }).click();
+  await expect(
+    page.getByRole("group", { name: "Confirm channel disconnection" }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "Keep channel", exact: true }).click();
+  await expect(
+    page.getByRole("group", { name: "Confirm channel disconnection" }),
+  ).not.toBeVisible();
+  await page.getByRole("button", { name: "Disconnect", exact: true }).click();
+  await page
+    .getByRole("button", { name: "Confirm disconnect", exact: true })
+    .click();
   await expect(page.getByText("YouTube settings updated")).toBeVisible();
 });

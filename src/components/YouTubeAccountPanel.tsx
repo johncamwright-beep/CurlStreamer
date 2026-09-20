@@ -1,3 +1,4 @@
+import { YouTubeConnectionGuide } from "./YouTubeConnectionGuide";
 import { redirect } from "next/navigation";
 
 import { YouTubeSettingsControls } from "@/components/YouTubeSettingsControls";
@@ -7,16 +8,33 @@ import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { getYouTubeConnection } from "@/lib/youtube-connection";
 
 const resultMessages: Record<string, string> = {
-  connected: "YouTube channel connected.",
+  connected:
+    "YouTube channel connected. Check the channel name below, then select Test connection.",
   cancelled: "YouTube connection was cancelled.",
   oauth_expired: "The connection attempt expired. Please try again.",
   reconnect_required:
-    "Google did not return reusable authorization. Please reconnect.",
-  scope_missing: "The required YouTube permission was not granted.",
+    "Google authorization needs renewing. Start Reconnect again and approve the requested YouTube access.",
+  scope_missing:
+    "YouTube permission was not granted. Reconnect and approve the requested YouTube access in Google.",
   channel_selection_required:
-    "A single owned YouTube channel could not be selected for this account.",
+    "Google did not return one YouTube channel. Check the Google email in YouTube account settings, then reconnect with the account that owns or manages your channel.",
   forbidden: "Team administrator access is required.",
-  connection_failed: "YouTube connection failed. Please try again.",
+  channel_mismatch:
+    "The Google account selected a different YouTube channel. Your existing channel was kept. Reconnect using the Google account for the channel shown below; choose Use another account if needed.",
+  connection_in_use:
+    "This channel is still linked to unfinished broadcasts. Reconnect the same channel to restore access. Resolve unfinished broadcasts before disconnecting or changing channels.",
+  configuration_unavailable:
+    "YouTube sign-in is temporarily unavailable because CurlStreamer needs a configuration update. Contact support; changing your Google password will not fix this.",
+  start_failed:
+    "YouTube sign-in could not start. Refresh this page and try again. If it keeps happening, contact support.",
+  provider_unavailable:
+    "Google could not be reached. Your existing channel was kept. Wait a moment, then start a fresh reconnect.",
+  provider_rejected:
+    "Google could not complete this connection. Check the selected account and permissions, then reconnect. Contact support if it repeats.",
+  quota_exceeded:
+    "YouTube’s request limit has been reached. Try later; you do not need to disconnect your channel.",
+  connection_failed:
+    "The connection could not be confirmed. Check the channel shown below and test it before starting a fresh reconnect. Contact support if the problem repeats.",
 };
 
 export async function YouTubeAccountPanel({
@@ -78,10 +96,15 @@ export async function YouTubeAccountPanel({
           will use this team-owned connection.
         </p>
       </div>
-      {result && resultMessages[result] && (
-        <p role="status" className="rounded-lg bg-slate-800 p-3">
-          {resultMessages[result]}
-        </p>
+      {result &&
+        resultMessages[result] &&
+        (result !== "connected" || connection?.status === "connected") && (
+          <p role="status" className="rounded-lg bg-slate-800 p-3">
+            {resultMessages[result]}
+          </p>
+        )}
+      {canManage && (
+        <YouTubeConnectionGuide channelTitle={connection?.channelTitle} />
       )}
       <YouTubeSettingsControls
         connection={connection}

@@ -27,6 +27,7 @@ export function YouTubeSettingsControls({
 }) {
   const router = useRouter();
   const [busy, setBusy] = useState<"test" | "disconnect" | null>(null);
+  const [confirmDisconnect, setConfirmDisconnect] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
 
   async function mutate(action: "test" | "disconnect") {
@@ -38,6 +39,7 @@ export function YouTubeSettingsControls({
           ? "/api/settings/youtube/test"
           : "/api/settings/youtube",
         {
+          signal: AbortSignal.timeout(15_000),
           method: action === "test" ? "POST" : "DELETE",
           headers: { "x-curlstreamer-request": "youtube-settings" },
         },
@@ -46,10 +48,19 @@ export function YouTubeSettingsControls({
         message?: string;
         error?: string;
       };
-      setMessage(body.message ?? body.error ?? "YouTube settings updated");
+      setMessage(
+        body.message ??
+          body.error ??
+          (response.ok
+            ? "YouTube settings updated"
+            : "The request failed. Your channel has not been changed. Please try again."),
+      );
+      if (response.ok) setConfirmDisconnect(false);
       router.refresh();
     } catch {
-      setMessage("YouTube settings are temporarily unavailable");
+      setMessage(
+        "The request timed out or could not reach CurlStreamer. Refresh this page to check the current channel status before trying again.",
+      );
     } finally {
       setBusy(null);
     }
@@ -88,6 +99,36 @@ export function YouTubeSettingsControls({
               before a future broadcast.
             </p>
           )}
+          {canManage && confirmDisconnect && (
+            <div
+              className="rounded-lg border border-amber-700 p-3 space-y-3"
+              role="group"
+              aria-label="Confirm channel disconnection"
+            >
+              <p>
+                Disconnect {connection.channelTitle}? You will need to reconnect
+                before creating or starting broadcasts. Your games and
+                recordings will not be deleted. Unfinished broadcasts may
+                prevent disconnection.
+              </p>
+              <div className="flex flex-wrap gap-3">
+                <button
+                  className="btn-secondary min-h-11"
+                  disabled={busy !== null}
+                  onClick={() => setConfirmDisconnect(false)}
+                >
+                  Keep channel
+                </button>
+                <button
+                  className="btn-secondary min-h-11"
+                  disabled={busy !== null}
+                  onClick={() => void mutate("disconnect")}
+                >
+                  Confirm disconnect
+                </button>
+              </div>
+            </div>
+          )}
           {canManage && (
             <div className="grid gap-3 sm:grid-cols-3">
               <button
@@ -108,7 +149,7 @@ export function YouTubeSettingsControls({
                 type="button"
                 className="min-h-11 rounded-lg border border-red-500 px-4 py-2 text-red-200"
                 disabled={busy !== null}
-                onClick={() => void mutate("disconnect")}
+                onClick={() => setConfirmDisconnect(true)}
               >
                 {busy === "disconnect" ? "Disconnecting…" : "Disconnect"}
               </button>

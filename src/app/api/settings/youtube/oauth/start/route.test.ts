@@ -167,4 +167,29 @@ describe("YouTube OAuth start", () => {
       expect(response.headers.get("set-cookie")).toBeNull();
     },
   );
+  it("returns browser configuration failures to settings without exposing diagnostic secrets", async () => {
+    mocks.configuration.mockImplementation(() => {
+      throw new Error("private-secret");
+    });
+    const response = await GET(
+      new Request("https://example.test/api/settings/youtube/oauth/start", {
+        headers: { accept: "text/html" },
+      }),
+    );
+    expect(response.status).toBe(307);
+    expect(response.headers.get("location")).toBe(
+      "https://example.test/account?section=youtube&result=configuration_unavailable",
+    );
+    expect(mocks.begin).not.toHaveBeenCalled();
+  });
+  it("does not redirect browser errors onto an untrusted public host", async () => {
+    vi.stubEnv("APP_BASE_URL", "https://example.test");
+    const response = await GET(
+      new Request("https://attacker.example/api/settings/youtube/oauth/start", {
+        headers: { accept: "text/html" },
+      }),
+    );
+    expect(response.status).toBe(503);
+    expect(response.headers.get("location")).toBeNull();
+  });
 });

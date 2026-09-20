@@ -7,6 +7,7 @@ import {
 } from "@/lib/youtube-oauth-origin";
 import {
   completeYouTubeConnection,
+  getYouTubeConnection,
   consumeYouTubeOAuth,
 } from "@/lib/youtube-connection";
 import {
@@ -84,6 +85,13 @@ export async function GET(request: NextRequest) {
         configuration,
       );
       const channel = await loadOwnedYouTubeChannel(tokens.access_token);
+      const existing = await getYouTubeConnection(user);
+      if (
+        existing?.channel_id &&
+        existing.connection_status !== "disconnected" &&
+        existing.channel_id !== channel.id
+      )
+        throw new Error("youtube_channel_mismatch");
       await completeYouTubeConnection(user, {
         organizationId: state.organizationId,
         expectedVersion: state.expectedVersion,
@@ -104,9 +112,15 @@ export async function GET(request: NextRequest) {
         "youtube_reconnect_required",
         "youtube_scope_missing",
         "youtube_channel_selection_required",
+        "youtube_channel_mismatch",
+        "youtube_connection_in_use",
+        "youtube_provider_unavailable",
+        "youtube_provider_rejected",
+        "youtube_quota_exceeded",
       ].includes(error.message)
         ? error.message.replace("youtube_", "")
         : "connection_failed";
+    console.error("YouTube OAuth callback failed", { code: result });
   }
   const response = settingsRedirect(origin, result);
   response.cookies.set(YOUTUBE_OAUTH_COOKIE, "", {

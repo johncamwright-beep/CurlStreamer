@@ -61,7 +61,7 @@ describe("shared application navigation", () => {
     expect(navigation).not.toMatch(/Administration/);
     expect(home).not.toContain("AppNavigation");
     expect(home).toContain("<MarketingHome />");
-    expect(navigation).toContain("createBrowserSupabaseClient");
+    expect(navigation).toContain("useAccountDisplay");
   });
 
   it("synchronizes persistent current-game capability links", () => {

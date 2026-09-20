@@ -13,7 +13,8 @@ import {
   selectCurrentGame,
   type CurrentGameSelection,
 } from "@/lib/current-game";
-import { createBrowserSupabaseClient } from "@/lib/supabase/browser";
+
+import { useAccountDisplay } from "./AccountDisplayProvider";
 
 type NavLink = { href: string; label: string; icon: AppIconName };
 const plan: NavLink[] = [
@@ -40,61 +41,18 @@ export function AppNavigation({
   const trigger = useRef<HTMLButtonElement>(null);
   const panel = useRef<HTMLElement>(null);
   const [open, setOpen] = useState(false);
-  const [signedIn, setSignedIn] = useState(knownSignedIn ?? false);
-  const [platformAdmin, setPlatformAdmin] = useState(false);
-  const [coachAccess, setCoachAccess] = useState(false);
+  const {
+    platformAdmin,
+    coachAccess,
+    refresh,
+    signedIn: sessionSignedIn,
+  } = useAccountDisplay();
+  const signedIn = knownSignedIn ?? sessionSignedIn;
   const [current, setCurrent] = useState<CurrentGameSelection | null>(null);
 
   useEffect(() => {
-    setCoachAccess(false);
-    if (!open || !signedIn) return;
-    const controller = new AbortController();
-    void fetch("/api/curlcoach/access", {
-      cache: "no-store",
-      signal: controller.signal,
-    })
-      .then(async (response) => (response.ok ? response.json() : null))
-      .then((data) => {
-        if (!controller.signal.aborted) setCoachAccess(data?.enabled === true);
-      })
-      .catch(() => {});
-    return () => controller.abort();
-  }, [open, signedIn, pathname]);
-  useEffect(() => {
-    setPlatformAdmin(false);
-    if (!open || !signedIn) return;
-    const controller = new AbortController();
-    void fetch("/api/account/navigation", {
-      cache: "no-store",
-      signal: controller.signal,
-    })
-      .then(async (response) => {
-        const data = response.ok ? await response.json() : null;
-        if (!controller.signal.aborted)
-          setPlatformAdmin(data?.platformAdmin === true);
-      })
-      .catch(() => {
-        if (!controller.signal.aborted) setPlatformAdmin(false);
-      });
-    return () => controller.abort();
-  }, [open, signedIn, pathname]);
-
-  useEffect(() => {
-    if (knownSignedIn !== undefined) return setSignedIn(knownSignedIn);
-    try {
-      const client = createBrowserSupabaseClient();
-      void client.auth
-        .getUser()
-        .then(({ data }) => setSignedIn(Boolean(data.user)))
-        .catch(() => setSignedIn(false));
-      const { data } = client.auth.onAuthStateChange((_event, session) =>
-        setSignedIn(Boolean(session?.user)),
-      );
-      return () => data.subscription.unsubscribe();
-    } catch {
-      setSignedIn(false);
-    }
-  }, [knownSignedIn]);
+    if (signedIn) refresh(open);
+  }, [open, signedIn, pathname, refresh]);
 
   useEffect(() => {
     const update = (event?: Event) => {

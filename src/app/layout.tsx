@@ -1,4 +1,5 @@
 import "./globals.css";
+import { AccountDisplayProvider } from "@/components/AccountDisplayProvider";
 export const metadata = {
   title: "Curl Streamer",
   robots: { index: false, follow: false },
@@ -17,7 +18,9 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
-      <body>{children}</body>
+      <body>
+        <AccountDisplayProvider>{children}</AccountDisplayProvider>
+      </body>
     </html>
   );
 }

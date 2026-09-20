@@ -223,3 +223,55 @@ test("platform administrators keep team access read-only until support edits are
   );
   expect(inviteRequests).toBe(1);
 });
+
+test("account logo and privileged menu links persist while navigation refreshes", async ({
+  page,
+}) => {
+  let pause = false;
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  for (const [path, json] of [
+    ["appearance", { logo: "/branding/curlstreamer-icon.png" }],
+    ["navigation", { platformAdmin: true }],
+  ] as const) {
+    await page.route("**/api/account/" + path, async (route) => {
+      if (pause) await gate;
+      await route.fulfill({ json });
+    });
+  }
+  await page.route("**/api/curlcoach/access", async (route) => {
+    if (pause) await gate;
+    await route.fulfill({ json: { enabled: true } });
+  });
+  await signIn(page, "/account");
+  const logo = page.locator(".account-shortcut img");
+  await expect(logo).toHaveAttribute("src", "/branding/curlstreamer-icon.png");
+  await page.getByRole("button", { name: "Open navigation menu" }).click();
+  const menu = page.getByRole("navigation", {
+    name: "CurlStreamer navigation",
+  });
+  await expect(menu.getByRole("link", { name: "Shot Tracker" })).toBeVisible();
+  await expect(
+    menu.getByRole("link", { name: "Platform administration" }),
+  ).toBeVisible();
+  pause = true;
+  try {
+    await menu.getByRole("link", { name: "Create game", exact: true }).click();
+    await page.waitForURL("**/games/new");
+    await expect(logo).toHaveAttribute(
+      "src",
+      "/branding/curlstreamer-icon.png",
+    );
+    await page.getByRole("button", { name: "Open navigation menu" }).click();
+    await expect(
+      menu.getByRole("link", { name: "Shot Tracker" }),
+    ).toBeVisible();
+    await expect(
+      menu.getByRole("link", { name: "Platform administration" }),
+    ).toBeVisible();
+  } finally {
+    release();
+  }
+});

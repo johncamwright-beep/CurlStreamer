@@ -1,13 +1,15 @@
 "use client";
 import Link from "next/link";
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { useAccountDisplay } from "./AccountDisplayProvider";
 export function AccountShortcut({
   initialLogo,
 }: {
   initialLogo?: string | null;
 }) {
-  const [logo, setLogo] = useState<string | null>(initialLogo ?? null);
+  const { logo: savedLogo, seedLogo } = useAccountDisplay();
+  const logo = initialLogo !== undefined ? initialLogo : savedLogo;
   const marker = useRef<HTMLSpanElement>(null);
   const [placement, setPlacement] = useState<{
     main: HTMLElement;
@@ -57,27 +59,9 @@ export function AccountShortcut({
       header.style.removeProperty("--account-header-padding");
     };
   }, []);
-  useEffect(() => {
-    if (initialLogo !== undefined) {
-      setLogo(initialLogo);
-      return;
-    }
-    const controller = new AbortController();
-    void fetch("/api/account/appearance", { signal: controller.signal })
-      .then((response) => (response.ok ? response.json() : null))
-      .then((value) => {
-        if (
-          typeof value?.logo === "string" &&
-          (value.logo.startsWith("/branding/") ||
-            value.logo.startsWith("https://"))
-        )
-          setLogo(value.logo);
-      })
-      .catch(() => {});
-    return () => {
-      controller.abort();
-    };
-  }, [initialLogo]);
+  useLayoutEffect(() => {
+    if (initialLogo !== undefined) seedLogo(initialLogo);
+  }, [initialLogo, seedLogo]);
   const shortcut = (
     <Link
       href="/account"

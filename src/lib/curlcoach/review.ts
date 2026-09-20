@@ -71,3 +71,39 @@ export function reviewStart(video?: VideoReview) {
           video.lookBackSeconds,
       );
 }
+
+export type BroadcastReview = {
+  url: string;
+  startedAt: string;
+  endedAt?: string;
+};
+/** Derived display metadata only: never rewrite the coach's append-only events. */
+export function withBroadcastReview<
+  T extends { flaggedAt?: string; videoReview?: VideoReview },
+>(shot: T, broadcast?: BroadcastReview): T {
+  if (reviewLink(shot.videoReview) || !broadcast || !shot.flaggedAt)
+    return shot;
+  const at = Date.parse(shot.flaggedAt),
+    start = Date.parse(broadcast.startedAt);
+  const end = broadcast.endedAt ? Date.parse(broadcast.endedAt) : Infinity;
+  if (
+    !supportedVideo(broadcast.url) ||
+    !Number.isFinite(at) ||
+    !Number.isFinite(start) ||
+    Number.isNaN(end) ||
+    at < start ||
+    at > end
+  )
+    return shot;
+  const positionSeconds = Math.floor((at - start) / 1000);
+  if (positionSeconds > 604800) return shot;
+  return {
+    ...shot,
+    videoReview: {
+      url: broadcast.url,
+      positionSeconds,
+      lookBackSeconds: shot.videoReview?.lookBackSeconds ?? 30,
+      delaySeconds: shot.videoReview?.delaySeconds ?? 0,
+    },
+  };
+}

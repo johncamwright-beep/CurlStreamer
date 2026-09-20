@@ -1,3 +1,4 @@
+vi.mock("./curlcoach-video", () => ({ loadCoachBroadcastReviews: m.videos }));
 import { beforeEach, expect, it, vi } from "vitest";
 const m = vi.hoisted(() => ({
   account: vi.fn(),
@@ -7,6 +8,7 @@ const m = vi.hoisted(() => ({
   seasons: vi.fn(),
   games: vi.fn(),
   rpc: vi.fn(),
+  videos: vi.fn(),
 }));
 vi.mock("@/lib/curlcoach/production-access", () => ({
   requireCoachAccount: m.account,
@@ -30,6 +32,7 @@ const eid = "00000000-0000-4000-8000-000000000001",
   gid = "00000000-0000-4000-8000-000000000002";
 beforeEach(() => {
   vi.clearAllMocks();
+  m.videos.mockResolvedValue({});
   m.account.mockResolvedValue({ userId: "coach", organizationId: "org" });
   m.auth.mockResolvedValue({ data: { user: { id: "coach" } }, error: null });
   m.settings.mockResolvedValue({
@@ -69,6 +72,7 @@ it("denies before reading shared games or roster", async () => {
   m.account.mockResolvedValue(null);
   await expect(loadProductionStreamerEvent()).rejects.toThrow("access");
   expect(m.games).not.toHaveBeenCalled();
+  expect(m.videos).not.toHaveBeenCalled();
   expect(m.settings).not.toHaveBeenCalled();
 });
 it("links completed scoreboard and real roster without writing shared state", async () => {
@@ -100,6 +104,7 @@ it("a shot save reads only the selected authorized game's scoreboard", async () 
   m.games.mockResolvedValue({ ok: true, value: [first, second] });
   m.rpc.mockResolvedValue({ data: [], error: null });
   const result = await loadProductionStreamerEvent(eid, gid);
+  expect(m.videos).not.toHaveBeenCalled();
   expect(result.event.games.map((g) => g.id)).toEqual([gid]);
   expect(m.rpc).toHaveBeenCalledExactlyOnceWith("read_game_state", {
     p_game_id: gid,
@@ -210,4 +215,18 @@ it("season aggregation excludes other seasons, deleted games and unauthorized se
       "00000000-0000-4000-8000-000000000099",
     ),
   ).rejects.toThrow("Season unavailable");
+});
+
+it("loads timing only for authorized selected games", async () => {
+  m.videos.mockResolvedValue({
+    [gid]: {
+      url: "https://youtu.be/abcdefghijk",
+      startedAt: "2026-09-19T12:00:00Z",
+    },
+  });
+  const result = await loadProductionStreamerEvent(eid);
+  expect(m.videos).toHaveBeenCalledWith("org", [gid]);
+  expect(result.event.games[0].broadcastReview?.startedAt).toBe(
+    "2026-09-19T12:00:00Z",
+  );
 });

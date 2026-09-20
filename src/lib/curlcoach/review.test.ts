@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { reviewLink, videoReviewSchema } from "./review";
+import { reviewLink, videoReviewSchema, withBroadcastReview } from "./review";
 import { shotSchema, append, currentShots, emptyState } from "./model";
 import { nextTurn } from "./next-turn";
 import { gameShots, sampleEvent } from "./event";
@@ -72,4 +72,33 @@ it("retains flagged notes and bookmarks in audited corrections and clears them f
     note: "",
     videoReview: { url: video.url, positionSeconds: null, lookBackSeconds: 30 },
   });
+});
+
+it("derives existing flags from actual start, preserves look-back and does not rewrite events", () => {
+  const shot = {
+    flaggedAt: "2026-09-19T12:20:00Z",
+    videoReview: { url: "", positionSeconds: null, lookBackSeconds: 45 },
+  };
+  const broadcast = {
+    url: "https://youtu.be/abcdefghijk",
+    startedAt: "2026-09-19T12:00:00Z",
+    endedAt: "2026-09-19T14:00:00Z",
+  };
+  expect(
+    reviewLink(withBroadcastReview(shot, broadcast).videoReview),
+  ).toContain("t=1155s");
+  expect(shot.videoReview.positionSeconds).toBeNull();
+  for (const flaggedAt of [
+    "2026-09-19T11:59:59Z",
+    "2026-09-19T14:00:01Z",
+    "invalid",
+  ])
+    expect(
+      withBroadcastReview({ ...shot, flaggedAt }, broadcast).videoReview
+        .positionSeconds,
+    ).toBeNull();
+  expect(withBroadcastReview(shot).videoReview.positionSeconds).toBeNull();
+  expect(
+    withBroadcastReview({ videoReview: video }, broadcast).videoReview,
+  ).toEqual(video);
 });

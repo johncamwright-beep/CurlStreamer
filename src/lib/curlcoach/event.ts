@@ -1,3 +1,4 @@
+import { withBroadcastReview, type BroadcastReview } from "./review";
 import {
   currentShots,
   emptyState,
@@ -28,6 +29,7 @@ export type CoachGame = {
   initialHammer: Team | null;
   ends: { end: number; us: number; them: number; hammer: boolean | null }[];
   scoreboardAvailable: boolean;
+  broadcastReview?: BroadcastReview;
   roster?: RosterEntry[];
   state: State;
 };
@@ -46,7 +48,9 @@ export type Workspace = {
   refreshedAt: string;
 };
 export function gameShots(game: CoachGame) {
-  return currentShots(game.state.events);
+  return currentShots(game.state.events).map((shot) =>
+    withBroadcastReview(shot, game.broadcastReview),
+  );
 }
 export function eventShots(event: CoachEvent) {
   return event.games.flatMap((game) =>

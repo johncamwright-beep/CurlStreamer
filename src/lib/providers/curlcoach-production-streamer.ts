@@ -1,3 +1,4 @@
+import { loadCoachBroadcastReviews } from "./curlcoach-video";
 import { isCurrentGame, preferredGame } from "@/lib/current-game";
 import "server-only";
 import { z } from "zod";
@@ -193,6 +194,12 @@ export async function loadProductionStreamerEvent(
     seasonId: selected.seasonId,
     games: [],
   };
+  const broadcastReviews = gameId
+    ? {}
+    : await loadCoachBroadcastReviews(
+        account.organizationId,
+        rows.map((row) => row.id),
+      );
   for (const [index, row] of rows.entries()) {
     const ends =
       row.completion_result?.outcome === "no_result"
@@ -256,6 +263,7 @@ export async function loadProductionStreamerEvent(
       side: "home",
       initialHammer: row.config.initialHammer ?? null,
       scoreboardAvailable: available,
+      broadcastReview: broadcastReviews[row.id],
       ends: scoreboard(row.config as GameConfig, scoreEvents, "home"),
       state: {
         ...emptyState(),

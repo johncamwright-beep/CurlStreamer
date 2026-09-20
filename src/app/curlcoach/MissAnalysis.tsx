@@ -140,7 +140,7 @@ export default function MissAnalysis({
                 (s.flagged ?? !!s.review) && (
                   <p>
                     Go back {s.videoReview?.lookBackSeconds ?? 30} seconds ·
-                    video timing pending
+                    video link not available for this flag
                   </p>
                 )
               )}

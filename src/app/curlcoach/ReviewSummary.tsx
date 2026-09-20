@@ -46,7 +46,7 @@ export default function ReviewSummary({
               </a>
             ) : (
               <p>
-                Video synchronization pending.{" "}
+                Video link not available for this flag.{" "}
                 {shot.flaggedAt
                   ? `Flag captured ${new Date(shot.flaggedAt).toLocaleString()}.`
                   : "This older flag has no captured real-time timestamp."}{" "}

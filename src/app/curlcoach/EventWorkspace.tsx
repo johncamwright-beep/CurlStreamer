@@ -952,6 +952,7 @@ export default function EventWorkspace({
                     gameId: game.id,
                     roster: game.roster ?? game.state.roster,
                     initialState: game.state,
+                    broadcastReview: game.broadcastReview,
                     onSaved: saved,
                   }}
                 />

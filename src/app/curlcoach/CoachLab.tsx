@@ -1,4 +1,8 @@
 "use client";
+import {
+  withBroadcastReview,
+  type BroadcastReview,
+} from "@/lib/curlcoach/review";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   currentShots,
@@ -61,6 +65,7 @@ export default function CoachLab({
     gameId: string;
     roster?: State["roster"];
     initialState: State;
+    broadcastReview?: BroadcastReview;
     onSaved: (state: State) => void;
   };
 }) {
@@ -587,9 +592,9 @@ export default function CoachLab({
                         />
                       </label>
                       <p>
-                        Flag time captured automatically. Video synchronization
-                        is pending: this local preview has no timing connection
-                        to the broadcast.
+                        Flag time saved automatically. Review links use the
+                        game’s CurlStreamer broadcast when video timing is
+                        available. Refresh the event after the broadcast starts.
                       </p>
                     </div>
                   )}
@@ -743,7 +748,12 @@ export default function CoachLab({
               </article>
             ))}
           </section>
-          <ReviewSummary shots={shots} players={players} />
+          <ReviewSummary
+            shots={shots.map((shot) =>
+              withBroadcastReview(shot, context?.broadcastReview),
+            )}
+            players={players}
+          />
           <section className="coach-panel" hidden={!!actionsTarget && !history}>
             {actionsTarget
               ? createPortal(sessionActions, actionsTarget)

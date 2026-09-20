@@ -122,3 +122,51 @@ test("miss review scopes season data and screen wake follows scoring", async ({
     })
     .toBe(1);
 });
+
+test("broadcast flags open the same timed link in scoring, game review and miss analysis", async ({
+  page,
+}) => {
+  await page.route("**/api/curlcoach/workspace?**", async (route) => {
+    const response = await route.fetch();
+    const body = await response.json();
+    for (const game of body.event?.games ?? []) {
+      game.broadcastReview = {
+        url: "https://www.youtube.com/watch?v=abcdefghijk",
+        startedAt: "2026-09-19T12:00:00Z",
+        endedAt: "2026-09-19T14:00:00Z",
+      };
+      for (const entry of game.state.events)
+        if (entry.shot) {
+          entry.shot.flagged = true;
+          entry.shot.flaggedAt = "2026-09-19T12:20:00Z";
+          entry.shot.videoReview = {
+            url: "",
+            positionSeconds: null,
+            lookBackSeconds: 45,
+          };
+        }
+    }
+    await route.fulfill({ response, json: body });
+  });
+  await page.goto("/curlcoach");
+  await page
+    .getByLabel("Local lab key")
+    .fill("curlcoach-e2e-only-key-thirty-two-characters");
+  await page.getByRole("button", { name: "Unlock lab" }).click();
+  const link = () =>
+    page.getByRole("link", { name: "Review video from 0:19:15" }).first();
+  await expect(link()).toHaveAttribute(
+    "href",
+    "https://www.youtube.com/watch?v=abcdefghijk&t=1155s",
+  );
+  for (const name of ["Game analysis", "Miss analysis"]) {
+    await page
+      .getByRole("button", { name: "Shot Tracker menu", exact: true })
+      .click();
+    await page.getByRole("link", { name, exact: true }).click();
+    await expect(link()).toHaveAttribute(
+      "href",
+      "https://www.youtube.com/watch?v=abcdefghijk&t=1155s",
+    );
+  }
+});

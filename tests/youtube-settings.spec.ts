@@ -21,7 +21,9 @@ test("team administrator can inspect and disconnect the saved YouTube channel", 
       exact: false,
     }),
   ).toBeVisible();
-  await expect(page.getByText("Test Club TV")).toBeVisible();
+  await expect(
+    page.getByRole("definition").filter({ hasText: "Test Club TV" }),
+  ).toBeVisible();
   await expect(page.getByText("UC_TEST_CHANNEL")).toBeVisible();
   await expect(
     page.getByRole("button", { name: "Test connection" }),

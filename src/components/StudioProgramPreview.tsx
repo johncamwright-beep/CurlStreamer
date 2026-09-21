@@ -1,7 +1,13 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 
-export function StudioProgramPreview({ gameId }: { gameId: string }) {
+export function StudioProgramPreview({
+  gameId,
+  embedded = false,
+}: {
+  gameId: string;
+  embedded?: boolean;
+}) {
   const [supported, setSupported] = useState(false);
   const [frame, setFrame] = useState(0);
   const [ready, setReady] = useState(false);
@@ -32,8 +38,10 @@ export function StudioProgramPreview({ gameId }: { gameId: string }) {
     <section
       aria-label="Studio program preview"
       style={{
-        width: 1920,
-        height: 1080,
+        width: embedded ? "100%" : 1920,
+        height: embedded ? "auto" : 1080,
+        aspectRatio: "16 / 9",
+        overflow: "hidden",
         position: "relative",
         background: "#071320",
         color: "white",
@@ -49,6 +57,8 @@ export function StudioProgramPreview({ gameId }: { gameId: string }) {
           onLoad={() => schedule(true)}
           onError={() => schedule(false)}
           style={{
+            position: "absolute",
+            inset: 0,
             width: "100%",
             height: "100%",
             objectFit: "contain",
@@ -65,18 +75,18 @@ export function StudioProgramPreview({ gameId }: { gameId: string }) {
             display: "grid",
             placeContent: "center",
             textAlign: "center",
-            padding: 80,
-            fontSize: 36,
+            padding: embedded ? 16 : 80,
+            fontSize: embedded ? 14 : 36,
           }}
         >
-          <h1>
+          <h2>
             {supported
               ? "Waiting for Studio’s picture"
               : "Preview on the recording PC"}
-          </h1>
+          </h2>
           <p>
             {supported
-              ? "Start this game in Studio. The program picture will appear here."
+              ? "Start recording in Studio. The program picture will appear here."
               : "Open this game in the updated Windows Studio app to see its cameras and score together."}
           </p>
         </div>

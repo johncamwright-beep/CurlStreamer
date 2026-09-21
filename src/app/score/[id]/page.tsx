@@ -21,6 +21,8 @@ import type {
 } from "@/lib/game-completion";
 import { StudioDeviceCards } from "@/components/StudioDeviceCards";
 import { StudioYouTube } from "@/components/StudioYouTube";
+import { StudioProgramPreview } from "@/components/StudioProgramPreview";
+import { CameraZoomControls } from "@/components/CameraZoomControls";
 import { StudioAudio } from "@/components/StudioAudio";
 import { cameraAudioEnabled } from "@/lib/camera-audio";
 import { WindowsStudioRequired } from "@/components/WindowsStudioRequired";
@@ -318,13 +320,15 @@ export default function Scorer({
         </div>
         {canEndGame && (
           <div className="scoring-page-actions">
-            <Link
-              className="btn-secondary"
-              href={`/broadcast/${id}`}
-              aria-label={`Broadcast: ${title}`}
-            >
-              Show broadcast
-            </Link>
+            {!desktop && (
+              <Link
+                className="btn-secondary"
+                href={`/broadcast/${id}`}
+                aria-label={`Broadcast: ${title}`}
+              >
+                Show broadcast
+              </Link>
+            )}
             {desktop && canEndGame && (
               <div className="scoring-header-finish">
                 <EndGameControl
@@ -581,6 +585,11 @@ export default function Scorer({
               {scoringNotice}
             </p>
           )}
+          {desktop && canEndGame && (
+            <>
+              <StudioAudio id={id} />
+            </>
+          )}
         </div>
         {canEndGame && (
           <aside
@@ -590,21 +599,26 @@ export default function Scorer({
             aria-label="Broadcast and program controls"
           >
             {desktop ? (
-              <>
-                {desktop && (
-                  <div className="scoring-control-tiles">
-                    <ScoringProgramControls game={game} act={act} compact />
-                    {canEndGame && <StudioYouTube id={id} />}
-                  </div>
-                )}
-              </>
+              <section
+                className="scoring-preview-panel"
+                aria-label="Stream preview and camera zoom"
+              >
+                <h2 className="scoring-eyebrow">Program preview</h2>
+                <StudioProgramPreview key={id} gameId={id} embedded />
+                <CameraZoomControls game={game} act={act} />
+              </section>
             ) : (
               <>
                 <WindowsStudioRequired gameId={id} />
                 <ScoringProgramControls game={game} act={act} />
               </>
             )}
-            {desktop && canEndGame && <StudioAudio id={id} />}
+            {desktop && (
+              <div className="scoring-control-tiles">
+                <ScoringProgramControls game={game} act={act} compact />
+                <StudioYouTube id={id} />
+              </div>
+            )}
             {!desktop && canEndGame && (
               <div className="scoring-card scoring-finish">
                 {!desktop && (

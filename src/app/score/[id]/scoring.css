@@ -857,3 +857,80 @@
 .scoring-remote {
   max-width: 900px;
 }
+
+/* Studio keeps the local program picture in the page, never over the controls. */
+.scoring-desktop:not(.scoring-remote) {
+  max-width: 1600px;
+}
+.scoring-preview-panel {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+.scoring-preview-panel > section {
+  border-radius: 12px;
+  border: 1px solid #2a3b50;
+}
+.scoring-preview-panel .camera-zoom-rail {
+  position: static;
+  transform: none;
+  width: 100%;
+  max-height: none;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px 16px;
+  z-index: auto;
+}
+.scoring-preview-panel .camera-zoom-rail h2 {
+  display: block;
+  grid-column: 1 / -1;
+  margin: 0;
+}
+.scoring-preview-panel .camera-zoom-control + .camera-zoom-control {
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+@media (min-width: 851px) {
+  .scoring-desktop .scoring-columns {
+    grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr);
+    gap: 16px;
+  }
+  .scoring-desktop .scoring-main {
+    gap: 10px;
+  }
+}
+
+@media (max-width: 850px) {
+  .scoring-desktop .scoring-columns,
+  .scoring-desktop .scoring-sidebar {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (min-width: 851px) {
+  .scoring-desktop:not(.scoring-remote) .scoring-columns {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 400px);
+  }
+  .scoring-preview-panel .camera-zoom-control {
+    display: grid;
+    grid-template-columns: 96px minmax(0, 1fr);
+    column-gap: 8px;
+    align-items: center;
+  }
+  .scoring-preview-panel .camera-zoom-control h3,
+  .scoring-preview-panel .camera-zoom-control p {
+    grid-column: 1 / -1;
+  }
+  .scoring-preview-panel .camera-zoom-buttons {
+    margin: 0;
+  }
+}
+
+.scoring-preview-panel .camera-zoom-rail {
+  padding: 0.6rem;
+  gap: 6px 12px;
+}
+.scoring-desktop .scoring-device-dock {
+  margin-top: 8px;
+}

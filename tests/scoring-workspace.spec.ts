@@ -216,7 +216,8 @@ test("desktop game day keeps scoring primary and settings available on demand", 
     await page.setViewportSize({ width: 1280, height: 850 });
   await page.addInitScript(() =>
     Object.defineProperty(navigator, "userAgent", {
-      value: "CurlStreamerStudio/0.3 StudioNativeAudio/1",
+      value:
+        "CurlStreamerStudio/0.3 StudioNativeAudio/1 StudioProgramPreview/1",
     }),
   );
   await page.addInitScript(() => {
@@ -225,7 +226,47 @@ test("desktop game day keeps scoring primary and settings available on demand", 
       value: { webview: { postMessage() {} } },
     });
   });
+  await page.route("**/__studio-preview/**", (route) =>
+    route.fulfill({
+      contentType: "image/svg+xml",
+      body: '<svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080"><rect width="1920" height="1080" fill="#163343"/><text x="600" y="540" fill="white" font-size="64">Test program frame</text></svg>',
+    }),
+  );
   const { game, actions } = await setup(page, true);
+  const preview = page.getByRole("region", {
+    name: "Studio program preview",
+    exact: true,
+  });
+  await expect(
+    preview.getByRole("img", { name: "Actual Studio program output" }),
+  ).toBeVisible();
+  await expect(page.getByRole("link", { name: /^Broadcast:/ })).toHaveCount(0);
+  await expect(
+    page.getByRole("button", { name: "Camera 1 zoom in" }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Camera 2 zoom in" }),
+  ).toBeVisible();
+  expect(
+    await page
+      .getByTestId("camera-zoom-rail")
+      .evaluate((el) => getComputedStyle(el).position),
+  ).toBe("static");
+  const previewBox = (await preview.boundingBox())!;
+  expect(previewBox.width / previewBox.height).toBeCloseTo(16 / 9, 1);
+  if (info.project.name !== "mobile") {
+    const scoreBox = (await page
+      .getByRole("region", { name: "Match score" })
+      .boundingBox())!;
+    expect(previewBox.x).toBeGreaterThan(scoreBox.x + scoreBox.width);
+    expect(previewBox.y).toBeLessThan(scoreBox.y + 60);
+  }
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth,
+    ),
+  ).toBe(true);
+
   await expect(
     page.getByRole("region", { name: "USB microphones", exact: true }),
   ).toBeVisible();
@@ -410,4 +451,42 @@ test("remote scorer only sees scoreboard controls", async ({ page }) => {
   await expect(
     page.getByRole("button", { name: "End Game", exact: true }),
   ).toHaveCount(0);
+});
+
+test("Studio inline zoom sends camera commands without changing the score", async ({
+  page,
+}) => {
+  await page.addInitScript(() =>
+    Object.defineProperty(navigator, "userAgent", {
+      value: "CurlStreamerStudio/0.3",
+    }),
+  );
+  const { game, actions } = await setup(page, true);
+  game.cameraZoom = {
+    "camera-home": {
+      supported: true,
+      min: 1,
+      max: 4,
+      step: 0.1,
+      value: 1,
+      updatedAt: Date.now(),
+    },
+  };
+  await page.reload();
+  await page
+    .getByRole("button", { name: "Camera 1 zoom in", exact: true })
+    .click();
+  await expect.poll(() => actions.length).toBe(1);
+  expect(actions[0]).toMatchObject({
+    type: "camera-zoom",
+    role: "camera-home",
+    value: 1.1,
+  });
+  expect(actions[0].commandId).toEqual(expect.any(String));
+  await expect(
+    page.getByRole("button", { name: "Save 1 point", exact: true }),
+  ).toBeEnabled();
+  await expect(
+    page.getByRole("button", { name: "Camera 2 zoom in", exact: true }),
+  ).toBeDisabled();
 });

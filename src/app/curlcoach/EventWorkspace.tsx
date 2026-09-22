@@ -17,6 +17,7 @@ import {
   gameShots,
   grouped,
   matrix,
+  outcomePercent,
   workbookCategoryPercent,
   scoreTimeline,
   type CoachEvent,
@@ -24,7 +25,7 @@ import {
   type Workspace,
 } from "@/lib/curlcoach/event";
 import { preferredGame } from "@/lib/current-game";
-import CoachLab from "./CoachLab";
+import CoachLab, { turnLabel } from "./CoachLab";
 import ReviewSummary from "./ReviewSummary";
 import MissAnalysis from "./MissAnalysis";
 import ScoringWakeLock from "./ScoringWakeLock";
@@ -41,6 +42,12 @@ type Page = (typeof pages)[number];
 const slug = (page: string) => page.toLowerCase().replaceAll(" ", "-");
 const pct = (value: number | null) =>
   value === null ? "—" : `${value.toFixed(1)}%`;
+const outcome = (shots: Shot[], deficiency: string) => {
+  const count = shots.filter(
+    (shot) => !shot.excluded && shot.deficiency === deficiency,
+  ).length;
+  return `${count} · ${pct(outcomePercent(shots, deficiency))}`;
+};
 function Summary({ shots }: { shots: Shot[] }) {
   const r = report(shots);
   return (
@@ -71,11 +78,15 @@ function Table({
   columns,
   rows,
   shotSelector = false,
+  selectorLabel = "Shot type",
+  optionLabel,
 }: {
   title: string;
   columns: readonly string[];
   rows: { label: string; values: (string | number)[] }[];
   shotSelector?: boolean;
+  selectorLabel?: string;
+  optionLabel?: (label: string) => string;
 }) {
   const [shot, setShot] = useState("");
   const selectedShot = rows.some((row) => row.label === shot)
@@ -89,15 +100,15 @@ function Table({
       <h3>{title}</h3>
       {shotSelector && (
         <label className="event-shot-selector">
-          Shot type
+          {selectorLabel}
           <select
-            aria-label={title + " shot type"}
+            aria-label={title + " " + selectorLabel.toLowerCase()}
             value={selectedShot}
             onChange={(event) => setShot(event.target.value)}
           >
             {rows.map((row) => (
               <option key={row.label} value={row.label}>
-                {row.label}
+                {optionLabel?.(row.label) ?? row.label}
               </option>
             ))}
           </select>
@@ -179,6 +190,76 @@ function ShootingTable({ shots }: { shots: Shot[] }) {
     />
   );
 }
+function ResultTable({
+  shots,
+  title,
+  types,
+  aggregateLabel,
+}: {
+  shots: Shot[];
+  title: string;
+  types: readonly string[];
+  aggregateLabel: string;
+}) {
+  return (
+    <Table
+      title={title}
+      shotSelector
+      columns={[...deficiencies, "Shooting"]}
+      rows={grouped(shots, types, (s) => s.type, aggregateLabel).map((r) => {
+        const category = shots.filter((s) =>
+          r.label === aggregateLabel
+            ? s.type !== null && types.includes(s.type)
+            : s.type === r.label,
+        );
+        return {
+          label: r.label,
+          values: [
+            ...deficiencies.map((deficiency) => outcome(category, deficiency)),
+            pct(r.percent),
+          ],
+        };
+      })}
+    />
+  );
+}
+function TurnDeficiencyTable({
+  shots,
+  title = "Turn / deficiency",
+}: {
+  shots: Shot[];
+  title?: string;
+}) {
+  return (
+    <Table
+      title={title}
+      shotSelector
+      selectorLabel="Turn / target"
+      optionLabel={(label) =>
+        label === "All Turns" ? label : turnLabel(label)
+      }
+      columns={[...deficiencies, "Shooting"]}
+      rows={grouped(
+        shots,
+        turns,
+        (s) => s.turn,
+        "All Turns",
+        () => true,
+      ).map((r) => {
+        const category = shots.filter((s) =>
+          r.label === "All Turns" ? true : s.turn === r.label,
+        );
+        return {
+          label: r.label,
+          values: [
+            ...deficiencies.map((deficiency) => outcome(category, deficiency)),
+            pct(r.percent),
+          ],
+        };
+      })}
+    />
+  );
+}
 function DataTables({
   shots,
   summary = true,
@@ -189,17 +270,7 @@ function DataTables({
   return (
     <>
       {summary && <Summary shots={shots} />}
-      <Table
-        title="Turn / deficiency"
-        columns={deficiencies}
-        rows={matrix(
-          shots,
-          turns,
-          deficiencies,
-          (s) => s.turn,
-          (s) => s.deficiency,
-        )}
-      />
+      <TurnDeficiencyTable shots={shots} />
       <Table
         title="Shot type performance"
         shotSelector
@@ -235,29 +306,17 @@ function DataTables({
           };
         })}
       />
-      <Table
+      <ResultTable
         title="Result / draw type"
-        shotSelector
-        columns={deficiencies}
-        rows={matrix(
-          shots,
-          shotTypes.slice(0, 5),
-          deficiencies,
-          (s) => s.type,
-          (s) => s.deficiency,
-        )}
+        shots={shots}
+        types={shotTypes.slice(0, 5)}
+        aggregateLabel="All Draws"
       />
-      <Table
+      <ResultTable
         title="Result / hit type"
-        shotSelector
-        columns={deficiencies}
-        rows={matrix(
-          shots,
-          shotTypes.slice(5),
-          deficiencies,
-          (s) => s.type,
-          (s) => s.deficiency,
-        )}
+        shots={shots}
+        types={shotTypes.slice(5)}
+        aggregateLabel="All Hits"
       />
       <ShootingTable shots={shots} />
     </>
@@ -363,17 +422,10 @@ function PlayerAnalysis({
       </div>
       <div className="event-two">
         {["Draws", "Hits"].map((f) => (
-          <Table
+          <TurnDeficiencyTable
             key={f}
             title={`Turn analysis · ${f}`}
-            columns={deficiencies}
-            rows={matrix(
-              shots.filter((s) => family(s) === f),
-              turns,
-              deficiencies,
-              (s) => s.turn,
-              (s) => s.deficiency,
-            )}
+            shots={shots.filter((s) => family(s) === f)}
           />
         ))}
       </div>
@@ -1040,6 +1092,8 @@ export default function EventWorkspace({
                   />
                   <Table
                     title="End performance"
+                    shotSelector
+                    selectorLabel="End"
                     columns={["Recorded", "Graded", "Shooting"]}
                     rows={grouped(
                       selected,
@@ -1054,8 +1108,10 @@ export default function EventWorkspace({
                         (_, i) => String(i + 1),
                       ),
                       (s) => String(s.end),
+                      "All Ends",
                     ).map((r) => ({
-                      label: `End ${r.label}`,
+                      label:
+                        r.label === "All Ends" ? r.label : `End ${r.label}`,
                       values: [r.attempts, r.scored, pct(r.percent)],
                     }))}
                   />

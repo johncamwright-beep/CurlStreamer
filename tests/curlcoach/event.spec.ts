@@ -135,6 +135,62 @@ test("seven-game workspace navigation, player/game filters and source availabili
     .getByRole("combobox", { name: "Team / player", exact: true })
     .selectOption("lead");
   await checkShotDropdown();
+  async function checkAnalysisSelectors() {
+    const hitSelector = page.getByRole("combobox", {
+      name: "Result / hit type shot type",
+      exact: true,
+    });
+    const hitTable = page.getByRole("region", {
+      name: "Result / hit type",
+      exact: true,
+    });
+    await expect(hitSelector).toHaveValue("All Hits");
+    await expect(hitTable.getByRole("rowheader")).toHaveText("All Hits");
+    await expect(hitTable.getByRole("cell").first()).toHaveText(
+      /^\d+ · \d+\.\d%$/,
+    );
+    await expect(hitTable.getByRole("cell").last()).toHaveText(/^\d+\.\d%$/);
+    await hitSelector.selectOption("Peel");
+    await expect(hitTable.getByRole("rowheader")).toHaveText("Peel");
+
+    const turnSelector = page.getByRole("combobox", {
+      name: "Turn / deficiency turn / target",
+      exact: true,
+    });
+    await expect(turnSelector).toHaveValue("All Turns");
+    await expect(turnSelector.locator("option[value='CW C']")).toHaveText(
+      /^CW C — Clockwise/,
+    );
+    await turnSelector.selectOption("CW C");
+    await expect(
+      page
+        .getByRole("region", { name: "Turn / deficiency", exact: true })
+        .getByRole("rowheader"),
+    ).toHaveText("CW C");
+
+    const endSelector = page.getByRole("combobox", {
+      name: "End performance end",
+      exact: true,
+    });
+    await expect(endSelector).toHaveValue("All Ends");
+    await endSelector.selectOption("End 1");
+    await expect(
+      page
+        .getByRole("region", { name: "End performance", exact: true })
+        .getByRole("rowheader"),
+    ).toHaveText("End 1");
+    await expect(
+      page
+        .getByRole("region", { name: "End performance", exact: true })
+        .getByRole("cell")
+        .last(),
+    ).toHaveText(/^\d+\.\d%$/);
+    await hitSelector.scrollIntoViewIfNeeded();
+    await page.screenshot({
+      path: `test-results/game-analysis-selectors-${info.project.name}.png`,
+    });
+  }
+  await checkAnalysisSelectors();
   await expect(page.locator(".event-metrics")).toHaveCount(1);
   await expect(page.locator(".event-metrics > div").nth(1)).toContainText("16");
   await page

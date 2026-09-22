@@ -77,11 +77,29 @@ export function grouped(
   shots: Shot[],
   labels: readonly string[],
   key: (shot: Shot) => string | null,
+  aggregateLabel?: string,
+  aggregate?: (shot: Shot) => boolean,
 ) {
-  return labels.map((label) => ({
+  const groups = labels.map((label) => ({
     label,
     ...report(shots.filter((shot) => key(shot) === label)),
   }));
+  if (!aggregateLabel) return groups;
+  return [
+    {
+      label: aggregateLabel,
+      ...report(
+        shots.filter(
+          aggregate ??
+            ((shot) => {
+              const value = key(shot);
+              return value !== null && labels.includes(value);
+            }),
+        ),
+      ),
+    },
+    ...groups,
+  ];
 }
 export function matrix(
   shots: Shot[],
@@ -98,6 +116,17 @@ export function matrix(
           .length,
     ),
   }));
+}
+/** Share within outcomes that were actually recorded for this selected group. */
+export function outcomePercent(shots: Shot[], outcome: string) {
+  const recorded = shots.filter(
+    (shot) => !shot.excluded && shot.deficiency !== null,
+  );
+  return recorded.length
+    ? (recorded.filter((shot) => shot.deficiency === outcome).length /
+        recorded.length) *
+        100
+    : null;
 }
 export function scoreboard(
   config: Pick<GameConfig, "initialHammer">,

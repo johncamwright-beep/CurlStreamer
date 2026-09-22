@@ -41,4 +41,4 @@ Sandbox products created in account acct_1UF2oOPgssc0VK35:
 
 September 22: John explicitly approved both production migrations and a Stripe test-mode release. Migrations 0060 and 0061 applied successfully through Supabase SQL Editor. Postflight: all three pilot grants, one coaching entitlement and two account trial clocks are present; three teams retain page access; no seasonal orders or paid grants exist yet. Billing-table RLS is enabled and anonymous checkout execution is denied.
 
-No live payments have been enabled. Hosted sandbox checkout verification follows the website deployment.
+Release 97022c3 is Ready in Vercel (BTWxFNibnvey2qvBFj8X5o593PXS) and serves www.curlstreamer.app. Hosted Stripe sandbox checkout succeeded for CAD 128 (base plus one coaching seat); the order reconciled to paid with season end 2027-09-01 04:00 UTC. A full sandbox refund reconciled it to revoked. Two webhook events were processed, no live orders or paid-access grants were created, and all three pilot grants plus the existing coaching grant remain. Public-page checks passed. No live payments have been enabled.

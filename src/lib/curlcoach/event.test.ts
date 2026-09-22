@@ -4,8 +4,10 @@ import {
   family,
   gameShots,
   matrix,
+  outcomePercent,
   sampleEvent,
   scoreboard,
+  grouped,
   workbookCategoryPercent,
 } from "./event";
 import { append, report } from "./model";
@@ -54,6 +56,55 @@ it("exposes workbook category denominator separately from graded-attempt percent
       (s) => s.execution,
     )[0].values,
   ).toEqual([2]);
+});
+it("adds an aggregate hit group using the numeric-grade shooting denominator", () => {
+  const shot = gameShots(sampleEvent("shorty-example").games[0]).find(
+    (s) => s.type === "Peel" && !s.excluded,
+  )!;
+  const rows = [
+    { ...shot, grade: 5 },
+    { ...shot, grade: 0 },
+    { ...shot, grade: null },
+    { ...shot, type: "Runback/Multiple" as const, grade: null },
+  ];
+  const groups = grouped(
+    rows,
+    ["Peel", "Runback/Multiple"],
+    (s) => s.type,
+    "All Hits",
+  );
+  expect(groups[0]).toMatchObject({
+    label: "All Hits",
+    attempts: 4,
+    scored: 2,
+    missing: 2,
+    percent: 50,
+  });
+  expect(groups[2].percent).toBeNull();
+  expect(
+    grouped(
+      [
+        { ...shot, turn: "CW C" as const, grade: 0 },
+        { ...shot, turn: null, grade: 5 },
+      ],
+      ["CW C"],
+      (s) => s.turn,
+      "All Turns",
+      () => true,
+    )[0].percent,
+  ).toBe(50);
+  expect(
+    outcomePercent(
+      [
+        { ...shot, deficiency: "Make" as const },
+        { ...shot, deficiency: "Light" as const },
+        { ...shot, deficiency: null },
+        { ...shot, deficiency: "Make" as const, excluded: "Pick" as const },
+      ],
+      "Make",
+    ),
+  ).toBe(50);
+  expect(outcomePercent([{ ...shot, deficiency: null }], "Make")).toBeNull();
 });
 it("derives actual scoreboard ends with Undo, blank-end hammer retention and extra ends", () => {
   expect(

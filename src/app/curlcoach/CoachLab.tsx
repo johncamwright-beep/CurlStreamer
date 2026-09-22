@@ -22,7 +22,7 @@ import { createPortal } from "react-dom";
 import { nextTurn } from "@/lib/curlcoach/next-turn";
 import ReviewSummary from "./ReviewSummary";
 
-function turnLabel(value: string) {
+export function turnLabel(value: string) {
   const [turn, target, direction] = value.split(" ");
   return `${value} — ${turn === "CW" ? "Clockwise" : "Counterclockwise"}; broom ${target === "C" ? "inside" : "outside"} four-foot lines; ${direction === "IO" ? "away from" : "towards"} centre`;
 }

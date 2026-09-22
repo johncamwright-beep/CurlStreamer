@@ -198,19 +198,38 @@ test("seven-game workspace navigation, player/game filters and source availabili
     .click();
   await page.getByRole("link", { name: /End-by-end scores/ }).click();
   await expect(
-    page.getByRole("heading", { name: "Event score difference / hammer" }),
+    page.getByRole("heading", { name: "With hammer", exact: true }),
   ).toBeVisible();
   await expect(
     page.getByRole("combobox", { name: "Team / player", exact: true }),
-  ).toBeDisabled();
+  ).toHaveCount(0);
   await page
     .getByRole("combobox", { name: "Game", exact: true })
     .selectOption("all");
   await expect(page.locator(".event-metrics > div").first()).toContainText("7");
+  await expect(
+    page.getByRole("heading", { name: "Game scoreboard", exact: true }),
+  ).toHaveCount(0);
+  await expect(
+    page.getByRole("region", { name: "With hammer", exact: true }),
+  ).toContainText("ends");
+  await expect(page.getByLabel("Entering end", { exact: true })).toHaveValue(
+    "final",
+  );
+  await page.getByLabel("Entering end", { exact: true }).selectOption("7");
+  await expect(
+    page.getByRole("region", {
+      name: "Win rate by starting situation",
+      exact: true,
+    }),
+  ).toContainText("%");
   await page
     .getByRole("combobox", { name: "Game", exact: true })
     .selectOption("shorty-example-7");
   await expect(page.locator(".event-metrics > div").first()).toContainText("1");
+  await expect(
+    page.getByRole("heading", { name: "Game scoreboard", exact: true }),
+  ).toBeVisible();
   await expect(page.locator(".event-metrics")).toHaveCount(1);
   expect(
     await page

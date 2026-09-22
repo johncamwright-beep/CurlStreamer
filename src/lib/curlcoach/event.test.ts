@@ -134,7 +134,7 @@ it("derives actual scoreboard ends with Undo, blank-end hammer retention and ext
       "home",
     ),
   ).toEqual([
-    { end: 1, us: 0, them: 0, hammer: false },
-    { end: 11, us: 1, them: 0, hammer: false },
+    { end: 1, us: 0, them: 0, hammer: false, hammerBefore: false },
+    { end: 11, us: 1, them: 0, hammer: false, hammerBefore: false },
   ]);
 });

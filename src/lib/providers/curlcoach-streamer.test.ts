@@ -90,7 +90,7 @@ it("loads only the selected event and projects completed scoreboard data without
   });
   const result = await loadStreamerEvent(eventId);
   expect(result.event.games[0].ends).toEqual([
-    { end: 1, us: 0, them: 2, hammer: true },
+    { end: 1, us: 0, them: 2, hammer: true, hammerBefore: true },
   ]);
   expect(result.event.games[0].state.organizationId).toBe("org");
   expect(mocks.rpc).not.toHaveBeenCalled();

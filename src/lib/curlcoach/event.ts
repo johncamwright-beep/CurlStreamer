@@ -27,7 +27,13 @@ export type CoachGame = {
   status: string;
   side: Team;
   initialHammer: Team | null;
-  ends: { end: number; us: number; them: number; hammer: boolean | null }[];
+  ends: {
+    end: number;
+    us: number;
+    them: number;
+    hammer: boolean | null;
+    hammerBefore?: boolean | null;
+  }[];
   scoreboardAvailable: boolean;
   broadcastReview?: BroadcastReview;
   roster?: RosterEntry[];
@@ -141,6 +147,7 @@ export function scoreboard(
     }
     if (event.type !== "end") return [];
     const score = event.score;
+    const hammerBefore = hammer === null ? null : hammer === side;
     if (!score.blank && score.team)
       hammer = score.team === "home" ? "away" : "home";
     return [
@@ -149,6 +156,7 @@ export function scoreboard(
         us: score.team === side ? score.points : 0,
         them: score.team && score.team !== side ? score.points : 0,
         hammer: hammer === null ? null : hammer === side,
+        hammerBefore,
       },
     ];
   });

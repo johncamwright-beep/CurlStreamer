@@ -94,7 +94,7 @@ it("denies before reading shared games or roster", async () => {
 it("links completed scoreboard and real roster without writing shared state", async () => {
   const result = await loadProductionStreamerEvent(eid);
   expect(result.event.games[0].ends).toEqual([
-    { end: 1, us: 0, them: 2, hammer: true },
+    { end: 1, us: 0, them: 2, hammer: true, hammerBefore: true },
   ]);
   expect(result.event.games[0].state.roster).toEqual([
     { id: expect.any(String), name: "Real Player", position: "Lead" },
@@ -297,9 +297,9 @@ it("reads saved line scores when the scheduling list omits completion_result", a
   const result = await loadProductionStreamerEvent(eid);
   expect(result.event.games[0].scoreboardAvailable).toBe(true);
   expect(result.event.games[0].ends).toEqual([
-    { end: 1, us: 2, them: 0, hammer: false },
-    { end: 2, us: 0, them: 0, hammer: false },
-    { end: 3, us: 0, them: 1, hammer: true },
+    { end: 1, us: 2, them: 0, hammer: false, hammerBefore: true },
+    { end: 2, us: 0, them: 0, hammer: false, hammerBefore: false },
+    { end: 3, us: 0, them: 1, hammer: true, hammerBefore: false },
   ]);
   expect(m.rpc).toHaveBeenCalledWith("read_game_completion_summary", {
     p_game_id: gid,

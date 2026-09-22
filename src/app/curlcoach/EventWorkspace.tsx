@@ -19,11 +19,15 @@ import {
   matrix,
   outcomePercent,
   workbookCategoryPercent,
-  scoreTimeline,
   type CoachEvent,
   type CoachGame,
   type Workspace,
 } from "@/lib/curlcoach/event";
+import {
+  teamScoreStatistics,
+  situationWins,
+  type rate,
+} from "@/lib/curlcoach/score-statistics";
 import { updateWorkspaceState } from "@/lib/curlcoach/workspace-state";
 import { preferredGame } from "@/lib/current-game";
 import CoachLab, { turnLabel } from "./CoachLab";
@@ -433,8 +437,17 @@ function PlayerAnalysis({
     </>
   );
 }
-function Scoreboard({ event }: { event: CoachEvent }) {
-  const available = event.games.filter((g) => g.scoreboardAvailable);
+function Scoreboard({
+  event,
+  singleGame,
+}: {
+  event: CoachEvent;
+  singleGame: boolean;
+}) {
+  const [enteringEnd, setEnteringEnd] = useState("final");
+  const available = event.games.filter(
+    (g) => g.scoreboardAvailable && g.ends.length,
+  );
   if (!available.length)
     return (
       <section className="event-card" role="status">
@@ -446,29 +459,30 @@ function Scoreboard({ event }: { event: CoachEvent }) {
         </p>
       </section>
     );
-  const timelines = available.flatMap((g) =>
-    scoreTimeline(g).map((point) => ({ ...point, game: g.id })),
-  );
+  const us = teamScoreStatistics(available),
+    them = teamScoreStatistics(available, true);
+  const formatRate = (r: ReturnType<typeof rate>) =>
+    r.total
+      ? pct(r.percent) + " · " + r.count + " / " + r.total + " ends"
+      : "— · No eligible ends";
+  const comparison = (
+    keys: { key: Exclude<keyof typeof us, "unknownHammer">; label: string }[],
+  ) =>
+    keys.map(({ key, label }) => ({
+      label,
+      values: [formatRate(us[key]), formatRate(them[key])],
+    }));
   const maxEnd = Math.max(
-    8,
+    ...available.map((g) => g.scheduledEnds),
     ...available.flatMap((g) => g.ends.map((e) => e.end)),
   );
-  const columns = Array.from({ length: maxEnd + 1 }, (_, e) =>
-    e === 0 ? "Start" : `After ${e}`,
-  );
-  const rows = Array.from({ length: 9 }, (_, i) => 4 - i).flatMap((diff) =>
-    [true, false].map((hammer) => ({
-      label: `${diff === 0 ? "Tied" : `${diff > 0 ? "Up" : "Down"} ${Math.abs(diff)}${Math.abs(diff) === 4 ? "+" : ""}`} · ${hammer ? "With" : "Without"} hammer`,
-      values: columns.map(
-        (_, end) =>
-          timelines.filter(
-            (p) =>
-              p.end === end &&
-              Math.max(-4, Math.min(4, p.difference)) === diff &&
-              p.hammer === hammer,
-          ).length,
-      ),
-    })),
+  const endSelection =
+    enteringEnd === "final" || Number(enteringEnd) <= maxEnd
+      ? enteringEnd
+      : "final";
+  const wins = situationWins(
+    available,
+    endSelection === "final" ? "final" : Number(endSelection),
   );
   return (
     <>
@@ -507,66 +521,112 @@ function Scoreboard({ event }: { event: CoachEvent }) {
           </strong>
         </div>
       </div>
+      <p className="score-stat-caption">
+        {singleGame ? "Selected game" : "All selected games combined"} · Each
+        percentage shows matching ends / eligible ends.
+      </p>
+      {us.unknownHammer > 0 && (
+        <p role="status">
+          Hammer is unknown for {us.unknownHammer} recorded ends. Those ends
+          count toward totals and overall blanks, but not hammer statistics.
+        </p>
+      )}
       <Table
-        title="Event score difference / hammer"
-        columns={columns}
-        rows={rows}
+        title="With hammer"
+        columns={["Our team", "Opponents"]}
+        rows={comparison([
+          { key: "scoring", label: "Score at least 1 point" },
+          { key: "multiple", label: "Score 2 or more points" },
+          { key: "blankWith", label: "Blank the end (0–0)" },
+          { key: "stolenAgainst", label: "Allow a steal" },
+        ])}
       />
-      {event.games.map((game) => (
-        <div key={game.id}>
-          <section className="event-card">
-            <h3>
-              {game.label} · {game.teamName} vs {game.opponent}
-            </h3>
-            {!game.scoreboardAvailable ? (
-              <p>Streamer end-by-end scoring is unavailable for this game.</p>
-            ) : (
-              <Table
-                title="Game scoreboard"
-                columns={game.ends.map((e) => String(e.end)).concat("Total")}
-                rows={[
-                  {
-                    label: game.teamName,
-                    values: game.ends
-                      .map((e) => e.us)
-                      .concat(game.ends.reduce((n, e) => n + e.us, 0)),
-                  },
-                  {
-                    label: game.opponent,
-                    values: game.ends
-                      .map((e) => e.them)
-                      .concat(game.ends.reduce((n, e) => n + e.them, 0)),
-                  },
-                ]}
-              />
-            )}
-          </section>
-          {game.scoreboardAvailable && (
-            <Table
-              title="Game score / hammer timeline"
-              columns={[
-                "Our score",
-                "Their score",
-                "Difference",
-                "Hammer after end",
-              ]}
-              rows={scoreTimeline(game).map((p) => ({
-                label: p.end ? `After end ${p.end}` : "Start",
-                values: [
-                  p.us,
-                  p.them,
-                  p.difference,
-                  p.hammer === null
-                    ? "Unknown"
-                    : p.hammer
-                      ? "With us"
-                      : "With opponent",
-                ],
-              }))}
-            />
-          )}
-        </div>
-      ))}
+      <Table
+        title="Without hammer"
+        columns={["Our team", "Opponents"]}
+        rows={comparison([
+          { key: "steals", label: "Steal at least 1 point" },
+          { key: "forceOne", label: "Hold opponent to 1 point" },
+          { key: "blankWithout", label: "Blank the end (0–0)" },
+          { key: "concedeMultiple", label: "Allow 2 or more points" },
+        ])}
+      />
+      <Table
+        title="All ends"
+        columns={["Combined"]}
+        rows={[{ label: "Blank ends (0–0)", values: [formatRate(us.blanks)] }]}
+      />
+      <section className="event-card score-situations">
+        <h3>Winning from a game situation</h3>
+        <label className="event-shot-selector">
+          Entering end
+          <select
+            aria-label="Entering end"
+            value={endSelection}
+            onChange={(e) => setEnteringEnd(e.target.value)}
+          >
+            <option value="final">Final scheduled end</option>
+            {Array.from({ length: maxEnd }, (_, i) => (
+              <option key={i + 1} value={i + 1}>
+                End {i + 1}
+              </option>
+            ))}
+          </select>
+        </label>
+        <p className="score-stat-caption">
+          Completed games only. Score and hammer are measured before the
+          selected end; wins use the final recorded score, including extra ends.
+          Games that ended earlier are excluded.
+        </p>
+        {wins.length ? (
+          <Table
+            title="Win rate by starting situation"
+            columns={["Win rate", "Wins / games", "Losses", "Ties"]}
+            rows={wins.map((r) => ({
+              label:
+                (r.difference === 0
+                  ? "Tied"
+                  : (r.difference > 0 ? "Up " : "Down ") +
+                    Math.abs(r.difference) +
+                    (Math.abs(r.difference) === 4 ? "+" : "")) +
+                " · " +
+                (r.hammer ? "With hammer" : "Without hammer"),
+              values: [
+                pct(r.percent),
+                r.wins + " / " + r.total,
+                r.losses,
+                r.ties,
+              ],
+            }))}
+          />
+        ) : (
+          <p role="status">
+            No completed games with a known score and hammer reached this end.
+          </p>
+        )}
+      </section>
+      {singleGame &&
+        available.map((game) => (
+          <Table
+            key={game.id}
+            title="Game scoreboard"
+            columns={game.ends.map((e) => String(e.end)).concat("Total")}
+            rows={[
+              {
+                label: game.teamName,
+                values: game.ends
+                  .map((e) => e.us)
+                  .concat(game.ends.reduce((n, e) => n + e.us, 0)),
+              },
+              {
+                label: game.opponent,
+                values: game.ends
+                  .map((e) => e.them)
+                  .concat(game.ends.reduce((n, e) => n + e.them, 0)),
+              },
+            ]}
+          />
+        ))}
     </>
   );
 }
@@ -1023,21 +1083,22 @@ export default function EventWorkspace({
                       ))}
                     </select>
                   </label>
-                  <label>
-                    Team / player
-                    <select
-                      disabled={view === "End-by-end scores"}
-                      value={view === "End-by-end scores" ? "all" : player}
-                      onChange={(e) => setPlayer(e.target.value)}
-                    >
-                      <option value="all">Whole team</option>
-                      {analysisPlayers.map((p) => (
-                        <option key={p.id} value={p.id}>
-                          {p.name}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
+                  {view !== "End-by-end scores" && (
+                    <label>
+                      Team / player
+                      <select
+                        value={player}
+                        onChange={(e) => setPlayer(e.target.value)}
+                      >
+                        <option value="all">Whole team</option>
+                        {analysisPlayers.map((p) => (
+                          <option key={p.id} value={p.id}>
+                            {p.name}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  )}
                 </>
               )}
               <div ref={setFiltersTarget} className="event-extra-filters" />
@@ -1182,7 +1243,10 @@ export default function EventWorkspace({
               ))}
             {view === "End-by-end scores" &&
               (analysisGames.length ? (
-                <Scoreboard event={{ ...event, games: analysisGames }} />
+                <Scoreboard
+                  event={{ ...event, games: analysisGames }}
+                  singleGame={analysisGame !== "all"}
+                />
               ) : (
                 <p>No games in this event.</p>
               ))}

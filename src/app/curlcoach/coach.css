@@ -944,3 +944,13 @@
     max-width: 200px;
   }
 }
+
+.score-stat-caption {
+  font-size: 0.85rem;
+  color: var(--muted, #adc4d2);
+}
+.score-situations > .event-card {
+  padding: 0;
+  border: 0;
+  margin-bottom: 0;
+}

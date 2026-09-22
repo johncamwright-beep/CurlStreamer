@@ -25,7 +25,7 @@ grant all on public.team_trial_codes, public.team_access to service_role;
 
 -- Existing pilot teams keep access through the current calendar year.
 insert into public.team_access(organization_id,trial_expires_at)
-select id, date_trunc('year',now() at time zone 'America/Toronto') + interval '1 year'
+select id, (date_trunc('year',now() at time zone 'America/Toronto') + interval '1 year')
   at time zone 'America/Toronto' from public.organizations;
 
 create function public.assert_team_broadcast_access(p_org uuid)

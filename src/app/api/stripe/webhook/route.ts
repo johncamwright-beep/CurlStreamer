@@ -4,6 +4,11 @@ import {
   stripeTestClient,
   stripeTestConfig,
 } from "@/lib/providers/stripe-billing";
+import {
+  seasonConfig,
+  seasonClient,
+  syncSeasonEvent,
+} from "@/lib/providers/stripe-season";
 export const runtime = "nodejs";
 export async function POST(request: Request) {
   const reply = (body: unknown, status = 200) =>
@@ -31,6 +36,11 @@ export async function POST(request: Request) {
     return reply({ error: "Invalid Stripe signature" }, 400);
   }
   try {
+    // The existing sandbox destination can deliver both legacy subscription
+    // events and new one-time season orders. It never accepts live events.
+    const season = seasonConfig();
+    if (season && !season.live && season.webhook === config.webhook)
+      await syncSeasonEvent(seasonClient(), event);
     await reconcileTestEvent(stripe, event);
     return reply({ received: true });
   } catch {

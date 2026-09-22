@@ -36,9 +36,11 @@ test("team trial code activates with a visible expiry and no payment authorizati
     .fill("CURL-01234567-89ABCDEF-01234567-89ABCDEF");
   await page.getByRole("button", { name: "Activate team trial" }).click();
   await expect(
-    page.getByText("Your team’s trial is active.", { exact: true }),
+    page.getByText("Your team’s pilot access is active.", { exact: true }),
   ).toBeVisible();
-  await expect(page.getByText(/Trial ends: December 31, 2026/)).toBeVisible();
+  await expect(
+    page.getByText(/Pilot access ends: December 31, 2026/),
+  ).toBeVisible();
   await expect(
     page.getByText(/does not authorize automatic charges/),
   ).toBeVisible();
@@ -461,4 +463,88 @@ test("owners can transfer one coaching seat and assign two with two licences", a
     .click();
   await expect(licences.getByRole("status")).toContainText("saved");
   expect(selected).toHaveLength(2);
+});
+
+test("seven-day setup access explains no streaming and offers nonrenewing season checkout", async ({
+  page,
+}) => {
+  await page.route("**/api/account/season", async (route) => {
+    if (route.request().method() === "POST") {
+      expect(route.request().postDataJSON()).toEqual({
+        base: true,
+        coaches: 1,
+      });
+      return route.fulfill({
+        status: 409,
+        json: { error: "Test checkout deliberately stopped before payment" },
+      });
+    }
+    return route.fulfill({
+      json: {
+        available: true,
+        mode: "test",
+        canManage: true,
+        access: {
+          setupExpiresAt: "2026-09-22T12:00:00Z",
+          pageEnabled: true,
+          streamEnabled: false,
+        },
+      },
+    });
+  });
+  await page.goto("/login?next=/account?section=subscription");
+  await page.getByLabel("Email address").fill("admin@youtube.test");
+  await page.getByLabel("Password").fill("playwright-password");
+  await page.getByRole("button", { name: "Sign in", exact: true }).click();
+  const season = page.getByRole("region", { name: "Season access" });
+  await expect(season).toContainText(
+    "does not include streaming or Shot Tracker",
+  );
+  await expect(season).toContainText("No automatic renewal");
+  await season.getByLabel("Shot Tracker licences to add").selectOption("1");
+  await expect(season).toContainText("Total: $128 CAD");
+  await season
+    .getByRole("button", { name: "Open test season checkout" })
+    .click();
+  await expect(season.getByRole("alert")).toContainText("deliberately stopped");
+});
+
+test("season checkout respects existing purchases and never claims success from the return URL", async ({
+  page,
+}) => {
+  await page.route("**/api/account/season", (route) =>
+    route.fulfill({
+      json: {
+        available: true,
+        mode: "test",
+        canManage: true,
+        purchase: { baseOwned: true, coachSeats: 1, pending: false },
+        access: { pageEnabled: true, streamEnabled: false },
+      },
+    }),
+  );
+  await page.goto(
+    "/login?next=" +
+      encodeURIComponent("/account?section=subscription&season=returned"),
+  );
+  await page.getByLabel("Email address").fill("admin@youtube.test");
+  await page.getByLabel("Password").fill("playwright-password");
+  await page.getByRole("button", { name: "Sign in", exact: true }).click();
+  const season = page.getByRole("region", { name: "Season access" });
+  await expect(season).toContainText(
+    "returning here alone does not confirm payment",
+  );
+  await expect(season.getByLabel("CurlStreamer season pass")).toBeDisabled();
+  await expect(season.getByLabel("CurlStreamer season pass")).not.toBeChecked();
+  await expect(
+    season.getByRole("button", { name: "Open test season checkout" }),
+  ).toBeDisabled();
+  await season.getByLabel("Shot Tracker licences to add").selectOption("1");
+  await expect(season).toContainText("Total: $39 CAD");
+  await expect(
+    season.getByRole("button", { name: "Open test season checkout" }),
+  ).toBeEnabled();
+  await expect(
+    season.getByRole("button", { name: "Cancel pending checkout" }),
+  ).toBeDisabled();
 });

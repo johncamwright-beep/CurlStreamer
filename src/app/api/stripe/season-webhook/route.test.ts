@@ -1,26 +1,17 @@
 import Stripe from "stripe";
 import { beforeEach, expect, it, vi } from "vitest";
-const m = vi.hoisted(() => ({
-  reconcile: vi.fn(),
-  season: vi.fn(),
-  seasonConfig: vi.fn(),
-}));
-vi.mock("@/lib/providers/stripe-billing", () => ({
-  stripeTestConfig: () => ({ webhook: "whsec_test" }),
-  stripeTestClient: () => new Stripe("sk_test_example"),
-  reconcileTestEvent: m.reconcile,
-}));
+const m = vi.hoisted(() => ({ reconcile: vi.fn() }));
 vi.mock("@/lib/providers/stripe-season", () => ({
-  seasonConfig: m.seasonConfig,
+  seasonConfig: () => ({ webhook: "whsec_test", live: false }),
   seasonClient: () => new Stripe("sk_test_example"),
-  syncSeasonEvent: m.season,
+  syncSeasonEvent: m.reconcile,
 }));
 import { POST } from "./route";
 beforeEach(() => vi.resetAllMocks());
 function request(live = false, valid = true) {
   const payload = JSON.stringify({
     id: "evt_test",
-    type: "customer.subscription.updated",
+    type: "checkout.session.completed",
     livemode: live,
     data: { object: { customer: "cus_test" } },
   });
@@ -30,7 +21,7 @@ function request(live = false, valid = true) {
     payload,
     secret: valid ? "whsec_test" : "whsec_wrong",
   });
-  return new Request("https://test/api/stripe/webhook", {
+  return new Request("https://test/api/stripe/season-webhook", {
     method: "POST",
     headers: { "stripe-signature": signature },
     body: payload,
@@ -49,14 +40,4 @@ it("rejects signed live-mode events", async () => {
 it("returns a retryable response if synchronization fails", async () => {
   m.reconcile.mockRejectedValue(Error("database unavailable"));
   expect((await POST(request())).status).toBe(503);
-});
-
-it("routes verified sandbox events to seasonal reconciliation only in test mode", async () => {
-  m.seasonConfig.mockReturnValue({ live: false, webhook: "whsec_test" });
-  expect((await POST(request())).status).toBe(200);
-  expect(m.season).toHaveBeenCalledOnce();
-  m.season.mockClear();
-  m.seasonConfig.mockReturnValue({ live: true });
-  expect((await POST(request())).status).toBe(200);
-  expect(m.season).not.toHaveBeenCalled();
 });

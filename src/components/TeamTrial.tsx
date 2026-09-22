@@ -1,11 +1,13 @@
 "use client";
 import { useEffect, useState } from "react";
+import { SeasonAccess } from "./SeasonAccess";
 import { TeamBilling } from "./TeamBilling";
 type Trial = {
   status: "none" | "active" | "expired";
   expiresAt: string | null;
 };
 export function TeamTrial({ canManage }: { canManage: boolean }) {
+  const [accessVersion, setAccessVersion] = useState(0);
   const [trial, setTrial] = useState<Trial | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -27,6 +29,7 @@ export function TeamTrial({ canManage }: { canManage: boolean }) {
   return (
     <div className="grid gap-4">
       <h2 className="text-xl font-bold">Trial & subscription</h2>
+      <SeasonAccess key={accessVersion} />
       {error && (
         <p role="alert" className="text-red-300">
           {error}
@@ -43,14 +46,14 @@ export function TeamTrial({ canManage }: { canManage: boolean }) {
         <>
           <p role="status">
             {trial.status === "active"
-              ? "Your team’s trial is active."
+              ? "Your team’s pilot access is active."
               : trial.status === "expired"
-                ? "Your team’s trial has ended."
-                : "Your team has not activated a trial."}
+                ? "Your team’s pilot access has ended."
+                : "Your team has not redeemed a pilot code."}
           </p>
           {trial.expiresAt && (
             <p>
-              Trial ends:{" "}
+              Pilot access ends:{" "}
               {new Intl.DateTimeFormat("en-CA", {
                 dateStyle: "long",
                 timeStyle: "short",
@@ -64,9 +67,9 @@ export function TeamTrial({ canManage }: { canManage: boolean }) {
             required and redeeming a code does not authorize automatic charges.
           </p>
           <p className="text-slate-300">
-            When your trial ends, a subscription will be required to start
-            another broadcast. Your account, game history and public team page
-            remain available.
+            When pilot access ends, a season pass will be required to start
+            another broadcast. Your account and game history remain saved. Your
+            public page is hidden unless you have active season or pilot access.
           </p>
           {trial.status === "none" &&
             (canManage ? (
@@ -86,6 +89,7 @@ export function TeamTrial({ canManage }: { canManage: boolean }) {
                     if (!response.ok) throw Error(data.error);
                     setTrial(data);
                     setCode("");
+                    setAccessVersion((version) => version + 1);
                   } catch (error) {
                     setError(
                       error instanceof Error

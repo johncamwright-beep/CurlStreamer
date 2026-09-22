@@ -11,6 +11,10 @@ export const readPublishedTeamProfile = cache(async (slug: string) => {
     .eq("slug", slug)
     .maybeSingle();
   if (error || !data) return null;
+  const access = await createAdminSupabaseClient().rpc("team_has_page_access", {
+    p_org: data.organization_id,
+  });
+  if (access.error || access.data !== true) return null;
   const parsed = teamPageSettingsSchema.safeParse(data.settings);
   if (!parsed.success || !parsed.data.published) return null;
   return {

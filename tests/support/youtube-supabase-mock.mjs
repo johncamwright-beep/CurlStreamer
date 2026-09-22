@@ -82,6 +82,14 @@ const server = createServer(async (request, response) => {
     });
   if (url.pathname === "/rest/v1/rpc/consume_request_limit")
     return send(response, 200, true);
+  if (url.pathname === "/rest/v1/rpc/read_team_commercial_access")
+    return send(response, 200, {
+      pageEnabled: true,
+      streamEnabled: true,
+      pilotExpiresAt: "2027-01-01T05:00:00Z",
+    });
+  if (url.pathname === "/rest/v1/rpc/team_has_page_access")
+    return send(response, 200, true);
   if (url.pathname === "/rest/v1/rpc/read_public_team_games")
     return send(
       response,

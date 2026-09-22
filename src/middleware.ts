@@ -25,9 +25,12 @@ export async function middleware(request: NextRequest) {
     return NextResponse.next();
   // Public marketing and interest collection do not need an Auth round trip.
   if (
-    ["/", "/api/pilot-waitlist", "/api/stripe/webhook"].includes(
-      request.nextUrl.pathname,
-    )
+    [
+      "/",
+      "/api/pilot-waitlist",
+      "/api/stripe/webhook",
+      "/api/stripe/season-webhook",
+    ].includes(request.nextUrl.pathname)
   )
     return NextResponse.next();
   let response = NextResponse.next({ request });

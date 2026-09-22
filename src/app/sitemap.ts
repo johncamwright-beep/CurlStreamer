@@ -15,12 +15,9 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   ];
   const db = createAdminSupabaseClient();
   for (let offset = 0; offset < 49000; offset += 1000) {
-    const { data, error } = await db
-      .from("team_public_profiles")
-      .select("slug")
-      .eq("settings->>published", "true")
-      .order("slug")
-      .range(offset, offset + 999);
+    const { data, error } = await db.rpc("list_available_team_pages", {
+      p_offset: offset,
+    });
     if (error) throw new Error("Published team sitemap unavailable");
     for (const item of data ?? [])
       if (/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(item.slug))

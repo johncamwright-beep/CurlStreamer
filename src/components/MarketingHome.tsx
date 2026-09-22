@@ -4,6 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { PilotWaitlistForm } from "./PilotWaitlistForm";
 import { MarketingAudio } from "./MarketingAudio";
+import { MarketingShotTracker } from "./MarketingShotTracker";
 import "./MarketingHome.css";
 
 const features = {
@@ -52,6 +53,9 @@ export function MarketingHome() {
             </a>
             <a className="nav-section" href="#teams">
               Team pages
+            </a>
+            <a className="nav-section" href="#shot-tracker">
+              Shot Tracker
             </a>
             <a href="/login">Log in</a>
             <a className="cta" href="#pilot">
@@ -137,6 +141,7 @@ export function MarketingHome() {
           <span>On-ice audio &amp; commentary</span>
           <span>Sponsor visibility</span>
           <span>Your own team page</span>
+          <a href="#shot-tracker">Shot Tracker add-on →</a>
         </div>
         <section className="section" id="how">
           <div className="wrap">
@@ -426,6 +431,7 @@ export function MarketingHome() {
             </div>
           </div>
         </section>
+        <MarketingShotTracker />
         <section className="section tint" id="pilot">
           <div className="wrap waitlist-grid">
             <div>
@@ -448,8 +454,8 @@ export function MarketingHome() {
                 decide to take part.
               </p>
               <p>
-                Public downloads, pricing and trial details will follow as the
-                product becomes ready.
+                Public downloads and launch details will follow as the product
+                becomes ready.
               </p>
             </div>
             <PilotWaitlistForm />
@@ -495,6 +501,22 @@ export function MarketingHome() {
               <p>
                 Yes. Share the game’s remote scorer invitation so another phone
                 or tablet can update the scoreboard.
+              </p>
+            </details>
+            <details>
+              <summary>Is Shot Tracker included with CurlStreamer?</summary>
+              <p>
+                Shot Tracker is an optional add-on: $39 CAD per coach licence
+                per season, in addition to the $89 CAD CurlStreamer season pass.
+                The team owner assigns each licence to a team member and can
+                transfer it. You can use CurlStreamer without purchasing Shot
+                Tracker.
+              </p>
+              <p>
+                Shot Tracker runs in your browser on a phone, tablet or
+                computer. Studio and the camera network are needed for
+                broadcasting, not for recording coaching notes and reviewing
+                shot statistics.
               </p>
             </details>
             <details>

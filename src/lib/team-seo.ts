@@ -11,15 +11,18 @@ export function teamMetadata(
 ): Metadata {
   const url = `https://${slug}.curlstreamer.app/`;
   const title = `${s.name} | Games, Results & Team News`;
-  const description = (
-    s.tagline ||
-    s.description ||
-    `Meet ${s.name}. Follow upcoming curling games, results, team news and broadcasts.`
-  ).slice(0, 160);
+  const description =
+    `${s.name} curling: ${s.tagline || s.description || "Team news and player profiles."} Follow curling games, results and livestreams.`.slice(
+      0,
+      160,
+    );
   const photo = s.photo || logo;
   return {
     title,
     description,
+    icons: {
+      icon: [{ url: `${url}team-icon.png`, type: "image/png", sizes: "96x96" }],
+    },
     alternates: { canonical: url },
     robots: {
       index: true,

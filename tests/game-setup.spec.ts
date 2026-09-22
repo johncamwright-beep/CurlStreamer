@@ -271,6 +271,7 @@ test("edit game preserves the current opponent and allows selecting a saved team
   ).toBeVisible();
   const picker = page.getByLabel("Team 2 — Opponent", { exact: true });
   await expect(picker).toHaveValue("opponent");
+  await page.locator('input[name="scheduledDate"]').fill("2026-09-12");
   const payloads: Record<string, unknown>[] = [];
   await page.route("**/api/team-schedule", async (route) => {
     payloads.push(route.request().postDataJSON());

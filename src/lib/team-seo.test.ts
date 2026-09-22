@@ -30,3 +30,21 @@ it("excludes hidden social links and safely encodes team-entered text", () => {
   expect(json).not.toContain("</script>");
   expect(JSON.parse(json).mainEntity.athlete[0].name).toBe("Alex");
 });
+
+it("uses a stable square team favicon and natural curling search context", () => {
+  const metadata = teamMetadata(
+    "teambenning",
+    defaultTeamPageSettings("Team Benning"),
+    null,
+  );
+  expect(metadata.description).toContain("Team Benning curling");
+  expect(metadata.icons).toMatchObject({
+    icon: [
+      {
+        url: "https://teambenning.curlstreamer.app/team-icon.png",
+        sizes: "96x96",
+      },
+    ],
+  });
+  expect(metadata).not.toHaveProperty("keywords");
+});

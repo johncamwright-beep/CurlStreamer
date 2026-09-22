@@ -39,6 +39,6 @@ Sandbox products created in account acct_1UF2oOPgssc0VK35:
 - Existing sandbox webhook we_1UF3AKPgssc0VK35D1686VRB now listens to 14 events, preserving its original eight and adding the six required seasonal refund/dispute/checkout events.
 - Non-secret mode and two price IDs saved in Vercel scoped only to codex/internal-network-pilot. No keys were copied or revealed. Existing test credentials are reused by the prepared code.
 
-PRODUCTION MIGRATION BLOCKED: automatic approval review rejected confirming migration 0060 in Supabase because it updates existing profile rows and changes access-control functions. The confirmation dialog was cancelled. Neither 0060 nor 0061 was applied; neither seasonal billing code nor page-expiry gating is deployed. Do not bypass this rejection by using a different execution method. John must approve the concrete production migration before proceeding. Preflight: 3 active pilot access rows, 2 accounts/owners, 1 coaching entitlement. These grants must remain intact.
+September 22: John explicitly approved both production migrations and a Stripe test-mode release. Migrations 0060 and 0061 applied successfully through Supabase SQL Editor. Postflight: all three pilot grants, one coaching entitlement and two account trial clocks are present; three teams retain page access; no seasonal orders or paid grants exist yet. Billing-table RLS is enabled and anonymous checkout execution is denied.
 
-No live payments have been enabled. The new sandbox checkout has not had an end-to-end hosted Stripe payment rehearsal because its required database migration is blocked.
+No live payments have been enabled. Hosted sandbox checkout verification follows the website deployment.

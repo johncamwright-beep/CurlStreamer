@@ -272,3 +272,57 @@ it("bounds concurrent active-score reads while preserving game order", async () 
   );
   expect(peak).toBe(4);
 });
+
+it("reads saved line scores when the scheduling list omits completion_result", async () => {
+  const { value } = await m.games();
+  const { completion_result: _omitted, ...row } = value[0];
+  m.games.mockResolvedValue({ ok: true, value: [row] });
+  m.rpc.mockImplementation(async (name) =>
+    name === "read_game_state"
+      ? { data: [{ outcome: "closed", state: null }], error: null }
+      : {
+          data: {
+            result: {
+              outcome: "home_win",
+              ends: [
+                { end: 1, team: "home", points: 2, blank: false },
+                { end: 2, team: null, points: 0, blank: true },
+                { end: 3, team: "away", points: 1, blank: false },
+              ],
+            },
+          },
+          error: null,
+        },
+  );
+  const result = await loadProductionStreamerEvent(eid);
+  expect(result.event.games[0].scoreboardAvailable).toBe(true);
+  expect(result.event.games[0].ends).toEqual([
+    { end: 1, us: 2, them: 0, hammer: false },
+    { end: 2, us: 0, them: 0, hammer: false },
+    { end: 3, us: 0, them: 1, hammer: true },
+  ]);
+  expect(m.rpc).toHaveBeenCalledWith("read_game_completion_summary", {
+    p_game_id: gid,
+  });
+});
+
+it.each([null, { result: { outcome: "no_result", ends: [] } }])(
+  "does not invent a score for a closed game without a result",
+  async (completion) => {
+    const { value } = await m.games();
+    m.games.mockResolvedValue({
+      ok: true,
+      value: [{ ...value[0], completion_result: null }],
+    });
+    m.rpc.mockImplementation(async (name) => ({
+      data:
+        name === "read_game_state"
+          ? [{ outcome: "closed", state: null }]
+          : completion,
+      error: null,
+    }));
+    const result = await loadProductionStreamerEvent(eid);
+    expect(result.event.games[0].scoreboardAvailable).toBe(false);
+    expect(result.event.games[0].ends).toEqual([]);
+  },
+);

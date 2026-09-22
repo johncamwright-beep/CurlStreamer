@@ -1,3 +1,4 @@
+import { readGameCompletionSummary } from "@/lib/game-completion";
 import { loadCoachBroadcastReviews } from "./curlcoach-video";
 import { isCurrentGame, preferredGame } from "@/lib/current-game";
 import "server-only";
@@ -247,6 +248,27 @@ export async function loadProductionStreamerEvent(
           await createAdminSupabaseClient().rpc("read_game_state", {
             p_game_id: row.id,
           });
+        // Completed games intentionally have no live state. Read their saved
+        // line score rather than depending on the scheduling-list projection.
+        if (
+          !readError &&
+          snapshot?.[0]?.outcome === "closed" &&
+          row.completion_result?.outcome !== "no_result"
+        ) {
+          const completion = await readGameCompletionSummary(row.id);
+          if (completion && completion.result.outcome !== "no_result") {
+            const completedEnds = z
+              .array(endSchema)
+              .parse(completion.result.ends);
+            scoreEvents = completedEnds.map((score, i) => ({
+              id: String(i),
+              at: 0,
+              type: "end",
+              score,
+            }));
+            available = completedEnds.length > 0;
+          }
+        }
         const state = snapshot?.[0]?.state;
         if (!readError && snapshot?.[0]?.outcome === "active" && state) {
           scoreEvents = z

@@ -435,6 +435,17 @@ function PlayerAnalysis({
 }
 function Scoreboard({ event }: { event: CoachEvent }) {
   const available = event.games.filter((g) => g.scoreboardAvailable);
+  if (!available.length)
+    return (
+      <section className="event-card" role="status">
+        <h3>No line scores available</h3>
+        <p>
+          {event.games.length
+            ? "No CurlStreamer end scores are available for the selected games. Record the ends in the game's scorer, then refresh here."
+            : "No games match these filters."}
+        </p>
+      </section>
+    );
   const timelines = available.flatMap((g) =>
     scoreTimeline(g).map((point) => ({ ...point, game: g.id })),
   );
@@ -461,6 +472,13 @@ function Scoreboard({ event }: { event: CoachEvent }) {
   );
   return (
     <>
+      {available.length < event.games.length && (
+        <p role="status">
+          Line scores are available for {available.length} of{" "}
+          {event.games.length} selected games. Games without line scores are
+          excluded from these statistics.
+        </p>
+      )}
       <div className="event-metrics event-shot-metrics">
         <div>
           <span>Games</span>

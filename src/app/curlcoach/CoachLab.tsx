@@ -327,6 +327,8 @@ export default function CoachLab({
     <>
       {" "}
       <button
+        aria-label="Undo latest change"
+        title="Undo latest change"
         disabled={busy || closed || !state?.events.length}
         onClick={() => {
           if (!state?.events.length) return;
@@ -337,18 +339,25 @@ export default function CoachLab({
           void save(previous?.shot ?? null, latest.shotId);
         }}
       >
-        Undo latest change
+        Undo
       </button>
-      <button onClick={() => setHistory(!history)} aria-expanded={history}>
-        Revision history ({state?.events.length ?? 0})
+      <button
+        onClick={() => setHistory(!history)}
+        aria-expanded={history}
+        aria-label={`Revision history (${state?.events.length ?? 0})`}
+        title="Revision history"
+      >
+        History ({state?.events.length ?? 0})
       </button>
       {context?.source === "streamer" && !closed && (
         <button
           className="coach-finish"
+          aria-label="Finish private coaching session"
+          title="Finish private coaching session"
           disabled={busy}
           onClick={() => void lifecycle("finish")}
         >
-          Finish private coaching session
+          Finish
         </button>
       )}
     </>

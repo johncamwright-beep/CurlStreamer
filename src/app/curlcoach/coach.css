@@ -752,16 +752,26 @@
   min-height: 110px;
   resize: vertical;
 }
-.coach-menu-actions {
-  display: grid;
-  gap: 4px;
+.coach-topbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
 }
-.coach-menu-actions[hidden] {
-  display: none;
+.coach-session-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
 }
-.coach-menu-actions button {
-  text-align: left;
+.coach-topbar button {
   min-height: 44px;
+  padding: 8px 10px;
+  font-size: 14px;
+  line-height: 1.2;
+  margin: 0;
+}
+.coach-topbar .coach-menu-toggle {
+  gap: 6px;
 }
 
 .event-header {

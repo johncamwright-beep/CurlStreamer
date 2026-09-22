@@ -762,16 +762,25 @@ export default function EventWorkspace({
   return (
     <div className="coach-workspace">
       <aside className="event-sidebar">
-        <button
-          type="button"
-          className="coach-menu-toggle"
-          aria-label="Shot Tracker menu"
-          aria-expanded={menuOpen}
-          aria-controls="coach-menu"
-          onClick={() => setMenuOpen(!menuOpen)}
-        >
-          <span aria-hidden="true">☰</span> {view}
-        </button>
+        <div className="coach-topbar">
+          <button
+            type="button"
+            className="coach-menu-toggle"
+            aria-label="Shot Tracker menu"
+            aria-expanded={menuOpen}
+            aria-controls="coach-menu"
+            onClick={() => setMenuOpen(!menuOpen)}
+          >
+            <span aria-hidden="true">☰</span> {view}
+          </button>
+          <div
+            ref={setActionsTarget}
+            hidden={view !== "Scoring"}
+            className="coach-session-actions"
+            role="group"
+            aria-label="Scoring session actions"
+          />
+        </div>
         <div
           id="coach-menu"
           hidden={!menuOpen}
@@ -799,11 +808,6 @@ export default function EventWorkspace({
               </a>
             ))}
           </nav>
-          <div
-            ref={setActionsTarget}
-            hidden={view !== "Scoring"}
-            className="coach-menu-actions"
-          />
           <div className="event-sidebar-footer">
             {mode === "streamer" ? (
               <nav aria-label="Account">

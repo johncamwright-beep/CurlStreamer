@@ -34,6 +34,16 @@ describe("middleware configuration boundary", () => {
   });
   afterEach(() => vi.unstubAllEnvs());
 
+  it("serves the public download without an authentication request", async () => {
+    vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", undefined);
+    vi.stubEnv("NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY", undefined);
+    const response = await middleware(
+      new NextRequest("https://www.curlstreamer.app/download"),
+    );
+    expect(response.headers.get("x-middleware-next")).toBe("1");
+    expect(mocks.createServerClient).not.toHaveBeenCalled();
+  });
+
   it("reaches verified session refresh with explicitly supplied public configuration", async () => {
     const response = await middleware(
       new NextRequest("http://localhost/api/games/game-1"),

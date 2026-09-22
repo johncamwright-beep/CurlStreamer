@@ -186,10 +186,8 @@ test("browser scoring keeps stream start in Windows Studio", async ({
     page.getByRole("heading", { name: "Requires Windows Studio" }),
   ).toBeVisible();
   await expect(
-    page.getByText("The pilot Windows installer is supplied separately", {
-      exact: false,
-    }),
-  ).toBeVisible();
+    page.getByRole("link", { name: "Download Studio", exact: true }),
+  ).toHaveAttribute("href", "/download");
   await expect(
     page.getByRole("button", { name: "Start broadcast" }),
   ).toHaveCount(0);

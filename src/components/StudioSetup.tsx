@@ -143,9 +143,8 @@ export function StudioSetup({
                 <h2 id="open-studio-heading">Requires Windows Studio</h2>
                 <p>
                   Streaming starts only in CurlStreamer Studio on the Windows
-                  recording PC. Install the pilot Windows installer supplied by
-                  your CurlStreamer contact, then open Studio with this game.
-                  There is no public installer download yet.
+                  recording PC. Visit the Studio download page to check the
+                  pilot installer status, then open Studio with this game.
                 </p>
                 <div className="game-entry-actions">
                   {gameUrl.startsWith("https://") && (
@@ -156,6 +155,9 @@ export function StudioSetup({
                       Open Windows Studio
                     </a>
                   )}
+                  <Link className="btn-secondary" href="/download">
+                    Download Studio
+                  </Link>
                   <button
                     className="btn-secondary"
                     disabled={!gameUrl}
@@ -186,8 +188,8 @@ export function StudioSetup({
                 />
                 <p className="mt-3">
                   If nothing opens, launch CurlStreamer Studio from Windows and
-                  paste this link. The preview installer is currently supplied
-                  separately; there is no public download yet.
+                  paste this link. Check the Studio download page for the
+                  current pilot installer availability and update instructions.
                 </p>
                 <p role="status" className="mt-3">
                   {message}

@@ -22,9 +22,9 @@ foreach ($directory in @("app", "node", "native/default", "native/production", "
 }
 Push-Location $repository
 try {
-  & $node node_modules/esbuild/bin/esbuild scripts/m5-studio.ts --bundle --platform=node --format=esm --minify '--banner:js=import { createRequire } from "node:module"; const require = createRequire(import.meta.url);' "--outfile=$destinationPath/app/studio.mjs"
+  & $node node_modules/esbuild/bin/esbuild scripts/m5-studio.ts --bundle --platform=node --format=esm --minify '--banner:js=import { createRequire } from "node:module"; const require = createRequire(import.meta.url);' "--outfile=$destinationPath/app/studio.mjs" "--metafile=$destinationPath/app/studio-metafile.json"
   if ($LASTEXITCODE -ne 0) { throw "Studio controller build failed." }
-  & $node node_modules/esbuild/bin/esbuild src/lib/providers/m4-program-renderer-browser.tsx --bundle --platform=browser --format=iife --target=chrome120 --jsx=automatic --minify "--outfile=$destinationPath/renderer/m4-program-renderer.js"
+  & $node node_modules/esbuild/bin/esbuild src/lib/providers/m4-program-renderer-browser.tsx --bundle --platform=browser --format=iife --target=chrome120 --jsx=automatic --minify "--outfile=$destinationPath/renderer/m4-program-renderer.js" "--metafile=$destinationPath/renderer/m4-program-renderer-metafile.json"
   if ($LASTEXITCODE -ne 0) { throw "Renderer build failed." }
   & $node node_modules/tailwindcss/lib/cli.js -i src/app/globals.css -o "$destinationPath/renderer/m4-program-renderer.css" --minify
   if ($LASTEXITCODE -ne 0) { throw "Stylesheet build failed." }

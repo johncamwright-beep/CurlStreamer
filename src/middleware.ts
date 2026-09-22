@@ -27,6 +27,7 @@ export async function middleware(request: NextRequest) {
   if (
     [
       "/",
+      "/download",
       "/api/pilot-waitlist",
       "/api/stripe/webhook",
       "/api/stripe/season-webhook",

@@ -1,3 +1,4 @@
+import type { EventLevel } from "@/lib/team-hierarchy";
 import { withBroadcastReview, type BroadcastReview } from "./review";
 import {
   currentShots,
@@ -22,6 +23,7 @@ export type CoachGame = {
   opponent: string;
   teamName: string;
   scheduledEnds: number;
+  competitionLevel?: EventLevel | null;
   scheduledStart?: string | null;
   timezone?: string | null;
   status: string;
@@ -238,6 +240,7 @@ export function sampleEvent(id: string): CoachEvent {
         opponent:
           id === "practice" ? "Practice opponent" : `Example team ${g + 1}`,
         teamName: "Practice team",
+        competitionLevel: id === "practice" ? null : g < 3 ? "U18" : "Men’s",
         scheduledEnds: 8,
         status: id === "practice" ? "active" : "completed",
         side: "home",

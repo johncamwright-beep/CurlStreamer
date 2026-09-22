@@ -1,3 +1,4 @@
+import { opponentSeasonSchema } from "@/lib/opponent-seasons";
 import { readGameCompletionSummary } from "@/lib/game-completion";
 import "server-only";
 import { z } from "zod";
@@ -5,6 +6,7 @@ import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { createAdminSupabaseClient } from "@/lib/supabase/admin";
 import { loadActiveTeam } from "@/lib/team-games";
 import {
+  listOpponentSeasons,
   listEvents,
   listTeamHierarchyGames,
 } from "@/lib/team-hierarchy-service";
@@ -51,12 +53,16 @@ export async function loadStreamerEvent(eventId?: string) {
     throw new Error(
       "A verified team administrator is required for Streamer coaching data.",
     );
-  const [events, games] = await Promise.all([
+  const [events, games, opponentSeasons] = await Promise.all([
     listEvents(data.user),
     listTeamHierarchyGames(data.user),
+    listOpponentSeasons(data.user),
   ]);
-  if (!events.ok || !games.ok)
+  if (!events.ok || !games.ok || !opponentSeasons.ok)
     throw new Error("Local Streamer event data is unavailable.");
+  const seasonProfiles = z
+    .array(opponentSeasonSchema)
+    .parse(opponentSeasons.value);
   const catalog = z
     .array(z.object({ id: z.string().uuid(), name: z.string() }))
     .parse(events.value);
@@ -69,6 +75,8 @@ export async function loadStreamerEvent(eventId?: string) {
       z.object({
         id: z.string().uuid(),
         event_id: z.string().uuid().nullable(),
+        season_id: z.string().uuid().nullable().optional(),
+        opponent_id: z.string().uuid().nullable().optional(),
         game_number: z.number().nullable(),
         game_label: z.string().nullable(),
         game_status: z.string(),
@@ -172,6 +180,11 @@ export async function loadStreamerEvent(eventId?: string) {
       label: row.game_label || `Game ${row.game_number ?? index + 1}`,
       teamName: row.config.homeName,
       opponent: row.config.awayName,
+      competitionLevel:
+        seasonProfiles.find(
+          (p) =>
+            p.opponent_id === row.opponent_id && p.season_id === row.season_id,
+        )?.level ?? null,
       scheduledEnds: row.config.scheduledEnds,
       status: row.game_status,
       side: "home",

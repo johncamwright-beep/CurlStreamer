@@ -5,6 +5,7 @@ const m = vi.hoisted(() => ({
   auth: vi.fn(),
   settings: vi.fn(),
   events: vi.fn(),
+  opponentSeasons: vi.fn(),
   seasons: vi.fn(),
   games: vi.fn(),
   rpc: vi.fn(),
@@ -24,6 +25,7 @@ vi.mock("@/lib/providers/team-settings", () => ({
 }));
 vi.mock("@/lib/team-hierarchy-service", () => ({
   listEvents: m.events,
+  listOpponentSeasons: m.opponentSeasons,
   listSeasons: m.seasons,
   listTeamHierarchyGames: m.games,
 }));
@@ -38,6 +40,7 @@ const account = {
 } as CoachAccount;
 beforeEach(() => {
   vi.clearAllMocks();
+  m.opponentSeasons.mockResolvedValue({ ok: true, value: [] });
   m.videos.mockResolvedValue({});
   m.account.mockResolvedValue({
     userId: "coach",
@@ -326,3 +329,43 @@ it.each([null, { result: { outcome: "no_result", ends: [] } }])(
     expect(result.event.games[0].ends).toEqual([]);
   },
 );
+
+it("uses only the opponent's matching seasonal level, never the event level", async () => {
+  const season = "00000000-0000-4000-8000-000000000060";
+  const opponent = "00000000-0000-4000-8000-000000000061";
+  const otherSeason = "00000000-0000-4000-8000-000000000062";
+  const rows = await m.games();
+  rows.value[0].season_id = season;
+  rows.value[0].opponent_id = opponent;
+  m.games.mockResolvedValue(rows);
+  m.events.mockResolvedValue({
+    ok: true,
+    value: [{ id: eid, name: "Men's event", level: "Men’s" }],
+  });
+  m.opponentSeasons.mockResolvedValue({
+    ok: true,
+    value: [
+      {
+        opponent_id: opponent,
+        season_id: otherSeason,
+        level: "U18",
+        roster: {},
+        revision: 1,
+      },
+      {
+        opponent_id: opponent,
+        season_id: season,
+        level: "U20",
+        roster: { lead: "Private name" },
+        revision: 1,
+      },
+    ],
+  });
+  const result = await loadProductionStreamerEvent(eid);
+  expect(result.event.games[0].competitionLevel).toBe("U20");
+  expect(JSON.stringify(result)).not.toContain("Private name");
+  m.opponentSeasons.mockResolvedValue({ ok: true, value: [] });
+  expect(
+    (await loadProductionStreamerEvent(eid)).event.games[0].competitionLevel,
+  ).toBeNull();
+});

@@ -1,3 +1,4 @@
+import { opponentSeasonSchema } from "@/lib/opponent-seasons";
 import { readGameCompletionSummary } from "@/lib/game-completion";
 import { loadCoachBroadcastReviews } from "./curlcoach-video";
 import { isCurrentGame, preferredGame } from "@/lib/current-game";
@@ -11,6 +12,7 @@ import {
 import { readTeamSettings } from "@/lib/providers/team-settings";
 import { createHash } from "node:crypto";
 import {
+  listOpponentSeasons,
   listEvents,
   listSeasons,
   listTeamHierarchyGames,
@@ -61,11 +63,10 @@ export async function loadProductionStreamerEvent(
     listEvents(account.user),
     listTeamHierarchyGames(account.user),
     listSeasons(account.user),
+    listOpponentSeasons(account.user),
   ]);
-  const [{ settings }, [events, games, seasonResult]] = await Promise.all([
-    settingsResult,
-    hierarchyResult,
-  ]);
+  const [{ settings }, [events, games, seasonResult, opponentSeasons]] =
+    await Promise.all([settingsResult, hierarchyResult]);
   // Snapshot the existing team roster. Never substitute the lab's example players.
   const roster = (["lead", "second", "third", "fourth"] as const)
     .filter((position) => settings.roster[position].trim())
@@ -79,8 +80,11 @@ export async function loadProductionStreamerEvent(
       position: (position[0].toUpperCase() + position.slice(1)) as
         "Lead" | "Second" | "Third" | "Fourth",
     }));
-  if (!events.ok || !games.ok || !seasonResult.ok)
+  if (!events.ok || !games.ok || !seasonResult.ok || !opponentSeasons.ok)
     throw new Error("Team event data is unavailable.");
+  const seasonProfiles = z
+    .array(opponentSeasonSchema)
+    .parse(opponentSeasons.value);
   const seasons = z
     .array(z.object({ id: z.string().uuid(), name: z.string() }))
     .parse(seasonResult.value);
@@ -181,6 +185,7 @@ export async function loadProductionStreamerEvent(
         id: z.string().uuid(),
         event_id: z.string().uuid().nullable(),
         season_id: z.string().uuid().nullable().optional(),
+        opponent_id: z.string().uuid().nullable().optional(),
         scheduled_start: z.string().nullable().optional(),
         timezone: z.string().nullable().optional(),
         game_number: z.number().nullable(),
@@ -304,6 +309,12 @@ export async function loadProductionStreamerEvent(
         label: row.game_label || `Game ${row.game_number ?? index + 1}`,
         teamName: row.config.homeName,
         opponent: row.config.awayName,
+        competitionLevel:
+          seasonProfiles.find(
+            (p) =>
+              p.opponent_id === row.opponent_id &&
+              p.season_id === row.season_id,
+          )?.level ?? null,
         scheduledEnds: row.config.scheduledEnds,
         scheduledStart: row.scheduled_start,
         timezone: row.timezone,

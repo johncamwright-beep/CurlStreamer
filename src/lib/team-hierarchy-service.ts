@@ -252,3 +252,6 @@ export function updateScheduledTeamGame(
     ...(configSnapshot ? { p_config_snapshot: configSnapshot } : {}),
   });
 }
+
+export const listOpponentSeasons = (user: User) =>
+  rpc<unknown[]>("list_opponent_seasons", { p_user_id: user.id });

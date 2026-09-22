@@ -161,3 +161,78 @@ test("links a public profile to an existing saved opponent", async ({
     },
   ]);
 });
+
+test("opponent roster and level remain independent across seasons", async ({
+  page,
+}) => {
+  const first = "11111111-1111-4111-8111-111111111111",
+    second = "22222222-2222-4222-8222-222222222222";
+  const profiles: Record<string, unknown>[] = [];
+  await page.route("**/api/opponent-seasons", async (route) => {
+    if (route.request().method() === "POST") {
+      const b = route.request().postDataJSON();
+      const profile = {
+        opponent_id: b.opponentId,
+        season_id: b.seasonId,
+        level: b.level,
+        roster: b.roster,
+        revision: 1,
+      };
+      profiles.push(profile);
+      await route.fulfill({ json: { profile } });
+    } else
+      await route.fulfill({
+        json: {
+          profiles,
+          seasons: [
+            { id: first, name: "2026-27", status: "active" },
+            { id: second, name: "2027-28", status: "planned" },
+          ],
+        },
+      });
+  });
+  await page.goto("/opponents");
+  await page
+    .getByRole("button", { name: "Season details", exact: true })
+    .first()
+    .click();
+  await page
+    .getByRole("combobox", { name: "Competition level", exact: true })
+    .selectOption("U20");
+  await page.getByLabel("Lead", { exact: true }).fill("Alex Firstseason");
+  await page.getByRole("button", { name: "Save season details" }).click();
+  await expect(page.getByRole("status")).toContainText("2026-27 saved");
+  await page
+    .getByRole("combobox", { name: "Opponent season", exact: true })
+    .selectOption(second);
+  await page
+    .getByRole("button", { name: "Season details", exact: true })
+    .first()
+    .click();
+  await expect(page.getByLabel("Lead", { exact: true })).toHaveValue("");
+  await page.getByLabel("Lead", { exact: true }).fill("Jordan Nextseason");
+  await page
+    .getByRole("combobox", { name: "Competition level", exact: true })
+    .selectOption("Men’s");
+  await page.getByRole("button", { name: "Save season details" }).click();
+  await expect(page.getByRole("status")).toContainText("2027-28 saved");
+  await page
+    .getByRole("combobox", { name: "Opponent season", exact: true })
+    .selectOption(first);
+  await page
+    .getByRole("button", { name: "Season details", exact: true })
+    .first()
+    .click();
+  await expect(page.getByLabel("Lead", { exact: true })).toHaveValue(
+    "Alex Firstseason",
+  );
+  await expect(
+    page.getByRole("combobox", { name: "Competition level", exact: true }),
+  ).toHaveValue("U20");
+  expect(profiles).toHaveLength(2);
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth,
+    ),
+  ).toBe(true);
+});

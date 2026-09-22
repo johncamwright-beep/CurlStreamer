@@ -3,6 +3,7 @@ const mocks = vi.hoisted(() => ({
   auth: vi.fn(),
   team: vi.fn(),
   events: vi.fn(),
+  opponentSeasons: vi.fn(),
   games: vi.fn(),
   rpc: vi.fn(),
 }));
@@ -15,6 +16,7 @@ vi.mock("@/lib/supabase/admin", () => ({
 vi.mock("@/lib/team-games", () => ({ loadActiveTeam: mocks.team }));
 vi.mock("@/lib/team-hierarchy-service", () => ({
   listEvents: mocks.events,
+  listOpponentSeasons: mocks.opponentSeasons,
   listTeamHierarchyGames: mocks.games,
 }));
 import {
@@ -23,6 +25,7 @@ import {
 } from "./curlcoach-streamer";
 beforeEach(() => {
   vi.clearAllMocks();
+  mocks.opponentSeasons.mockResolvedValue({ ok: true, value: [] });
   vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", "http://127.0.0.1:54321");
 });
 afterEach(() => vi.unstubAllEnvs());

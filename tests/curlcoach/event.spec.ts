@@ -393,3 +393,58 @@ test("selected event statistics and local filters do not wait for the season dow
     release();
   }
 });
+
+test("competition level filters games locally and persists across statistics views", async ({
+  page,
+}) => {
+  await page.goto("/curlcoach");
+  await page
+    .getByLabel("Local lab key")
+    .fill("curlcoach-e2e-only-key-thirty-two-characters");
+  await page.getByRole("button", { name: "Unlock lab" }).click();
+  await expect(
+    page.getByRole("combobox", { name: "Game", exact: true }),
+  ).toBeVisible();
+  await page
+    .getByRole("button", { name: "Shot Tracker menu", exact: true })
+    .click();
+  await page.getByRole("link", { name: "Shot breakdown", exact: true }).click();
+  await expect(page.locator(".event-metrics")).toContainText("448");
+  await page
+    .getByRole("combobox", { name: "Competition level", exact: true })
+    .selectOption("U18");
+  await expect(
+    page.getByRole("combobox", { name: "Game", exact: true }).locator("option"),
+  ).toHaveCount(4);
+  await expect(page.locator(".event-metrics")).toContainText("192");
+  for (const view of [
+    "Team statistics",
+    "Game analysis",
+    "Miss analysis",
+    "End-by-end scores",
+  ]) {
+    await page
+      .getByRole("button", { name: "Shot Tracker menu", exact: true })
+      .click();
+    await page.getByRole("link", { name: view, exact: true }).click();
+    await expect(
+      page.getByRole("combobox", { name: "Competition level", exact: true }),
+    ).toHaveValue("U18");
+    await expect(
+      page
+        .getByRole("combobox", { name: "Game", exact: true })
+        .locator("option"),
+    ).toHaveCount(4);
+  }
+  await page
+    .getByRole("combobox", { name: "Competition level", exact: true })
+    .selectOption("unrecorded");
+  await expect(
+    page.getByRole("combobox", { name: "Game", exact: true }).locator("option"),
+  ).toHaveCount(1);
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth,
+    ),
+  ).toBe(true);
+});

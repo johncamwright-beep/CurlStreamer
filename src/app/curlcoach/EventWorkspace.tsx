@@ -29,6 +29,7 @@ import {
   type rate,
 } from "@/lib/curlcoach/score-statistics";
 import { updateWorkspaceState } from "@/lib/curlcoach/workspace-state";
+import { eventLevels } from "@/lib/team-hierarchy";
 import { preferredGame } from "@/lib/current-game";
 import CoachLab, { turnLabel } from "./CoachLab";
 import ReviewSummary from "./ReviewSummary";
@@ -678,6 +679,7 @@ export default function EventWorkspace({
     [gameId, setGameId] = useState(""),
     [player, setPlayer] = useState("all"),
     [analysisGame, setAnalysisGame] = useState("all"),
+    [competitionLevel, setCompetitionLevel] = useState("all"),
     [data, setData] = useState<Workspace | null>(null),
     [error, setError] = useState(""),
     [busy, setBusy] = useState(false);
@@ -825,6 +827,11 @@ export default function EventWorkspace({
     statsGames = statsReady
       ? (analysisData?.event.games ?? [])
           .filter((g) => selectedEvent === "all" || g.eventId === selectedEvent)
+          .filter(
+            (g) =>
+              competitionLevel === "all" ||
+              (g.competitionLevel ?? "unrecorded") === competitionLevel,
+          )
           .map((g) => ({
             ...g,
             label:
@@ -1043,6 +1050,27 @@ export default function EventWorkspace({
                         {e.name}
                       </option>
                     ))}
+                  </select>
+                </label>
+              )}
+              {statistics && (
+                <label>
+                  Competition
+                  <select
+                    aria-label="Competition level"
+                    title="Opponent’s level for the game’s season"
+                    value={competitionLevel}
+                    onChange={(e) => {
+                      setCompetitionLevel(e.target.value);
+                      setAnalysisGame("all");
+                      setPlayer("all");
+                    }}
+                  >
+                    <option value="all">All levels</option>
+                    {eventLevels.map((level) => (
+                      <option key={level}>{level}</option>
+                    ))}
+                    <option value="unrecorded">Not recorded</option>
                   </select>
                 </label>
               )}

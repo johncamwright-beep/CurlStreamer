@@ -506,11 +506,9 @@ export function MarketingHome() {
             <details>
               <summary>Is Shot Tracker included with CurlStreamer?</summary>
               <p>
-                Shot Tracker is an optional add-on: $39 CAD per coach licence
-                per season, in addition to the $89 CAD CurlStreamer season pass.
-                The team owner assigns each licence to a team member and can
-                transfer it. You can use CurlStreamer without purchasing Shot
-                Tracker.
+                Shot Tracker is an optional add-on to CurlStreamer. The team
+                owner assigns each licence to a team member and can transfer it.
+                You can use CurlStreamer without purchasing Shot Tracker.
               </p>
               <p>
                 Shot Tracker runs in your browser on a phone, tablet or

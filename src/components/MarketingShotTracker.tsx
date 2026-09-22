@@ -35,14 +35,6 @@ export function MarketingShotTracker() {
                 coaching notes without publishing them on your team page.
               </li>
             </ul>
-            <div className="tracker-price">
-              <strong>$39 CAD</strong>
-              <span>per assigned coach licence / season</span>
-            </div>
-            <p className="tracker-terms">
-              Added to the $89 CAD CurlStreamer season pass. Access ends August
-              31; purchase again for the next season. No automatic renewal.
-            </p>
             <a className="cta" href="#pilot">
               Interested in Shot Tracker? Join the pilot →
             </a>

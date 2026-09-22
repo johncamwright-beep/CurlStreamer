@@ -565,6 +565,9 @@ export default function EventWorkspace({
   const [actionsTarget, setActionsTarget] = useState<HTMLDivElement | null>(
     null,
   );
+  const [filtersTarget, setFiltersTarget] = useState<HTMLDivElement | null>(
+    null,
+  );
   const drafts = useRef(
     new Map<string, { draft: Shot; editing: string | null; current?: Shot }>(),
   );
@@ -869,7 +872,7 @@ export default function EventWorkspace({
             </button>
           )}
           {open && (
-            <div className="event-selectors">
+            <div className="event-selectors event-filter-bar">
               {mode === "lab" && (
                 <label>
                   Data source
@@ -965,6 +968,61 @@ export default function EventWorkspace({
                   </select>
                 </label>
               )}
+              {view === "Scoring" && event && (
+                <label className="event-game-picker">
+                  Game
+                  <select
+                    value={gameId}
+                    onChange={(e) => {
+                      setGameId(e.target.value);
+                      remember(source, event.id, e.target.value);
+                    }}
+                  >
+                    {event.games.map((g) => (
+                      <option key={g.id} value={g.id}>
+                        {g.label} · vs {g.opponent}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
+              {view !== "Scoring" && (
+                <>
+                  <label>
+                    Game
+                    <select
+                      value={analysisGame}
+                      onChange={(e) => {
+                        setAnalysisGame(e.target.value);
+                        setPlayer("all");
+                      }}
+                    >
+                      <option value="all">All games</option>
+                      {statsGames.map((g) => (
+                        <option key={g.id} value={g.id}>
+                          {g.label} · vs {g.opponent}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label>
+                    Team / player
+                    <select
+                      disabled={view === "End-by-end scores"}
+                      value={view === "End-by-end scores" ? "all" : player}
+                      onChange={(e) => setPlayer(e.target.value)}
+                    >
+                      <option value="all">Whole team</option>
+                      {analysisPlayers.map((p) => (
+                        <option key={p.id} value={p.id}>
+                          {p.name}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                </>
+              )}
+              <div ref={setFiltersTarget} className="event-extra-filters" />
             </div>
           )}
         </header>
@@ -1000,24 +1058,7 @@ export default function EventWorkspace({
             <div hidden={view !== "Scoring"}>
               <ScoringWakeLock active={open && !!game && view === "Scoring"} />
             </div>
-            {view === "Scoring" && (
-              <label className="event-game-picker">
-                Game
-                <select
-                  value={gameId}
-                  onChange={(e) => {
-                    setGameId(e.target.value);
-                    remember(source, event.id, e.target.value);
-                  }}
-                >
-                  {event.games.map((g) => (
-                    <option key={g.id} value={g.id}>
-                      {g.label} · vs {g.opponent}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            )}
+
             <div hidden={view !== "Scoring"}>
               {game ? (
                 <CoachLab
@@ -1047,44 +1088,10 @@ export default function EventWorkspace({
                 <p>No games in this event.</p>
               )}
             </div>
-            {view !== "Scoring" && (
-              <div className="event-analysis-filters">
-                <label>
-                  Game
-                  <select
-                    value={analysisGame}
-                    onChange={(e) => {
-                      setAnalysisGame(e.target.value);
-                      setPlayer("all");
-                    }}
-                  >
-                    <option value="all">All games</option>
-                    {statsGames.map((g) => (
-                      <option key={g.id} value={g.id}>
-                        {g.label} · vs {g.opponent}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label>
-                  Team / player
-                  <select
-                    disabled={view === "End-by-end scores"}
-                    value={view === "End-by-end scores" ? "all" : player}
-                    onChange={(e) => setPlayer(e.target.value)}
-                  >
-                    <option value="all">Whole team</option>
-                    {analysisPlayers.map((p) => (
-                      <option key={p.id} value={p.id}>
-                        {p.name}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              </div>
-            )}
+
             {view === "Miss analysis" && (
               <MissAnalysis
+                filtersTarget={filtersTarget}
                 shots={selected}
                 games={analysisGames}
                 players={analysisPlayers}

@@ -2,7 +2,7 @@ import { expect, test } from "@playwright/test";
 test.skip(!process.env.CURLCOACH_E2E, "Use the Shot Tracker config");
 test("miss review scopes season data and screen wake follows scoring", async ({
   page,
-}) => {
+}, info) => {
   await page.addInitScript(() => {
     const state = { requests: 0, releases: 0 };
     Object.assign(window, { wakeTest: state });
@@ -63,6 +63,34 @@ test("miss review scopes season data and screen wake follows scoring", async ({
     .getByRole("button", { name: "Shot Tracker menu", exact: true })
     .click();
   await page.getByRole("link", { name: "Miss analysis", exact: true }).click();
+  await expect(
+    page.getByRole("combobox", { name: "Review", exact: true }),
+  ).toBeVisible();
+  await expect(page.locator(".event-metrics")).toHaveCount(0);
+  const viewport = page.viewportSize()!;
+  await page.screenshot({
+    path: "work/compact-filters-" + info.project.name + ".png",
+  });
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  const bounds = await page
+    .locator(".event-filter-bar select")
+    .evaluateAll((nodes) =>
+      nodes.map((node) => {
+        const box = node.getBoundingClientRect();
+        return {
+          top: Math.round(box.top),
+          height: box.height,
+          right: box.right,
+        };
+      }),
+    );
+  expect(new Set(bounds.map((box) => box.top)).size).toBe(1);
+  expect(bounds.every((box) => box.height >= 44 && box.right <= 1440)).toBe(
+    true,
+  );
+  await page.screenshot({ path: "work/compact-filters-desktop.png" });
+  await page.setViewportSize(viewport);
+
   await expect
     .poll(async () => {
       const s = await wake();

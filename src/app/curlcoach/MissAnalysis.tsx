@@ -1,5 +1,6 @@
 "use client";
 import { useState } from "react";
+import { createPortal } from "react-dom";
 import { deficiencies, shotTypes, type Shot } from "@/lib/curlcoach/model";
 import { family, type CoachGame } from "@/lib/curlcoach/event";
 import { isMiss } from "@/lib/curlcoach/misses";
@@ -8,7 +9,9 @@ export default function MissAnalysis({
   shots,
   games,
   players,
+  filtersTarget,
 }: {
+  filtersTarget?: HTMLDivElement | null;
   shots: (Shot & { id: string; gameId: string })[];
   games: CoachGame[];
   players: readonly { id: string; name: string }[];
@@ -35,58 +38,46 @@ export default function MissAnalysis({
     )
     .slice()
     .reverse();
+  const filters = (
+    <>
+      <label>
+        Shot type
+        <select value={type} onChange={(e) => setType(e.target.value)}>
+          <option value="all">All shots</option>
+          {["Draws", "Hits", ...shotTypes].map((s) => (
+            <option key={s}>{s}</option>
+          ))}
+        </select>
+      </label>
+      <label>
+        Review
+        <select value={focus} onChange={(e) => setFocus(e.target.value)}>
+          <option value="misses">Partial or missed shots</option>
+          <option value="complete">Complete misses (Xmiss / 0)</option>
+          <option value="flags">Flagged shots</option>
+          <option value="notes">Shots with notes</option>
+        </select>
+      </label>
+      <label>
+        Reason
+        <select value={reason} onChange={(e) => setReason(e.target.value)}>
+          <option value="all">All reasons</option>
+          {deficiencies.map((r) => (
+            <option key={r}>{r}</option>
+          ))}
+          <option value="unrecorded">Not recorded</option>
+        </select>
+      </label>
+    </>
+  );
   return (
     <>
-      <div className="event-analysis-filters">
-        <label>
-          Shot type
-          <select value={type} onChange={(e) => setType(e.target.value)}>
-            <option value="all">All shots</option>
-            {["Draws", "Hits", ...shotTypes].map((s) => (
-              <option key={s}>{s}</option>
-            ))}
-          </select>
-        </label>
-        <label>
-          Review
-          <select value={focus} onChange={(e) => setFocus(e.target.value)}>
-            <option value="misses">Partial or missed shots</option>
-            <option value="complete">Complete misses (Xmiss / 0)</option>
-            <option value="flags">Flagged shots</option>
-            <option value="notes">Shots with notes</option>
-          </select>
-        </label>
-        <label>
-          Reason
-          <select value={reason} onChange={(e) => setReason(e.target.value)}>
-            <option value="all">All reasons</option>
-            {deficiencies.map((r) => (
-              <option key={r}>{r}</option>
-            ))}
-            <option value="unrecorded">Not recorded</option>
-          </select>
-        </label>
-      </div>
-      <div className="event-metrics event-shot-metrics">
-        <div>
-          <span>Shots</span>
-          <strong>{visible.length}</strong>
-        </div>
-        <div>
-          <span>Flagged</span>
-          <strong>
-            {visible.filter((s) => s.flagged ?? !!s.review).length}
-          </strong>
-        </div>
-        <div>
-          <span>With notes</span>
-          <strong>{visible.filter((s) => s.note.trim()).length}</strong>
-        </div>
-        <div>
-          <span>No reason</span>
-          <strong>{visible.filter((s) => !s.deficiency).length}</strong>
-        </div>
-      </div>
+      {filtersTarget ? (
+        createPortal(filters, filtersTarget)
+      ) : (
+        <div className="event-filter-bar">{filters}</div>
+      )}
+
       <section className="event-card">
         <h3>Reasons</h3>
         <div className="coach-miss-reasons">

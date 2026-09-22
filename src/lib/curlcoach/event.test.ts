@@ -106,6 +106,44 @@ it("adds an aggregate hit group using the numeric-grade shooting denominator", (
   ).toBe(50);
   expect(outcomePercent([{ ...shot, deficiency: null }], "Make")).toBeNull();
 });
+it("aggregates shot tables in one pass per selector", () => {
+  const shots = gameShots(sampleEvent("shorty-example").games[0]);
+  let groupedKeyCalls = 0;
+  const groups = grouped(
+    shots,
+    ["Draws", "Hits"],
+    (shot) => {
+      groupedKeyCalls++;
+      return family(shot);
+    },
+    "All",
+  );
+  expect(groupedKeyCalls).toBe(shots.length);
+  expect(groups.map((group) => group.attempts)).toEqual([64, 34, 30]);
+
+  let rowCalls = 0;
+  let columnCalls = 0;
+  const values = matrix(
+    shots,
+    ["Draws", "Hits"],
+    ["Make", "Partial"],
+    (shot) => {
+      rowCalls++;
+      return family(shot);
+    },
+    (shot) => {
+      columnCalls++;
+      return shot.execution;
+    },
+  );
+  const eligible = shots.filter((shot) => !shot.excluded).length;
+  expect(rowCalls).toBe(eligible);
+  expect(columnCalls).toBe(eligible);
+  expect(values).toEqual([
+    { label: "Draws", values: [9, 7] },
+    { label: "Hits", values: [6, 9] },
+  ]);
+});
 it("derives actual scoreboard ends with Undo, blank-end hammer retention and extra ends", () => {
   expect(
     scoreboard(

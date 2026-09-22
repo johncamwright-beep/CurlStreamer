@@ -39,32 +39,36 @@ export default async function PublicTeamPage({
   const profile = await readPublishedTeamProfile(slug);
   if (!profile) notFound();
   const s = profile.settings;
-  const { data: games } = await db.rpc("read_public_team_games", {
-    p_org: profile.organization_id,
-  });
-  const { data: news } = s.news
-    ? await db
-        .from("team_news")
-        .select("id,summary,content,photo_url,created_at")
-        .eq("organization_id", profile.organization_id)
-        .eq("published", true)
-        .is("deleted_at", null)
-        .order("created_at", { ascending: false })
-        .limit(30)
-    : { data: [] };
-  const sponsors = s.sponsors
-    ? await gameLibrarySponsors("", profile.organization_id).catch(() => [])
-    : [];
-  const { data: accomplishments } = s.accomplishments
-    ? await db
-        .from("events")
-        .select("id,name,end_date,result,level,show_level")
-        .is("deleted_at", null)
-        .eq("organization_id", profile.organization_id)
-        .in("result", ["1st", "2nd", "3rd", "qualified"])
-        .order("end_date", { ascending: false })
-        .limit(50)
-    : { data: [] };
+  const [gamesResult, newsResult, sponsors, accomplishmentsResult] =
+    await Promise.all([
+      db.rpc("read_public_team_games", { p_org: profile.organization_id }),
+      s.news
+        ? db
+            .from("team_news")
+            .select("id,summary,content,photo_url,created_at")
+            .eq("organization_id", profile.organization_id)
+            .eq("published", true)
+            .is("deleted_at", null)
+            .order("created_at", { ascending: false })
+            .limit(30)
+        : Promise.resolve({ data: [] }),
+      s.sponsors
+        ? gameLibrarySponsors("", profile.organization_id).catch(() => [])
+        : Promise.resolve([]),
+      s.accomplishments
+        ? db
+            .from("events")
+            .select("id,name,end_date,result,level,show_level")
+            .is("deleted_at", null)
+            .eq("organization_id", profile.organization_id)
+            .in("result", ["1st", "2nd", "3rd", "qualified"])
+            .order("end_date", { ascending: false })
+            .limit(50)
+        : Promise.resolve({ data: [] }),
+    ]);
+  const games = gamesResult.data;
+  const news = newsResult.data;
+  const accomplishments = accomplishmentsResult.data;
   return (
     <div className="public-team-page">
       <script

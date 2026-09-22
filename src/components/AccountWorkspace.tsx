@@ -99,18 +99,22 @@ export function AccountWorkspace({
             <div
               hidden={!["team", "public", "social", "photos"].includes(current)}
             >
-              <TeamSettings
-                name={teamName}
-                section={
-                  current === "public"
-                    ? "public"
-                    : current === "social"
-                      ? "social"
-                      : current === "photos"
-                        ? "photos"
-                        : "team"
-                }
-              />
+              {["team", "public", "social", "photos"].some((id) =>
+                visited.has(id as Section),
+              ) && (
+                <TeamSettings
+                  name={teamName}
+                  section={
+                    current === "public"
+                      ? "public"
+                      : current === "social"
+                        ? "social"
+                        : current === "photos"
+                          ? "photos"
+                          : "team"
+                  }
+                />
+              )}
             </div>
             <div hidden={current !== "members"}>
               {visited.has("members") && <TeamMembers />}

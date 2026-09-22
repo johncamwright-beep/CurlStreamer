@@ -171,16 +171,23 @@ function ProgramRenderer() {
               },
               controller.signal,
             ).catch(() => undefined);
-            setCameras((current) => ({
-              ...current,
-              [role]: {
-                ...current[role],
-                metrics,
-                message: metrics.direct
-                  ? "Verified direct camera"
-                  : "Verifying direct path…",
-              },
-            }));
+            setCameras((current) => {
+              const message = metrics.direct
+                ? "Verified direct camera"
+                : "Verifying direct path…";
+              // ProgramCanvas only consumes the direct-path result. Avoid
+              // re-rendering the full program once per metrics sample when
+              // that visible verification state has not changed.
+              if (
+                current[role].metrics?.direct === metrics.direct &&
+                current[role].message === message
+              )
+                return current;
+              return {
+                ...current,
+                [role]: { ...current[role], metrics, message },
+              };
+            });
           },
           onStop: (message) => {
             handles.delete(role);

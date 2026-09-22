@@ -22,10 +22,12 @@ export default async function AccountPage({
     data: { user },
   } = await supabase.auth.getUser();
   if (!user?.email_confirmed_at) redirect("/login");
-  const result = await getAccountContext(user);
+  const [result, administrator] = await Promise.all([
+    getAccountContext(user),
+    platformAdminContext().catch(() => null),
+  ]);
   if (!result.ok) return <AccountServiceUnavailable />;
   const account = result.account;
-  const administrator = await platformAdminContext().catch(() => null);
   return (
     <main className="mx-auto min-h-screen max-w-5xl p-5 md:py-12">
       <div className="mb-4">

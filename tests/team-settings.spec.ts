@@ -207,6 +207,7 @@ test("team news drafts, edits and removal stay compact and explicit", async ({
 test("account sections preserve edits, support back navigation and save a team photo", async ({
   page,
 }, testInfo) => {
+  let teamReads = 0;
   let settings = defaultTeamPageSettings("Team Benning");
   const photo = "https://media.test/team-photo.png";
   await page.route("https://media.test/**", (route) =>
@@ -246,6 +247,7 @@ test("account sections preserve edits, support back navigation and save a team p
       settings = route.request().postDataJSON();
       return route.fulfill({ json: { saved: true, settings } });
     }
+    teamReads++;
     return route.fulfill({ json: { settings, logo: null, canEdit: true } });
   });
   await page.goto("/login?next=/account");
@@ -257,6 +259,7 @@ test("account sections preserve edits, support back navigation and save a team p
     name: "Account settings sections",
   });
   await expect(page.getByLabel("Sign-in email")).toBeVisible();
+  expect(teamReads).toBe(0);
   await menu.getByRole("button", { name: "Team info", exact: true }).click();
   await page.getByLabel("About the team").fill("Our team biography.");
   await page

@@ -74,12 +74,15 @@ export function family(shot: Shot) {
 }
 /** Lead!K10:K21 and Data Tables!B41:B52 use typed attempts as denominator. */
 export function workbookCategoryPercent(shots: Shot[]) {
-  const typed = shots.filter((shot) => !shot.excluded && shot.type !== null);
-  return typed.length
-    ? (typed.reduce((sum, shot) => sum + (shot.grade ?? 0), 0) /
-        (typed.length * 5)) *
-        100
-    : null;
+  let attempts = 0;
+  let points = 0;
+  for (const shot of shots) {
+    if (!shot.excluded && shot.type !== null) {
+      attempts++;
+      points += shot.grade ?? 0;
+    }
+  }
+  return attempts ? (points / (attempts * 5)) * 100 : null;
 }
 export function grouped(
   shots: Shot[],
@@ -88,26 +91,21 @@ export function grouped(
   aggregateLabel?: string,
   aggregate?: (shot: Shot) => boolean,
 ) {
+  const categories = new Map(labels.map((label) => [label, [] as Shot[]]));
+  const combined: Shot[] = [];
+  for (const shot of shots) {
+    const value = key(shot);
+    if (value !== null) categories.get(value)?.push(shot);
+    if (aggregate ? aggregate(shot) : value !== null && categories.has(value))
+      combined.push(shot);
+  }
   const groups = labels.map((label) => ({
     label,
-    ...report(shots.filter((shot) => key(shot) === label)),
+    ...report(categories.get(label)!),
   }));
-  if (!aggregateLabel) return groups;
-  return [
-    {
-      label: aggregateLabel,
-      ...report(
-        shots.filter(
-          aggregate ??
-            ((shot) => {
-              const value = key(shot);
-              return value !== null && labels.includes(value);
-            }),
-        ),
-      ),
-    },
-    ...groups,
-  ];
+  return aggregateLabel
+    ? [{ label: aggregateLabel, ...report(combined) }, ...groups]
+    : groups;
 }
 export function matrix(
   shots: Shot[],
@@ -116,25 +114,30 @@ export function matrix(
   row: (s: Shot) => string | null,
   column: (s: Shot) => string | null,
 ) {
-  return rows.map((label) => ({
-    label,
-    values: columns.map(
-      (c) =>
-        shots.filter((s) => !s.excluded && row(s) === label && column(s) === c)
-          .length,
-    ),
-  }));
+  const rowIndex = new Map(rows.map((label, index) => [label, index]));
+  const columnIndex = new Map(columns.map((label, index) => [label, index]));
+  const counts = rows.map(() => columns.map(() => 0));
+  for (const shot of shots) {
+    if (shot.excluded) continue;
+    const rowValue = row(shot);
+    const columnValue = column(shot);
+    const r = rowValue === null ? undefined : rowIndex.get(rowValue);
+    const c = columnValue === null ? undefined : columnIndex.get(columnValue);
+    if (r !== undefined && c !== undefined) counts[r][c]++;
+  }
+  return rows.map((label, index) => ({ label, values: counts[index] }));
 }
 /** Share within outcomes that were actually recorded for this selected group. */
 export function outcomePercent(shots: Shot[], outcome: string) {
-  const recorded = shots.filter(
-    (shot) => !shot.excluded && shot.deficiency !== null,
-  );
-  return recorded.length
-    ? (recorded.filter((shot) => shot.deficiency === outcome).length /
-        recorded.length) *
-        100
-    : null;
+  let recorded = 0;
+  let matches = 0;
+  for (const shot of shots) {
+    if (!shot.excluded && shot.deficiency !== null) {
+      recorded++;
+      if (shot.deficiency === outcome) matches++;
+    }
+  }
+  return recorded ? (matches / recorded) * 100 : null;
 }
 export function scoreboard(
   config: Pick<GameConfig, "initialHammer">,

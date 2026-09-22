@@ -48,6 +48,19 @@ describe("program renderer camera transport", () => {
     expect(peer.close).toHaveBeenCalledTimes(1);
     handle.stop();
   });
+  it("clears completed request deadlines while the camera poll remains active", async () => {
+    vi.useFakeTimers();
+    const h = hooks();
+    const request = vi.fn().mockResolvedValue({ events: [] });
+    request.mockResolvedValueOnce(ticket);
+    const handle = await connectM4ProgramCamera({ ...h, request });
+    await vi.advanceTimersByTimeAsync(0);
+
+    // Only the direct-path watchdog and the next 250 ms poll are pending.
+    // Successful requests must not each retain their 8-second deadline.
+    expect(vi.getTimerCount()).toBe(2);
+    handle.stop();
+  });
   it("rejects credential-bearing connection metadata before creating a peer", async () => {
     await expect(
       connectM4ProgramCamera({

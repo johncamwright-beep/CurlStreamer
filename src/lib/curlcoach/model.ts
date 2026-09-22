@@ -202,13 +202,25 @@ export function append(state: State, command: Command, actor: string): State {
   };
 }
 export function report(shots: Shot[]) {
-  const scored = shots.filter((s) => !s.excluded && s.grade !== null);
-  const points = scored.reduce((sum, s) => sum + s.grade!, 0);
+  let scored = 0;
+  let points = 0;
+  let missing = 0;
+  let excluded = 0;
+  for (const shot of shots) {
+    if (shot.excluded) {
+      excluded++;
+    } else if (shot.grade === null) {
+      missing++;
+    } else {
+      scored++;
+      points += shot.grade;
+    }
+  }
   return {
     attempts: shots.length,
-    scored: scored.length,
-    missing: shots.filter((s) => !s.excluded && s.grade === null).length,
-    excluded: shots.filter((s) => s.excluded).length,
-    percent: scored.length ? (points / (5 * scored.length)) * 100 : null,
+    scored,
+    missing,
+    excluded,
+    percent: scored ? (points / (5 * scored)) * 100 : null,
   };
 }

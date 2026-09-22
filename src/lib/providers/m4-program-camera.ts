@@ -33,12 +33,28 @@ export async function connectM4ProgramCamera(options: {
   let lastVerified: number | undefined,
     nextInspect = 0,
     closed = false;
-  const call = (path: string, body?: unknown) =>
-    options.request(
-      path,
-      body,
-      AbortSignal.any([signal, AbortSignal.timeout(8000)]),
-    );
+  const call = async (path: string, body?: unknown) => {
+    // Event polling runs four times per second. AbortSignal.timeout() leaves
+    // each successful request's timer alive until its deadline, so clear the
+    // deadline as soon as this request settles or the connection stops.
+    const deadline = new AbortController();
+    const timer = setTimeout(() => deadline.abort(), 8000);
+    const cancel = () => {
+      clearTimeout(timer);
+      deadline.abort();
+    };
+    signal.addEventListener("abort", cancel, { once: true });
+    try {
+      return await options.request(
+        path,
+        body,
+        AbortSignal.any([signal, deadline.signal]),
+      );
+    } finally {
+      clearTimeout(timer);
+      signal.removeEventListener("abort", cancel);
+    }
+  };
   function stop(reason?: string) {
     if (closed) return;
     closed = true;

@@ -45,6 +45,7 @@ it("derives the verified account scope and repeats access authorization in the d
   await expect(requireCoachAccount()).resolves.toEqual({
     userId: "coach",
     organizationId: "organization",
+    user: expect.objectContaining({ id: "coach" }),
   });
   expect(mocks.rpc).toHaveBeenCalledWith("assert_curlcoach_access", {
     p_actor_user_id: "coach",

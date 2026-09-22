@@ -2,9 +2,11 @@ import { loadCoachBroadcastReviews } from "./curlcoach-video";
 import { isCurrentGame, preferredGame } from "@/lib/current-game";
 import "server-only";
 import { z } from "zod";
-import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { createAdminSupabaseClient } from "@/lib/supabase/admin";
-import { requireCoachAccount } from "@/lib/curlcoach/production-access";
+import {
+  requireCoachAccount,
+  type CoachAccount,
+} from "@/lib/curlcoach/production-access";
 import { readTeamSettings } from "@/lib/providers/team-settings";
 import { createHash } from "node:crypto";
 import {
@@ -22,20 +24,47 @@ const endSchema = z.object({
   points: z.number().int().min(0).max(8),
   blank: z.boolean(),
 });
+const MAX_CONCURRENT_SCORE_READS = 4;
+
+async function mapWithConcurrency<T, R>(
+  values: readonly T[],
+  limit: number,
+  mapper: (value: T, index: number) => Promise<R>,
+): Promise<R[]> {
+  const results = new Array<R>(values.length);
+  let next = 0;
+  const worker = async () => {
+    while (next < values.length) {
+      const index = next++;
+      results[index] = await mapper(values[index]!, index);
+    }
+  };
+  await Promise.all(
+    Array.from({ length: Math.min(limit, values.length) }, () => worker()),
+  );
+  return results;
+}
 /** Read-only integration. Revalidate account and event membership on every request. */
 export async function loadProductionStreamerEvent(
   eventId?: string,
   gameId?: string,
   seasonId?: string,
+  requestAccount?: CoachAccount,
 ) {
-  const account = await requireCoachAccount();
+  // The route may pass an account it just authorized. Direct callers establish
+  // the same request-local scope here; this is never cached across requests.
+  const account = requestAccount ?? (await requireCoachAccount());
   if (!account) throw new Error("Private coaching access is required.");
-  const { data, error } = await (
-    await createServerSupabaseClient()
-  ).auth.getUser();
-  if (error || !data.user || data.user.id !== account.userId)
-    throw new Error("Sign in to your account first.");
-  const { settings } = await readTeamSettings(account.organizationId);
+  const settingsResult = readTeamSettings(account.organizationId);
+  const hierarchyResult = Promise.all([
+    listEvents(account.user),
+    listTeamHierarchyGames(account.user),
+    listSeasons(account.user),
+  ]);
+  const [{ settings }, [events, games, seasonResult]] = await Promise.all([
+    settingsResult,
+    hierarchyResult,
+  ]);
   // Snapshot the existing team roster. Never substitute the lab's example players.
   const roster = (["lead", "second", "third", "fourth"] as const)
     .filter((position) => settings.roster[position].trim())
@@ -49,11 +78,6 @@ export async function loadProductionStreamerEvent(
       position: (position[0].toUpperCase() + position.slice(1)) as
         "Lead" | "Second" | "Third" | "Fourth",
     }));
-  const [events, games, seasonResult] = await Promise.all([
-    listEvents(data.user),
-    listTeamHierarchyGames(data.user),
-    listSeasons(data.user),
-  ]);
   if (!events.ok || !games.ok || !seasonResult.ok)
     throw new Error("Team event data is unavailable.");
   const seasons = z
@@ -195,85 +219,89 @@ export async function loadProductionStreamerEvent(
     games: [],
   };
   const broadcastReviews = gameId
-    ? {}
-    : await loadCoachBroadcastReviews(
+    ? Promise.resolve<Awaited<ReturnType<typeof loadCoachBroadcastReviews>>>({})
+    : loadCoachBroadcastReviews(
         account.organizationId,
         rows.map((row) => row.id),
       );
-  for (const [index, row] of rows.entries()) {
-    const ends =
-      row.completion_result?.outcome === "no_result"
-        ? undefined
-        : row.completion_result?.ends;
-    let scoreEvents: ScoreEvent[] = [];
-    let available = !!ends;
-    if (ends)
-      scoreEvents = ends.map((score, i) => ({
-        id: String(i),
-        at: 0,
-        type: "end",
-        score,
-      }));
-    else {
-      // IDs come only from the account-scoped listing above, never the caller.
-      const { data: snapshot, error: readError } =
-        await createAdminSupabaseClient().rpc("read_game_state", {
-          p_game_id: row.id,
-        });
-      const state = snapshot?.[0]?.state;
-      if (!readError && snapshot?.[0]?.outcome === "active" && state) {
-        scoreEvents = z
-          .array(
-            z.discriminatedUnion("type", [
-              z.object({
-                type: z.literal("end"),
-                id: z.string(),
-                at: z.number(),
-                score: endSchema,
-              }),
-              z.object({
-                type: z.literal("hammer"),
-                id: z.string(),
-                at: z.number(),
-                team: z.enum(["home", "away"]),
-              }),
-              z.object({
-                type: z.literal("undo"),
-                id: z.string(),
-                at: z.number(),
-                targetId: z.string(),
-              }),
-            ]),
-          )
-          .parse(state.scoreEvents);
-        available = true;
+  event.games = await mapWithConcurrency(
+    rows,
+    MAX_CONCURRENT_SCORE_READS,
+    async (row, index) => {
+      const ends =
+        row.completion_result?.outcome === "no_result"
+          ? undefined
+          : row.completion_result?.ends;
+      let scoreEvents: ScoreEvent[] = [];
+      let available = !!ends;
+      if (ends)
+        scoreEvents = ends.map((score, i) => ({
+          id: String(i),
+          at: 0,
+          type: "end",
+          score,
+        }));
+      else {
+        // IDs come only from the account-scoped listing above, never the caller.
+        const { data: snapshot, error: readError } =
+          await createAdminSupabaseClient().rpc("read_game_state", {
+            p_game_id: row.id,
+          });
+        const state = snapshot?.[0]?.state;
+        if (!readError && snapshot?.[0]?.outcome === "active" && state) {
+          scoreEvents = z
+            .array(
+              z.discriminatedUnion("type", [
+                z.object({
+                  type: z.literal("end"),
+                  id: z.string(),
+                  at: z.number(),
+                  score: endSchema,
+                }),
+                z.object({
+                  type: z.literal("hammer"),
+                  id: z.string(),
+                  at: z.number(),
+                  team: z.enum(["home", "away"]),
+                }),
+                z.object({
+                  type: z.literal("undo"),
+                  id: z.string(),
+                  at: z.number(),
+                  targetId: z.string(),
+                }),
+              ]),
+            )
+            .parse(state.scoreEvents);
+          available = true;
+        }
       }
-    }
-    event.games.push({
-      id: row.id,
-      eventId: row.event_id ?? "standalone",
-      label: row.game_label || `Game ${row.game_number ?? index + 1}`,
-      teamName: row.config.homeName,
-      opponent: row.config.awayName,
-      scheduledEnds: row.config.scheduledEnds,
-      scheduledStart: row.scheduled_start,
-      timezone: row.timezone,
-      status: row.game_status,
-      // The scheduling form stores the owning team in homeName.
-      side: "home",
-      initialHammer: row.config.initialHammer ?? null,
-      scoreboardAvailable: available,
-      broadcastReview: broadcastReviews[row.id],
-      ends: scoreboard(row.config as GameConfig, scoreEvents, "home"),
-      state: {
-        ...emptyState(),
-        organizationId: event.organizationId,
-        gameId: row.id,
-        roster,
-        revision: 0,
-        status: "open",
-      },
-    });
-  }
-  return { event, catalog, seasons, actor: data.user.id };
+      return {
+        id: row.id,
+        eventId: row.event_id ?? "standalone",
+        label: row.game_label || `Game ${row.game_number ?? index + 1}`,
+        teamName: row.config.homeName,
+        opponent: row.config.awayName,
+        scheduledEnds: row.config.scheduledEnds,
+        scheduledStart: row.scheduled_start,
+        timezone: row.timezone,
+        status: row.game_status,
+        // The scheduling form stores the owning team in homeName.
+        side: "home",
+        initialHammer: row.config.initialHammer ?? null,
+        scoreboardAvailable: available,
+        broadcastReview: (await broadcastReviews)[row.id],
+        ends: scoreboard(row.config as GameConfig, scoreEvents, "home"),
+        state: {
+          ...emptyState(),
+          organizationId: event.organizationId,
+          gameId: row.id,
+          roster,
+          revision: 0,
+          status: "open",
+        },
+      };
+    },
+  );
+  return { event, catalog, seasons, actor: account.userId };
 }

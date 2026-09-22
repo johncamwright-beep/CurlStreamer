@@ -15,6 +15,7 @@ import {
 } from "@/lib/providers/curlcoach-local";
 import { loadStreamerEvent } from "@/lib/providers/curlcoach-streamer";
 import { requireCoachAccount } from "@/lib/curlcoach/production-access";
+import type { CoachAccount } from "@/lib/curlcoach/production-access";
 import { loadProductionStreamerEvent } from "@/lib/providers/curlcoach-production-streamer";
 import {
   loadCoachState,
@@ -28,36 +29,49 @@ const selection = z
   })
   .strict();
 const privateHeaders = { "Cache-Control": "private, no-store" };
-async function denial() {
+type AccessGate = { response?: NextResponse; account?: CoachAccount };
+async function denial(): Promise<AccessGate> {
   if (!labEnabled()) {
     if (process.env.CURLCOACH_ENABLED !== "true")
-      return new NextResponse(null, { status: 404 });
-    if (!(await requireCoachAccount()))
-      return NextResponse.json(
-        { error: "Private coaching access is required." },
-        { status: 403, headers: privateHeaders },
-      );
-    return;
+      return { response: new NextResponse(null, { status: 404 }) };
+    const account = await requireCoachAccount();
+    if (!account)
+      return {
+        response: NextResponse.json(
+          { error: "Private coaching access is required." },
+          { status: 403, headers: privateHeaders },
+        ),
+      };
+    return { account };
   }
   if (!(await authorized((await cookies()).get(sessionCookie)?.value)))
-    return NextResponse.json(
-      { error: "Unlock the local coach lab." },
-      { status: 401 },
-    );
+    return {
+      response: NextResponse.json(
+        { error: "Unlock the local coach lab." },
+        { status: 401 },
+      ),
+    };
+  return {};
 }
 async function source(
   input: z.infer<typeof selection>,
   gameId?: string,
   seasonId?: string,
+  account?: CoachAccount,
 ) {
   if (!labEnabled()) {
     if (input.source !== "streamer")
       throw new Error("Sample data is only available in the local lab.");
     return gameId
-      ? loadProductionStreamerEvent(input.eventId, gameId)
+      ? loadProductionStreamerEvent(input.eventId, gameId, undefined, account)
       : seasonId
-        ? loadProductionStreamerEvent(undefined, undefined, seasonId)
-        : loadProductionStreamerEvent(input.eventId);
+        ? loadProductionStreamerEvent(undefined, undefined, seasonId, account)
+        : loadProductionStreamerEvent(
+            input.eventId,
+            undefined,
+            undefined,
+            account,
+          );
   }
   return input.source === "sample"
     ? {
@@ -78,8 +92,8 @@ async function source(
     : loadStreamerEvent(input.eventId);
 }
 export async function GET(request: Request) {
-  const denied = await denial();
-  if (denied) return denied;
+  const { response, account } = await denial();
+  if (response) return response;
   const input = selection
     .extend({
       seasonId: z
@@ -102,7 +116,12 @@ export async function GET(request: Request) {
       (!labEnabled() || input.data.source !== "sample")
     )
       throw new Error("Invalid season");
-    const result = await source(input.data, undefined, input.data.seasonId);
+    const result = await source(
+      input.data,
+      undefined,
+      input.data.seasonId,
+      account,
+    );
     const { event, catalog, actor } = result;
     const seasons = "seasons" in result ? result.seasons : [];
     event.games = await Promise.all(
@@ -137,8 +156,8 @@ export async function GET(request: Request) {
   }
 }
 export async function POST(request: Request) {
-  const denied = await denial();
-  if (denied) return denied;
+  const { response, account } = await denial();
+  if (response) return response;
   if (!sameOrigin(request)) return new NextResponse(null, { status: 403 });
   const input = selection
     .extend({
@@ -164,7 +183,12 @@ export async function POST(request: Request) {
       { status: 400 },
     );
   try {
-    const { event, actor } = await source(input.data, input.data.gameId);
+    const { event, actor } = await source(
+      input.data,
+      input.data.gameId,
+      undefined,
+      account,
+    );
     const game = event.games.find((game) => game.id === input.data.gameId);
     if (!game)
       return NextResponse.json(

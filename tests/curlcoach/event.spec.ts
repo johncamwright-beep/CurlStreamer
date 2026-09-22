@@ -303,4 +303,74 @@ test("scoring draft survives stats navigation with one cached season read", asyn
     "Saved. Next turn",
   );
   expect(reads).toBe(1);
+  await page
+    .getByRole("button", { name: "Shot Tracker menu", exact: true })
+    .click();
+  await page.getByRole("link", { name: "Shot breakdown", exact: true }).click();
+  await expect(
+    page.getByRole("heading", { name: "Turn / deficiency", exact: true }),
+  ).toBeVisible();
+  expect(reads).toBe(1);
+});
+
+test("selected event statistics and local filters do not wait for the season download", async ({
+  page,
+}) => {
+  let release!: () => void;
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  let reads = 0;
+  await page.route("**/api/curlcoach/workspace?**", async (route) => {
+    if (route.request().method() !== "GET") return route.continue();
+    reads++;
+    if (new URL(route.request().url()).searchParams.has("seasonId")) await held;
+    await route.continue();
+  });
+  try {
+    await page.goto("/curlcoach");
+    await page
+      .getByLabel("Local lab key")
+      .fill("curlcoach-e2e-only-key-thirty-two-characters");
+    await page.getByRole("button", { name: "Unlock lab" }).click();
+    await expect(
+      page.getByRole("combobox", { name: "Game", exact: true }),
+    ).toBeVisible();
+    await page
+      .getByRole("button", { name: "Shot Tracker menu", exact: true })
+      .click();
+    await page
+      .getByRole("link", { name: "Shot breakdown", exact: true })
+      .click();
+    // The season request remains held: existing event data must already be usable.
+    await expect(page.locator(".event-metrics")).toContainText("448");
+    await page
+      .getByRole("combobox", { name: "Game", exact: true })
+      .selectOption("shorty-example-1");
+    await expect(page.locator(".event-metrics > div").nth(1)).toContainText(
+      "64",
+    );
+    await page
+      .getByRole("combobox", { name: "Team / player", exact: true })
+      .selectOption("lead");
+    await expect(page.locator(".event-metrics > div").nth(1)).toContainText(
+      "16",
+    );
+    expect(reads).toBe(2);
+    await page
+      .getByRole("combobox", { name: "Event", exact: true })
+      .selectOption("all");
+    await expect(page.getByRole("status").first()).toContainText(
+      "Loading season statistics",
+    );
+    release();
+    await expect(
+      page
+        .getByRole("combobox", { name: "Game", exact: true })
+        .locator("option"),
+    ).toHaveCount(9);
+    expect(reads).toBe(2);
+  } finally {
+    release();
+  }
 });

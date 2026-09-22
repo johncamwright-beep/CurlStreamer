@@ -28,12 +28,22 @@ vi.mock("@/lib/team-hierarchy-service", () => ({
   listTeamHierarchyGames: m.games,
 }));
 import { loadProductionStreamerEvent } from "./curlcoach-production-streamer";
+import type { CoachAccount } from "@/lib/curlcoach/production-access";
 const eid = "00000000-0000-4000-8000-000000000001",
   gid = "00000000-0000-4000-8000-000000000002";
+const account = {
+  userId: "coach",
+  organizationId: "org",
+  user: { id: "coach" },
+} as CoachAccount;
 beforeEach(() => {
   vi.clearAllMocks();
   m.videos.mockResolvedValue({});
-  m.account.mockResolvedValue({ userId: "coach", organizationId: "org" });
+  m.account.mockResolvedValue({
+    userId: "coach",
+    organizationId: "org",
+    user: account.user,
+  });
   m.auth.mockResolvedValue({ data: { user: { id: "coach" } }, error: null });
   m.settings.mockResolvedValue({
     settings: {
@@ -67,6 +77,12 @@ beforeEach(() => {
       },
     ],
   });
+});
+it("uses the route's request-local account without repeating authentication", async () => {
+  await loadProductionStreamerEvent(eid, undefined, undefined, account);
+  expect(m.account).not.toHaveBeenCalled();
+  expect(m.auth).not.toHaveBeenCalled();
+  expect(m.events).toHaveBeenCalledWith(account.user);
 });
 it("denies before reading shared games or roster", async () => {
   m.account.mockResolvedValue(null);
@@ -229,4 +245,30 @@ it("loads timing only for authorized selected games", async () => {
   expect(result.event.games[0].broadcastReview?.startedAt).toBe(
     "2026-09-19T12:00:00Z",
   );
+});
+
+it("bounds concurrent active-score reads while preserving game order", async () => {
+  const { value } = await m.games();
+  const active = Array.from({ length: 9 }, (_, index) => ({
+    ...value[0],
+    id: `00000000-0000-4000-8000-${String(index + 10).padStart(12, "0")}`,
+    game_number: index + 1,
+    game_status: "active",
+    completion_result: null,
+  }));
+  m.games.mockResolvedValue({ ok: true, value: active });
+  let inFlight = 0;
+  let peak = 0;
+  m.rpc.mockImplementation(async () => {
+    inFlight++;
+    peak = Math.max(peak, inFlight);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    inFlight--;
+    return { data: [], error: null };
+  });
+  const workspace = await loadProductionStreamerEvent(eid);
+  expect(workspace.event.games.map((game) => game.id)).toEqual(
+    active.map((game) => game.id),
+  );
+  expect(peak).toBe(4);
 });

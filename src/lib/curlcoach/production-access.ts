@@ -1,4 +1,5 @@
 import "server-only";
+import type { User } from "@supabase/supabase-js";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { createAdminSupabaseClient } from "@/lib/supabase/admin";
 import { loadActiveTeam } from "@/lib/team-games";
@@ -6,6 +7,7 @@ import { loadActiveTeam } from "@/lib/team-games";
 export type CoachAccount = {
   userId: string;
   organizationId: string;
+  user: User;
 };
 
 /**
@@ -31,5 +33,6 @@ export async function requireCoachAccount(): Promise<CoachAccount | null> {
   return {
     userId: data.user.id,
     organizationId: team.team.organizationId,
+    user: data.user,
   };
 }

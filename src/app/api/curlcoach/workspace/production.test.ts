@@ -113,6 +113,7 @@ beforeEach(() => {
   mocks.account.mockResolvedValue({
     userId: ids.actor,
     organizationId: ids.organization,
+    user: { id: ids.actor },
   });
   mocks.productionSource.mockResolvedValue(workspace());
   mocks.load.mockResolvedValue(state());
@@ -159,6 +160,16 @@ it("loads each production game from durable private storage, never the local lab
   expect(mocks.localRead).not.toHaveBeenCalled();
   expect(mocks.localSource).not.toHaveBeenCalled();
   expect((await response.json()).event.source).toBe("streamer");
+  expect(mocks.productionSource).toHaveBeenCalledWith(
+    ids.event,
+    undefined,
+    undefined,
+    expect.objectContaining({
+      userId: ids.actor,
+      organizationId: ids.organization,
+      user: expect.objectContaining({ id: ids.actor }),
+    }),
+  );
 });
 
 it("keeps production sample data unavailable", async () => {

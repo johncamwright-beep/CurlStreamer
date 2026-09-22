@@ -24,6 +24,7 @@ import {
   type CoachGame,
   type Workspace,
 } from "@/lib/curlcoach/event";
+import { updateWorkspaceState } from "@/lib/curlcoach/workspace-state";
 import { preferredGame } from "@/lib/current-game";
 import CoachLab, { turnLabel } from "./CoachLab";
 import ReviewSummary from "./ReviewSummary";
@@ -599,6 +600,7 @@ export default function EventWorkspace({
     [data, setData] = useState<Workspace | null>(null),
     [error, setError] = useState(""),
     [busy, setBusy] = useState(false);
+  const [selectionReady, setSelectionReady] = useState(false);
   useEffect(() => {
     const query = new URLSearchParams(location.search);
     if (mode !== "streamer" && query.get("source") === "streamer")
@@ -618,6 +620,7 @@ export default function EventWorkspace({
         ) ?? "Scoring",
       );
     read();
+    setSelectionReady(true);
     window.addEventListener("hashchange", read);
     return () => window.removeEventListener("hashchange", read);
   }, [initialEventId, mode]);
@@ -625,12 +628,22 @@ export default function EventWorkspace({
   const [statsEventId, setStatsEventId] = useState("");
   const [statsData, setStatsData] = useState<Workspace | null>(null);
   const [statsError, setStatsError] = useState("");
+  // Component-local only: never persist private coaching data across accounts.
+  const savedStates = useRef(new Map<string, State>());
+  const refreshSequence = useRef(0);
   const statistics = view !== "Scoring";
   const selectedSeason = seasonId || data?.event.seasonId || "unassigned";
   const selectedEvent = statsEventId || data?.event.id || "all";
-  const statsReady = statsData?.event.seasonId === selectedSeason;
+  const seasonReady = statsData?.event.seasonId === selectedSeason;
+  const eventReady =
+    data?.event.seasonId === selectedSeason && data?.event.id === selectedEvent;
+  // Event statistics are already in the scoring response. Don't hold them up
+  // while the rest of the season loads for the All events selector.
+  const analysisData = seasonReady ? statsData : eventReady ? data : null;
+  const statsReady = !!analysisData;
+  const hasData = !!data;
   useEffect(() => {
-    if (!open || !statistics || !data || statsReady) return;
+    if (!open || !statistics || !hasData || seasonReady) return;
     const controller = new AbortController();
     setStatsError("");
     void fetch(
@@ -642,7 +655,12 @@ export default function EventWorkspace({
         const result = await response.json();
         if (!response.ok)
           throw new Error(result.error || "Statistics unavailable");
-        if (!controller.signal.aborted) setStatsData(result);
+        if (!controller.signal.aborted) {
+          let current: Workspace = result;
+          for (const state of savedStates.current.values())
+            current = updateWorkspaceState(current, state);
+          setStatsData(current);
+        }
       })
       .catch((error) => {
         if (!controller.signal.aborted)
@@ -651,9 +669,10 @@ export default function EventWorkspace({
           );
       });
     return () => controller.abort();
-  }, [open, statistics, data, statsReady, selectedSeason, source]);
+  }, [open, statistics, hasData, seasonReady, selectedSeason, source]);
   const refresh = useCallback(
-    async (signal?: AbortSignal) => {
+    async (signal?: AbortSignal, resetStatistics = true) => {
+      const sequence = ++refreshSequence.current;
       setBusy(true);
       setError("");
       try {
@@ -663,30 +682,46 @@ export default function EventWorkspace({
         );
         const result = await response.json();
         if (!response.ok) throw new Error(result.error);
-        setData(result);
-        setStatsData(null);
+        if (signal?.aborted || sequence !== refreshSequence.current) return;
+        let current: Workspace = result;
+        for (const state of savedStates.current.values())
+          current = updateWorkspaceState(current, state);
+        setData(current);
+        setStatsData((previous) =>
+          !resetStatistics &&
+          previous?.event.organizationId === current.event.organizationId &&
+          previous.event.source === current.event.source
+            ? current.event.games.reduce(
+                (workspace, game) =>
+                  updateWorkspaceState(workspace, game.state),
+                previous,
+              )
+            : null,
+        );
         setGameId((current) =>
           result.event.games.some((g: CoachGame) => g.id === current)
             ? current
             : (preferredGame<CoachGame>(result.event.games)?.id ?? ""),
         );
       } catch (e) {
-        if (!signal?.aborted) {
+        if (!signal?.aborted && sequence === refreshSequence.current) {
           setData(null);
+          setStatsData(null);
           setError(e instanceof Error ? e.message : "Event unavailable");
         }
       } finally {
-        if (!signal?.aborted) setBusy(false);
+        if (!signal?.aborted && sequence === refreshSequence.current)
+          setBusy(false);
       }
     },
     [source, eventId],
   );
   useEffect(() => {
-    if (!open) return;
+    if (!open || !selectionReady) return;
     const controller = new AbortController();
-    void refresh(controller.signal);
+    void refresh(controller.signal, false);
     return () => controller.abort();
-  }, [open, refresh]);
+  }, [open, selectionReady, refresh]);
   async function unlock(form: FormData) {
     setBusy(true);
     try {
@@ -707,14 +742,14 @@ export default function EventWorkspace({
   const event = data?.event,
     game = event?.games.find((g) => g.id === gameId),
     statsGames = statsReady
-      ? (statsData?.event.games ?? [])
+      ? (analysisData?.event.games ?? [])
           .filter((g) => selectedEvent === "all" || g.eventId === selectedEvent)
           .map((g) => ({
             ...g,
             label:
               selectedEvent === "all"
-                ? (statsData?.catalog.find((e) => e.id === g.eventId)?.name ??
-                    "Single games") +
+                ? (analysisData?.catalog.find((e) => e.id === g.eventId)
+                    ?.name ?? "Single games") +
                   " · " +
                   g.label
                 : g.label,
@@ -744,21 +779,15 @@ export default function EventWorkspace({
     );
   }
   function saved(state: State) {
-    setStatsData(null);
+    savedStates.current.set(state.gameId, state);
+    setStatsData((current) =>
+      current ? updateWorkspaceState(current, state) : current,
+    );
     setData((current) =>
-      current
-        ? {
-            ...current,
-            event: {
-              ...current.event,
-              games: current.event.games.map((g) =>
-                g.id === state.gameId ? { ...g, state } : g,
-              ),
-            },
-          }
-        : current,
+      current ? updateWorkspaceState(current, state) : current,
     );
   }
+
   return (
     <div className="coach-workspace">
       <aside className="event-sidebar">
@@ -848,6 +877,8 @@ export default function EventWorkspace({
                     value={source}
                     onChange={(e) => {
                       setData(null);
+                      setStatsData(null);
+                      savedStates.current.clear();
                       setSource(e.target.value as typeof source);
                       remember(
                         e.target.value,
@@ -890,7 +921,7 @@ export default function EventWorkspace({
                     Event
                     <select
                       value={selectedEvent}
-                      disabled={!statsReady}
+                      disabled={!data}
                       onChange={(e) => {
                         setStatsEventId(e.target.value);
                         setAnalysisGame("all");
@@ -942,7 +973,7 @@ export default function EventWorkspace({
             ? statsError || "Loading season statistics…"
             : busy
               ? "Loading event…"
-              : error}
+              : error || statsError}
         </p>
         {!open ? (
           <form className="event-card" action={unlock}>

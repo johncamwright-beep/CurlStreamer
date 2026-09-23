@@ -1,6 +1,7 @@
 "use client";
 import React, { useState } from "react";
 import { youtubeWatchUrlSchema } from "@/lib/youtube-watch";
+import { formatScheduledStart, isIanaTimezone } from "@/lib/team-hierarchy";
 
 export type PublicGame = {
   id: string;
@@ -12,10 +13,29 @@ export type PublicGame = {
   event_id?: string | null;
   number: number | null;
   scheduled: string | null;
+  timezone?: string | null;
   completed: string | null;
   result: { home: number; away: number } | null;
   youtube: string | null;
 };
+export function publicGameScheduleLabel(game: PublicGame) {
+  const scheduled =
+    game.scheduled && /T\d{2}:\d{2}/.test(game.scheduled)
+      ? new Date(game.scheduled)
+      : null;
+  if (scheduled && Number.isFinite(scheduled.getTime())) {
+    const timezone =
+      game.timezone && isIanaTimezone(game.timezone) ? game.timezone : "UTC";
+    return formatScheduledStart(game.scheduled!, timezone);
+  }
+  const recordedDate = game.scheduled || game.completed;
+  if (recordedDate) {
+    const date = new Date(recordedDate);
+    if (Number.isFinite(date.getTime()))
+      return `${date.toLocaleDateString("en-CA", { timeZone: "UTC" })} · Start time not recorded`;
+  }
+  return "Date and time to be announced";
+}
 export function filterPublicGames(
   games: PublicGame[],
   mode: string,
@@ -126,13 +146,11 @@ export function PublicTeamGames({
                 {g.event || "Single game"}
                 {g.number ? ` · Game ${g.number}` : ""}
               </p>
-              <time className="text-sm">
-                {g.completed || g.scheduled
-                  ? new Date((g.completed || g.scheduled)!).toLocaleDateString(
-                      "en-CA",
-                      { timeZone: "UTC" },
-                    )
-                  : "Date to be announced"}
+              <time
+                className="text-sm"
+                dateTime={g.scheduled || g.completed || undefined}
+              >
+                {publicGameScheduleLabel(g)}
               </time>
             </div>
             <div className="flex shrink-0 flex-col items-end">

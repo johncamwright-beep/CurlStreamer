@@ -92,3 +92,40 @@ it("links an opponent only when its published slug is safe", () => {
   expect(html).toContain('src="https://cdn.example/team-wright.png"');
   expect(html).not.toContain("https://bad/slug.curlstreamer.app");
 });
+
+it("shows an upcoming game's start in the game's timezone", () => {
+  const html = renderToStaticMarkup(
+    <PublicTeamGames
+      games={[
+        {
+          ...game("a", "Orion", "2026-10-20T22:30:00Z"),
+          timezone: "America/Toronto",
+        },
+      ]}
+      upcoming
+      results
+    />,
+  );
+  expect(html).toContain("Oct 20, 2026");
+  expect(html).toContain("6:30");
+  expect(html).toContain("EDT");
+  expect(html).toContain('dateTime="2026-10-20T22:30:00Z"');
+});
+it("shows a completed game's scheduled start rather than its completion time", () => {
+  const html = renderToStaticMarkup(
+    <PublicTeamGames
+      games={[
+        {
+          ...game("a", "Orion", "2026-10-20T22:30:00Z", "2026-10-22T01:00:00Z"),
+          timezone: "America/Vancouver",
+        },
+      ]}
+      upcoming={false}
+      results
+    />,
+  );
+  expect(html).toContain("Oct 20, 2026");
+  expect(html).toContain("3:30");
+  expect(html).toContain("PDT");
+  expect(html).not.toContain("Oct 21, 2026");
+});

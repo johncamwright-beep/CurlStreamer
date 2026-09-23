@@ -1,6 +1,9 @@
 "use server";
-import { signupSchema } from "@/lib/auth/validation";
-import { confirmationUrl } from "@/lib/auth/validation";
+import {
+  approvedRedirect,
+  authCallbackUrl,
+  signupSchema,
+} from "@/lib/auth/validation";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 
 export type AuthFormState = {
@@ -14,12 +17,13 @@ export async function signup(
   const parsed = signupSchema.safeParse(Object.fromEntries(formData));
   if (!parsed.success) return { errors: parsed.error.flatten().fieldErrors };
   const supabase = await createServerSupabaseClient();
+  const next = approvedRedirect(formData.get("next")?.toString() ?? null);
   await supabase.auth.signUp({
     email: parsed.data.email,
     password: parsed.data.password,
     options: {
       data: { display_name: parsed.data.displayName },
-      emailRedirectTo: confirmationUrl(),
+      emailRedirectTo: authCallbackUrl(next),
     },
   });
   // Intentionally neutral: Supabase may obscure an existing account.

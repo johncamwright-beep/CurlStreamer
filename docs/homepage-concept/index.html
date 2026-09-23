@@ -1,0 +1,1244 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>CurlStreamer — Homepage concept</title>
+    <style>
+      * {
+        box-sizing: border-box;
+      }
+      html {
+        scroll-behavior: smooth;
+      }
+      body {
+        margin: 0;
+        color: #102b36;
+        background: #f4f7f5;
+        font:
+          16px/1.6 system-ui,
+          sans-serif;
+      }
+      a {
+        color: inherit;
+      }
+      button,
+      input {
+        font: inherit;
+      }
+      button,
+      a.cta {
+        cursor: pointer;
+      }
+      button,
+      a.cta,
+      nav a,
+      summary {
+        min-height: 44px;
+      }
+      button:focus-visible,
+      a:focus-visible,
+      summary:focus-visible {
+        outline: 3px solid #db992b;
+        outline-offset: 4px;
+      }
+      h1,
+      h2,
+      h3,
+      p {
+        margin-top: 0;
+      }
+      h1 {
+        font-size: clamp(44px, 6vw, 78px);
+        line-height: 1.02;
+        letter-spacing: -0.055em;
+        margin-bottom: 26px;
+      }
+      h2 {
+        font-size: clamp(30px, 4vw, 48px);
+        letter-spacing: -0.04em;
+        line-height: 1.12;
+        margin-bottom: 24px;
+      }
+      h3 {
+        font-size: 21px;
+        line-height: 1.25;
+      }
+      p {
+        color: #48616a;
+      }
+      small {
+        font-size: 12px;
+      }
+      .wrap {
+        max-width: 1240px;
+        margin: auto;
+        padding: 0 32px;
+      }
+      .notice {
+        background: #d9efeb;
+        text-align: center;
+        padding: 8px 20px;
+        font-size: 12px;
+        letter-spacing: 0.06em;
+      }
+      .notice strong {
+        margin-right: 12px;
+      }
+      header {
+        background: #091d28;
+        color: #fff;
+      }
+      nav {
+        display: flex;
+        align-items: center;
+        gap: 24px;
+        padding: 20px 0;
+        flex-wrap: wrap;
+      }
+      nav .brand {
+        margin-right: auto;
+      }
+      nav img {
+        width: 190px;
+        display: block;
+      }
+      nav a {
+        text-decoration: none;
+        display: inline-flex;
+        align-items: center;
+        font-size: 14px;
+      }
+      .cta,
+      button {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+        border: 0;
+        border-radius: 8px;
+        background: #63dce5;
+        color: #06202b;
+        padding: 13px 22px;
+        text-decoration: none;
+        font-weight: 700;
+      }
+      .secondary {
+        background: transparent;
+        border: 1px solid #7a999f;
+        color: inherit;
+      }
+      .eyebrow {
+        font-size: 12px;
+        letter-spacing: 0.18em;
+        text-transform: uppercase;
+        font-weight: 750;
+        color: #166770;
+        margin-bottom: 18px;
+      }
+      .hero {
+        background: #091d28;
+        color: #fff;
+        padding: 72px 0 90px;
+      }
+      .hero p {
+        color: #b8cbd0;
+        font-size: 19px;
+        max-width: 520px;
+      }
+      .hero .eyebrow {
+        color: #74dfe5;
+      }
+      .split {
+        display: grid;
+        grid-template-columns: 1fr 1.05fr;
+        gap: 58px;
+        align-items: center;
+      }
+      .actions {
+        display: flex;
+        gap: 12px;
+        flex-wrap: wrap;
+        margin: 28px 0 15px;
+      }
+      .hero small {
+        color: #a8bec5;
+      }
+      .demo {
+        padding: 16px;
+        background: #12323d;
+        border: 1px solid #36545e;
+        border-radius: 16px;
+        box-shadow: 0 24px 70px #0004;
+        transform: rotate(-1deg);
+      }
+      .demo-top {
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+        font-size: 11px;
+        letter-spacing: 0.08em;
+        margin-bottom: 14px;
+      }
+      .live {
+        color: #88e9d2;
+      }
+      .program {
+        display: grid;
+        grid-template-columns: 1fr 1fr 1.06fr;
+        gap: 7px;
+        min-height: 290px;
+      }
+      .ice {
+        background: #eaf3f1;
+        position: relative;
+        border-radius: 5px;
+        overflow: hidden;
+        display: grid;
+        place-items: center;
+      }
+      .ice:before {
+        content: "";
+        width: 85%;
+        aspect-ratio: 1;
+        border: 17px solid #74b4c8;
+        border-radius: 50%;
+        box-shadow: inset 0 0 0 15px #f9fcfa;
+        background: radial-gradient(
+          circle,
+          #f8fbf9 0 12%,
+          #dd6462 13% 34%,
+          #f8fbf9 35%
+        );
+        position: absolute;
+        top: 48px;
+      }
+      .ice:after {
+        content: "";
+        width: 1px;
+        height: 100%;
+        background: #bb5757;
+        position: absolute;
+      }
+      .ice span {
+        position: absolute;
+        bottom: 12px;
+        color: #35525c;
+        font-size: 11px;
+      }
+      .program-side {
+        background: #071c25;
+        border-radius: 5px;
+        padding: 12px;
+        font-size: 12px;
+      }
+      .program-side p {
+        font-size: 10px;
+        margin: 5px 0 15px;
+      }
+      .score {
+        display: flex;
+        justify-content: space-between;
+        border-top: 1px solid #34515c;
+        padding: 9px 0;
+        font-size: 11px;
+      }
+      .sponsor {
+        background: #f2f0e3;
+        color: #17343e;
+        text-align: center;
+        padding: 20px 5px;
+        margin-top: 16px;
+        border-radius: 5px;
+        font-size: 11px;
+      }
+      .program-side img {
+        width: 100%;
+        margin-top: 20px;
+      }
+      .caption {
+        font-size: 12px !important;
+        color: #b7cbd0 !important;
+        margin: 14px 0 0 !important;
+      }
+      .strip {
+        display: flex;
+        justify-content: space-between;
+        gap: 20px;
+        flex-wrap: wrap;
+        padding: 24px 0;
+        border-bottom: 1px solid #cbdad9;
+        font-size: 14px;
+        font-weight: 650;
+      }
+      .section {
+        padding: 86px 0;
+      }
+      .intro {
+        max-width: 640px;
+        margin-bottom: 36px;
+      }
+      .grid3 {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 22px;
+      }
+      .tile {
+        background: white;
+        padding: 28px;
+        border: 1px solid #d4e0df;
+        border-radius: 14px;
+      }
+      .number {
+        font-size: 13px;
+        color: #1c737d;
+        display: block;
+        margin-bottom: 22px;
+      }
+      .tint {
+        background: #e4efed;
+      }
+      .flow {
+        display: grid;
+        grid-template-columns: 1fr 36px 1fr 36px 1fr;
+        align-items: center;
+        gap: 10px;
+        margin: 34px 0;
+      }
+      .node {
+        padding: 24px;
+        background: #fff;
+        border: 1px solid #b9d0ce;
+        border-radius: 12px;
+        text-align: center;
+      }
+      .node b {
+        display: block;
+        margin: 8px 0;
+      }
+      .node small {
+        display: block;
+        color: #4d6971;
+      }
+      .arrow {
+        font-size: 30px;
+        text-align: center;
+        color: #36828a;
+      }
+      .gear {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 20px;
+      }
+      .gear article {
+        border-top: 3px solid #7ca9ae;
+        padding: 20px 0;
+      }
+      .gear p {
+        font-size: 14px;
+      }
+      .device {
+        height: 66px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+        margin-bottom: 18px;
+      }
+      .phone {
+        width: 32px;
+        height: 59px;
+        border: 3px solid #26515e;
+        border-radius: 7px;
+        background: #d3e9e6;
+      }
+      .laptop {
+        width: 94px;
+        height: 57px;
+        border: 4px solid #26515e;
+        border-bottom-width: 9px;
+        border-radius: 6px;
+        background: #d3e9e6;
+      }
+      .mic {
+        width: 22px;
+        height: 45px;
+        background: #26515e;
+        border-radius: 14px;
+      }
+      .network {
+        font-size: 34px;
+        color: #26515e;
+      }
+      .studio-image {
+        display: block;
+        width: 100%;
+        border-radius: 14px;
+        border: 1px solid #34515b;
+      }
+      .dark {
+        background: #0d2934;
+        color: white;
+      }
+      .dark p {
+        color: #bfd1d5;
+      }
+      .tabs {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+        margin-bottom: 24px;
+      }
+      .tabs button {
+        background: #dbe8e5;
+        color: #173b46;
+      }
+      .tabs button[aria-pressed="true"] {
+        background: #123c49;
+        color: white;
+      }
+      .feature {
+        padding: 20px 0 0;
+        min-height: 110px;
+      }
+      .team-preview {
+        background: #fff;
+        border: 1px solid #cadcda;
+        border-radius: 14px;
+        box-shadow: 0 18px 50px #143b4514;
+        overflow: hidden;
+      }
+      .team-head {
+        background: #204d57;
+        color: white;
+        padding: 24px;
+        display: flex;
+        align-items: center;
+        gap: 16px;
+      }
+      .team-head img {
+        width: 58px;
+        height: 58px;
+        object-fit: contain;
+      }
+      .team-head p {
+        color: #d7e9e8;
+        margin: 0;
+        font-size: 12px;
+      }
+      .team-content {
+        display: grid;
+        grid-template-columns: 1.6fr 1fr;
+        gap: 15px;
+        padding: 20px;
+      }
+      .mini {
+        border: 1px solid #d9e1df;
+        border-radius: 7px;
+        padding: 13px;
+        font-size: 12px;
+        margin-bottom: 13px;
+      }
+      .mini p {
+        font-size: 12px;
+        margin: 5px 0;
+      }
+      .game-row {
+        display: flex;
+        justify-content: space-between;
+        gap: 8px;
+        padding: 8px 0;
+        border-bottom: 1px solid #e0e7e4;
+      }
+      .pill {
+        font-size: 11px;
+        background: #d8eee8;
+        color: #17604e;
+        padding: 3px 8px;
+        border-radius: 20px;
+      }
+      .planned {
+        background: #f6e9ce;
+        color: #765017;
+      }
+      .purchase {
+        display: grid;
+        grid-template-columns: 1.2fr 1fr;
+        gap: 40px;
+        background: #fff;
+        border: 1px solid #c9dad6;
+        border-radius: 16px;
+        padding: 36px;
+      }
+      .steps {
+        margin: 0;
+        padding-left: 24px;
+      }
+      .steps li {
+        padding: 7px 0;
+      }
+      .price {
+        font-size: 28px;
+        letter-spacing: -0.03em;
+        color: #143944;
+      }
+      .faq {
+        max-width: 820px;
+      }
+      details {
+        border-bottom: 1px solid #b9cfca;
+        padding: 15px 0;
+      }
+      summary {
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        font-weight: 650;
+      }
+      details p {
+        margin: 12px 0;
+      }
+      .closing {
+        text-align: center;
+        padding: 70px 20px;
+        background: #aee6df;
+      }
+      .closing p {
+        max-width: 600px;
+        margin: auto;
+      }
+      footer {
+        background: #091d28;
+        color: #c4d4d8;
+        padding: 30px 0;
+        font-size: 13px;
+      }
+      footer .wrap {
+        display: flex;
+        gap: 22px;
+        flex-wrap: wrap;
+        justify-content: space-between;
+      }
+      dialog {
+        border: 1px solid #bdd2cf;
+        border-radius: 16px;
+        padding: 30px;
+        width: min(600px, calc(100% - 32px));
+        max-height: 90vh;
+        color: #183c47;
+      }
+      dialog::backdrop {
+        background: #00131bd0;
+      }
+      dialog .close {
+        float: right;
+        padding: 8px 14px;
+        background: #e0ece9;
+      }
+      .journey-step {
+        padding: 20px 0;
+      }
+      .journey-step h3 {
+        font-size: 28px;
+      }
+      .fake-field {
+        padding: 13px;
+        border: 1px solid #c5d5d0;
+        border-radius: 7px;
+        margin: 10px 0;
+        color: #56716f;
+        background: #f6f9f8;
+      }
+      .mock-note {
+        font-size: 13px;
+        color: #75541d;
+        background: #fbf0d9;
+        padding: 12px;
+        border-radius: 7px;
+      }
+      .progress {
+        display: flex;
+        gap: 5px;
+        margin: 24px 0;
+      }
+      .progress span {
+        height: 5px;
+        background: #dae7e2;
+        flex: 1;
+      }
+      .progress span.on {
+        background: #288f96;
+      }
+      [hidden] {
+        display: none !important;
+      }
+      @media (max-width: 900px) {
+        .split {
+          grid-template-columns: 1fr;
+          gap: 32px;
+        }
+        .hero {
+          padding: 42px 0 55px;
+        }
+        .demo {
+          transform: none;
+        }
+        .gear {
+          grid-template-columns: repeat(2, 1fr);
+        }
+        .grid3 {
+          grid-template-columns: 1fr;
+        }
+        .section {
+          padding: 54px 0;
+        }
+        nav {
+          gap: 16px;
+        }
+        .nav-section {
+          display: none;
+        }
+        .purchase {
+          grid-template-columns: 1fr;
+        }
+      }
+      @media (max-width: 480px) {
+        .wrap {
+          padding: 0 20px;
+        }
+        nav img {
+          width: 148px;
+        }
+        nav .cta {
+          display: none;
+        }
+        .program {
+          min-height: 260px;
+          gap: 4px;
+        }
+        .program-side {
+          padding: 7px;
+        }
+        .ice:before {
+          border-width: 10px;
+          box-shadow: inset 0 0 0 8px #f9fcfa;
+        }
+        .flow {
+          grid-template-columns: 1fr;
+        }
+        .arrow {
+          transform: rotate(90deg);
+        }
+        .team-content {
+          grid-template-columns: 1fr;
+        }
+        .gear {
+          gap: 15px;
+        }
+        .purchase {
+          padding: 24px;
+        }
+        .section h2 {
+          max-width: 100%;
+        }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        html {
+          scroll-behavior: auto;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="notice">
+      <strong>HOMEPAGE CONCEPT · 01</strong> Proposed copy and interactions. No
+      purchases or account changes.
+    </div>
+    <header>
+      <div class="wrap">
+        <nav aria-label="Main navigation">
+          <a class="brand" href="#"
+            ><img src="assets/logo.png" alt="CurlStreamer home" /></a
+          ><a class="nav-section" href="#how">How it works</a
+          ><a class="nav-section" href="#equipment">Equipment</a
+          ><a class="nav-section" href="#teams">Team pages</a
+          ><a class="nav-section" href="#start">Get started</a
+          ><a href="https://curlstreamer.app/login">Log in ↗</a
+          ><button class="cta" data-journey>Sign up</button>
+        </nav>
+      </div>
+    </header>
+    <main>
+      <section class="hero">
+        <div class="wrap split">
+          <div>
+            <div class="eyebrow">Your team. Your game. Your audience.</div>
+            <h1>Bring the rink<br />to everyone.</h1>
+            <p>
+              Turn your phones into curling cameras. Bring the score, team audio
+              and sponsors together in one YouTube broadcast.
+            </p>
+            <div class="actions">
+              <button data-journey>Get started →</button
+              ><a class="cta secondary" href="#how">See how it works</a>
+            </div>
+            <small>Windows Studio + phone cameras + your YouTube channel</small>
+          </div>
+          <div class="demo">
+            <div class="demo-top">
+              <span>CURLSTREAMER BROADCAST</span
+              ><span class="live">● EXAMPLE LAYOUT</span>
+            </div>
+            <div class="program">
+              <div class="ice"><span>CAMERA 1</span></div>
+              <div class="ice"><span>CAMERA 2</span></div>
+              <div class="program-side">
+                <b>Club Classic<br />Game 1</b>
+                <p>September 17 · 8:00 AM EDT</p>
+                <div class="score"><span>Home team</span><b>4</b></div>
+                <div class="score"><span>Away team</span><b>3</b></div>
+                <div class="sponsor">
+                  YOUR TEAM IS SPONSORED BY<br /><strong>Your sponsors</strong>
+                </div>
+                <img src="assets/logo.png" alt="CurlStreamer" />
+              </div>
+            </div>
+            <p class="caption">
+              Broadcast diagram. Final homepage: replace the ice illustrations
+              with real rink footage.
+            </p>
+          </div>
+        </div>
+      </section>
+      <div class="wrap strip">
+        <span>Two camera views</span><span>Live scoring</span
+        ><span>Team & camera audio</span><span>Sponsor visibility</span
+        ><span>Your own team page</span>
+      </div>
+      <section class="section" id="how">
+        <div class="wrap">
+          <div class="intro">
+            <div class="eyebrow">From setup to first stone</div>
+            <h2>A game-day workflow<br />built around curling.</h2>
+            <p>
+              Plan the season in your browser. Open Studio at the rink. Give
+              family, friends and supporters one place to follow along.
+            </p>
+          </div>
+          <div class="grid3">
+            <article class="tile">
+              <span class="number">01 / PLAN</span>
+              <h3>Set up the game</h3>
+              <p>
+                Choose the event, opponent, date and local time. Add a game
+                number if you want one. Reserve a YouTube watch link for a
+                scheduled stream.
+              </p>
+            </article>
+            <article class="tile">
+              <span class="number">02 / CONNECT</span>
+              <h3>Scan. Frame. Check.</h3>
+              <p>
+                Open Windows Studio and scan the camera invitations with your
+                phones. Check both pictures, choose your audio and bring in the
+                sponsors.
+              </p>
+            </article>
+            <article class="tile">
+              <span class="number">03 / BROADCAST</span>
+              <h3>Share every end</h3>
+              <p>
+                Start the YouTube broadcast when ready. Score from Studio or
+                invite a remote scorer. Finish with results and a replay link
+                for your team page.
+              </p>
+            </article>
+          </div>
+        </div>
+      </section>
+      <section class="section tint" id="equipment">
+        <div class="wrap">
+          <div class="intro">
+            <div class="eyebrow">The setup</div>
+            <h2>Phones on the ice.<br />Studio at the controls.</h2>
+            <p>A practical setup with equipment your team may already have.</p>
+          </div>
+          <div
+            class="flow"
+            aria-label="Phone cameras send video over the local network to Windows Studio, which sends the broadcast over the internet to YouTube"
+          >
+            <div class="node">
+              <div class="device">
+                <div class="phone"></div>
+                <div class="phone"></div>
+              </div>
+              <b>Phone cameras</b><small>Stable mounts + power</small>
+            </div>
+            <div class="arrow" aria-hidden="true">→</div>
+            <div class="node">
+              <div class="device"><div class="laptop"></div></div>
+              <b>Windows Studio</b
+              ><small>Same local network as the cameras</small>
+            </div>
+            <div class="arrow" aria-hidden="true">→</div>
+            <div class="node">
+              <div class="device network" aria-hidden="true">▶</div>
+              <b>Your YouTube channel</b
+              ><small>Internet upload → viewers everywhere</small>
+            </div>
+          </div>
+          <div class="gear">
+            <article>
+              <h3>Windows computer</h3>
+              <p>
+                Runs Studio, receives the cameras and sends the finished
+                broadcast. Exact supported specifications will accompany the
+                installer.
+              </p>
+            </article>
+            <article>
+              <h3>One or two phones</h3>
+              <p>
+                Browser camera connections, secure mounts and charging power for
+                the game. Two phones give you both camera views.
+              </p>
+            </article>
+            <article>
+              <h3>Reliable network</h3>
+              <p>
+                A local network that lets the phones reach the PC, plus reliable
+                internet upload. Check the rink network before game day.
+              </p>
+            </article>
+            <article>
+              <h3>Optional wireless audio</h3>
+              <p>
+                A compatible USB microphone receiver and player microphones.
+                Camera microphones can provide ambience. Use headphones to check
+                the mix.
+              </p>
+            </article>
+          </div>
+          <small
+            >You also need a YouTube channel enabled for live streaming. A
+            separate phone or tablet can handle remote scoring.</small
+          >
+        </div>
+      </section>
+      <section class="section dark">
+        <div class="wrap split">
+          <div>
+            <div class="eyebrow" style="color: #75d9df">
+              One game. One control room.
+            </div>
+            <h2>Everything that belongs<br />in the broadcast.</h2>
+            <p>
+              Two camera views, end-by-end scoring, microphone levels and
+              sponsor placement—managed together.
+            </p>
+            <p>
+              Give your scorer a dedicated invitation so they can update the
+              scoreboard while the operator looks after the stream.
+            </p>
+            <small
+              >Actual development screenshot. Final launch page will use a
+              fresh, cleaned-up capture.</small
+            >
+          </div>
+          <img
+            class="studio-image"
+            src="assets/studio.png"
+            alt="CurlStreamer Studio showing score controls, two camera connections, sponsors, YouTube and four microphone controls"
+            loading="eager"
+          />
+        </div>
+      </section>
+      <section class="section" id="teams">
+        <div class="wrap split">
+          <div>
+            <div class="eyebrow">Beyond the broadcast</div>
+            <h2>A home for<br />your whole season.</h2>
+            <p>
+              Your team gets a public address, with your name, colours and
+              identity. Choose what supporters can see.
+            </p>
+            <div class="tabs" aria-label="Team page features">
+              <button aria-pressed="true" data-feature="games">Games</button
+              ><button aria-pressed="false" data-feature="news">
+                News & photos</button
+              ><button aria-pressed="false" data-feature="sponsors">
+                Sponsors</button
+              ><button aria-pressed="false" data-feature="social">
+                Social media
+              </button>
+            </div>
+            <div class="feature" aria-live="polite">
+              <h3 id="feature-title">The season, in one place</h3>
+              <p id="feature-copy">
+                Upcoming games, results and YouTube links, with event filters to
+                find the right match.
+              </p>
+              <span class="pill" id="feature-status"
+                >Available in the current product</span
+              >
+            </div>
+          </div>
+          <div class="team-preview">
+            <div class="team-head">
+              <img src="assets/team.png" alt="Team Benning logo" />
+              <div>
+                <b>Team Benning</b>
+                <p>Your team. Your season.</p>
+                <small>teambenning.curlstreamer.app</small>
+              </div>
+            </div>
+            <div class="team-content">
+              <div>
+                <div class="mini">
+                  <b>Team Benning Games</b>
+                  <div class="game-row">
+                    <span>Club Classic · Game 1</span><span>Watch ↗</span>
+                  </div>
+                  <div class="game-row">
+                    <span>Club Classic · Game 2</span><span>Upcoming</span>
+                  </div>
+                </div>
+                <div class="mini">
+                  <b>Team Benning News</b>
+                  <p>
+                    Our season starts here <span aria-hidden="true">＋</span>
+                  </p>
+                  <p>
+                    Thank you to our supporters
+                    <span aria-hidden="true">＋</span>
+                  </p>
+                </div>
+                <div class="mini">
+                  <b>Proudly sponsored by</b>
+                  <p>Sponsor images · names · website links</p>
+                </div>
+              </div>
+              <aside>
+                <div class="mini">
+                  <b>About the team</b>
+                  <p>Team bio and photo</p>
+                  <hr />
+                  <b>Players</b>
+                  <p>Fourth · Third / Skip<br />Second · Lead</p>
+                  <hr />
+                  <b>Accomplishments</b>
+                  <p>Tournament results</p>
+                </div>
+              </aside>
+            </div>
+            <div style="padding: 0 20px 16px">
+              <small>Illustrative team page content</small>
+            </div>
+          </div>
+        </div>
+      </section>
+      <section class="section tint" id="start">
+        <div class="wrap">
+          <div class="intro">
+            <div class="eyebrow">Getting started</div>
+            <h2>Your first broadcast<br />starts with your team.</h2>
+            <p>
+              Proposed signup journey. Pricing and public downloads are still to
+              be finalized.
+            </p>
+          </div>
+          <div class="purchase">
+            <div>
+              <span class="pill planned">PLANNED COMMERCIAL LAUNCH</span>
+              <h3 style="margin-top: 18px">CurlStreamer for your team</h3>
+              <p>
+                Bring the broadcast, schedule, sponsors and public team page
+                into one account.
+              </p>
+              <div class="price">Pricing to be announced</div>
+              <p>
+                No sample price or trial promise until the offer is decided.
+              </p>
+              <button data-journey>Preview signup journey →</button>
+            </div>
+            <ol class="steps">
+              <li>
+                <b>Create your account</b><br />Verify your email and name your
+                team.
+              </li>
+              <li>
+                <b>Choose your plan</b><br />Review the price and subscription
+                terms.
+              </li>
+              <li>
+                <b>Complete secure checkout</b><br />Receive confirmation and
+                manage billing from your account.
+              </li>
+              <li>
+                <b>Install and connect</b><br />Download Studio, connect YouTube
+                and run the setup check.
+              </li>
+              <li>
+                <b>Schedule your first game</b><br />Publish your team page when
+                you are ready.
+              </li>
+            </ol>
+          </div>
+        </div>
+      </section>
+      <section class="section">
+        <div class="wrap faq">
+          <div class="eyebrow">Before you start</div>
+          <h2>A few good questions.</h2>
+          <details>
+            <summary>Can I manage the team away from the rink?</summary>
+            <p>
+              Yes. Use the website for scheduling and team information. The
+              Windows computer runs Studio for the broadcast at the rink.
+            </p>
+          </details>
+          <details>
+            <summary>Do viewers need a CurlStreamer account?</summary>
+            <p>
+              Published team pages are public. The broadcast opens on YouTube
+              and follows the visibility and viewing settings of that video.
+            </p>
+          </details>
+          <details>
+            <summary>Can someone else keep score?</summary>
+            <p>
+              Yes. Share the game's remote scorer invitation so another phone or
+              tablet can update the scoreboard.
+            </p>
+          </details>
+          <details>
+            <summary>
+              Does it automatically publish to Facebook and Instagram?
+            </summary>
+            <p>
+              Direct social publishing is planned and depends on completing Meta
+              setup and approvals. The current team page can display social
+              profile links. The launch website should keep these capabilities
+              distinct.
+            </p>
+          </details>
+          <details>
+            <summary>Can I change my team's public address later?</summary>
+            <p>
+              Choose carefully: the team's subdomain is fixed after first
+              publication. You can update page content and control which
+              sections are visible.
+            </p>
+          </details>
+          <details>
+            <summary>Where do I get Studio?</summary>
+            <p>
+              A public download page is planned with the current version, system
+              requirements and installation steps. This concept does not
+              distribute an installer.
+            </p>
+          </details>
+        </div>
+      </section>
+      <section class="closing">
+        <div class="eyebrow">Let them be part of it</div>
+        <h2>
+          They can't all be at the rink.<br />They can still follow your team.
+        </h2>
+        <p>Make the game easy to watch and the season easy to follow.</p>
+        <div class="actions" style="justify-content: center">
+          <button data-journey>Get started →</button
+          ><a class="cta secondary" href="#equipment">Check the equipment</a>
+        </div>
+      </section>
+    </main>
+    <footer>
+      <div class="wrap">
+        <span>CurlStreamer · A home for your game.</span
+        ><span
+          >Planned footer: Download · Setup guide · Support · Privacy ·
+          Terms</span
+        >
+      </div>
+    </footer>
+    <dialog id="journey" aria-labelledby="journey-title">
+      <button class="close" aria-label="Close signup preview">×</button>
+      <div class="eyebrow">Signup journey preview</div>
+      <h2 id="journey-title">Get your team ready</h2>
+      <p class="mock-note">
+        Design preview only. No personal information is collected and no payment
+        is taken.
+      </p>
+      <div class="progress" aria-hidden="true">
+        <span></span><span></span><span></span><span></span><span></span>
+      </div>
+      <div class="journey-step" aria-live="polite"></div>
+      <div class="actions">
+        <button id="previous" class="secondary">Back</button
+        ><button id="next">Continue →</button>
+      </div>
+    </dialog>
+    <script>
+      const features = {
+        games: [
+          "The season, in one place",
+          "Upcoming games, results and YouTube links, with event filters to find the right match.",
+          false,
+        ],
+        news: [
+          "Tell the story behind the score",
+          "Publish team news with images and links. Share event photos, your roster and accomplishments.",
+          false,
+        ],
+        sponsors: [
+          "Give your supporters a place to shine",
+          "Show sponsor images, names and business links on the team page, with sponsor placement in your broadcast too.",
+          false,
+        ],
+        social: [
+          "Connect your team’s social presence",
+          "Social profile links are available. Facebook and Instagram account connections, feeds and direct post publishing are planned, subject to Meta approvals.",
+          true,
+        ],
+      };
+      document.querySelectorAll("[data-feature]").forEach((b) =>
+        b.addEventListener("click", () => {
+          document
+            .querySelectorAll("[data-feature]")
+            .forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
+          const v = features[b.dataset.feature];
+          document.getElementById("feature-title").textContent = v[0];
+          document.getElementById("feature-copy").textContent = v[1];
+          const s = document.getElementById("feature-status");
+          s.textContent = v[2]
+            ? "Profile links now · integrations planned"
+            : "Available in the current product";
+          s.classList.toggle("planned", v[2]);
+        }),
+      );
+      const steps = [
+        [
+          "Create your team account",
+          "Email verification → team name → account owner. Existing customers use Log in.",
+          "Email address · Team name",
+        ],
+        [
+          "Choose your plan",
+          "Show the full price, billing interval, included features and cancellation terms before proceeding.",
+          "Plan and price to be decided",
+        ],
+        [
+          "Secure checkout",
+          "Use a hosted payment screen. Handle payment success, decline and cancellation. Activate access only after confirmed payment.",
+          "Payment preview — no card details requested",
+        ],
+        [
+          "Set up Studio",
+          "Download the Windows installer. Sign in, connect your YouTube channel and check cameras, audio and network.",
+          "Installer · YouTube connection · Setup checklist",
+        ],
+        [
+          "Make it yours",
+          "Add your logo and sponsors, schedule the first game and choose whether to publish your team page.",
+          "Team setup → Game dashboard",
+        ],
+      ];
+      let step = 0;
+      const d = document.getElementById("journey");
+      function render() {
+        const s = steps[step];
+        d.querySelector(".journey-step").innerHTML =
+          "<small>STEP " +
+          (step + 1) +
+          " OF 5</small><h3>" +
+          s[0] +
+          "</h3><p>" +
+          s[1] +
+          '</p><div class="fake-field">' +
+          s[2] +
+          "</div>";
+        d.querySelectorAll(".progress span").forEach((x, i) =>
+          x.classList.toggle("on", i <= step),
+        );
+        document.getElementById("previous").disabled = step === 0;
+        document.getElementById("next").textContent =
+          step === 4 ? "Finish preview" : "Continue →";
+      }
+      document.querySelectorAll("[data-journey]").forEach((b) =>
+        b.addEventListener("click", () => {
+          step = 0;
+          render();
+          d.showModal();
+        }),
+      );
+      d.querySelector(".close").addEventListener("click", () => d.close());
+      document.getElementById("previous").addEventListener("click", () => {
+        if (step > 0) {
+          step--;
+          render();
+        }
+      });
+      document.getElementById("next").addEventListener("click", () => {
+        if (step === 4) d.close();
+        else {
+          step++;
+          render();
+        }
+      });
+    </script>
+    <script>
+      steps[0] = [
+        "Create your team account",
+        "Choose Google, Apple or email. Each takes you into the same account and team setup. These buttons simulate the choice only.",
+        "Team name · Account owner",
+      ];
+      steps[1] = [
+        "Try it with your team",
+        "Proposed option: a trial without a card. Show its expiry date clearly. Trial length, access limits and the final offer are still to be decided.",
+        "Trial → Choose a paid plan when ready",
+      ];
+      steps[2] = [
+        "Choose a subscription",
+        "After a trial, review pricing and terms, then use hosted checkout. No automatic charge for a trial without a card. Manage renewals, invoices and cancellation in Account & Settings.",
+        "Subscription & Billing → Secure checkout",
+      ];
+      const baseRender = render;
+      render = function () {
+        baseRender();
+        if (step === 0) {
+          const choices = document.createElement("div");
+          choices.className = "actions";
+          [
+            "Continue with Google",
+            "Continue with Apple",
+            "Continue with email",
+          ].forEach((label) => {
+            const b = document.createElement("button");
+            b.textContent = label;
+            b.className = "secondary";
+            b.addEventListener("click", () => {
+              step = 1;
+              render();
+            });
+            choices.append(b);
+          });
+          d.querySelector(".journey-step").append(choices);
+        }
+      };
+      const billing = document.createElement("dialog");
+      billing.setAttribute("aria-label", "Subscription and billing concept");
+      billing.innerHTML =
+        '<button class="close" aria-label="Close billing preview">×</button><div class="eyebrow">Account & Settings · Proposed panel</div><h2>Subscription & Billing</h2><p class="mock-note">Sample state only. No active trial or subscription is being created.</p><span class="pill">Trial</span><h3 style="margin-top:20px">Your team’s subscription</h3><p>Trial ends: [date]<br>Next charge: none — no payment method added</p><div class="fake-field">Plan · Price · Billing interval · Currency</div><p>Choose a plan before the trial ends to continue paid features. Your game records remain saved.</p><hr><h3>Billing controls</h3><p>Choose or change plan<br>Update payment method<br>View invoices<br>Cancel renewal — shows effective date</p><small>Proposed integration: Stripe-hosted Checkout and Customer Portal. Final provider and offer are not selected.</small>';
+      document.body.append(billing);
+      billing
+        .querySelector("button")
+        .addEventListener("click", () => billing.close());
+      const billingButton = document.createElement("button");
+      billingButton.className = "secondary";
+      billingButton.textContent = "Preview billing panel";
+      billingButton.style.marginTop = "12px";
+      billingButton.addEventListener("click", () => billing.showModal());
+      document.querySelector(".purchase > div").append(billingButton);
+    </script>
+  </body>
+</html>

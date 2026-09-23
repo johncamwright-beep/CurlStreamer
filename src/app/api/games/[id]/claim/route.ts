@@ -9,14 +9,29 @@ export async function POST(
   request: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
+  let verifiedInvitation = false;
   try {
     const { id } = await params;
     const client =
       request.headers.get("x-forwarded-for")?.split(",")[0] ?? "local";
-    if (!rateLimit(`claim:${id}:${client}`, 20))
+    // Aggregate by client rather than an attacker-controlled game id. Allow
+    // multiple teams' phones to reconnect behind one curling-club router.
+    let allowed;
+    try {
+      allowed = await rateLimit(`claim:${client.trim()}`, 120);
+    } catch {
+      return NextResponse.json(
+        {
+          error:
+            "The game connection is temporarily unavailable. Try again shortly.",
+        },
+        { status: 503 },
+      );
+    }
+    if (!allowed)
       return NextResponse.json(
         { error: "Too many attempts. Wait a minute and try again." },
-        { status: 429 },
+        { status: 429, headers: { "Retry-After": "60" } },
       );
     const body = schema.parse(await request.json());
     const claims = await readAccessToken(body.token);
@@ -28,6 +43,7 @@ export async function POST(
       !claims.exp
     )
       throw new Error();
+    verifiedInvitation = true;
     const authorization = await authorizeGame(
       new Request(request.url, {
         headers: { authorization: `Bearer ${body.token}` },
@@ -38,6 +54,14 @@ export async function POST(
         tokenAllowed: (access) => access.purpose === "invitation",
       },
     );
+    if (!authorization.ok && authorization.reason === "unavailable")
+      return NextResponse.json(
+        {
+          error:
+            "The game connection is temporarily unavailable. Try connecting again shortly.",
+        },
+        { status: 503 },
+      );
     if (!authorization.ok)
       return NextResponse.json(
         {
@@ -66,6 +90,14 @@ export async function POST(
           expiresIn: 21_600,
         });
   } catch {
+    if (verifiedInvitation)
+      return NextResponse.json(
+        {
+          error:
+            "The game connection is temporarily unavailable. Try connecting again shortly.",
+        },
+        { status: 503 },
+      );
     return NextResponse.json(
       { error: "This link is invalid or expired." },
       { status: 401 },

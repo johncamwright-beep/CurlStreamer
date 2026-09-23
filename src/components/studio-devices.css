@@ -1,0 +1,214 @@
+.studio-device-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  align-items: start;
+}
+.studio-device:last-child {
+  grid-column: 1 / -1;
+}
+.studio-device {
+  min-width: 0;
+  border: 1px solid #304456;
+  border-radius: 14px;
+  padding: 16px;
+  background: #101e2c;
+  color: #edf3f8;
+}
+.studio-device header {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  margin-bottom: 12px;
+}
+.studio-device h2 {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 650;
+}
+.studio-device-number {
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  display: grid;
+  place-items: center;
+  background: #183e48;
+  color: #78e1cc;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+.studio-device p {
+  color: #b8c7d4;
+  font-size: 14px;
+  line-height: 1.65;
+  margin: 10px 0;
+}
+.studio-device .studio-device-state {
+  margin: 3px 0 0;
+  font-size: 12px;
+  color: #b8c7d4;
+}
+.studio-device-state::before {
+  content: "";
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin-right: 6px;
+  border-radius: 50%;
+  background: #9caeba;
+}
+.studio-device-state[data-online="true"]::before {
+  background: #66dfc6;
+}
+.studio-device .studio-device-state[data-online="true"] {
+  color: #80eed4;
+  font-weight: 650;
+}
+.studio-device .studio-device-help {
+  font-size: 12px;
+}
+.studio-device-action {
+  display: flex;
+  min-height: 44px;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  margin-top: 12px;
+  border-radius: 10px;
+  background: #66dfc6;
+  color: #07262e;
+  padding: 12px;
+  font-size: 14px;
+  font-weight: 650;
+}
+.studio-device-action.secondary {
+  background: #1b3041;
+  color: #e0eaf2;
+  border: 1px solid #42596d;
+}
+.studio-device-action:disabled {
+  opacity: 0.55;
+  cursor: wait;
+}
+.studio-device :is(button, a, summary):focus-visible {
+  outline: 3px solid #78e1cc;
+  outline-offset: 4px;
+}
+.studio-device-qr {
+  margin-top: 18px;
+  text-align: center;
+}
+.studio-device-qr img {
+  width: 176px;
+  max-width: 100%;
+  height: auto;
+  display: block;
+  margin: auto;
+  border-radius: 10px;
+}
+.studio-qr-size {
+  display: block;
+  padding: 0;
+  margin: auto;
+  max-width: 100%;
+  background: white;
+  border-radius: 10px;
+  cursor: zoom-in;
+}
+.studio-device-qr[data-large="true"] img {
+  width: 320px;
+}
+.studio-device-qr[data-large="true"] .studio-qr-size {
+  cursor: zoom-out;
+}
+.studio-device-qr p {
+  font-size: 12px;
+}
+.studio-device-qr summary {
+  min-height: 44px;
+  padding: 12px 0;
+  cursor: pointer;
+  font-size: 13px;
+  color: #cad8e2;
+}
+.studio-device-qr a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  color: #78e1cc;
+  text-decoration: underline;
+}
+.studio-device [role="alert"] {
+  color: #fecaca;
+}
+.studio-connect-page {
+  max-width: 1280px;
+  margin: auto;
+  padding: 28px 32px 48px;
+  color: #edf3f8;
+}
+.studio-connect-page > header {
+  margin: 24px 0;
+}
+.studio-connect-page h1 {
+  font-size: 30px;
+  font-weight: 700;
+  letter-spacing: -0.025em;
+}
+.studio-connect-page > header p {
+  color: #b8c7d4;
+  margin-top: 8px;
+  line-height: 1.7;
+}
+.studio-connect-page > a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  color: #b9d7df;
+}
+.studio-connect-note {
+  margin-top: 24px;
+  padding: 18px 0;
+  border-top: 1px solid #304456;
+  color: #b8c7d4;
+  font-size: 14px;
+  line-height: 1.7;
+}
+@media (max-width: 520px) {
+  .studio-device-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .studio-connect-page {
+    padding: 20px;
+    max-width: 600px;
+  }
+}
+
+.studio-device-mic-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.studio-device-mic-controls > button {
+  width: auto;
+  margin: 0;
+  flex-shrink: 0;
+}
+.studio-device-mic-controls > label {
+  flex: 1;
+  min-width: 0;
+}
+.scoring-device-dock .studio-device > .studio-device-mic-controls {
+  grid-column: 2;
+  max-width: 230px;
+}
+.studio-device-mic-controls input {
+  width: 80px;
+}
+@media (max-width: 480px) {
+  .scoring-device-dock .studio-device > .studio-device-mic-controls {
+    grid-column: 1 / -1;
+    max-width: none;
+  }
+}

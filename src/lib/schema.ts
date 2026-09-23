@@ -1,14 +1,28 @@
 import { z } from "zod";
-export const gameSchema = z.object({
-  eventName: z.string().trim().min(2).max(100),
-  homeName: z.string().trim().min(1).max(50),
-  awayName: z.string().trim().min(1).max(50),
-  homeColor: z.string().regex(/^#[0-9a-fA-F]{6}$/),
-  awayColor: z.string().regex(/^#[0-9a-fA-F]{6}$/),
-  scheduledEnds: z.union([z.literal(8), z.literal(10)]),
-  youtubeTitle: z.string().trim().min(2).max(100),
-  youtubeVisibility: z.enum(["unlisted", "private", "public"]),
-});
+import { youtubeWatchUrlSchema } from "@/lib/youtube-watch";
+export const gameSchema = z
+  .object({
+    eventName: z.string().trim().min(2).max(100),
+    homeName: z.string().trim().min(1).max(50),
+    awayName: z.string().trim().min(1).max(50),
+    homeColor: z.string().regex(/^#[0-9a-fA-F]{6}$/),
+    awayColor: z.string().regex(/^#[0-9a-fA-F]{6}$/),
+    scheduledEnds: z.union([z.literal(8), z.literal(10)]),
+    youtubeEnabled: z.boolean().optional(),
+    /** A watch page hosted by an opponent or event organizer. */
+    sharedYoutubeWatchUrl: youtubeWatchUrlSchema.nullish(),
+    youtubeTitle: z.string().trim().min(2).max(100),
+    youtubeVisibility: z.enum(["unlisted", "private", "public"]),
+  })
+  .superRefine((value, context) => {
+    if (value.youtubeEnabled && value.sharedYoutubeWatchUrl)
+      context.addIssue({
+        code: "custom",
+        path: ["sharedYoutubeWatchUrl"],
+        message:
+          "Choose either your team YouTube stream or a shared watch link.",
+      });
+  });
 const scoringIntent = {
   intentId: z.uuid(),
   expectedLastEventId: z.string().min(1).max(100).nullable(),
@@ -49,9 +63,59 @@ export const actionSchema = z.discriminatedUnion("type", [
   }),
   z.object({
     type: z.literal("layout"),
-    layout: z.enum(["split", "home", "away"]),
+    layout: z.enum(["split", "home", "away", "none"]),
   }),
   z.object({ type: z.literal("audio"), muted: z.boolean() }),
+  z.object({
+    type: z.literal("camera-audio"),
+    role: z.enum(["camera-home", "camera-away"]),
+    enabled: z.boolean(),
+    volume: z.number().finite().min(0).max(1).optional(),
+  }),
+  z.object({
+    type: z.literal("camera-audio-status"),
+    role: z.enum(["camera-home", "camera-away"]),
+    status: z.enum([
+      "off",
+      "pending",
+      "active",
+      "permission-required",
+      "error",
+    ]),
+  }),
+  z.object({
+    type: z.literal("camera-zoom"),
+    role: z.enum(["camera-home", "camera-away"]),
+    commandId: z.uuid(),
+    value: z.number().finite().min(0).max(100),
+  }),
+  z
+    .object({
+      type: z.literal("camera-zoom-status"),
+      role: z.enum(["camera-home", "camera-away"]),
+      supported: z.boolean(),
+      min: z.number().finite().min(0).max(100).optional(),
+      max: z.number().finite().min(0).max(100).optional(),
+      step: z.number().finite().positive().max(100).optional(),
+      value: z.number().finite().min(0).max(100).optional(),
+    })
+    .superRefine((value, context) => {
+      if (!value.supported) return;
+      if (
+        value.min === undefined ||
+        value.max === undefined ||
+        value.step === undefined ||
+        value.value === undefined ||
+        value.max <= value.min ||
+        value.value < value.min ||
+        value.value > value.max
+      )
+        context.addIssue({
+          code: "custom",
+          message:
+            "A supported camera must report a valid hardware zoom range.",
+        });
+    }),
   z.object({
     type: z.literal("camera-framing"),
     role: z.enum(["camera-home", "camera-away"]),

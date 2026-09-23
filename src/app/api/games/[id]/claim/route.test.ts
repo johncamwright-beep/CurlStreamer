@@ -30,6 +30,24 @@ const request = () =>
   });
 
 describe("atomic role claim route", () => {
+  it("returns a retryable outage without accepting claims when the limiter fails", async () => {
+    mocks.rateLimit.mockRejectedValue(new Error("offline"));
+    const response = await POST(request(), {
+      params: Promise.resolve({ id: "game-1" }),
+    });
+    expect(response.status).toBe(503);
+    expect(mocks.claimRole).not.toHaveBeenCalled();
+    expect(mocks.readAccessToken).not.toHaveBeenCalled();
+  });
+  it("returns 429 and a retry interval when shared attempts are exhausted", async () => {
+    mocks.rateLimit.mockResolvedValue(false);
+    const response = await POST(request(), {
+      params: Promise.resolve({ id: "game-1" }),
+    });
+    expect(response.status).toBe(429);
+    expect(response.headers.get("retry-after")).toBe("60");
+    expect(mocks.claimRole).not.toHaveBeenCalled();
+  });
   beforeEach(() => {
     vi.resetAllMocks();
     mocks.rateLimit.mockReturnValue(true);
@@ -77,5 +95,29 @@ describe("atomic role claim route", () => {
     });
     expect(response.status).toBe(409);
     expect(mocks.issueParticipantToken).not.toHaveBeenCalled();
+  });
+
+  it("reports unavailable game storage without calling a valid invitation expired", async () => {
+    mocks.authorizeGame.mockResolvedValue({ ok: false, reason: "unavailable" });
+    const response = await POST(request(), {
+      params: Promise.resolve({ id: "game-1" }),
+    });
+    expect(response.status).toBe(503);
+    expect((await response.json()).error).toContain("temporarily unavailable");
+    expect(mocks.claimRole).not.toHaveBeenCalled();
+  });
+
+  it("keeps invalid signatures rejected but treats failures after verification as retryable", async () => {
+    mocks.readAccessToken.mockRejectedValueOnce(new Error("bad signature"));
+    const invalid = await POST(request(), {
+      params: Promise.resolve({ id: "game-1" }),
+    });
+    expect(invalid.status).toBe(401);
+    mocks.claimRole.mockRejectedValueOnce(new Error("database unavailable"));
+    const unavailable = await POST(request(), {
+      params: Promise.resolve({ id: "game-1" }),
+    });
+    expect(unavailable.status).toBe(503);
+    expect((await unavailable.json()).error).not.toContain("expired");
   });
 });

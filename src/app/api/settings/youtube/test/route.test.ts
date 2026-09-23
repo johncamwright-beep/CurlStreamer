@@ -101,7 +101,8 @@ describe("YouTube connection test", () => {
 
   it("marks an invalid grant as requiring reconnect", async () => {
     mocks.refresh.mockRejectedValue(new Error("youtube_reconnect_required"));
-    await POST(request());
+    const response = await POST(request());
+    expect((await response.json()).error).toContain("Reconnect this channel");
     expect(mocks.finish).toHaveBeenCalledWith(
       user,
       organizationId,

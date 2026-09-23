@@ -82,7 +82,13 @@ export async function POST(request: Request) {
       ).catch(() => undefined);
     }
     return NextResponse.json(
-      { error: "YouTube connection test failed" },
+      {
+        error:
+          error instanceof Error &&
+          error.message === "youtube_reconnect_required"
+            ? "Google authorization expired or was revoked. Reconnect this channel in your regular browser, then test again."
+            : "YouTube connection test failed",
+      },
       { status: 409 },
     );
   }

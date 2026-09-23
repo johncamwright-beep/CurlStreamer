@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const user = { id: "11111111-1111-4111-8111-111111111111" };
 const organizationId = "22222222-2222-4222-8222-222222222222";
@@ -18,6 +18,7 @@ const mocks = vi.hoisted(() => ({
   channel: vi.fn(),
   encrypt: vi.fn(),
   complete: vi.fn(),
+  existing: vi.fn(),
 }));
 
 vi.mock("@/lib/youtube-route-auth", () => ({
@@ -26,6 +27,7 @@ vi.mock("@/lib/youtube-route-auth", () => ({
 vi.mock("@/lib/youtube-connection", () => ({
   consumeYouTubeOAuth: mocks.consume,
   completeYouTubeConnection: mocks.complete,
+  getYouTubeConnection: mocks.existing,
 }));
 vi.mock("@/lib/providers/youtube", () => ({
   youtubeConfiguration: mocks.configuration,
@@ -60,9 +62,13 @@ function request(
 }
 
 describe("YouTube OAuth callback", () => {
+  afterEach(() => vi.unstubAllEnvs());
   beforeEach(() => {
     vi.resetAllMocks();
+    vi.stubEnv("APP_BASE_URL", undefined);
+    vi.stubEnv("NODE_ENV", "test");
     mocks.manager.mockResolvedValue(user);
+    mocks.existing.mockResolvedValue(null);
     mocks.configuration.mockReturnValue(configuration);
     mocks.open.mockReturnValue({
       state: "s".repeat(43),
@@ -85,6 +91,52 @@ describe("YouTube OAuth callback", () => {
     mocks.channel.mockResolvedValue({ id: "channel-1", title: "Club TV" });
     mocks.encrypt.mockReturnValue("encrypted-envelope");
     mocks.complete.mockResolvedValue(undefined);
+  });
+
+  it.each(["http", "https"])(
+    "completes a Next %s loopback callback and returns to canonical HTTPS settings",
+    async (protocol) => {
+      vi.stubEnv("APP_BASE_URL", "https://example.test");
+      vi.stubEnv("NODE_ENV", "production");
+      const response = await GET(
+        new NextRequest(
+          `${protocol}://127.0.0.1:3000/api/settings/youtube/oauth/callback?state=${"s".repeat(43)}&code=code`,
+          {
+            headers: {
+              cookie: "curlstreamer_youtube_oauth=sealed",
+              "x-forwarded-host": "attacker.example",
+            },
+          },
+        ),
+      );
+      expect(response.headers.get("location")).toBe(
+        "https://example.test/settings/youtube?result=connected",
+      );
+      expect(response.headers.get("set-cookie")).toContain("Secure");
+      expect(mocks.complete).toHaveBeenCalledOnce();
+      expect(mocks.exchange.mock.calls[0][3].redirectUri).toBe(
+        configuration.redirectUri,
+      );
+    },
+  );
+
+  it("does not exchange a callback received on an unrelated public host", async () => {
+    vi.stubEnv("APP_BASE_URL", "https://example.test");
+    const response = await GET(
+      new NextRequest(
+        `https://attacker.example/api/settings/youtube/oauth/callback?state=${"s".repeat(43)}&code=code`,
+        {
+          headers: {
+            cookie: "curlstreamer_youtube_oauth=sealed",
+            "x-forwarded-host": "example.test",
+          },
+        },
+      ),
+    );
+    expect(response.status).toBe(503);
+    expect(mocks.consume).not.toHaveBeenCalled();
+    expect(mocks.exchange).not.toHaveBeenCalled();
+    expect(response.headers.get("location")).toBeNull();
   });
 
   it("saves only encrypted credentials and expires the path-bound cookie", async () => {
@@ -164,5 +216,51 @@ describe("YouTube OAuth callback", () => {
     );
     expect(mocks.open).not.toHaveBeenCalled();
     expect(mocks.exchange).not.toHaveBeenCalled();
+  });
+  it("does not replace an existing channel when Google returns the wrong account", async () => {
+    mocks.existing.mockResolvedValue({
+      channel_id: "original-channel",
+      connection_status: "reconnect_required",
+    });
+    const response = await GET(
+      request({ state: "s".repeat(43), code: "code" }),
+    );
+    expect(response.headers.get("location")).toContain(
+      "result=channel_mismatch",
+    );
+    expect(mocks.complete).not.toHaveBeenCalled();
+    expect(response.headers.get("set-cookie")).toContain("Max-Age=0");
+  });
+  it("allows same-channel reauthorization and an explicitly disconnected channel", async () => {
+    const channel = await mocks.channel();
+    for (const existing of [
+      { channel_id: channel.id, connection_status: "reconnect_required" },
+      { channel_id: "old", connection_status: "disconnected" },
+    ]) {
+      mocks.existing.mockResolvedValue(existing);
+      const response = await GET(
+        request({ state: "s".repeat(43), code: "code" }),
+      );
+      expect(response.headers.get("location")).toContain("result=connected");
+    }
+    expect(mocks.complete).toHaveBeenCalledTimes(2);
+  });
+  it("reports a fixed recovery code without logging provider secrets", async () => {
+    const log = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      mocks.exchange.mockRejectedValue(new Error("private-access-token"));
+      const response = await GET(
+        request({ state: "s".repeat(43), code: "code" }),
+      );
+      expect(response.headers.get("location")).toContain(
+        "result=connection_failed",
+      );
+      expect(log).toHaveBeenLastCalledWith("YouTube OAuth callback failed", {
+        code: "connection_failed",
+      });
+      expect(mocks.complete).not.toHaveBeenCalled();
+    } finally {
+      log.mockRestore();
+    }
   });
 });

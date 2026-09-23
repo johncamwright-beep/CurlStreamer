@@ -254,3 +254,17 @@
     font-size: 13px;
   }
 }
+
+.studio-setup .panel {
+  background: #f8fafc;
+  color: #192b3e;
+  border-color: #bbcbd8;
+  box-shadow: none;
+}
+.studio-setup a.text-cyan-300 {
+  color: #075985;
+}
+.studio-setup .panel .bg-slate-950 {
+  background: #eef3f8;
+  border-color: #bbcbd8;
+}

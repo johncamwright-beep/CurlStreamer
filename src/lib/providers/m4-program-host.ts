@@ -8,6 +8,7 @@ import { createM4ProgramRealtime } from "./m4-program-realtime";
 import { createM4ProgramBridge } from "./m4-program-bridge";
 import { startM4StudioRecorder } from "./m4-studio-recorder";
 import { recoverM4ProgramCaches } from "./m4-program-cache";
+import type { StudioDiagnostic } from "./m5-studio-diagnostics";
 
 const optionsSchema = z
   .object({
@@ -33,7 +34,10 @@ const optionsSchema = z
  * process; the recorder receives only an uncredentialed loopback root URL.
  * The per-run CEF cache is deleted after the native child has exited.
  */
-export async function startM4ProgramHost(input: z.input<typeof optionsSchema>) {
+export async function startM4ProgramHost(
+  input: z.input<typeof optionsSchema>,
+  diagnostic?: StudioDiagnostic,
+) {
   const options = optionsSchema.parse(input);
   const cacheRoot = resolve(options.cacheRoot);
   const rendererRoot = resolve(options.rendererRoot);
@@ -86,6 +90,7 @@ export async function startM4ProgramHost(input: z.input<typeof optionsSchema>) {
       previewOnly: options.previewOnly,
       program: { url: bridge.rendererUrl, cacheDirectory },
       streamPlugin: options.streamPlugin,
+      diagnostic,
     });
   } catch {
     await bridge?.close().catch(() => undefined);

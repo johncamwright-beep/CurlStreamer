@@ -4,6 +4,7 @@ import { z } from "zod";
 import { readM4RecorderReady } from "./m4-recorder-ready";
 import { M4NativePipeClient } from "./m4-native-pipe";
 import { M4ProgramStream } from "./m4-program-stream";
+import type { StudioDiagnostic } from "./m5-studio-diagnostics";
 
 const localProgram = z
   .object({
@@ -55,6 +56,7 @@ export async function startM4StudioRecorder(paths: {
   previewOnly?: boolean;
   streamPlugin?: string;
   program?: { url: string; cacheDirectory: string };
+  diagnostic?: StudioDiagnostic;
 }) {
   const fail = () => new Error("m4_recording_unavailable");
   const root = process.env.SystemRoot;
@@ -107,6 +109,7 @@ export async function startM4StudioRecorder(paths: {
   );
   // A child closing stdin early must not produce an unhandled EPIPE.
   child.stdin.on("error", () => undefined);
+  paths.diagnostic?.("native_started");
   if (source) {
     // Public loopback proof only. Future private grants require separate
     // browser-cache/log containment; they are rejected by this schema.
@@ -123,10 +126,12 @@ export async function startM4StudioRecorder(paths: {
       // A failed kill also emits error. Only a failed spawn proves that no
       // child exists; otherwise retain ownership until the actual exit event.
       if (child.pid !== undefined) return;
+      paths.diagnostic?.("native_spawn_failed");
       exited = true;
       resolve({ finalized: false });
     });
     child.once("exit", (code) => {
+      paths.diagnostic?.("native_exited", { exitCode: code });
       exited = true;
       resolve({ finalized: code === 0 });
     });

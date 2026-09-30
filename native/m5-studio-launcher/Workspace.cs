@@ -29,7 +29,8 @@ internal sealed class Workspace : Form
     private TaskCompletionSource<string> ready;
     private TaskCompletionSource<bool> exited;
     private TaskCompletionSource<Dictionary<string, object>> handoff;
-    private bool busy, polling, closing, mayClose, cleanupConfirmed, recording, controllerReady, startupFailed;
+    private bool busy, polling, closing, mayClose, recording, controllerReady, startupFailed;
+    private Dictionary<string, object> lastState;
     private readonly UsbAudio usbAudio = new UsbAudio();
     private readonly object usbLock = new object();
     private readonly List<float> usbSamples = new List<float>();
@@ -262,7 +263,7 @@ internal sealed class Workspace : Form
             youtubeError = error is WorkspaceFailure ? error.Message : "Studio could not start YouTube. Close and reopen Studio, then try Broadcast to YouTube again.";
             if (WorkspacePolicy.Game(web.CoreWebView2.Source, origin) == gameId)
                 web.ExecuteScriptAsync("window.dispatchEvent(new CustomEvent('studio-youtube-status',{detail:" + json.Serialize(new { gameId = gameId, available = true, busy = false, streaming = "failed", live = false, receiving = false, message = youtubeError }) + "}));");
-        } finally { busy = false; UpdateButtons(); }
+        } finally { busy = false; PublishYouTubeStatus(lastState); UpdateButtons(); }
     }
     private async Task StartRecording() {
         if (busy || closing || recording || selectedGame == null) return;
@@ -296,30 +297,47 @@ internal sealed class Workspace : Form
     private async Task StartController(string gameId) {
         var node = Path.Combine(root, "node", "node.exe"); var controller = Path.Combine(root, "app", "studio.mjs");
         await Task.Run(() => { Verify(node, nodeHash); Verify(controller, controllerHash); });
-        ready = new TaskCompletionSource<string>(); exited = new TaskCompletionSource<bool>(); cleanupConfirmed = false; controllerReady = false; startupFailed = false;
+        ready = new TaskCompletionSource<string>(); exited = new TaskCompletionSource<bool>(); controllerReady = false; startupFailed = false; lastState = null;
+        var processReady = ready; var processExited = exited; bool processCleanupConfirmed = false;
         var info = new ProcessStartInfo(node) { Arguments = "\"" + controller + "\" \"" + origin + "/games/" + gameId + "\"", WorkingDirectory = root, UseShellExecute = false, CreateNoWindow = true, RedirectStandardInput = true, RedirectStandardOutput = true, RedirectStandardError = true };
         info.EnvironmentVariables.Clear();
         foreach (var key in new[] { "SystemRoot", "WINDIR", "TEMP", "TMP", "LOCALAPPDATA", "USERPROFILE" }) { var v = Environment.GetEnvironmentVariable(key); if (!String.IsNullOrEmpty(v)) info.EnvironmentVariables[key] = v; }
         info.EnvironmentVariables["PATH"] = Environment.GetFolderPath(Environment.SpecialFolder.System); info.EnvironmentVariables["NODE_ENV"] = "production";
         var process = new Process { StartInfo = info };
         process.OutputDataReceived += (s, e) => {
-            if (e.Data == "CLOSED") cleanupConfirmed = true;
-            if (e.Data == "START_FAILED") { startupFailed = true; ready.TrySetException(new InvalidDataException()); }
-            if (e.Data != null && e.Data.StartsWith("READY ") && WorkspacePolicy.Loopback(e.Data.Substring(6))) { controllerReady = true; ready.TrySetResult(e.Data.Substring(6)); }
+            if (e.Data == "CLOSED") processCleanupConfirmed = true;
+            if (e.Data == "START_FAILED") { if (child == process) startupFailed = true; processReady.TrySetException(new InvalidDataException()); }
+            if (e.Data != null && e.Data.StartsWith("READY ") && WorkspacePolicy.Loopback(e.Data.Substring(6))) { if (child == process) controllerReady = true; processReady.TrySetResult(e.Data.Substring(6)); }
         };
         process.ErrorDataReceived += (s, e) => { /* Never forward raw diagnostics or credentials. */ };
         process.Start(); child = process; runningGame = gameId; process.BeginOutputReadLine(); process.BeginErrorReadLine();
-        ObserveExit(process);
-        if (await Task.WhenAny(ready.Task, Task.Delay(120000)) != ready.Task) throw new InvalidDataException();
-        localAddress = await ready.Task;
+        ObserveExit(process, processReady, processExited, () => processCleanupConfirmed);
+        if (await Task.WhenAny(processReady.Task, Task.Delay(120000)) != processReady.Task) throw new InvalidDataException();
+        localAddress = await processReady.Task;
         local = new HttpClient(new HttpClientHandler { CookieContainer = new CookieContainer(), AllowAutoRedirect = false, UseProxy = false }) { Timeout = TimeSpan.FromSeconds(120) };
         using (var result = await local.GetAsync(localAddress)) result.EnsureSuccessStatusCode();
     }
-    private async void ObserveExit(Process process) {
+    private async void ObserveExit(Process process, TaskCompletionSource<string> processReady, TaskCompletionSource<bool> processExited, Func<bool> confirmed) {
         await Task.Run(() => process.WaitForExit());
-        var clean = cleanupConfirmed && process.ExitCode == 0;
-        ready.TrySetException(new InvalidDataException()); exited.TrySetResult(clean);
-        if (!closing && !busy && !clean) { status.Text = "Recording stopped unexpectedly. Check the recordings folder before restarting."; recording = false; UpdateButtons(); }
+        var clean = confirmed() && process.ExitCode == 0;
+        processReady.TrySetException(new InvalidDataException()); processExited.TrySetResult(clean);
+        if (child != process) return;
+        try {
+            var directory = profileDirectory ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "CurlStreamer", "Studio");
+            Directory.CreateDirectory(directory);
+            File.WriteAllText(Path.Combine(directory, "controller-exit.json"), json.Serialize(new { timestampUtc = DateTime.UtcNow.ToString("o"), exitCode = process.ExitCode, cleanupConfirmed = clean }));
+        } catch { /* Only lifecycle facts, never child stderr or arguments. */ }
+        if (!closing && !clean) {
+            recording = false; previewMapping = null; lastState = null;
+            youtubeError = "Studio's local video controller stopped. Close and reopen Studio before reconnecting cameras and YouTube.";
+            if (local != null) local.CancelPendingRequests();
+            if (handoff != null) handoff.TrySetException(new WorkspaceFailure(youtubeError));
+            usbAudio.Stop(); usbGame = null; lock (usbLock) usbSamples.Clear();
+            usbError = "Studio's local video controller stopped. Reconnect Studio before enabling USB audio.";
+            PublishUsbStatus(); PublishYouTubeStatus(null);
+            status.Text = "Studio's local video controller stopped. Close and reopen Studio to reconnect.";
+            UpdateButtons();
+        }
     }
     private async Task<Dictionary<string, object>> Command(object action) {
         if (local == null || !WorkspacePolicy.Loopback(localAddress)) throw new InvalidDataException();
@@ -331,6 +349,8 @@ internal sealed class Workspace : Form
     }
     private string TextValue(Dictionary<string, object> state, string key) { object value; return state.TryGetValue(key, out value) ? value as string : null; }
     private void ApplyState(Dictionary<string, object> state) {
+        if (child == null || child.HasExited) return;
+        lastState = state;
         var phase = TextValue(state, "program");
         recording = phase == "recording" || phase == "starting" || phase == "stopping" || (phase == "failed" && recording);
         previewMapping = phase == "recording" ? TextValue(state, "previewMapping") : null;
@@ -340,17 +360,22 @@ internal sealed class Workspace : Form
         object phoneAudio;
         if (web.CoreWebView2 != null && WorkspacePolicy.SameOrigin(web.CoreWebView2.Source, origin) && selectedGame == runningGame && state.TryGetValue("phoneAudio", out phoneAudio))
             web.CoreWebView2.ExecuteScriptAsync("window.dispatchEvent(new CustomEvent('studio-audio-status',{detail:" + json.Serialize(new { gameId = runningGame, cameras = phoneAudio }) + "}));");
-        if (web.CoreWebView2 != null && WorkspacePolicy.SameOrigin(web.CoreWebView2.Source, origin) && selectedGame == runningGame) {
-            object available; var enabled = state.TryGetValue("streamingAvailable", out available) && available is bool && (bool)available;
-            web.CoreWebView2.ExecuteScriptAsync("window.dispatchEvent(new CustomEvent('studio-youtube-status',{detail:" + json.Serialize(new { gameId = runningGame, available = enabled, busy = busy, streaming = TextValue(state, "streaming") ?? "idle", live = TextValue(state, "broadcast") == "live", receiving = TextValue(state, "youtubeReception") == "confirmed", message = enabled ? youtubeError : "YouTube streaming is not enabled in this Studio installation." }) + "}));");
-        }
+        PublishYouTubeStatus(state);
         status.Text = phase == "recording" ? "Cameras ready · Not recording · YouTube off" : phase == "stopped" ? "Cameras disconnected · No recording saved" : TextValue(state, "programMessage") ?? "Camera status is unavailable.";
         UpdateButtons();
     }
+    private void PublishYouTubeStatus(Dictionary<string, object> state) {
+        if (web.CoreWebView2 != null && WorkspacePolicy.SameOrigin(web.CoreWebView2.Source, origin) && selectedGame == runningGame) {
+            var offline = state == null;
+            object available; var enabled = !offline && state.TryGetValue("streamingAvailable", out available) && available is bool && (bool)available;
+            web.CoreWebView2.ExecuteScriptAsync("window.dispatchEvent(new CustomEvent('studio-youtube-status',{detail:" + json.Serialize(new { gameId = runningGame, available = offline || enabled, busy = !offline && busy, streaming = offline || youtubeError.Length > 0 ? "failed" : TextValue(state, "streaming") ?? "idle", live = !offline && youtubeError.Length == 0 && TextValue(state, "broadcast") == "live", receiving = !offline && youtubeError.Length == 0 && TextValue(state, "youtubeReception") == "confirmed", message = offline || enabled ? youtubeError : "YouTube streaming is not enabled in this Studio installation." }) + "}));");
+        }
+    }
     private async Task Poll() {
-        if (busy || polling || closing || local == null || !recording) return;
+        if (polling || closing || local == null || !recording) return;
+        var observedChild = child;
         polling = true;
-        try { using (var response = await local.GetAsync(localAddress + "/state")) { response.EnsureSuccessStatusCode(); if (!busy && !closing) ApplyState(json.Deserialize<Dictionary<string, object>>(await response.Content.ReadAsStringAsync())); } }
+        try { using (var timeout = new System.Threading.CancellationTokenSource(3000)) using (var response = await local.GetAsync(localAddress + "/state", timeout.Token)) { response.EnsureSuccessStatusCode(); if (!closing && child == observedChild) ApplyState(json.Deserialize<Dictionary<string, object>>(await response.Content.ReadAsStringAsync())); } }
         catch { if (!busy) status.Text = "Recording status is unavailable. Keep Studio open while checking the recording."; }
         finally { polling = false; }
     }

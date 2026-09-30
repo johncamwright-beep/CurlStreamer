@@ -1,4 +1,40 @@
-# Streaming stability review — September 29, 2026
+# Streaming stability review — September 30, 2026
+
+## September 30 recovery
+
+The September 29 release did not pass John's physical camera test. Cameras
+dropped even with YouTube off. In one earlier failure the local controller
+stopped; its original exit cause was not captured. Later camera failures happened
+while the controller and native renderer were still running.
+
+- Camera path inspections now run independently of cloud event polling. A
+  stalled event read cannot starve the local ten-second verification watchdog.
+- Sending receiver path confirmation no longer blocks local statistics or
+  presenting verified video/audio. Only one confirmation can be outstanding.
+  Temporary transport failures are distinguished from rejected authority.
+  Camera-side proof freshness, ticket expiry and direct-path checks remain.
+- Studio keeps reading local status during YouTube preparation, publishes the
+  final pending/live state, and clears stale preview/audio/YouTube status if its
+  controller exits. Process callbacks cannot settle a replacement controller.
+- A bounded local lifecycle journal records startup, shutdown, native exits and
+  whitelisted failure codes. It excludes credentials, URLs and raw errors.
+- The production scheduled-broadcast adoption function no longer treats a
+  pending or failed reservation as an uncertain YouTube creation. Actual intents
+  remain quarantined and recently started reservations remain fenced. Database
+  fixtures validated none, pending, failed, stale intent, ready and recent intent
+  cases in a transaction; fixture rows were rolled back. The function change is
+  recorded in migration `0065_pending_youtube_adoption.sql`.
+
+The update is installed locally as `0.4.0-pilot.3`; all 2,247 installed component
+hashes and the offline startup/shutdown check passed. This is a local patch, not
+a published installer. The native WebView2 fixture also passed pending/live and
+unexpected-controller-exit checks. The final unit suite passed 1,643 tests with
+93 skips; formatting, typechecking and the production build passed. Browser
+regression checks passed 246 tests with 92 skips. Physical camera, microphone and YouTube
+endurance remain unverified; repeat the camera-only test before enabling audio
+or starting a broadcast.
+
+## September 29 baseline
 
 The review found software failure paths that can explain abrupt disconnections
 and misleading status changes. They are reproducible code defects; they do not
@@ -41,8 +77,8 @@ The fixes are committed in `1ec14e9` and deployed to `curlstreamer.app`; the liv
 site's scoring and preview assets were checked for the new recovery behavior.
 Studio `0.4.0-pilot.2` is published on GitHub with matching source and notices.
 An anonymous full installer download matched its published size and SHA-256.
-The installed Studio on this PC is now `0.4.0-pilot.2`; its component hashes and
-offline startup check passed. The website download descriptor now points to
+The September 29 installation was `0.4.0-pilot.2`; its component hashes and
+offline startup check passed. The website download descriptor points to
 that same release. Physical camera/broadcast endurance is still unverified.
 
 ## Remaining work

@@ -47,6 +47,80 @@ function stats(local = "host", remote = "host", extra: object[] = []) {
   ] as [string, object][]) as unknown as RTCStatsReport;
 }
 describe("M1 direct media boundary", () => {
+  it("inspects and presents verified video while one path confirmation is stalled", async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal(
+      "MediaStream",
+      class {
+        getTracks() {
+          return [];
+        }
+      },
+    );
+    const pc = {
+      addTransceiver: vi.fn(),
+      getStats: vi.fn().mockResolvedValue(stats()),
+      close: vi.fn(),
+      ontrack: null as unknown as (event: unknown) => void,
+    };
+    let resolve!: () => void;
+    const send = vi.fn(
+      () =>
+        new Promise<void>((r) => {
+          resolve = r;
+        }),
+    );
+    const onVideo = vi.fn(),
+      onFailure = vi.fn();
+    const peer = new DirectPeer({
+      side: "receiver",
+      createPeer: () => pc as unknown as RTCPeerConnection,
+      send,
+      onVideo,
+      onFailure,
+    });
+    pc.ontrack({ track: {} });
+    expect(await peer.inspect()).toMatchObject({ direct: true });
+    expect(onVideo).toHaveBeenCalledOnce();
+    await vi.advanceTimersByTimeAsync(12000);
+    expect(await peer.inspect()).toMatchObject({ direct: true });
+    expect(pc.getStats).toHaveBeenCalledTimes(2);
+    expect(send).toHaveBeenCalledTimes(1);
+    resolve();
+    await vi.advanceTimersByTimeAsync(0);
+    await peer.inspect();
+    expect(send).toHaveBeenCalledTimes(2);
+    peer.close();
+    resolve();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(onFailure).not.toHaveBeenCalled();
+  });
+  it("fails closed on rejected confirmation and ignores a late rejection after close", async () => {
+    for (const closed of [false, true]) {
+      const pc = {
+        addTransceiver: vi.fn(),
+        getStats: async () => stats(),
+        close: vi.fn(),
+      };
+      let reject!: (cause: Error) => void;
+      const onFailure = vi.fn();
+      const peer = new DirectPeer({
+        side: "receiver",
+        createPeer: () => pc as unknown as RTCPeerConnection,
+        send: () =>
+          new Promise<void>((_resolve, r) => {
+            reject = r;
+          }),
+        onVideo: vi.fn(),
+        onFailure,
+      });
+      await peer.inspect();
+      if (closed) peer.close();
+      reject(new Error("authority rejected"));
+      await vi.waitFor(() => expect(pc.close).toHaveBeenCalledOnce());
+      expect(onFailure).toHaveBeenCalledTimes(closed ? 0 : 1);
+    }
+  });
   it("requires fresh receiver confirmation for a camera's redacted prflx path", async () => {
     vi.useFakeTimers();
     const report = stats("host", "prflx") as unknown as Map<

@@ -83,7 +83,34 @@ internal static class WorkspaceHandoffTests
                         await CheckPreview(core, origin + "/__studio-preview/" + id + "?stale=1", false);
                         typeof(Workspace).GetField("recording", BindingFlags.Instance | BindingFlags.NonPublic).SetValue(form, false);
                     }
-                    File.WriteAllText(output, "PASS: native WebView2 grant handoff, cross-game/account refusal, actual preview image decode, cross-game preview denial and stale-frame denial; no real media or accounts.");
+                    // A successful command publishes while busy; completing it
+                    // must clear the web button even when later polling stops.
+                    await core.ExecuteScriptAsync("window.youtubeEvents=[];window.addEventListener('studio-youtube-status',e=>window.youtubeEvents.push(e.detail));");
+                    var publish = typeof(Workspace).GetMethod("PublishYouTubeStatus", BindingFlags.Instance | BindingFlags.NonPublic);
+                    var readyState = new System.Collections.Generic.Dictionary<string, object> { { "streamingAvailable", true }, { "streaming", "armed" }, { "broadcast", "live" }, { "youtubeReception", "confirmed" } };
+                    typeof(Workspace).GetField("busy", BindingFlags.Instance | BindingFlags.NonPublic).SetValue(form, true);
+                    publish.Invoke(form, new object[] { readyState });
+                    typeof(Workspace).GetField("busy", BindingFlags.Instance | BindingFlags.NonPublic).SetValue(form, false);
+                    publish.Invoke(form, new object[] { readyState });
+                    if (await core.ExecuteScriptAsync("window.youtubeEvents.length===2&&window.youtubeEvents[0].busy&&!window.youtubeEvents[1].busy&&window.youtubeEvents[1].live") != "true") throw new Exception("YouTube busy status did not settle.");
+                    publish.Invoke(form, new object[] { null });
+                    if (await core.ExecuteScriptAsync("!window.youtubeEvents.at(-1).busy&&!window.youtubeEvents.at(-1).live&&window.youtubeEvents.at(-1).streaming==='failed'") != "true") throw new Exception("Controller exit retained pending/live status.");
+                    var testNode = Environment.GetEnvironmentVariable("CURLCAST_TEST_NODE");
+                    using (var stopped = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(testNode, "-e \"process.exit(7)\"") { UseShellExecute = false, CreateNoWindow = true })) {
+                        typeof(Workspace).GetField("child", BindingFlags.Instance | BindingFlags.NonPublic).SetValue(form, stopped);
+                        typeof(Workspace).GetField("busy", BindingFlags.Instance | BindingFlags.NonPublic).SetValue(form, true);
+                        typeof(Workspace).GetField("recording", BindingFlags.Instance | BindingFlags.NonPublic).SetValue(form, true);
+                        var ready = new TaskCompletionSource<string>(); var exited = new TaskCompletionSource<bool>();
+                        typeof(Workspace).GetMethod("ObserveExit", BindingFlags.Instance | BindingFlags.NonPublic).Invoke(form, new object[] { stopped, ready, exited, new Func<bool>(() => false) });
+                        if (await exited.Task) throw new Exception("Unexpected exit was reported clean.");
+                        for (int i = 0; i < 20 && (bool)typeof(Workspace).GetField("recording", BindingFlags.Instance | BindingFlags.NonPublic).GetValue(form); i++) await Task.Delay(100);
+                        if ((bool)typeof(Workspace).GetField("recording", BindingFlags.Instance | BindingFlags.NonPublic).GetValue(form)) throw new Exception("Busy operation suppressed controller-offline handling.");
+                        if (!File.ReadAllText(Path.Combine(root, "FixtureProfile", "controller-exit.json")).Contains("\"exitCode\":7")) throw new Exception("Controller exit evidence missing.");
+                        if (await core.ExecuteScriptAsync("!window.youtubeEvents.at(-1).busy&&window.youtubeEvents.at(-1).message.includes('controller stopped')") != "true") throw new Exception("Controller exit left web preparation hanging.");
+                        typeof(Workspace).GetField("child", BindingFlags.Instance | BindingFlags.NonPublic).SetValue(form, null);
+                        typeof(Workspace).GetField("busy", BindingFlags.Instance | BindingFlags.NonPublic).SetValue(form, false);
+                    }
+                    File.WriteAllText(output, "PASS: native WebView2 handoff and preview boundaries; YouTube pending settles and controller-offline clears pending/live; no real media or accounts.");
                     result = 0;
                 } catch (Exception error) { File.WriteAllText(output, "FAIL: " + error.GetType().Name + " " + error.Message); }
                 finally { timeout.Stop(); form.Close(); }

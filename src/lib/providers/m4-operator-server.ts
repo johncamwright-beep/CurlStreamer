@@ -7,6 +7,7 @@ import { z } from "zod";
 import { M4DesktopClient } from "./m4-desktop-client";
 import { checkM4NativeHost } from "./m4-native-preflight";
 import { startM4ProgramHost } from "./m4-program-host";
+import type { StudioDiagnostic } from "./m5-studio-diagnostics";
 
 const command = z.discriminatedUnion("action", [
   z.object({ action: z.literal("check") }).strict(),
@@ -151,6 +152,7 @@ async function usbAudioBody(request: IncomingMessage) {
 export async function createM4OperatorServer(options: {
   gameId: string;
   origin: string;
+  diagnostic?: StudioDiagnostic;
   paths: { executable: string; plugin: string; runtime: string };
   pairingEnabled?: boolean;
   /** Deliberately fail closed: this must be explicitly enabled by the launcher. */
@@ -512,20 +514,23 @@ export async function createM4OperatorServer(options: {
           const handle = await (
             configuration.start ??
             ((invitation: string, destination: string) =>
-              startM4ProgramHost({
-                gameId: options.gameId,
-                origin: options.origin,
-                invitation,
-                realtimeUrl: configuration.realtimeUrl,
-                realtimeKey: configuration.realtimeKey,
-                executable: configuration.recorder,
-                runtime: configuration.runtime,
-                recording: destination,
-                previewOnly: true,
-                cacheRoot: configuration.cacheRoot,
-                rendererRoot: configuration.rendererRoot,
-                streamPlugin: configuration.streamPlugin,
-              }))
+              startM4ProgramHost(
+                {
+                  gameId: options.gameId,
+                  origin: options.origin,
+                  invitation,
+                  realtimeUrl: configuration.realtimeUrl,
+                  realtimeKey: configuration.realtimeKey,
+                  executable: configuration.recorder,
+                  runtime: configuration.runtime,
+                  recording: destination,
+                  previewOnly: true,
+                  cacheRoot: configuration.cacheRoot,
+                  rendererRoot: configuration.rendererRoot,
+                  streamPlugin: configuration.streamPlugin,
+                },
+                options.diagnostic,
+              ))
           )(invitation, recording);
           if (closing) {
             try {

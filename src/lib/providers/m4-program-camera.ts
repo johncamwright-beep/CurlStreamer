@@ -32,7 +32,7 @@ export async function connectM4ProgramCamera(options: {
     timer: ReturnType<typeof setTimeout> | undefined;
   let watchdog: ReturnType<typeof setInterval> | undefined;
   let lastVerified: number | undefined,
-    nextInspect = 0,
+    inspecting = false,
     closed = false;
   const call = async (path: string, body?: unknown) => {
     // Event polling runs once per second. AbortSignal.timeout() leaves
@@ -51,6 +51,20 @@ export async function connectM4ProgramCamera(options: {
         body,
         AbortSignal.any([signal, deadline.signal]),
       );
+    } catch (cause) {
+      // A local read can time out while Node is still retrying its upstream
+      // authority check. Do not turn that transport delay into peer teardown.
+      // Rejected authority/metadata and ambiguous signaling writes still stop.
+      if (
+        (path.startsWith("/events/") ||
+          (path === "/camera" &&
+            (body as { signal?: { type?: string } } | undefined)?.signal
+              ?.type === "path-confirmed")) &&
+        !signal.aborted &&
+        (deadline.signal.aborted || cause instanceof TypeError)
+      )
+        throw new StudioTransportUnavailable();
+      throw cause;
     } finally {
       clearTimeout(timer);
       signal.removeEventListener("abort", cancel);
@@ -106,8 +120,30 @@ export async function connectM4ProgramCamera(options: {
         if (metrics) options.onMetrics(metrics);
         stop(reason);
       },
+      onConfirmationFailure: (cause) => {
+        // A missed proof is not retried. A subsequent verified measurement
+        // may send a fresh proof while the relay's ticket is still valid.
+        if (cause instanceof StudioTransportUnavailable) return;
+        stop(
+          "Camera authority or direct connection ended. Reconnect the camera.",
+        );
+      },
     });
     const started = Date.now();
+    async function inspect() {
+      if (closed || inspecting) return;
+      inspecting = true;
+      try {
+        const metrics = await peer!.inspect();
+        if (closed) return;
+        if (metrics.direct) lastVerified = Date.now();
+        options.onMetrics(metrics);
+      } catch {
+        stop("Direct camera verification failed. Reconnect the camera.");
+      } finally {
+        inspecting = false;
+      }
+    }
     watchdog = setInterval(() => {
       if (
         lastVerified === undefined
@@ -115,7 +151,10 @@ export async function connectM4ProgramCamera(options: {
           : Date.now() - lastVerified > 10000
       )
         stop("Direct path verification timed out. Reconnect the camera.");
+      else void inspect();
     }, 1000);
+    // Local WebRTC evidence is independent of internet signaling latency.
+    void inspect();
     async function poll() {
       if (closed) return;
       try {
@@ -138,19 +177,6 @@ export async function connectM4ProgramCamera(options: {
             throw Error();
           await peer!.receive(event.signal);
           if (closed) return;
-        }
-        if (Date.now() >= nextInspect) {
-          nextInspect = Date.now() + 1000;
-          const metrics = await peer!.inspect();
-          if (closed) return;
-          if (metrics.direct) lastVerified = Date.now();
-          options.onMetrics(metrics);
-          if (
-            lastVerified === undefined
-              ? Date.now() - started > 45000
-              : Date.now() - lastVerified > 10000
-          )
-            throw Error();
         }
         // Drain once a second. The relay validates authority through five-second
         // ticket renewals and freshly checks every queued signaling message.

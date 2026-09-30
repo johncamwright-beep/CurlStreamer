@@ -316,6 +316,9 @@ export class DirectPeer {
       onVideo: (stream: MediaStream) => void;
       onAudio?: (stream: MediaStream) => void;
       onFailure: (reason: string, metrics?: DirectMetrics) => void;
+      /** Receivers may distinguish a temporary transport outage from revoked
+       * authority. Local path inspection never waits for this notification. */
+      onConfirmationFailure?: (cause: unknown) => void;
       createPeer?: (config: RTCConfiguration) => RTCPeerConnection;
     },
   ) {
@@ -485,6 +488,7 @@ export class DirectPeer {
   }
   private receiverConfirmedAt = -Infinity;
   private lastConfirmationAt = -Infinity;
+  private confirmationPending = false;
   private hiddenPathSince: number | undefined;
   /** Replace the reserved optional audio sender without renegotiating media authority. */
   async replaceAudioTrack(track: MediaStreamTrack | null) {
@@ -533,10 +537,29 @@ export class DirectPeer {
     if (
       metrics.direct &&
       this.options.side === "receiver" &&
+      !this.confirmationPending &&
       performance.now() - this.lastConfirmationAt >= 2000
     ) {
       this.lastConfirmationAt = performance.now();
-      await this.options.send({ type: "path-confirmed" });
+      this.confirmationPending = true;
+      // Deliver only one fresh proof at a time. Internet signaling must not
+      // block local getStats or hide an already verified video/audio track.
+      // The camera still requires a received proof within its five-second
+      // window; this does not extend authority or replay negotiation writes.
+      void Promise.resolve()
+        .then(() => {
+          if (!this.closed)
+            return this.options.send({ type: "path-confirmed" });
+        })
+        .catch((cause) => {
+          if (this.closed) return;
+          if (this.options.onConfirmationFailure)
+            this.options.onConfirmationFailure(cause);
+          else this.fail("Direct path confirmation could not be delivered.");
+        })
+        .finally(() => {
+          this.confirmationPending = false;
+        });
     }
     if (metrics.direct)
       report.forEach((row) => {

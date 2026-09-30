@@ -82,6 +82,7 @@ export class M4DesktopClient {
   #fence = 0;
   #handoffAttempted = false;
   #activeIntent?: string;
+  #observation?: Promise<M4ProviderObservation>;
   #base: string;
   #fetcher: typeof fetch;
   #clock: () => number;
@@ -210,26 +211,31 @@ export class M4DesktopClient {
   /** Read-only independent provider evidence. Never extends a desktop/native
    * lease or retries a consumed destination. Observation outages stay unknown. */
   observeOutput(intentId: string): Promise<M4ProviderObservation> {
+    this.#expire();
+    if (
+      this.#state !== "active" ||
+      !this.#session ||
+      !this.#bearer ||
+      this.#activeIntent !== intentId
+    )
+      return Promise.reject(fail());
+    if (this.#observation) return this.#observation;
+    const authority = this.#session;
+    const bearer = this.#bearer;
     const fence = this.#fence;
-    return this.#serialize(async () => {
-      this.#expire();
-      if (
-        this.#state !== "active" ||
-        !this.#session ||
-        !this.#bearer ||
-        this.#activeIntent !== intentId ||
-        fence !== this.#fence
-      )
-        throw fail();
+    // Provider reads must not hold up lease renewal or Stop. They cannot grant
+    // authority; bind both sides of the request to the existing session/fence.
+    // Coalesce concurrent reads so independence cannot create a request flood.
+    const observation = (async () => {
       try {
         const response = await this.#request(
           "/observe",
           {
             intentId,
-            sessionId: this.#session.sessionId,
-            generation: this.#session.generation,
+            sessionId: authority.sessionId,
+            generation: authority.generation,
           },
-          this.#bearer,
+          bearer,
         );
         const result = observationResponse.parse(response.value);
         this.#expire();
@@ -237,8 +243,10 @@ export class M4DesktopClient {
           this.#state !== "active" ||
           fence !== this.#fence ||
           result.intentId !== intentId ||
-          result.sessionId !== this.#session.sessionId ||
-          result.generation !== this.#session.generation ||
+          this.#session !== authority ||
+          this.#activeIntent !== intentId ||
+          result.sessionId !== authority.sessionId ||
+          result.generation !== authority.generation ||
           result.broadcastLive !== (result.broadcastStatus === "live")
         )
           throw fail();
@@ -251,7 +259,11 @@ export class M4DesktopClient {
       } catch {
         throw fail();
       }
+    })().finally(() => {
+      if (this.#observation === observation) this.#observation = undefined;
     });
+    this.#observation = observation;
+    return observation;
   }
   #expire() {
     const now = this.#clock();

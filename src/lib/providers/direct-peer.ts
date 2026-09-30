@@ -43,6 +43,7 @@ export type DirectMetrics = {
     roundTripMs?: number;
   };
   localEndpointProven?: boolean;
+  confirmationTransport?: "local" | "cloud" | "none";
   remoteEndpointProven?: boolean;
   localPrivateEndpoint?: boolean;
   remotePrivateEndpoint?: boolean;
@@ -300,6 +301,12 @@ export class DirectPeer {
   private presentedAudio = false;
   private appliedRemote: { type: "offer" | "answer"; sdp: string } | undefined;
   private advertised = { local: new Set<string>(), remote: new Set<string>() };
+  private pathChannel: RTCDataChannel | undefined;
+  private pathProbe: { nonce: string; at: number } | undefined;
+  private remoteProbe: { nonce: string; at: number } | undefined;
+  private lastLocalProofAt = -Infinity;
+  private lastProbeAt = -Infinity;
+  private confirmationTransport: "local" | "cloud" = "cloud";
   private handshake = {
     readyReceived: 0,
     offersReceived: 0,
@@ -329,6 +336,48 @@ export class DirectPeer {
       iceTransportPolicy: "all",
       bundlePolicy: "max-bundle",
     });
+    // Shares the existing authenticated DTLS peer and negotiation lifetime.
+    // Only nonce-bound path evidence travels here; server ticket renewal,
+    // revocation and assignment checks remain independent and unchanged.
+    // Older peers send no probes and keep using cloud confirmation.
+    try {
+      if (this.pc.createDataChannel) {
+        const channel = this.pc.createDataChannel("curlstreamer-path-v1", {
+          negotiated: true,
+          id: 0,
+          ordered: false,
+          maxRetransmits: 0,
+          protocol: "curlstreamer-path-v1",
+        });
+        this.pathChannel = channel;
+        channel.onmessage = ({ data }) => {
+          if (
+            this.closed ||
+            channel.readyState !== "open" ||
+            this.pc.connectionState !== "connected" ||
+            typeof data !== "string"
+          )
+            return;
+          const match = /^(probe|proof):([a-f0-9-]{36})$/.exec(data);
+          if (!match) return;
+          const now = performance.now();
+          if (this.options.side === "receiver" && match[1] === "probe")
+            this.remoteProbe = { nonce: match[2], at: now };
+          else if (
+            this.options.side === "camera" &&
+            match[1] === "proof" &&
+            this.pathProbe?.nonce === match[2] &&
+            now - this.pathProbe.at < 5000
+          ) {
+            this.pathProbe = undefined;
+            this.receiverConfirmedAt = now;
+            this.confirmationTransport = "local";
+          }
+        };
+      }
+    } catch {
+      /* Unsupported channels use the existing cloud confirmation path. */
+    }
     if (options.track) {
       options.track.contentHint = "detail";
       const stream = new MediaStream([options.track]);
@@ -399,6 +448,7 @@ export class DirectPeer {
         if (!signalAllowed(sender, signal)) throw Error("Rejected signaling");
         if (signal.type === "path-confirmed") {
           this.receiverConfirmedAt = performance.now();
+          this.confirmationTransport = "cloud";
         } else if (signal.type === "ready") {
           ++this.handshake.readyReceived;
           // Broadcast delivery is ephemeral. The camera repeats readiness until
@@ -507,6 +557,45 @@ export class DirectPeer {
     metrics.iceGatheringState = this.pc.iceGatheringState;
     metrics.handshake = { ...this.handshake };
     if (this.closed) return metrics;
+    const channel = this.pathChannel;
+    const localPathOpen =
+      channel?.readyState === "open" && this.pc.connectionState === "connected";
+    if (localPathOpen && channel.bufferedAmount === 0) {
+      const now = performance.now();
+      try {
+        if (
+          this.options.side === "camera" &&
+          now - this.lastProbeAt >= 2000 &&
+          (!this.pathProbe || now - this.pathProbe.at >= 5000)
+        ) {
+          const nonce = crypto.randomUUID();
+          this.pathProbe = { nonce, at: now };
+          this.lastProbeAt = now;
+          channel.send(`probe:${nonce}`);
+        } else if (
+          this.options.side === "receiver" &&
+          metrics.direct &&
+          this.remoteProbe &&
+          now - this.remoteProbe.at < 5000
+        ) {
+          channel.send(`proof:${this.remoteProbe.nonce}`);
+          this.remoteProbe = undefined;
+          this.lastLocalProofAt = now;
+        }
+      } catch {
+        // A lost proof cannot delay inspection or extend freshness. Restore
+        // the existing cloud path after a channel send failure.
+        this.lastLocalProofAt = -Infinity;
+      }
+    }
+    metrics.confirmationTransport =
+      this.options.side === "camera"
+        ? performance.now() - this.receiverConfirmedAt < 5000
+          ? this.confirmationTransport
+          : "none"
+        : performance.now() - this.lastLocalProofAt < 5000
+          ? "local"
+          : "cloud";
     // A camera browser can redact prflx addresses. Its authenticated receiver
     // must independently prove the path; this never relaxes receiver checks.
     const hiddenCameraPath =
@@ -537,6 +626,7 @@ export class DirectPeer {
     if (
       metrics.direct &&
       this.options.side === "receiver" &&
+      !(localPathOpen && performance.now() - this.lastLocalProofAt < 5000) &&
       !this.confirmationPending &&
       performance.now() - this.lastConfirmationAt >= 2000
     ) {
@@ -647,6 +737,16 @@ export class DirectPeer {
   }
   close() {
     this.closed = true;
+    this.pathProbe = undefined;
+    this.remoteProbe = undefined;
+    if (this.pathChannel) {
+      this.pathChannel.onmessage = null;
+      try {
+        this.pathChannel.close();
+      } catch {
+        /* Still close the media peer. */
+      }
+    }
     this.cancelGathering?.();
     this.clearDisconnectTimer();
     this.pending = [];

@@ -6,6 +6,7 @@ import type {
 } from "./m4-desktop-client";
 import type { M4NativePipeClient, M4NativeObservation } from "./m4-native-pipe";
 import { M4StudioRuntime } from "./m4-studio-runtime";
+import type { StudioDiagnostic } from "./m5-studio-diagnostics";
 
 type Native = Pick<
   M4NativePipeClient,
@@ -35,7 +36,28 @@ export class M4ProgramStream {
   #provider?: { value: M4ProviderObservation; at: number };
   #localTimer?: ReturnType<typeof setTimeout>;
   #providerTimer?: ReturnType<typeof setTimeout>;
-  constructor(private native: Native) {}
+  #failureReported = false;
+  constructor(
+    private native: Native,
+    private diagnostic?: StudioDiagnostic,
+  ) {}
+
+  #failed(
+    reason:
+      | "native_output_error"
+      | "native_authority_lost"
+      | "native_pipe_unavailable"
+      | "stream_start_failed"
+      | "stream_runtime_failed",
+  ) {
+    if (this.#failureReported) return;
+    this.#failureReported = true;
+    try {
+      this.diagnostic?.("stream_failed", { reason });
+    } catch {
+      /* A diagnostic callback cannot change stream cleanup. */
+    }
+  }
 
   snapshot(): M4StreamSnapshot {
     const native = this.native.snapshot();
@@ -96,6 +118,11 @@ export class M4ProgramStream {
       .run(intentId, this.#abort.signal, () => {
         if (this.#state !== "starting") return;
         this.#state = "armed";
+        try {
+          this.diagnostic?.("stream_started");
+        } catch {
+          /* Evidence only. */
+        }
         ready();
         if (this.native.observe) {
           void this.#observeLocal(this.#abort!.signal);
@@ -104,9 +131,14 @@ export class M4ProgramStream {
       })
       .then(
         () => {
-          this.#state = "stopped";
+          this.#state = this.#failureReported ? "failed" : "stopped";
         },
         () => {
+          this.#failed(
+            this.#state === "starting"
+              ? "stream_start_failed"
+              : "stream_runtime_failed",
+          );
           this.#state = "failed";
         },
       )
@@ -130,11 +162,25 @@ export class M4ProgramStream {
       const value = await this.native.observe!();
       if (!signal.aborted && this.#state === "armed") {
         this.#local = { value, at };
-        if (value.authority !== 1 || value.state === "failed")
+        if (value.authority !== 1 || value.state === "failed") {
+          this.#failed(
+            value.failure !== "none"
+              ? "native_output_error"
+              : "native_authority_lost",
+          );
           this.#abort!.abort();
+        }
       }
     } catch {
       this.#local = undefined;
+      if (
+        !signal.aborted &&
+        this.#state === "armed" &&
+        this.native.snapshot().state === "failed"
+      ) {
+        this.#failed("native_pipe_unavailable");
+        this.#abort!.abort();
+      }
     }
     if (!signal.aborted && this.#state === "armed")
       this.#localTimer = setTimeout(() => {

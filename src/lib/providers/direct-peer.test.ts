@@ -47,6 +47,125 @@ function stats(local = "host", remote = "host", extra: object[] = []) {
   ] as [string, object][]) as unknown as RTCStatsReport;
 }
 describe("M1 direct media boundary", () => {
+  it("confirms a redacted camera over its existing DTLS peer without internet signaling", async () => {
+    vi.useFakeTimers();
+    const cameraStats = stats("host", "prflx") as unknown as Map<
+      string,
+      Record<string, unknown>
+    >;
+    cameraStats.get("local")!.address = "";
+    cameraStats.get("remote")!.address = "";
+    function channel() {
+      return {
+        readyState: "open",
+        bufferedAmount: 0,
+        onmessage: undefined as
+          undefined | ((event: { data: unknown }) => void),
+        send: vi.fn<(data: string) => void>(),
+        close: vi.fn(),
+      };
+    }
+    const cameraChannel = channel(),
+      receiverChannel = channel();
+    const receiverSend = vi.fn().mockResolvedValue(undefined);
+    const failure = vi.fn();
+    const camera = new DirectPeer({
+      side: "camera",
+      send: vi.fn(),
+      onVideo: vi.fn(),
+      onFailure: failure,
+      createPeer: () =>
+        ({
+          addTransceiver: vi.fn(),
+          getStats: async () => cameraStats,
+          createDataChannel: () => cameraChannel,
+          connectionState: "connected",
+          close: vi.fn(),
+        }) as unknown as RTCPeerConnection,
+    });
+    const receiver = new DirectPeer({
+      side: "receiver",
+      send: receiverSend,
+      onVideo: vi.fn(),
+      onFailure: failure,
+      createPeer: () =>
+        ({
+          addTransceiver: vi.fn(),
+          getStats: async () => stats(),
+          createDataChannel: () => receiverChannel,
+          connectionState: "connected",
+          close: vi.fn(),
+        }) as unknown as RTCPeerConnection,
+    });
+    cameraChannel.send.mockImplementation((data) =>
+      receiverChannel.onmessage?.({ data }),
+    );
+    receiverChannel.send.mockImplementation((data) =>
+      cameraChannel.onmessage?.({ data }),
+    );
+    for (let i = 0; i < 12; ++i) {
+      await camera.inspect();
+      await receiver.inspect();
+      expect(await camera.inspect()).toMatchObject({
+        direct: true,
+        path: "peer-reflexive",
+      });
+      await vi.advanceTimersByTimeAsync(2000);
+    }
+    expect(receiverSend).not.toHaveBeenCalled();
+    expect(failure).not.toHaveBeenCalled();
+    // A replayed local proof cannot keep the path trusted after freshness expires.
+    const oldProof = receiverChannel.send.mock.calls.at(-1)![0];
+    await vi.advanceTimersByTimeAsync(9000);
+    cameraChannel.onmessage?.({ data: oldProof });
+    expect(await camera.inspect()).toMatchObject({
+      direct: false,
+      path: "rejected",
+    });
+    expect(failure).toHaveBeenCalledOnce();
+    camera.close();
+    receiver.close();
+  });
+
+  it("keeps cloud compatibility and never sends local proof for an unverified receiver", async () => {
+    vi.useFakeTimers();
+    let report = stats();
+    const channel = {
+      readyState: "open",
+      bufferedAmount: 0,
+      onmessage: undefined as undefined | ((event: { data: unknown }) => void),
+      send: vi.fn(),
+      close: vi.fn(),
+    };
+    const send = vi.fn().mockResolvedValue(undefined);
+    const failure = vi.fn();
+    const peer = new DirectPeer({
+      side: "receiver",
+      send,
+      onVideo: vi.fn(),
+      onFailure: failure,
+      createPeer: () =>
+        ({
+          addTransceiver: vi.fn(),
+          getStats: async () => report,
+          createDataChannel: () => channel,
+          connectionState: "connected",
+          close: vi.fn(),
+        }) as unknown as RTCPeerConnection,
+    });
+    await peer.inspect();
+    await Promise.resolve();
+    expect(send).toHaveBeenCalledWith({ type: "path-confirmed" });
+    report = stats("host", "relay");
+    channel.onmessage?.({ data: "probe:11111111-1111-4111-8111-111111111111" });
+    expect(await peer.inspect()).toMatchObject({
+      direct: false,
+      path: "rejected",
+    });
+    expect(channel.send).not.toHaveBeenCalled();
+    expect(failure).toHaveBeenCalledOnce();
+    peer.close();
+  });
   it("inspects and presents verified video while one path confirmation is stalled", async () => {
     vi.useFakeTimers();
     vi.stubGlobal(

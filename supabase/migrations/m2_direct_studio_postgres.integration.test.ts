@@ -208,6 +208,40 @@ function paired() {
   return { game, device, ticket: JSON.parse(started.stdout) as Ticket };
 }
 describe.skipIf(!enabled)("M2 disposable PostgreSQL authority", () => {
+  it("allows independent camera checks while the other role holds a session update", async () => {
+    const { game, ticket } = paired();
+    const away = service(
+      action(game, "register").replace("'camera-home'", "'camera-away'"),
+    );
+    expect(away.ok).toBe(true);
+    const awayTicket = JSON.parse(away.stdout) as Ticket;
+    const home = held(
+      action(
+        game,
+        "ticket",
+        "receiver",
+        ticket.sessionId,
+        ticket.negotiationId,
+      ),
+      "m2_independent_" + randomUUID(),
+    );
+    await home.ready;
+    try {
+      // Must finish before releasing Home; the original whole-game UPDATE
+      // lock blocks here. Each role still owns an exclusive session-row lock.
+      const result = service(
+        "set statement_timeout='500ms'; " +
+          action(game, "check", "receiver", awayTicket.sessionId).replace(
+            "'camera-home'",
+            "'camera-away'",
+          ),
+      );
+      expect(result.ok, result.stderr).toBe(true);
+    } finally {
+      home.release();
+    }
+    expect((await home.result).ok).toBe(true);
+  }, 15000);
   it("rejects browser RPC access, wrong organizations and duplicate invitation claims", () => {
     const { game, ticket } = paired();
     expect(sql("set role authenticated; " + action(game, "register")).ok).toBe(

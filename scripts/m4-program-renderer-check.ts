@@ -118,9 +118,13 @@ try {
   await page.getByText("North", { exact: true }).waitFor();
   await page.getByText("South", { exact: true }).waitFor();
   await page.getByAltText("Community Ice").waitFor();
-  await page.waitForFunction(() =>
-    document.body.textContent?.includes("Verifying direct path"),
-  );
+  // Camera status is internal state; the contained program shows camera
+  // placeholders rather than this operator-facing status phrase. Verify the
+  // actual retry requests and both video elements instead of hidden copy.
+  const cameraDeadline = Date.now() + 10000;
+  while (connected.length < 2 && Date.now() < cameraDeadline) await delay(50);
+  if ((await page.getByLabel("Direct camera", { exact: true }).count()) !== 2)
+    throw new Error("renderer did not create both contained camera elements");
   if (errors.length)
     throw new Error(`renderer page errors: ${errors.join("; ")}`);
   if (

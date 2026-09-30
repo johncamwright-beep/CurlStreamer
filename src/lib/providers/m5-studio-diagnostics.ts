@@ -19,6 +19,8 @@ const entry = z
       "native_started",
       "native_exited",
       "native_spawn_failed",
+      "stream_started",
+      "stream_failed",
     ]),
     reason: z
       .enum([
@@ -27,6 +29,11 @@ const entry = z
         "sigint",
         "sigterm",
         "startup_failed",
+        "native_output_error",
+        "native_authority_lost",
+        "native_pipe_unavailable",
+        "stream_start_failed",
+        "stream_runtime_failed",
       ])
       .optional(),
     failure: z

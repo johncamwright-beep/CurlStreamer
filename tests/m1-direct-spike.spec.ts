@@ -114,6 +114,7 @@ test("actual DirectPeer transports synthetic portrait video over host-only WebRT
         direct: boolean;
         relayBytes: number;
         framesDecoded: number;
+        confirmationTransport: string;
       }>;
       close: () => void;
       replaceAudioTrack: (track: MediaStreamTrack | null) => Promise<void>;
@@ -255,8 +256,14 @@ test("actual DirectPeer transports synthetic portrait video over host-only WebRT
         samples.reduce((sum, value) => sum + value * value, 0) / samples.length,
       );
       await camera.replaceAudioTrack(null);
-      await new Promise((resolve) => setTimeout(resolve, 500));
-      const mutedAudio = audioRms();
+      // Let the real RTP jitter/decoder buffer drain, including under parallel
+      // browser load. Keep the same silence threshold and a bounded deadline.
+      const muteDeadline = Date.now() + 3000;
+      let mutedAudio = audioRms();
+      do {
+        await new Promise((resolve) => setTimeout(resolve, 100));
+        mutedAudio = audioRms();
+      } while (mutedAudio >= 0.001 && Date.now() < muteDeadline);
       await receiver.receive({
         type: "ice",
         candidate: {
@@ -306,6 +313,7 @@ test("actual DirectPeer transports synthetic portrait video over host-only WebRT
     }
   });
   expect(result.metrics?.direct).toBe(true);
+  expect(result.metrics?.confirmationTransport).toBe("local");
   expect(result.metrics?.relayBytes).toBe(0);
   expect(result.metrics!.framesDecoded).toBeGreaterThan(5);
   expect(result.dimensions).toEqual({ width: 720, height: 1280 });

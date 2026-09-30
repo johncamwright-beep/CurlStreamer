@@ -165,6 +165,7 @@ export async function startM4StudioRecorder(paths: {
             bootstrap.capability,
             { observations: true },
           ),
+          paths.diagnostic,
         );
       } finally {
         bootstrap.capability.fill(0);

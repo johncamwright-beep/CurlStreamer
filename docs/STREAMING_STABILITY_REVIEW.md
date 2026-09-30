@@ -30,9 +30,62 @@ hashes and the offline startup/shutdown check passed. This is a local patch, not
 a published installer. The native WebView2 fixture also passed pending/live and
 unexpected-controller-exit checks. The final unit suite passed 1,643 tests with
 93 skips; formatting, typechecking and the production build passed. Browser
-regression checks passed 246 tests with 92 skips. Physical camera, microphone and YouTube
-endurance remain unverified; repeat the camera-only test before enabling audio
-or starting a broadcast.
+regression checks passed 246 tests with 92 skips. John reports both cameras stable
+for over two minutes after the renderer update, with YouTube and USB audio off.
+A local read confirms both cameras receiving and the controller/native renderer
+still running, with no new exit in the lifecycle journal. This passes the initial
+camera-only check. John also reports the subsequent two-minute camera/USB-audio
+check stable. A local read confirms both cameras receiving, USB samples delivered
+and drained, microphone levels present and the audio renderer running. The live
+YouTube test subsequently failed at approximately 11:12:53 AM EDT: cameras cycled
+through reconnects and the local output failed. The controller, native renderer
+and USB sample delivery stayed running. The server desktop Stop was recorded
+about 20 seconds before its lease deadline, so expiry alone does not explain
+this failure. The prior two-minute checks are not evidence of live endurance.
+
+### Follow-up to the failed live test
+
+- Separate and coalesce read-only YouTube observations so a slow Google/server
+  response cannot hold the desktop heartbeat or Stop queue. Successful late
+  observations remain fenced by session, intent, expiry and cancellation.
+- Migration `0066_camera_authority_shared_locks.sql` is applied to production.
+  Camera actions take shared locks on game/assignment authority and still take
+  an exclusive lock on their own session row. Independent camera roles no longer
+  serialize every check on a whole-game exclusive lock. Release, completion and
+  deletion continue to conflict with the shared authority locks. Transactional
+  fixtures passed both roles, organization, assignment, negotiation, expiry,
+  completion and RPC permission checks; all fixture changes were rolled back.
+  The added multi-session concurrency test requires a disposable local database
+  and is skipped in this environment; it has not been presented as executed.
+- Add nonce-bound path confirmations over the existing peer's encrypted DTLS
+  data channel. This removes routine internet confirmation round trips from
+  redacted phone path statistics. Only independently verified receivers answer;
+  nonce/proof freshness stays five seconds and consumed proof replay is rejected.
+  Authorization tickets, role release and negotiation teardown remain separate.
+  Older peers retain cloud confirmation, and stale local proof restores fallback.
+- Record fixed stream failure reasons before cleanup can erase native output
+  evidence. An observed output failure remains failed rather than becoming an
+  ordinary stopped stream after cleanup. No raw errors, tokens or target values
+  are logged.
+
+Production logs include `peer_stale`, game-state conflicts and statement
+timeouts around the drop. A later snapshot showed valid assignments, fresh
+heartbeats and no blocked requests. Supabase also reports an ongoing Eastern US
+latency incident affecting clients/serverless functions regardless of project
+region: <https://status.supabase.com/>. These are potential contributors, not a
+confirmed explanation of every disconnect. Do not clear or replay the delivered
+output intent's quarantine to restart this failed broadcast.
+
+The follow-up desktop package is prepared as `0.4.0-pilot.4` and is not installed
+yet. Formatting, typechecking, production build, 1,649 unit tests and 246 browser
+tests passed (94 unit and 92 browser tests skipped for unavailable fixtures).
+Real synthetic portrait WebRTC also confirmed local path proofs, audio delivery,
+bounded mute settling and relay rejection. The packaged renderer check and
+offline startup/shutdown smoke passed. The renderer check previously waited for
+an internal camera status phrase that was not rendered; it now checks actual
+retry requests and both video elements. Physical live endurance remains
+unverified. Reconnect once after the coordinated update, then test the actual
+YouTube picture and sound for 5–10 minutes before a longer 45–60 minute run.
 
 ## September 29 baseline
 

@@ -136,4 +136,35 @@ describe("independent managed program stream", () => {
     expect(f.handoff).not.toHaveBeenCalled();
     expect(f.release).not.toHaveBeenCalled();
   });
+  it("preserves a native output failure as failed and records a fixed reason before cleanup", async () => {
+    vi.useFakeTimers();
+    const f = fixture();
+    const diagnostic = vi.fn();
+    const native = {
+      ...f.native,
+      observe: vi.fn(async () => ({
+        state: "failed" as const,
+        failure: "output-error" as const,
+        authority: 2,
+        bytes: 100,
+      })),
+    };
+    const stream = new M4ProgramStream(native, diagnostic);
+    vi.spyOn(f.desktop, "observeOutput").mockRejectedValue(
+      new Error("private-token"),
+    );
+    await stream.start(f.desktop, "intent");
+    await vi.advanceTimersByTimeAsync(0);
+    expect(stream.snapshot().state).toBe("failed");
+    expect(diagnostic).toHaveBeenCalledWith("stream_failed", {
+      reason: "native_output_error",
+    });
+    expect(
+      diagnostic.mock.calls.filter(([event]) => event === "stream_failed"),
+    ).toHaveLength(1);
+    expect(JSON.stringify(diagnostic.mock.calls)).not.toContain("private");
+    expect(f.native.stop).toHaveBeenCalledOnce();
+    expect(f.release).toHaveBeenCalledOnce();
+    expect(vi.getTimerCount()).toBe(0);
+  });
 });

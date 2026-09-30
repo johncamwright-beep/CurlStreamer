@@ -56,7 +56,8 @@ export class M4ApplicationOutput {
         await this.stop();
         return this.snapshot();
       }
-      await this.native.renew(this.desktop.remainingLeaseMs());
+      if (response.leaseRenewed)
+        await this.native.renew(this.desktop.remainingLeaseMs());
       return this.snapshot();
     } catch {
       await this.stop().catch(() => undefined);

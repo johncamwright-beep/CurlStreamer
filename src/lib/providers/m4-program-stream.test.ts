@@ -42,6 +42,7 @@ function fixture() {
     state: "active",
     authorized: true,
     desiredAction: "wait",
+    leaseRenewed: true,
   });
   const release = vi
     .spyOn(desktop, "stop")

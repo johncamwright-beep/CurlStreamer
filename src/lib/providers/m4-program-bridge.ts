@@ -6,6 +6,7 @@ import { z } from "zod";
 import { createM4SponsorAssets } from "./m4-sponsor-assets";
 import { createM4UsbAudioQueue } from "./m4-usb-audio";
 import type { M4ProgramClient } from "./m4-program-client";
+import { StudioTransportUnavailable } from "./studio-transport-error";
 import {
   cameraRoleSchema,
   signalSchema,
@@ -273,8 +274,10 @@ export async function createM4ProgramBridge(
         if (closed || events.some((event) => event.cameraRole !== role.data))
           throw Error();
         reply(200, { events });
-      } catch {
-        reply(409, { error: "Camera events unavailable" });
+      } catch (cause) {
+        reply(cause instanceof StudioTransportUnavailable ? 503 : 409, {
+          error: "Camera events unavailable",
+        });
       }
       return;
     }
@@ -376,8 +379,10 @@ export async function createM4ProgramBridge(
       } else value = await client.action(command.parse(parsed));
       if (closed) throw Error();
       reply(200, value);
-    } catch {
-      reply(409, { error: "Program unavailable" });
+    } catch (cause) {
+      reply(cause instanceof StudioTransportUnavailable ? 503 : 409, {
+        error: "Program unavailable",
+      });
     } finally {
       clearTimeout(timer);
       for (const chunk of chunks) chunk.fill(0);

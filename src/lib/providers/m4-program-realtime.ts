@@ -3,6 +3,7 @@ import { createClient } from "@supabase/supabase-js";
 import { performance } from "node:perf_hooks";
 import { z } from "zod";
 import type { M4ProgramClient } from "./m4-program-client";
+import { StudioTransportUnavailable } from "./studio-transport-error";
 import {
   cameraRoleSchema,
   signalAllowed,
@@ -139,6 +140,7 @@ export function createM4ProgramRealtime(options: {
     chain: Promise<unknown>;
     pending: number;
     renewing: boolean;
+    checkedAt: number;
     queue: Envelope[];
     seen: Map<string, number>;
     cancellation: AbortController;
@@ -227,13 +229,17 @@ export function createM4ProgramRealtime(options: {
       return task();
     });
     slot.chain = work
-      .catch(() => {
-        stop(slot);
+      .catch((cause) => {
+        if (!(cause instanceof StudioTransportUnavailable)) stop(slot);
       })
       .finally(() => {
         --slot.pending;
       });
-    return work.catch(() => {
+    return work.catch((cause) => {
+      if (cause instanceof StudioTransportUnavailable) {
+        live(slot);
+        throw cause;
+      }
       throw fail();
     });
   }
@@ -250,6 +256,7 @@ export function createM4ProgramRealtime(options: {
     );
     live(slot);
     if (!same(current, result)) throw fail();
+    slot.checkedAt = performance.now();
   }
   function receive(slot: Slot, value: unknown) {
     if (closed || slot.closed || !slot.ticket) return;
@@ -293,6 +300,7 @@ export function createM4ProgramRealtime(options: {
         chain: Promise.resolve(),
         pending: 0,
         renewing: false,
+        checkedAt: -Infinity,
         queue: [],
         seen: new Map(),
         cancellation: new AbortController(),
@@ -312,6 +320,7 @@ export function createM4ProgramRealtime(options: {
         );
         live(slot);
         slot.ticket = initial.row;
+        slot.checkedAt = performance.now();
         setDeadline(slot, initial.deadline);
         slot.transport = (options.transport ?? supabaseTransport)({
           url: options.url,
@@ -363,6 +372,7 @@ export function createM4ProgramRealtime(options: {
             );
             live(slot);
             slot.ticket = next.row;
+            slot.checkedAt = performance.now();
             setDeadline(slot, next.deadline);
           })
             .catch(() => undefined)
@@ -383,7 +393,11 @@ export function createM4ProgramRealtime(options: {
         slot = slots.get(role);
       if (!slot) throw fail();
       return serial(slot, async () => {
-        await check(slot);
+        // Tickets independently validate authority every five seconds. Avoid
+        // another database write for each empty local renderer poll. Queued
+        // signals still require a fresh check immediately before release.
+        if (slot.queue.length || performance.now() - slot.checkedAt >= 5000)
+          await check(slot);
         return slot.queue
           .splice(0)
           .filter((message) => message.expiresAt > Date.now());

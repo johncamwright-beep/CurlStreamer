@@ -177,6 +177,44 @@ test("summary and saved payload reserve an unlisted YouTube watch page", async (
     fullPage: true,
   });
 });
+
+test("a pending YouTube page explains the uncertainty and retries the same game", async ({
+  page,
+}) => {
+  await fillGame(page);
+  await page
+    .locator("summary")
+    .filter({ hasText: /^Streaming/ })
+    .click();
+  await page.getByRole("radio", { name: "Yes" }).check();
+  const payloads: { operation: string; gameId: string }[] = [];
+  await page.route("**/api/team-schedule", async (route) => {
+    const payload = route.request().postDataJSON();
+    payloads.push(payload);
+    await route.fulfill({
+      json: {
+        game: { id: payload.gameId },
+        youtube:
+          payload.operation === "createGame"
+            ? { status: "pending", errorCode: "broadcast_operation_uncertain" }
+            : { status: "ready", thumbnailStatus: "ready" },
+      },
+    });
+  });
+  await page
+    .getByRole("button", { name: "Schedule game", exact: true })
+    .click();
+  await expect(page.getByRole("status")).toContainText(
+    "Check this channel's Live list",
+  );
+  await page.getByRole("button", { name: "Retry YouTube" }).click();
+  await expect(page.getByRole("status")).toHaveCount(0);
+  expect(payloads.map((item) => item.operation)).toEqual([
+    "createGame",
+    "retryYouTube",
+  ]);
+  expect(payloads[1].gameId).toBe(payloads[0].gameId);
+});
 test("unknown opponents are explained and invalid collapsed title settings reopen", async ({
   page,
 }) => {

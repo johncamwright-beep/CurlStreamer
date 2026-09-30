@@ -1,10 +1,12 @@
 import { randomUUID } from "node:crypto";
+import { performance } from "node:perf_hooks";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   createM4ProgramRealtime,
   type M4RealtimeTransport,
 } from "./m4-program-realtime";
 import type { CameraRole } from "../m2-studio-protocol";
+import { StudioTransportUnavailable } from "./studio-transport-error";
 
 const session = "11111111-1111-4111-8111-111111111111";
 const negotiation = "22222222-2222-4222-8222-222222222222";
@@ -59,9 +61,47 @@ function fixture() {
   });
   return { relay, client, subscriptions };
 }
-afterEach(() => vi.useRealTimers());
+afterEach(() => {
+  vi.useRealTimers();
+  vi.restoreAllMocks();
+});
 
 describe("Node-owned program realtime boundary", () => {
+  it("does not write a remote authority check for each empty renderer poll", async () => {
+    vi.useFakeTimers();
+    vi.spyOn(performance, "now").mockImplementation(() => Date.now());
+    const f = fixture();
+    try {
+      await f.relay.connect("camera-home");
+      for (let i = 0; i < 4; i++) {
+        await vi.advanceTimersByTimeAsync(1000);
+        expect(await f.relay.drain("camera-home")).toEqual([]);
+      }
+      expect(f.client.action).toHaveBeenCalledTimes(2);
+      await vi.advanceTimersByTimeAsync(1000);
+      await f.relay.drain("camera-home");
+      expect(f.client.action).toHaveBeenCalledTimes(3);
+      expect(f.subscriptions[0].renew).toHaveBeenCalledTimes(1);
+    } finally {
+      await f.relay.close();
+    }
+  });
+  it("keeps a current ticket through one renewal outage but stops at its original expiry", async () => {
+    vi.useFakeTimers();
+    vi.spyOn(performance, "now").mockImplementation(() => Date.now());
+    const f = fixture();
+    await f.relay.connect("camera-home");
+    f.client.action.mockRejectedValue(new StudioTransportUnavailable());
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(f.subscriptions[0].close).not.toHaveBeenCalled();
+    expect(f.subscriptions[0].renew).not.toHaveBeenCalled();
+    await expect(f.relay.drain("camera-home")).rejects.toBeInstanceOf(
+      StudioTransportUnavailable,
+    );
+    await vi.advanceTimersByTimeAsync(14000);
+    expect(f.subscriptions[0].close).toHaveBeenCalledTimes(1);
+    await f.relay.close();
+  });
   it.each(["close", "timeout", "expiry"] as const)(
     "settles never-ready subscription on %s and bounds stuck cleanup",
     async (mode) => {
@@ -187,7 +227,7 @@ describe("Node-owned program realtime boundary", () => {
       ])
         f.subscriptions[0].options.receive(message(change));
       expect(await f.relay.drain("camera-home")).toEqual([]);
-      expect(f.client.action).toHaveBeenCalledTimes(3);
+      expect(f.client.action).toHaveBeenCalledTimes(2);
     } finally {
       await f.relay.close();
     }

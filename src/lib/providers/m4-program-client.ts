@@ -3,6 +3,7 @@ import { performance } from "node:perf_hooks";
 import { z } from "zod";
 import type { BroadcastGame } from "../game-projection";
 import { gameSchema } from "../schema";
+import { StudioTransportUnavailable } from "./studio-transport-error";
 import {
   cameraRoleSchema,
   signalAllowed,
@@ -346,6 +347,8 @@ export class M4ProgramClient {
         !(cause instanceof NetworkUnavailable)
       )
         this.close();
+      if (cause instanceof NetworkUnavailable)
+        throw new StudioTransportUnavailable();
       throw fail();
     }
   }

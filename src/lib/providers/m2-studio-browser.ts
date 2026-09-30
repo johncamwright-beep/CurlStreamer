@@ -9,6 +9,7 @@ import {
 } from "@/lib/m2-studio-protocol";
 import { DirectPeer, type DirectMetrics } from "./direct-peer";
 import type { z } from "zod";
+import { StudioTransportUnavailable } from "./studio-transport-error";
 
 export type StudioRequest = (
   body: z.infer<typeof studioRequestSchema>,
@@ -142,7 +143,14 @@ export async function connectStudio(options: {
         throw Error();
       await db.realtime.setAuth(next.token);
       ticket = next;
-    } catch {
+    } catch (cause) {
+      // A failed renewal cannot extend capture. Keep the original deadline;
+      // explicit rejection still stops immediately.
+      if (cause instanceof StudioTransportUnavailable) {
+        if (serverNow(true) >= ticket.expiresAt)
+          stop("Studio authority expired. Capture stopped.");
+        return;
+      }
       stop(
         "Studio or camera authority ended. Reconnect only while the game and assignment remain active.",
       );
@@ -200,11 +208,18 @@ export async function connectStudio(options: {
             await peer.receive(message.signal);
           } else if (!closed) ++signaling.expired;
         })
-        .catch(() =>
+        .catch((cause) => {
+          // Drop this envelope; never forward it without a fresh authority
+          // check. Later messages can recover within the original ticket.
+          if (
+            cause instanceof StudioTransportUnavailable &&
+            serverNow(true) < ticket.expiresAt
+          )
+            return;
           stop(
             "Signaling authority ended. Reconnect from the current session.",
-          ),
-        );
+          );
+        });
     });
     await new Promise<void>((resolve, reject) => {
       const timeout = setTimeout(

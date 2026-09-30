@@ -33,6 +33,10 @@ import { shouldApplyCameraZoomCommand } from "@/lib/camera-zoom-command";
 import type { CameraAudioStatus } from "@/lib/types";
 import { cameraAudioEnabled } from "@/lib/camera-audio";
 import { selectPhoneAudioTrack } from "@/lib/phone-audio-track";
+import {
+  StudioTransportUnavailable,
+  isTemporaryStudioStatus,
+} from "@/lib/providers/studio-transport-error";
 
 export function M2CameraSlot({
   id,
@@ -337,9 +341,9 @@ export function M2CameraSlot({
       body: JSON.stringify({ ...body, cameraRole }),
       cache: "no-store",
       signal: AbortSignal.timeout(8_000),
-    }).catch((error: unknown) => {
+    }).catch(() => {
       if (requestEpoch === epoch.current) recoverable.current = true;
-      throw error;
+      throw new StudioTransportUnavailable();
     });
     const value = await result.json().catch(() => null);
     if (!result.ok) {
@@ -361,6 +365,8 @@ export function M2CameraSlot({
                 (result.status === 401 || result.status === 403)
               ? "This camera no longer has access. Ask the organizer for a new camera QR code."
               : "Could not connect to Studio. Check your connection and try again.";
+      if (isTemporaryStudioStatus(result.status))
+        throw new StudioTransportUnavailable();
       throw Error("Studio request failed");
     }
     return value;

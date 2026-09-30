@@ -22,6 +22,7 @@ vi.mock("./direct-peer", () => ({
   },
 }));
 import { connectStudio, type StudioRequest } from "./m2-studio-browser";
+import { StudioTransportUnavailable } from "./studio-transport-error";
 function ticket(cameraRole: "camera-home" | "camera-away"): StudioTicket {
   return {
     cameraRole,
@@ -90,6 +91,51 @@ afterEach(() => {
   vi.unstubAllEnvs();
 });
 describe("M2 camera role authority and independent connections", () => {
+  it("recovers a temporary renewal outage using the same camera and scoped subscription", async () => {
+    const initial = ticket("camera-away");
+    const onStop = vi.fn();
+    const request = vi.fn<StudioRequest>().mockResolvedValue(initial);
+    const connection = await connectStudio({
+      side: "camera",
+      ticket: initial,
+      request,
+      onStop,
+      onVideo: vi.fn(),
+      onMetrics: vi.fn(),
+    });
+    request.mockRejectedValueOnce(new StudioTransportUnavailable());
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(onStop).not.toHaveBeenCalled();
+    expect(mocks.peers[0].close).not.toHaveBeenCalled();
+    request.mockResolvedValue({ ...initial, expiresAt: Date.now() + 20000 });
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(mocks.createClient).toHaveBeenCalledTimes(1);
+    expect(
+      mocks.createClient.mock.results[0].value.realtime.setAuth,
+    ).toHaveBeenCalledTimes(2);
+    connection.stop();
+  });
+  it("does not extend camera capture on repeated temporary renewal failures", async () => {
+    const initial = ticket("camera-away");
+    const onStop = vi.fn();
+    const request = vi
+      .fn<StudioRequest>()
+      .mockResolvedValueOnce(initial)
+      .mockRejectedValue(new StudioTransportUnavailable());
+    await connectStudio({
+      side: "camera",
+      ticket: initial,
+      request,
+      onStop,
+      onVideo: vi.fn(),
+      onMetrics: vi.fn(),
+    });
+    await vi.advanceTimersByTimeAsync(21000);
+    expect(onStop).toHaveBeenCalledExactlyOnceWith(
+      "Studio authority expired. Capture stopped.",
+    );
+    expect(mocks.peers[0].close).toHaveBeenCalledTimes(1);
+  });
   it.each([-60000, 60000])(
     "accepts fresh offers with a device clock offset of %i ms, while rejecting expired and overlong messages",
     async (offset) => {

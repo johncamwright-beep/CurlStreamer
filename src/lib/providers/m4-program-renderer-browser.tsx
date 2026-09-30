@@ -11,6 +11,10 @@ import type { DirectMetrics } from "./direct-peer";
 import { connectM4ProgramCamera } from "./m4-program-camera";
 import { ProgramPhoneAudio } from "@/components/ProgramPhoneAudio";
 import { ProgramUsbAudio } from "@/components/ProgramUsbAudio";
+import {
+  StudioTransportUnavailable,
+  isTemporaryStudioStatus,
+} from "./studio-transport-error";
 
 type CameraState = {
   stream?: MediaStream;
@@ -36,6 +40,8 @@ async function request(
       body === undefined ? undefined : { "content-type": "application/json" },
     body: body === undefined ? undefined : JSON.stringify(body),
   });
+  if (isTemporaryStudioStatus(response.status) && !response.redirected)
+    throw new StudioTransportUnavailable();
   if (!response.ok || response.redirected)
     throw new Error("program_unavailable");
   return response.json() as Promise<unknown>;
@@ -104,7 +110,7 @@ function ProgramRenderer() {
         if (!value.game || controller.signal.aborted) throw new Error();
         setGame(value.game);
         setProgramMessage("Local program ready");
-        timer = setTimeout(() => void poll(), 500);
+        timer = setTimeout(() => void poll(), 1000);
       } catch {
         if (!controller.signal.aborted) {
           setProgramMessage("Reconnecting to Studio…");

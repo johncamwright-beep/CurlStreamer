@@ -64,6 +64,7 @@ type State =
   | "stopping"
   | "stopped";
 const fail = () => new Error("m4_desktop_client_unavailable");
+class TransportUnavailable extends Error {}
 
 /** Node-only capability holder. It does not control OBS. A native watchdog must
  * poll snapshot and stop OBS whenever authority is not active, including stalls.
@@ -282,23 +283,33 @@ export class M4DesktopClient {
           },
           body: JSON.stringify(body),
           signal: controller.signal,
-        }).then(async (response) => {
-          if (!response.ok) throw fail();
-          return {
-            value: await response.json(),
-            date: Date.parse(response.headers.get("date") ?? ""),
-          };
-        }),
+        })
+          .catch(() => {
+            throw new TransportUnavailable();
+          })
+          .then(async (response) => {
+            if ([408, 429, 500, 502, 503, 504].includes(response.status)) {
+              await response.body?.cancel().catch(() => undefined);
+              throw new TransportUnavailable();
+            }
+            if (!response.ok) throw fail();
+            return {
+              value: await response.json(),
+              date: Date.parse(response.headers.get("date") ?? ""),
+            };
+          }),
         new Promise<never>((_, reject) => {
           timer = setTimeout(() => {
             controller.abort();
-            reject(fail());
+            reject(new TransportUnavailable());
           }, 5_000);
         }),
       ]);
       if (!Number.isFinite(response.date)) throw fail();
       return { ...response, start };
-    } catch {
+    } catch (cause) {
+      if (cause instanceof TransportUnavailable)
+        throw new TransportUnavailable();
       throw fail();
     } finally {
       if (timer) clearTimeout(timer);
@@ -390,8 +401,27 @@ export class M4DesktopClient {
             this.#deadlines(parsed.data, response.date, response.start).lease,
           );
         this.#expire();
-        return { ...this.snapshot(), desiredAction: parsed.data.desiredAction };
-      } catch {
+        return {
+          ...this.snapshot(),
+          desiredAction: parsed.data.desiredAction,
+          leaseRenewed: parsed.data.desiredAction === "wait",
+        };
+      } catch (cause) {
+        this.#expire();
+        // A lost reply is not a revocation. Keep only the previously verified
+        // lease; the native watchdog still expires independently. Never retry
+        // target delivery or renew native authority using this failed request.
+        if (
+          cause instanceof TransportUnavailable &&
+          this.#state === "active" &&
+          fence === this.#fence &&
+          this.remainingLeaseMs() > 0
+        )
+          return {
+            ...this.snapshot(),
+            desiredAction: "wait" as const,
+            leaseRenewed: false,
+          };
         if (this.#state === "active") this.#state = "failed";
         throw fail();
       }

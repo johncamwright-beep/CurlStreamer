@@ -197,6 +197,48 @@ test("browser scoring keeps stream start in Windows Studio", async ({
   ).toBeEnabled();
 });
 
+test("scoring preserves its last loaded controls during a transient outage and clears them on revocation", async ({
+  page,
+}) => {
+  await setup(page);
+  await page
+    .getByRole("group", { name: "Points scored" })
+    .getByRole("button", { name: "3 points", exact: true })
+    .click();
+  await page.route(`**/api/games/${testGameId}`, (route) =>
+    route.fulfill({ status: 503, json: { error: "Unavailable" } }),
+  );
+  await expect(
+    page
+      .getByRole("status")
+      .filter({ hasText: "Showing the last loaded score" }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Save 3 points" }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "Scoring unavailable" }),
+  ).toHaveCount(0);
+  await page.route(`**/api/games/${testGameId}`, (route) =>
+    route.fulfill({
+      json: gameFixture(),
+      headers: { "x-curlcast-account-role": "owner" },
+    }),
+  );
+  await expect(page.getByText(/Showing the last loaded score/)).toHaveCount(0, {
+    timeout: 15000,
+  });
+  await page.route(`**/api/games/${testGameId}`, (route) =>
+    route.fulfill({ status: 403, json: { error: "Access revoked" } }),
+  );
+  await expect(
+    page.getByRole("heading", { name: "Scoring unavailable" }),
+  ).toBeVisible();
+  await expect(page.getByRole("button", { name: "Save 3 points" })).toHaveCount(
+    0,
+  );
+});
+
 test("an active carousel can be stopped after its sponsors are removed", async ({
   page,
 }) => {
@@ -423,6 +465,44 @@ test("desktop game day keeps scoring primary and settings available on demand", 
     })),
   );
   expect(game.claims).toEqual(gameFixture().claims);
+});
+
+test("Studio preview keeps its last picture through failed frame requests", async ({
+  page,
+}) => {
+  await page.addInitScript(() =>
+    Object.defineProperty(navigator, "userAgent", {
+      value: "CurlStreamerStudio/0.3 StudioProgramPreview/1",
+    }),
+  );
+  let unavailable = false;
+  const frame =
+    '<svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080"><rect width="1920" height="1080" fill="#163343"/></svg>';
+  await page.route("**/__studio-preview/**", (route) =>
+    unavailable
+      ? route.fulfill({ status: 503, body: "Unavailable" })
+      : route.fulfill({ contentType: "image/svg+xml", body: frame }),
+  );
+  await setup(page, true);
+  const preview = page.getByRole("region", {
+    name: "Studio program preview",
+    exact: true,
+  });
+  await expect(
+    preview.getByRole("img", { name: "Actual Studio program output" }),
+  ).toBeVisible();
+  unavailable = true;
+  await expect(preview.getByText("Preview reconnecting…")).toBeVisible({
+    timeout: 10000,
+  });
+  await expect(
+    preview.getByRole("img", { name: "Actual Studio program output" }),
+  ).toBeVisible();
+  await expect(preview.getByText("Waiting for Studio’s picture")).toHaveCount(
+    0,
+  );
+  unavailable = false;
+  await expect(preview.getByText("Preview reconnecting…")).toHaveCount(0);
 });
 
 test("remote scorer only sees scoreboard controls", async ({ page }) => {

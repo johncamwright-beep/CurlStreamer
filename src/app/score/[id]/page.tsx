@@ -102,7 +102,7 @@ export default function Scorer({
         />
       </main>
     );
-  if (error)
+  if (error && !game)
     return (
       <main className="scoring-workspace mx-auto max-w-xl">
         <AppNavigation />
@@ -271,6 +271,11 @@ export default function Scorer({
         (!canEndGame ? " scoring-remote" : "")
       }
     >
+      {error && (
+        <div className="scoring-card mb-3" role="status">
+          {error} Showing the last loaded score.
+        </div>
+      )}
       <header className="scoring-page-heading">
         <div className="scoring-navigation">
           <AppNavigation

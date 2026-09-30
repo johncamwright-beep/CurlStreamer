@@ -5,6 +5,7 @@ import {
   type CameraRole,
 } from "../m2-studio-protocol";
 import { z } from "zod";
+import { StudioTransportUnavailable } from "./studio-transport-error";
 
 /** Renderer transport only. Uses the existing unchanged direct-path verifier.
  * The trusted application supplies the local API transport; no Supabase client,
@@ -34,7 +35,7 @@ export async function connectM4ProgramCamera(options: {
     nextInspect = 0,
     closed = false;
   const call = async (path: string, body?: unknown) => {
-    // Event polling runs four times per second. AbortSignal.timeout() leaves
+    // Event polling runs once per second. AbortSignal.timeout() leaves
     // each successful request's timer alive until its deadline, so clear the
     // deadline as soon as this request settles or the connection stops.
     const deadline = new AbortController();
@@ -151,8 +152,16 @@ export async function connectM4ProgramCamera(options: {
           )
             throw Error();
         }
-        timer = setTimeout(() => void poll(), 250);
-      } catch {
+        // Drain once a second. The relay validates authority through five-second
+        // ticket renewals and freshly checks every queued signaling message.
+        timer = setTimeout(() => void poll(), 1000);
+      } catch (cause) {
+        // The Node relay retains only its unexpired ticket, and direct-path
+        // verification remains independently bounded by the watchdog.
+        if (cause instanceof StudioTransportUnavailable && !closed) {
+          timer = setTimeout(() => void poll(), 1000);
+          return;
+        }
         stop(
           "Camera authority or direct connection ended. Reconnect the camera.",
         );

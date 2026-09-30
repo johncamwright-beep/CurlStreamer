@@ -189,6 +189,7 @@ export async function findOrCreateYouTubeBroadcast(
   },
   fetcher: typeof fetch = fetch,
   allowCreate = true,
+  onBeforeInsert?: () => void,
 ): Promise<YouTubeBroadcast> {
   if (values.manualLifecycle && values.visibility !== "unlisted")
     throw new Error("youtube_manual_configuration_mismatch");
@@ -201,9 +202,10 @@ export async function findOrCreateYouTubeBroadcast(
   );
   if (!existing && !allowCreate)
     throw new Error("broadcast_operation_uncertain");
-  const value =
-    existing ??
-    broadcastSchema.parse(
+  let value = existing;
+  if (!value) {
+    onBeforeInsert?.();
+    value = broadcastSchema.parse(
       await youtubeRequest(
         "/liveBroadcasts?part=id,snippet,status,contentDetails",
         values.accessToken,
@@ -229,6 +231,7 @@ export async function findOrCreateYouTubeBroadcast(
         fetcher,
       ),
     );
+  }
   if (values.manualLifecycle && !manualBroadcastSchema.safeParse(value).success)
     throw new Error("youtube_manual_configuration_mismatch");
   return {

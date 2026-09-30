@@ -16,6 +16,7 @@ vi.mock("./direct-peer", () => ({
   },
 }));
 import { connectM4ProgramCamera } from "./m4-program-camera";
+import { StudioTransportUnavailable } from "./studio-transport-error";
 const ticket = {
   cameraRole: "camera-home",
   sessionId: "22222222-2222-4222-8222-222222222222",
@@ -35,6 +36,24 @@ afterEach(() => {
   vi.useRealTimers();
 });
 describe("program renderer camera transport", () => {
+  it("retains the same peer through a temporary signaling outage and resumes polling", async () => {
+    vi.useFakeTimers();
+    const h = hooks();
+    const request = vi
+      .fn()
+      .mockResolvedValue({ events: [] })
+      .mockResolvedValueOnce(ticket);
+    const handle = await connectM4ProgramCamera({ ...h, request });
+    await vi.advanceTimersByTimeAsync(0);
+    request.mockRejectedValueOnce(new StudioTransportUnavailable());
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(peer.close).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(peer.created).toHaveBeenCalledTimes(1);
+    expect(h.onStop).not.toHaveBeenCalled();
+    expect(h.onMetrics).toHaveBeenCalledTimes(2);
+    handle.stop();
+  });
   it("times out direct verification even when an event request never settles", async () => {
     vi.useFakeTimers();
     const h = hooks();
@@ -56,9 +75,14 @@ describe("program renderer camera transport", () => {
     const handle = await connectM4ProgramCamera({ ...h, request });
     await vi.advanceTimersByTimeAsync(0);
 
-    // Only the direct-path watchdog and the next 250 ms poll are pending.
+    // Only the direct-path watchdog and the next one-second poll are pending.
     // Successful requests must not each retain their 8-second deadline.
     expect(vi.getTimerCount()).toBe(2);
+    expect(request).toHaveBeenCalledTimes(2);
+    await vi.advanceTimersByTimeAsync(999);
+    expect(request).toHaveBeenCalledTimes(2);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(request).toHaveBeenCalledTimes(3);
     handle.stop();
   });
   it("rejects credential-bearing connection metadata before creating a peer", async () => {

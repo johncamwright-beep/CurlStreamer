@@ -37,6 +37,12 @@ export function useGame<V extends GameView = undefined>(
   const contextGate = useRef(new GameRefreshGate());
   const refresh = useCallback(
     async (includeNavigationMetadata = false) => {
+      const reportError = (message: string) => {
+        // The next poll is scheduled before React necessarily commits a render.
+        // Recovery must not inherit the previous outage's ten-second delay.
+        pollingState.current.error = message;
+        setError(message);
+      };
       const ticket = refreshGate.current.start();
       const contextTicket =
         includeNavigationMetadata && includeContext
@@ -55,7 +61,7 @@ export function useGame<V extends GameView = undefined>(
         );
       } catch {
         if (!refreshGate.current.accept(ticket)) return;
-        setError("Game service is temporarily unavailable.");
+        reportError("Game service is temporarily unavailable.");
         return;
       }
       if (r.ok) {
@@ -66,7 +72,7 @@ export function useGame<V extends GameView = undefined>(
           (!body.config && body.status !== "completed")
         ) {
           if (refreshGate.current.accept(ticket))
-            setError("Game details could not be read. Try again.");
+            reportError("Game details could not be read. Try again.");
           return;
         }
         const nextLifecycle =
@@ -98,7 +104,8 @@ export function useGame<V extends GameView = undefined>(
         setAccountOperator(r.headers.get("x-curlcast-operator") === "true");
         setAccountRole(r.headers.get("x-curlcast-account-role") ?? "");
         setM1Pilot(r.headers.get("x-curlcast-m1-pilot") === "true");
-        setError("");
+        pollingState.current.lifecycle = nextLifecycle;
+        reportError("");
       } else {
         const body = await r.json().catch(() => null);
         const nextLifecycle =
@@ -106,6 +113,10 @@ export function useGame<V extends GameView = undefined>(
             ? (body.lifecycle as "closed" | "deleted")
             : undefined;
         if (!refreshGate.current.accept(ticket, nextLifecycle)) return;
+        if ([408, 429, 500, 502, 503, 504].includes(r.status)) {
+          reportError("Game service is temporarily unavailable. Reconnecting…");
+          return;
+        }
         contextGate.current.reset();
         setGame(undefined);
         setCompletion(undefined);
@@ -116,7 +127,8 @@ export function useGame<V extends GameView = undefined>(
         if (nextLifecycle) setLifecycle(nextLifecycle);
         if ([401, 404, 410].includes(r.status))
           clearCurrentGameIfMatching(localStorage, id);
-        setError(body?.error ?? "Game is unavailable.");
+        if (nextLifecycle) pollingState.current.lifecycle = nextLifecycle;
+        reportError(body?.error ?? "Game is unavailable.");
       }
     },
     [id, view, invitation, includeContext],

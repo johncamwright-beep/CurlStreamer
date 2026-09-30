@@ -88,7 +88,7 @@ describe("M4 desktop output observation", () => {
     { youtube_connection_version: 4 },
     { broadcast_generation: 3 },
     { expires_at: "2026-09-08T14:01:00Z" },
-    { lease_expires_at: "2026-09-08T10:01:00Z" },
+    { lease_expires_at: "2026-09-08T10:00:20Z" },
   ])(
     "discards observation after concurrent binding change %o",
     async (change) => {
@@ -107,6 +107,21 @@ describe("M4 desktop output observation", () => {
     await expect(
       observeM4DesktopOutput(game, credential, intentId),
     ).rejects.toMatchObject({ code: "42501" });
+  });
+  it("preserves live evidence when a concurrent heartbeat extends the same desktop lease", async () => {
+    mocks.rpc
+      .mockResolvedValueOnce({ data: [row], error: null })
+      .mockResolvedValueOnce({
+        data: [{ ...row, lease_expires_at: "2026-09-08T10:01:00Z" }],
+        error: null,
+      });
+    await expect(
+      observeM4DesktopOutput(game, credential, intentId),
+    ).resolves.toEqual({ intentId, sessionId, generation: 1, ...observation });
+    expect(mocks.rpc).toHaveBeenLastCalledWith(
+      "record_m4_live_evidence",
+      expect.any(Object),
+    );
   });
   it.each(["CURLCAST_M4_LOCAL_YOUTUBE", "CURLCAST_M4_TARGET_HANDOFF"])(
     "requires %s",

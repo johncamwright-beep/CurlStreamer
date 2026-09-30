@@ -8,10 +8,11 @@ const mocks = vi.hoisted(() => ({
   broadcast: vi.fn(),
   thumbnail: vi.fn(),
   update: vi.fn(),
+  from: vi.fn(),
 }));
 
 vi.mock("@/lib/supabase/admin", () => ({
-  createAdminSupabaseClient: () => ({ rpc: mocks.rpc }),
+  createAdminSupabaseClient: () => ({ rpc: mocks.rpc, from: mocks.from }),
 }));
 vi.mock("./scheduled-youtube-credentials", () => ({
   getScheduledYouTubeCredentials: mocks.credentials,
@@ -33,6 +34,13 @@ import { provisionScheduledYouTubeBroadcast } from "./scheduled-youtube";
 describe("scheduled YouTube provisioning", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    const updateQuery = {
+      eq: vi.fn().mockReturnThis(),
+      is: vi.fn().mockReturnThis(),
+      then: (resolve: (value: { error: null }) => void) =>
+        resolve({ error: null }),
+    };
+    mocks.from.mockReturnValue({ update: vi.fn(() => updateQuery) });
     mocks.thumbnail.mockResolvedValue(undefined);
     mocks.update.mockResolvedValue(undefined);
     mocks.credentials.mockResolvedValue({
@@ -100,6 +108,63 @@ describe("scheduled YouTube provisioning", () => {
     );
     expect(result.status).toBe("pending");
     expect(mocks.rpc).not.toHaveBeenCalled();
+  });
+
+  it("releases an intent when discovery fails before any YouTube insert", async () => {
+    mocks.rpc
+      .mockResolvedValueOnce({ data: [{ action: "run" }], error: null })
+      .mockResolvedValueOnce({ data: [{ action: "run" }], error: null })
+      .mockResolvedValueOnce({
+        data: [
+          {
+            status: "ready",
+            watch_url: "https://www.youtube.com/watch?v=abcdefghijk",
+          },
+        ],
+        error: null,
+      });
+    mocks.broadcast.mockRejectedValueOnce(
+      new Error("youtube_provider_unavailable"),
+    );
+    const user = { id: "22222222-2222-4222-8222-222222222222" } as never;
+    const values = {
+      gameId: "33333333-3333-4333-8333-333333333333",
+      title: "Final",
+      scheduledStart: "2026-11-01T06:30:00.000Z",
+    };
+    await expect(
+      provisionScheduledYouTubeBroadcast(user, values),
+    ).resolves.toMatchObject({
+      status: "pending",
+      errorCode: "youtube_provider_unavailable",
+    });
+    expect(mocks.from).toHaveBeenCalledWith("games");
+    await expect(
+      provisionScheduledYouTubeBroadcast(user, values),
+    ).resolves.toMatchObject({
+      status: "ready",
+    });
+  });
+
+  it("keeps an intent when a YouTube insert may have started", async () => {
+    mocks.rpc.mockResolvedValueOnce({ data: [{ action: "run" }], error: null });
+    mocks.broadcast.mockImplementationOnce(
+      async (_values, _fetcher, _allowCreate, onBeforeInsert) => {
+        onBeforeInsert();
+        throw new Error("youtube_provider_unavailable");
+      },
+    );
+    await expect(
+      provisionScheduledYouTubeBroadcast(
+        { id: "22222222-2222-4222-8222-222222222222" } as never,
+        {
+          gameId: "33333333-3333-4333-8333-333333333333",
+          title: "Final",
+          scheduledStart: "2026-11-01T06:30:00.000Z",
+        },
+      ),
+    ).resolves.toMatchObject({ status: "pending" });
+    expect(mocks.from).not.toHaveBeenCalled();
   });
 
   it("retains a ready watch page when thumbnail upload fails and retries without another broadcast", async () => {

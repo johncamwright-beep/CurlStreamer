@@ -8,6 +8,7 @@ import { refreshYouTubeAccessToken } from "./youtube";
 import {
   findOrCreateYouTubeBroadcast,
   updateScheduledYouTubeTime,
+  type YouTubeBroadcast,
 } from "./youtube-live";
 import {
   uploadScheduledThumbnail,
@@ -16,7 +17,9 @@ import {
 
 function providerError(error: unknown) {
   const message = error instanceof Error ? error.message : "";
-  return message.startsWith("youtube_")
+  return message.startsWith("youtube_") ||
+    message === "broadcast_operation_uncertain" ||
+    message === "broadcast_discovery_incomplete"
     ? message
     : "youtube_provider_unavailable";
 }
@@ -109,11 +112,13 @@ export async function provisionScheduledYouTubeBroadcast(
       watchUrl: null,
       errorCode: "youtube_schedule_unavailable",
     } as const;
+  let insertAttempted = false;
+  let broadcast: YouTubeBroadcast;
   try {
     const signal = AbortSignal.timeout(8_000);
     const scheduledFetch: typeof fetch = (input, init) =>
       fetch(input, { ...init, signal });
-    const broadcast = await findOrCreateYouTubeBroadcast(
+    broadcast = await findOrCreateYouTubeBroadcast(
       {
         accessToken,
         sessionKey: values.gameId,
@@ -124,7 +129,31 @@ export async function provisionScheduledYouTubeBroadcast(
       },
       scheduledFetch,
       action === "run",
+      () => {
+        insertAttempted = true;
+      },
     );
+  } catch (error) {
+    const code = providerError(error);
+    if (action === "run" && !insertAttempted) {
+      // No insert was attempted by this request. Reopen the game for a retry;
+      // discovery still runs before a new page can be created.
+      await db
+        .from("games")
+        .update({
+          youtube_scheduled_status: "pending",
+          youtube_scheduled_error_code: code,
+          youtube_scheduled_updated_at: new Date().toISOString(),
+        })
+        .eq("id", values.gameId)
+        .eq("organization_id", credentials.organization_id)
+        .eq("youtube_scheduled_status", "intent")
+        .is("youtube_scheduled_broadcast_id", null)
+        .is("youtube_scheduled_watch_url", null);
+    }
+    return { status: "pending", watchUrl: null, errorCode: code } as const;
+  }
+  try {
     const { data, error } = await db.rpc("record_scheduled_youtube_broadcast", {
       p_user_id: user.id,
       p_game_id: values.gameId,

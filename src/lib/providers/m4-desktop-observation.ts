@@ -114,9 +114,15 @@ export async function observeM4DesktopOutput(
       "youtube_channel_id",
       "youtube_connection_version",
       "expires_at",
-      "lease_expires_at",
     ] as const)
       if (current[key] !== initial[key]) throw new Error();
+    // A heartbeat may renew the same desktop while Google is being checked.
+    // Both reads assert current authority; an extension is not a new binding.
+    if (
+      Date.parse(current.lease_expires_at) <
+      Date.parse(initial.lease_expires_at)
+    )
+      throw new Error();
     if (!m4DesktopObservationEnabled()) throw new Error();
     if (observation.broadcastLive) {
       const { error } = await createAdminSupabaseClient().rpc(

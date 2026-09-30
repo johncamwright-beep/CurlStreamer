@@ -103,6 +103,35 @@ describe("YouTube Live provider", () => {
       fetcher.mock.calls.some(([url]) => String(url).includes("/transition")),
     ).toBe(false);
   });
+  it("marks provider insertion only after broadcast discovery succeeds", async () => {
+    const beforeInsert = vi.fn();
+    const failedDiscovery = vi
+      .fn<typeof fetch>()
+      .mockRejectedValue(new Error("offline"));
+    await expect(
+      findOrCreateYouTubeBroadcast(
+        manualValues,
+        failedDiscovery,
+        true,
+        beforeInsert,
+      ),
+    ).rejects.toThrow("youtube_provider_unavailable");
+    expect(beforeInsert).not.toHaveBeenCalled();
+
+    const failedInsert = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(json({ items: [] }))
+      .mockRejectedValueOnce(new Error("offline"));
+    await expect(
+      findOrCreateYouTubeBroadcast(
+        manualValues,
+        failedInsert,
+        true,
+        beforeInsert,
+      ),
+    ).rejects.toThrow("youtube_provider_unavailable");
+    expect(beforeInsert).toHaveBeenCalledOnce();
+  });
   it("uses the scheduled game instant for a reserved watch page", async () => {
     const fetcher = vi
       .fn<typeof fetch>()

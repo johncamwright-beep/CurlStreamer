@@ -257,6 +257,69 @@ describe("in-memory M4 desktop capability client", () => {
     fetcher.mockResolvedValueOnce(response({ ...row, desiredAction: "stop" }));
     await client.stop();
   });
+  it.each([408, 429, 500, 502, 503, 504])(
+    "keeps only acknowledged authority during HTTP %s and recovers on a fresh heartbeat",
+    async (status) => {
+      const { client, fetcher, advance } = setup();
+      await client.exchange(code);
+      advance(5000);
+      const remaining = client.remainingLeaseMs();
+      fetcher.mockResolvedValueOnce(new Response("unavailable", { status }));
+      expect(await client.heartbeat()).toMatchObject({
+        authorized: true,
+        leaseRenewed: false,
+      });
+      expect(client.remainingLeaseMs()).toBe(remaining);
+      advance(5000);
+      fetcher.mockResolvedValueOnce(
+        response(
+          {
+            ...row,
+            leaseExpiresAt: new Date(epoch + 40000).toISOString(),
+            desiredAction: "wait",
+          },
+          epoch + 10000,
+        ),
+      );
+      expect(await client.heartbeat()).toMatchObject({ leaseRenewed: true });
+      expect(client.remainingLeaseMs()).toBe(26000);
+    },
+  );
+  it("expires repeated network failures without retrying exchange or extending authority", async () => {
+    const { client, fetcher, advance } = setup();
+    await client.exchange(code);
+    fetcher.mockRejectedValue(new TypeError("private network error"));
+    expect(await client.heartbeat()).toMatchObject({ leaseRenewed: false });
+    advance(29000);
+    await expect(client.heartbeat()).rejects.toThrow(
+      /^m4_desktop_client_unavailable$/,
+    );
+    expect(client.snapshot().state).toBe("expired");
+    expect(fetcher).toHaveBeenCalledTimes(2);
+  });
+  it.each([401, 402, 403, 409])(
+    "stops on HTTP %s instead of treating it as transport loss",
+    async (status) => {
+      const { client, fetcher } = setup();
+      await client.exchange(code);
+      fetcher.mockResolvedValueOnce(new Response("rejected", { status }));
+      await expect(client.heartbeat()).rejects.toThrow(
+        /^m4_desktop_client_unavailable$/,
+      );
+      expect(client.snapshot().authorized).toBe(false);
+    },
+  );
+  it("does not tolerate malformed successful heartbeat data", async () => {
+    const { client, fetcher } = setup();
+    await client.exchange(code);
+    fetcher.mockResolvedValueOnce(
+      new Response("broken json", {
+        headers: { date: new Date(epoch).toUTCString() },
+      }),
+    );
+    await expect(client.heartbeat()).rejects.toThrow();
+    expect(client.snapshot().authorized).toBe(false);
+  });
   it("bounds a stalled fetch even if the transport ignores abort", async () => {
     vi.useFakeTimers();
     const { client, fetcher } = setup();

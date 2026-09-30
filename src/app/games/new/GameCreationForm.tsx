@@ -22,6 +22,25 @@ import { DEFAULT_TIMEZONE, TimezoneSelect } from "@/components/TimezoneSelect";
 
 type Opponent = { id: string; display_name: string };
 type Dialog = "season" | "event" | null;
+function youtubeSchedulingMessage(code?: string) {
+  switch (code) {
+    case "youtube_reconnect_required":
+    case "youtube_scope_missing":
+      return "The connected YouTube channel needs authorization. Reconnect it in YouTube Settings, then retry this game.";
+    case "youtube_quota_exceeded":
+      return "YouTube's API limit has been reached. The game is saved; retry when the limit resets.";
+    case "youtube_live_streaming_not_enabled":
+    case "youtube_live_permission_blocked":
+      return "YouTube has not enabled live streaming for this channel. Check the channel in YouTube Studio before retrying.";
+    case "broadcast_operation_uncertain":
+    case "broadcast_discovery_incomplete":
+      return "We could not confirm whether YouTube created a watch page. Check this channel's Live list in YouTube Studio before retrying; do not schedule a duplicate game.";
+    case "youtube_provider_unavailable":
+      return "YouTube did not respond. The game is saved; try again shortly.";
+    default:
+      return "The game was saved, but its YouTube watch page is still pending.";
+  }
+}
 export function GameCreationForm({
   teamName,
   seasons: initialSeasons,
@@ -132,6 +151,7 @@ export function GameCreationForm({
   const [createdGame, setCreatedGame] = useState<{
     id: string;
     youtubeStatus?: string;
+    youtubeErrorCode?: string;
     thumbnailStatus?: string;
   } | null>(null);
   const [finishedScheduling, setFinishedScheduling] = useState(false);
@@ -378,6 +398,7 @@ export function GameCreationForm({
           youtubeStatus: youtubeEnabled
             ? (body.youtube?.status ?? "pending")
             : undefined,
+          youtubeErrorCode: body.youtube?.errorCode,
         });
         setBusy(false);
         saving.current = false;
@@ -413,6 +434,7 @@ export function GameCreationForm({
         setCreatedGame({
           ...createdGame,
           youtubeStatus: body.youtube?.status ?? "pending",
+          youtubeErrorCode: body.youtube?.errorCode,
         });
         setBusy(false);
         return;
@@ -420,6 +442,7 @@ export function GameCreationForm({
       setCreatedGame({
         ...createdGame,
         youtubeStatus: "ready",
+        youtubeErrorCode: undefined,
         thumbnailStatus: body.youtube?.thumbnailStatus,
       });
       setBusy(false);
@@ -450,7 +473,7 @@ export function GameCreationForm({
               <p>
                 {createdGame.youtubeStatus === "ready"
                   ? "Your watch link is ready, but YouTube could not accept its preview image. You can retry or continue scheduling."
-                  : "The game was saved, but its YouTube watch page is still pending."}
+                  : youtubeSchedulingMessage(createdGame.youtubeErrorCode)}
               </p>
               <button
                 type="button"

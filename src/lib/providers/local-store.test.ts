@@ -39,6 +39,29 @@ afterEach(() => {
 });
 
 describe("local-store shared assignment authority", () => {
+  it("persists reconnect intent without changing scores or camera assignment", async () => {
+    const store = await loadFreshStore();
+    const game = store.createGame(config);
+    const commandId = "55555555-5555-4555-8555-555555555555";
+    const claims = { ...game.claims };
+    const scores = structuredClone(game.scoreEvents);
+    const before = Date.now();
+    store.updateGame(game.id, {
+      type: "camera-reconnect",
+      role: "camera-home",
+      commandId,
+    });
+    const reloaded = (await reloadStore()).getGame(game.id)!;
+    expect(reloaded.cameraReconnect?.["camera-home"]).toEqual({
+      id: commandId,
+      requestedAt: expect.any(Number),
+    });
+    expect(
+      reloaded.cameraReconnect!["camera-home"]!.requestedAt,
+    ).toBeGreaterThanOrEqual(before);
+    expect(reloaded.claims).toEqual(claims);
+    expect(reloaded.scoreEvents).toEqual(scores);
+  });
   it("limits microphone reports to the assigned phone and clears intent on release", async () => {
     const store = await loadFreshStore();
     const game = store.createGame(config);

@@ -139,6 +139,52 @@ An intermediate typecheck overlapped Next.js regenerating its types; the final
 check after the build completed passed. This follow-up is a website/provider
 change and does not replace the running Studio binaries.
 
+Commit `3e51747` is pushed and the website deployment is verified anonymously:
+the live scoring bundle contains both new status labels, and its stylesheet
+contains the compact heading wrap. The deployed scoring bundle SHA-256 is
+`4c1e29b15fcfc8e7b823b9db45632c0edf2ecec89a849697f61f1286e8245c93`.
+The running installation remains `0.4.0-pilot.4`; no new installer is required
+for this website follow-up. Refresh the scoring page after finishing the current
+live test to load the new display.
+
+## Same-link recovery and phone wake follow-up
+
+- The camera page owns its screen wake lock independently of its connection.
+  Disconnect and automatic retries leave it held; closing the page releases it.
+  Returning to a visible page reacquires it. Browser denial and repeated system
+  release remain bounded and show an unlocked-phone instruction. A browser cannot
+  override manual locking, background suspension or operating-system power policy.
+- Camera recovery retries continue with a capped delay while the prior capture
+  consent and assignment remain valid. Scoring has a role-scoped **Reconnect
+  camera** request, consumed once by an already connected, unlocked phone. New
+  invitations, explicit phone Disconnect and rejected access require fresh consent.
+- Studio's **Disconnect** pauses only the already bound native stream. **Reconnect**
+  resumes that output and its existing watch page without another target handoff,
+  provider creation or camera-program restart. Independent authority renewals
+  continue while paused; Stop, lease expiry, output failure and End Game stay
+  terminal. Older launchers do not advertise recovery, so the website disables
+  Disconnect rather than accidentally completing their broadcasts.
+- A failed UI command no longer changes actual native/provider output evidence.
+  Active local output with unavailable Google confirmation says it is sending video
+  and checking YouTube. The verified watch destination survives status loss and is
+  displayed as a compact label. Sponsor placement controls divide the tile evenly.
+- Preparation no longer automatically retires quarantined output or replaces an
+  already completed watch page. Completed YouTube broadcasts cannot reopen.
+  Recovery after loss of native authority is still blocked; this patch implements
+  pause/resume of valid authority, not replay of a consumed grant.
+
+Validation: the full unit suite passed 1,659 tests with 94 environment-dependent
+skips; added cleanup and late-Stop regressions passed in focused checks. Production
+builds passed. The main browser suite passed 167 checks with one compact-height
+failure and 92 skips; the height was corrected without reducing 44px controls.
+The repaired desktop/mobile checks and all 78 account/provider checks passed.
+All 26 phone/scoring/YouTube checks passed together on the final functional patch.
+Native OBS validation passed all 20 checks, including pause/resume, recording
+continuity, expiry and terminal Stop. The real WebView2 fixture passed with mocked
+resources and no accounts or live media. Studio `0.4.0-pilot.5` is staged locally;
+the running `0.4.0-pilot.4` installation has not been changed. Physical same-link
+disconnect/reconnect and phone screen-timeout testing remain required.
+
 ## September 29 baseline
 
 The review found software failure paths that can explain abrupt disconnections

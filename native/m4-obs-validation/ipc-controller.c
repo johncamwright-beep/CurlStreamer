@@ -35,6 +35,8 @@ int wmain(int argc, WCHAR **argv)
     h.magic = M4_IPC_MAGIC; h.version = 1; h.opcode = 1; h.length = sizeof(arm); h.sequence = 1;
     memcpy(h.token, b.token, sizeof(h.token));
     arm.lease_ms = 1000;
+    if (b.scenario == IPC_PAUSE_RESUME) arm.lease_ms = 6000;
+    if (b.scenario == IPC_PAUSED_EXPIRE) arm.lease_ms = 2000;
     strcpy_s(arm.server, sizeof(arm.server), "rtmps://synthetic.invalid/live2");
     strcpy_s(arm.key, sizeof(arm.key), b.canary);
     if (b.scenario >= IPC_PRODUCTION_ARM) strcpy_s(arm.server, sizeof(arm.server), "rtmps://a.rtmps.youtube.com:443/live2");
@@ -50,7 +52,28 @@ int wmain(int argc, WCHAR **argv)
     CloseHandle((HANDLE)b.started); b.started = 0;
     Sleep(200);
     if (b.scenario == IPC_DISCONNECT) goto cleanup;
-    if (b.scenario == IPC_STOP) {
+    if (b.scenario == IPC_PAUSE_RESUME || b.scenario == IPC_PAUSED_EXPIRE) {
+        h.opcode = 5; h.length = 0; ++h.sequence;
+        if (!send_frame(pipe, &h, NULL, 0)) { result = 6; goto cleanup; }
+        int confirmed = 0;
+        for (int i = 0; i < 50; ++i) { if (observe(pipe, &h, 1, 3)) { confirmed = 1; break; } Sleep(20); }
+        if (!confirmed) { result = 6; goto cleanup; }
+        Sleep(200);
+        if (!observe(pipe, &h, 1, 3)) { result = 6; goto cleanup; }
+        if (b.scenario == IPC_PAUSE_RESUME) {
+            h.opcode = 6; h.length = 0; ++h.sequence;
+            if (!send_frame(pipe, &h, NULL, 0)) { result = 6; goto cleanup; }
+            confirmed = 0;
+            for (int i = 0; i < 50; ++i) { if (observe(pipe, &h, 1, 2)) { confirmed = 1; break; } Sleep(20); }
+            if (!confirmed) { result = 6; goto cleanup; }
+            h.opcode = 3; h.length = 0; ++h.sequence;
+            if (!send_frame(pipe, &h, NULL, 0)) { result = 6; goto cleanup; }
+            Sleep(100);
+        } else Sleep(2200);
+        if (!observe(pipe, &h, 2, 3)) { result = 6; goto cleanup; }
+        h.opcode = 6; h.length = 0; ++h.sequence;
+        if (send_frame(pipe, &h, NULL, 0)) { result = 6; goto cleanup; }
+    } else if (b.scenario == IPC_STOP) {
         if (!observe(pipe, &h, 1, 1)) { result = 6; goto cleanup; }
         h.opcode = 3; h.length = 0; ++h.sequence;
         send_frame(pipe, &h, NULL, 0);

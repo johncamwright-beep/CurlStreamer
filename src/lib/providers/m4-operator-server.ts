@@ -32,6 +32,8 @@ const command = z.discriminatedUnion("action", [
     })
     .strict(),
   z.object({ action: z.literal("stop-stream") }).strict(),
+  z.object({ action: z.literal("pause-stream") }).strict(),
+  z.object({ action: z.literal("resume-stream") }).strict(),
 ]);
 const invitationCode = z.string().regex(/^[A-Za-z0-9_-]{43}$/);
 
@@ -88,8 +90,17 @@ type ProgramHandle = Omit<
   stream?: {
     start(desktop: M4DesktopClient, intentId: string): Promise<void>;
     stop(): Promise<void>;
+    pause?(): Promise<void>;
+    resume?(): Promise<void>;
     snapshot(): {
-      state: "idle" | "starting" | "armed" | "stopping" | "stopped" | "failed";
+      state:
+        | "idle"
+        | "starting"
+        | "armed"
+        | "paused"
+        | "stopping"
+        | "stopped"
+        | "failed";
       localOutput?: {
         state:
           "unknown" | "idle" | "connecting" | "active" | "stopped" | "failed";
@@ -278,6 +289,9 @@ export async function createM4OperatorServer(options: {
         options.pairingEnabled === true &&
         Boolean(programHandle?.stream),
       streaming,
+      canReconnect: Boolean(
+        programHandle?.stream?.pause && programHandle.stream.resume,
+      ),
       streamingMessage:
         streaming === "armed"
           ? broadcastLive
@@ -469,6 +483,20 @@ export async function createM4OperatorServer(options: {
         reply(409, { error: "No stream is active" });
         return;
       }
+      if (
+        (input.action === "pause-stream" || input.action === "resume-stream") &&
+        (options.streamingEnabled !== true ||
+          pairing !== "paired" ||
+          !desktop.snapshot().authorized ||
+          program !== "recording" ||
+          !programHandle?.stream?.pause ||
+          !programHandle.stream.resume ||
+          programHandle.stream.snapshot().state !==
+            (input.action === "pause-stream" ? "armed" : "paused"))
+      ) {
+        reply(409, { error: "Output recovery is not ready" });
+        return;
+      }
       const attempt = ++epoch;
       let programSettled: (() => void) | undefined;
       if (input.action === "start-program") {
@@ -571,6 +599,21 @@ export async function createM4OperatorServer(options: {
             streamingMessage =
               "Streaming request approved. YouTube reception is not confirmed.";
           }
+        } else if (
+          input.action === "pause-stream" ||
+          input.action === "resume-stream"
+        ) {
+          const handle = programHandle!;
+          const streamAttempt = ++streamEpoch;
+          if (input.action === "pause-stream") await handle.stream!.pause!();
+          else await handle.stream!.resume!();
+          if (streamAttempt === streamEpoch && programHandle === handle) {
+            streaming = handle.stream!.snapshot().state;
+            streamingMessage =
+              input.action === "pause-stream"
+                ? "YouTube disconnected. Watch link, cameras and microphone retained."
+                : "Reconnecting video to the same YouTube broadcast…";
+          }
         } else if (input.action === "stop-stream") {
           const handle = programHandle;
           const streamAttempt = ++streamEpoch;
@@ -642,7 +685,9 @@ export async function createM4OperatorServer(options: {
               "Could not verify this PC. Check the Studio installation.";
           } else if (
             input.action === "start-stream" ||
-            input.action === "stop-stream"
+            input.action === "stop-stream" ||
+            input.action === "pause-stream" ||
+            input.action === "resume-stream"
           ) {
             streaming = "failed";
             streamingMessage =
@@ -685,7 +730,7 @@ export async function createM4OperatorServer(options: {
     if (
       pairing !== "paired" ||
       busy ||
-      ["starting", "armed", "stopping"].includes(streaming)
+      ["starting", "armed", "paused", "stopping"].includes(streaming)
     )
       return;
     const attempt = epoch;

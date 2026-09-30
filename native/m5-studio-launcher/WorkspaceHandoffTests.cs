@@ -87,14 +87,19 @@ internal static class WorkspaceHandoffTests
                     // must clear the web button even when later polling stops.
                     await core.ExecuteScriptAsync("window.youtubeEvents=[];window.addEventListener('studio-youtube-status',e=>window.youtubeEvents.push(e.detail));");
                     var publish = typeof(Workspace).GetMethod("PublishYouTubeStatus", BindingFlags.Instance | BindingFlags.NonPublic);
-                    var readyState = new System.Collections.Generic.Dictionary<string, object> { { "streamingAvailable", true }, { "streaming", "armed" }, { "broadcast", "live" }, { "youtubeReception", "confirmed" } };
+                    var readyState = new System.Collections.Generic.Dictionary<string, object> { { "streamingAvailable", true }, { "streaming", "armed" }, { "broadcast", "live" }, { "youtubeReception", "confirmed" }, { "canReconnect", true }, { "localOutput", new System.Collections.Generic.Dictionary<string, object> { { "state", "active" } } } };
                     typeof(Workspace).GetField("busy", BindingFlags.Instance | BindingFlags.NonPublic).SetValue(form, true);
                     publish.Invoke(form, new object[] { readyState });
                     typeof(Workspace).GetField("busy", BindingFlags.Instance | BindingFlags.NonPublic).SetValue(form, false);
                     publish.Invoke(form, new object[] { readyState });
                     if (await core.ExecuteScriptAsync("window.youtubeEvents.length===2&&window.youtubeEvents[0].busy&&!window.youtubeEvents[1].busy&&window.youtubeEvents[1].live") != "true") throw new Exception("YouTube busy status did not settle.");
+                    var youtubeError = typeof(Workspace).GetField("youtubeError", BindingFlags.Instance | BindingFlags.NonPublic);
+                    youtubeError.SetValue(form, "Fixture command failed.");
+                    publish.Invoke(form, new object[] { readyState });
+                    if (await core.ExecuteScriptAsync("window.youtubeEvents.at(-1).live&&window.youtubeEvents.at(-1).streaming==='armed'&&window.youtubeEvents.at(-1).outputActive&&window.youtubeEvents.at(-1).canReconnect") != "true") throw new Exception("A command error hid confirmed output or reconnect capability.");
+                    youtubeError.SetValue(form, "");
                     publish.Invoke(form, new object[] { null });
-                    if (await core.ExecuteScriptAsync("!window.youtubeEvents.at(-1).busy&&!window.youtubeEvents.at(-1).live&&window.youtubeEvents.at(-1).streaming==='failed'") != "true") throw new Exception("Controller exit retained pending/live status.");
+                    if (await core.ExecuteScriptAsync("!window.youtubeEvents.at(-1).available&&!window.youtubeEvents.at(-1).busy&&!window.youtubeEvents.at(-1).live&&window.youtubeEvents.at(-1).streaming==='failed'") != "true") throw new Exception("Controller exit retained pending/live status.");
                     var testNode = Environment.GetEnvironmentVariable("CURLCAST_TEST_NODE");
                     using (var stopped = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(testNode, "-e \"process.exit(7)\"") { UseShellExecute = false, CreateNoWindow = true })) {
                         typeof(Workspace).GetField("child", BindingFlags.Instance | BindingFlags.NonPublic).SetValue(form, stopped);

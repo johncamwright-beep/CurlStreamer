@@ -156,37 +156,38 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 describe("M4 provider orchestration", () => {
-  it("retries preparation only after abandoned-session cleanup is confirmed", async () => {
-    mocks.rpc
-      .mockResolvedValueOnce({ error: { code: "55000" } })
-      .mockResolvedValueOnce({
-        data: session({
-          action: "none",
-          status: "stopped",
-          desiredState: "stopped",
-        }),
-      })
-      .mockResolvedValueOnce({
-        data: session({ action: "none", status: "prepared" }),
-      });
+  it("preserves a retired watch page without creating a replacement", async () => {
+    mocks.rpc.mockResolvedValueOnce({
+      data: session({
+        action: "none",
+        status: "stopped",
+        desiredState: "stopped",
+        watchUrl,
+      }),
+    });
     expect(await prepareM4Session(gameId, credential)).toMatchObject({
-      status: "prepared",
+      status: "stopped",
+      watchUrl,
     });
     expect(mocks.rpc.mock.calls.map(([name]) => name)).toEqual([
-      "claim_m4_broadcast_operation",
-      "claim_abandoned_m4_cleanup",
-      "claim_m4_broadcast_operation",
+      "get_m4_broadcast_session",
     ]);
+    expect(mocks.broadcast).not.toHaveBeenCalled();
   });
-  it("does not stop an active desktop when abandoned cleanup is refused", async () => {
+  it("never retires a watch page automatically after a quarantined claim", async () => {
     mocks.rpc
-      .mockResolvedValueOnce({ error: { code: "55000" } })
+      .mockResolvedValueOnce({
+        data: session({ action: "none", status: "prepared" }),
+      })
       .mockResolvedValueOnce({ error: { code: "55000" } });
     await expect(prepareM4Session(gameId, credential)).rejects.toMatchObject({
       code: "55000",
     });
     expect(mocks.transition).not.toHaveBeenCalled();
     expect(mocks.rpc).toHaveBeenCalledTimes(2);
+    expect(mocks.rpc.mock.calls.map(([name]) => name)).not.toContain(
+      "claim_abandoned_m4_cleanup",
+    );
   });
   it("prepares manual provider resources in durable order without starting OBS or transitioning live", async () => {
     state(session());
@@ -241,7 +242,7 @@ describe("M4 provider orchestration", () => {
       await prepareM4Session(gameId, credential);
       expect(mocks.refresh).not.toHaveBeenCalled();
       expect(mocks.broadcast).not.toHaveBeenCalled();
-      expect(mocks.rpc).toHaveBeenCalledTimes(1);
+      expect(mocks.rpc).toHaveBeenCalledTimes(2);
     },
   );
   it("disables all resource creation when retrying unresolved intents", async () => {
@@ -329,6 +330,7 @@ describe("M4 provider orchestration", () => {
       state(
         session({
           desiredState: "stopped",
+          watchUrl,
           status: "stopping",
           youtubeBroadcastCreateState: creation,
         }),

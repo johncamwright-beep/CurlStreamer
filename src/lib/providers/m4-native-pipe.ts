@@ -291,6 +291,19 @@ export class M4NativePipeClient {
       }
     });
   }
+  pause() {
+    return this.#outputControl(5);
+  }
+  resume() {
+    return this.#outputControl(6);
+  }
+  #outputControl(opcode: 5 | 6) {
+    return this.#serialize(async () => {
+      if (this.#stopping || this.#state !== "armed") throw unavailable();
+      if ((await this.#frame(opcode, Buffer.alloc(0))) !== 1 || this.#stopping)
+        throw unavailable();
+    });
+  }
   observe() {
     return this.#serialize(async () => {
       if (!this.#observations) throw unavailable();

@@ -236,6 +236,7 @@ export class M4DesktopClient {
             generation: authority.generation,
           },
           bearer,
+          12000,
         );
         const result = observationResponse.parse(response.value);
         this.#expire();
@@ -278,7 +279,12 @@ export class M4DesktopClient {
     this.#queue = next.catch(() => undefined);
     return next;
   }
-  async #request(path: string, body: unknown, bearer?: string) {
+  async #request(
+    path: string,
+    body: unknown,
+    bearer?: string,
+    timeoutMs = 5000,
+  ) {
     const start = this.#clock();
     const controller = new AbortController();
     let timer: ReturnType<typeof setTimeout> | undefined;
@@ -314,7 +320,7 @@ export class M4DesktopClient {
           timer = setTimeout(() => {
             controller.abort();
             reject(new TransportUnavailable());
-          }, 5_000);
+          }, timeoutMs);
         }),
       ]);
       if (!Number.isFinite(response.date)) throw fail();

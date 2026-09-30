@@ -31,6 +31,14 @@ async function setup(page: Page, desktop = false) {
     legacyBroadcastRequests += 1;
     return route.fulfill({ json: { status: "idle", desiredState: "stopped" } });
   });
+  await page.route(`**/api/games/${testGameId}/studio-m4`, (route) =>
+    route.fulfill({
+      json: {
+        status: "prepared",
+        watchUrl: "https://www.youtube.com/watch?v=abcdefghijk",
+      },
+    }),
+  );
   await page.goto(`/score/${testGameId}`);
   await expect(
     desktop
@@ -273,6 +281,41 @@ test("desktop game day keeps scoring primary and settings available on demand", 
     }),
   );
   const { game, actions } = await setup(page, true);
+  await page.evaluate((gameId) => {
+    window.dispatchEvent(
+      new CustomEvent("studio-youtube-status", {
+        detail: {
+          gameId,
+          available: true,
+          busy: false,
+          streaming: "armed",
+          live: true,
+          receiving: true,
+          message: "",
+          canReconnect: true,
+          outputActive: true,
+        },
+      }),
+    );
+  }, testGameId);
+  await expect(
+    page.getByRole("link", { name: "Watch on YouTube" }),
+  ).toBeVisible();
+  const sponsorControls = page.getByRole("region", {
+    name: "Sponsors",
+    exact: true,
+  });
+  const overlayButton = (await sponsorControls
+    .getByRole("button", { name: "Overlay", exact: true })
+    .boundingBox())!;
+  const panelButton = (await sponsorControls
+    .getByRole("button", { name: "Side panel", exact: true })
+    .boundingBox())!;
+  expect(Math.abs(overlayButton.width - panelButton.width)).toBeLessThanOrEqual(
+    1,
+  );
+  expect(overlayButton.height).toBeGreaterThanOrEqual(44);
+  expect(panelButton.height).toBeGreaterThanOrEqual(44);
   const preview = page.getByRole("region", {
     name: "Studio program preview",
     exact: true,

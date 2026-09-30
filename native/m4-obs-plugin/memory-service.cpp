@@ -37,6 +37,7 @@ struct State {
   bool initialized = false;
   bool output_started = false;
   bool output_stopped = false;
+  bool paused = false;
   uint32_t output_failure = 0;
   HANDLE pipe = INVALID_HANDLE_VALUE;
   std::thread ipc;
@@ -96,7 +97,7 @@ void output_stop(void *data, calldata_t *details)
   std::lock_guard lock(state->mutex);
   state->output_stopped = true;
   if (calldata_int(details, "code") != OBS_OUTPUT_SUCCESS) state->output_failure = 2;
-  state->revoked = true;
+  if (!state->paused || !state->authorized() || state->output_failure) state->revoked = true;
   state->changed.notify_all();
 }
 
@@ -241,7 +242,7 @@ void deactivate(void *data)
   if (!data) return;
   const auto state = *static_cast<Handle *>(data);
   std::lock_guard lock(state->mutex);
-  state->revoked = true;
+  if (!state->paused || !state->authorized()) state->revoked = true;
   state->changed.notify_all();
 }
 bool can_connect(void *data)
@@ -449,8 +450,8 @@ void ipc_worker(Handle state, std::shared_ptr<std::vector<unsigned char>> capabi
           header.sequence != sequence || !same_user(state->pipe)) break;
       if ((header.opcode == 1 && header.length != sizeof(ArmPayload)) ||
           (header.opcode == 2 && header.length != sizeof(uint32_t)) ||
-          ((header.opcode == 3 || header.opcode == 4) && header.length != 0) ||
-          header.opcode < 1 || header.opcode > 4) break;
+          (header.opcode >= 3 && header.length != 0) ||
+          header.opcode < 1 || header.opcode > 6) break;
       if (header.opcode == 4) {
         auto observation = observe(state, sequence);
         if (!transfer(state, &observation, sizeof(observation), true) || ++sequence == 0) break;
@@ -461,11 +462,28 @@ void ipc_worker(Handle state, std::shared_ptr<std::vector<unsigned char>> capabi
         SecureZeroMemory(&payload, sizeof(payload)); break;
       }
       bool accepted = false;
+      const auto before_resume = header.opcode == 6 ? observe(state, sequence) : IpcObservation{};
       IpcReply reply = {ipc_magic, sequence, 1, 2};
       {
         std::lock_guard lock(state->mutex);
         state->authorized();
         if (header.opcode == 3) { state->revoked = true; accepted = true; }
+        // Pause/resume changes only the already bound output. The target is
+        // never redelivered, and lease expiry/Stop remain terminal while paused.
+        if (header.opcode == 5 && state->authorized()) {
+          state->paused = true;
+          accepted = true;
+        }
+        if (header.opcode == 6 && state->authorized() && state->paused &&
+            before_resume.reply.state == 1 && before_resume.output == 3 &&
+            before_resume.failure == 0) {
+          state->paused = false;
+          state->start_attempted = false;
+          state->initialized = false;
+          state->output_started = false;
+          state->output_stopped = false;
+          accepted = true;
+        }
         if (header.opcode == 2 && state->authorized() && payload.lease > 0 && payload.lease <= 30000) {
           state->deadline = Clock::now() + std::chrono::milliseconds(payload.lease);
           accepted = true;
@@ -540,15 +558,27 @@ extern "C" __declspec(dllexport) bool m4_start_if_authorized(obs_service_t *serv
 {
   Handle state;
   obs_output_t *output = nullptr;
+  bool paused = false;
   {
     std::lock_guard registry_lock(registry_mutex);
     auto it = registry.find(service);
     if (it == registry.end()) return false;
     state = it->second;
     std::lock_guard lock(state->mutex);
-    if (!state->attached || !state->authorized() || state->start_attempted || !state->owned) return false;
-    state->start_attempted = true;
+    if (!state->attached || !state->authorized() || !state->owned) return false;
+    paused = state->paused;
+    if (!paused && state->start_attempted) return false;
+    if (!paused) state->start_attempted = true;
     output = obs_weak_output_get_output(state->owned);
+  }
+  if (paused) {
+    if (output && obs_output_active(output)) obs_output_force_stop(output);
+    else {
+      std::lock_guard lock(state->mutex);
+      if (state->paused) state->output_stopped = true;
+    }
+    if (output) obs_output_release(output);
+    return false;
   }
   const bool started = output && obs_output_start(output);
   if (output) obs_output_release(output);

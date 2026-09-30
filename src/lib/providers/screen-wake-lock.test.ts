@@ -31,10 +31,10 @@ function page(visibilityState: DocumentVisibilityState = "visible") {
 }
 
 function sentinel() {
-  return {
+  return Object.assign(new EventTarget(), {
     released: false,
     release: vi.fn().mockResolvedValue(undefined),
-  } as unknown as WakeLockSentinel;
+  }) as unknown as WakeLockSentinel;
 }
 
 describe("optional screen wake lock", () => {
@@ -106,7 +106,7 @@ describe("optional screen wake lock", () => {
     expect(onUnavailable).toHaveBeenCalledWith(screenWakeUnavailableMessage);
   });
 
-  it("requests only while visible and retries once after visibility returns", async () => {
+  it("requests only while visible and does not duplicate a held lock", async () => {
     const request = vi
       .fn()
       .mockRejectedValueOnce(new Error("unavailable"))
@@ -128,7 +128,85 @@ describe("optional screen wake lock", () => {
     expect(request).toHaveBeenCalledTimes(2);
   });
 
-  it("releases a successfully acquired wake lock during disconnect cleanup", async () => {
+  it("reacquires after multiple background/foreground cycles", async () => {
+    const acquired = [sentinel(), sentinel(), sentinel()];
+    const request = vi
+      .fn()
+      .mockResolvedValueOnce(acquired[0])
+      .mockResolvedValueOnce(acquired[1])
+      .mockResolvedValueOnce(acquired[2]);
+    const visiblePage = page();
+    const available = vi.fn();
+    const lock = new OptionalScreenWakeLock(
+      { wakeLock: { request } } as unknown as Navigator,
+      visiblePage,
+      vi.fn(),
+      available,
+    );
+    lock.start();
+    await vi.waitFor(() => expect(available).toHaveBeenCalledTimes(1));
+    for (let index = 0; index < 2; index++) {
+      visiblePage.becomeHidden();
+      Object.assign(acquired[index], { released: true });
+      acquired[index].dispatchEvent(new Event("release"));
+      expect(request).toHaveBeenCalledTimes(index + 1);
+      visiblePage.becomeVisible();
+      visiblePage.becomeVisible();
+      await vi.waitFor(() =>
+        expect(available).toHaveBeenCalledTimes(index + 2),
+      );
+      expect(request).toHaveBeenCalledTimes(index + 2);
+    }
+    await lock.release();
+  });
+
+  it("bounds automatic recovery from a visible system release", async () => {
+    const acquired = [sentinel(), sentinel()];
+    const request = vi
+      .fn()
+      .mockResolvedValueOnce(acquired[0])
+      .mockResolvedValueOnce(acquired[1]);
+    const unavailable = vi.fn();
+    const available = vi.fn();
+    const lock = new OptionalScreenWakeLock(
+      { wakeLock: { request } } as unknown as Navigator,
+      page(),
+      unavailable,
+      available,
+    );
+    lock.start();
+    await vi.waitFor(() => expect(available).toHaveBeenCalledTimes(1));
+    acquired[0].dispatchEvent(new Event("release"));
+    await vi.waitFor(() => expect(available).toHaveBeenCalledTimes(2));
+    acquired[1].dispatchEvent(new Event("release"));
+    expect(unavailable).toHaveBeenCalledWith(screenWakeUnavailableMessage);
+    expect(request).toHaveBeenCalledTimes(2);
+    await lock.release();
+  });
+
+  it("releases a pending acquisition after page cleanup", async () => {
+    const acquired = sentinel();
+    let grant!: (value: WakeLockSentinel) => void;
+    const request = vi.fn(
+      () =>
+        new Promise<WakeLockSentinel>((resolve) => {
+          grant = resolve;
+        }),
+    );
+    const lock = new OptionalScreenWakeLock(
+      { wakeLock: { request } } as unknown as Navigator,
+      page(),
+      vi.fn(),
+    );
+    lock.start();
+    await vi.waitFor(() => expect(request).toHaveBeenCalledTimes(1));
+    const release = lock.release();
+    grant(acquired);
+    await release;
+    expect(acquired.release).toHaveBeenCalledOnce();
+  });
+
+  it("releases a successfully acquired wake lock during page cleanup", async () => {
     const acquired = sentinel();
     const lock = new OptionalScreenWakeLock(
       {
@@ -147,5 +225,21 @@ describe("optional screen wake lock", () => {
     await lock.release();
 
     expect(acquired.release).toHaveBeenCalledOnce();
+  });
+  it("contains a browser release failure during page cleanup", async () => {
+    const acquired = sentinel();
+    (acquired.release as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
+      new Error("browser already released"),
+    );
+    const request = vi.fn().mockResolvedValue(acquired);
+    const lock = new OptionalScreenWakeLock(
+      { wakeLock: { request } } as unknown as Navigator,
+      page(),
+      vi.fn(),
+    );
+    lock.start();
+    await vi.waitFor(() => expect(request).toHaveBeenCalledOnce());
+    await expect(lock.release()).resolves.toBeUndefined();
+    expect(request).toHaveBeenCalledOnce();
   });
 });

@@ -12,7 +12,7 @@ const paths = {
   runtime: "C:\\missing",
 };
 type StreamState =
-  "idle" | "starting" | "armed" | "stopping" | "stopped" | "failed";
+  "idle" | "starting" | "armed" | "paused" | "stopping" | "stopped" | "failed";
 
 async function fixture(
   input: {
@@ -46,6 +46,12 @@ async function fixture(
       stream: {
         start: streamStart,
         stop: streamStop,
+        pause: async () => {
+          streamState = "paused";
+        },
+        resume: async () => {
+          streamState = "armed";
+        },
         snapshot: () => ({ state: streamState, ...input.observation }),
       },
     };
@@ -113,6 +119,36 @@ async function fixture(
 }
 
 describe("M4 operator streaming races", () => {
+  it("disconnects and reconnects without releasing desktop authority or the camera program", async () => {
+    const f = await fixture();
+    try {
+      await f.ready();
+      await f.command({
+        action: "start-stream",
+        intentId: crypto.randomUUID(),
+      });
+      await f.command({ action: "pause-stream" });
+      expect(await f.state()).toMatchObject({
+        streaming: "paused",
+        program: "recording",
+        pairing: "paired",
+        canReconnect: true,
+      });
+      await f.command({ action: "resume-stream" });
+      expect(await f.state()).toMatchObject({
+        streaming: "armed",
+        program: "recording",
+      });
+      expect(f.streamStart).toHaveBeenCalledOnce();
+      expect(f.streamStop).not.toHaveBeenCalled();
+      expect(f.recordingStop).not.toHaveBeenCalled();
+      await f.command({ action: "stop-stream" });
+      expect((await f.command({ action: "resume-stream" })).status).toBe(409);
+    } finally {
+      await f.app.close();
+      await rm(f.directory, { recursive: true, force: true });
+    }
+  });
   it("does not confirm broadcast without fresh active bytes, even when provider is active", async () => {
     const f = await fixture({
       observation: {
@@ -255,6 +291,8 @@ describe("M4 operator streaming races", () => {
         stream: {
           start: vi.fn(async () => undefined),
           stop: vi.fn(async () => undefined),
+          pause: async () => undefined,
+          resume: async () => undefined,
           snapshot: () => ({ state: "idle" as const }),
         },
       };
@@ -300,6 +338,8 @@ describe("M4 operator streaming races", () => {
         stream: {
           start: vi.fn(async () => undefined),
           stop: vi.fn(async () => undefined),
+          pause: async () => undefined,
+          resume: async () => undefined,
           snapshot: () => ({ state: "idle" as const }),
         },
       };

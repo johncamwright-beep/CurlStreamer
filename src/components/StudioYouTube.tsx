@@ -11,6 +11,8 @@ const stateSchema = z.object({
   live: z.boolean(),
   receiving: z.boolean(),
   message: z.string().max(300),
+  canReconnect: z.boolean().optional().default(false),
+  outputActive: z.boolean().optional().default(false),
 });
 export function StudioYouTube({ id }: { id: string }) {
   const [state, setState] = useState<z.infer<typeof stateSchema>>();
@@ -27,7 +29,7 @@ export function StudioYouTube({ id }: { id: string }) {
   const failures = useRef(0);
   const halted = useRef(false);
   const confirmedLive = useRef(false);
-  const watchingOutput = state?.streaming === "armed";
+  const watchingOutput = state && ["armed", "paused"].includes(state.streaming);
   useEffect(() => {
     setBridgeAvailable(
       Boolean(
@@ -60,7 +62,7 @@ export function StudioYouTube({ id }: { id: string }) {
       const response = await result.json();
       const messages: Record<string, string> = {
         ended:
-          "This YouTube broadcast has ended. Select End Stream before starting a new broadcast.",
+          "YouTube has completed this broadcast and cannot reopen its watch link. Start a new game for a new broadcast.",
         removed:
           "YouTube removed this broadcast. Check your channel in YouTube Studio.",
         "setup-required":
@@ -79,7 +81,7 @@ export function StudioYouTube({ id }: { id: string }) {
     } catch {
       setError(
         halted.current
-          ? "YouTube needs attention. Select End Stream, check YouTube settings, then start again."
+          ? "YouTube needs attention. Check YouTube settings. Your game’s watch link is retained."
           : "YouTube status is temporarily unavailable. Retrying automatically…",
       );
       nextCheck.current =
@@ -106,9 +108,12 @@ export function StudioYouTube({ id }: { id: string }) {
     setWatchUrl("");
     setCopied(false);
     setCopyError("");
-    if (!watchingOutput) return;
+    if (!bridgeAvailable) return;
     const controller = new AbortController();
+    let loading = false;
     async function load() {
+      if (loading) return;
+      loading = true;
       try {
         const response = await fetch(`/api/games/${id}/studio-m4`, {
           cache: "no-store",
@@ -128,6 +133,8 @@ export function StudioYouTube({ id }: { id: string }) {
           setWatchUrl(result.data.watchUrl);
       } catch {
         /* Retry during this output session; never display an unverified destination. */
+      } finally {
+        loading = false;
       }
     }
     void load();
@@ -136,7 +143,7 @@ export function StudioYouTube({ id }: { id: string }) {
       controller.abort();
       clearInterval(timer);
     };
-  }, [id, watchingOutput]);
+  }, [id, bridgeAvailable]);
   useEffect(() => {
     let last = 0;
     confirmedLive.current = false;
@@ -173,7 +180,14 @@ export function StudioYouTube({ id }: { id: string }) {
         chrome?: { webview?: { postMessage(value: unknown): void } };
       }
     ).chrome?.webview;
-    if (!bridge || pending || !state || state.busy) return;
+    if (
+      !bridge ||
+      pending ||
+      !state ||
+      state.busy ||
+      (action === "stop" && !state.canReconnect)
+    )
+      return;
     setAutoGoLive(action === "start");
     halted.current = action === "stop";
     nextCheck.current = 0;
@@ -207,31 +221,48 @@ export function StudioYouTube({ id }: { id: string }) {
             ? "Status unavailable"
             : state.live
               ? "● LIVE"
-              : state?.receiving
-                ? "Receiving video"
-                : watchingOutput
-                  ? "Checking status…"
-                  : active
-                    ? "Connecting…"
-                    : "Not live"}
+              : state.streaming === "paused"
+                ? "Disconnected"
+                : state?.receiving
+                  ? "Receiving video"
+                  : watchingOutput
+                    ? state.outputActive
+                      ? "Sending video · Checking YouTube…"
+                      : "Checking status…"
+                    : active
+                      ? "Connecting…"
+                      : "Not live"}
         </strong>
       </div>
       <div className="studio-youtube-actions flex flex-wrap gap-2">
         <button
           className="btn"
-          disabled={!state?.available || state.busy || pending}
+          disabled={
+            !state?.available ||
+            state.busy ||
+            pending ||
+            Boolean(active && !state.canReconnect)
+          }
           onClick={() => send(active ? "stop" : "start")}
         >
           {pending || state?.busy
             ? "Please wait…"
             : active
-              ? "End Stream"
-              : "Broadcast to YouTube"}
+              ? "Disconnect"
+              : state?.streaming === "paused"
+                ? "Reconnect"
+                : "Broadcast to YouTube"}
         </button>
         <a className="btn-secondary" href="/settings/youtube">
           YouTube settings
         </a>
       </div>
+      {active && !state?.canReconnect && (
+        <p className="mt-2 text-sm">
+          Update Windows Studio to disconnect and reconnect on the same watch
+          link.
+        </p>
+      )}
       {state?.receiving && !state.live && (
         <div className="mt-2 flex items-center gap-2 text-sm">
           {!error && (goingLive || autoGoLive || state.streaming === "armed")
@@ -244,7 +275,7 @@ export function StudioYouTube({ id }: { id: string }) {
           {error}
         </p>
       )}
-      {watchingOutput && watchUrl && (
+      {watchUrl && (
         <div className="studio-youtube-watch mt-2 flex items-center gap-2 text-sm">
           <a
             className="min-w-0 flex-1 truncate underline"
@@ -253,7 +284,7 @@ export function StudioYouTube({ id }: { id: string }) {
             target="_blank"
             rel="noreferrer"
           >
-            {watchUrl}
+            Watch on YouTube
           </a>
           <button
             className="btn-secondary"
@@ -274,7 +305,7 @@ export function StudioYouTube({ id }: { id: string }) {
           </button>
         </div>
       )}
-      {watchingOutput && copyError && <p role="alert">{copyError}</p>}
+      {copyError && <p role="alert">{copyError}</p>}
       {(!state?.available || state?.message) && (
         <p className="mt-2 text-sm text-slate-300">
           {state?.message || "Preparing Studio’s YouTube connection…"}

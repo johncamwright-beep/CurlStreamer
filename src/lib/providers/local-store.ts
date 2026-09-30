@@ -264,7 +264,9 @@ export function updateGame(
         "role" in action &&
         action.role !== expectedAuthority.role &&
         !(
-          (action.type === "camera-zoom" || action.type === "camera-audio") &&
+          (action.type === "camera-zoom" ||
+            action.type === "camera-audio" ||
+            action.type === "camera-reconnect") &&
           expectedAuthority.role === "scorer"
         )
       )
@@ -310,6 +312,13 @@ export function updateGame(
           value: action.value,
           requestedAt: now,
         },
+      };
+    }
+    if (action.type === "camera-reconnect") {
+      game.cameraReconnect ??= {};
+      game.cameraReconnect[action.role] = {
+        id: action.commandId,
+        requestedAt: now,
       };
     }
     if (action.type === "camera-zoom-status") {

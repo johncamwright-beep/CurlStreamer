@@ -117,10 +117,10 @@ it("times out a provider read without extending authority or preventing a later 
   fetcher.mockReturnValueOnce(new Promise(() => undefined));
   const remaining = client.remainingLeaseMs();
   const rejected = expect(client.observeOutput(intentId)).rejects.toThrow();
-  advance(5000);
-  await vi.advanceTimersByTimeAsync(5000);
+  advance(12000);
+  await vi.advanceTimersByTimeAsync(12000);
   await rejected;
-  expect(client.remainingLeaseMs()).toBe(remaining - 5000);
+  expect(client.remainingLeaseMs()).toBe(remaining - 12000);
   expect(client.snapshot().authorized).toBe(true);
   fetcher.mockResolvedValueOnce(response(observed));
   await client.observeOutput(intentId);

@@ -828,31 +828,55 @@ describe("GET /api/games/[id] over HTTP", () => {
     );
   });
 
-  it("keeps scorer zoom commands bound to the scorer assignment", async () => {
+  it.each(["camera-zoom", "camera-reconnect"])(
+    "keeps scorer %s commands bound to the scorer assignment",
+    async (type) => {
+      anonymous();
+      const claimant = game.claims.scorer!;
+      const response = await PATCH(
+        new Request(`${origin}/api/games/${testGameId}`, {
+          method: "PATCH",
+          headers: {
+            authorization: `Bearer ${await issueParticipantToken(testGameId, "scorer", claimant)}`,
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({
+            type,
+            role: "camera-home",
+            commandId: "10000000-0000-4000-8000-000000000014",
+            value: 2,
+          }),
+        }),
+        { params: Promise.resolve({ id: testGameId }) },
+      );
+      expect(response.status).toBe(200);
+      expect(mocks.updateGame).toHaveBeenLastCalledWith(
+        testGameId,
+        expect.objectContaining({ type }),
+        expect.objectContaining({ role: "scorer", claim: claimant }),
+      );
+    },
+  );
+  it("does not let an assigned phone issue remote reconnect commands", async () => {
     anonymous();
-    const claimant = game.claims.scorer!;
+    const claimant = game.claims["camera-home"]!;
     const response = await PATCH(
       new Request(`${origin}/api/games/${testGameId}`, {
         method: "PATCH",
         headers: {
-          authorization: `Bearer ${await issueParticipantToken(testGameId, "scorer", claimant)}`,
+          authorization: `Bearer ${await issueParticipantToken(testGameId, "camera-home", claimant)}`,
           "content-type": "application/json",
         },
         body: JSON.stringify({
-          type: "camera-zoom",
+          type: "camera-reconnect",
           role: "camera-home",
           commandId: "10000000-0000-4000-8000-000000000014",
-          value: 2,
         }),
       }),
       { params: Promise.resolve({ id: testGameId }) },
     );
-    expect(response.status).toBe(200);
-    expect(mocks.updateGame).toHaveBeenLastCalledWith(
-      testGameId,
-      expect.objectContaining({ type: "camera-zoom" }),
-      expect.objectContaining({ role: "scorer", claim: claimant }),
-    );
+    expect(response.status).toBe(403);
+    expect(mocks.updateGame).not.toHaveBeenCalled();
   });
 
   it("binds scorer writes to the trusted token role and generation", async () => {

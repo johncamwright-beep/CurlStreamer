@@ -84,6 +84,11 @@ export const actionSchema = z.discriminatedUnion("type", [
     ]),
   }),
   z.object({
+    type: z.literal("camera-reconnect"),
+    role: z.enum(["camera-home", "camera-away"]),
+    commandId: z.uuid(),
+  }),
+  z.object({
     type: z.literal("camera-zoom"),
     role: z.enum(["camera-home", "camera-away"]),
     commandId: z.uuid(),

@@ -58,6 +58,90 @@ function fixture() {
 }
 afterEach(() => vi.useRealTimers());
 describe("independent managed program stream", () => {
+  it("pauses and resumes one delivered target while renewing authority, with Stop terminal", async () => {
+    vi.useFakeTimers();
+    const f = fixture();
+    let output: "active" | "stopped" = "active";
+    const native = {
+      ...f.native,
+      pause: vi.fn(async () => {
+        output = "stopped";
+      }),
+      resume: vi.fn(async () => {
+        output = "active";
+      }),
+      observe: vi.fn(async () => ({
+        state: output,
+        failure: "none" as const,
+        authority: f.native.snapshot().state === "stopped" ? 2 : 1,
+        bytes: output === "active" ? 1234 : 0,
+      })),
+    };
+    vi.spyOn(f.desktop, "observeOutput").mockRejectedValue(
+      new Error("provider unavailable"),
+    );
+    const stream = new M4ProgramStream(native);
+    await stream.start(f.desktop, "intent");
+    await stream.pause();
+    expect(stream.snapshot()).toMatchObject({
+      state: "paused",
+      liveConfirmed: false,
+      localOutput: { state: "stopped" },
+    });
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(native.renew).toHaveBeenCalledOnce();
+    expect(f.release).not.toHaveBeenCalled();
+    await stream.resume();
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(stream.snapshot()).toMatchObject({
+      state: "armed",
+      localOutput: { state: "active" },
+    });
+    expect(f.handoff).toHaveBeenCalledOnce();
+    expect(native.arm).toHaveBeenCalledOnce();
+    await stream.stop();
+    await expect(stream.resume()).rejects.toThrow();
+    expect(native.resume).toHaveBeenCalledOnce();
+    expect(f.release).toHaveBeenCalledOnce();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+  it("cannot restore paused authority from a late observation after Stop", async () => {
+    vi.useFakeTimers();
+    const f = fixture();
+    const observation = {
+      state: "stopped" as const,
+      failure: "none" as const,
+      authority: 1,
+      bytes: 100,
+    };
+    const observe = vi.fn(async () => observation);
+    const native = {
+      ...f.native,
+      observe,
+      pause: vi.fn(async () => undefined),
+      resume: vi.fn(async () => undefined),
+    };
+    vi.spyOn(f.desktop, "observeOutput").mockRejectedValue(
+      new Error("offline"),
+    );
+    const stream = new M4ProgramStream(native);
+    await stream.start(f.desktop, "intent");
+    let deliver!: (value: typeof observation) => void;
+    observe.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          deliver = resolve;
+        }),
+    );
+    const pausing = expect(stream.pause()).rejects.toThrow();
+    await vi.waitFor(() => expect(deliver).toBeDefined());
+    await stream.stop();
+    deliver(observation);
+    await pausing;
+    expect(stream.snapshot().state).toBe("stopped");
+    await expect(stream.resume()).rejects.toThrow();
+    expect(native.resume).not.toHaveBeenCalled();
+  });
   it("arms once, renews and stops without any recording capability", async () => {
     vi.useFakeTimers();
     const f = fixture();

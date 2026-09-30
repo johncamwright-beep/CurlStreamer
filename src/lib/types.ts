@@ -94,6 +94,9 @@ export interface GameState {
   cameraHealth?: Partial<Record<"camera-home" | "camera-away", CameraHealth>>;
   cameraFraming?: Partial<Record<"camera-home" | "camera-away", CameraFraming>>;
   cameraZoom?: Partial<Record<"camera-home" | "camera-away", CameraZoomState>>;
+  cameraReconnect?: Partial<
+    Record<"camera-home" | "camera-away", { id: string; requestedAt: number }>
+  >;
   /** Director microphone intent and the assigned phone's reported capture state. */
   cameraAudio?: Partial<
     Record<"camera-home" | "camera-away", CameraAudioState>

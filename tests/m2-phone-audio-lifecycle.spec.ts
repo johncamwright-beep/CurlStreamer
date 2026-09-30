@@ -3,20 +3,19 @@ import { build } from "esbuild";
 
 const game = "00000000-0000-4000-8000-000000000001";
 
-test("M2 phone retains one permissioned microphone through intent polls and status telemetry failure", async ({
+test("M2 phone retains its microphone through intent polls and stays awake after disconnect until the page closes", async ({
   page,
 }) => {
   test.slow();
   let enabled = false;
+  let reconnectCommand: { id: string; requestedAt: number } | undefined;
   const mocks: Record<string, string> = {
     qrcode: "export default {toDataURL: async()=>''}",
     "next/image": "export default function Image(){return null}",
     "@/lib/access-session": `export const cameraPublishAccessToken=()=>"phone-token";export const organizerAccessToken=()=>"organizer-token";export const preserveAndStoreParticipantAccess=()=>{}`,
     "@/lib/providers/livekit-client": `export const hardwareZoomRange=()=>undefined;export const clampZoom=(value)=>value`,
     "@/lib/providers/camera-capture": `export const deviceIsPortrait=()=>true;export async function acquireRawPortraitCamera(_devices,_video,_portrait,onTrack,_mode,includeAudio){await navigator.mediaDevices.getUserMedia({audio:includeAudio,video:true});const h=window.__m2PhoneAudio;onTrack?.(h.video);return {track:h.video,audioTrack:includeAudio?h.audio:undefined,report:{}}}`,
-    "@/lib/providers/screen-wake-lock":
-      "export class OptionalScreenWakeLock{start(){} async release(){}}",
-    "@/lib/providers/m2-studio-browser": `export async function connectStudio(){const h=window.__m2PhoneAudio;return {stop(){h.stopped++},async replaceAudioTrack(track){h.replaced.push(track)}}}`,
+    "@/lib/providers/m2-studio-browser": `export async function connectStudio(options){const h=window.__m2PhoneAudio;h.interrupt=options.onStop;return {stop(){h.stopped++},async replaceAudioTrack(track){h.replaced.push(track)}}}`,
     "@/lib/m2-studio-protocol": `export const studioTicketSchema={parse:(value)=>value}`,
     "@/lib/providers/m2-endurance-recorder": `export const enduranceStorageKey=()=>"test";export class EnduranceRecorder{finish(){}}`,
     "@/lib/camera-zoom-command":
@@ -34,7 +33,7 @@ test("M2 phone retains one permissioned microphone through intent polls and stat
     stdin: {
       loader: "tsx",
       resolveDir: process.cwd(),
-      contents: `import React from 'react';import{createRoot}from'react-dom/client';import{M2CameraSlot}from'./src/components/M2CameraSlot';createRoot(document.getElementById('root')).render(<M2CameraSlot id='${game}' side='camera' cameraRole='camera-home'/>);`,
+      contents: `import React from 'react';import{createRoot}from'react-dom/client';import{M2CameraSlot}from'./src/components/M2CameraSlot';const root=createRoot(document.getElementById('root'));window.__unmountPhone=()=>root.unmount();root.render(<M2CameraSlot id='${game}' side='camera' cameraRole='camera-home'/>);`,
     },
     plugins: [
       {
@@ -70,7 +69,27 @@ test("M2 phone retains one permissioned microphone through intent polls and stat
       audio: track(),
       replaced: [] as Array<MediaStreamTrack | null>,
       stopped: 0,
+      wakeRequests: 0,
+      wakeReleases: 0,
     };
+    Object.defineProperty(navigator, "wakeLock", {
+      configurable: true,
+      value: {
+        request: async () => {
+          const h = (window as any).__m2PhoneAudio;
+          h.wakeRequests++;
+          const events = new EventTarget();
+          return Object.assign(events, {
+            released: false,
+            async release() {
+              this.released = true;
+              h.wakeReleases++;
+              events.dispatchEvent(new Event("release"));
+            },
+          });
+        },
+      },
+    });
     Object.defineProperty(navigator, "mediaDevices", {
       configurable: true,
       value: {
@@ -80,10 +99,15 @@ test("M2 phone retains one permissioned microphone through intent polls and stat
               __m2PhoneAudio: {
                 calls: MediaStreamConstraints[];
                 audio: MediaStreamTrack;
+                video: MediaStreamTrack;
               };
             }
           ).__m2PhoneAudio;
           h.calls.push(constraints);
+          if (constraints.video && h.video.readyState === "ended") {
+            h.video = track() as unknown as MediaStreamTrack;
+            h.audio = track() as unknown as MediaStreamTrack;
+          }
           return { getAudioTracks: () => [h.audio] };
         },
       },
@@ -116,7 +140,10 @@ test("M2 phone retains one permissioned microphone through intent polls and stat
   await page.route(`**/api/games/${game}`, async (route) => {
     if (route.request().method() === "GET")
       return route.fulfill({
-        json: { cameraAudio: { "camera-home": { enabled } } },
+        json: {
+          cameraAudio: { "camera-home": { enabled } },
+          cameraReconnect: { "camera-home": reconnectCommand },
+        },
       });
     const body = route.request().postDataJSON();
     // The sender has already accepted the track when this telemetry request is made.
@@ -129,6 +156,11 @@ test("M2 phone retains one permissioned microphone through intent polls and stat
   });
 
   await page.goto("/m2-phone-audio-fixture");
+  await expect
+    .poll(() =>
+      page.evaluate(() => (window as any).__m2PhoneAudio.wakeRequests),
+    )
+    .toBe(1);
   await page
     .getByRole("button", { name: "Connect phone", exact: true })
     .click();
@@ -192,4 +224,45 @@ test("M2 phone retains one permissioned microphone through intent polls and stat
   expect(
     await page.evaluate(() => (window as any).__m2PhoneAudio.calls.length),
   ).toBe(1);
+  reconnectCommand = { id: "recovery-1", requestedAt: Date.now() };
+  await expect
+    .poll(() =>
+      page.evaluate(() => (window as any).__m2PhoneAudio.calls.length),
+    )
+    .toBe(2);
+  await page.waitForTimeout(4300);
+  expect(
+    await page.evaluate(() => (window as any).__m2PhoneAudio.calls.length),
+  ).toBe(2);
+  // A transient peer failure recovers without another phone tap or wake release.
+  await page.evaluate(() =>
+    (window as any).__m2PhoneAudio.interrupt("signaling disconnected"),
+  );
+  await expect
+    .poll(() =>
+      page.evaluate(() => (window as any).__m2PhoneAudio.calls.length),
+    )
+    .toBe(3);
+  await page
+    .getByRole("button", { name: "Disconnect phone", exact: true })
+    .click();
+  await expect(
+    page.getByRole("button", { name: "Connect phone", exact: true }),
+  ).toBeVisible();
+  expect(
+    await page.evaluate(() => {
+      const h = (window as any).__m2PhoneAudio;
+      return {
+        requests: h.wakeRequests,
+        releases: h.wakeReleases,
+        video: h.video.readyState,
+      };
+    }),
+  ).toEqual({ requests: 1, releases: 0, video: "ended" });
+  await page.evaluate(() => (window as any).__unmountPhone());
+  await expect
+    .poll(() =>
+      page.evaluate(() => (window as any).__m2PhoneAudio.wakeReleases),
+    )
+    .toBe(1);
 });

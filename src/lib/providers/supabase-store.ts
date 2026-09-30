@@ -258,6 +258,13 @@ function applyAction(game: GameState, action: z.infer<typeof actionSchema>) {
       command: { id: action.commandId, value: action.value, requestedAt: now },
     };
   }
+  if (action.type === "camera-reconnect") {
+    game.cameraReconnect ??= {};
+    game.cameraReconnect[action.role] = {
+      id: action.commandId,
+      requestedAt: now,
+    };
+  }
   if (action.type === "camera-zoom-status") {
     game.cameraZoom ??= {};
     const command = game.cameraZoom[action.role]?.command;
@@ -368,7 +375,9 @@ export async function updateGame(
         "role" in action &&
         action.role !== expectedAuthority.role &&
         !(
-          (action.type === "camera-zoom" || action.type === "camera-audio") &&
+          (action.type === "camera-zoom" ||
+            action.type === "camera-audio" ||
+            action.type === "camera-reconnect") &&
           expectedAuthority.role === "scorer"
         )
       )

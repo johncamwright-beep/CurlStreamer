@@ -140,7 +140,7 @@ int main(int argc, char **argv)
     if (argc != 3 && argc != 4 && argc != 5) { puts("Usage: m4_obs_validation <plugin-dll> <OBS-runtime-bin> [--production | --ipc scenario | --node-ipc scenario | --studio-bootstrap]"); return 2; }
     bool studio_mode = argc == 4 && strcmp(argv[3], "--studio-bootstrap") == 0;
     if (argc == 4 && strcmp(argv[3], "--production") && !studio_mode) return 2;
-    if (argc == 5 && ((strcmp(argv[3], "--ipc") && strcmp(argv[3], "--node-ipc")) || strtoul(argv[4], NULL, 10) > IPC_PRODUCTION_BAD_LEASE)) return 2;
+    if (argc == 5 && ((strcmp(argv[3], "--ipc") && strcmp(argv[3], "--node-ipc")) || strtoul(argv[4], NULL, 10) > IPC_PAUSED_EXPIRE)) return 2;
     snprintf(graphics_path, sizeof(graphics_path), "%s/libobs-d3d11.dll", argv[2]);
     snprintf(data_path, sizeof(data_path), "%s/../../data/libobs/", argv[2]);
     SetDllDirectoryA(argv[2]);
@@ -170,7 +170,7 @@ int main(int argc, char **argv)
     CHECK(obs_reset_video(&video) == OBS_VIDEO_SUCCESS, "real video pipeline");
     if (argc == 5 || studio_mode) {
         unsigned scenario = studio_mode ? IPC_DEFAULT : (unsigned)strtoul(argv[4], NULL, 10);
-        bool rejected = scenario == IPC_BAD_TOKEN || scenario == IPC_OVERSIZE || scenario == IPC_DEFAULT || scenario > IPC_PRODUCTION_ARM;
+        bool rejected = scenario == IPC_BAD_TOKEN || scenario == IPC_OVERSIZE || scenario == IPC_DEFAULT || (scenario > IPC_PRODUCTION_ARM && scenario <= IPC_PRODUCTION_BAD_LEASE);
         WCHAR controller_exe[1024], *filename;
         WCHAR node_exe[1024], node_script[1024];
         bool node_mode = studio_mode || strcmp(argv[3], "--node-ipc") == 0;
@@ -233,6 +233,16 @@ int main(int argc, char **argv)
             CHECK(!bind(service, stream), "attached output cannot be rebound");
             CHECK(start_owned(service) && !start_owned(service), "IPC authorized bound start is one-shot");
             SetEvent(controller.started);
+            if (scenario == IPC_PAUSE_RESUME || scenario == IPC_PAUSED_EXPIRE) {
+                DWORD code;
+                deadline = GetTickCount64() + 7000;
+                while (WaitForSingleObject(controller.process, 0) == WAIT_TIMEOUT && GetTickCount64() < deadline) {
+                    start_owned(service);
+                    Sleep(20);
+                }
+                CHECK(GetExitCodeProcess(controller.process, &code) && code == 0, "pause/resume retains target and rejects resume after Stop or expiry");
+                Sleep(100);
+            } else {
             Sleep(250);
             if (scenario != IPC_STOP && scenario != IPC_PRODUCTION_ARM)
                 CHECK(InterlockedCompareExchange(&stream_sink->frames, 0, 0) > 0, "IPC stream received frames");
@@ -244,6 +254,7 @@ int main(int argc, char **argv)
                 CHECK(obs_output_active(stream), "renewal extends original lease");
                 Sleep(1000);
             } else Sleep(1100);
+            }
             CHECK(!obs_output_active(stream), "IPC failure or expiry stops output");
             CHECK(!start_owned(service) && !obs_output_start(stream), "IPC revoked restart rejected");
             if (scenario == IPC_STOP)

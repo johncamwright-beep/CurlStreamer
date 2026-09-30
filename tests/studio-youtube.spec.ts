@@ -69,6 +69,8 @@ test("Studio YouTube sends game-scoped commands and expires live status", async 
               live,
               receiving,
               message: "",
+              canReconnect: true,
+              outputActive: false,
             },
           }),
         ),
@@ -92,35 +94,31 @@ test("Studio YouTube sends game-scoped commands and expires live status", async 
   await page.clock.fastForward(11000);
   await report("fixture-game", false, true);
   await expect.poll(() => requests.length).toBe(2);
-  await expect(page.getByRole("link", { name: watchUrl })).toHaveAttribute(
-    "href",
-    watchUrl,
-  );
+  await expect(
+    page.getByRole("link", { name: "Watch on YouTube" }),
+  ).toHaveAttribute("href", watchUrl);
   await report("fixture-game", true);
   await expect(page.getByRole("status")).toHaveText("● LIVE");
   await expect(
-    page.getByRole("button", { name: "End Stream", exact: true }),
+    page.getByRole("button", { name: "Disconnect", exact: true }),
   ).toBeEnabled();
-  await expect(page.getByRole("link", { name: watchUrl })).toHaveAttribute(
-    "target",
-    "_blank",
-  );
-  await expect(page.getByRole("link", { name: watchUrl })).toHaveAttribute(
-    "href",
-    watchUrl,
-  );
+  await expect(
+    page.getByRole("link", { name: "Watch on YouTube" }),
+  ).toHaveAttribute("target", "_blank");
+  await expect(
+    page.getByRole("link", { name: "Watch on YouTube" }),
+  ).toHaveAttribute("href", watchUrl);
   await page.getByRole("button", { name: "Copy link" }).click();
   expect(
     await page.evaluate(() => (window as unknown as { copied: string }).copied),
   ).toBe(watchUrl);
   await report("fixture-game", false, false, "armed");
   await expect(page.getByRole("status")).toHaveText("Checking status…");
-  await expect(page.getByRole("link", { name: watchUrl })).toHaveAttribute(
-    "href",
-    watchUrl,
-  );
   await expect(
-    page.getByRole("button", { name: "End Stream", exact: true }),
+    page.getByRole("link", { name: "Watch on YouTube" }),
+  ).toHaveAttribute("href", watchUrl);
+  await expect(
+    page.getByRole("button", { name: "Disconnect", exact: true }),
   ).toBeEnabled();
   await page.clock.fastForward(11000);
   await report("fixture-game", false, true, "armed");
@@ -128,16 +126,52 @@ test("Studio YouTube sends game-scoped commands and expires live status", async 
   // Losing a status sample does not request another live transition for an
   // already confirmed broadcast or hide its verified watch destination.
   expect(requests).toHaveLength(2);
-  await expect(page.getByRole("link", { name: watchUrl })).toHaveAttribute(
-    "href",
-    watchUrl,
-  );
+  await expect(
+    page.getByRole("link", { name: "Watch on YouTube" }),
+  ).toHaveAttribute("href", watchUrl);
+  await report("fixture-game", true);
+  await page.getByRole("button", { name: "Disconnect", exact: true }).click();
+  expect(
+    await page.evaluate(() => (window as unknown as { sent: unknown[] }).sent),
+  ).toEqual([
+    { type: "studio-youtube-start", gameId: "fixture-game" },
+    { type: "studio-youtube-stop", gameId: "fixture-game" },
+  ]);
+  await report("fixture-game", false, false, "paused");
+  await expect(page.getByRole("status")).toHaveText("Disconnected");
+  await expect(
+    page.getByRole("link", { name: "Watch on YouTube" }),
+  ).toHaveAttribute("href", watchUrl);
+  await page.getByRole("button", { name: "Reconnect", exact: true }).click();
   await report("fixture-game", true);
   await page.clock.fastForward(7000);
   await expect(page.getByRole("status")).toHaveText("Status unavailable");
   await expect(start).toBeDisabled();
-  await expect(page.getByRole("link", { name: watchUrl })).toHaveCount(0);
+  await expect(
+    page.getByRole("link", { name: "Watch on YouTube" }),
+  ).toHaveAttribute("href", watchUrl);
   await report("fixture-game", false, false, "stopped");
   await expect(page.getByRole("status")).toHaveText("Not live");
   await expect(start).toBeEnabled();
+  // Older launchers still interpret Stop as final completion. Never send a
+  // pause command until the native bridge advertises the new capability.
+  await page.evaluate(() =>
+    window.dispatchEvent(
+      new CustomEvent("studio-youtube-status", {
+        detail: {
+          gameId: "fixture-game",
+          available: true,
+          busy: false,
+          streaming: "armed",
+          live: true,
+          receiving: true,
+          message: "",
+        },
+      }),
+    ),
+  );
+  await expect(
+    page.getByRole("button", { name: "Disconnect", exact: true }),
+  ).toBeDisabled();
+  await expect(page.getByText(/Update Windows Studio/)).toBeVisible();
 });

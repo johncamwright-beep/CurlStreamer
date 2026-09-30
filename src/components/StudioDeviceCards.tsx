@@ -95,6 +95,38 @@ function DeviceCard({
   const [reconnect, setReconnect] = useState<{ url: string; image: string }>();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [recoveryMessage, setRecoveryMessage] = useState("");
+  async function reconnectCamera() {
+    if (busy || role === "scorer" || !enabled || !claimed) return;
+    setBusy(true);
+    setError("");
+    setRecoveryMessage("");
+    try {
+      const token = organizerAccessToken(localStorage, id);
+      const response = await fetch(`/api/games/${id}`, {
+        method: "PATCH",
+        headers: {
+          "content-type": "application/json",
+          ...(token ? { authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({
+          type: "camera-reconnect",
+          role,
+          commandId: crypto.randomUUID(),
+        }),
+        signal: AbortSignal.timeout(8000),
+      });
+      if (!response.ok) throw Error();
+      setRecoveryMessage(
+        "Reconnect requested. Keep the phone’s camera page open and unlocked.",
+      );
+      await onChanged?.();
+    } catch {
+      setError("Could not request camera recovery. Try again.");
+    } finally {
+      setBusy(false);
+    }
+  }
   const request = useRef<AbortController | null>(null);
   useEffect(() => {
     setReconnect(undefined);
@@ -317,6 +349,16 @@ function DeviceCard({
         </div>
       )}
       <div className="studio-device-actions">
+        {!scorer && claimed && (
+          <button
+            className="studio-device-action secondary"
+            disabled={busy || !enabled}
+            onClick={() => void reconnectCamera()}
+          >
+            Reconnect camera
+          </button>
+        )}
+        {recoveryMessage && <p role="status">{recoveryMessage}</p>}
         {!scorer && onVisibility && (
           <button
             className="studio-device-action secondary studio-device-visibility"

@@ -81,7 +81,10 @@ describe.skipIf(process.platform !== "win32")(
             authority: 1,
           });
           await client.renew(20000);
+          await client.pause();
+          await client.resume();
           await client.stop();
+          await expect(client.resume()).rejects.toThrow();
           expect(await client.observe()).toMatchObject({
             state: "stopped",
             authority: 2,
@@ -95,7 +98,7 @@ describe.skipIf(process.platform !== "win32")(
               20000,
             ),
           ).rejects.toThrow();
-          expect(operations).toEqual([1, 4, 2, 3, 4]);
+          expect(operations).toEqual([1, 4, 2, 5, 6, 3, 4]);
         } finally {
           client.disconnect();
           peer?.destroy();

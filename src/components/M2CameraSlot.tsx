@@ -30,7 +30,7 @@ import {
   enduranceStorageKey,
 } from "@/lib/providers/m2-endurance-recorder";
 import { shouldApplyCameraZoomCommand } from "@/lib/camera-zoom-command";
-import type { CameraAudioStatus } from "@/lib/types";
+import type { CameraAudioStatus, GameState } from "@/lib/types";
 import { cameraAudioEnabled } from "@/lib/camera-audio";
 import { selectPhoneAudioTrack } from "@/lib/phone-audio-track";
 import {
@@ -149,17 +149,24 @@ export function M2CameraSlot({
   const retryCount = useRef(0);
   const mounted = useRef(true);
   const recoverable = useRef(false);
+  const operationFlight = useRef(false);
+  const captureConsentAt = useRef(0);
+  const reconnectCommand = useRef<string | undefined>(undefined);
   function recover() {
     if (
       !mounted.current ||
       side !== "camera" ||
       !recoverable.current ||
-      retryCount.current >= 6
+      !captureConsentAt.current
     )
       return;
-    const delay = Math.min(10000, 2000 * ++retryCount.current);
+    retryCount.current = Math.min(8, retryCount.current + 1);
+    const delay = Math.min(15000, 2000 * retryCount.current);
     setStatus("Connection interrupted. Reconnecting to Studio…");
-    retryTimer.current = setTimeout(() => void run(connect), delay);
+    retryTimer.current = setTimeout(() => {
+      if (operationFlight.current) recover();
+      else void run(connect);
+    }, delay);
   }
   const stage = useRef("operation");
   const sessionRef = useRef<string | undefined>(undefined);
@@ -172,6 +179,7 @@ export function M2CameraSlot({
   );
   const [qr, setQr] = useState("");
   const [warning, setWarning] = useState("");
+  const [wakeWarning, setWakeWarning] = useState("");
   const [metrics, setMetrics] = useState<DirectMetrics>();
   const [frameSize, setFrameSize] = useState({ width: 0, height: 0 });
   const captureEvidence = useRef<{
@@ -348,7 +356,16 @@ export function M2CameraSlot({
     const value = await result.json().catch(() => null);
     if (!result.ok) {
       recoverable.current =
-        result.status >= 500 || value?.code === "studio_stale";
+        result.status >= 500 ||
+        value?.code === "studio_stale" ||
+        value?.code === "peer_stale" ||
+        value?.code === "signal_limit";
+      if (
+        result.status === 401 ||
+        result.status === 403 ||
+        value?.code === "camera_released"
+      )
+        captureConsentAt.current = 0;
       if (requestEpoch === epoch.current)
         failure.current =
           side === "camera" && result.status === 409
@@ -396,16 +413,40 @@ export function M2CameraSlot({
       captureEvidence.current.stateAfterStop = track.current.readyState;
     }
     track.current = undefined;
-    void wake.current?.release();
-    wake.current = undefined;
+    // A camera disconnect must not let a phone left on the ice fall asleep.
+    // The camera page owns its wake lock independently of this connection.
+    if (side !== "camera") {
+      void wake.current?.release();
+      wake.current = undefined;
+    }
     if (video.current) video.current.srcObject = null;
   }
+  useEffect(() => {
+    if (side !== "camera") return;
+    const lock = new OptionalScreenWakeLock(
+      navigator,
+      document,
+      setWakeWarning,
+      () => setWakeWarning(""),
+    );
+    lock.start();
+    const hide = () => void lock.release();
+    const show = () => lock.start();
+    window.addEventListener("pagehide", hide);
+    window.addEventListener("pageshow", show);
+    return () => {
+      window.removeEventListener("pagehide", hide);
+      window.removeEventListener("pageshow", show);
+      void lock.release();
+    };
+  }, [id, side]);
   useEffect(() => {
     mounted.current = true;
     const readInvitation = () => {
       if (side !== "camera") return;
       const incoming = new URLSearchParams(location.hash.slice(1)).get("token");
       if (incoming) {
+        captureConsentAt.current = 0;
         cleanup("Operator opened a new camera invitation");
         invitation.current = incoming;
         history.replaceState(null, "", location.pathname);
@@ -418,7 +459,10 @@ export function M2CameraSlot({
     };
     readInvitation();
     window.addEventListener("hashchange", readInvitation);
-    const hide = () => cleanup("Receiver page hidden by navigation or closure");
+    const hide = () => {
+      captureConsentAt.current = 0;
+      cleanup("Receiver page hidden by navigation or closure");
+    };
     window.addEventListener("pagehide", hide);
     return () => {
       mounted.current = false;
@@ -462,7 +506,8 @@ export function M2CameraSlot({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session, side, id]);
   async function run(operation: () => Promise<void>) {
-    if (busy) return;
+    if (operationFlight.current) return;
+    operationFlight.current = true;
     setBusy(true);
     setWarning("");
     failure.current = "";
@@ -474,6 +519,7 @@ export function M2CameraSlot({
       setStatus(failure.current || `Could not complete ${stage.current}.`);
       recover();
     } finally {
+      operationFlight.current = false;
       setBusy(false);
     }
   }
@@ -607,12 +653,7 @@ export function M2CameraSlot({
         setWarning("Could not report camera zoom capability."),
       );
       captureEvidence.current = { report: acquired.report };
-      wake.current = new OptionalScreenWakeLock(
-        navigator,
-        document,
-        setWarning,
-      );
-      wake.current.start();
+      captureConsentAt.current ||= Date.now();
     }
     stage.current = "session ticket validation";
     const ticket = studioTicketSchema.parse(
@@ -680,7 +721,7 @@ export function M2CameraSlot({
         cleanup(failure.current);
         setStatus(failure.current);
         if (
-          /signaling disconnected|Signaling stopped|Studio authority expired/i.test(
+          /signaling disconnected|Signaling stopped|Studio authority expired|WebRTC transport failed|Direct connection failed|Path check stopped/i.test(
             reason,
           )
         )
@@ -701,7 +742,7 @@ export function M2CameraSlot({
     setStatus("Connecting to Studio…");
   }
   useEffect(() => {
-    if (side !== "camera" || !connection.current) return;
+    if (side !== "camera" || !claimed) return;
     let cancelled = false;
     const pollIntent = async () => {
       if (audioPollFlight.current) return;
@@ -714,8 +755,26 @@ export function M2CameraSlot({
           signal: AbortSignal.timeout(5_000),
         });
         if (cancelled || !response.ok) return;
-        const game = (await response.json().catch(() => null)) as
-          Parameters<typeof cameraAudioEnabled>[0] | null;
+        const game = (await response
+          .json()
+          .catch(() => null)) as GameState | null;
+        const command = game?.cameraReconnect?.[cameraRole];
+        if (
+          !cancelled &&
+          captureConsentAt.current &&
+          command &&
+          command.id !== reconnectCommand.current &&
+          command.requestedAt >= captureConsentAt.current &&
+          command.requestedAt <= Date.now() &&
+          Date.now() - command.requestedAt <= 60_000 &&
+          !operationFlight.current
+        ) {
+          reconnectCommand.current = command.id;
+          retryCount.current = 0;
+          void run(connect);
+          return;
+        }
+        if (!connection.current) return;
         const enabled = game ? cameraAudioEnabled(game, cameraRole) : false;
         if (cancelled) return;
         const changed = enabled !== audioIntent.current;
@@ -737,7 +796,7 @@ export function M2CameraSlot({
       cancelled = true;
       clearInterval(timer);
     };
-  }, [id, side, cameraRole, audioConnectionVersion]);
+  }, [id, side, cameraRole, audioConnectionVersion, claimed]);
   useEffect(() => {
     if (side !== "camera" || !zoomRange || !track.current) return;
     let cancelled = false;
@@ -984,6 +1043,8 @@ export function M2CameraSlot({
           onClick={() => {
             retryCount.current = 0;
             if (previewReady) {
+              captureConsentAt.current = 0;
+              recoverable.current = false;
               cleanup("Phone disconnected");
               setMetrics(undefined);
               setStatus("Phone disconnected. Connect again when ready.");
@@ -1022,6 +1083,7 @@ export function M2CameraSlot({
             : status}
         </p>
         {warning && <p role="alert">{warning}</p>}
+        {wakeWarning && <p role="alert">{wakeWarning}</p>}
         <p className="phone-camera-hint">
           Keep the phone upright, on the same Wi-Fi as Studio, and leave this
           page open.

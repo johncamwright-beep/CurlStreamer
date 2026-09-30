@@ -12,8 +12,9 @@ type Native = Pick<
   M4NativePipeClient,
   "arm" | "renew" | "stop" | "snapshot" | "disconnect"
 > &
-  Partial<Pick<M4NativePipeClient, "observe">>;
-type State = "idle" | "starting" | "armed" | "stopping" | "stopped" | "failed";
+  Partial<Pick<M4NativePipeClient, "observe" | "pause" | "resume">>;
+type State =
+  "idle" | "starting" | "armed" | "paused" | "stopping" | "stopped" | "failed";
 const unavailable = () => new Error("m4_program_stream_unavailable");
 export type M4StreamSnapshot = {
   state: State;
@@ -37,6 +38,11 @@ export class M4ProgramStream {
   #localTimer?: ReturnType<typeof setTimeout>;
   #providerTimer?: ReturnType<typeof setTimeout>;
   #failureReported = false;
+  #controlFlight = false;
+  #outputGeneration = 0;
+  #authorized() {
+    return this.#state === "armed" || this.#state === "paused";
+  }
   constructor(
     private native: Native,
     private diagnostic?: StudioDiagnostic,
@@ -73,7 +79,7 @@ export class M4ProgramStream {
         : undefined;
     return {
       state:
-        (this.#state === "armed" && native.state !== "armed") ||
+        (this.#authorized() && native.state !== "armed") ||
         (this.#state === "idle" && native.state !== "connected")
           ? "failed"
           : this.#state,
@@ -160,7 +166,7 @@ export class M4ProgramStream {
     const at = performance.now();
     try {
       const value = await this.native.observe!();
-      if (!signal.aborted && this.#state === "armed") {
+      if (!signal.aborted && this.#authorized()) {
         this.#local = { value, at };
         if (value.authority !== 1 || value.state === "failed") {
           this.#failed(
@@ -175,14 +181,14 @@ export class M4ProgramStream {
       this.#local = undefined;
       if (
         !signal.aborted &&
-        this.#state === "armed" &&
+        this.#authorized() &&
         this.native.snapshot().state === "failed"
       ) {
         this.#failed("native_pipe_unavailable");
         this.#abort!.abort();
       }
     }
-    if (!signal.aborted && this.#state === "armed")
+    if (!signal.aborted && this.#authorized())
       this.#localTimer = setTimeout(() => {
         void this.#observeLocal(signal);
       }, 1000);
@@ -193,14 +199,23 @@ export class M4ProgramStream {
     signal: AbortSignal,
   ) {
     const at = performance.now();
+    const generation = this.#outputGeneration;
     try {
-      const value = await desktop.observeOutput(intentId);
-      if (!signal.aborted && this.#state === "armed")
+      const value =
+        this.#state === "armed"
+          ? await desktop.observeOutput(intentId)
+          : undefined;
+      if (
+        value &&
+        !signal.aborted &&
+        this.#state === "armed" &&
+        generation === this.#outputGeneration
+      )
         this.#provider = { value, at };
     } catch {
-      this.#provider = undefined;
+      if (generation === this.#outputGeneration) this.#provider = undefined;
     }
-    if (!signal.aborted && this.#state === "armed")
+    if (!signal.aborted && this.#authorized())
       this.#providerTimer = setTimeout(() => {
         void this.#observeProvider(desktop, intentId, signal);
       }, 5000);
@@ -215,6 +230,66 @@ export class M4ProgramStream {
       this.#local = { value: await this.native.observe(), at };
     } catch {
       /* Missing status remains unknown, not a confirmed output stop. */
+    }
+  }
+
+  async pause() {
+    if (
+      this.#state !== "armed" ||
+      this.#controlFlight ||
+      !this.native.pause ||
+      !this.native.observe
+    )
+      throw unavailable();
+    this.#controlFlight = true;
+    ++this.#outputGeneration;
+    try {
+      await this.native.pause();
+      // Keep the heartbeat and camera program alive, but do not confirm pause
+      // from the command acknowledgement alone.
+      const until = performance.now() + 4000;
+      while (this.#state === "armed" && !this.#abort?.signal.aborted) {
+        const value = await this.native.observe();
+        if (
+          this.#state !== "armed" ||
+          this.#abort?.signal.aborted ||
+          value.authority !== 1 ||
+          value.failure !== "none"
+        )
+          throw unavailable();
+        this.#local = { value, at: performance.now() };
+        if (value.state === "stopped") {
+          this.#state = "paused";
+          this.#provider = undefined;
+          return;
+        }
+        if (performance.now() >= until) throw unavailable();
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      }
+      throw unavailable();
+    } finally {
+      this.#controlFlight = false;
+    }
+  }
+  async resume() {
+    if (
+      this.#state !== "paused" ||
+      this.#controlFlight ||
+      !this.native.resume ||
+      this.#abort?.signal.aborted
+    )
+      throw unavailable();
+    this.#controlFlight = true;
+    ++this.#outputGeneration;
+    try {
+      await this.native.resume();
+      if (this.#state !== "paused" || this.#abort?.signal.aborted)
+        throw unavailable();
+      this.#local = undefined;
+      this.#provider = undefined;
+      this.#state = "armed";
+    } finally {
+      this.#controlFlight = false;
     }
   }
 

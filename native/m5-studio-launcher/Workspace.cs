@@ -238,11 +238,13 @@ internal sealed class Workspace : Form
                 Dictionary<string, object> previous;
                 using (var response = await local.GetAsync(localAddress + "/state")) { response.EnsureSuccessStatusCode(); previous = json.Deserialize<Dictionary<string, object>>(await response.Content.ReadAsStringAsync()); }
                 if (WorkspacePolicy.RestartYouTube(TextValue(previous, "pairing"), TextValue(previous, "streaming"))) {
-                    // Grants and output sinks are single-use. Require confirmed cleanup before replacing them.
-                    status.Text = "Reconnecting Studio for a new YouTube broadcast…";
-                    await CloseController();
-                    await ConnectProgram(gameId);
+                    throw new WorkspaceFailure("Studio's stream authority ended. Keep this game open and check YouTube settings. A replacement watch link will not be created automatically.");
                 }
+                if (TextValue(previous, "streaming") == "paused") {
+                    ApplyState(await Command(new { action = "resume-stream" }));
+                    return;
+                }
+                if (TextValue(previous, "streaming") != "idle") throw new WorkspaceFailure("This YouTube output is already connecting. Wait for its status before reconnecting.");
                 var prepared = await WebsiteYouTube(gameId, "", new { action = "prepare" });
                 if (prepared != "prepared") throw new WorkspaceFailure(WorkspacePolicy.YouTubeFailure(prepared));
                 Dictionary<string, object> state;
@@ -256,13 +258,10 @@ internal sealed class Workspace : Form
                 }
                 ApplyState(await Command(new { action = "start-stream", intentId = Guid.NewGuid().ToString() }));
             } else {
-                ApplyState(await Command(new { action = "stop-stream" }));
-                await WebsiteYouTube(gameId, "", new { action = "stop" });
+                ApplyState(await Command(new { action = "pause-stream" }));
             }
         } catch (Exception error) {
-            youtubeError = error is WorkspaceFailure ? error.Message : "Studio could not start YouTube. Close and reopen Studio, then try Broadcast to YouTube again.";
-            if (WorkspacePolicy.Game(web.CoreWebView2.Source, origin) == gameId)
-                web.ExecuteScriptAsync("window.dispatchEvent(new CustomEvent('studio-youtube-status',{detail:" + json.Serialize(new { gameId = gameId, available = true, busy = false, streaming = "failed", live = false, receiving = false, message = youtubeError }) + "}));");
+            youtubeError = error is WorkspaceFailure ? error.Message : "Studio could not change the YouTube connection. Your game and watch link are retained. Check the connection status and try again.";
         } finally { busy = false; PublishYouTubeStatus(lastState); UpdateButtons(); }
     }
     private async Task StartRecording() {
@@ -368,7 +367,9 @@ internal sealed class Workspace : Form
         if (web.CoreWebView2 != null && WorkspacePolicy.SameOrigin(web.CoreWebView2.Source, origin) && selectedGame == runningGame) {
             var offline = state == null;
             object available; var enabled = !offline && state.TryGetValue("streamingAvailable", out available) && available is bool && (bool)available;
-            web.CoreWebView2.ExecuteScriptAsync("window.dispatchEvent(new CustomEvent('studio-youtube-status',{detail:" + json.Serialize(new { gameId = runningGame, available = offline || enabled, busy = !offline && busy, streaming = offline || youtubeError.Length > 0 ? "failed" : TextValue(state, "streaming") ?? "idle", live = !offline && youtubeError.Length == 0 && TextValue(state, "broadcast") == "live", receiving = !offline && youtubeError.Length == 0 && TextValue(state, "youtubeReception") == "confirmed", message = offline || enabled ? youtubeError : "YouTube streaming is not enabled in this Studio installation." }) + "}));");
+            object recovery; var canReconnect = !offline && state.TryGetValue("canReconnect", out recovery) && recovery is bool && (bool)recovery;
+            object output; var localOutput = !offline && state.TryGetValue("localOutput", out output) ? output as Dictionary<string, object> : null;
+            web.CoreWebView2.ExecuteScriptAsync("window.dispatchEvent(new CustomEvent('studio-youtube-status',{detail:" + json.Serialize(new { gameId = runningGame, available = !offline && enabled, busy = !offline && busy, canReconnect = canReconnect, streaming = offline ? "failed" : TextValue(state, "streaming") ?? "idle", outputActive = localOutput != null && TextValue(localOutput, "state") == "active", live = !offline && TextValue(state, "broadcast") == "live", receiving = !offline && TextValue(state, "youtubeReception") == "confirmed", message = offline || enabled ? youtubeError : "YouTube streaming is not enabled in this Studio installation." }) + "}));");
         }
     }
     private async Task Poll() {

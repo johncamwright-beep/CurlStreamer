@@ -26,6 +26,8 @@ export function StudioYouTube({ id }: { id: string }) {
   const nextCheck = useRef(0);
   const failures = useRef(0);
   const halted = useRef(false);
+  const confirmedLive = useRef(false);
+  const watchingOutput = state?.streaming === "armed";
   useEffect(() => {
     setBridgeAvailable(
       Boolean(
@@ -95,6 +97,7 @@ export function StudioYouTube({ id }: { id: string }) {
       !state.live &&
       !state.busy &&
       !halted.current &&
+      !confirmedLive.current &&
       Date.now() >= nextCheck.current
     )
       void goLive();
@@ -103,7 +106,7 @@ export function StudioYouTube({ id }: { id: string }) {
     setWatchUrl("");
     setCopied(false);
     setCopyError("");
-    if (!state?.live) return;
+    if (!watchingOutput) return;
     const controller = new AbortController();
     async function load() {
       try {
@@ -124,7 +127,7 @@ export function StudioYouTube({ id }: { id: string }) {
         if (result.success && !controller.signal.aborted)
           setWatchUrl(result.data.watchUrl);
       } catch {
-        /* Retry while live; never display an unverified destination. */
+        /* Retry during this output session; never display an unverified destination. */
       }
     }
     void load();
@@ -133,13 +136,22 @@ export function StudioYouTube({ id }: { id: string }) {
       controller.abort();
       clearInterval(timer);
     };
-  }, [id, state?.live]);
+  }, [id, watchingOutput]);
   useEffect(() => {
     let last = 0;
+    confirmedLive.current = false;
+    setState(undefined);
     const receive = (event: Event) => {
       const parsed = stateSchema.safeParse((event as CustomEvent).detail);
       if (!parsed.success || parsed.data.gameId !== id) return;
       last = Date.now();
+      if (parsed.data.live) confirmedLive.current = true;
+      else if (
+        ["idle", "starting", "stopping", "stopped", "failed"].includes(
+          parsed.data.streaming,
+        )
+      )
+        confirmedLive.current = false;
       setState(parsed.data);
       setPending(false);
     };
@@ -166,6 +178,7 @@ export function StudioYouTube({ id }: { id: string }) {
     halted.current = action === "stop";
     nextCheck.current = 0;
     failures.current = 0;
+    confirmedLive.current = false;
     setError("");
     setPending(true);
     bridge.postMessage({ type: `studio-youtube-${action}`, gameId: id });
@@ -190,13 +203,17 @@ export function StudioYouTube({ id }: { id: string }) {
           role="status"
           className={state?.live ? "text-red-400" : "text-slate-300"}
         >
-          {state?.live
-            ? "● LIVE"
-            : state?.receiving
-              ? "Receiving video"
-              : active
-                ? "Connecting…"
-                : "Not live"}
+          {!state
+            ? "Status unavailable"
+            : state.live
+              ? "● LIVE"
+              : state?.receiving
+                ? "Receiving video"
+                : watchingOutput
+                  ? "Checking status…"
+                  : active
+                    ? "Connecting…"
+                    : "Not live"}
         </strong>
       </div>
       <div className="studio-youtube-actions flex flex-wrap gap-2">
@@ -227,7 +244,7 @@ export function StudioYouTube({ id }: { id: string }) {
           {error}
         </p>
       )}
-      {state?.live && watchUrl && (
+      {watchingOutput && watchUrl && (
         <div className="studio-youtube-watch mt-2 flex items-center gap-2 text-sm">
           <a
             className="min-w-0 flex-1 truncate underline"
@@ -257,7 +274,7 @@ export function StudioYouTube({ id }: { id: string }) {
           </button>
         </div>
       )}
-      {state?.live && copyError && <p role="alert">{copyError}</p>}
+      {watchingOutput && copyError && <p role="alert">{copyError}</p>}
       {(!state?.available || state?.message) && (
         <p className="mt-2 text-sm text-slate-300">
           {state?.message || "Preparing Studio’s YouTube connection…"}

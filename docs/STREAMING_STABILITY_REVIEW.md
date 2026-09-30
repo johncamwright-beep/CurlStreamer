@@ -76,8 +76,14 @@ region: <https://status.supabase.com/>. These are potential contributors, not a
 confirmed explanation of every disconnect. Do not clear or replay the delivered
 output intent's quarantine to restart this failed broadcast.
 
-The follow-up desktop package is prepared as `0.4.0-pilot.4` and is not installed
-yet. Formatting, typechecking, production build, 1,649 unit tests and 246 browser
+The follow-up desktop package is installed locally as `0.4.0-pilot.4`. All 2,247
+installed component hashes and the relocated-bundle, empty-profile, unarmed
+native readiness and graceful-controller-exit smoke checks passed. Commit
+`8e93e0f` is pushed, and the matching website deployment is verified: the live
+`m4-program-renderer.js` SHA-256 matches the tested asset
+`8ea3728fcc7dfc7d4b42d8fbf08c57eb6118c0afe4504234e523ad94ce84c4d1`.
+The updated installer has not been publicly released. Formatting, typechecking,
+production build, 1,649 unit tests and 246 browser
 tests passed (94 unit and 92 browser tests skipped for unavailable fixtures).
 Real synthetic portrait WebRTC also confirmed local path proofs, audio delivery,
 bounded mute settling and relay rejection. The packaged renderer check and
@@ -86,6 +92,52 @@ an internal camera status phrase that was not rendered; it now checks actual
 retry requests and both video elements. Physical live endurance remains
 unverified. Reconnect once after the coordinated update, then test the actual
 YouTube picture and sound for 5–10 minutes before a longer 45–60 minute run.
+
+### Follow-up to cycling YouTube status
+
+John's five-minute camera/USB check passed with `0.4.0-pilot.4`. During the
+subsequent live run, the status badge and watch link cycled, with one brief
+camera flicker reported. John confirms that the actual YouTube picture and
+sound subsequently stay continuous. This does not establish long-run camera
+endurance or explain all earlier failures.
+
+A public, read-only local operator sample reproduced live/unknown confirmation
+while output stayed active and byte counts increased. A later 90-second sample
+recorded 45 active-output checks, 44 live confirmations and one unknown
+confirmation, with no unavailable reads or camera drops. The lifecycle journal
+contains a stream start at 12:29:41 PM EDT and no subsequent stream failure or
+controller/native exit in that sample.
+
+The status path checks the owned Google channel, stream and broadcast
+sequentially within a five-second desktop request deadline, in addition to OAuth
+and database calls. A failed poll clears confirmation immediately even when
+local output keeps working. Cloud latency is a potential contributor; these
+samples alone do not identify which individual external call was slow.
+
+- Keep the owned-channel check first, then read stream and broadcast concurrently.
+  All ownership, channel, resource-binding and desktop authority checks remain.
+- Keep the verified watch destination available during the same armed output
+  session. Do not discard it on each provider confirmation fluctuation. Clear it
+  on stopped/failed output, game changes or loss of fresh Studio status.
+- Show `Checking status…` for an armed output with missing provider confirmation,
+  and `Status unavailable` when Studio updates stop. Neither claims that an
+  unconfirmed stream is live or that a lost status read stopped video.
+- Once native/provider evidence confirms live, do not request another automatic
+  go-live transition because a later status sample loses confirmation. A new
+  output session resets that guard; initial go-live retries remain bounded.
+- Allow the compact tile heading to wrap its status label without squeezing out
+  the title or making the action tile unnecessarily tall.
+
+Formatting, final typechecking, production builds and 1,651 unit tests passed
+(94 skipped). The initial full main browser run passed 165 checks and failed
+three: the longer unavailable label expanded a compact tile, and the old desktop
+and mobile link assertions expected it to disappear during missing confirmation.
+The heading layout and assertions were corrected; all 24 scoring/YouTube checks
+passed on rerun. All 78 account/provider browser checks also passed. In total,
+246 distinct browser checks are covered, with 92 environment-specific skips.
+An intermediate typecheck overlapped Next.js regenerating its types; the final
+check after the build completed passed. This follow-up is a website/provider
+change and does not replace the running Studio binaries.
 
 ## September 29 baseline
 

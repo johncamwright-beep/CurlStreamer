@@ -51,23 +51,28 @@ test("Studio YouTube sends game-scoped commands and expires live status", async 
   await page.goto("/youtube-fixture");
   const start = page.getByRole("button", { name: "Broadcast to YouTube" });
   await expect(start).toBeDisabled();
-  const report = async (gameId: string, live = false, receiving = live) =>
+  const report = async (
+    gameId: string,
+    live = false,
+    receiving = live,
+    streaming = receiving ? "armed" : "idle",
+  ) =>
     page.evaluate(
-      ({ gameId, live, receiving }) =>
+      ({ gameId, live, receiving, streaming }) =>
         window.dispatchEvent(
           new CustomEvent("studio-youtube-status", {
             detail: {
               gameId,
               available: true,
               busy: false,
-              streaming: receiving ? "armed" : "idle",
+              streaming,
               live,
               receiving,
               message: "",
             },
           }),
         ),
-      { gameId, live, receiving },
+      { gameId, live, receiving, streaming },
     );
   await report("wrong-game", true);
   await expect(start).toBeDisabled();
@@ -87,7 +92,10 @@ test("Studio YouTube sends game-scoped commands and expires live status", async 
   await page.clock.fastForward(11000);
   await report("fixture-game", false, true);
   await expect.poll(() => requests.length).toBe(2);
-  await expect(page.getByRole("link", { name: watchUrl })).toHaveCount(0);
+  await expect(page.getByRole("link", { name: watchUrl })).toHaveAttribute(
+    "href",
+    watchUrl,
+  );
   await report("fixture-game", true);
   await expect(page.getByRole("status")).toHaveText("● LIVE");
   await expect(
@@ -105,8 +113,31 @@ test("Studio YouTube sends game-scoped commands and expires live status", async 
   expect(
     await page.evaluate(() => (window as unknown as { copied: string }).copied),
   ).toBe(watchUrl);
+  await report("fixture-game", false, false, "armed");
+  await expect(page.getByRole("status")).toHaveText("Checking status…");
+  await expect(page.getByRole("link", { name: watchUrl })).toHaveAttribute(
+    "href",
+    watchUrl,
+  );
+  await expect(
+    page.getByRole("button", { name: "End Stream", exact: true }),
+  ).toBeEnabled();
+  await page.clock.fastForward(11000);
+  await report("fixture-game", false, true, "armed");
+  await expect(page.getByRole("status")).toHaveText("Receiving video");
+  // Losing a status sample does not request another live transition for an
+  // already confirmed broadcast or hide its verified watch destination.
+  expect(requests).toHaveLength(2);
+  await expect(page.getByRole("link", { name: watchUrl })).toHaveAttribute(
+    "href",
+    watchUrl,
+  );
+  await report("fixture-game", true);
   await page.clock.fastForward(7000);
-  await expect(page.getByRole("status")).toHaveText("Not live");
+  await expect(page.getByRole("status")).toHaveText("Status unavailable");
   await expect(start).toBeDisabled();
   await expect(page.getByRole("link", { name: watchUrl })).toHaveCount(0);
+  await report("fixture-game", false, false, "stopped");
+  await expect(page.getByRole("status")).toHaveText("Not live");
+  await expect(start).toBeEnabled();
 });

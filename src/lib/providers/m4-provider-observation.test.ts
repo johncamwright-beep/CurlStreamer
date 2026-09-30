@@ -46,6 +46,30 @@ function providerValues(overrides: Record<string, unknown> = {}) {
 }
 
 describe("M4 provider observation", () => {
+  it("checks ownership first, then reads stream and broadcast concurrently", async () => {
+    const values = providerValues();
+    const pending: ((response: Response) => void)[] = [];
+    const read = vi
+      .fn<typeof fetch>()
+      .mockImplementation(
+        () => new Promise<Response>((resolve) => pending.push(resolve)),
+      );
+    const result = observeM4YouTubeProvider(token, expected, read);
+    expect(read).toHaveBeenCalledTimes(1);
+    pending[0](response(values[0]));
+    await vi.waitFor(() => expect(read).toHaveBeenCalledTimes(3));
+    // Neither resource response has arrived yet; both reads are already running.
+    pending[1](response(values[1]));
+    pending[2](response(values[2]));
+    await expect(result).resolves.toMatchObject({ broadcastLive: true });
+  });
+  it("does not read resource data after a wrong owned channel", async () => {
+    const read = fetcher([{ items: [{ id: "other" }] }]);
+    await expect(
+      observeM4YouTubeProvider(token, expected, read),
+    ).rejects.toThrow();
+    expect(read).toHaveBeenCalledTimes(1);
+  });
   it("uses only authenticated GET list calls and reports provider state", async () => {
     const read = fetcher(providerValues());
     await expect(

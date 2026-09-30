@@ -106,13 +106,26 @@ export async function observeM4YouTubeProvider(
     );
     if (owned.items[0].id !== ids.channelId) throw new Error();
 
-    const stream = streamSchema.parse(
-      await get(
+    // The owned-channel check stays first. These resource reads are independent
+    // and read-only; avoid adding both network latencies to each status poll.
+    const resources = await Promise.allSettled([
+      get(
         `/liveStreams?part=id,snippet,status&id=${encodeURIComponent(ids.streamId)}`,
         accessToken,
         fetcher,
       ),
-    ).items[0];
+      get(
+        `/liveBroadcasts?part=id,snippet,status,contentDetails&id=${encodeURIComponent(ids.broadcastId)}`,
+        accessToken,
+        fetcher,
+      ),
+    ]);
+    if (
+      resources[0].status !== "fulfilled" ||
+      resources[1].status !== "fulfilled"
+    )
+      throw new Error();
+    const stream = streamSchema.parse(resources[0].value).items[0];
     if (
       !stream ||
       stream.id !== ids.streamId ||
@@ -120,13 +133,7 @@ export async function observeM4YouTubeProvider(
     )
       throw new Error();
 
-    const broadcast = broadcastSchema.parse(
-      await get(
-        `/liveBroadcasts?part=id,snippet,status,contentDetails&id=${encodeURIComponent(ids.broadcastId)}`,
-        accessToken,
-        fetcher,
-      ),
-    ).items[0];
+    const broadcast = broadcastSchema.parse(resources[1].value).items[0];
     if (
       !broadcast ||
       broadcast.id !== ids.broadcastId ||

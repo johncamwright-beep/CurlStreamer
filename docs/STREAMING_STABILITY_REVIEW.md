@@ -37,9 +37,13 @@ these code changes. Camera and sponsor media retain `object-fit: contain`.
 
 ## Release status
 
-The fixes and installer are prepared locally. Publishing, public-domain
-verification, and updating the installed Studio copy are not yet confirmed.
-Website deployment alone cannot update the native controller or camera renderer.
+The fixes are committed in `1ec14e9` and deployed to `curlstreamer.app`; the live
+site's scoring and preview assets were checked for the new recovery behavior.
+Studio `0.4.0-pilot.2` is published on GitHub with matching source and notices.
+An anonymous full installer download matched its published size and SHA-256.
+The installed Studio on this PC is now `0.4.0-pilot.2`; its component hashes and
+offline startup check passed. The website download descriptor now points to
+that same release. Physical camera/broadcast endurance is still unverified.
 
 ## Remaining work
 

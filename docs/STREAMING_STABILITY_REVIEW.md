@@ -1,5 +1,54 @@
 # Streaming stability review — October 1, 2026
 
+## Camera reconnection follow-up
+
+John reported an access-denied QR after restart, then camera recovery loops after
+releasing and reclaiming both roles. Confirmed defects and implemented fixes:
+
+- A fresh participant claim could leave the preferred participant-storage key
+  pointing at an older assignment. Every successful claim now replaces that key
+  while retaining organizer access separately.
+- Reconnect QR previously contained only a page address. The new operator-only
+  route and migration `0068` prepare a ten-minute invitation bound to the existing
+  device and assignment generation. Existing claim exchange permits the original
+  browser to renew its six-hour participant session without releasing the camera.
+  Wrong-device, expired, released, completed and publicly callable cases remain
+  rejected. No camera session or game state changes during renewal.
+- Phone automatic recovery omitted several actual transport failure messages,
+  including the 45-second direct-path timeout. Those now retry with bounded
+  backoff; duplicate timers are cleared and late failures from replaced requests
+  cannot clear the successor's capture consent. Reconnect status includes the last
+  failure reason. Missing/expired local access is detected before capture.
+- Camera controls move into the scoring column above expanded USB audio, avoiding
+  the gap caused by the height of the program-preview column. Fresh native video
+  evidence remains visible when cloud device-status polling fails; its existing
+  six-second expiry is unchanged.
+
+Read-only live checks found the controller running and receiver sessions fresh,
+with both assignments current but phone heartbeats stale. This does not establish
+the physical transport failure's root cause. Supabase's October 1 status page
+reports unresolved Eastern US API latency since September 29; it is a possible
+contributor, not a confirmed explanation for this game's interruptions.
+
+Migration `0068` is installed and verified in the live database. A corrected
+rollback-only fixture passed the existing-device, response-loss retry, wrong-device,
+expired, released, completed-game and private-RPC checks. Its fixture rows were
+rolled back; no live camera was released or reset. The corrected editor submission
+ran without the earlier warning, so the additional confirmation request was
+withdrawn. Code commit `3807cba` is deployed and verified on `www.curlstreamer.app`.
+Vercel deployment `489BbaxPEciAXVHQyWGuYW9PMTBY` is Ready with the custom domain
+assigned. Anonymous score/camera asset checks confirmed the new renewal endpoint,
+access-expiry message and replaced-request guard in that deployment. Remote web
+CI was still running at verification; Windows launcher CI passed.
+
+Validation: formatting, TypeScript, production build and 1,671 unit tests passed
+with 95 environment-dependent skips. The full main browser run passed 169 checks;
+its one layout failure was corrected and all 42 affected desktop/mobile checks
+passed on the final code. All 78 account/YouTube checks passed (248 unique browser
+checks in total, 92 skips). No native installer change is required. A physical
+camera/YouTube endurance test after refreshing the phone pages remains necessary;
+these automated checks do not establish that every live interruption is fixed.
+
 ## October 1 close and restart recovery
 
 - Closing an active game in Windows Studio asks whether to end the game.

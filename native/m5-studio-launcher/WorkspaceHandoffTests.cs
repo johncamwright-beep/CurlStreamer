@@ -64,6 +64,27 @@ internal static class WorkspaceHandoffTests
                     mode = 2; refused = false;
                     try { await (Task<string>)youtube.Invoke(form, new object[] { id, "", new { action = "prepare" } }); } catch { refused = true; }
                     if (!refused) throw new Exception("YouTube account denial was not preserved.");
+                    var remember = typeof(Workspace).GetMethod("RememberGame", BindingFlags.Instance | BindingFlags.NonPublic);
+                    var remembered = typeof(Workspace).GetMethod("RememberedGame", BindingFlags.Instance | BindingFlags.NonPublic);
+                    remember.Invoke(form, new object[] { id });
+                    if ((string)remembered.Invoke(form, null) != id) throw new Exception("Resume game not persisted.");
+                    var resumePath = Path.Combine(root, "FixtureProfile", "resume-game.json");
+                    File.WriteAllText(resumePath, "{\"origin\":\"https://other.example\",\"gameId\":\"" + id + "\"}");
+                    if (remembered.Invoke(form, null) != null) throw new Exception("Cross-origin saved game accepted.");
+                    remember.Invoke(form, new object[] { id });
+                    var scoringLoaded = new TaskCompletionSource<bool>();
+                    EventHandler<CoreWebView2NavigationCompletedEventArgs> scoringNavigation = (sender2,args2) => scoringLoaded.TrySetResult(args2.IsSuccess);
+                    core.NavigationCompleted += scoringNavigation;
+                    core.Navigate(origin + "/score/" + id);
+                    if (!await scoringLoaded.Task) throw new Exception("Fixture scoring navigation failed.");
+                    core.NavigationCompleted -= scoringNavigation;
+                    await core.ExecuteScriptAsync("window.endRequested=false;window.addEventListener('studio-end-game-request',e=>{window.endRequested=e.detail.gameId==='" + id + "';window.chrome.webview.postMessage({type:'studio-end-game-opened',gameId:e.detail.gameId});});");
+                    await (Task)typeof(Workspace).GetMethod("RequestEndGame", BindingFlags.Instance | BindingFlags.NonPublic).Invoke(form, new object[] { id });
+                    for (int i=0;i<20 && await core.ExecuteScriptAsync("window.endRequested")!="true";i++) await Task.Delay(100);
+                    if (await core.ExecuteScriptAsync("window.endRequested")!="true") throw new Exception("Close did not request final-score review.");
+                    await core.ExecuteScriptAsync("window.chrome.webview.postMessage({type:'studio-end-game-cancelled',gameId:'" + id + "'});");
+                    await Task.Delay(100);
+                    if (typeof(Workspace).GetField("closeAfterGame", BindingFlags.Instance | BindingFlags.NonPublic).GetValue(form) != null) throw new Exception("Cancelled review retained close intent.");
                     var mappingName = "Local\\CurlStreamerPreview-" + Guid.NewGuid().ToString("N");
                     byte[] picture;
                     using (var bitmap = new System.Drawing.Bitmap(1280, 720, System.Drawing.Imaging.PixelFormat.Format32bppRgb))
@@ -112,13 +133,15 @@ internal static class WorkspaceHandoffTests
                         if ((bool)typeof(Workspace).GetField("recording", BindingFlags.Instance | BindingFlags.NonPublic).GetValue(form)) throw new Exception("Busy operation suppressed controller-offline handling.");
                         if (!File.ReadAllText(Path.Combine(root, "FixtureProfile", "controller-exit.json")).Contains("\"exitCode\":7")) throw new Exception("Controller exit evidence missing.");
                         if (await core.ExecuteScriptAsync("!window.youtubeEvents.at(-1).busy&&window.youtubeEvents.at(-1).message.includes('controller stopped')") != "true") throw new Exception("Controller exit left web preparation hanging.");
-                        typeof(Workspace).GetField("child", BindingFlags.Instance | BindingFlags.NonPublic).SetValue(form, null);
+                        typeof(Workspace).GetField("exited", BindingFlags.Instance | BindingFlags.NonPublic).SetValue(form, exited);
+                        await (Task)typeof(Workspace).GetMethod("CloseController", BindingFlags.Instance | BindingFlags.NonPublic).Invoke(form, null);
+                        if (typeof(Workspace).GetField("child", BindingFlags.Instance | BindingFlags.NonPublic).GetValue(form) != null || !File.Exists(Path.Combine(root,"FixtureProfile","recording-warning.json"))) throw new Exception("Dead controller blocked restart or lost cleanup warning.");
                         typeof(Workspace).GetField("busy", BindingFlags.Instance | BindingFlags.NonPublic).SetValue(form, false);
                     }
                     File.WriteAllText(output, "PASS: native WebView2 handoff and preview boundaries; YouTube pending settles and controller-offline clears pending/live; no real media or accounts.");
                     result = 0;
                 } catch (Exception error) { File.WriteAllText(output, "FAIL: " + error.GetType().Name + " " + error.Message); }
-                finally { timeout.Stop(); form.Close(); }
+                finally { timeout.Stop(); typeof(Workspace).GetField("mayClose", BindingFlags.Instance | BindingFlags.NonPublic).SetValue(form, true); form.Close(); }
             };
         };
         Application.Run(form);

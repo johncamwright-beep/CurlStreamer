@@ -214,7 +214,7 @@ describe("M4 private preparation and cleanup API", () => {
     expect(result.headers.get("cache-control")).toBe("no-store");
     expect(result.headers.get("vary")).toBe("Cookie, Authorization");
   });
-  it.each(["42501", "55000", "unexpected"])(
+  it.each(["42501", "55000", "P0409", "unexpected"])(
     "sanitizes provider failure %s",
     async (code) => {
       mocks.prepare.mockRejectedValue(
@@ -222,7 +222,11 @@ describe("M4 private preparation and cleanup API", () => {
       );
       const result = await POST(request({ action: "prepare" }), context);
       expect(result.status).toBe(
-        code === "42501" ? 403 : code === "55000" ? 409 : 503,
+        code === "42501"
+          ? 403
+          : code === "55000" || code === "P0409"
+            ? 409
+            : 503,
       );
       expect(await result.text()).not.toContain("secret");
     },

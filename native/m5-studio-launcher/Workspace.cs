@@ -31,6 +31,8 @@ internal sealed class Workspace : Form
     private TaskCompletionSource<Dictionary<string, object>> handoff;
     private bool busy, polling, closing, mayClose, recording, controllerReady, startupFailed;
     private Dictionary<string, object> lastState;
+    private string closeAfterGame;
+    private bool endRequestPending, gameEnded;
     private readonly UsbAudio usbAudio = new UsbAudio();
     private readonly object usbLock = new object();
     private readonly List<float> usbSamples = new List<float>();
@@ -72,21 +74,36 @@ internal sealed class Workspace : Form
         bottom.Controls.Add(status);
         web.Dock = DockStyle.Fill;
         Controls.Add(web); Controls.Add(bottom);
+        var menu = new MenuStrip();
+        var studioMenu = new ToolStripMenuItem("Studio");
+        var reload = new ToolStripMenuItem("Reload scoring screen");
+        reload.ShortcutKeys = Keys.Control | Keys.R;
+        reload.Click += (s, e) => {
+            if (!busy && !closing && web.CoreWebView2 != null) {
+                closeAfterGame = null; endRequestPending = false;
+                web.CoreWebView2.Reload();
+            }
+        };
+        var saved = new ToolStripMenuItem(File.Exists(Path.Combine(LifecycleDirectory, "recording-warning.json")) ? "Saved videos — check previous recording" : "Saved videos"); saved.Click += (s, e) => OpenRecordings();
+        var close = new ToolStripMenuItem("Close Studio…"); close.Click += (s, e) => Close();
+        studioMenu.DropDownItems.AddRange(new ToolStripItem[] { reload, saved, close });
+        menu.Items.Add(studioMenu); Controls.Add(menu); MainMenuStrip = menu;
         Shown += async (s, e) => await Initialize();
         poll.Tick += async (s, e) => await Poll();
         FormClosing += async (s, e) => {
             if (mayClose) return;
             e.Cancel = true;
             if (busy || closing) { status.Text = "Wait for the current recording action to finish before closing."; return; }
-            closing = true; UpdateButtons();
-            try { await CloseController(); mayClose = true; poll.Stop(); web.Dispose(); Close(); }
-            catch {
-                closing = false;
-                if (child != null && child.HasExited && MessageBox.Show(this, "The recording process has ended, but cleanup was not confirmed. Check your recording before using it. Close Studio?", "Recording recovery", MessageBoxButtons.YesNo, MessageBoxIcon.Warning) == DialogResult.Yes) {
-                    mayClose = true; poll.Stop(); web.Dispose(); Close(); return;
-                }
-                status.Text = "Recording cleanup was not confirmed. Studio remains open; check the recordings before closing."; UpdateButtons();
+            var game = runningGame ?? selectedGame ?? lastGame;
+            if (game != null && !gameEnded) {
+                var choice = MessageBox.Show(this,
+                    "Do you want to end the game?\n\nYes: review and confirm the final score, then close Studio.\nNo: close Studio and return to this game later. Your score and YouTube link are kept.\nCancel: stay in Studio.\n\nClosing Studio interrupts local cameras, audio and video delivery.",
+                    "Close Studio", MessageBoxButtons.YesNoCancel, MessageBoxIcon.Question, MessageBoxDefaultButton.Button3);
+                if (choice == DialogResult.Cancel) { closeAfterGame = null; endRequestPending = false; return; }
+                if (choice == DialogResult.Yes) { await RequestEndGame(game); return; }
+                RememberGame(game);
             }
+            await CloseWorkspace();
         };
         UpdateButtons();
     }
@@ -95,6 +112,51 @@ internal sealed class Workspace : Form
     private void Nav(FlowLayoutPanel panel, string label, string path) { var b = MakeButton(label); b.Click += (s, e) => Navigate(path); panel.Controls.Add(b); }
     private void Navigate(string path) { if (!busy && !closing && origin != null && web.CoreWebView2 != null) web.CoreWebView2.Navigate(origin + path); }
     private TableLayoutPanel bottom;
+    private string LifecycleDirectory { get { return profileDirectory ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "CurlStreamer", "Studio"); } }
+    private void RememberGame(string game) {
+        try {
+            if (WorkspacePolicy.Game(origin + "/score/" + game, origin) != game) return;
+            Directory.CreateDirectory(LifecycleDirectory);
+            File.WriteAllText(Path.Combine(LifecycleDirectory, "resume-game.json"), json.Serialize(new { origin = origin, gameId = game }));
+        } catch { status.Text = "Your game is saved online. Choose it from Games when you reopen Studio."; }
+    }
+    private string RememberedGame() {
+        try {
+            var path = Path.Combine(LifecycleDirectory, "resume-game.json");
+            if (!File.Exists(path) || new FileInfo(path).Length > 1024) return null;
+            var value = json.Deserialize<Dictionary<string, object>>(File.ReadAllText(path));
+            var game = TextValue(value, "gameId");
+            return value.Count == 2 && TextValue(value, "origin") == origin &&
+                WorkspacePolicy.Game(origin + "/score/" + game, origin) == game ? game : null;
+        } catch { return null; }
+    }
+    private void ForgetGame() {
+        try { File.Delete(Path.Combine(LifecycleDirectory, "resume-game.json")); } catch { }
+    }
+    private async Task RequestEndGame(string game) {
+        if (web.CoreWebView2 == null || origin == null) { status.Text = "Open this game's scoring screen to review its final score."; return; }
+        closeAfterGame = game; endRequestPending = true;
+        if (WorkspacePolicy.Game(web.CoreWebView2.Source, origin) == game && new Uri(web.CoreWebView2.Source).AbsolutePath == "/score/" + game)
+            await DispatchEndGame();
+        else Navigate("/score/" + game);
+    }
+    private async Task DispatchEndGame() {
+        if (!endRequestPending || selectedGame != closeAfterGame || web.CoreWebView2 == null ||
+            !WorkspacePolicy.SameOrigin(web.CoreWebView2.Source, origin)) return;
+        await web.ExecuteScriptAsync("window.dispatchEvent(new CustomEvent('studio-end-game-request',{detail:" + json.Serialize(new { gameId = closeAfterGame }) + "}));");
+        status.Text = "Review and confirm End Game above. Cancel keeps Studio open.";
+    }
+    private async Task CloseWorkspace() {
+        closing = true; UpdateButtons();
+        try {
+            await CloseController();
+            mayClose = true; poll.Stop(); usbTimer.Stop(); web.Dispose(); Close();
+        } catch {
+            closing = false;
+            status.Text = "Studio has not stopped safely yet. It remains open; wait and try closing again.";
+            UpdateButtons();
+        }
+    }
     private void UpdateButtons() {
         bottom.Visible = !recording && (selectedGame != null || origin == null);
         gameDay.Enabled = !busy && !closing && (recording ? runningGame : lastGame) != null;
@@ -153,7 +215,15 @@ internal sealed class Workspace : Form
                 if (!WorkspacePolicy.SameOrigin(e.Uri, origin)) { e.Cancel = true; status.Text = "Use the website in your browser for external account connections."; }
                 selectedGame = null; UpdateButtons();
             };
-            core.SourceChanged += (s, e) => { selectedGame = WorkspacePolicy.Game(core.Source, origin); if (selectedGame != null) lastGame = selectedGame; if (usbGame != null && usbGame != selectedGame) { var ignored = StopUsbAudio(); } UpdateButtons(); };
+            core.SourceChanged += (s, e) => {
+                var nextGame = WorkspacePolicy.Game(core.Source, origin);
+                if (nextGame != null && nextGame != selectedGame) gameEnded = false;
+                selectedGame = nextGame;
+                if (closeAfterGame != null && selectedGame != closeAfterGame) { closeAfterGame = null; endRequestPending = false; }
+                if (selectedGame != null) { lastGame = selectedGame; RememberGame(selectedGame); }
+                if (usbGame != null && usbGame != selectedGame) { var ignored = StopUsbAudio(); }
+                UpdateButtons();
+            };
             core.NavigationCompleted += (s, e) => {
                 selectedGame = WorkspacePolicy.Game(core.Source, origin);
                 if (!e.IsSuccess && !recording) status.Text = "The workspace could not load. Check your internet connection and choose Refresh.";
@@ -170,7 +240,7 @@ internal sealed class Workspace : Form
             // Earlier builds persisted a blanket denial. Reset only this site's microphone permission.
             await core.Profile.SetPermissionStateAsync(CoreWebView2PermissionKind.Microphone, origin, CoreWebView2PermissionState.Default);
             core.WebMessageReceived += ReceiveGrant;
-            var initialId = launchGame == null ? null : WorkspacePolicy.Game(launchGame, origin);
+            var initialId = launchGame == null ? RememberedGame() : WorkspacePolicy.Game(launchGame, origin);
             core.Navigate(initialId != null ? origin + "/score/" + initialId : origin + "/dashboard");
             poll.Start();
         } catch {
@@ -187,11 +257,27 @@ internal sealed class Workspace : Form
             if (TextValue(value, "type") != null && TextValue(value, "type").StartsWith("studio-usb-")) {
                 await UsbCommand(value); return;
             }
-            if (value.Count == 2 && TextValue(value, "gameId") == selectedGame && selectedGame != null && !busy && !closing) {
+            if (value.Count == 2 && TextValue(value, "gameId") == selectedGame && selectedGame != null && !closing) {
                 var type = TextValue(value, "type");
+                if (type == "studio-end-game-opened") { endRequestPending = false; return; }
+                if (type == "studio-end-game-cancelled" || type == "studio-end-game-unavailable") {
+                    closeAfterGame = null; endRequestPending = false;
+                    if (type == "studio-end-game-unavailable") status.Text = "End Game is unavailable. Sign in as this game's administrator, or choose No to close and return later.";
+                    return;
+                }
+                if (type == "studio-game-ended") {
+                    gameEnded = true; ForgetGame(); lastGame = null;
+                    for (int wait = 0; busy && !closing && wait < 120; wait++) await Task.Delay(1000);
+                    if (busy || closing) { status.Text = "Game ended. Wait for the current Studio action, then close Studio."; return; }
+                    if (closeAfterGame == selectedGame) { closeAfterGame = null; endRequestPending = false; await CloseWorkspace(); }
+                    else if (recording && runningGame == selectedGame) await StopRecording();
+                    return;
+                }
+                if (busy) return;
                 if (type == "studio-youtube-start" || type == "studio-youtube-stop") { await YouTube(type == "studio-youtube-start"); return; }
-                if (type == "studio-game-ended") { if (recording && runningGame == selectedGame) await StopRecording(); return; }
                 if (type == "studio-game-ready") {
+                    gameEnded = false;
+                    if (endRequestPending && closeAfterGame == selectedGame) await DispatchEndGame();
                     if (recording && runningGame != selectedGame) await StopRecording();
                     await StartRecording(); return;
                 }
@@ -225,11 +311,21 @@ internal sealed class Workspace : Form
             if (await Task.WhenAny(handoff.Task, Task.Delay(35000)) != handoff.Task) throw new InvalidDataException();
             var result = await handoff.Task;
             if (WorkspacePolicy.Game(web.CoreWebView2.Source, origin) != gameId) throw new InvalidDataException();
-            if (Convert.ToInt32(result["status"]) != 200) throw new WorkspaceFailure(WorkspacePolicy.YouTubeFailure(TextValue(result, "sourceUrl")));
+            if (Convert.ToInt32(result["status"]) != 200) throw new WorkspaceFailure(WorkspacePolicy.YouTubeFailure(TextValue(result, "sourceUrl")), TextValue(result, "sourceUrl"));
             return TextValue(result, "sourceUrl");
         } finally { handoff = null; handoffNonce = null; }
     }
     private string youtubeError = "";
+    private async Task<string> PrepareYouTube(string gameId) {
+        for (int attempt = 0; ; attempt++) {
+            try { return await WebsiteYouTube(gameId, "", new { action = "prepare" }); }
+            catch (WorkspaceFailure failure) {
+                if (failure.Code != "studio_recovery_pending" || attempt >= 7) throw;
+                status.Text = "Waiting for the previous Studio connection to expire. Keeping the same YouTube link…";
+            }
+            await Task.Delay(5000);
+        }
+    }
     private async Task YouTube(bool start) {
         if (busy || closing || !recording || selectedGame != runningGame) return;
         var gameId = runningGame; busy = true; youtubeError = "";
@@ -245,7 +341,7 @@ internal sealed class Workspace : Form
                     return;
                 }
                 if (TextValue(previous, "streaming") != "idle") throw new WorkspaceFailure("This YouTube output is already connecting. Wait for its status before reconnecting.");
-                var prepared = await WebsiteYouTube(gameId, "", new { action = "prepare" });
+                var prepared = await PrepareYouTube(gameId);
                 if (prepared != "prepared") throw new WorkspaceFailure(WorkspacePolicy.YouTubeFailure(prepared));
                 Dictionary<string, object> state;
                 using (var response = await local.GetAsync(localAddress + "/state")) { response.EnsureSuccessStatusCode(); state = json.Deserialize<Dictionary<string, object>>(await response.Content.ReadAsStringAsync()); }
@@ -482,14 +578,27 @@ internal sealed class Workspace : Form
         await StopUsbAudio();
         if (child == null) return;
         status.Text = "Stopping output and disconnecting cameras…";
-        if (!child.HasExited) { child.StandardInput.WriteLine("close"); child.StandardInput.Flush(); }
-        if (await Task.WhenAny(exited.Task, Task.Delay(120000)) != exited.Task ||
-            (!(await exited.Task) && !(startupFailed && !controllerReady))) throw new InvalidDataException();
+        if (!child.HasExited) {
+            try { child.StandardInput.WriteLine("close"); child.StandardInput.Flush(); }
+            catch { if (!child.HasExited) throw; }
+        }
+        if (await Task.WhenAny(exited.Task, Task.Delay(120000)) != exited.Task || !child.HasExited) throw new InvalidDataException();
+        if (!(await exited.Task) && !(startupFailed && !controllerReady)) {
+            // A dead process cannot keep sending video. Retain the uncertain
+            // cleanup evidence without trapping the user in a dead workspace.
+            try {
+                Directory.CreateDirectory(LifecycleDirectory);
+                File.WriteAllText(Path.Combine(LifecycleDirectory, "recording-warning.json"), json.Serialize(new { timestampUtc = DateTime.UtcNow.ToString("o"), message = "Previous Studio cleanup was not confirmed. Check any saved recording before using it." }));
+            } catch { }
+        }
         if (local != null) local.Dispose(); local = null; child.Dispose(); child = null; runningGame = null; localAddress = null; recording = false;
     }
     private void OpenRecordings() {
         try { var folder = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "CurlStreamer", "Studio", "Recordings"); Directory.CreateDirectory(folder); Process.Start(new ProcessStartInfo(WorkspacePolicy.ExistingDirectory(folder)) { UseShellExecute = true }); }
         catch { status.Text = "Could not open the recordings folder."; }
     }
-    private sealed class WorkspaceFailure : Exception { internal WorkspaceFailure(string message) : base(message) {} }
+    private sealed class WorkspaceFailure : Exception {
+        internal readonly string Code;
+        internal WorkspaceFailure(string message, string code = null) : base(message) { Code = code; }
+    }
 }

@@ -103,6 +103,15 @@ async function credential(
 }
 function failure(error: unknown) {
   const code = (error as { code?: unknown } | null)?.code;
+  if (code === "P0409")
+    return response(
+      {
+        error:
+          "The previous Studio connection is still expiring. Wait up to 35 seconds and reconnect to this game's saved YouTube link.",
+        code: "studio_recovery_pending",
+      },
+      409,
+    );
   if (code === "P0402")
     return response(
       {

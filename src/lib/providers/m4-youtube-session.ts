@@ -266,8 +266,9 @@ export async function prepareM4Session(
     throw Object.assign(Error("M4 preparation unavailable"), { code: "55000" });
   const existing = await readM4Session(gameId, credential);
   // Recovery must never retire and replace a game's existing watch page.
-  // Delivered/expired native authority remains quarantined; only End Game
-  // may complete provider resources. Pause/resume uses the original authority.
+  // Delivered authority remains one-use. A full restart requires a fresh
+  // pairing after the old sender's lease expires; provider IDs stay unchanged.
+  // Only End Game may complete provider resources.
   if (existing.watchUrl && existing.status === "stopped") return existing;
   let s = await claim(gameId, credential, "prepared");
   if (s.action !== "run") return safe(s);

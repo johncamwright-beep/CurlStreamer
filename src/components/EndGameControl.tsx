@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type {
   CompletionCleanup,
   CompletionReview,
@@ -33,6 +33,33 @@ export function EndGameControl({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [completionSaved, setCompletionSaved] = useState(false);
+
+  function notifyStudio(type: string) {
+    const bridge = (
+      window as Window & {
+        chrome?: { webview?: { postMessage: (message: unknown) => void } };
+      }
+    ).chrome?.webview;
+    bridge?.postMessage({ type, gameId });
+  }
+
+  useEffect(() => {
+    function requestEndGame(event: Event) {
+      if ((event as CustomEvent).detail?.gameId !== gameId) return;
+      if (!enabled || disabled) {
+        notifyStudio("studio-end-game-unavailable");
+        return;
+      }
+      setOpen(true);
+      notifyStudio("studio-end-game-opened");
+    }
+    window.addEventListener("studio-end-game-request", requestEndGame);
+    return () =>
+      window.removeEventListener("studio-end-game-request", requestEndGame);
+    // The bridge only reports the result of this game-scoped UI request.
+    // Authorization and final confirmation remain in the completion endpoint.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [gameId, enabled, disabled]);
 
   async function request(body: unknown) {
     const token =
@@ -137,7 +164,10 @@ export function EndGameControl({
                 <button
                   className="btn-secondary"
                   disabled={busy}
-                  onClick={() => setOpen(false)}
+                  onClick={() => {
+                    setOpen(false);
+                    notifyStudio("studio-end-game-cancelled");
+                  }}
                 >
                   Cancel
                 </button>

@@ -48,6 +48,8 @@ internal static class WorkspacePolicy
     internal static string YouTubeFailure(string code)
     {
         switch (code) {
+            case "studio_recovery_pending":
+                return "The previous Studio connection is still expiring. Wait up to 35 seconds, then reconnect to this game's saved YouTube link.";
             case "youtube_reconnect_required":
                 return "Reconnect your existing YouTube channel in Account & Settings > YouTube Settings using your regular browser, then try again.";
             case "subscription_required":

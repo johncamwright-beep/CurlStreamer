@@ -116,4 +116,12 @@ No real broadcast, camera release, or game reset was initiated during this revie
 - Main desktop/mobile browser suite: 182 passed, 92 conditional fixture checks skipped. Separate YouTube/settings fixture suite: all 78 passed. Both suites built the production app successfully with explicit test configuration.
 - Installed Studio: `0.4.0-pilot.8`; all 2,247 installed component hashes match its manifest. Five files replaced; rollback backup is `work/studio-before-coordinator-20261001-151946`. The Windows Start menu shortcut was verified to target the installed executable. Studio was left closed.
 - Final native adapter regression: two more desktop/mobile checks passed, proving 403 blocks one camera without retrying while the other recovers independently from 503. An additional production build and type check passed.
-- Production deployment verification: pending at this report revision.
+- Website code deployment verified: commit `19de2a4`, deployment `dpl_JApZD6ARvJt62PMAgZGn6E9654Hd`, Ready on `www.curlstreamer.app`. At 3:26 PM Toronto time the public camera page served that exact deployment's asset containing the new coordinator states, automatic recovery message, Cancel connection control, and diagnostic export. Asset SHA-256: `c6261ee7f6a8c2de82214acff21110ec5404eb33788aee10f1fd84009d0ffe57`. Evidence: `work/coordinator-deployment-proof.json` and the deployment screenshot in the chat's visualization directory.
+
+### Next physical check
+
+1. Open **CurlStreamer Studio** from the Windows Start menu and resume the existing game. This PC already has pilot 8; a public installer redownload is not needed for this test.
+2. Refresh both existing camera pages in their original phone browsers, then tap **Connect phone** once on each. Do not release camera assignments or create a replacement game just to test recovery.
+3. Run both cameras for ten minutes with YouTube off. If steady, connect the saved YouTube broadcast and continue for 45–60 minutes. A short successful interval is not an endurance result.
+4. Exercise one phone interruption, Studio close/resume, and remote Reconnect camera. Record whether local picture/audio and the actual YouTube feed continue, separately from badges/status.
+5. If a drop occurs, export both phone connection logs promptly and retain both Studio journals. Compare the initiating event, not only later retry messages. This rollout has not yet passed the physical-device endurance check.

@@ -127,8 +127,25 @@ export async function checkAvailableProgramScope(scope: ProgramScope) {
   );
   // Each slot independently checks active game/org and its fixed session in SQL.
   // A failed camera must not remove the healthy camera's score/sponsor canvas.
-  if (!results.some((result) => result.status === "fulfilled"))
+  if (!results.some((result) => result.status === "fulfilled")) {
+    // A failed database call is not evidence that the signed program scope was
+    // revoked. Returning 409 here permanently closed the local program client.
+    const unavailable = results.find(
+      (result) =>
+        result.status === "rejected" &&
+        result.reason instanceof StudioUnavailable,
+    );
+    if (unavailable?.status === "rejected") throw unavailable.reason;
+    if (
+      results.some(
+        (result) =>
+          result.status === "rejected" &&
+          !(result.reason instanceof StudioRejected),
+      )
+    )
+      throw new StudioUnavailable("database");
     throw new StudioRejected();
+  }
 }
 export async function prepareProgramScope(
   gameId: string,

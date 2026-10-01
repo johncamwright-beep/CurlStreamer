@@ -4,6 +4,10 @@ import { z } from "zod";
 import type { BroadcastGame } from "../game-projection";
 import { gameSchema } from "../schema";
 import { StudioTransportUnavailable } from "./studio-transport-error";
+import type {
+  ConnectionDiagnostic,
+  ConnectionDiagnosticInput,
+} from "./connection-diagnostics";
 import {
   cameraRoleSchema,
   signalAllowed,
@@ -21,7 +25,13 @@ const actionSchema = z
   })
   .strict();
 const fail = () => new Error("m4_program_unavailable");
-class SlotUnavailable extends Error {}
+class SlotUnavailable extends Error {
+  constructor(
+    readonly reason: ConnectionDiagnosticInput["code"] = "authority_rejected",
+  ) {
+    super();
+  }
+}
 class NetworkUnavailable extends Error {}
 
 const sponsorUrl = z
@@ -132,7 +142,14 @@ export class M4ProgramClient {
   #state: "new" | "exchanging" | "active" | "closed" = "new";
   #requests = new Set<AbortController>();
   #fetch: typeof fetch;
-  constructor(gameId: string, origin: string, fetcher: typeof fetch = fetch) {
+  #diagnostic?: ConnectionDiagnostic;
+  #failed = new Set<string>();
+  constructor(
+    gameId: string,
+    origin: string,
+    fetcher: typeof fetch = fetch,
+    diagnostic?: ConnectionDiagnostic,
+  ) {
     let url: URL;
     try {
       url = new URL(origin);
@@ -151,11 +168,21 @@ export class M4ProgramClient {
     this.#gameId = gameId;
     this.#endpoint = `${origin}/api/games/${gameId}/studio-m3`;
     this.#fetch = fetcher;
+    this.#diagnostic = diagnostic;
+  }
+  #log(input: ConnectionDiagnosticInput) {
+    try {
+      this.#diagnostic?.(input);
+    } catch {
+      /* No effect on authority or media. */
+    }
   }
   get active() {
     return this.#state === "active" && performance.now() < this.#deadline;
   }
   close() {
+    if (this.#state !== "closed")
+      this.#log({ layer: "session", code: "stopped" });
     this.#state = "closed";
     this.#cookie = undefined;
     this.#organizationId = undefined;
@@ -187,6 +214,18 @@ export class M4ProgramClient {
     cookie?: string,
     method: "GET" | "POST" = "POST",
   ) {
+    const started = performance.now();
+    const metadata = body as
+      | {
+          action?: ConnectionDiagnosticInput["action"];
+          cameraRole?: "camera-home" | "camera-away";
+        }
+      | undefined;
+    const action = method === "GET" ? "read" : metadata?.action;
+    const role = metadata?.cameraRole;
+    const scope = `${role ?? "program"}:${action}`;
+    let status: number | undefined;
+    let trace: string | undefined;
     const controller = new AbortController();
     this.#requests.add(controller);
     const timer = setTimeout(() => controller.abort(), 8000);
@@ -205,20 +244,23 @@ export class M4ProgramClient {
       }).catch(() => {
         throw new NetworkUnavailable();
       });
+      status = response.status;
+      const correlation = response.headers.get("x-curlstreamer-trace");
+      if (correlation && z.uuid().safeParse(correlation).success)
+        trace = correlation;
       if ([408, 429, 500, 502, 503, 504].includes(response.status)) {
         await response.body?.cancel().catch(() => undefined);
         throw new NetworkUnavailable();
       }
-      if (
+      const slotConflict =
         method === "POST" &&
         cookie &&
         response.status === 409 &&
-        !response.redirected
-      ) {
-        await response.body?.cancel().catch(() => undefined);
-        throw new SlotUnavailable();
-      }
-      if (!response.ok || response.status !== 200 || response.redirected)
+        !response.redirected;
+      if (
+        !slotConflict &&
+        (!response.ok || response.status !== 200 || response.redirected)
+      )
         throw fail();
       const reader = response.body?.getReader();
       if (!reader) throw fail();
@@ -232,15 +274,70 @@ export class M4ProgramClient {
           if (size > 65536) throw fail();
           chunks.push(value);
         }
+        const text = Buffer.concat(chunks).toString("utf8");
+        if (slotConflict) {
+          let value: { code?: unknown } | null = null;
+          try {
+            value = JSON.parse(text);
+          } catch {
+            /* An unlabelled conflict still affects only this slot. */
+          }
+          const reason = [
+            "studio_stale",
+            "peer_stale",
+            "camera_released",
+            "signal_limit",
+          ].includes(value?.code as string)
+            ? (value?.code as ConnectionDiagnosticInput["code"])
+            : "authority_rejected";
+          throw new SlotUnavailable(reason);
+        }
+        const durationMs = Math.min(
+          600_000,
+          Math.round(performance.now() - started),
+        );
+        if (this.#failed.delete(scope) || durationMs >= 1500)
+          this.#log({
+            layer: "http",
+            code: durationMs >= 1500 ? "slow" : "recovered",
+            action,
+            role,
+            status,
+            trace,
+            durationMs,
+          });
         return {
           headers: response.headers,
-          value: JSON.parse(Buffer.concat(chunks).toString("utf8")) as unknown,
+          value: JSON.parse(text) as unknown,
         };
       } finally {
         await reader.cancel().catch(() => undefined);
         for (const chunk of chunks) chunk.fill(0);
       }
     } catch (cause) {
+      if (
+        controller.signal.aborted &&
+        this.active &&
+        !(cause instanceof SlotUnavailable)
+      )
+        cause = new NetworkUnavailable();
+      this.#failed.add(scope);
+      this.#log({
+        layer: "http",
+        code:
+          cause instanceof NetworkUnavailable
+            ? controller.signal.aborted
+              ? "timeout"
+              : "network_unavailable"
+            : cause instanceof SlotUnavailable
+              ? cause.reason
+              : "authority_rejected",
+        action,
+        role,
+        status,
+        trace,
+        durationMs: Math.min(600_000, Math.round(performance.now() - started)),
+      });
       if (
         cause instanceof SlotUnavailable ||
         cause instanceof NetworkUnavailable
@@ -373,6 +470,8 @@ export class M4ProgramClient {
       // A transport outage does not revoke the credential. Subsequent requests
       // still validate the game and the original, unextended deadline.
       if (!(cause instanceof NetworkUnavailable)) this.close();
+      if (cause instanceof NetworkUnavailable)
+        throw new StudioTransportUnavailable();
       throw fail();
     }
   }

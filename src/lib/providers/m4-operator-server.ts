@@ -8,6 +8,7 @@ import { M4DesktopClient } from "./m4-desktop-client";
 import { checkM4NativeHost } from "./m4-native-preflight";
 import { startM4ProgramHost } from "./m4-program-host";
 import type { StudioDiagnostic } from "./m5-studio-diagnostics";
+import type { ConnectionDiagnostic } from "./connection-diagnostics";
 
 const command = z.discriminatedUnion("action", [
   z.object({ action: z.literal("check") }).strict(),
@@ -164,6 +165,7 @@ export async function createM4OperatorServer(options: {
   gameId: string;
   origin: string;
   diagnostic?: StudioDiagnostic;
+  connectionDiagnostic?: ConnectionDiagnostic;
   paths: { executable: string; plugin: string; runtime: string };
   pairingEnabled?: boolean;
   /** Deliberately fail closed: this must be explicitly enabled by the launcher. */
@@ -183,7 +185,10 @@ export async function createM4OperatorServer(options: {
   };
 }) {
   const desktop =
-    options.desktop ?? new M4DesktopClient(options.gameId, options.origin);
+    options.desktop ??
+    new M4DesktopClient(options.gameId, options.origin, {
+      diagnostic: options.connectionDiagnostic,
+    });
   const cookie = randomBytes(32).toString("hex"),
     nonce = randomBytes(16).toString("hex");
   let pc = "unchecked",
@@ -558,6 +563,7 @@ export async function createM4OperatorServer(options: {
                   streamPlugin: configuration.streamPlugin,
                 },
                 options.diagnostic,
+                options.connectionDiagnostic,
               ))
           )(invitation, recording);
           if (closing) {

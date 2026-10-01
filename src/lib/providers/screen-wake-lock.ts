@@ -26,7 +26,22 @@ export class OptionalScreenWakeLock {
     >,
     private readonly onUnavailable: (message: string) => void,
     private readonly onAvailable: () => void = () => undefined,
+    private readonly diagnostic?: (
+      event:
+        | "wake_unsupported"
+        | "wake_permission_denied"
+        | "wake_released"
+        | "wake_acquired"
+        | "wake_unavailable",
+    ) => void,
   ) {}
+  private report(event: Parameters<NonNullable<typeof this.diagnostic>>[0]) {
+    try {
+      this.diagnostic?.(event);
+    } catch {
+      /* Wake-lock behavior cannot depend on a logger. */
+    }
+  }
 
   start() {
     if (this.active) return;
@@ -35,6 +50,7 @@ export class OptionalScreenWakeLock {
     this.releaseRetryUsed = false;
     this.page.addEventListener("visibilitychange", this.handleVisibility);
     if (!this.browser.wakeLock) {
+      this.report("wake_unsupported");
       this.onUnavailable(screenWakeUnavailableMessage);
       return;
     }
@@ -78,6 +94,7 @@ export class OptionalScreenWakeLock {
       return;
     const request = this.browser.wakeLock?.request;
     if (!request) {
+      this.report("wake_unsupported");
       this.onUnavailable(screenWakeUnavailableMessage);
       return;
     }
@@ -95,6 +112,7 @@ export class OptionalScreenWakeLock {
           "release",
           () => {
             if (!this.active || this.sentinel !== sentinel) return;
+            this.report("wake_released");
             this.sentinel = undefined;
             if (this.page.visibilityState !== "visible") return;
             if (this.releaseRetryUsed) {
@@ -107,11 +125,18 @@ export class OptionalScreenWakeLock {
           },
           { once: true },
         );
+        this.report("wake_acquired");
         this.onAvailable();
       })
-      .catch(() => {
-        if (this.active && generation === this.generation)
+      .catch((cause) => {
+        if (this.active && generation === this.generation) {
+          this.report(
+            cause instanceof DOMException && cause.name === "NotAllowedError"
+              ? "wake_permission_denied"
+              : "wake_unavailable",
+          );
           this.onUnavailable(screenWakeUnavailableMessage);
+        }
       })
       .finally(() => {
         this.requestFlight = undefined;

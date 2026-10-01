@@ -8,6 +8,10 @@ import { createM4UsbAudioQueue } from "./m4-usb-audio";
 import type { M4ProgramClient } from "./m4-program-client";
 import { StudioTransportUnavailable } from "./studio-transport-error";
 import {
+  connectionDiagnosticSchema,
+  type ConnectionDiagnostic,
+} from "./connection-diagnostics";
+import {
   cameraRoleSchema,
   signalSchema,
   signalEnvelopeSchema,
@@ -44,6 +48,7 @@ export async function createM4ProgramBridge(
     directory: string;
     sponsorStorageOrigin?: string;
     sponsorCacheDirectory?: string;
+    diagnostic?: ConnectionDiagnostic;
   },
 ) {
   const key = randomBytes(32).toString("base64url");
@@ -234,8 +239,10 @@ export async function createM4ProgramBridge(
             sponsors,
           },
         });
-      } catch {
-        reply(409, { error: "Program unavailable" });
+      } catch (cause) {
+        reply(cause instanceof StudioTransportUnavailable ? 503 : 409, {
+          error: "Program unavailable",
+        });
       }
       return;
     }
@@ -299,6 +306,26 @@ export async function createM4ProgramBridge(
         chunks.push(chunk);
       }
       const parsed = JSON.parse(Buffer.concat(chunks).toString("utf8"));
+      const diagnostic = z
+        .object({
+          action: z.literal("diagnostic"),
+          event: connectionDiagnosticSchema.omit({
+            at: true,
+            run: true,
+            source: true,
+          }),
+        })
+        .strict()
+        .safeParse(parsed);
+      if (diagnostic.success && rendererAllowed) {
+        try {
+          rendererAssets?.diagnostic?.(diagnostic.data.event);
+        } catch {
+          /* Logging must not interrupt camera recovery. */
+        }
+        reply(200, { ok: true });
+        return;
+      }
       const observation = z
         .object({
           action: z.literal("observe"),
@@ -355,6 +382,21 @@ export async function createM4ProgramBridge(
         .strict()
         .safeParse(parsed);
       if (usbObservation.success && rendererAllowed) {
+        if (usbRenderer.contextState !== usbObservation.data.contextState) {
+          try {
+            rendererAssets?.diagnostic?.({
+              layer: "audio",
+              code:
+                usbObservation.data.contextState === "running"
+                  ? "ready"
+                  : usbObservation.data.contextState === "suspended"
+                    ? "audio_suspended"
+                    : "stopped",
+            });
+          } catch {
+            /* best effort */
+          }
+        }
         usbRenderer = { ...usbObservation.data, observedAt: Date.now() };
         reply(200, { ok: true });
         return;

@@ -37,6 +37,11 @@ import {
   StudioTransportUnavailable,
   isTemporaryStudioStatus,
 } from "@/lib/providers/studio-transport-error";
+import {
+  createPhoneConnectionDiagnostics,
+  connectionFailureReason,
+  type ConnectionDiagnosticInput,
+} from "@/lib/providers/connection-diagnostics";
 
 export function M2CameraSlot({
   id,
@@ -51,6 +56,54 @@ export function M2CameraSlot({
   onReady?: (role: "camera-home" | "camera-away", ready: boolean) => void;
   testRun?: number;
 }) {
+  const diagnostics = useRef<
+    ReturnType<typeof createPhoneConnectionDiagnostics> | undefined
+  >(undefined);
+  const diagnosticSampleAt = useRef(0);
+  const diagnosticDirect = useRef<boolean | undefined>(undefined);
+  function log(input: ConnectionDiagnosticInput) {
+    diagnostics.current?.record({
+      ...input,
+      role: cameraRole,
+      attempt: epoch.current,
+    });
+  }
+  useEffect(() => {
+    if (side !== "camera") return;
+    diagnostics.current = createPhoneConnectionDiagnostics(id, cameraRole);
+    log({ layer: "page", code: "started" });
+    const visibility = () =>
+      log({
+        layer: "page",
+        code:
+          document.visibilityState === "visible" ? "visible" : "backgrounded",
+      });
+    document.addEventListener("visibilitychange", visibility);
+    return () => {
+      log({ layer: "page", code: "stopped" });
+      document.removeEventListener("visibilitychange", visibility);
+    };
+    // One diagnostic run per mounted camera page; no capture or permission request.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id, side, cameraRole]);
+  function downloadConnectionLog() {
+    const blob = new Blob(
+      [
+        JSON.stringify(
+          { version: 1, events: diagnostics.current?.snapshot() ?? [] },
+          null,
+          2,
+        ),
+      ],
+      { type: "application/json" },
+    );
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `curlstreamer-${cameraRole}-connection-log.json`;
+    link.click();
+    URL.revokeObjectURL(url);
+  }
   const [previewReady, setPreviewReady] = useState(false);
   const [zoomRange, setZoomRange] = useState<ZoomRange>();
   const [zoom, setZoom] = useState(1);
@@ -162,6 +215,7 @@ export function M2CameraSlot({
       return;
     retryCount.current = Math.min(8, retryCount.current + 1);
     const delay = Math.min(15000, 2000 * retryCount.current);
+    log({ layer: "session", code: "retry", durationMs: delay });
     clearTimeout(retryTimer.current);
     setStatus(
       `Connection interrupted. Reconnecting to Studio…${failure.current ? ` ${failure.current}` : ""}`,
@@ -206,6 +260,20 @@ export function M2CameraSlot({
   ) {
     if (side !== "camera") return;
     if (reportEpoch !== epoch.current) return;
+    if (audioStatusRef.current !== status)
+      log({
+        layer: "audio",
+        code:
+          status === "active"
+            ? "ready"
+            : status === "off"
+              ? "stopped"
+              : status === "pending"
+                ? "started"
+                : status === "permission-required"
+                  ? "permission_denied"
+                  : "capture_failed",
+      });
     audioStatusRef.current = status;
     setAudioStatus(status);
     const token = cameraPublishAccessToken(localStorage, id, cameraRole);
@@ -337,6 +405,7 @@ export function M2CameraSlot({
   const request = async (
     body: Omit<Parameters<StudioRequest>[0], "cameraRole">,
   ) => {
+    const requestStarted = performance.now();
     const requestEpoch = epoch.current;
     recoverable.current = false;
     const token =
@@ -353,10 +422,43 @@ export function M2CameraSlot({
       cache: "no-store",
       signal: AbortSignal.timeout(8_000),
     }).catch(() => {
+      log({
+        layer: "http",
+        code: "network_unavailable",
+        action: body.action,
+        durationMs: Math.min(
+          600_000,
+          Math.round(performance.now() - requestStarted),
+        ),
+      });
       if (requestEpoch === epoch.current) recoverable.current = true;
       throw new StudioTransportUnavailable();
     });
     const value = await result.json().catch(() => null);
+    const trace = result.headers.get("x-curlstreamer-trace");
+    const durationMs = Math.min(
+      600_000,
+      Math.round(performance.now() - requestStarted),
+    );
+    const code = [
+      "studio_stale",
+      "peer_stale",
+      "camera_released",
+      "signal_limit",
+    ].includes(value?.code)
+      ? (value.code as ConnectionDiagnosticInput["code"])
+      : result.status >= 500
+        ? "network_unavailable"
+        : "authority_rejected";
+    if (!result.ok || durationMs >= 1500)
+      log({
+        layer: "http",
+        code: result.ok ? "slow" : code,
+        action: body.action,
+        durationMs,
+        status: result.status,
+        ...(trace && /^[0-9a-f-]{36}$/.test(trace) ? { trace } : {}),
+      });
     if (!result.ok) {
       // A response from the replaced connection must not clear consent or
       // recovery state belonging to its successor.
@@ -433,8 +535,13 @@ export function M2CameraSlot({
     const lock = new OptionalScreenWakeLock(
       navigator,
       document,
-      setWakeWarning,
-      () => setWakeWarning(""),
+      (message) => {
+        setWakeWarning(message);
+      },
+      () => {
+        setWakeWarning("");
+      },
+      (code) => log({ layer: "wake", code }),
     );
     lock.start();
     const hide = () => void lock.release();
@@ -521,7 +628,21 @@ export function M2CameraSlot({
     stage.current = "operation";
     try {
       await operation();
-    } catch {
+    } catch (cause) {
+      log({
+        layer:
+          stage.current === "camera capture"
+            ? "capture"
+            : stage.current === "camera claim"
+              ? "claim"
+              : "session",
+        code:
+          cause instanceof DOMException && cause.name === "NotAllowedError"
+            ? "permission_denied"
+            : cause instanceof DOMException && cause.name === "NotFoundError"
+              ? "device_missing"
+              : "unknown_failure",
+      });
       cleanup(failure.current || `Could not complete ${stage.current}.`);
       setStatus(failure.current || `Could not complete ${stage.current}.`);
       recover();
@@ -571,15 +692,33 @@ export function M2CameraSlot({
     const claimant =
       localStorage.getItem("curlcast-device") || crypto.randomUUID();
     localStorage.setItem("curlcast-device", claimant);
+    const started = performance.now();
     const response = await fetch("/api/games/" + id + "/claim", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ token: invitation.current, claimant }),
+      signal: AbortSignal.timeout(8_000),
+    }).catch(() => {
+      log({
+        layer: "claim",
+        code: "network_unavailable",
+        action: "claim",
+        durationMs: Math.min(600_000, Math.round(performance.now() - started)),
+      });
+      throw new StudioTransportUnavailable();
     });
     const value = await response.json();
-    if (!response.ok || value.role !== cameraRole || !value.sessionToken)
+    if (!response.ok || value.role !== cameraRole || !value.sessionToken) {
+      log({
+        layer: "claim",
+        code: "authority_rejected",
+        action: "claim",
+        status: response.status,
+      });
       throw Error();
+    }
     preserveAndStoreParticipantAccess(localStorage, id, value.sessionToken);
+    log({ layer: "claim", code: "ready" });
     invitation.current = undefined;
     setClaimed(true);
     setStatus("camera claimed. Keep the phone upright and start the camera.");
@@ -600,6 +739,7 @@ export function M2CameraSlot({
         throw Error();
       }
       stage.current = "camera capture";
+      log({ layer: "capture", code: "started" });
       if (!window.isSecureContext || !navigator.mediaDevices?.getUserMedia) {
         setStatus(
           "Open this camera page over trusted HTTPS, or localhost on the PC.",
@@ -668,6 +808,7 @@ export function M2CameraSlot({
       );
       captureEvidence.current = { report: acquired.report };
       captureConsentAt.current ||= Date.now();
+      log({ layer: "capture", code: "ready" });
     }
     stage.current = "session ticket validation";
     const ticket = studioTicketSchema.parse(
@@ -709,6 +850,22 @@ export function M2CameraSlot({
       },
       onMetrics: (value) => {
         if (attempt !== epoch.current) return;
+        if (
+          Date.now() - diagnosticSampleAt.current >= 15_000 ||
+          diagnosticDirect.current !== value.direct
+        ) {
+          diagnosticSampleAt.current = Date.now();
+          diagnosticDirect.current = value.direct;
+          log({
+            layer: "media",
+            code: "sample",
+            direct: value.direct,
+            connection: value.connectionState,
+            ice: value.iceConnectionState,
+            frames: value.framesDecoded,
+            bytes: value.bytesSent,
+          });
+        }
         onReady?.(cameraRole, value.direct);
         if (video.current)
           setFrameSize({
@@ -731,6 +888,7 @@ export function M2CameraSlot({
       },
       onStop: (reason) => {
         if (attempt !== epoch.current) return;
+        log({ layer: "peer", code: connectionFailureReason(reason) });
         failure.current ||= reason;
         cleanup(failure.current);
         setStatus(failure.current);
@@ -1098,6 +1256,12 @@ export function M2CameraSlot({
         </p>
         {warning && <p role="alert">{warning}</p>}
         {wakeWarning && <p role="alert">{wakeWarning}</p>}
+        <button
+          className="btn-secondary min-h-11"
+          onClick={downloadConnectionLog}
+        >
+          Download connection log
+        </button>
         <p className="phone-camera-hint">
           Keep the phone upright, on the same Wi-Fi as Studio, and leave this
           page open.

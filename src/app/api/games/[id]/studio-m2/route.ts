@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { authorizeGame, authorizationError } from "@/lib/game-authorization";
 import { studioRequestSchema, signalAllowed } from "@/lib/m2-studio-protocol";
+import { traceStudioRequest } from "@/lib/providers/connection-diagnostics-server";
 import {
   requireStudioConfiguration,
   studioAction,
@@ -18,7 +19,7 @@ function response(body: unknown, status = 200) {
     headers: { "cache-control": "no-store", vary: "Cookie, Authorization" },
   });
 }
-export async function POST(
+async function handlePOST(
   request: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
@@ -115,4 +116,10 @@ export async function POST(
           503,
         );
   }
+}
+export function POST(
+  request: Request,
+  context: { params: Promise<{ id: string }> },
+) {
+  return traceStudioRequest(() => handlePOST(request, context));
 }

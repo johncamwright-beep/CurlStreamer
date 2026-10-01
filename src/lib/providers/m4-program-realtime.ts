@@ -4,6 +4,7 @@ import { performance } from "node:perf_hooks";
 import { z } from "zod";
 import type { M4ProgramClient } from "./m4-program-client";
 import { StudioTransportUnavailable } from "./studio-transport-error";
+import type { ConnectionDiagnostic } from "./connection-diagnostics";
 import {
   cameraRoleSchema,
   signalAllowed,
@@ -117,6 +118,7 @@ export function createM4ProgramRealtime(options: {
   url: string;
   key: string;
   transport?: M4RealtimeTransport;
+  diagnostic?: ConnectionDiagnostic;
 }) {
   try {
     const url = new URL(options.url);
@@ -181,7 +183,18 @@ export function createM4ProgramRealtime(options: {
     slot.deadline = deadline;
     clearTimeout(slot.expiry);
     slot.expiry = setTimeout(
-      () => stop(slot),
+      () => {
+        try {
+          options.diagnostic?.({
+            layer: "session",
+            code: "lease_expired",
+            role: slot.ticket?.cameraRole,
+          });
+        } catch {
+          /* best effort */
+        }
+        stop(slot);
+      },
       Math.max(0, deadline - performance.now()),
     );
   }
@@ -328,7 +341,18 @@ export function createM4ProgramRealtime(options: {
           token: initial.row.token!,
           topic: initial.row.topic!,
           receive: (value) => receive(slot, value),
-          failed: () => stop(slot),
+          failed: () => {
+            try {
+              options.diagnostic?.({
+                layer: "realtime",
+                code: "channel_closed",
+                role,
+              });
+            } catch {
+              /* best effort */
+            }
+            stop(slot);
+          },
         });
         if (slot.closed) {
           await bounded(
@@ -340,6 +364,11 @@ export function createM4ProgramRealtime(options: {
         // Includes setAuth and subscription setup, and rejects immediately on
         // teardown even if the transport's underlying promise never settles.
         await bounded(slot.transport.ready, 8000, slot.cancellation.signal);
+        try {
+          options.diagnostic?.({ layer: "realtime", code: "ready", role });
+        } catch {
+          /* best effort */
+        }
         live(slot);
         slot.timer = setInterval(() => {
           try {

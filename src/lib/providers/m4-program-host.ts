@@ -9,6 +9,7 @@ import { createM4ProgramBridge } from "./m4-program-bridge";
 import { startM4StudioRecorder } from "./m4-studio-recorder";
 import { recoverM4ProgramCaches } from "./m4-program-cache";
 import type { StudioDiagnostic } from "./m5-studio-diagnostics";
+import type { ConnectionDiagnostic } from "./connection-diagnostics";
 
 const optionsSchema = z
   .object({
@@ -37,6 +38,7 @@ const optionsSchema = z
 export async function startM4ProgramHost(
   input: z.input<typeof optionsSchema>,
   diagnostic?: StudioDiagnostic,
+  connectionDiagnostic?: ConnectionDiagnostic,
 ) {
   const options = optionsSchema.parse(input);
   const cacheRoot = resolve(options.cacheRoot);
@@ -63,7 +65,12 @@ export async function startM4ProgramHost(
     /^curlstreamer-m4-cef-[a-f0-9]{32}$/.test(basename(cacheDirectory));
   if (!safeCache) throw new Error("m4_program_host_unavailable");
 
-  const client = new M4ProgramClient(options.gameId, options.origin);
+  const client = new M4ProgramClient(
+    options.gameId,
+    options.origin,
+    fetch,
+    connectionDiagnostic,
+  );
   let realtime: ReturnType<typeof createM4ProgramRealtime> | undefined;
   let bridge: Awaited<ReturnType<typeof createM4ProgramBridge>> | undefined;
   let recorder: Awaited<ReturnType<typeof startM4StudioRecorder>> | undefined;
@@ -77,11 +84,13 @@ export async function startM4ProgramHost(
       client,
       url: options.realtimeUrl,
       key: options.realtimeKey,
+      diagnostic: connectionDiagnostic,
     });
     bridge = await createM4ProgramBridge(client, realtime, {
       directory: rendererRoot,
       sponsorStorageOrigin: options.realtimeUrl,
       sponsorCacheDirectory: join(cacheRoot, "SponsorAssets"),
+      diagnostic: connectionDiagnostic,
     });
     recorder = await startM4StudioRecorder({
       executable: options.executable,

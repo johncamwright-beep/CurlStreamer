@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { traceStudioRequest } from "@/lib/providers/connection-diagnostics-server";
 import {
   exchangeM4DesktopPairing,
   m4DesktopEnabled,
@@ -20,7 +21,10 @@ const exchanged = session.extend({
   bearer: secret,
   leaseExpiresAt: z.iso.datetime({ offset: true }),
 });
-export async function POST(request: Request, context: Context) {
+export function POST(request: Request, context: Context) {
+  return traceStudioRequest(() => post(request, context), "youtube");
+}
+async function post(request: Request, context: Context) {
   try {
     const id = identifier.safeParse((await context.params).id);
     const body = bodySchema.safeParse(await input(request));

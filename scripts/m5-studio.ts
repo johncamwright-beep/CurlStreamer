@@ -3,6 +3,7 @@ import { fileURLToPath } from "node:url";
 import { mkdir, realpath } from "node:fs/promises";
 import { createInterface } from "node:readline";
 import { createM4OperatorServer } from "../src/lib/providers/m4-operator-server";
+import { createStudioConnectionDiagnostics } from "../src/lib/providers/connection-diagnostics-node";
 import {
   createStudioDiagnostics,
   studioFailureCode,
@@ -90,6 +91,7 @@ try {
       origin: configuration.website,
       gameId,
       diagnostic,
+      connectionDiagnostic: createStudioConnectionDiagnostics(dataRoot),
       paths: {
         executable: join(root, studioFiles.host),
         plugin: join(root, studioFiles.defaultPlugin),

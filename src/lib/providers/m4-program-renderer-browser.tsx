@@ -15,6 +15,18 @@ import {
   StudioTransportUnavailable,
   isTemporaryStudioStatus,
 } from "./studio-transport-error";
+import {
+  connectionFailureReason,
+  type ConnectionDiagnosticInput,
+} from "./connection-diagnostics";
+
+function log(event: ConnectionDiagnosticInput) {
+  void request(
+    "/camera",
+    { action: "diagnostic", event },
+    AbortSignal.timeout(2_000),
+  ).catch(() => undefined);
+}
 
 type CameraState = {
   stream?: MediaStream;
@@ -129,8 +141,10 @@ function ProgramRenderer() {
     const controller = new AbortController();
     const handles = new Map<ProgramCameraRole, { stop(): void }>();
     const retries = new Map<ProgramCameraRole, ReturnType<typeof setTimeout>>();
+    const sampleAt = new Map<ProgramCameraRole, number>();
     const retry = (role: ProgramCameraRole) => {
       if (controller.signal.aborted || retries.has(role)) return;
+      log({ layer: "session", code: "retry", role });
       retries.set(
         role,
         setTimeout(() => {
@@ -141,6 +155,7 @@ function ProgramRenderer() {
     };
     const connect = async (role: ProgramCameraRole) => {
       if (controller.signal.aborted || handles.has(role)) return;
+      let ended = false;
       setCameras((current) => ({
         ...current,
         [role]: {
@@ -152,7 +167,8 @@ function ProgramRenderer() {
           role,
           request,
           signal: controller.signal,
-          onVideo: (stream) =>
+          onVideo: (stream) => {
+            log({ layer: "media", code: "ready", role });
             setCameras((current) => ({
               ...current,
               [role]: {
@@ -160,13 +176,27 @@ function ProgramRenderer() {
                 stream,
                 message: "Verified direct camera",
               },
-            })),
+            }));
+          },
           onAudio: (audio) =>
             setCameras((current) => ({
               ...current,
               [role]: { ...current[role], audio },
             })),
           onMetrics: (metrics) => {
+            if (Date.now() - (sampleAt.get(role) ?? 0) >= 15_000) {
+              sampleAt.set(role, Date.now());
+              log({
+                layer: "media",
+                code: "sample",
+                role,
+                direct: metrics.direct,
+                connection: metrics.connectionState,
+                ice: metrics.iceConnectionState,
+                frames: metrics.framesDecoded,
+                bytes: metrics.bytesReceived,
+              });
+            }
             void request(
               "/camera",
               {
@@ -196,6 +226,12 @@ function ProgramRenderer() {
             });
           },
           onStop: (message) => {
+            ended = true;
+            log({
+              layer: "peer",
+              code: connectionFailureReason(message),
+              role,
+            });
             handles.delete(role);
             setCameras((current) => ({
               ...current,
@@ -204,7 +240,9 @@ function ProgramRenderer() {
             retry(role);
           },
         });
-        if (controller.signal.aborted) handle.stop();
+        // onStop can run before the connect promise settles. Installing that
+        // already-closed handle would make every subsequent retry a no-op.
+        if (controller.signal.aborted || ended) handle.stop();
         else handles.set(role, handle);
       } catch {
         if (!controller.signal.aborted) {

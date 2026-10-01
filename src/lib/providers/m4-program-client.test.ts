@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { M4ProgramClient } from "./m4-program-client";
+import { StudioTransportUnavailable } from "./studio-transport-error";
 const game = "11111111-1111-4111-8111-111111111111";
 const session = "22222222-2222-4222-8222-222222222222";
 const origin = "https://pilot.invalid";
@@ -50,6 +51,47 @@ const projected = {
   },
 };
 describe("Node program authority", () => {
+  it("reports an exhausted temporary outage as retryable and logs recovery without credentials", async () => {
+    const trace = "33333333-3333-4333-8333-333333333333";
+    const diagnostic = vi.fn();
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(exchange())
+      .mockResolvedValueOnce(
+        new Response("private token body", {
+          status: 503,
+          headers: { "x-curlstreamer-trace": trace },
+        }),
+      )
+      .mockRejectedValueOnce(new TypeError("private URL"))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ game: projected })));
+    const client = new M4ProgramClient(game, origin, fetcher, diagnostic);
+    await client.exchange("a".repeat(43));
+    await expect(client.readGame()).rejects.toBeInstanceOf(
+      StudioTransportUnavailable,
+    );
+    expect(client.active).toBe(true);
+    expect(await client.readGame()).toEqual(projected);
+    expect(diagnostic).toHaveBeenCalledWith(
+      expect.objectContaining({
+        layer: "http",
+        code: "network_unavailable",
+        status: 503,
+        trace,
+      }),
+    );
+    expect(diagnostic).toHaveBeenCalledWith(
+      expect.objectContaining({
+        layer: "http",
+        code: "recovered",
+        action: "read",
+      }),
+    );
+    expect(JSON.stringify(diagnostic.mock.calls)).not.toMatch(
+      /private|aaa\.bbb|pilot\.invalid/,
+    );
+    client.close();
+  });
   it("recovers a temporary server failure without replacing program authority", async () => {
     const fetcher = vi
       .fn<typeof fetch>()

@@ -4,6 +4,7 @@ import { authorizeGame, authorizationError } from "@/lib/game-authorization";
 import { broadcastGame, type BroadcastGame } from "@/lib/game-projection";
 import type { Sponsor } from "@/lib/types";
 import { studioOrigin } from "@/lib/studio-origin";
+import { traceStudioRequest } from "@/lib/providers/connection-diagnostics-server";
 import { readGame } from "@/lib/providers/game-read";
 import { gameBroadcastSponsors } from "@/lib/providers/sponsor-library";
 import {
@@ -14,6 +15,7 @@ import {
 import {
   requireStudioConfiguration,
   StudioRejected,
+  StudioUnavailable,
   studioAction,
   issueStudioTicket,
   broadcastStudioSignal,
@@ -54,15 +56,25 @@ function response(body: unknown, status = 200) {
   });
 }
 function failure(cause: unknown) {
-  return response(
+  const result = response(
     {
       error:
         cause instanceof StudioRejected
           ? "Program authority expired. Prepare a new OBS source."
           : "Program service unavailable.",
+      ...(cause instanceof StudioRejected ? { code: cause.reason } : {}),
     },
     cause instanceof StudioRejected ? 409 : 503,
   );
+  result.headers.set(
+    "x-curlstreamer-stage",
+    cause instanceof StudioRejected
+      ? "authorization"
+      : cause instanceof StudioUnavailable
+        ? cause.stage
+        : "unexpected",
+  );
+  return result;
 }
 function sameOrigin(request: Request, trustedOrigin: string) {
   const origin = request.headers.get("origin");
@@ -111,7 +123,7 @@ function privateProgramSponsorIds(
     }),
   };
 }
-export async function POST(
+async function handlePOST(
   request: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
@@ -199,7 +211,7 @@ export async function POST(
     return failure(cause);
   }
 }
-export async function GET(
+async function handleGET(
   request: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
@@ -232,4 +244,16 @@ export async function GET(
   } catch (cause) {
     return failure(cause);
   }
+}
+export function POST(
+  request: Request,
+  context: { params: Promise<{ id: string }> },
+) {
+  return traceStudioRequest(() => handlePOST(request, context), "session");
+}
+export function GET(
+  request: Request,
+  context: { params: Promise<{ id: string }> },
+) {
+  return traceStudioRequest(() => handleGET(request, context), "session");
 }

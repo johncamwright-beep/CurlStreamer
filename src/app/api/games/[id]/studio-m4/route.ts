@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
+import { traceStudioRequest } from "@/lib/providers/connection-diagnostics-server";
 import {
   verifiedCompletionAccount,
   type CompletionCredential,
@@ -137,7 +138,10 @@ function failure(error: unknown) {
   );
 }
 type Context = { params: Promise<{ id: string }> };
-export async function GET(request: Request, context: Context) {
+export function GET(request: Request, context: Context) {
+  return traceStudioRequest(() => get(request, context), "youtube");
+}
+async function get(request: Request, context: Context) {
   const parsed = paramsSchema.safeParse(await context.params);
   if (!parsed.success) return response({ error: "Invalid game." }, 400);
   if (!enabled())
@@ -153,7 +157,10 @@ export async function GET(request: Request, context: Context) {
     return failure(error);
   }
 }
-export async function POST(request: Request, context: Context) {
+export function POST(request: Request, context: Context) {
+  return traceStudioRequest(() => post(request, context), "youtube");
+}
+async function post(request: Request, context: Context) {
   const parsed = paramsSchema.safeParse(await context.params);
   const text = await request.text().catch(() => "");
   let input: unknown;

@@ -251,6 +251,28 @@ test("M2 phone retains its microphone through intent polls and stays awake after
   await expect(
     page.getByRole("button", { name: "Connect phone", exact: true }),
   ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Download connection log" }),
+  ).toBeVisible();
+  const diagnosticLog = await page.evaluate(
+    (gameId) =>
+      JSON.parse(
+        localStorage.getItem(
+          `curlstreamer-connection-log:${gameId}:camera-home`,
+        ) ?? "[]",
+      ),
+    game,
+  );
+  expect(diagnosticLog).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ layer: "wake", code: "wake_acquired" }),
+      expect.objectContaining({ layer: "peer", code: "verification_timeout" }),
+      expect.objectContaining({ layer: "session", code: "retry" }),
+    ]),
+  );
+  expect(JSON.stringify(diagnosticLog)).not.toMatch(
+    /phone-token|organizer-token|Bearer|sessionToken/,
+  );
   expect(
     await page.evaluate(() => {
       const h = (window as any).__m2PhoneAudio;

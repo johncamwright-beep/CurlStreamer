@@ -136,7 +136,10 @@ test("camera-away fresh invitation supersedes saved access and claims only that 
   await expect(
     page.getByRole("button", { name: "Connect phone", exact: true }),
   ).toBeEnabled();
-  await expect(page.getByRole("main").getByRole("button")).toHaveCount(1);
+  await expect(page.getByRole("main").getByRole("button")).toHaveCount(2);
+  await expect(
+    page.getByRole("button", { name: "Download connection log", exact: true }),
+  ).toBeVisible();
   await page.screenshot({
     path: info.outputPath("phone-portrait.png"),
     fullPage: true,

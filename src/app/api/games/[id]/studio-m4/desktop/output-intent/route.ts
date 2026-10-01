@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { traceStudioRequest } from "@/lib/providers/connection-diagnostics-server";
 import { m4DesktopEnabled } from "@/lib/providers/m4-desktop-authority";
 import { claimM4OutputIntent } from "@/lib/providers/m4-output-intent";
 import {
@@ -27,7 +28,10 @@ const resultSchema = z
   .refine((value) => value.phase !== "reserved" || !value.deliveryRecorded);
 
 /** Reserve a journal intent only; this endpoint never delivers credentials or starts output. */
-export async function POST(request: Request, context: Context) {
+export function POST(request: Request, context: Context) {
+  return traceStudioRequest(() => post(request, context), "youtube");
+}
+async function post(request: Request, context: Context) {
   try {
     const id = identifier.safeParse((await context.params).id);
     const body = bodySchema.safeParse(await input(request));

@@ -16,6 +16,7 @@ import {
   programCookieName,
   checkAvailableProgramScope,
 } from "./m3-program-session";
+import { StudioUnavailable, StudioRejected } from "./m2-studio-session";
 const gameId = "00000000-0000-4000-8000-000000000001";
 const scope = {
   gameId,
@@ -113,7 +114,7 @@ describe("M3 one-use program grants", () => {
   it("retains the canvas with one valid slot but refuses two stale slots", async () => {
     mocks.studioAction.mockRejectedValueOnce(new Error("released"));
     await expect(checkAvailableProgramScope(scope)).resolves.toBeUndefined();
-    mocks.studioAction.mockRejectedValue(new Error("stale"));
+    mocks.studioAction.mockRejectedValue(new StudioRejected());
     await expect(checkAvailableProgramScope(scope)).rejects.toThrow();
   });
   it("expires program cookies after four hours", async () => {
@@ -128,6 +129,23 @@ describe("M3 one-use program grants", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+  it("does not turn two database outages into revoked program authority", async () => {
+    const failure = new StudioUnavailable();
+    mocks.studioAction.mockRejectedValue(failure);
+    await expect(checkAvailableProgramScope(scope)).rejects.toBe(failure);
+    mocks.studioAction.mockRejectedValueOnce(new StudioRejected());
+    await expect(checkAvailableProgramScope(scope)).rejects.toBe(failure);
+    mocks.studioAction.mockResolvedValueOnce({});
+    await expect(checkAvailableProgramScope(scope)).resolves.toBeUndefined();
+  });
+  it("treats an unexpected rejected database promise as unavailable, not revoked", async () => {
+    mocks.studioAction.mockRejectedValue(
+      new TypeError("fetch failed private URL"),
+    );
+    await expect(checkAvailableProgramScope(scope)).rejects.toBeInstanceOf(
+      StudioUnavailable,
+    );
   });
   it("wrong game cannot consume a grant; terminal authority consumes and refuses it", async () => {
     const code = await createProgramGrant(scope);

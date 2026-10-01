@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { M4ProgramClient } from "./m4-program-client";
 import { createM4ProgramBridge } from "./m4-program-bridge";
+import { StudioTransportUnavailable } from "./studio-transport-error";
 const closers: Array<() => Promise<void>> = [];
 afterEach(async () => {
   await Promise.all(closers.splice(0).map((close) => close()));
@@ -21,6 +22,47 @@ async function setup() {
   return { client, action, bridge, headers };
 }
 describe("private loopback program API", () => {
+  it("preserves the retryable classification through the local program endpoint", async () => {
+    const { client, bridge, headers } = await setup();
+    vi.spyOn(client, "readGame").mockRejectedValue(
+      new StudioTransportUnavailable(),
+    );
+    expect((await fetch(bridge.address + "/program", { headers })).status).toBe(
+      503,
+    );
+  });
+  it("accepts only fixed diagnostic fields from the authorized renderer", async () => {
+    const diagnostic = vi.fn();
+    const client = { readGame: vi.fn(), action: vi.fn(), close: vi.fn() };
+    const bridge = await createM4ProgramBridge(client, undefined, {
+      directory: ".",
+      diagnostic,
+    });
+    closers.push(bridge.close);
+    const cookie = (await fetch(bridge.rendererUrl)).headers
+      .get("set-cookie")!
+      .split(";")[0];
+    const event = {
+      layer: "peer",
+      code: "verification_timeout",
+      role: "camera-away",
+    };
+    const post = (value: unknown, renderer = true) =>
+      fetch(bridge.address + "/camera", {
+        method: "POST",
+        headers: {
+          origin: bridge.address,
+          "content-type": "application/json",
+          ...(renderer ? { cookie } : { authorization: bridge.authorization }),
+        },
+        body: JSON.stringify({ action: "diagnostic", event: value }),
+      });
+    expect((await post(event)).status).toBe(200);
+    expect(diagnostic).toHaveBeenCalledExactlyOnceWith(event);
+    expect((await post({ ...event, token: "secret" })).status).toBe(409);
+    expect((await post(event, false)).status).toBe(409);
+    expect(diagnostic).toHaveBeenCalledTimes(1);
+  });
   it("drains USB PCM only to the claimed renderer and exposes flush generations", async () => {
     const { bridge, headers } = await setup();
     const page = await fetch(bridge.rendererUrl);

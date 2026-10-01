@@ -23,6 +23,11 @@ vi.mock("@/lib/game-authorization", () => ({
 vi.mock("@/lib/providers/m2-studio-session", () => ({
   ...mocks,
   StudioRejected: class extends Error {},
+  StudioUnavailable: class extends Error {
+    constructor(readonly stage = "database") {
+      super();
+    }
+  },
 }));
 vi.mock("@/lib/providers/m3-program-session", () => ({
   ...mocks,
@@ -33,7 +38,10 @@ vi.mock("@/lib/providers/game-read", () => mocks);
 vi.mock("@/lib/providers/sponsor-library", () => mocks);
 vi.mock("@/lib/game-projection", () => mocks);
 import { POST, GET } from "./route";
-import { StudioRejected } from "@/lib/providers/m2-studio-session";
+import {
+  StudioRejected,
+  StudioUnavailable,
+} from "@/lib/providers/m2-studio-session";
 import { gameFixture } from "@/test/game-fixture";
 const id = "00000000-0000-4000-8000-000000000001",
   home = "00000000-0000-4000-8000-000000000002",
@@ -189,6 +197,18 @@ describe("M3 restricted program route", () => {
       (await call({ action: "ticket", cameraRole: "camera-away" })).status,
     ).toBe(409);
     expect(mocks.issueStudioTicket).not.toHaveBeenCalled();
+  });
+  it("returns a retryable service failure and correlated database stage for an unavailable scope check", async () => {
+    mocks.checkAvailableProgramScope.mockRejectedValueOnce(
+      new StudioUnavailable("database"),
+    );
+    const response = await GET(new Request("https://test"), params);
+    expect(response.status).toBe(503);
+    expect(response.headers.get("x-curlstreamer-stage")).toBe("database");
+    expect(response.headers.get("x-curlstreamer-trace")).toMatch(
+      /^[0-9a-f-]{36}$/,
+    );
+    expect(mocks.broadcastGame).not.toHaveBeenCalled();
   });
   it("renders only bundled fallback after a successful empty library lookup", async () => {
     const actual = await vi.importActual<

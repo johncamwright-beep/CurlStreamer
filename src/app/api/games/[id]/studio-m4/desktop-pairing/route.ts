@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { traceStudioRequest } from "@/lib/providers/connection-diagnostics-server";
 import {
   verifiedCompletionAccount,
   type CompletionCredential,
@@ -43,7 +44,10 @@ async function credential(
   const account = await verifiedCompletionAccount();
   return account.ok ? account.value : undefined;
 }
-export async function POST(request: Request, context: Context) {
+export function POST(request: Request, context: Context) {
+  return traceStudioRequest(() => post(request, context), "youtube");
+}
+async function post(request: Request, context: Context) {
   try {
     const id = identifier.safeParse((await context.params).id);
     const body = bodySchema.safeParse(await input(request));

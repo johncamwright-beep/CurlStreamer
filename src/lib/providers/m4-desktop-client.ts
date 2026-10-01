@@ -1,6 +1,10 @@
 // Native Node entry points only; node:crypto intentionally prevents browser use.
 import { createHash, randomBytes } from "node:crypto";
 import { z } from "zod";
+import type {
+  ConnectionDiagnostic,
+  ConnectionDiagnosticInput,
+} from "./connection-diagnostics";
 
 const secret = z.string().regex(/^[A-Za-z0-9_-]{43}$/);
 const session = z.object({
@@ -86,11 +90,17 @@ export class M4DesktopClient {
   #base: string;
   #fetcher: typeof fetch;
   #clock: () => number;
+  #diagnostic?: ConnectionDiagnostic;
+  #failedRequests = new Set<string>();
 
   constructor(
     gameId: string,
     origin: string,
-    options: { fetcher?: typeof fetch; clock?: () => number } = {},
+    options: {
+      fetcher?: typeof fetch;
+      clock?: () => number;
+      diagnostic?: ConnectionDiagnostic;
+    } = {},
   ) {
     try {
       z.uuid().parse(gameId);
@@ -108,6 +118,7 @@ export class M4DesktopClient {
     }
     this.#fetcher = options.fetcher ?? fetch;
     this.#clock = options.clock ?? (() => performance.now());
+    this.#diagnostic = options.diagnostic;
   }
   get challenge() {
     return this.#challenge;
@@ -287,6 +298,32 @@ export class M4DesktopClient {
   ) {
     const start = this.#clock();
     const controller = new AbortController();
+    let status: number | undefined;
+    let trace: string | undefined;
+    const actions: Record<string, ConnectionDiagnosticInput["action"]> = {
+      "/exchange": "exchange",
+      "/output-intent": "output_intent",
+      "/target": "target",
+      "/observe": "observe",
+    };
+    const action = actions[path] ?? "heartbeat";
+    const log = (code: ConnectionDiagnosticInput["code"]) => {
+      try {
+        this.#diagnostic?.({
+          layer: "youtube",
+          code,
+          action,
+          status,
+          trace,
+          durationMs: Math.min(
+            600_000,
+            Math.max(0, Math.round(this.#clock() - start)),
+          ),
+        });
+      } catch {
+        /* best effort */
+      }
+    };
     let timer: ReturnType<typeof setTimeout> | undefined;
     try {
       const response = await Promise.race([
@@ -306,6 +343,10 @@ export class M4DesktopClient {
             throw new TransportUnavailable();
           })
           .then(async (response) => {
+            status = response.status;
+            const correlation = response.headers.get("x-curlstreamer-trace");
+            if (correlation && z.uuid().safeParse(correlation).success)
+              trace = correlation;
             if ([408, 429, 500, 502, 503, 504].includes(response.status)) {
               await response.body?.cancel().catch(() => undefined);
               throw new TransportUnavailable();
@@ -324,8 +365,18 @@ export class M4DesktopClient {
         }),
       ]);
       if (!Number.isFinite(response.date)) throw fail();
+      if (this.#failedRequests.delete(path)) log("recovered");
+      else if (this.#clock() - start >= 1500) log("slow");
       return { ...response, start };
     } catch (cause) {
+      this.#failedRequests.add(path);
+      log(
+        cause instanceof TransportUnavailable
+          ? controller.signal.aborted
+            ? "timeout"
+            : "network_unavailable"
+          : "authority_rejected",
+      );
       if (cause instanceof TransportUnavailable)
         throw new TransportUnavailable();
       throw fail();

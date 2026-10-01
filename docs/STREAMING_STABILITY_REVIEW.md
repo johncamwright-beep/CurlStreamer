@@ -1,4 +1,42 @@
-# Streaming stability review — September 30, 2026
+# Streaming stability review — October 1, 2026
+
+## October 1 close and restart recovery
+
+- Closing an active game in Windows Studio asks whether to end the game.
+  **Yes** opens the existing final-score review and confirmation. Studio closes
+  only after the game is saved as completed and the local controller stops.
+  **No** stops the local sender without completing the game or YouTube broadcast,
+  remembers the game, and returns to its scoring page on reopening. **Cancel**
+  keeps Studio open; cancelling the web review cancels the pending close.
+- Studio's menu includes **Reload scoring screen** (`Ctrl+R`), which leaves
+  healthy camera and output processes running.
+- A full restart obtains fresh, one-use output authority for the same saved
+  broadcast/stream IDs. Migration `0067` waits until the old sender's enforced
+  lease expires, plus three seconds, before allowing another pairing. Stop alone
+  is insufficient. Old credentials remain spent; channel, membership, game,
+  generation and entitlement checks are preserved. Native preparation retries
+  the temporary expiry wait for up to 35 seconds. A completed YouTube broadcast
+  remains terminal; this flow does not create a replacement watch page.
+- An already-exited controller no longer traps the user in a cleanup dialog.
+  Unconfirmed cleanup is retained as a recording warning, and the Saved videos
+  menu flags that the previous recording should be checked.
+
+Validation: formatting, TypeScript, production builds and the full unit suite
+passed (1,662 passed; 95 environment-dependent skips). Browser suites passed
+248 checks with 92 skips. The real WebView2 fixture verified scoped review/cancel,
+remembered-game origin validation, and dead-controller recovery with retained
+cleanup evidence. Rollback-only PostgreSQL fixtures verified same provider IDs,
+unexpired-sender rejection, fresh one-use delivery, replay rejection, revoked
+owner rejection and terminal-game rejection before migration `0067` was applied.
+Fixture teams and users were rolled back; no real provider was invoked.
+
+Studio `0.4.0-pilot.6` was installed locally after confirming Studio was closed:
+2,247 component hashes verified, four files replaced with a rollback backup.
+The staged and installed packages passed offline native startup/shutdown checks.
+Matching source is commit `c82b60e`; third-party notices are included. The public
+installer remains `0.4.0-pilot.2`. These checks do not prove physical endurance:
+the remaining test is closing with **No**, reopening, and reconnecting the same
+watch link with both phones and USB audio.
 
 ## September 30 recovery
 
@@ -239,9 +277,9 @@ that same release. Physical camera/broadcast endurance is still unverified.
   check audio, stop normally, and verify the recording and replay link.
 - Test install/update on another Windows PC. Offline startup is not a camera or
   network endurance test.
-- Restarting a consumed/stopped broadcast currently rebuilds the Studio program
-  because output grants and native sinks are single use. Keeping cameras alive
-  across a replacement output session needs a separate lifecycle change.
+- October 1 adds fresh authority on a full restart after the old lease expires.
+  Physical same-link restart and long-run camera/audio continuity still need
+  testing on the installed `0.4.0-pilot.6` package.
 - Provider observations still refresh Google access tokens frequently. A bounded,
   server-only token cache with connection-version invalidation could reduce
   provider traffic, but is outside this stability patch.

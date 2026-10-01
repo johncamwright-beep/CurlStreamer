@@ -95,7 +95,9 @@ Validation completed so far:
 - Live database: migration 0069 was installed and verified. Its isolated recovery fixture passed inside a savepoint and all fixture data was rolled back. Existing games and camera assignments were not changed.
 - Separate YouTube/settings browser fixture suite: all 78 desktop/mobile checks passed, with a second successful production build.
 
-The website rollout is being completed. The local Studio package is prepared; installation awaits closure of the running app.
+Website deployment verified at 2:34 PM Toronto time: commit `f8a2c0b`, Vercel deployment `dpl_C4pYvXvQwNP7ixtBzxjGjLERVDhw`, Ready and assigned to `www.curlstreamer.app`. Public asset verification found the phone diagnostic export and persistent-history code. Harmless invalid-game requests to the M2, M3, and M4 desktop routes each returned 400 with a valid correlation ID. Evidence is saved locally under `work/connection-diagnostics-deployment-proof.json`, `work/connection-diagnostics-vercel-ready.png`, and `work/receiver-recovery-installed.png`.
+
+The local Studio package is prepared as `work/studio-connection-pilot7-final` with release `0.4.0-pilot.7`; installation awaits closure of the running app. The Windows Start menu shortcut targets the installed package. Launch that shortcut after installation, rather than the older pilot 6 staging executable currently running. The public download has not been republished by this change.
 
 Required physical verification: a 45–60 minute run with both phones, then controlled interruption of one phone, Studio restart/resume, scoring navigation, and YouTube disconnect/reconnect on the same saved broadcast. Collect both phone exports and both Studio journals immediately after any interruption.
 

@@ -210,6 +210,7 @@ export function M2CameraSlot({
   const mounted = useRef(true);
   const operationFlight = useRef(false);
   const captureConsentAt = useRef(0);
+  const pausedAt = useRef(0);
   const pageOwner = useRef<CameraPageOwner | undefined>(undefined);
   function ownsCameraPage() {
     return side !== "camera" || pageOwner.current?.held() === true;
@@ -274,7 +275,9 @@ export function M2CameraSlot({
       canRetry: () =>
         mounted.current &&
         (side === "camera"
-          ? Boolean(captureConsentAt.current) && ownsCameraPage()
+          ? Boolean(captureConsentAt.current) &&
+            !pausedAt.current &&
+            ownsCameraPage()
           : Boolean(sessionRef.current)),
       retryDelays: [2000, 4000, 8000, 15000],
       onState: (state) => {
@@ -408,6 +411,7 @@ export function M2CameraSlot({
     if (
       side !== "camera" ||
       !ownsCameraPage() ||
+      Boolean(pausedAt.current) ||
       audioFlight.current ||
       (audioAttemptBlocked.current && !fromGesture)
     )
@@ -602,9 +606,21 @@ export function M2CameraSlot({
     return value;
   };
   function cleanup(reason = "Connection cleanup") {
+    pausedAt.current = 0;
+    captureConsentAt.current = 0;
     if (owner.current) owner.current.stop();
     else releaseResources(reason);
     pageOwner.current?.release();
+  }
+  function pauseCamera() {
+    if (side !== "camera" || !ownsCameraPage()) return;
+    pausedAt.current = Date.now();
+    // Stop media and automatic retries, retaining this page's prior consent
+    // and ownership so an authorized fresh Studio command can resume it.
+    coordinator().stop();
+    setMetrics(undefined);
+    log({ layer: "session", code: "camera_paused" });
+    setStatus("Camera paused. Resume here or reconnect from Studio.");
   }
   function releaseResources(reason = "Connection cleanup") {
     recorder.current?.finish("interrupted", reason);
@@ -863,6 +879,8 @@ export function M2CameraSlot({
       setStatus(failure.current);
       return Promise.resolve();
     }
+    if (pausedAt.current) captureConsentAt.current = 0;
+    pausedAt.current = 0;
     return coordinator().start();
   }
   async function establish(context: ConnectionAttempt) {
@@ -1097,6 +1115,15 @@ export function M2CameraSlot({
           );
           return;
         }
+        if (
+          response.status === 410 ||
+          (response.ok && ["closed", "completed"].includes(game?.status ?? ""))
+        ) {
+          cleanup("Game ended");
+          setClaimed(false);
+          setStatus("This game is closed. Cameras cannot reconnect.");
+          return;
+        }
         if (!response.ok || !game) return;
         const command = game.cameraReconnect?.[cameraRole];
         if (
@@ -1104,10 +1131,13 @@ export function M2CameraSlot({
           command &&
           command.id !== reconnectCommand.current &&
           command.requestedAt >= captureConsentAt.current &&
+          command.requestedAt > pausedAt.current &&
           command.requestedAt <= Date.now() &&
           Date.now() - command.requestedAt <= 60000
         ) {
           reconnectCommand.current = command.id;
+          pausedAt.current = 0;
+          log({ layer: "session", code: "camera_remote_resume" });
           void coordinator().restart();
           return;
         }
@@ -1288,13 +1318,15 @@ export function M2CameraSlot({
             <h1>Portrait camera</h1>
           </div>
           <span>
-            {metrics?.direct && previewReady
-              ? "Connected"
-              : previewReady
-                ? "Connecting"
-                : connectionPhase === "retrying"
-                  ? "Reconnecting"
-                  : "Not connected"}
+            {pausedAt.current
+              ? "Paused"
+              : metrics?.direct && previewReady
+                ? "Connected"
+                : previewReady
+                  ? "Connecting"
+                  : connectionPhase === "retrying"
+                    ? "Reconnecting"
+                    : "Not connected"}
           </span>
         </header>
         <div className="phone-camera-frame">
@@ -1337,19 +1369,21 @@ export function M2CameraSlot({
         <button
           className="btn phone-camera-connect"
           onClick={() => {
-            if (previewReady || busy) {
-              captureConsentAt.current = 0;
-              cleanup("Phone disconnected");
+            if (previewReady) pauseCamera();
+            else if (busy) {
+              cleanup("Phone connection cancelled");
               setMetrics(undefined);
-              setStatus("Phone disconnected. Connect again when ready.");
+              setStatus("Connection cancelled. Tap Connect phone when ready.");
             } else void connect();
           }}
         >
           {busy && !previewReady
             ? "Cancel connection"
             : previewReady
-              ? "Disconnect phone"
-              : "Connect phone"}
+              ? "Pause camera"
+              : pausedAt.current
+                ? "Resume camera"
+                : "Connect phone"}
         </button>
         {audioStatus === "permission-required" && (
           <button

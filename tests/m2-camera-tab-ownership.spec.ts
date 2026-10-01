@@ -4,6 +4,7 @@ import { build } from "esbuild";
 const game = "00000000-0000-4000-8000-000000000001";
 const takeoverMessage =
   "This camera is connected from another tab. Use that tab, or tap Connect phone here to take over.";
+const pauseMessage = "Camera paused. Resume here or reconnect from Studio.";
 
 async function fixture(context: BrowserContext) {
   const mocks: Record<string, string> = {
@@ -135,12 +136,20 @@ async function fixture(context: BrowserContext) {
   await context.route(`**/api/games/${game}/studio-m2`, (route) =>
     route.fulfill({ json: {} }),
   );
-  const state: { reconnect?: { id: string; requestedAt: number } } = {};
+  const state: {
+    reconnect?: { id: string; requestedAt: number };
+    httpStatus: number;
+    gameStatus: "active" | "closed" | "completed";
+  } = { httpStatus: 200, gameStatus: "active" };
   await context.route(`**/api/games/${game}`, (route) =>
     route.fulfill({
+      status: route.request().method() === "GET" ? state.httpStatus : 200,
       json:
         route.request().method() === "GET"
-          ? { cameraReconnect: { "camera-home": state.reconnect } }
+          ? {
+              status: state.gameStatus,
+              cameraReconnect: { "camera-home": state.reconnect },
+            }
           : {},
     }),
   );
@@ -167,7 +176,7 @@ async function connect(page: Page, count = 1) {
     )
     .toBe(count);
   await expect(
-    page.getByRole("button", { name: "Disconnect phone", exact: true }),
+    page.getByRole("button", { name: "Pause camera", exact: true }),
   ).toBeVisible();
 }
 
@@ -214,6 +223,8 @@ test("only a deliberate Connect gesture can take the same camera from another ta
   await first.evaluate(() =>
     (window as any).__tabCamera.providers[0].onStop("Transient peer failure"),
   );
+  // Issue strictly after capture consent rather than at its frozen timestamp.
+  await second.clock.runFor(100);
   state.reconnect = {
     id: "successor-recovery",
     requestedAt: await second.evaluate(() => Date.now()),
@@ -221,7 +232,12 @@ test("only a deliberate Connect gesture can take the same camera from another ta
   await advance(first);
   await advance(second);
   await expect
-    .poll(() => snapshot(second))
+    .poll(async () => {
+      // A routed response can settle after runFor has exhausted its intervals
+      // under worker load. Advance another intent poll on each observation.
+      await second.clock.runFor(2100);
+      return snapshot(second);
+    })
     .toMatchObject({
       captures: 2,
       stopped: [1, 0],
@@ -309,7 +325,7 @@ test("a retired pending provider cannot release the newer tab when it settles", 
   expect((await snapshot(first)).captures).toBe(1);
 });
 
-test("disconnect in an old tab cannot remove a successor before its storage event arrives", async ({
+test("pause in an old tab cannot remove a successor before its storage event arrives", async ({
   context,
 }) => {
   await fixture(context);
@@ -324,12 +340,10 @@ test("disconnect in an old tab cannot remove a successor before its storage even
   );
   await connect(second);
   await first
-    .getByRole("button", { name: "Disconnect phone", exact: true })
+    .getByRole("button", { name: "Pause camera", exact: true })
     .click();
   await first.evaluate(() =>
-    (window as any).__tabCamera.providers[0].onStop(
-      "Late disconnected callback",
-    ),
+    (window as any).__tabCamera.providers[0].onStop("Late paused callback"),
   );
   await second.evaluate(() =>
     (window as any).__tabCamera.providers[0].onStop("Transient peer failure"),
@@ -395,4 +409,190 @@ test("late microphone setup cannot acquire or publish audio after another tab ta
     stopped: [0],
     tracks: ["live", "live"],
   });
+});
+
+async function pauseCamera(page: Page) {
+  await page.getByRole("button", { name: "Pause camera", exact: true }).click();
+  await expect(page.getByRole("status")).toHaveText(pauseMessage);
+  await expect(
+    page.getByRole("button", { name: "Resume camera", exact: true }),
+  ).toBeVisible();
+  await expect(page.getByText("Paused", { exact: true })).toBeVisible();
+}
+
+test("pause stops media and retries until one fresh Studio command or a Resume gesture", async ({
+  context,
+}) => {
+  const state = await fixture(context);
+  const page = await openCamera(context);
+  await connect(page);
+  state.reconnect = {
+    id: "before-pause",
+    requestedAt: await page.evaluate(() => Date.now()),
+  };
+  await advance(page);
+  await expect.poll(() => snapshot(page)).toMatchObject({ captures: 2 });
+  await pauseCamera(page);
+  const pausedAt = await page.evaluate(() => Date.now());
+  const pausedPolls = (await snapshot(page)).polls;
+  await page.evaluate(() => {
+    const h = (window as any).__tabCamera;
+    h.enableAudio = true;
+    h.providers[1].onStop("Late failure after Pause");
+  });
+  // The previously consumed command remains on the server after Pause.
+  await advance(page);
+  expect((await snapshot(page)).captures).toBe(2);
+  state.reconnect = { id: "at-pause", requestedAt: pausedAt };
+  await advance(page);
+  expect((await snapshot(page)).captures).toBe(2);
+  state.reconnect = { id: "older-command", requestedAt: pausedAt - 1 };
+  await advance(page);
+  expect(await snapshot(page)).toMatchObject({
+    captures: 2,
+    stopped: [1, 1],
+    tracks: ["ended", "ended", "ended", "ended"],
+  });
+  expect((await snapshot(page)).polls).toBeGreaterThan(pausedPolls);
+  expect(
+    await page.evaluate(
+      () => (window as any).__tabCamera.publishedAudio.length,
+    ),
+  ).toBe(0);
+  await expect(page.getByRole("status")).toHaveText(pauseMessage);
+
+  state.reconnect = {
+    id: "fresh-resume",
+    requestedAt: await page.evaluate(() => Date.now()),
+  };
+  await advance(page);
+  await expect.poll(() => snapshot(page)).toMatchObject({ captures: 3 });
+  await expect(
+    page.getByRole("button", { name: "Pause camera", exact: true }),
+  ).toBeVisible();
+  await advance(page);
+  expect((await snapshot(page)).captures).toBe(3);
+  await pauseCamera(page);
+  await advance(page);
+  expect((await snapshot(page)).captures).toBe(3);
+  await page
+    .getByRole("button", { name: "Resume camera", exact: true })
+    .click();
+  await expect.poll(() => snapshot(page)).toMatchObject({ captures: 4 });
+});
+
+for (const terminal of [
+  "pagehide",
+  "new invitation",
+  401,
+  403,
+  410,
+  "completed",
+] as const) {
+  test(`a paused camera cannot remotely resume after ${terminal}`, async ({
+    context,
+  }) => {
+    const state = await fixture(context);
+    const page = await openCamera(context);
+    await connect(page);
+    await pauseCamera(page);
+    if (terminal === "pagehide") {
+      await page.evaluate(() => window.dispatchEvent(new Event("pagehide")));
+    } else if (terminal === "new invitation") {
+      await page.evaluate(() => (location.hash = "token=fresh-invitation"));
+      await expect(page.getByRole("status")).toContainText(
+        "New invitation received",
+      );
+    } else {
+      if (terminal === "completed") state.gameStatus = "completed";
+      else state.httpStatus = terminal;
+      await advance(page);
+    }
+    if (terminal !== "pagehide") {
+      await expect(
+        page.getByRole("button", { name: "Connect phone", exact: true }),
+      ).toBeVisible();
+    }
+    await advance(page);
+    state.httpStatus = 200;
+    state.gameStatus = "active";
+    state.reconnect = {
+      id: "late-recovery-after-cleanup",
+      requestedAt: await page.evaluate(() => Date.now()),
+    };
+    await page.evaluate(() =>
+      (window as any).__tabCamera.providers[0].onStop("Late retired callback"),
+    );
+    await advance(page);
+    expect(await snapshot(page)).toMatchObject({
+      captures: 1,
+      stopped: [1],
+      tracks: ["ended", "ended"],
+    });
+    expect(
+      await page.evaluate(
+        () => (window as any).__tabCamera.publishedAudio.length,
+      ),
+    ).toBe(0);
+  });
+}
+
+test("a paused tab cannot remotely resume after takeover before its storage event arrives", async ({
+  context,
+}) => {
+  const state = await fixture(context);
+  const first = await openCamera(context);
+  const second = await openCamera(context);
+  await connect(first);
+  await pauseCamera(first);
+  await first.evaluate(
+    () => ((window as any).__tabCamera.holdStorageEvents = true),
+  );
+  await connect(second);
+  await first.clock.runFor(100);
+  state.reconnect = {
+    id: "new-owner-recovery",
+    requestedAt: await first.evaluate(() => Date.now()),
+  };
+  await advance(first);
+  await expect(first.getByRole("status")).toContainText(takeoverMessage);
+  await expect(
+    first.getByRole("button", { name: "Connect phone", exact: true }),
+  ).toBeVisible();
+  expect(await snapshot(first)).toMatchObject({ captures: 1, stopped: [1] });
+  await advance(second);
+  await expect
+    .poll(() => snapshot(second))
+    .toMatchObject({ captures: 2, stopped: [1, 0] });
+});
+
+test("pausing a pending provider prevents its late completion from restarting capture", async ({
+  context,
+}) => {
+  await fixture(context);
+  const page = await openCamera(context);
+  await page.evaluate(() => ((window as any).__tabCamera.deferProvider = true));
+  await page
+    .getByRole("button", { name: "Connect phone", exact: true })
+    .click();
+  await expect
+    .poll(() =>
+      page.evaluate(() => (window as any).__tabCamera.providers.length),
+    )
+    .toBe(1);
+  await pauseCamera(page);
+  await page.evaluate(() => (window as any).__tabCamera.resolveProvider());
+  await expect
+    .poll(() => snapshot(page))
+    .toMatchObject({ captures: 1, stopped: [1] });
+  await page.evaluate(() =>
+    (window as any).__tabCamera.providers[0].onStop("Late paused negotiation"),
+  );
+  await advance(page);
+  expect(await snapshot(page)).toMatchObject({
+    captures: 1,
+    stopped: [1],
+    tracks: ["ended", "ended"],
+  });
+  await expect(page.getByRole("status")).toHaveText(pauseMessage);
 });

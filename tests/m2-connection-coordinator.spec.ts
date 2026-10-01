@@ -237,7 +237,7 @@ test("denying a cancelled permission request cannot trigger video-only fallback"
   await expect(
     page.getByRole("button", { name: "Connect phone", exact: true }),
   ).toBeEnabled();
-  await expect(page.getByRole("status")).toContainText("Phone disconnected");
+  await expect(page.getByRole("status")).toContainText("Connection cancelled");
 });
 
 test("a pending receiver heartbeat cannot invalidate a newly connected handle", async ({

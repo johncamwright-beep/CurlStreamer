@@ -174,6 +174,11 @@ test("camera cards share a row on a tablet and reconnect QR collapses when onlin
     "Phone online · Waiting for video",
   );
   await expect(first.getByRole("img")).toBeVisible();
+  const recovery = first.getByRole("button", {
+    name: "Reconnect camera",
+    exact: true,
+  });
+  await expect(recovery).toBeEnabled();
   await page.evaluate(
     (gameId) =>
       window.dispatchEvent(
@@ -184,9 +189,31 @@ test("camera cards share a row on a tablet and reconnect QR collapses when onlin
     testGameId,
   );
   await expect(first.getByRole("status")).toHaveText("Receiving video");
+  await expect(recovery).toBeDisabled();
   await expect(first.getByRole("img")).toHaveCount(0);
+  await page.evaluate(
+    (gameId) =>
+      window.dispatchEvent(
+        new CustomEvent("studio-camera-status", {
+          detail: { gameId, cameras: { "camera-home": false } },
+        }),
+      ),
+    testGameId,
+  );
+  await expect(recovery).toBeEnabled();
+  await page.evaluate(
+    (gameId) =>
+      window.dispatchEvent(
+        new CustomEvent("studio-camera-status", {
+          detail: { gameId, cameras: { "camera-home": true } },
+        }),
+      ),
+    testGameId,
+  );
+  await expect(recovery).toBeDisabled();
   online = false;
   await page.clock.fastForward(6500);
+  await expect(recovery).toBeEnabled();
   await expect(
     first.getByRole("button", { name: "Show reconnect QR" }),
   ).toBeVisible();

@@ -3,7 +3,7 @@ import { build } from "esbuild";
 
 const game = "00000000-0000-4000-8000-000000000001";
 
-test("M2 phone retains its microphone through intent polls and stays awake after disconnect until the page closes", async ({
+test("M2 phone retains its microphone through intent polls and stays awake while paused until the page closes", async ({
   page,
 }) => {
   test.slow();
@@ -245,11 +245,9 @@ test("M2 phone retains its microphone through intent polls and stays awake after
       page.evaluate(() => (window as any).__m2PhoneAudio.calls.length),
     )
     .toBe(3);
-  await page
-    .getByRole("button", { name: "Disconnect phone", exact: true })
-    .click();
+  await page.getByRole("button", { name: "Pause camera", exact: true }).click();
   await expect(
-    page.getByRole("button", { name: "Connect phone", exact: true }),
+    page.getByRole("button", { name: "Resume camera", exact: true }),
   ).toBeVisible();
   await expect(
     page.getByRole("button", { name: "Download connection log" }),

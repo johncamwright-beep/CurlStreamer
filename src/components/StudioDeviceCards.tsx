@@ -101,7 +101,14 @@ function DeviceCard({
   const [error, setError] = useState("");
   const [recoveryMessage, setRecoveryMessage] = useState("");
   async function reconnectCamera() {
-    if (busy || role === "scorer" || !enabled || !claimed) return;
+    if (
+      busy ||
+      role === "scorer" ||
+      !enabled ||
+      !claimed ||
+      connectionStatus?.videoReceiving === true
+    )
+      return;
     setBusy(true);
     setError("");
     setRecoveryMessage("");
@@ -382,7 +389,13 @@ function DeviceCard({
         {!scorer && claimed && (
           <button
             className="studio-device-action secondary"
-            disabled={busy || !enabled}
+            disabled={busy || !enabled || Boolean(online)}
+            title={
+              online
+                ? "Camera is receiving video. Reconnect is available if video stops."
+                : undefined
+            }
+            style={online ? { cursor: "not-allowed" } : undefined}
             onClick={() => void reconnectCamera()}
           >
             Reconnect camera

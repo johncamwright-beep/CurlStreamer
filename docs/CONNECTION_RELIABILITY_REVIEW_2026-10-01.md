@@ -103,6 +103,16 @@ Teardown only retires the page's local active state and leaves an inert marker. 
 
 Longer physical-device endurance and the saved YouTube broadcast recovery checks remain outstanding. Closing competing tabs is a confirmed successful user intervention, not a completed endurance test of the new guard.
 
+### Intentional phone pause and Studio recovery
+
+John's next test identified a separate issue: tapping Disconnect phone permanently cleared capture consent and page ownership. That correctly stopped media, but also stopped organizer-command polling, so Studio's Reconnect camera could not reach the still-open phone page.
+
+The connected phone action is now **Pause camera**. It stops video, microphone publication, pending setup, and automatic retries while retaining the current page's prior consent and ownership. The page displays **Paused** and **Resume camera**; an authorized, unconsumed Studio command issued after the pause can resume it once. Commands issued before or at the pause are ignored. A local Resume starts fresh capture consent so a pre-pause command cannot immediately restart it again. Page closure, a replacement invitation, takeover, authority rejection, and game completion still permanently retire consent and resources. Wake lock remains best effort and independent of media.
+
+Studio's **Reconnect camera** stays in a stable position but is disabled while fresh native evidence confirms advancing received video frames. Phone-online status alone cannot disable it. The native proof expires when frame counters stop advancing; the normal two-second status cadence makes recovery available roughly five to seven seconds after the last advancing frame. If native status events stop entirely, the card's existing six-second expiry also enables recovery. The handler independently rejects reconnect while video is verified.
+
+Pause and remote resume add fixed diagnostic codes `camera_paused` and `camera_remote_resume`; neither includes credentials or page markers. This is a website update and requires refreshing the relevant web pages after the current run, with no Studio reinstall.
+
 ## Validation and rollout
 
 Validation completed so far:
@@ -151,3 +161,11 @@ No real broadcast, camera release, or game reset was initiated during this revie
 Website deployment verified at 4:15 PM Toronto time: commit `fc8b832`, deployment `dpl_EzAiXCQUhZ4vHiYuNMBJB9PN44Cw`, Ready and assigned to `www.curlstreamer.app`. Public camera-page asset verification found the ownership marker, takeover message, diagnostic event, and log export in that exact deployment's bundle. Asset SHA-256: `29e30889d4da19742bbf58b5ee2dad9b078c7ece7ac24e4a2ce4c1248673c1e4`. Evidence: `work/camera-page-owner-deployment-proof.json` and `camera-page-ownership-deployed.png` in the chat's visualization directory.
 
 After the current camera run, reload the remaining camera page on each phone and tap Connect once to load the web guard. Keep only one camera page per phone during that transition. This update does not need another Studio installation.
+
+### Pause/resume validation
+
+- Full unit suite: 1,718 passed; 95 conditional database tests skipped. Formatting and type checking passed.
+- Full main desktop/mobile browser run: 205 passed, 92 conditional checks skipped, and five fixture failures. Two expectations still required the old cancellation text, two incorrectly required a rerender during page unload, and one frozen-clock takeover assertion needed to advance the next intent poll after a delayed routed response. The resource, permission, ownership, and stale-command assertions were retained.
+- Corrected affected files: all 44 desktop/mobile checks passed, including 26 ownership/pause cases, cancellation and stale setup, microphone/wake lifecycle, and state-aware Studio controls. The production build passed in both the main and focused browser runs.
+- Separate YouTube/settings fixture suite: all 78 desktop/mobile checks passed with another successful production build.
+- These are mocked browser tests, not a completed physical-device endurance run. No real broadcast, camera release, or game reset was initiated.

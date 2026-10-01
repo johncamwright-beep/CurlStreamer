@@ -590,6 +590,34 @@ export default function Scorer({
               {scoringNotice}
             </p>
           )}
+
+          {desktop && (
+            <div className="scoring-device-dock">
+              {canEndGame && m1Pilot && (
+                <section id="devices" aria-label="Connected devices">
+                  <StudioDeviceCards
+                    id={id}
+                    claims={game.claims}
+                    cameraAudio={cameraAudio}
+                    layout={game.layout}
+                    onLayout={async (layout) => {
+                      await act({ type: "layout", layout });
+                    }}
+                    onAudio={async (role, enabled, volume) => {
+                      await act({
+                        type: "camera-audio",
+                        role,
+                        enabled,
+                        volume,
+                      });
+                    }}
+                    onChanged={refresh}
+                    enabled
+                  />
+                </section>
+              )}
+            </div>
+          )}
           {desktop && canEndGame && (
             <>
               <StudioAudio id={id} />
@@ -652,28 +680,6 @@ export default function Scorer({
           </aside>
         )}
       </div>
-      {desktop && (
-        <div className="scoring-device-dock">
-          {canEndGame && m1Pilot && (
-            <section id="devices" aria-label="Connected devices">
-              <StudioDeviceCards
-                id={id}
-                claims={game.claims}
-                cameraAudio={cameraAudio}
-                layout={game.layout}
-                onLayout={async (layout) => {
-                  await act({ type: "layout", layout });
-                }}
-                onAudio={async (role, enabled, volume) => {
-                  await act({ type: "camera-audio", role, enabled, volume });
-                }}
-                onChanged={refresh}
-                enabled
-              />
-            </section>
-          )}
-        </div>
-      )}
     </main>
   );
 }

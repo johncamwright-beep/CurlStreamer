@@ -92,7 +92,11 @@ function DeviceCard({
     expires: number;
   }>();
   const [now, setNow] = useState(Date.now());
-  const [reconnect, setReconnect] = useState<{ url: string; image: string }>();
+  const [reconnect, setReconnect] = useState<{
+    url: string;
+    image: string;
+    expires: number;
+  }>();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [recoveryMessage, setRecoveryMessage] = useState("");
@@ -149,7 +153,7 @@ function DeviceCard({
   }, [invitation]);
   async function showReconnect() {
     if (!claimed || !enabled || request.current) return;
-    if (reconnect) {
+    if (reconnect && reconnect.expires > Date.now()) {
       setQrOpen(!qrOpen);
       return;
     }
@@ -159,21 +163,47 @@ function DeviceCard({
     setBusy(true);
     setError("");
     try {
-      // This is only a page address. The original device must still present
-      // its existing scoped session; it grants no access or reassignment.
-      const url = new URL(
-        role === "scorer"
-          ? "/score/" + id
-          : "/studio-m2/" + id + "/camera/" + role,
-        location.origin,
-      ).href;
+      let url = new URL("/score/" + id, location.origin).href;
+      let expires = Date.now() + 600_000;
+      if (role !== "scorer") {
+        const token = organizerAccessToken(localStorage, id);
+        const response = await fetch(
+          `/api/games/${id}/camera-reconnect-invitation`,
+          {
+            method: "POST",
+            cache: "no-store",
+            signal: controller.signal,
+            headers: {
+              "content-type": "application/json",
+              ...(token ? { authorization: `Bearer ${token}` } : {}),
+            },
+            body: JSON.stringify({ role }),
+          },
+        );
+        if (!response.ok) throw Error();
+        const result = z
+          .object({ url: z.url(), expiresAt: z.iso.datetime() })
+          .parse(await response.json());
+        const parsed = new URL(result.url);
+        expires = Date.parse(result.expiresAt);
+        if (
+          parsed.origin !== location.origin ||
+          parsed.pathname !== `/studio-m2/${id}/camera/${role}` ||
+          parsed.username ||
+          parsed.password ||
+          !parsed.hash ||
+          expires <= Date.now()
+        )
+          throw Error();
+        url = parsed.href;
+      }
       const image = await QRCode.toDataURL(url, {
         width: 240,
         margin: 2,
         errorCorrectionLevel: "M",
       });
       if (request.current === controller && !controller.signal.aborted)
-        setReconnect({ url, image });
+        setReconnect({ url, image, expires });
     } catch {
       if (request.current === controller)
         setError("Could not display the reconnect code. Try again.");
@@ -414,8 +444,8 @@ function DeviceCard({
                   />
                 </button>
                 <p>
-                  Use the original device and browser. This code does not grant
-                  access to a different device.
+                  Use the original device and browser. Camera codes renew its
+                  access for this assignment and expire in 10 minutes.
                 </p>
                 <a href={reconnect.url}>Open reconnect page</a>
               </div>
@@ -667,8 +697,13 @@ export function StudioDeviceCards({
               : undefined
           }
           connectionStatus={
-            connections?.[role]
-              ? { ...connections[role], videoReceiving: received[role] }
+            connections?.[role] || received[role]
+              ? {
+                  receiverReady: false,
+                  phoneOnline: false,
+                  ...connections?.[role],
+                  videoReceiving: received[role],
+                }
               : undefined
           }
         />

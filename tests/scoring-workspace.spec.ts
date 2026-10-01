@@ -2,6 +2,19 @@ import { expect, test, type Page } from "@playwright/test";
 import { gameFixture, testGameId } from "../src/test/game-fixture";
 
 async function setup(page: Page, desktop = false) {
+  await page.route(
+    `**/api/games/${testGameId}/camera-reconnect-invitation`,
+    (route) =>
+      route.fulfill({
+        json: {
+          url: new URL(
+            `/studio-m2/${testGameId}/camera/${route.request().postDataJSON().role}#token=fixture-renewal`,
+            route.request().url(),
+          ).href,
+          expiresAt: new Date(Date.now() + 600_000).toISOString(),
+        },
+      }),
+  );
   const game = gameFixture();
   game.cameraHealth!["camera-home"]!.updatedAt = Date.now();
   game.config.homeName = "Northern Ontario Curling Club";

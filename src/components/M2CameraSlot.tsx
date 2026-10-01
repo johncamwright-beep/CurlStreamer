@@ -162,7 +162,10 @@ export function M2CameraSlot({
       return;
     retryCount.current = Math.min(8, retryCount.current + 1);
     const delay = Math.min(15000, 2000 * retryCount.current);
-    setStatus("Connection interrupted. Reconnecting to Studio…");
+    clearTimeout(retryTimer.current);
+    setStatus(
+      `Connection interrupted. Reconnecting to Studio…${failure.current ? ` ${failure.current}` : ""}`,
+    );
     retryTimer.current = setTimeout(() => {
       if (operationFlight.current) recover();
       else void run(connect);
@@ -355,6 +358,10 @@ export function M2CameraSlot({
     });
     const value = await result.json().catch(() => null);
     if (!result.ok) {
+      // A response from the replaced connection must not clear consent or
+      // recovery state belonging to its successor.
+      if (requestEpoch !== epoch.current)
+        throw Error("Previous camera request ended");
       recoverable.current =
         result.status >= 500 ||
         value?.code === "studio_stale" ||
@@ -585,6 +592,13 @@ export function M2CameraSlot({
     captureEvidence.current = {};
     const attempt = epoch.current;
     if (side === "camera") {
+      if (!cameraPublishAccessToken(localStorage, id, cameraRole)) {
+        captureConsentAt.current = 0;
+        setClaimed(false);
+        failure.current =
+          "Camera access has expired or is missing. Scan Reconnect QR from Studio in this phone’s original browser, then tap Connect phone.";
+        throw Error();
+      }
       stage.current = "camera capture";
       if (!window.isSecureContext || !navigator.mediaDevices?.getUserMedia) {
         setStatus(
@@ -721,7 +735,7 @@ export function M2CameraSlot({
         cleanup(failure.current);
         setStatus(failure.current);
         if (
-          /signaling disconnected|Signaling stopped|Studio authority expired|WebRTC transport failed|Direct connection failed|Path check stopped/i.test(
+          /signaling disconnected|Signaling stopped|Studio authority expired|Studio or camera authority ended|Signaling authority ended|No verified direct path|Direct path statistics unavailable|Unable to verify the media path|WebRTC could not apply|WebRTC transport failed|Direct connection failed|Path check stopped/i.test(
             reason,
           )
         )

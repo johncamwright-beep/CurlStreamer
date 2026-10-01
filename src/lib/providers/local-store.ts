@@ -197,6 +197,35 @@ export function claimRole(
     return { game, generation };
   });
 }
+export function prepareCameraReconnect(
+  id: string,
+  role: "camera-home" | "camera-away",
+  invitationId: string,
+  expiresAt: string,
+) {
+  return mutate((games, invitations) => {
+    const game = games.get(id);
+    const deviceId = game?.claims[role];
+    if (
+      !game ||
+      game.status !== "active" ||
+      !deviceId ||
+      expiresAt <= new Date().toISOString()
+    )
+      return {
+        error: "This camera assignment is unavailable. Refresh the game.",
+      };
+    const generation = game.claimGenerations?.[role] ?? 0;
+    invitations.set(invitationId, {
+      gameId: id,
+      role,
+      generation,
+      expiresAt,
+      claimant: deviceId,
+    });
+    return { deviceId, generation };
+  });
+}
 export function releaseRole(
   id: string,
   role: "camera-home" | "camera-away",

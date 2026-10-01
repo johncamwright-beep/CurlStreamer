@@ -41,6 +41,19 @@ test.beforeAll(async () => {
   )!.text;
 });
 async function openCards(page: Page) {
+  await page.route(
+    `**/api/games/${testGameId}/camera-reconnect-invitation`,
+    (route) =>
+      route.fulfill({
+        json: {
+          url: new URL(
+            `/studio-m2/${testGameId}/camera/${route.request().postDataJSON().role}#token=fixture-renewal`,
+            route.request().url(),
+          ).href,
+          expiresAt: new Date(Date.now() + 600_000).toISOString(),
+        },
+      }),
+  );
   await page.route("**/device-fixture", (route) =>
     route.fulfill({
       contentType: "text/html",
@@ -90,7 +103,9 @@ test("device QR requests are explicit, role-specific and cleared when claimed", 
     camera1.getByRole("link", { name: "Open reconnect page" }),
   ).toHaveAttribute(
     "href",
-    new RegExp("/studio-m2/" + testGameId + "/camera/camera-home$"),
+    new RegExp(
+      "/studio-m2/" + testGameId + "/camera/camera-home#token=fixture-renewal$",
+    ),
   );
   expect(roles).toEqual([]);
   await camera2.getByRole("button", { name: "Show QR code" }).click();

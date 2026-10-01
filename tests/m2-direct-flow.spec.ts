@@ -108,12 +108,13 @@ test("camera-away fresh invitation supersedes saved access and claims only that 
     { id: game },
   );
   const claims: unknown[] = [];
+  const freshAccess = `test.${Buffer.from(JSON.stringify({ gameId: game, purpose: "participant", role: "camera-away", exp: Date.now() / 1000 + 3600, assignmentGeneration: 3 })).toString("base64url")}.test`;
   await page.route(`**/api/games/${game}/claim`, async (route) => {
     claims.push(route.request().postDataJSON());
     await route.fulfill({
       json: {
         role: "camera-away",
-        sessionToken: "synthetic-new-camera-away-access",
+        sessionToken: freshAccess,
       },
     });
   });
@@ -143,6 +144,12 @@ test("camera-away fresh invitation supersedes saved access and claims only that 
   expect(claims).toEqual([
     { token: "synthetic-fresh-away", claimant: expect.any(String) },
   ]);
+  expect(
+    await page.evaluate(
+      (id) => localStorage.getItem(`curlcast-participant-access-${id}`),
+      game,
+    ),
+  ).toBe(freshAccess);
   expect(
     await page
       .locator("video")

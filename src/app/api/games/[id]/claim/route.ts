@@ -44,6 +44,14 @@ export async function POST(
     )
       throw new Error();
     verifiedInvitation = true;
+    if (claims.deviceId && claims.deviceId !== body.claimant)
+      return NextResponse.json(
+        {
+          error:
+            "Open this reconnect code in the original phone browser. To use a different device, ask the organizer to release and reassign this camera.",
+        },
+        { status: 409 },
+      );
     const authorization = await authorizeGame(
       new Request(request.url, {
         headers: { authorization: `Bearer ${body.token}` },

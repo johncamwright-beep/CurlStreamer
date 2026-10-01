@@ -28,6 +28,7 @@ import {
   getGame,
   listCameraIdentityGenerations,
   prepareRoleInvitation,
+  prepareCameraReconnect,
   releaseRole,
   updateGame,
 } from "./supabase-store";
@@ -882,6 +883,41 @@ describe("Supabase score-event persistence", () => {
 });
 
 describe("Supabase assignment generation RPCs", () => {
+  it("renews only database-selected valid device and generation metadata", async () => {
+    const deviceId = "22222222-2222-4222-8222-222222222222";
+    mocks.rpc.mockResolvedValueOnce({
+      data: { deviceId, generation: 4 },
+      error: null,
+    });
+    await expect(
+      prepareCameraReconnect(
+        "game-1",
+        "camera-home",
+        "renewal",
+        "2030-01-01T00:00:00.000Z",
+      ),
+    ).resolves.toEqual({ deviceId, generation: 4 });
+    expect(mocks.rpc).toHaveBeenCalledWith("prepare_game_camera_reconnect", {
+      p_game_id: "game-1",
+      p_role: "camera-home",
+      p_invitation_id: "renewal",
+      p_expires_at: "2030-01-01T00:00:00.000Z",
+    });
+    mocks.rpc.mockResolvedValueOnce({
+      data: { deviceId: "invalid", generation: -1 },
+      error: null,
+    });
+    expect(
+      (
+        await prepareCameraReconnect(
+          "game-1",
+          "camera-home",
+          "invalid",
+          "2030-01-01T00:00:00.000Z",
+        )
+      ).error,
+    ).toBeTruthy();
+  });
   beforeEach(() => {
     mocks.rpc.mockReset().mockResolvedValue({ error: null });
     mocks.maybeSingle.mockReset();

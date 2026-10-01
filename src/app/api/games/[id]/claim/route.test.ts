@@ -30,6 +30,24 @@ const request = () =>
   });
 
 describe("atomic role claim route", () => {
+  it("rejects a reconnect code opened by a different device before exchange", async () => {
+    mocks.readAccessToken.mockResolvedValue({
+      gameId: "game-1",
+      purpose: "invitation",
+      role: "camera-home",
+      jti: invitationId,
+      deviceId: "33333333-3333-4333-8333-333333333333",
+      assignmentGeneration: 4,
+      exp: Math.floor(Date.now() / 1000) + 600,
+    });
+    const response = await POST(request(), {
+      params: Promise.resolve({ id: "game-1" }),
+    });
+    expect(response.status).toBe(409);
+    expect((await response.json()).error).toContain("original phone browser");
+    expect(mocks.claimRole).not.toHaveBeenCalled();
+    expect(mocks.issueParticipantToken).not.toHaveBeenCalled();
+  });
   it("returns a retryable outage without accepting claims when the limiter fails", async () => {
     mocks.rateLimit.mockRejectedValue(new Error("offline"));
     const response = await POST(request(), {

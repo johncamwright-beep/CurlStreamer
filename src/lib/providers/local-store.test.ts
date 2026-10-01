@@ -39,6 +39,47 @@ afterEach(() => {
 });
 
 describe("local-store shared assignment authority", () => {
+  it("renews the existing camera without changing its generation and rejects reuse after release", async () => {
+    const store = await loadFreshStore();
+    const game = store.createGame(config);
+    const claimant = "11111111-1111-4111-8111-111111111111";
+    const expiresAt = new Date(Date.now() + 60_000).toISOString();
+    store.prepareRoleInvitation(game.id, "camera-home", "first", expiresAt);
+    store.claimRole(game.id, "camera-home", claimant, {
+      id: "first",
+      expectedGeneration: 1,
+      expiresAt,
+    });
+    expect(
+      store.prepareCameraReconnect(game.id, "camera-home", "renew", expiresAt),
+    ).toEqual({ deviceId: claimant, generation: 1 });
+    expect(
+      store.claimRole(game.id, "camera-home", claimant, {
+        id: "renew",
+        expectedGeneration: 1,
+        expiresAt,
+      }),
+    ).toMatchObject({ generation: 1 });
+    expect(
+      store.claimRole(game.id, "camera-home", "other", {
+        id: "renew",
+        expectedGeneration: 1,
+        expiresAt,
+      }),
+    ).toHaveProperty("error");
+    expect(store.getGame(game.id)?.claimGenerations?.["camera-home"]).toBe(1);
+    store.releaseRole(game.id, "camera-home", claimant, 1);
+    expect(
+      store.claimRole(game.id, "camera-home", claimant, {
+        id: "renew",
+        expectedGeneration: 1,
+        expiresAt,
+      }),
+    ).toHaveProperty("error");
+    expect(
+      store.prepareCameraReconnect(game.id, "camera-away", "absent", expiresAt),
+    ).toHaveProperty("error");
+  });
   it("persists reconnect intent without changing scores or camera assignment", async () => {
     const store = await loadFreshStore();
     const game = store.createGame(config);

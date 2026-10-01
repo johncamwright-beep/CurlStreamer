@@ -236,7 +236,9 @@ test("M2 phone retains its microphone through intent polls and stays awake after
   ).toBe(2);
   // A transient peer failure recovers without another phone tap or wake release.
   await page.evaluate(() =>
-    (window as any).__m2PhoneAudio.interrupt("signaling disconnected"),
+    (window as any).__m2PhoneAudio.interrupt(
+      "No verified direct path within 45 seconds. Reconnect both pages.",
+    ),
   );
   await expect
     .poll(() =>

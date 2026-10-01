@@ -1,7 +1,7 @@
 import "server-only";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { randomUUID } from "crypto";
-import type { z } from "zod";
+import { z } from "zod";
 import type { actionSchema } from "../schema";
 import { applyScoringAction } from "../scoring";
 import type { GameConfig, GameState, ParticipantAuthority } from "../types";
@@ -121,6 +121,34 @@ export async function prepareRoleInvitation(
   });
   if (error) return { error: "This invitation could not be created." };
   return { generation: Number(data) };
+}
+
+export async function prepareCameraReconnect(
+  id: string,
+  role: "camera-home" | "camera-away",
+  invitationId: string,
+  expiresAt: string,
+): Promise<{ error?: string; deviceId?: string; generation?: number }> {
+  const { data, error } = await supabase().rpc(
+    "prepare_game_camera_reconnect",
+    {
+      p_game_id: id,
+      p_role: role,
+      p_invitation_id: invitationId,
+      p_expires_at: expiresAt,
+    },
+  );
+  const result = z
+    .object({
+      deviceId: z.uuid(),
+      generation: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER),
+    })
+    .safeParse(data);
+  if (error || !result.success)
+    return {
+      error: "This camera assignment is unavailable. Refresh the game.",
+    };
+  return result.data;
 }
 
 async function getGameRecord(id: string) {

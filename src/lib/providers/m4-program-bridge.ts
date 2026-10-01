@@ -8,6 +8,10 @@ import { createM4UsbAudioQueue } from "./m4-usb-audio";
 import type { M4ProgramClient } from "./m4-program-client";
 import { StudioTransportUnavailable } from "./studio-transport-error";
 import {
+  m4CameraDrainIdentitySchema,
+  type M4CameraDrainIdentity,
+} from "./m4-program-realtime";
+import {
   connectionDiagnosticSchema,
   type ConnectionDiagnostic,
 } from "./connection-diagnostics";
@@ -41,7 +45,7 @@ export async function createM4ProgramBridge(
   },
   realtime?: {
     connect(role: CameraRole): Promise<unknown>;
-    drain(role: CameraRole): Promise<unknown>;
+    drain(role: CameraRole, identity: M4CameraDrainIdentity): Promise<unknown>;
     close(): Promise<void>;
   },
   rendererAssets?: {
@@ -266,10 +270,35 @@ export async function createM4ProgramBridge(
       return;
     }
     if (request.method === "GET" && request.url?.startsWith("/events/")) {
+      const url = new URL(request.url, "http://127.0.0.1");
       const role = cameraRoleSchema.safeParse(
-        request.url.slice("/events/".length),
+        url.pathname.slice("/events/".length),
       );
-      if (!realtime || !role.success) {
+      const values = Object.fromEntries(url.searchParams);
+      const numericScope = z
+        .object({
+          generation: z.string().regex(/^[1-9][0-9]*$/),
+          assignmentGeneration: z.string().regex(/^(0|[1-9][0-9]*)$/),
+        })
+        .safeParse(values);
+      const identity = m4CameraDrainIdentitySchema.safeParse({
+        ...values,
+        generation:
+          values.generation === undefined
+            ? undefined
+            : Number(values.generation),
+        assignmentGeneration:
+          values.assignmentGeneration === undefined
+            ? undefined
+            : Number(values.assignmentGeneration),
+      });
+      if (
+        !realtime ||
+        !role.success ||
+        !identity.success ||
+        !numericScope.success ||
+        [...url.searchParams.keys()].length !== 4
+      ) {
         reply(403, { error: "Program request denied" });
         return;
       }
@@ -277,7 +306,7 @@ export async function createM4ProgramBridge(
         const events = z
           .array(signalEnvelopeSchema)
           .max(128)
-          .parse(await realtime.drain(role.data));
+          .parse(await realtime.drain(role.data, identity.data));
         if (closed || events.some((event) => event.cameraRole !== role.data))
           throw Error();
         reply(200, { events });

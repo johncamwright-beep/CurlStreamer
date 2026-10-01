@@ -36,6 +36,14 @@ function message(extra: Record<string, unknown> = {}) {
     ...extra,
   };
 }
+function identity() {
+  return {
+    sessionId: session,
+    negotiationId: negotiation,
+    generation: 1,
+    assignmentGeneration: 2,
+  };
+}
 function fixture() {
   const action = vi.fn(
     async (body: { action: string; cameraRole: CameraRole }) =>
@@ -67,6 +75,61 @@ afterEach(() => {
 });
 
 describe("Node-owned program realtime boundary", () => {
+  it("rejects a late retired drain without consuming or stopping the successor's queued signaling", async () => {
+    const f = fixture();
+    await f.relay.connect("camera-home");
+    const replacement = {
+      ...ticket(),
+      negotiationId: "77777777-7777-4777-8777-777777777777",
+      generation: 2,
+      assignmentGeneration: 3,
+    };
+    replacement.topic = `m2:camera-home:${session}:2:${replacement.negotiationId}:receiver`;
+    f.client.action.mockResolvedValue(replacement);
+    await f.relay.connect("camera-home");
+    const nextMessage = message({
+      negotiationId: replacement.negotiationId,
+      generation: 2,
+      assignmentGeneration: 3,
+    });
+    f.subscriptions[1].options.receive(nextMessage);
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+    for (const mismatch of [
+      identity(),
+      {
+        ...identity(),
+        negotiationId: replacement.negotiationId,
+        generation: 2,
+      },
+      {
+        ...identity(),
+        negotiationId: replacement.negotiationId,
+        assignmentGeneration: 3,
+      },
+      {
+        ...identity(),
+        negotiationId: replacement.negotiationId,
+        generation: 2,
+        assignmentGeneration: 3,
+        sessionId: "88888888-8888-4888-8888-888888888888",
+      },
+    ])
+      await expect(f.relay.drain("camera-home", mismatch)).rejects.toThrow(
+        "m4_program_realtime_unavailable",
+      );
+    expect(f.subscriptions[1].close).not.toHaveBeenCalled();
+    expect(
+      await f.relay.drain("camera-home", {
+        ...identity(),
+        negotiationId: replacement.negotiationId,
+        generation: 2,
+        assignmentGeneration: 3,
+      }),
+    ).toEqual([nextMessage]);
+    await f.relay.close();
+  });
   it("does not write a remote authority check for each empty renderer poll", async () => {
     vi.useFakeTimers();
     vi.spyOn(performance, "now").mockImplementation(() => Date.now());
@@ -75,11 +138,11 @@ describe("Node-owned program realtime boundary", () => {
       await f.relay.connect("camera-home");
       for (let i = 0; i < 4; i++) {
         await vi.advanceTimersByTimeAsync(1000);
-        expect(await f.relay.drain("camera-home")).toEqual([]);
+        expect(await f.relay.drain("camera-home", identity())).toEqual([]);
       }
       expect(f.client.action).toHaveBeenCalledTimes(2);
       await vi.advanceTimersByTimeAsync(1000);
-      await f.relay.drain("camera-home");
+      await f.relay.drain("camera-home", identity());
       expect(f.client.action).toHaveBeenCalledTimes(3);
       expect(f.subscriptions[0].renew).toHaveBeenCalledTimes(1);
     } finally {
@@ -95,9 +158,9 @@ describe("Node-owned program realtime boundary", () => {
     await vi.advanceTimersByTimeAsync(5000);
     expect(f.subscriptions[0].close).not.toHaveBeenCalled();
     expect(f.subscriptions[0].renew).not.toHaveBeenCalled();
-    await expect(f.relay.drain("camera-home")).rejects.toBeInstanceOf(
-      StudioTransportUnavailable,
-    );
+    await expect(
+      f.relay.drain("camera-home", identity()),
+    ).rejects.toBeInstanceOf(StudioTransportUnavailable);
     await vi.advanceTimersByTimeAsync(14000);
     expect(f.subscriptions[0].close).toHaveBeenCalledTimes(1);
     await f.relay.close();
@@ -162,11 +225,11 @@ describe("Node-owned program realtime boundary", () => {
       ]);
       await f.relay.connect("camera-away");
       f.subscriptions[0].options.failed();
-      await expect(f.relay.drain("camera-home")).rejects.toThrow(
+      await expect(f.relay.drain("camera-home", identity())).rejects.toThrow(
         /^m4_program_realtime_unavailable$/,
       );
       expect(f.subscriptions[0].close).toHaveBeenCalledTimes(1);
-      expect(await f.relay.drain("camera-away")).toEqual([]);
+      expect(await f.relay.drain("camera-away", identity())).toEqual([]);
       expect(f.subscriptions[1].close).not.toHaveBeenCalled();
     } finally {
       await f.relay.close();
@@ -186,12 +249,14 @@ describe("Node-owned program realtime boundary", () => {
       const incoming = message();
       f.subscriptions[0].options.receive(incoming);
       f.subscriptions[0].options.receive(incoming);
-      expect(await f.relay.drain("camera-home")).toEqual([incoming]);
-      expect(await f.relay.drain("camera-home")).toEqual([]);
-      expect(await f.relay.drain("camera-away")).toEqual([]);
-      expect(JSON.stringify(await f.relay.drain("camera-home"))).not.toContain(
-        "private-token",
-      );
+      expect(await f.relay.drain("camera-home", identity())).toEqual([
+        incoming,
+      ]);
+      expect(await f.relay.drain("camera-home", identity())).toEqual([]);
+      expect(await f.relay.drain("camera-away", identity())).toEqual([]);
+      expect(
+        JSON.stringify(await f.relay.drain("camera-home", identity())),
+      ).not.toContain("private-token");
       expect(
         f.client.action.mock.calls.filter(([body]) => body.action === "check")
           .length,
@@ -226,7 +291,7 @@ describe("Node-owned program realtime boundary", () => {
         { secret: "must not forward" },
       ])
         f.subscriptions[0].options.receive(message(change));
-      expect(await f.relay.drain("camera-home")).toEqual([]);
+      expect(await f.relay.drain("camera-home", identity())).toEqual([]);
       expect(f.client.action).toHaveBeenCalledTimes(2);
     } finally {
       await f.relay.close();
@@ -247,7 +312,7 @@ describe("Node-owned program realtime boundary", () => {
     await Promise.resolve();
     await f.relay.close();
     resolve(ticket());
-    await expect(f.relay.drain("camera-home")).rejects.toThrow(
+    await expect(f.relay.drain("camera-home", identity())).rejects.toThrow(
       /^m4_program_realtime_unavailable$/,
     );
   });
@@ -262,7 +327,7 @@ describe("Node-owned program realtime boundary", () => {
       f.client.action.mockRejectedValueOnce(
         new Error("private-upstream-error"),
       );
-      await expect(f.relay.drain("camera-home")).rejects.toThrow(
+      await expect(f.relay.drain("camera-home", identity())).rejects.toThrow(
         /^m4_program_realtime_unavailable$/,
       );
       expect(f.subscriptions[0].close).toHaveBeenCalled();
@@ -276,7 +341,7 @@ describe("Node-owned program realtime boundary", () => {
       await f.relay.connect("camera-home");
       for (let i = 0; i < 40; ++i)
         f.subscriptions[0].options.receive(message());
-      await expect(f.relay.drain("camera-home")).rejects.toThrow(
+      await expect(f.relay.drain("camera-home", identity())).rejects.toThrow(
         /^m4_program_realtime_unavailable$/,
       );
       expect(f.subscriptions[0].close).toHaveBeenCalledTimes(1);
@@ -312,7 +377,7 @@ describe("Node-owned program realtime boundary", () => {
     await f.relay.connect("camera-home");
     await vi.advanceTimersByTimeAsync(500);
     expect(f.subscriptions[0].close).toHaveBeenCalledTimes(1);
-    await expect(f.relay.drain("camera-home")).rejects.toThrow(
+    await expect(f.relay.drain("camera-home", identity())).rejects.toThrow(
       /^m4_program_realtime_unavailable$/,
     );
     await f.relay.close();

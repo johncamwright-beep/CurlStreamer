@@ -268,18 +268,58 @@ describe("private loopback program API", () => {
     expect(value.sessionId).toBe(ticket.sessionId);
     expect(value).not.toHaveProperty("token");
     expect(value).not.toHaveProperty("topic");
-    const events = await fetch(bridge.address + "/events/camera-home", {
-      headers: {
-        authorization: bridge.authorization,
-        "sec-fetch-site": "same-origin",
+    const identity = {
+      sessionId: ticket.sessionId,
+      negotiationId: ticket.negotiationId,
+      generation: ticket.generation,
+      assignmentGeneration: ticket.assignmentGeneration,
+    };
+    const scope = new URLSearchParams(
+      Object.entries(identity).map(([key, value]) => [key, String(value)]),
+    );
+    const events = await fetch(
+      bridge.address + `/events/camera-home?${scope}`,
+      {
+        headers: {
+          authorization: bridge.authorization,
+          "sec-fetch-site": "same-origin",
+        },
       },
-    });
+    );
     expect(await events.json()).toEqual({ events: [] });
-    expect(realtime.drain).toHaveBeenCalledWith("camera-home");
+    expect(realtime.drain).toHaveBeenCalledExactlyOnceWith(
+      "camera-home",
+      identity,
+    );
     expect(
       (await fetch(bridge.address + "/events/camera-home?other=1", { headers }))
         .status,
     ).toBe(403);
+    for (const suffix of [
+      "",
+      `?${scope}&other=1`,
+      `?${scope}&generation=2`,
+      `?${scope.toString().replace("generation=1", "generation=NaN")}`,
+      `?${scope.toString().replace("assignmentGeneration=1", "assignmentGeneration=-1")}`,
+      `?${scope.toString().replace(ticket.negotiationId, "invalid")}`,
+    ]) {
+      expect(
+        (
+          await fetch(bridge.address + `/events/camera-home${suffix}`, {
+            headers,
+          })
+        ).status,
+      ).toBe(403);
+    }
+    expect(realtime.drain).toHaveBeenCalledTimes(1);
+    realtime.drain.mockRejectedValueOnce(new Error("retired identity"));
+    expect(
+      (
+        await fetch(bridge.address + `/events/camera-home?${scope}`, {
+          headers,
+        })
+      ).status,
+    ).toBe(409);
     await bridge.close();
     expect(realtime.close).toHaveBeenCalledTimes(1);
   });

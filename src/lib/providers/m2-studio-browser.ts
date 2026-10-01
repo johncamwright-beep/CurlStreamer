@@ -10,6 +10,15 @@ import {
 import { DirectPeer, type DirectMetrics } from "./direct-peer";
 import type { z } from "zod";
 import { StudioTransportUnavailable } from "./studio-transport-error";
+import { ConnectionFailure } from "./camera-connection-coordinator";
+
+const temporary = (cause: unknown) =>
+  cause instanceof StudioTransportUnavailable ||
+  (cause instanceof ConnectionFailure && cause.retryable);
+const authorityFailure = (cause: unknown) =>
+  cause instanceof ConnectionFailure
+    ? cause
+    : new ConnectionFailure("authority_rejected", false);
 
 export type StudioRequest = (
   body: z.infer<typeof studioRequestSchema>,
@@ -23,7 +32,7 @@ export async function connectStudio(options: {
   request: StudioRequest;
   onVideo: (stream: MediaStream) => void;
   onMetrics: (metrics: DirectMetrics) => void;
-  onStop: (reason: string) => void;
+  onStop: (reason: string, failure?: ConnectionFailure) => void;
 }) {
   const config = publicSupabaseConfig(
     process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -61,6 +70,7 @@ export async function connectStudio(options: {
       negotiationId: ticket.negotiationId!,
       ...(signal ? { signal } : {}),
     });
+    if (closed) throw new ConnectionFailure("stopped", false);
     if (action !== "signal") {
       const next = studioTicketSchema.parse(value);
       if (
@@ -70,7 +80,7 @@ export async function connectStudio(options: {
         next.assignmentGeneration !== ticket.assignmentGeneration ||
         next.generation !== ticket.generation
       )
-        throw Error("Studio authority changed.");
+        throw new ConnectionFailure("authority_rejected", false);
       if (next.serverTime !== undefined) {
         const receivedAt = performance.now();
         clock = {
@@ -89,7 +99,8 @@ export async function connectStudio(options: {
   let ready: ReturnType<typeof setInterval> | undefined;
   let cancelSubscription: (() => void) | undefined;
   let renewing = false,
-    inspecting = false;
+    inspecting = false,
+    announcing = false;
   const seen = new Set<string>();
   // Aggregate counters only: never retain signaling payloads in diagnostics.
   const signaling = { received: 0, accepted: 0, expired: 0, rejected: 0 };
@@ -98,17 +109,42 @@ export async function connectStudio(options: {
     side: options.side,
     track: options.track,
     send: async (signal) => {
-      if (!closed) await request("signal", signal);
+      if (closed) throw new ConnectionFailure("stopped", false);
+      try {
+        await request("signal", signal);
+      } catch (cause) {
+        if (cause instanceof ConnectionFailure && !cause.retryable)
+          stop(
+            "Studio authority ended. Reconnect only while the game remains active.",
+            cause,
+          );
+        throw cause;
+      }
     },
-    onVideo: options.onVideo,
+    onVideo: (stream) => {
+      if (!closed) options.onVideo(stream);
+    },
     onFailure: (reason, metrics) => {
       if (closed) return;
       // Preserve the rejected sample before stop finalizes the timed recorder.
       if (metrics) options.onMetrics(metrics);
-      stop(reason);
+      stop(
+        "Direct camera connection ended. Reconnect to resume.",
+        new ConnectionFailure("verification_failed", true),
+      );
+    },
+    onConfirmationFailure: (cause) => {
+      if (closed) return;
+      if (temporary(cause) && serverNow(true) < ticket.expiresAt) return;
+      stop(
+        "Direct camera confirmation ended. Reconnect to resume.",
+        temporary(cause)
+          ? new ConnectionFailure("lease_expired", true)
+          : authorityFailure(cause),
+      );
     },
   });
-  function stop(reason?: string) {
+  function stop(reason?: string, failure?: ConnectionFailure) {
     if (closed) return;
     closed = true;
     clearInterval(heartbeat);
@@ -120,9 +156,13 @@ export async function connectStudio(options: {
     options.track?.stop();
     if (channel) void db.removeChannel(channel);
     window.removeEventListener("pagehide", onPageHide);
-    if (reason) options.onStop(reason);
+    if (reason) options.onStop(reason, failure);
   }
-  const onPageHide = () => stop("This page closed. Reconnect to resume.");
+  const onPageHide = () =>
+    stop(
+      "This page closed. Reconnect to resume.",
+      new ConnectionFailure("backgrounded", true),
+    );
   const onAbort = () => stop();
   window.addEventListener("pagehide", onPageHide);
   options.signal?.addEventListener("abort", onAbort, { once: true });
@@ -140,19 +180,25 @@ export async function connectStudio(options: {
         next.generation !== ticket.generation ||
         !next.token
       )
-        throw Error();
+        throw new ConnectionFailure("authority_rejected", false);
       await db.realtime.setAuth(next.token);
+      if (closed) return;
       ticket = next;
     } catch (cause) {
       // A failed renewal cannot extend capture. Keep the original deadline;
       // explicit rejection still stops immediately.
-      if (cause instanceof StudioTransportUnavailable) {
+      if (closed) return;
+      if (temporary(cause)) {
         if (serverNow(true) >= ticket.expiresAt)
-          stop("Studio authority expired. Capture stopped.");
+          stop(
+            "Studio authority expired. Capture stopped.",
+            new ConnectionFailure("lease_expired", true),
+          );
         return;
       }
       stop(
         "Studio or camera authority ended. Reconnect only while the game and assignment remain active.",
+        authorityFailure(cause),
       );
     } finally {
       renewing = false;
@@ -198,6 +244,7 @@ export async function connectStudio(options: {
           if (seen.size > 256) seen.delete(seen.values().next().value!);
           // Channel ACLs are cached; revalidate every message against current DB authority.
           await request("check");
+          if (closed) return;
           remainingMs = Math.round(message.expiresAt - serverNow(true));
           if (
             !closed &&
@@ -211,19 +258,18 @@ export async function connectStudio(options: {
         .catch((cause) => {
           // Drop this envelope; never forward it without a fresh authority
           // check. Later messages can recover within the original ticket.
-          if (
-            cause instanceof StudioTransportUnavailable &&
-            serverNow(true) < ticket.expiresAt
-          )
-            return;
+          if (temporary(cause) && serverNow(true) < ticket.expiresAt) return;
           stop(
             "Signaling authority ended. Reconnect from the current session.",
+            temporary(cause)
+              ? new ConnectionFailure("lease_expired", true)
+              : authorityFailure(cause),
           );
         });
     });
     await new Promise<void>((resolve, reject) => {
       const timeout = setTimeout(
-        () => reject(Error("Private signaling subscription timed out.")),
+        () => reject(new ConnectionFailure("timeout", true)),
         10_000,
       );
       cancelSubscription = () => {
@@ -231,13 +277,18 @@ export async function connectStudio(options: {
         reject(Error("Connection cancelled."));
       };
       channel!.subscribe((status) => {
+        if (closed) return;
         if (status === "SUBSCRIBED") {
           clearTimeout(timeout);
           resolve();
         } else if (["CHANNEL_ERROR", "TIMED_OUT", "CLOSED"].includes(status)) {
           clearTimeout(timeout);
-          reject(Error("Private signaling unavailable."));
-          stop("Private signaling disconnected. Reconnect both pages.");
+          const failure = new ConnectionFailure("channel_closed", true);
+          reject(failure);
+          stop(
+            "Private signaling disconnected. Reconnect both pages.",
+            failure,
+          );
         }
       });
     });
@@ -249,7 +300,10 @@ export async function connectStudio(options: {
     monitor = setInterval(() => {
       if (closed) return;
       if (serverNow(true) >= ticket.expiresAt) {
-        stop("Studio authority expired. Capture stopped.");
+        stop(
+          "Studio authority expired. Capture stopped.",
+          new ConnectionFailure("lease_expired", true),
+        );
         return;
       }
       if (
@@ -258,6 +312,7 @@ export async function connectStudio(options: {
       ) {
         stop(
           "No verified direct path within 45 seconds. Reconnect both pages.",
+          new ConnectionFailure("verification_timeout", true),
         );
         return;
       }
@@ -267,6 +322,7 @@ export async function connectStudio(options: {
       ) {
         stop(
           "Direct path statistics unavailable for 10 seconds. Connection stopped.",
+          new ConnectionFailure("verification_timeout", true),
         );
         return;
       }
@@ -275,6 +331,7 @@ export async function connectStudio(options: {
       void peer
         .inspect()
         .then((metrics) => {
+          if (closed) return;
           metrics.signaling = { ...signaling };
           metrics.timing = {
             clock: clock ? "server" : "device",
@@ -284,17 +341,34 @@ export async function connectStudio(options: {
           if (metrics.direct) lastVerifiedAt = performance.now();
           if (!closed) options.onMetrics(metrics);
         })
-        .catch(() => stop("Unable to verify the media path."))
+        .catch(() =>
+          stop(
+            "Unable to verify the media path.",
+            new ConnectionFailure("verification_failed", true),
+          ),
+        )
         .finally(() => {
           inspecting = false;
         });
     }, 1_000);
     if (options.side === "camera") {
       const announce = () => {
-        if (!closed && !peer.pc.remoteDescription)
-          void request("signal", { type: "ready" }).catch(() =>
-            stop("Signaling stopped. Reconnect both pages."),
-          );
+        if (closed || announcing || peer.pc.remoteDescription) return;
+        announcing = true;
+        void request("signal", { type: "ready" })
+          .catch((cause) => {
+            if (closed) return;
+            if (temporary(cause) && serverNow(true) < ticket.expiresAt) return;
+            stop(
+              "Signaling stopped. Reconnect both pages.",
+              temporary(cause)
+                ? new ConnectionFailure("lease_expired", true)
+                : authorityFailure(cause),
+            );
+          })
+          .finally(() => {
+            announcing = false;
+          });
       };
       ready = setInterval(announce, 2_000);
       announce();
@@ -305,6 +379,7 @@ export async function connectStudio(options: {
       replaceAudioTrack: async (track: MediaStreamTrack | null) => {
         if (closed) throw Error("Studio connection has ended.");
         await peer.replaceAudioTrack(track);
+        if (closed) throw new ConnectionFailure("stopped", false);
       },
     };
   } catch (cause) {

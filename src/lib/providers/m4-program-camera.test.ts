@@ -17,6 +17,7 @@ vi.mock("./direct-peer", () => ({
 }));
 import { connectM4ProgramCamera } from "./m4-program-camera";
 import { StudioTransportUnavailable } from "./studio-transport-error";
+import { ConnectionFailure } from "./camera-connection-coordinator";
 const ticket = {
   cameraRole: "camera-home",
   sessionId: "22222222-2222-4222-8222-222222222222",
@@ -37,6 +38,75 @@ afterEach(() => {
   vi.useRealTimers();
 });
 describe("program renderer camera transport", () => {
+  it("scopes every event drain to the complete admitted receiver identity", async () => {
+    vi.useFakeTimers();
+    const request = vi
+      .fn()
+      .mockResolvedValue({ events: [] })
+      .mockResolvedValueOnce(ticket);
+    const handle = await connectM4ProgramCamera({ ...hooks(), request });
+    await vi.advanceTimersByTimeAsync(1000);
+    const reads = request.mock.calls.filter(([path]) =>
+      path.startsWith("/events/"),
+    );
+    expect(reads).toHaveLength(2);
+    for (const [path] of reads) {
+      const url = new URL(path, "http://localhost");
+      expect(url.pathname).toBe("/events/camera-home");
+      expect(Object.fromEntries(url.searchParams)).toEqual({
+        sessionId: ticket.sessionId,
+        negotiationId: ticket.negotiationId,
+        generation: "1",
+        assignmentGeneration: "1",
+      });
+    }
+    handle.stop();
+  });
+  it.each([
+    new ConnectionFailure("camera_released", false),
+    new ConnectionFailure("authority_rejected", false),
+    new StudioTransportUnavailable(),
+  ])(
+    "preserves typed setup failure identity instead of erasing recovery policy (%s)",
+    async (failure) => {
+      const h = hooks();
+      await expect(
+        connectM4ProgramCamera({
+          ...h,
+          request: vi.fn().mockRejectedValue(failure),
+        }),
+      ).rejects.toBe(failure);
+      expect(peer.created).not.toHaveBeenCalled();
+      expect(h.onStop).not.toHaveBeenCalled();
+    },
+  );
+
+  it("passes exact nonretryable authority metadata from a signal failure to its owner", async () => {
+    vi.useFakeTimers();
+    const h = hooks();
+    const failure = new ConnectionFailure("camera_released", false);
+    const request = vi.fn(async (path: string, body: unknown) => {
+      if (path.startsWith("/events/")) return { events: [] };
+      if ((body as { action: string }).action === "connect") return ticket;
+      throw failure;
+    });
+    const handle = await connectM4ProgramCamera({ ...h, request });
+    const options = peer.created.mock.calls[0][0] as {
+      send(value: { type: "path-confirmed" }): Promise<void>;
+      onConfirmationFailure(cause: unknown): void;
+    };
+    await expect(options.send({ type: "path-confirmed" })).rejects.toBe(
+      failure,
+    );
+    options.onConfirmationFailure(failure);
+    expect(h.onStop).toHaveBeenCalledExactlyOnceWith(
+      "Camera authority ended. Reconnect only while the game remains active.",
+      failure,
+    );
+    expect(peer.close).toHaveBeenCalledOnce();
+    handle.stop();
+  });
+
   it("retains its peer for a timed-out path notification but stops on revoked authority", async () => {
     vi.useFakeTimers();
     const h = hooks();
@@ -200,7 +270,10 @@ describe("program renderer camera transport", () => {
     });
     controller.abort();
     resolve(ticket);
-    await expect(pending).rejects.toThrow("m4_program_camera_unavailable");
+    await expect(pending).rejects.toMatchObject({
+      code: "stopped",
+      retryable: false,
+    });
     expect(peer.created).not.toHaveBeenCalled();
   });
   it("closes on a cross-camera event instead of delivering it to WebRTC", async () => {

@@ -28,6 +28,11 @@ function log(event: ConnectionDiagnosticInput) {
   ).catch(() => undefined);
 }
 
+import {
+  CameraConnectionCoordinator,
+  ConnectionFailure,
+} from "./camera-connection-coordinator";
+
 type CameraState = {
   stream?: MediaStream;
   audio?: MediaStream;
@@ -54,6 +59,8 @@ async function request(
   });
   if (isTemporaryStudioStatus(response.status) && !response.redirected)
     throw new StudioTransportUnavailable();
+  if ([401, 403, 410].includes(response.status) || response.redirected)
+    throw new ConnectionFailure("authority_rejected", false);
   if (!response.ok || response.redirected)
     throw new Error("program_unavailable");
   return response.json() as Promise<unknown>;
@@ -138,129 +145,141 @@ function ProgramRenderer() {
   }, []);
 
   useEffect(() => {
-    const controller = new AbortController();
-    const handles = new Map<ProgramCameraRole, { stop(): void }>();
-    const retries = new Map<ProgramCameraRole, ReturnType<typeof setTimeout>>();
-    const sampleAt = new Map<ProgramCameraRole, number>();
-    const retry = (role: ProgramCameraRole) => {
-      if (controller.signal.aborted || retries.has(role)) return;
-      log({ layer: "session", code: "retry", role });
-      retries.set(
-        role,
-        setTimeout(() => {
-          retries.delete(role);
-          void connect(role);
-        }, 1000),
-      );
-    };
-    const connect = async (role: ProgramCameraRole) => {
-      if (controller.signal.aborted || handles.has(role)) return;
-      let ended = false;
-      setCameras((current) => ({
-        ...current,
-        [role]: {
-          message: `Waiting for ${role === "camera-home" ? "Camera 1" : "Camera 2"}…`,
-        },
-      }));
-      try {
-        const handle = await connectM4ProgramCamera({
-          role,
-          request,
-          signal: controller.signal,
-          onVideo: (stream) => {
-            log({ layer: "media", code: "ready", role });
-            setCameras((current) => ({
-              ...current,
-              [role]: {
-                ...current[role],
-                stream,
-                message: "Verified direct camera",
-              },
-            }));
-          },
-          onAudio: (audio) =>
-            setCameras((current) => ({
-              ...current,
-              [role]: { ...current[role], audio },
-            })),
-          onMetrics: (metrics) => {
-            if (Date.now() - (sampleAt.get(role) ?? 0) >= 15_000) {
-              sampleAt.set(role, Date.now());
-              log({
-                layer: "media",
-                code: "sample",
-                role,
-                direct: metrics.direct,
-                connection: metrics.connectionState,
-                ice: metrics.iceConnectionState,
-                frames: metrics.framesDecoded,
-                bytes: metrics.bytesReceived,
-              });
-            }
-            void request(
-              "/camera",
-              {
-                action: "observe",
-                cameraRole: role,
-                frames: metrics.framesDecoded,
-                verified: metrics.direct,
-              },
-              controller.signal,
-            ).catch(() => undefined);
-            setCameras((current) => {
-              const message = metrics.direct
-                ? "Verified direct camera"
-                : "Verifying direct path…";
-              // ProgramCanvas only consumes the direct-path result. Avoid
-              // re-rendering the full program once per metrics sample when
-              // that visible verification state has not changed.
-              if (
-                current[role].metrics?.direct === metrics.direct &&
-                current[role].message === message
-              )
-                return current;
-              return {
-                ...current,
-                [role]: { ...current[role], metrics, message },
-              };
-            });
-          },
-          onStop: (message) => {
-            ended = true;
-            log({
-              layer: "peer",
-              code: connectionFailureReason(message),
+    const lifetime = new AbortController();
+    const owners = roles.map((role) => {
+      let sampleAt = 0;
+      let observationFlight = false;
+      return new CameraConnectionCoordinator({
+        connect: async (attempt) => {
+          attempt.phase("waiting-studio");
+          try {
+            return await connectM4ProgramCamera({
               role,
+              request,
+              signal: attempt.signal,
+              onVideo: (stream) => {
+                if (!attempt.current()) return;
+                log({ layer: "media", code: "ready", role });
+                setCameras((current) => ({
+                  ...current,
+                  [role]: { ...current[role], stream },
+                }));
+              },
+              onAudio: (audio) => {
+                if (attempt.current())
+                  setCameras((current) => ({
+                    ...current,
+                    [role]: { ...current[role], audio },
+                  }));
+              },
+              onMetrics: (metrics) => {
+                if (!attempt.current()) return;
+                attempt.phase(metrics.direct ? "streaming" : "negotiating");
+                if (Date.now() - sampleAt >= 15_000) {
+                  sampleAt = Date.now();
+                  log({
+                    layer: "media",
+                    code: "sample",
+                    role,
+                    direct: metrics.direct,
+                    connection: metrics.connectionState,
+                    ice: metrics.iceConnectionState,
+                    frames: metrics.framesDecoded,
+                    bytes: metrics.bytesReceived,
+                  });
+                }
+                if (!observationFlight) {
+                  observationFlight = true;
+                  const deadline = new AbortController();
+                  const timer = setTimeout(() => deadline.abort(), 5000);
+                  void request(
+                    "/camera",
+                    {
+                      action: "observe",
+                      cameraRole: role,
+                      frames: metrics.framesDecoded,
+                      verified: metrics.direct,
+                    },
+                    AbortSignal.any([attempt.signal, deadline.signal]),
+                  )
+                    .catch(() => undefined)
+                    .finally(() => {
+                      clearTimeout(timer);
+                      observationFlight = false;
+                    });
+                }
+                setCameras((current) =>
+                  current[role].metrics?.direct === metrics.direct
+                    ? current
+                    : { ...current, [role]: { ...current[role], metrics } },
+                );
+              },
+              onStop: (message, failure) => {
+                if (!attempt.current()) return;
+                const reason =
+                  failure ??
+                  new ConnectionFailure(connectionFailureReason(message), true);
+                log({ layer: "peer", code: reason.code, role });
+                attempt.fail(reason);
+              },
             });
-            handles.delete(role);
+          } catch (cause) {
+            if (cause instanceof ConnectionFailure) throw cause;
+            throw new ConnectionFailure(
+              cause instanceof StudioTransportUnavailable
+                ? "network_unavailable"
+                : "studio_stale",
+              true,
+            );
+          }
+        },
+        release: () => {
+          if (!lifetime.signal.aborted)
             setCameras((current) => ({
               ...current,
-              [role]: { metrics: current[role].metrics, message },
+              [role]: { message: "Waiting for camera…" },
             }));
-            retry(role);
-          },
-        });
-        // onStop can run before the connect promise settles. Installing that
-        // already-closed handle would make every subsequent retry a no-op.
-        if (controller.signal.aborted || ended) handle.stop();
-        else handles.set(role, handle);
-      } catch {
-        if (!controller.signal.aborted) {
-          setCameras((current) => ({
-            ...current,
-            [role]: {
-              message: "Waiting for camera…",
-            },
-          }));
-          retry(role);
-        }
-      }
-    };
-    for (const role of roles) void connect(role);
+        },
+        onState: (state) => {
+          if (lifetime.signal.aborted) return;
+          const message =
+            state.phase === "streaming"
+              ? "Verified direct camera"
+              : state.phase === "retrying"
+                ? "Reconnecting camera…"
+                : state.phase === "blocked"
+                  ? "Camera access ended. Reconnect from the scoring screen."
+                  : state.phase === "negotiating"
+                    ? "Verifying direct path…"
+                    : "Waiting for camera…";
+          log({
+            layer: "session",
+            code:
+              state.phase === "retrying"
+                ? "retry"
+                : state.phase === "streaming"
+                  ? "ready"
+                  : state.phase === "blocked"
+                    ? "authority_rejected"
+                    : "started",
+            role,
+            attempt: state.attempt,
+            ...(state.retryInMs === undefined
+              ? {}
+              : { durationMs: state.retryInMs }),
+          });
+          setCameras((current) =>
+            current[role].message === message
+              ? current
+              : { ...current, [role]: { ...current[role], message } },
+          );
+        },
+      });
+    });
+    owners.forEach((owner) => void owner.start());
     return () => {
-      controller.abort();
-      retries.forEach((timer) => clearTimeout(timer));
-      handles.forEach((handle) => handle.stop());
+      lifetime.abort();
+      owners.forEach((owner) => owner.close());
     };
   }, []);
 

@@ -16,6 +16,19 @@ import {
 
 type Envelope = z.infer<typeof signalEnvelopeSchema>;
 type SafeTicket = Omit<StudioTicket, "token" | "topic">;
+export const m4CameraDrainIdentitySchema = studioTicketSchema
+  .pick({
+    sessionId: true,
+    negotiationId: true,
+    generation: true,
+    assignmentGeneration: true,
+  })
+  .extend({
+    negotiationId: z.uuid(),
+    assignmentGeneration: z.number().int().nonnegative(),
+  })
+  .strict();
+export type M4CameraDrainIdentity = z.infer<typeof m4CameraDrainIdentitySchema>;
 export type M4RealtimeTransport = (options: {
   url: string;
   key: string;
@@ -417,10 +430,20 @@ export function createM4ProgramRealtime(options: {
         throw fail();
       }
     },
-    async drain(input: CameraRole): Promise<Envelope[]> {
+    async drain(
+      input: CameraRole,
+      identity: M4CameraDrainIdentity,
+    ): Promise<Envelope[]> {
       const role = roleValue(input),
         slot = slots.get(role);
-      if (!slot) throw fail();
+      const parsed = m4CameraDrainIdentitySchema.safeParse(identity);
+      if (
+        !slot ||
+        !parsed.success ||
+        !slot.ticket ||
+        !same(slot.ticket, { ...slot.ticket, ...parsed.data })
+      )
+        throw fail();
       return serial(slot, async () => {
         // Tickets independently validate authority every five seconds. Avoid
         // another database write for each empty local renderer poll. Queued

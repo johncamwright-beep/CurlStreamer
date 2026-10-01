@@ -6,6 +6,8 @@ const mocks = vi.hoisted(() => ({
     receive: ReturnType<typeof vi.fn>;
     close: ReturnType<typeof vi.fn>;
     inspect: ReturnType<typeof vi.fn>;
+    pc: { remoteDescription: unknown; connectionState: string };
+    callbacks: { onVideo(stream: MediaStream): void };
   }>,
   messages: [] as Array<(value: unknown) => void>,
 }));
@@ -16,13 +18,14 @@ vi.mock("./direct-peer", () => ({
     receive = vi.fn();
     close = vi.fn();
     inspect = vi.fn().mockResolvedValue({ direct: true, relayBytes: 0 });
-    constructor() {
+    constructor(public callbacks: { onVideo(stream: MediaStream): void }) {
       mocks.peers.push(this);
     }
   },
 }));
 import { connectStudio, type StudioRequest } from "./m2-studio-browser";
 import { StudioTransportUnavailable } from "./studio-transport-error";
+import { ConnectionFailure } from "./camera-connection-coordinator";
 function ticket(cameraRole: "camera-home" | "camera-away"): StudioTicket {
   return {
     cameraRole,
@@ -91,6 +94,155 @@ afterEach(() => {
   vi.unstubAllEnvs();
 });
 describe("M2 camera role authority and independent connections", () => {
+  it("keeps ready announcements single-flight and tolerates a temporary failure within the original lease", async () => {
+    const initial = ticket("camera-away");
+    let rejectReady!: (cause: unknown) => void;
+    const request = vi.fn<StudioRequest>().mockImplementation((body) =>
+      body.action === "signal"
+        ? new Promise((_resolve, reject) => {
+            rejectReady = reject;
+          })
+        : Promise.resolve(initial),
+    );
+    const onStop = vi.fn();
+    // Pairing has not produced an offer yet, so this phone announces ready.
+    const pending = connectStudio({
+      side: "camera",
+      ticket: initial,
+      request,
+      onStop,
+      onVideo: vi.fn(),
+      onMetrics: vi.fn(),
+    });
+    mocks.peers[0].pc.remoteDescription = null;
+    const connection = await pending;
+    const readyCalls = () =>
+      request.mock.calls.filter(
+        ([body]) => body.action === "signal" && body.signal?.type === "ready",
+      );
+    await vi.advanceTimersByTimeAsync(6000);
+    expect(readyCalls()).toHaveLength(1);
+    rejectReady(new ConnectionFailure("peer_stale", true));
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(readyCalls()).toHaveLength(2);
+    expect(onStop).not.toHaveBeenCalled();
+    expect(mocks.peers[0].close).not.toHaveBeenCalled();
+    connection.stop();
+    rejectReady(new StudioTransportUnavailable());
+    await vi.advanceTimersByTimeAsync(0);
+    expect(onStop).not.toHaveBeenCalled();
+  });
+
+  it("does not authenticate or subscribe after an aborted initial authority check settles late", async () => {
+    const initial = ticket("camera-away");
+    const controller = new AbortController();
+    let resolve!: (value: StudioTicket) => void;
+    const onVideo = vi.fn(),
+      onMetrics = vi.fn(),
+      onStop = vi.fn();
+    const pending = connectStudio({
+      side: "camera",
+      ticket: initial,
+      signal: controller.signal,
+      request: () =>
+        new Promise((done) => {
+          resolve = done;
+        }),
+      onVideo,
+      onMetrics,
+      onStop,
+    });
+    const assertion = expect(pending).rejects.toMatchObject({
+      code: "stopped",
+      retryable: false,
+    });
+    controller.abort();
+    resolve({ ...initial, serverTime: Date.now() + 60000 });
+    await assertion;
+    const db = mocks.createClient.mock.results[0].value;
+    expect(db.realtime.setAuth).not.toHaveBeenCalled();
+    expect(db.channel).not.toHaveBeenCalled();
+    mocks.peers[0].callbacks.onVideo({} as MediaStream);
+    expect(onVideo).not.toHaveBeenCalled();
+    expect(onMetrics).not.toHaveBeenCalled();
+    expect(onStop).not.toHaveBeenCalled();
+    expect(mocks.peers[0].close).toHaveBeenCalledOnce();
+  });
+
+  it("does not subscribe when initial authentication settles after cancellation", async () => {
+    const initial = ticket("camera-away");
+    const controller = new AbortController();
+    let finishAuth!: () => void;
+    const channel = vi.fn();
+    const setAuth = vi.fn(
+      () =>
+        new Promise<void>((done) => {
+          finishAuth = done;
+        }),
+    );
+    mocks.createClient.mockReturnValueOnce({
+      realtime: { setAuth },
+      channel,
+      removeChannel: vi.fn(),
+    });
+    const pending = connectStudio({
+      side: "camera",
+      ticket: initial,
+      signal: controller.signal,
+      request: vi.fn<StudioRequest>().mockResolvedValue(initial),
+      onVideo: vi.fn(),
+      onMetrics: vi.fn(),
+      onStop: vi.fn(),
+    });
+    const assertion = expect(pending).rejects.toThrow("Connection cancelled.");
+    await vi.advanceTimersByTimeAsync(0);
+    expect(setAuth).toHaveBeenCalledOnce();
+    controller.abort();
+    finishAuth();
+    await assertion;
+    expect(channel).not.toHaveBeenCalled();
+    expect(mocks.peers[0].close).toHaveBeenCalledOnce();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("ignores inspection, media, and signaling callbacks from a stopped connection", async () => {
+    const initial = ticket("camera-away");
+    const onMetrics = vi.fn(),
+      onVideo = vi.fn(),
+      onStop = vi.fn();
+    const request = vi.fn<StudioRequest>().mockResolvedValue(initial);
+    const connection = await connectStudio({
+      side: "receiver",
+      ticket: initial,
+      request,
+      onMetrics,
+      onVideo,
+      onStop,
+    });
+    let finishInspect!: (metrics: {
+      direct: boolean;
+      relayBytes: number;
+    }) => void;
+    mocks.peers[0].inspect.mockImplementationOnce(
+      () =>
+        new Promise((done) => {
+          finishInspect = done;
+        }),
+    );
+    await vi.advanceTimersByTimeAsync(1000);
+    connection.stop();
+    finishInspect({ direct: true, relayBytes: 0 });
+    mocks.peers[0].callbacks.onVideo({} as MediaStream);
+    mocks.messages[0](message(initial));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(request).toHaveBeenCalledOnce();
+    expect(mocks.peers[0].receive).not.toHaveBeenCalled();
+    expect(onMetrics).not.toHaveBeenCalled();
+    expect(onVideo).not.toHaveBeenCalled();
+    expect(onStop).not.toHaveBeenCalled();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
   it("recovers a temporary renewal outage using the same camera and scoped subscription", async () => {
     const initial = ticket("camera-away");
     const onStop = vi.fn();
@@ -133,6 +285,7 @@ describe("M2 camera role authority and independent connections", () => {
     await vi.advanceTimersByTimeAsync(21000);
     expect(onStop).toHaveBeenCalledExactlyOnceWith(
       "Studio authority expired. Capture stopped.",
+      expect.objectContaining({ code: "lease_expired", retryable: true }),
     );
     expect(mocks.peers[0].close).toHaveBeenCalledTimes(1);
   });
@@ -335,6 +488,7 @@ describe("M2 camera role authority and independent connections", () => {
     await vi.advanceTimersByTimeAsync(21_000);
     expect(homeStop).toHaveBeenCalledExactlyOnceWith(
       "Studio authority expired. Capture stopped.",
+      expect.objectContaining({ code: "lease_expired", retryable: true }),
     );
     expect(homeTrackStop).toHaveBeenCalledOnce();
     expect(awayStop).not.toHaveBeenCalled();

@@ -35,6 +35,7 @@ export const connectionDiagnosticSchema = z
       "studio_stale",
       "peer_stale",
       "camera_released",
+      "camera_page_replaced",
       "signal_limit",
       "permission_denied",
       "device_missing",

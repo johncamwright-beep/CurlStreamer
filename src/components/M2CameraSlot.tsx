@@ -49,6 +49,10 @@ import {
   type ConnectionAttempt,
   type ConnectionPhase,
 } from "@/lib/providers/camera-connection-coordinator";
+import {
+  CameraPageOwner,
+  cameraPageOwnerKey,
+} from "@/lib/providers/camera-page-owner";
 
 export function M2CameraSlot({
   id,
@@ -119,7 +123,8 @@ export function M2CameraSlot({
   const zoomReportFlight = useRef(false);
   const zoomCaptureStartedAt = useRef(0);
   async function reportZoom(range?: ZoomRange, value?: number) {
-    if (side !== "camera" || zoomReportFlight.current) return;
+    if (side !== "camera" || zoomReportFlight.current || !ownsCameraPage())
+      return;
     zoomReportFlight.current = true;
     const token = cameraPublishAccessToken(localStorage, id, cameraRole);
     try {
@@ -205,6 +210,23 @@ export function M2CameraSlot({
   const mounted = useRef(true);
   const operationFlight = useRef(false);
   const captureConsentAt = useRef(0);
+  const pageOwner = useRef<CameraPageOwner | undefined>(undefined);
+  function ownsCameraPage() {
+    return side !== "camera" || pageOwner.current?.held() === true;
+  }
+  function cameraPageOwner() {
+    return (pageOwner.current ??= new CameraPageOwner({
+      key: cameraPageOwnerKey(id, cameraRole),
+      onLost: () => {
+        captureConsentAt.current = 0;
+        cleanup("Camera connected in another tab");
+        log({ layer: "page", code: "camera_page_replaced" });
+        failure.current =
+          "This camera is connected from another tab. Use that tab, or tap Connect phone here to take over.";
+        if (mounted.current) setStatus(failure.current);
+      },
+    }));
+  }
   const reconnectCommand = useRef<string | undefined>(undefined);
   const owner = useRef<
     | CameraConnectionCoordinator<Awaited<ReturnType<typeof connectStudio>>>
@@ -217,7 +239,13 @@ export function M2CameraSlot({
     return (owner.current ??= new CameraConnectionCoordinator({
       connect: async (attempt) => {
         try {
-          return await connectFactory.current!(attempt);
+          const scopedAttempt = {
+            ...attempt,
+            current: () => attempt.current() && ownsCameraPage(),
+          };
+          if (!scopedAttempt.current())
+            throw new DOMException("Connection cancelled", "AbortError");
+          return await connectFactory.current!(scopedAttempt);
         } catch (cause) {
           if (cause instanceof ConnectionFailure) throw cause;
           if (cause instanceof StudioTransportUnavailable) {
@@ -246,7 +274,7 @@ export function M2CameraSlot({
       canRetry: () =>
         mounted.current &&
         (side === "camera"
-          ? Boolean(captureConsentAt.current)
+          ? Boolean(captureConsentAt.current) && ownsCameraPage()
           : Boolean(sessionRef.current)),
       retryDelays: [2000, 4000, 8000, 15000],
       onState: (state) => {
@@ -311,7 +339,7 @@ export function M2CameraSlot({
     status: CameraAudioStatus,
     reportEpoch = epoch.current,
   ) {
-    if (side !== "camera") return;
+    if (side !== "camera" || !ownsCameraPage()) return;
     if (reportEpoch !== epoch.current) return;
     if (audioStatusRef.current !== status)
       log({
@@ -379,6 +407,7 @@ export function M2CameraSlot({
   async function synchronizeAudio(fromGesture = false) {
     if (
       side !== "camera" ||
+      !ownsCameraPage() ||
       audioFlight.current ||
       (audioAttemptBlocked.current && !fromGesture)
     )
@@ -408,13 +437,24 @@ export function M2CameraSlot({
         : undefined;
     try {
       await reportAudio("pending", audioEpoch).catch(() => undefined);
+      if (
+        !acquisition &&
+        (audioEpoch !== epoch.current ||
+          !ownsCameraPage() ||
+          !connection.current)
+      )
+        return;
       const stream = next
         ? undefined
         : await (acquisition ??
             navigator.mediaDevices.getUserMedia({ audio: true, video: false }));
       next ??= stream?.getAudioTracks()[0];
       if (!next) throw Error("No microphone track was returned.");
-      if (audioEpoch !== epoch.current || !connection.current) {
+      if (
+        audioEpoch !== epoch.current ||
+        !ownsCameraPage() ||
+        !connection.current
+      ) {
         next.stop();
         return;
       }
@@ -426,7 +466,7 @@ export function M2CameraSlot({
       const audioConnection = connection.current;
       next.enabled = true;
       await audioConnection.replaceAudioTrack(next);
-      if (audioEpoch !== epoch.current) {
+      if (audioEpoch !== epoch.current || !ownsCameraPage()) {
         next.stop();
         return;
       }
@@ -564,6 +604,7 @@ export function M2CameraSlot({
   function cleanup(reason = "Connection cleanup") {
     if (owner.current) owner.current.stop();
     else releaseResources(reason);
+    pageOwner.current?.release();
   }
   function releaseResources(reason = "Connection cleanup") {
     recorder.current?.finish("interrupted", reason);
@@ -648,11 +689,13 @@ export function M2CameraSlot({
       owner.current?.close();
       owner.current = undefined;
       releaseResources("Receiver component unmounted");
+      pageOwner.current?.close();
+      pageOwner.current = undefined;
       window.removeEventListener("pagehide", hide);
       window.removeEventListener("hashchange", readInvitation);
     };
     // This component is mounted for one game and one side.
-  }, [id, side]);
+  }, [id, side, cameraRole]);
   useEffect(() => {
     if (side !== "receiver" || !session) return;
     let inFlight = false,
@@ -812,6 +855,14 @@ export function M2CameraSlot({
     setStatus("camera claimed. Keep the phone upright and start the camera.");
   }
   function connect() {
+    // Only a deliberate Connect gesture may take over from another page.
+    // Automatic and remote recovery keep checking the existing ownership.
+    if (side === "camera" && !cameraPageOwner().acquire()) {
+      failure.current =
+        "This browser could not save camera connection ownership. Enable website storage, then tap Connect phone.";
+      setStatus(failure.current);
+      return Promise.resolve();
+    }
     return coordinator().start();
   }
   async function establish(context: ConnectionAttempt) {
@@ -1012,7 +1063,12 @@ export function M2CameraSlot({
     if (side !== "camera" || !claimed) return;
     const lifetime = new AbortController();
     const poll = async () => {
-      if (audioPollFlight.current || lifetime.signal.aborted) return;
+      if (
+        audioPollFlight.current ||
+        lifetime.signal.aborted ||
+        !ownsCameraPage()
+      )
+        return;
       audioPollFlight.current = true;
       const pollEpoch = epoch.current;
       const pollTrack = track.current;
@@ -1026,7 +1082,12 @@ export function M2CameraSlot({
         const game = (await response
           .json()
           .catch(() => null)) as GameState | null;
-        if (lifetime.signal.aborted || pollEpoch !== epoch.current) return;
+        if (
+          lifetime.signal.aborted ||
+          pollEpoch !== epoch.current ||
+          !ownsCameraPage()
+        )
+          return;
         if ([401, 403].includes(response.status)) {
           captureConsentAt.current = 0;
           cleanup("Camera access ended");

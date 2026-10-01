@@ -89,6 +89,20 @@ Game state, camera claims, absolute authority expiry, direct-path verification l
 
 Remaining design work should follow evidence: profile program projection and cloud renewal latency, distinguish status polling from actual OBS delivery, and consider authenticated local signaling only if synchronized logs show cloud renewal is still the recurring bottleneck. Any local design needs an explicit bounded revocation model.
 
+### Competing phone tabs identified in the pilot 8 test
+
+Camera 1's exported log showed repeated negotiation failures and channel closures, followed by a brief verified direct connection. Studio's matching journal showed Camera 2 continuing to receive video while Camera 1 repeatedly lost its negotiation; the controller did not exit. John confirmed that Camera 1's phone had several camera tabs open. After closing the older tabs and connecting once in the newest tab, he reported that Camera 1 stayed connected. Starting on the wrong Wi-Fi may explain the initial failure, but it does not establish the cause of the later retries.
+
+The coordinator owns attempts within one mounted page. The remaining gap was ownership between pages: they share participant credentials in browser storage, so an older consenting page could read a newer camera credential and begin a competing negotiation. Server fencing correctly rejects the replaced negotiation, but automatic recovery allowed the pages to keep replacing each other.
+
+The phone now acquires a game-and-role page marker only when the operator taps Connect. Another tab's deliberate Connect retires the old page's capture, microphone, connection, and retries, with a clear takeover message. Synchronous ownership checks fence requests, awaited setup, microphone publication, and organizer-command polling even before a delayed storage event arrives. A retired page cannot erase its successor's marker on disconnect or closure. Automatic recovery retains ownership and cannot take it back. Ownership replacement is recorded as `camera_page_replaced` without recording the marker or credentials.
+
+This browser marker coordinates local pages; it grants no server authority. Existing camera authorization, assignment generation, negotiation identity, expiry, and release checks remain authoritative. Separate browsers or devices still require the existing server checks. This change needs only the phone website update; it does not require replacing native Studio or interrupting the working cameras.
+
+Teardown only retires the page's local active state and leaves an inert marker. Browser storage has no atomic compare-and-remove operation: reading then deleting could erase another tab's intervening acquisition. The marker cannot authorize retries after local retirement, and the next deliberate Connect overwrites it.
+
+Longer physical-device endurance and the saved YouTube broadcast recovery checks remain outstanding. Closing competing tabs is a confirmed successful user intervention, not a completed endurance test of the new guard.
+
 ## Validation and rollout
 
 Validation completed so far:
@@ -125,3 +139,13 @@ No real broadcast, camera release, or game reset was initiated during this revie
 3. Run both cameras for ten minutes with YouTube off. If steady, connect the saved YouTube broadcast and continue for 45–60 minutes. A short successful interval is not an endurance result.
 4. Exercise one phone interruption, Studio close/resume, and remote Reconnect camera. Record whether local picture/audio and the actual YouTube feed continue, separately from badges/status.
 5. If a drop occurs, export both phone connection logs promptly and retain both Studio journals. Compare the initiating event, not only later retry messages. This rollout has not yet passed the physical-device endurance check.
+
+### Page ownership validation
+
+- Final formatting and type checks passed. Full unit suite: 1,718 passed, with 95 conditional database checks skipped; this includes nine ownership tests.
+- Full main desktop/mobile browser run: 190 passed, 92 conditional checks skipped, and two initial failures. The new microphone fixture had a clock pause race; it was corrected by freezing time before mounting. The existing synthetic DirectPeer test encountered a browser-redacted peer-reflexive endpoint and correctly failed verification. Both affected files passed all 16 checks in an isolated rerun; verification restrictions were retained.
+- Final ownership implementation: all eight desktop/mobile regression checks passed, covering deliberate takeover, independent Camera 2, late callbacks/providers, delayed storage events, old-tab cleanup, remote recovery, and late microphone setup. The final change also passed a production build.
+- Separate YouTube/settings browser suite: all 78 passed with its successful production build. These were fixture tests; no real YouTube output was initiated.
+- Passive Studio observations at 20:06 UTC showed both roles reporting verified direct connections with advancing frame/byte counters. Combined with John's report after closing old tabs, this supports the competing-page diagnosis. It does not establish an endurance result for the new code.
+
+After the current camera run, reload the remaining camera page on each phone and tap Connect once to load the web guard. Keep only one camera page per phone during that transition. This update does not need another Studio installation. Deployment evidence will be recorded after the hosted source is verified.

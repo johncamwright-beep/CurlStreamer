@@ -1,8 +1,9 @@
 param(
   [Parameter(Mandatory = $true)][string]$StudioSource,
   [Parameter(Mandatory = $true)][string]$InstallerOutput,
-  [Parameter(Mandatory = $true)][string]$CompilerPath,
-  [switch]$AllowStreamingPreview
+  [string]$CompilerPath,
+  [switch]$AllowStreamingPreview,
+  [switch]$VerifyOnly
 )
 $ErrorActionPreference = "Stop"
 $sourceRoot = (Resolve-Path -LiteralPath $StudioSource).Path
@@ -27,13 +28,15 @@ foreach ($item in Get-ChildItem -LiteralPath $sourceRoot -Recurse -Force) {
   if ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) { throw "Linked files/directories are not package components." }
   if (-not $item.PSIsContainer -and -not $expected.Contains([IO.Path]::GetRelativePath($sourceRoot, $item.FullName).Replace('\', '/'))) { throw "Unexpected file in Studio assembly." }
 }
-foreach ($required in @('CurlStreamer Studio.exe', 'studio.json', 'node/node.exe', 'app/studio.mjs', 'native/m4_studio_host.exe', 'native/m4_studio_recorder.exe', 'obs/bin/64bit/obs.dll')) {
+foreach ($required in @('CurlStreamer Studio.exe', 'studio.json', 'node/node.exe', 'app/studio.mjs', 'native/m4_studio_host.exe', 'native/m4_studio_recorder.exe', 'native/m4_ip_camera.exe', 'native/default/curlstreamer-m4-memory.dll', 'native/production/curlstreamer-m4-memory.dll', 'renderer/m4-program-renderer.js', 'renderer/m4-program-renderer.css', 'obs/bin/64bit/obs.dll', 'THIRD_PARTY_NOTICES.json', 'STUDIO-LICENSE.md', 'WebView2Loader.dll')) {
   if (-not $expected.Contains($required)) { throw "Incomplete Studio assembly." }
 }
 $configuration = Get-Content -LiteralPath (Join-Path $sourceRoot 'studio.json') -Raw | ConvertFrom-Json
 if ($configuration.version -ne 1 -or $configuration.realtimeKey -notmatch '^sb_publishable_[A-Za-z0-9_-]+$' -or $configuration.streamingEnabled -isnot [bool]) { throw "Invalid private preview configuration." }
 if ($configuration.streamingEnabled -and -not $AllowStreamingPreview) { throw "Streaming preview packaging requires explicit opt-in." }
 if (@($configuration.PSObject.Properties.Name | Where-Object { $_ -notin @('version','website','realtimeUrl','realtimeKey','streamingEnabled') }).Count) { throw "Unexpected Studio configuration." }
+if ($VerifyOnly) { Write-Output "PASS: $($manifest.files.Count) component hashes, complete Studio assembly, safe public configuration, no extra or linked files."; return }
+if (-not $CompilerPath -or -not (Test-Path -LiteralPath $CompilerPath -PathType Leaf)) { throw 'Provide the Inno Setup compiler path, or use -VerifyOnly for assembly verification.' }
 New-Item -ItemType Directory -Path $outputRoot -Force | Out-Null
 $installerPath = Join-Path $outputRoot "CurlStreamer-Studio-$($manifest.release)-Setup.exe"
 if (Test-Path -LiteralPath $installerPath) { throw "Use a new output directory; existing installers are never overwritten." }

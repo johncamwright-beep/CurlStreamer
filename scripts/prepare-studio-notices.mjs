@@ -14,7 +14,8 @@ import { dirname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { brotliDecompressSync } from "node:zlib";
 
-const [studioArg, setupArg, studioSourceReleaseUrl] = process.argv.slice(2);
+const [studioArg, setupArg, studioSourceReleaseUrl, sourceArchiveArg, cefArg] =
+  process.argv.slice(2);
 if (!studioArg || !setupArg || !studioSourceReleaseUrl)
   throw new Error(
     "Usage: node scripts/prepare-studio-notices.mjs STUDIO_DIR SETUP_ROOT OBS_SOURCE_RELEASE_URL",
@@ -146,7 +147,9 @@ async function packageForInput(input) {
     );
   return { name, version: manifest.version, root, files };
 }
-const cef = join(dirname(studio), "cef_binary_6533_windows_x64"),
+const cef = cefArg
+    ? resolve(cefArg)
+    : join(dirname(studio), "cef_binary_6533_windows_x64"),
   cefRelease = join(cef, "Release"),
   cefResources = join(cef, "Resources"),
   studioBrowser = join(studio, "obs", "obs-plugins", "64bit");
@@ -179,6 +182,29 @@ await Promise.all([
 const previous = JSON.parse(
   await readFile(join(studio, "manifest.json"), "utf8"),
 );
+let sourceArchive;
+if (sourceArchiveArg) {
+  const path = resolve(studio, sourceArchiveArg);
+  if (!path.startsWith(studio + sep))
+    throw new Error("Source archive must be inside Studio staging.");
+  await requirePath(path, "matching staged source archive");
+  sourceArchive = {
+    path: relative(studio, path).split(sep).join("/"),
+    sha256: createHash("sha256")
+      .update(await readFile(path))
+      .digest("hex"),
+    scope:
+      "Current launcher, controller, renderer and IP camera receiver source snapshot. Retained native baseline components keep their prior source references.",
+  };
+}
+let baselineProvenance = null;
+try {
+  baselineProvenance = JSON.parse(
+    await readFile(join(studio, "baseline-provenance.json"), "utf8"),
+  );
+} catch (error) {
+  if (error.code !== "ENOENT") throw error;
+}
 if (previous.version !== 1 || previous.nodeVersion !== "v24.19.0")
   throw new Error("Studio manifest must declare version 1 and Node v24.19.0.");
 for (const name of ["libcef.dll", "chrome_elf.dll"])
@@ -308,12 +334,27 @@ const inventory = {
     },
     {
       component:
-        "CurlStreamer Studio launcher, controller, host, recorder, and memory-service components",
+        "CurlStreamer Studio launcher, controller, renderer and IP camera receiver",
       license: "GPL-2.0-or-later",
-      sourceReleaseUrl: studioSourceReleaseUrl,
+      ...(sourceArchive
+        ? {
+            repositoryReferenceUrl: studioSourceReleaseUrl,
+            stagedSourceArchive: sourceArchive,
+          }
+        : { sourceReleaseUrl: studioSourceReleaseUrl }),
       notices: ["STUDIO-LICENSE.md"],
     },
   ],
+  ...(baselineProvenance
+    ? {
+        retainedNativeBaseline: {
+          release: baselineProvenance.release,
+          manifestSha256: baselineProvenance.manifestSha256,
+          sourcePointers: baselineProvenance.sourcePointers,
+          note: "Retained host, recorder and memory-service binaries are hash-verified against this baseline; its historical source pointers are preserved.",
+        },
+      }
+    : {}),
   javascriptPackages: [...packages.values()]
     .sort((a, b) => a.name.localeCompare(b.name))
     .map(({ name, version, files }) => ({

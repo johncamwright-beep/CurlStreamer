@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { z } from "zod";
 import { createM4SponsorAssets } from "./m4-sponsor-assets";
 import { createM4UsbAudioQueue } from "./m4-usb-audio";
+import type { createM4IpCameraManager } from "./m4-ip-camera";
 import type { M4ProgramClient } from "./m4-program-client";
 import { StudioTransportUnavailable } from "./studio-transport-error";
 import {
@@ -47,22 +48,30 @@ export async function createM4ProgramBridge(
     connect(role: CameraRole): Promise<unknown>;
     drain(role: CameraRole, identity: M4CameraDrainIdentity): Promise<unknown>;
     close(): Promise<void>;
+    stopRole?(role: CameraRole): Promise<void>;
   },
   rendererAssets?: {
     directory: string;
     sponsorStorageOrigin?: string;
     sponsorCacheDirectory?: string;
     diagnostic?: ConnectionDiagnostic;
+    cameraInputs?: ReturnType<typeof createM4IpCameraManager>;
   },
 ) {
   const key = randomBytes(32).toString("base64url");
   const cameraFrames = new Map<
     CameraRole,
-    { frames: number; advancedAt: number }
+    { frames: number; advancedAt: number; generation?: number }
   >();
   const phoneAudio = new Map<
     CameraRole,
-    { peak: number; rms: number; receiving: boolean; observedAt: number }
+    {
+      peak: number;
+      rms: number;
+      receiving: boolean;
+      observedAt: number;
+      generation?: number;
+    }
   >();
   const rendererCookie = randomBytes(32).toString("base64url");
   const usbAudio = createM4UsbAudioQueue();
@@ -77,6 +86,7 @@ export async function createM4ProgramBridge(
   const expectedRendererCookie = Buffer.from(`m4_program=${rendererCookie}`);
   let address = "",
     closed = false,
+    authorityEnded = false,
     rendererClaimed = false;
   const rendererHtml = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>CurlStreamer program</title><link rel="stylesheet" href="/m4-program-renderer.css"></head><body><div id="root"></div><script src="/m4-program-renderer.js" defer></script></body></html>`;
   const builtinSponsors = new Map([
@@ -95,7 +105,7 @@ export async function createM4ProgramBridge(
     response.setHeader("x-content-type-options", "nosniff");
     response.setHeader(
       "content-security-policy",
-      "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; media-src blob:; frame-ancestors 'none'; base-uri 'none'; form-action 'none'",
+      "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; connect-src 'self'; media-src blob:; frame-ancestors 'none'; base-uri 'none'; form-action 'none'",
     );
     const reply = (status: number, value: unknown) => {
       if (response.destroyed) return;
@@ -123,6 +133,7 @@ export async function createM4ProgramBridge(
         request.headers["sec-fetch-site"] === "same-origin");
     const allowed =
       !closed &&
+      !authorityEnded &&
       hostAllowed &&
       sameContext &&
       (ownerAllowed || rendererAllowed);
@@ -150,6 +161,87 @@ export async function createM4ProgramBridge(
     }
     if (!allowed) {
       reply(403, { error: "Program request denied" });
+      return;
+    }
+    const inputs = rendererAssets?.cameraInputs;
+    if (request.method === "GET" && request.url === "/camera-inputs") {
+      const phone = {
+        kind: "phone",
+        host: null,
+        stream: null,
+        rotation: 0,
+        configured: true,
+        phase: "idle",
+        errorCode: null,
+        generation: 0,
+      };
+      reply(200, {
+        cameras: inputs?.snapshot() ?? {
+          "camera-home": phone,
+          "camera-away": phone,
+        },
+      });
+      return;
+    }
+    if (request.method === "GET" && request.url?.startsWith("/ip-camera/")) {
+      if (!rendererAllowed || !inputs)
+        return reply(403, { error: "Program request denied" });
+      const url = new URL(request.url, address);
+      const match = url.pathname.match(
+        /^\/ip-camera\/(camera-home|camera-away)\/(frame|audio)$/,
+      );
+      if (!match || url.searchParams.size !== 2)
+        return reply(400, { error: "Invalid camera request" });
+      const role = cameraRoleSchema.parse(match[1]);
+      const generation = Number(url.searchParams.get("generation"));
+      const after = Number(url.searchParams.get("after"));
+      const current = inputs.snapshot(role);
+      if (
+        !Number.isSafeInteger(generation) ||
+        generation < 0 ||
+        !Number.isSafeInteger(after) ||
+        after < 0 ||
+        current.kind !== "tapo" ||
+        current.generation !== generation
+      )
+        return reply(409, { error: "Camera source changed" });
+      response.setHeader("x-m4-ip-camera-generation", String(generation));
+      if (match[2] === "frame") {
+        const frame = inputs.latestFrame(role);
+        if (
+          !frame ||
+          frame.generation !== generation ||
+          frame.counter <= after
+        ) {
+          response.writeHead(204);
+          response.end();
+          return;
+        }
+        response.setHeader("x-m4-ip-camera-frame", String(frame.counter));
+        response.writeHead(200, {
+          "content-type": "image/jpeg",
+          "content-length": frame.jpeg.length,
+        });
+        response.end(frame.jpeg);
+      } else {
+        const audio = inputs.takeAudio(role);
+        const raw = audio.pcm;
+        if (audio.generation !== generation || !raw.length) {
+          raw.fill(0);
+          response.writeHead(204);
+          response.end();
+          return;
+        }
+        const pcm = Buffer.alloc(raw.length * 2);
+        for (let i = 0; i < raw.length; i += 2)
+          pcm.writeFloatLE(raw.readInt16LE(i) / 32768, i * 2);
+        raw.fill(0);
+        response.writeHead(200, {
+          "content-type": "application/octet-stream",
+          "content-length": pcm.length,
+        });
+        response.end(pcm, () => pcm.fill(0));
+      }
       return;
     }
     if (request.method === "GET" && request.url === "/") {
@@ -244,6 +336,14 @@ export async function createM4ProgramBridge(
           },
         });
       } catch (cause) {
+        if (!(cause instanceof StudioTransportUnavailable)) {
+          authorityEnded = true;
+          usbAudio.reset();
+          cameraFrames.clear();
+          phoneAudio.clear();
+          await inputs?.stop().catch(() => undefined);
+          await realtime?.close().catch(() => undefined);
+        }
         reply(cause instanceof StudioTransportUnavailable ? 503 : 409, {
           error: "Program unavailable",
         });
@@ -300,6 +400,10 @@ export async function createM4ProgramBridge(
         [...url.searchParams.keys()].length !== 4
       ) {
         reply(403, { error: "Program request denied" });
+        return;
+      }
+      if (inputs?.snapshot(role.data).kind === "tapo") {
+        reply(410, { error: "This slot uses a Tapo camera" });
         return;
       }
       try {
@@ -361,16 +465,33 @@ export async function createM4ProgramBridge(
           cameraRole: cameraRoleSchema,
           frames: z.number().int().nonnegative(),
           verified: z.boolean(),
+          sourceGeneration: z.number().int().nonnegative().optional(),
         })
         .strict()
         .safeParse(parsed);
       if (observation.success && rendererAllowed) {
-        const { cameraRole, frames, verified } = observation.data;
+        const { cameraRole, frames, verified, sourceGeneration } =
+          observation.data;
+        const source = inputs?.snapshot(cameraRole);
+        if (source && sourceGeneration !== source.generation)
+          return reply(409, { error: "Camera source changed" });
+        const ipFrame =
+          source?.kind === "tapo" ? inputs?.latestFrame(cameraRole) : undefined;
+        if (
+          source?.kind === "tapo" &&
+          verified &&
+          (!ipFrame || frames > ipFrame.counter)
+        )
+          return reply(409, { error: "Camera frame unavailable" });
         const previous = cameraFrames.get(cameraRole);
         cameraFrames.set(cameraRole, {
           frames,
+          generation: sourceGeneration,
           advancedAt:
-            verified && frames > (previous?.frames ?? 0)
+            verified &&
+            frames > 0 &&
+            (sourceGeneration !== previous?.generation ||
+              frames > (previous?.frames ?? 0))
               ? Date.now()
               : verified
                 ? (previous?.advancedAt ?? 0)
@@ -386,16 +507,24 @@ export async function createM4ProgramBridge(
           peak: z.number().finite().min(0).max(1),
           rms: z.number().finite().min(0).max(1),
           receiving: z.boolean(),
+          sourceGeneration: z.number().int().nonnegative().optional(),
         })
         .strict()
         .safeParse(parsed);
       if (audioObservation.success && rendererAllowed) {
         const { cameraRole, peak, rms, receiving } = audioObservation.data;
+        if (
+          inputs &&
+          audioObservation.data.sourceGeneration !==
+            inputs.snapshot(cameraRole).generation
+        )
+          return reply(409, { error: "Camera source changed" });
         phoneAudio.set(cameraRole, {
           peak,
           rms,
           receiving,
           observedAt: Date.now(),
+          generation: audioObservation.data.sourceGeneration,
         });
         reply(200, { ok: true });
         return;
@@ -438,16 +567,40 @@ export async function createM4ProgramBridge(
       if (closed) throw Error();
       let value: unknown;
       if (connect.success) {
+        if (inputs?.snapshot(connect.data.cameraRole).kind === "tapo") {
+          reply(410, { error: "This slot uses a Tapo camera" });
+          return;
+        }
         if (!realtime) throw Error();
+        const sourceGeneration = inputs?.snapshot(
+          connect.data.cameraRole,
+        ).generation;
         value = studioTicketSchema
           .omit({ token: true, topic: true })
           .parse(await realtime.connect(connect.data.cameraRole));
+        if (
+          inputs &&
+          (inputs.snapshot(connect.data.cameraRole).kind !== "phone" ||
+            inputs.snapshot(connect.data.cameraRole).generation !==
+              sourceGeneration)
+        ) {
+          await realtime.stopRole?.(connect.data.cameraRole);
+          reply(410, { error: "Camera source changed" });
+          return;
+        }
         if (
           (value as { cameraRole: CameraRole }).cameraRole !==
           connect.data.cameraRole
         )
           throw Error();
-      } else value = await client.action(command.parse(parsed));
+      } else {
+        const input = command.parse(parsed);
+        if (inputs?.snapshot(input.cameraRole).kind === "tapo") {
+          reply(410, { error: "This slot uses a Tapo camera" });
+          return;
+        }
+        value = await client.action(input);
+      }
       if (closed) throw Error();
       reply(200, value);
     } catch (cause) {
@@ -477,6 +630,12 @@ export async function createM4ProgramBridge(
         (["camera-home", "camera-away"] as const).map((role) => [
           role,
           !closed &&
+            !authorityEnded &&
+            (!rendererAssets?.cameraInputs ||
+              (cameraFrames.get(role)?.generation ===
+                rendererAssets.cameraInputs.snapshot(role).generation &&
+                (rendererAssets.cameraInputs.snapshot(role).kind !== "tapo" ||
+                  Boolean(rendererAssets.cameraInputs.latestFrame(role))))) &&
             Date.now() - (cameraFrames.get(role)?.advancedAt ?? 0) < 5000,
         ]),
       ),
@@ -486,6 +645,10 @@ export async function createM4ProgramBridge(
           const value = phoneAudio.get(role);
           const fresh =
             !closed &&
+            !authorityEnded &&
+            (!rendererAssets?.cameraInputs ||
+              value?.generation ===
+                rendererAssets.cameraInputs.snapshot(role).generation) &&
             value !== undefined &&
             Date.now() - value.observedAt < 6000;
           return [
@@ -524,6 +687,8 @@ export async function createM4ProgramBridge(
       if (closed) throw new Error("m4_program_unavailable");
       usbAudio.push(pcm);
     },
+    stopPhone: (role: CameraRole) =>
+      realtime?.stopRole?.(role) ?? Promise.resolve(),
     rendererUrl: address + "/",
     // Owner-only transport capability. Never log or put in a URL/config file.
     authorization: `Bearer ${key}`,

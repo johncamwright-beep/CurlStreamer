@@ -2,14 +2,19 @@
 
 import { organizerAccessToken } from "@/lib/access-session";
 import QRCode from "qrcode";
-import { useEffect, useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { z } from "zod";
 import type { Role, GameState, Layout } from "@/lib/types";
 import { cameraIsShown, toggleCameraLayout } from "@/lib/camera-layout";
 import { invitationRoles, issueInvitation } from "./GameInvitations";
 import "./studio-devices.css";
+import {
+  cameraInputNativeAction,
+  useStudioCameraInputs,
+  type StudioCameraInput,
+} from "./StudioCameraInputs";
 
-function DeviceCard({
+export function DeviceCard({
   id,
   role,
   label,
@@ -23,7 +28,9 @@ function DeviceCard({
   shown,
   onVisibility,
   layoutBusy,
+  cameraInput,
 }: {
+  cameraInput?: StudioCameraInput;
   id: string;
   role: Role;
   label: string;
@@ -289,6 +296,157 @@ function DeviceCard({
             : claimed
               ? "Waiting for phone"
               : "Ready to connect";
+  if (!scorer && cameraInput?.kind === "tapo")
+    return (
+      <section className="studio-device" aria-label={label}>
+        <header>
+          <span className="studio-device-number" aria-hidden="true">
+            {role === "camera-home" ? "1" : "2"}
+          </span>
+          <div>
+            <h2>{label}</h2>
+            <p
+              className="studio-device-state"
+              role="status"
+              data-online={Boolean(connectionStatus?.videoReceiving)}
+            >
+              {connectionStatus?.videoReceiving
+                ? "Receiving video"
+                : `Tapo · ${cameraInput.phase}`}
+            </p>
+          </div>
+        </header>
+        <p>
+          Tapo · {cameraInput.host} · {cameraInput.stream} ·{" "}
+          {cameraInput.rotation ?? 0}°
+        </p>
+        {cameraInput.errorCode && (
+          <p role="alert">
+            {cameraInput.errorCode === "auth_failed"
+              ? "Camera Account rejected. Check the local username and password in Settings."
+              : cameraInput.errorCode === "runtime_missing"
+                ? "This Studio installation needs its Tapo camera runtime. Check the installation."
+                : cameraInput.errorCode === "stale_frames"
+                  ? "Camera video stopped. Check Wi-Fi and reconnect."
+                  : "Camera could not connect. Check Wi-Fi, its IP address and RTSP access in Settings."}
+          </p>
+        )}
+        {onAudio && (
+          <div className="studio-device-mic-controls">
+            <button
+              className="studio-device-action secondary min-h-11"
+              aria-pressed={micEnabled === true}
+              disabled={busy || !enabled}
+              onClick={async () => {
+                setBusy(true);
+                setError("");
+                try {
+                  await onAudio(role, !micEnabled);
+                } catch {
+                  setError(
+                    "Could not change the camera microphone. Try again.",
+                  );
+                } finally {
+                  setBusy(false);
+                }
+              }}
+            >
+              {micEnabled ? "Turn mic off" : "Turn mic on"}
+            </button>
+            <label className="flex min-h-11 items-center gap-2 text-sm">
+              Mic volume
+              <input
+                type="range"
+                aria-label={label + " mic volume"}
+                min="0"
+                max="100"
+                step="5"
+                value={volumeDraft}
+                disabled={busy || !enabled}
+                className="min-h-11 min-w-0 flex-1"
+                onChange={(e) => setVolumeDraft(Number(e.target.value))}
+                onPointerUp={async (e) => {
+                  const volume = Number(e.currentTarget.value) / 100;
+                  setBusy(true);
+                  setError("");
+                  try {
+                    await onAudio(role, micEnabled === true, volume);
+                  } catch {
+                    setVolumeDraft(Math.round(micVolume * 100));
+                    setError("Could not change mic volume. Try again.");
+                  } finally {
+                    setBusy(false);
+                  }
+                }}
+                onKeyUp={async (e) => {
+                  if (
+                    ![
+                      "ArrowLeft",
+                      "ArrowRight",
+                      "ArrowUp",
+                      "ArrowDown",
+                      "Home",
+                      "End",
+                      "PageUp",
+                      "PageDown",
+                    ].includes(e.key)
+                  )
+                    return;
+                  try {
+                    await onAudio(
+                      role,
+                      micEnabled === true,
+                      Number(e.currentTarget.value) / 100,
+                    );
+                  } catch {
+                    setError("Could not change mic volume. Try again.");
+                  }
+                }}
+              />
+            </label>
+          </div>
+        )}
+        <div className="studio-device-actions">
+          <button
+            className="studio-device-action secondary min-h-11"
+            disabled={!enabled}
+            onClick={() =>
+              cameraInputNativeAction(id, role, "configure-camera")
+            }
+          >
+            Settings
+          </button>
+          {!connectionStatus?.videoReceiving && (
+            <button
+              className="studio-device-action secondary min-h-11"
+              disabled={!enabled}
+              onClick={() =>
+                cameraInputNativeAction(id, role, "reconnect-camera")
+              }
+            >
+              Reconnect camera
+            </button>
+          )}
+          {onVisibility && (
+            <button
+              className="studio-device-action secondary studio-device-visibility"
+              aria-pressed={shown}
+              disabled={layoutBusy || !enabled}
+              onClick={() =>
+                void onVisibility().catch(() =>
+                  setError(
+                    "Could not change the broadcast picture. Try again.",
+                  ),
+                )
+              }
+            >
+              {shown ? "Hide from broadcast" : "Show in broadcast"}
+            </button>
+          )}
+        </div>
+        {error && <p role="alert">{error}</p>}
+      </section>
+    );
   return (
     <section
       className="studio-device"
@@ -311,6 +469,15 @@ function DeviceCard({
           </p>
         </div>
       </header>
+      {!scorer && cameraInput && (
+        <button
+          className="studio-device-action secondary min-h-11"
+          disabled={!enabled}
+          onClick={() => cameraInputNativeAction(id, role, "configure-camera")}
+        >
+          Source settings
+        </button>
+      )}
       {role !== "scorer" && onAudio && claimed && (
         <div className="studio-device-mic-controls">
           <button
@@ -605,6 +772,7 @@ export function StudioDeviceCards({
   ) => Promise<unknown>;
 }) {
   const layoutFlight = useRef(false);
+  const cameraInputs = useStudioCameraInputs(id);
   const [layoutBusy, setLayoutBusy] = useState(false);
   async function toggleVisibility(camera: "home" | "away") {
     if (layoutFlight.current || !onLayout || !layout) return;
@@ -690,6 +858,7 @@ export function StudioDeviceCards({
           id={id}
           role={role}
           label={role === "scorer" ? "Remote scorer" : label}
+          cameraInput={cameraInputs[role]}
           claimed={Boolean(claims[role])}
           enabled={enabled}
           onChanged={onChanged}

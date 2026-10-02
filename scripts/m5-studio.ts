@@ -97,6 +97,10 @@ try {
         plugin: join(root, studioFiles.defaultPlugin),
         runtime,
       },
+      ipCamera: {
+        helperPath: join(root, studioFiles.ipCamera),
+        runtimePath: runtime,
+      },
       pairingEnabled: configuration.streamingEnabled,
       streamingEnabled: configuration.streamingEnabled,
       program: {

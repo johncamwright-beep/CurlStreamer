@@ -455,6 +455,14 @@ export function createM4ProgramRealtime(options: {
           .filter((message) => message.expiresAt > Date.now());
       });
     },
+    async stopRole(input: CameraRole) {
+      const role = roleValue(input);
+      const slot = slots.get(role);
+      if (!slot) return;
+      stop(slot);
+      if (slots.get(role) === slot) slots.delete(role);
+      await Promise.allSettled([...cleanups]);
+    },
     async close() {
       closed = true;
       for (const slot of slots.values()) stop(slot);

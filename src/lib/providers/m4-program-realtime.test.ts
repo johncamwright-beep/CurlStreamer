@@ -75,6 +75,49 @@ afterEach(() => {
 });
 
 describe("Node-owned program realtime boundary", () => {
+  it("stops only one role, discards its late messages, and leaves the other role's renewals active", async () => {
+    vi.useFakeTimers();
+    vi.spyOn(performance, "now").mockImplementation(() => Date.now());
+    const f = fixture();
+    try {
+      await f.relay.connect("camera-home");
+      await f.relay.connect("camera-away");
+      await f.relay.stopRole("camera-home");
+      expect(f.subscriptions[0].close).toHaveBeenCalledOnce();
+      expect(f.subscriptions[1].close).not.toHaveBeenCalled();
+      const homeCalls = f.client.action.mock.calls.filter(
+        ([body]) => body.cameraRole === "camera-home",
+      ).length;
+      f.subscriptions[0].options.receive(message());
+      await expect(f.relay.drain("camera-home", identity())).rejects.toThrow(
+        "m4_program_realtime_unavailable",
+      );
+      await vi.advanceTimersByTimeAsync(10000);
+      expect(
+        f.client.action.mock.calls.filter(
+          ([body]) => body.cameraRole === "camera-home",
+        ),
+      ).toHaveLength(homeCalls);
+      expect(f.subscriptions[0].renew).not.toHaveBeenCalled();
+      expect(f.subscriptions[1].renew).toHaveBeenCalledTimes(2);
+      const awayMessage = message({ cameraRole: "camera-away" });
+      f.subscriptions[1].options.receive(awayMessage);
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+      expect(await f.relay.drain("camera-away", identity())).toEqual([
+        awayMessage,
+      ]);
+      await f.relay.stopRole("camera-home");
+      expect(f.subscriptions[0].close).toHaveBeenCalledOnce();
+      expect(f.subscriptions[1].close).not.toHaveBeenCalled();
+      await expect(
+        f.relay.stopRole("camera-other" as CameraRole),
+      ).rejects.toThrow("m4_program_realtime_unavailable");
+    } finally {
+      await f.relay.close();
+    }
+  });
   it("rejects a late retired drain without consuming or stopping the successor's queued signaling", async () => {
     const f = fixture();
     await f.relay.connect("camera-home");

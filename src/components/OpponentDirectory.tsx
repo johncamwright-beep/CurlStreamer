@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { OpponentSeasonForm } from "./OpponentSeasonForm";
+import { OpponentDetailsDialog } from "./OpponentDetailsDialog";
 import {
   opponentSeasonDirectorySchema,
   type OpponentSeasonDirectory,
@@ -27,7 +27,7 @@ export function OpponentDirectory({
     null,
   );
   const [seasonId, setSeasonId] = useState("");
-  const [editing, setEditing] = useState<string | null>(null);
+  const [editing, setEditing] = useState<Opponent | "create" | null>(null);
   const [seasonError, setSeasonError] = useState("");
   const [reload, setReload] = useState(0);
   const [savedMessage, setSavedMessage] = useState("");
@@ -61,6 +61,8 @@ export function OpponentDirectory({
   const seasonName =
     seasonData?.seasons.find((s) => s.id === seasonId)?.name ??
     "Selected season";
+  const seasonArchived =
+    seasonData?.seasons.find((s) => s.id === seasonId)?.status === "archived";
   const [search, setSearch] = useState("");
   const [error, setError] = useState("");
   const shown = useMemo(
@@ -115,6 +117,12 @@ export function OpponentDirectory({
           details.
         </p>
       )}
+      {canEdit && seasonArchived && (
+        <p>
+          This season is archived. Select an available season to add or edit
+          opponents.
+        </p>
+      )}
       {seasonError && (
         <p role="alert">
           {seasonError}{" "}
@@ -143,24 +151,54 @@ export function OpponentDirectory({
         />
       )}
       {canEdit && (
-        <form
-          className="flex flex-col gap-2 sm:flex-row"
-          onSubmit={(e) => {
-            e.preventDefault();
-            const name = new FormData(e.currentTarget).get("name");
-            void mutate("createOpponent", { input: { displayName: name } });
+        <button
+          type="button"
+          className="btn min-h-11 justify-self-start"
+          disabled={!seasonId || seasonArchived || editing !== null}
+          onClick={() => {
+            setEditing("create");
+            setSavedMessage("");
           }}
         >
-          <label className="flex-1">
-            Add new opponent
-            <input
-              name="name"
-              required
-              className="mt-1 w-full rounded-lg bg-slate-800 p-3"
-            />
-          </label>
-          <button className="btn self-end">Add opponent</button>
-        </form>
+          Add opponent
+        </button>
+      )}
+      {editing && seasonId && (
+        <OpponentDetailsDialog
+          mode={editing === "create" ? "create" : "edit"}
+          opponent={editing === "create" ? undefined : editing}
+          initialName={editing === "create" ? search.trim() : undefined}
+          seasonId={seasonId}
+          seasonName={seasonName}
+          onCancel={() => setEditing(null)}
+          onSaved={(value) => {
+            if (value.profile) {
+              const profile = value.profile;
+              setSeasonData((current) =>
+                current
+                  ? {
+                      ...current,
+                      profiles: [
+                        ...current.profiles.filter(
+                          (p) =>
+                            !(
+                              p.opponent_id === profile.opponent_id &&
+                              p.season_id === profile.season_id
+                            ),
+                        ),
+                        profile,
+                      ],
+                    }
+                  : current,
+              );
+            }
+            setEditing(null);
+            setSavedMessage(
+              value.display_name + " · " + seasonName + " saved.",
+            );
+            router.refresh();
+          }}
+        />
       )}
       {error && (
         <p role="alert" className="text-red-300">
@@ -215,53 +253,17 @@ export function OpponentDirectory({
                     onLinked={() => router.refresh()}
                   />
                 </div>
-                {canEdit &&
-                  seasonId &&
-                  !opponent.archived_at &&
-                  editing !== opponent.id && (
-                    <button
-                      className="btn-secondary"
-                      disabled={editing !== null}
-                      onClick={() => {
-                        setEditing(opponent.id);
-                        setSavedMessage("");
-                      }}
-                    >
-                      Season details
-                    </button>
-                  )}
-                {editing === opponent.id && (
-                  <OpponentSeasonForm
-                    key={opponent.id + ":" + seasonId}
-                    opponentId={opponent.id}
-                    seasonId={seasonId}
-                    seasonName={seasonName}
-                    profile={profile}
-                    onCancel={() => setEditing(null)}
-                    onSaved={(value) => {
-                      setSeasonData((current) =>
-                        current
-                          ? {
-                              ...current,
-                              profiles: [
-                                ...current.profiles.filter(
-                                  (p) =>
-                                    !(
-                                      p.opponent_id === value.opponent_id &&
-                                      p.season_id === value.season_id
-                                    ),
-                                ),
-                                value,
-                              ],
-                            }
-                          : current,
-                      );
-                      setEditing(null);
-                      setSavedMessage(
-                        opponent.display_name + " · " + seasonName + " saved.",
-                      );
+                {canEdit && seasonId && !opponent.archived_at && (
+                  <button
+                    className="btn-secondary"
+                    disabled={seasonArchived || editing !== null}
+                    onClick={() => {
+                      setEditing(opponent);
+                      setSavedMessage("");
                     }}
-                  />
+                  >
+                    Edit
+                  </button>
                 )}
                 {canEdit && (
                   <button

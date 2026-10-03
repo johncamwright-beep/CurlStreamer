@@ -14,6 +14,7 @@ import {
   createScheduledTeamGame,
   updateEvent,
   updateScheduledTeamGame,
+  saveOpponentDetails,
 } from "./team-hierarchy-service";
 
 const user = { id: "11111111-1111-4111-8111-111111111111" } as User;
@@ -140,6 +141,84 @@ describe("scheduled game state persistence", () => {
         config,
       ),
     ).resolves.toEqual({ ok: false, kind: "conflict" });
+  });
+});
+
+describe("atomic opponent details persistence", () => {
+  const input = {
+    displayName: "  Corrected team  ",
+    seasonId: schedule.seasonId,
+    level: "U18" as const,
+    roster: {
+      lead: "Lead",
+      second: "",
+      third: "",
+      fourth: "",
+      alternate: "",
+      coach: "",
+    },
+    expectedRevision: 2,
+  };
+  const existing = { opponentId: user.id, expectedDisplayName: "Old team" };
+  beforeEach(() => mocks.rpc.mockReset());
+  it("saves the name and complete season profile through one RPC", async () => {
+    mocks.rpc.mockResolvedValue({
+      data: [
+        {
+          opponent_id: user.id,
+          display_name: "Corrected team",
+          season_id: schedule.seasonId,
+          level: "U18",
+          roster: input.roster,
+          revision: 3,
+        },
+      ],
+      error: null,
+    });
+    const result = await saveOpponentDetails(user, input, existing);
+    expect(result).toMatchObject({
+      ok: true,
+      value: {
+        opponent: { id: user.id, displayName: "Corrected team" },
+        profile: { revision: 3 },
+      },
+    });
+    expect(mocks.rpc).toHaveBeenCalledExactlyOnceWith("save_opponent_details", {
+      p_user_id: user.id,
+      p_opponent_id: user.id,
+      p_create: false,
+      p_display_name: "Corrected team",
+      p_expected_display_name: "Old team",
+      p_season_id: input.seasonId,
+      p_level: input.level,
+      p_roster: input.roster,
+      p_expected_revision: 2,
+    });
+  });
+  it("rejects invalid roster values and creation revisions before RPC", async () => {
+    expect(
+      await saveOpponentDetails(
+        user,
+        { ...input, roster: { ...input.roster, lead: "x".repeat(101) } },
+        existing,
+      ),
+    ).toMatchObject({ ok: false, kind: "validation" });
+    expect(await saveOpponentDetails(user, input)).toMatchObject({
+      ok: false,
+      kind: "validation",
+    });
+    expect(mocks.rpc).not.toHaveBeenCalled();
+  });
+  it.each([
+    ["42501", "authorization"],
+    ["40001", "conflict"],
+    ["23505", "opponentNameConflict"],
+  ])("maps %s without exposing database details", async (code, kind) => {
+    mocks.rpc.mockResolvedValue({ data: null, error: { code } });
+    expect(await saveOpponentDetails(user, input, existing)).toEqual({
+      ok: false,
+      kind,
+    });
   });
 });
 

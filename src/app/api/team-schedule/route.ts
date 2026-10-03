@@ -16,6 +16,11 @@ import {
   updateEvent,
   listOpponents,
   updateScheduledTeamGame,
+  saveOpponentDetails,
+  opponentDetailsInputSchema,
+  opponentDetailsUpdateInputSchema,
+  listOpponentSeasons,
+  listSeasons,
 } from "@/lib/team-hierarchy-service";
 import {
   eventInputSchema,
@@ -31,6 +36,17 @@ import { provisionScheduledYouTubeBroadcast } from "@/lib/providers/scheduled-yo
 
 const id = z.uuid();
 const requestSchema = z.discriminatedUnion("operation", [
+  z.object({
+    operation: z.literal("createOpponentDetails"),
+    input: opponentDetailsInputSchema.refine(
+      (value) => value.expectedRevision === 0,
+    ),
+  }),
+  z.object({
+    operation: z.literal("updateOpponentDetails"),
+    opponentId: id,
+    input: opponentDetailsUpdateInputSchema,
+  }),
   z.object({ operation: z.literal("createSeason"), input: seasonInputSchema }),
   z.object({ operation: z.literal("activateSeason"), seasonId: id }),
   z.object({ operation: z.literal("archiveSeason"), seasonId: id }),
@@ -89,6 +105,10 @@ const messages = {
     409,
     "That game number is already used in this event. Choose another number or leave the optional game number blank.",
   ],
+  opponentNameConflict: [
+    409,
+    "An opponent with that name already exists. Choose another name or edit the existing opponent.",
+  ],
   service: [503, "The team schedule is temporarily unavailable."],
 } as const;
 
@@ -115,6 +135,13 @@ export async function POST(request: Request) {
   if (!account.ok || !account.account.membership)
     return hierarchyFailure({ kind: "authorization" });
   if (
+    ["createOpponentDetails", "updateOpponentDetails"].includes(
+      body.operation,
+    ) &&
+    !["owner", "team_admin"].includes(account.account.membership.role)
+  )
+    return hierarchyFailure({ kind: "authorization" });
+  if (
     account.account.membership.role === "game_operator" &&
     !["createGame", "updateGame", "retryYouTube", "createOpponent"].includes(
       body.operation,
@@ -123,6 +150,25 @@ export async function POST(request: Request) {
     return hierarchyFailure({ kind: "authorization" });
   let result;
   switch (body.operation) {
+    case "createOpponentDetails":
+      result = await saveOpponentDetails(user, body.input);
+      break;
+    case "updateOpponentDetails":
+      result = await saveOpponentDetails(
+        user,
+        {
+          displayName: body.input.displayName,
+          seasonId: body.input.seasonId,
+          level: body.input.level,
+          roster: body.input.roster,
+          expectedRevision: body.input.expectedRevision,
+        },
+        {
+          opponentId: body.opponentId,
+          expectedDisplayName: body.input.expectedDisplayName,
+        },
+      );
+      break;
     case "createSeason":
       result = await createSeason(user, body.input);
       break;
@@ -355,6 +401,53 @@ export async function POST(request: Request) {
   return NextResponse.json(result.value ?? {}, {
     status: body.operation.startsWith("create") ? 201 : 200,
   });
+}
+
+export async function GET(request: Request) {
+  const auth = await createServerSupabaseClient()
+    .then((client) => client.auth.getUser())
+    .catch(() => null);
+  const user = auth?.data.user;
+  if (!user?.email_confirmed_at)
+    return NextResponse.json(
+      { error: "Sign in is required." },
+      { status: 401 },
+    );
+  const params = new URL(request.url).searchParams;
+  const parsed = z
+    .object({ opponentId: id, seasonId: id })
+    .strict()
+    .safeParse(Object.fromEntries(params));
+  if (!parsed.success) return hierarchyFailure({ kind: "validation" });
+  const account = await getAccountContext(user);
+  if (!account.ok || !account.account.membership)
+    return hierarchyFailure({ kind: "authorization" });
+  const [opponents, seasons, profiles] = await Promise.all([
+    listOpponents(user),
+    listSeasons(user),
+    listOpponentSeasons(user),
+  ]);
+  if (!opponents.ok) return hierarchyFailure(opponents);
+  if (!seasons.ok) return hierarchyFailure(seasons);
+  if (!profiles.ok) return hierarchyFailure(profiles);
+  const opponent = (
+    opponents.value as { id: string; display_name: string }[]
+  ).find((row) => row.id === parsed.data.opponentId);
+  const season = (seasons.value as { id: string; status: string }[]).find(
+    (row) => row.id === parsed.data.seasonId && row.status !== "archived",
+  );
+  if (!opponent || !season) return hierarchyFailure({ kind: "authorization" });
+  const profile =
+    (profiles.value as { opponent_id: string; season_id: string }[]).find(
+      (row) => row.opponent_id === opponent.id && row.season_id === season.id,
+    ) ?? null;
+  return NextResponse.json(
+    {
+      opponent: { id: opponent.id, displayName: opponent.display_name },
+      profile,
+    },
+    { headers: { "Cache-Control": "private, no-store" } },
+  );
 }
 
 function hierarchyFailure(result: { kind: keyof typeof messages }) {

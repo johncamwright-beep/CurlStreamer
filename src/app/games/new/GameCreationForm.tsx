@@ -1,5 +1,5 @@
 "use client";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import type {
   EventRecord,
@@ -19,6 +19,12 @@ import {
 import { RockColourSelector } from "@/components/RockColourSelector";
 import { OpponentProfilePicker } from "@/components/OpponentProfilePicker";
 import { DEFAULT_TIMEZONE, TimezoneSelect } from "@/components/TimezoneSelect";
+import { OpponentCombobox } from "@/components/OpponentCombobox";
+import {
+  OpponentDetailsDialog,
+  type SavedOpponentDetails,
+} from "@/components/OpponentDetailsDialog";
+import { nextEventGameNumber } from "@/lib/next-event-game-number";
 
 type Opponent = { id: string; display_name: string };
 type Dialog = "season" | "event" | null;
@@ -52,6 +58,7 @@ export function GameCreationForm({
   editing,
   editingTitle,
   onCreated,
+  canManageTeamDetails = true,
 }: {
   teamName: string;
   seasons: SeasonRecord[];
@@ -63,6 +70,7 @@ export function GameCreationForm({
   editing?: ScheduledGameRecord;
   editingTitle?: string;
   onCreated?: (gameId: string) => void;
+  canManageTeamDetails?: boolean;
 }) {
   const router = useRouter();
   const current =
@@ -95,7 +103,9 @@ export function GameCreationForm({
     editing?.eventId ?? preselected?.id ?? "",
   );
   const [gameNumberText, setGameNumberText] = useState(
-    editing?.gameNumber?.toString() ?? "",
+    editing
+      ? (editing.gameNumber?.toString() ?? "")
+      : nextEventGameNumber(preselected?.id ?? "", games),
   );
   const gameForm = useRef<HTMLFormElement>(null);
   const acceptedDuplicate = useRef("");
@@ -113,7 +123,7 @@ export function GameCreationForm({
       )),
   );
   const [opponentChoice, setOpponentChoice] = useState(
-    editing ? (editing.opponentId ?? "__tbd") : opponents.length ? "" : "__new",
+    editing ? (editing.opponentId ?? "__tbd") : "__tbd",
   );
   const [opponentSearch, setOpponentSearch] = useState(
     editing?.opponentId
@@ -122,9 +132,38 @@ export function GameCreationForm({
       : "",
   );
   const opponentTbd = opponentChoice === "__tbd";
+  const validOpponent =
+    opponentTbd ||
+    Boolean(
+      opponentChoice &&
+      (opponents.some((opponent) => opponent.id === opponentChoice) ||
+        editing?.opponentId === opponentChoice),
+    );
+  const [opponentDialog, setOpponentDialog] = useState<
+    "create" | "edit" | null
+  >(null);
+  const selectedOpponent =
+    opponents.find((opponent) => opponent.id === opponentChoice) ??
+    (editing?.opponentId === opponentChoice
+      ? { id: opponentChoice, display_name: editing.config.awayName }
+      : undefined);
   const [dialog, setDialog] = useState<Dialog>(
     initialSeasons.length ? null : "season",
   );
+  const [eventSeasonId, setEventSeasonId] = useState(seasonId);
+  const continueToEvent = useRef(false);
+  const setupDialog = useRef<HTMLDialogElement>(null);
+  useEffect(() => {
+    if (!dialog) return;
+    const element = setupDialog.current;
+    const previousFocus = document.activeElement;
+    element?.showModal();
+    return () => {
+      element?.close();
+      if (previousFocus instanceof HTMLElement && previousFocus.isConnected)
+        previousFocus.focus();
+    };
+  }, [dialog]);
   const [busy, setBusy] = useState(false);
   const saving = useRef(false);
   // Keeping this key for the form lifetime makes a client-side retry after a
@@ -162,9 +201,7 @@ export function GameCreationForm({
   const [scheduledTime, setScheduledTime] = useState(
     initialSchedule?.time ?? "",
   );
-  const [timezone, setTimezone] = useState(
-    editing?.timezone ?? DEFAULT_TIMEZONE,
-  );
+  const [timezone, setTimezone] = useState(initialTimezone);
   const [titleCustomized, setTitleCustomized] = useState(
     Boolean(
       editing?.config.youtubeTitle &&
@@ -205,16 +242,38 @@ export function GameCreationForm({
     effectiveTimezone,
   );
   const youtubeTitle = titleCustomized ? customTitle : generatedTitle;
-  const matching = opponents.find(
-    (o) =>
-      o.display_name.trim().toLocaleLowerCase() ===
-      opponentSearch.trim().replace(/\s+/g, " ").toLocaleLowerCase(),
-  );
+  function chooseEvent(value: string) {
+    setEventId(value);
+    setGameNumberText(
+      editing && value === editing.eventId
+        ? (editing.gameNumber?.toString() ?? "")
+        : nextEventGameNumber(value, games, newGameNumbers),
+    );
+    acceptedDuplicate.current = "";
+    setDuplicatePrompt(false);
+  }
+  function openEventDialog() {
+    setError("");
+    setEventSeasonId(seasonId);
+    if (!seasonId) {
+      continueToEvent.current = true;
+      setDialog("season");
+    } else setDialog("event");
+  }
+  function opponentSaved(saved: SavedOpponentDetails) {
+    setOpponents((items) => [
+      ...items.filter((item) => item.id !== saved.id),
+      { id: saved.id, display_name: saved.display_name },
+    ]);
+    setOpponentChoice(saved.id);
+    setOpponentSearch(saved.display_name);
+    setOpponentDialog(null);
+  }
   function chooseSeason(value: string) {
     if (value === "__new") return setDialog("season");
     setSeasonId(value);
     if (!events.some((e) => e.id === eventId && e.seasonId === value))
-      setEventId("");
+      chooseEvent("");
   }
   async function mutate(payload: unknown) {
     const response = await fetch("/api/team-schedule", {
@@ -226,36 +285,6 @@ export function GameCreationForm({
     if (!response.ok)
       throw new Error(body?.error ?? "The change could not be saved.");
     return body;
-  }
-  async function saveOpponent() {
-    if (saving.current) return;
-    const displayName = opponentSearch.trim().replace(/\s+/g, " ");
-    if (!displayName) return;
-    saving.current = true;
-    setBusy(true);
-    setError("");
-    try {
-      const result = await mutate({
-        operation: "createOpponent",
-        input: { displayName },
-      });
-      const saved = result?.[0];
-      if (!saved?.opponent_id || !saved?.display_name)
-        throw new Error("The opponent could not be saved. Please try again.");
-      setOpponents((items) => [
-        ...items.filter((item) => item.id !== saved.opponent_id),
-        { id: saved.opponent_id, display_name: saved.display_name },
-      ]);
-      setOpponentChoice(saved.opponent_id);
-      setOpponentSearch(saved.display_name);
-    } catch (e) {
-      setError(
-        e instanceof Error ? e.message : "The opponent could not be saved.",
-      );
-    } finally {
-      saving.current = false;
-      setBusy(false);
-    }
   }
   async function createSeason(form: FormData) {
     setBusy(true);
@@ -278,7 +307,7 @@ export function GameCreationForm({
       };
       setSeasons((v) => [...v, season]);
       setSeasonId(id);
-      setEventId("");
+      chooseEvent("");
       if (form.get("makeCurrent")) {
         await mutate({ operation: "activateSeason", seasonId: id });
         setSeasons((v) =>
@@ -293,7 +322,11 @@ export function GameCreationForm({
           })),
         );
       }
-      setDialog(null);
+      if (continueToEvent.current) {
+        continueToEvent.current = false;
+        setEventSeasonId(id);
+        setDialog("event");
+      } else setDialog(null);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Season could not be created.");
     } finally {
@@ -305,7 +338,7 @@ export function GameCreationForm({
     setError("");
     try {
       const input = {
-        seasonId,
+        seasonId: eventSeasonId,
         name: form.get("name"),
         eventType: form.get("eventType"),
         startDate: form.get("startDate"),
@@ -325,7 +358,9 @@ export function GameCreationForm({
           archivedAt: null,
         } as EventRecord,
       ]);
-      setEventId(id);
+      setSeasonId(eventSeasonId);
+      chooseEvent(id);
+      setTimezone(String(input.timezone));
       setDialog(null);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Event could not be created.");
@@ -335,6 +370,10 @@ export function GameCreationForm({
   }
   async function submit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
+    if (!validOpponent) {
+      setError("Choose a matching opponent or create a new opponent.");
+      return;
+    }
     if (
       numberInUse &&
       acceptedDuplicate.current !== `${eventId}:${gameNumberText}`
@@ -359,13 +398,7 @@ export function GameCreationForm({
           : { gameId: creationGameId.current }),
         seasonId,
         eventId: eventId || null,
-        ...(opponentTbd
-          ? {}
-          : opponentChoice && opponentChoice !== "__new"
-            ? { opponentId: opponentChoice }
-            : matching
-              ? { opponentId: matching.id }
-              : { opponentName }),
+        ...(opponentTbd ? {} : { opponentId: opponentChoice }),
         scheduledDate: date,
         scheduledTime: form.get("scheduledTime"),
         timezone,
@@ -506,7 +539,9 @@ export function GameCreationForm({
               acceptedDuplicate.current = "";
               setCreatedGame(null);
               setScheduledTime("");
-              setGameNumberText("");
+              setGameNumberText(
+                nextEventGameNumber(eventId, games, newGameNumbers),
+              );
               setTitleCustomized(false);
               setError("");
             }}
@@ -543,7 +578,19 @@ export function GameCreationForm({
       </nav>
       <header className="setup-heading">
         <p className="setup-eyebrow">Match preparation</p>
-        <h1>{editing ? "Edit game" : "Schedule a game"}</h1>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <h1>{editing ? "Edit game" : "Schedule a game"}</h1>
+          {canManageTeamDetails && (
+            <button
+              type="button"
+              className="btn-secondary"
+              disabled={busy}
+              onClick={openEventDialog}
+            >
+              Create event
+            </button>
+          )}
+        </div>
         <p>
           {editing
             ? editingTitle
@@ -588,7 +635,9 @@ export function GameCreationForm({
                         {s.status === "active" ? " (Current)" : ""}
                       </option>
                     ))}
-                  <option value="__new">Create New Season…</option>
+                  {canManageTeamDetails && (
+                    <option value="__new">Create New Season…</option>
+                  )}
                 </select>
               </label>
               <label>
@@ -598,8 +647,8 @@ export function GameCreationForm({
                   value={eventId}
                   onChange={(e) =>
                     e.target.value === "__new"
-                      ? setDialog("event")
-                      : setEventId(e.target.value)
+                      ? openEventDialog()
+                      : chooseEvent(e.target.value)
                   }
                   className="mt-1 min-h-11 w-full rounded-lg bg-slate-800 p-3"
                 >
@@ -609,7 +658,9 @@ export function GameCreationForm({
                       {event.name}
                     </option>
                   ))}
-                  <option value="__new">Create New Event…</option>
+                  {canManageTeamDetails && (
+                    <option value="__new">Create New Event…</option>
+                  )}
                 </select>
               </label>
               <label>
@@ -622,74 +673,54 @@ export function GameCreationForm({
               </label>
               <div>
                 <label htmlFor="setup-opponent">Team 2 — Opponent</label>
-                <select
+                <OpponentCombobox
                   id="setup-opponent"
-                  required
+                  options={
+                    selectedOpponent &&
+                    !opponents.some(
+                      (opponent) => opponent.id === selectedOpponent.id,
+                    )
+                      ? [...opponents, selectedOpponent]
+                      : opponents
+                  }
                   value={opponentChoice}
-                  onChange={(e) => {
-                    const choice = e.target.value;
+                  displayName={opponentSearch}
+                  disabled={busy}
+                  onSelect={(choice, name) => {
                     setOpponentChoice(choice);
-                    setOpponentSearch(
-                      opponents.find((o) => o.id === choice)?.display_name ??
-                        (choice === editing?.opponentId
-                          ? editing.config.awayName
-                          : ""),
-                    );
+                    setOpponentSearch(name);
+                    setError("");
                   }}
-                  className="mt-1 min-h-11 w-full rounded-lg bg-slate-800 p-3"
-                >
-                  <option value="" disabled>
-                    Choose an opponent
-                  </option>
-                  {editing?.opponentId &&
-                    !opponents.some((o) => o.id === editing.opponentId) && (
-                      <option value={editing.opponentId}>
-                        {editing.config.awayName} (current opponent)
-                      </option>
-                    )}
-                  {opponents.map((o) => (
-                    <option key={o.id} value={o.id}>
-                      {o.display_name}
-                    </option>
-                  ))}
-                  <option value="__tbd">Opponent TBD</option>
-                  <option value="__new">Add new opponent…</option>
-                </select>
-                {opponentChoice === "__new" && (
-                  <div className="mt-3">
-                    <label>
-                      New opponent name
-                      <input
-                        required
-                        maxLength={100}
-                        value={opponentSearch}
-                        onChange={(e) => setOpponentSearch(e.target.value)}
-                        placeholder="Enter the team name"
-                        className="mt-1 w-full rounded-lg bg-slate-800 p-3"
-                      />
-                    </label>
+                />
+                <div className="mt-2 flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    className="btn-secondary"
+                    disabled={busy || !seasonId}
+                    onClick={() => setOpponentDialog("create")}
+                  >
+                    Create new opponent
+                  </button>
+                  {selectedOpponent && canManageTeamDetails && (
                     <button
                       type="button"
-                      className="btn mt-2"
-                      disabled={busy || !opponentSearch.trim()}
-                      onClick={saveOpponent}
+                      className="btn-secondary"
+                      disabled={busy}
+                      onClick={() => setOpponentDialog("edit")}
                     >
-                      Save opponent
+                      Edit opponent
                     </button>
-                  </div>
+                  )}
+                </div>
+                {opponentChoice === "" && opponentSearch.trim() && (
+                  <p className="setup-help" role="status">
+                    Choose a matching team or create a new opponent.
+                  </p>
                 )}
-                <p className="setup-help">
-                  Choose a saved team or select “Add new opponent”. You can
-                  assign an unknown opponent later.
-                </p>
-                {opponentChoice !== "__tbd" && (
+                {!opponentTbd && (
                   <OpponentProfilePicker
                     key={opponentChoice}
-                    opponentId={
-                      opponentChoice && opponentChoice !== "__new"
-                        ? opponentChoice
-                        : undefined
-                    }
+                    opponentId={opponentChoice || undefined}
                     initialQuery={opponentSearch}
                     onLinked={(saved) => {
                       setOpponents((items) => [
@@ -1027,15 +1058,13 @@ export function GameCreationForm({
               begins.
             </p>
           )}
-          {(!seasonId ||
-            !scheduledInstant ||
-            (!opponentTbd && !opponentSearch.trim())) && (
+          {(!seasonId || !scheduledInstant || !validOpponent) && (
             <p className="setup-help">
               Still needed:{" "}
               {[
                 !seasonId && "season",
                 !scheduledInstant && "date, time and timezone",
-                !opponentTbd && !opponentSearch.trim() && "opponent",
+                !validOpponent && "opponent",
               ]
                 .filter(Boolean)
                 .join("; ")}
@@ -1043,7 +1072,7 @@ export function GameCreationForm({
             </p>
           )}
           <button
-            disabled={busy || !seasonId || !scheduledInstant}
+            disabled={busy || !seasonId || !scheduledInstant || !validOpponent}
             className="btn md:col-span-2"
           >
             {busy ? "Saving…" : editing ? "Save changes" : "Schedule game"}
@@ -1093,24 +1122,71 @@ export function GameCreationForm({
           </p>
         </aside>
       </form>
+      {opponentDialog && (
+        <OpponentDetailsDialog
+          mode={opponentDialog}
+          opponent={opponentDialog === "edit" ? selectedOpponent : undefined}
+          initialName={opponentChoice === "" ? opponentSearch : ""}
+          canManageSeasonDetails={canManageTeamDetails}
+          seasonId={seasonId}
+          seasonName={
+            seasons.find((season) => season.id === seasonId)?.name ??
+            "Selected season"
+          }
+          onSaved={opponentSaved}
+          onCancel={() => setOpponentDialog(null)}
+        />
+      )}
       {dialog && (
-        <div
-          className="fixed inset-0 z-50 grid place-items-center bg-black/70 p-4"
-          role="presentation"
+        <dialog
+          key={dialog}
+          ref={setupDialog}
+          aria-labelledby="inline-heading"
+          className="panel fixed inset-0 m-auto max-h-[90dvh] w-[calc(100%-2rem)] max-w-lg overflow-y-auto backdrop:bg-black/70"
+          onCancel={(event) => {
+            if (busy || seasons.length === 0) event.preventDefault();
+            else {
+              continueToEvent.current = false;
+              setError("");
+              setDialog(null);
+            }
+          }}
         >
-          <div
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="inline-heading"
-            className="panel w-full max-w-lg"
+          <h2 id="inline-heading" className="text-2xl font-bold">
+            Create New {dialog === "season" ? "Season" : "Event"}
+          </h2>
+          <form
+            className="mt-4 grid gap-3"
+            onSubmit={(event) => {
+              event.preventDefault();
+              if (busy) return;
+              const form = new FormData(event.currentTarget);
+              void (dialog === "season"
+                ? createSeason(form)
+                : createEvent(form));
+            }}
           >
-            <h2 id="inline-heading" className="text-2xl font-bold">
-              Create New {dialog === "season" ? "Season" : "Event"}
-            </h2>
-            <form
-              className="mt-4 grid gap-3"
-              action={dialog === "season" ? createSeason : createEvent}
-            >
+            <fieldset disabled={busy} className="grid min-w-0 gap-3">
+              {dialog === "event" && (
+                <label>
+                  Season
+                  <select
+                    required
+                    name="seasonId"
+                    value={eventSeasonId}
+                    onChange={(event) => setEventSeasonId(event.target.value)}
+                    className="mt-1 min-h-11 w-full rounded-lg bg-slate-800 p-3"
+                  >
+                    {seasons
+                      .filter((season) => season.status !== "archived")
+                      .map((season) => (
+                        <option key={season.id} value={season.id}>
+                          {season.name}
+                        </option>
+                      ))}
+                  </select>
+                </label>
+              )}
               <label>
                 Name
                 <input
@@ -1206,26 +1282,34 @@ export function GameCreationForm({
               )}
               <div className="flex gap-3">
                 <button disabled={busy} className="btn">
-                  Create
+                  {busy
+                    ? "Creating…"
+                    : dialog === "event"
+                      ? "Create event"
+                      : "Create season"}
                 </button>
-                {initialSeasons.length > 0 && (
+                {seasons.length > 0 && (
                   <button
                     type="button"
                     className="btn-secondary"
-                    onClick={() => setDialog(null)}
+                    onClick={() => {
+                      continueToEvent.current = false;
+                      setError("");
+                      setDialog(null);
+                    }}
                   >
                     Cancel
                   </button>
                 )}
               </div>
-              {error && (
-                <p role="alert" className="text-red-300">
-                  {error}
-                </p>
-              )}
-            </form>
-          </div>
-        </div>
+            </fieldset>
+            {error && (
+              <p role="alert" className="text-red-300">
+                {error}
+              </p>
+            )}
+          </form>
+        </dialog>
       )}
     </>
   );

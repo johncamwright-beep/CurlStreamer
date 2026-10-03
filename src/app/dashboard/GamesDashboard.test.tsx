@@ -59,7 +59,17 @@ describe("dashboard role controls", () => {
     expect(scorer).not.toContain("More actions");
     const admin = render("team_admin");
     expect(admin).toContain("More actions");
+    expect(admin).toContain("Edit opponent");
     expect(admin).toContain('href="/dashboard/trash"');
+  });
+  it("only offers opponent editing for a known opponent with a game season", () => {
+    expect(render("owner", [{ ...game, opponentId: null }])).not.toContain(
+      "Edit opponent",
+    );
+    expect(render("owner", [{ ...game, seasonId: null }])).not.toContain(
+      "Edit opponent",
+    );
+    expect(render("scorer")).not.toContain("Edit opponent");
   });
   it("falls back to an existing scheduled watch link when the shared field is empty", () => {
     const html = render("owner", [

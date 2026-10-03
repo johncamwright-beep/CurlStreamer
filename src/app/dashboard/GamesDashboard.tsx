@@ -14,6 +14,7 @@ import { formatScheduledStart } from "@/lib/team-hierarchy";
 import { formatCanonicalGameTitle } from "@/lib/game-title";
 import { youtubeWatchUrlSchema } from "@/lib/youtube-watch";
 import { GameEventFilter } from "@/components/GameEventFilter";
+import { OpponentEditControl } from "@/components/OpponentEditControl";
 
 export function GamesDashboard({
   account,
@@ -71,6 +72,7 @@ export function GamesDashboard({
           key={game.id}
           game={game}
           events={events}
+          seasons={seasons}
           role={membership.role}
           administrator={administrator}
           broadcast={broadcasts.sessions.find((s) => s.gameId === game.id)}
@@ -293,12 +295,14 @@ function EmptyState({ title, text }: { title: string; text: string }) {
 function GameCard({
   game,
   events,
+  seasons,
   role,
   administrator,
   broadcast,
 }: {
   game: ScheduledGameRecord;
   events: EventRecord[];
+  seasons: SeasonRecord[];
   role: string;
   administrator: boolean;
   broadcast?: DashboardBroadcast;
@@ -439,6 +443,17 @@ function GameCard({
         <details className="dashboard-more">
           <summary>More actions</summary>
           <div>
+            {game.opponentId && game.seasonId && (
+              <OpponentEditControl
+                opponentId={game.opponentId}
+                opponentName={game.config.awayName}
+                seasonId={game.seasonId}
+                seasonName={
+                  seasons.find((item) => item.id === game.seasonId)?.name ??
+                  "Game season"
+                }
+              />
+            )}
             {!completed && !closed && (
               <Link className="btn-secondary" href={`/games/${game.id}/edit`}>
                 Edit game

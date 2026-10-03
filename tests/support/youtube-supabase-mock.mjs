@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { dashboardResponse } from "./dashboard-fixtures.mjs";
 
 const userId = "11111111-1111-4111-8111-111111111111";
+const operatorId = "12121212-1212-4121-8121-121212121212";
 const organizationId = "22222222-2222-4222-8222-222222222222";
 const user = {
   id: userId,
@@ -150,15 +151,22 @@ const server = createServer(async (request, response) => {
   const dashboard = dashboardResponse(url);
   if (dashboard !== null) return send(response, 200, dashboard);
   if (url.pathname === "/auth/v1/token" && request.method === "POST") {
+    let raw = "";
+    for await (const chunk of request) raw += chunk;
+    const input = JSON.parse(raw || "{}");
+    const signedInUser =
+      input.email === "operator@youtube.test"
+        ? { ...structuredClone(user), id: operatorId, email: input.email }
+        : structuredClone(user);
     const token = jwt.replace(/[^.]+$/, randomUUID());
-    sessionUsers.set(token, structuredClone(user));
+    sessionUsers.set(token, signedInUser);
     return send(response, 200, {
       access_token: token,
       token_type: "bearer",
       expires_in: 3600,
       expires_at: Math.floor(Date.now() / 1000) + 3600,
       refresh_token: "playwright-refresh",
-      user,
+      user: signedInUser,
     });
   }
   if (url.pathname === "/auth/v1/user") {
@@ -195,7 +203,10 @@ const server = createServer(async (request, response) => {
     return send(response, 200, [
       {
         organization_id: organizationId,
-        role: "owner",
+        role:
+          url.searchParams.get("user_id") === `eq.${operatorId}`
+            ? "game_operator"
+            : "owner",
         organizations: { name: "Test Curling Club" },
       },
     ]);

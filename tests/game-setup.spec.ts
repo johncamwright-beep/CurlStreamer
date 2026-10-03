@@ -14,12 +14,152 @@ test.beforeEach(async ({ page }, info) => {
   await page.waitForURL(`**${target}`);
 });
 async function fillGame(page: import("@playwright/test").Page) {
-  await page
-    .getByLabel("Team 2 — Opponent", { exact: true })
-    .selectOption({ label: "Team Wright" });
+  await page.getByLabel("Team 2 — Opponent", { exact: true }).fill("Wright");
+  await page.getByRole("option", { name: "Team Wright", exact: true }).click();
   await page.locator('input[name="scheduledDate"]').fill("2026-10-20");
   await page.locator('input[name="scheduledTime"]').fill("18:30");
 }
+
+test("top Create event chooses its season and preserves the game draft", async ({
+  page,
+}) => {
+  await fillGame(page);
+  await page.getByText("Rock colours & game length", { exact: true }).click();
+  await page.getByLabel("Scheduled ends").selectOption("10");
+  const payloads: Record<string, any>[] = [];
+  const eventId = "aaaaaaaa-aaaa-4aaa-8aaa-111111111111";
+  const newSeasonId = "aaaaaaaa-aaaa-4aaa-8aaa-222222222222";
+  await page.route("**/api/team-schedule", async (route) => {
+    const payload = route.request().postDataJSON();
+    payloads.push(payload);
+    await route.fulfill({
+      json:
+        payload.operation === "createSeason"
+          ? newSeasonId
+          : payload.operation === "createEvent"
+            ? eventId
+            : { game: { id: payload.gameId } },
+    });
+  });
+  await page
+    .getByRole("combobox", { name: "Season", exact: true })
+    .selectOption("__new");
+  const seasonDialog = page.getByRole("dialog", {
+    name: "Create New Season",
+    exact: true,
+  });
+  await seasonDialog
+    .getByLabel("Name", { exact: true })
+    .fill("2026–27 Exhibition season");
+  await seasonDialog
+    .getByLabel("Start date", { exact: true })
+    .fill("2026-09-01");
+  await seasonDialog.getByLabel("End date", { exact: true }).fill("2027-04-01");
+  await seasonDialog
+    .getByRole("button", { name: "Create season", exact: true })
+    .click();
+  await expect(seasonDialog).toHaveCount(0);
+  await page
+    .getByRole("combobox", { name: "Season", exact: true })
+    .selectOption("33333333-3333-4333-8333-333333333333");
+  await page.getByRole("button", { name: "Create event", exact: true }).click();
+  const dialog = page.getByRole("dialog", {
+    name: "Create New Event",
+    exact: true,
+  });
+  const seasonPicker = dialog.getByRole("combobox", {
+    name: "Season",
+    exact: true,
+  });
+  await expect(seasonPicker).toHaveValue(
+    "33333333-3333-4333-8333-333333333333",
+  );
+  await seasonPicker.selectOption(newSeasonId);
+  await dialog.getByLabel("Name", { exact: true }).fill("Granite Invitational");
+  await dialog
+    .getByRole("combobox", { name: "Type", exact: true })
+    .selectOption("bonspiel");
+  await dialog.getByLabel("Start date", { exact: true }).fill("2026-10-19");
+  await dialog.getByLabel("End date", { exact: true }).fill("2026-10-22");
+  await dialog
+    .getByRole("button", { name: "Create event", exact: true })
+    .click();
+  await expect(dialog).toHaveCount(0);
+  expect(payloads).toHaveLength(2);
+  expect(payloads[1]).toMatchObject({
+    operation: "createEvent",
+    input: {
+      seasonId: newSeasonId,
+      name: "Granite Invitational",
+      eventType: "bonspiel",
+    },
+  });
+  await expect(
+    page.getByRole("combobox", { name: "Event", exact: true }),
+  ).toHaveValue(eventId);
+  await expect(
+    page.getByRole("combobox", { name: "Season", exact: true }),
+  ).toHaveValue(newSeasonId);
+  await expect(page.getByLabel("Game number (optional)")).toHaveValue("1");
+  await expect(
+    page.getByLabel("Team 2 — Opponent", { exact: true }),
+  ).toHaveValue("Team Wright");
+  await expect(page.locator('input[name="scheduledDate"]')).toHaveValue(
+    "2026-10-20",
+  );
+  await expect(page.locator('input[name="scheduledTime"]')).toHaveValue(
+    "18:30",
+  );
+  await expect(page.getByLabel("Scheduled ends")).toHaveValue("10");
+  await page
+    .getByRole("button", { name: "Schedule game", exact: true })
+    .click();
+  await expect(
+    page.getByRole("heading", { name: "Game scheduled", exact: true }),
+  ).toBeVisible();
+  expect(payloads[2]).toMatchObject({
+    operation: "createGame",
+    eventId,
+    gameNumber: 1,
+    opponentId: "77777777-7777-4777-8777-777777777777",
+    scheduledDate: "2026-10-20",
+    scheduledTime: "18:30",
+    config: { scheduledEnds: 10 },
+  });
+});
+
+test("opponent search starts at TBD and supports keyboard selection and cancellation", async ({
+  page,
+}) => {
+  const picker = page.getByLabel("Team 2 — Opponent", { exact: true });
+  await expect(picker).toHaveValue("TBD");
+  await picker.focus();
+  await expect(
+    page.getByRole("listbox", { name: "Matching opponents" }),
+  ).toHaveCount(0);
+  await picker.fill("  wRiGhT ");
+  await expect(
+    page.getByRole("option", { name: "Team Wright", exact: true }),
+  ).toBeVisible();
+  await picker.press("ArrowDown");
+  await expect(picker).toHaveAttribute(
+    "aria-activedescendant",
+    "setup-opponent-results-0",
+  );
+  await picker.press("Enter");
+  await expect(picker).toHaveValue("Team Wright");
+  await expect(picker).toHaveAttribute("aria-expanded", "false");
+  await picker.fill("Unknown team");
+  await picker.press("Escape");
+  await expect(picker).toHaveValue("Team Wright");
+  await picker.fill("");
+  await expect(picker).toHaveValue("TBD");
+  await expect(
+    page
+      .getByRole("listbox", { name: "Matching opponents" })
+      .getByRole("option"),
+  ).toHaveCount(0);
+});
 
 test("schedules multiple games with the same event and distinct save keys", async ({
   page,
@@ -29,6 +169,7 @@ test("schedules multiple games with the same event and distinct save keys", asyn
     .selectOption({ label: "Autumn Club Championship" });
   await fillGame(page);
   await page.locator('input[name="scheduledDate"]').fill("2026-09-12");
+  await expect(page.getByLabel("Game number (optional)")).toHaveValue("6");
   const payloads: Record<string, any>[] = [];
   await page.route("**/api/team-schedule", async (route) => {
     const payload = route.request().postDataJSON();
@@ -51,6 +192,8 @@ test("schedules multiple games with the same event and distinct save keys", asyn
     "2026-09-12",
   );
   await expect(page.locator('input[name="scheduledTime"]')).toHaveValue("");
+  await expect(page.getByLabel("Game number (optional)")).toHaveValue("7");
+  await page.getByLabel("Game number (optional)").fill("12");
   await page.locator('input[name="scheduledTime"]').fill("20:30");
   await page
     .getByRole("button", { name: "Schedule game", exact: true })
@@ -61,9 +204,21 @@ test("schedules multiple games with the same event and distinct save keys", asyn
   expect(payloads).toHaveLength(2);
   expect(payloads[1].gameId).not.toBe(payloads[0].gameId);
   expect(payloads[1].eventId).toBe(payloads[0].eventId);
+  expect(payloads.map((payload) => payload.gameNumber)).toEqual([6, 12]);
   expect(payloads[1].config).toMatchObject({
     scheduledEnds: payloads[0].config.scheduledEnds,
   });
+  await page.getByRole("button", { name: "Yes, schedule another" }).click();
+  await expect(page.getByLabel("Game number (optional)")).toHaveValue("13");
+  await page.locator('input[name="scheduledTime"]').fill("21:30");
+  await page
+    .getByRole("button", { name: "Schedule game", exact: true })
+    .click();
+  await expect(
+    page.getByRole("heading", { name: "Game scheduled", exact: true }),
+  ).toBeVisible();
+  expect(payloads.map((payload) => payload.gameNumber)).toEqual([6, 12, 13]);
+  expect(new Set(payloads.map((payload) => payload.gameId)).size).toBe(3);
   await page.getByRole("button", { name: "No, I’m finished" }).click();
   await expect(
     page.getByRole("heading", { name: "Open the last game?" }),
@@ -77,9 +232,8 @@ test("duplicate game number can be cleared without losing the game details", asy
   await page
     .getByRole("combobox", { name: "Event", exact: true })
     .selectOption({ label: "Autumn Club Championship" });
-  await page
-    .getByLabel("Team 2 — Opponent", { exact: true })
-    .selectOption({ label: "Team Wright" });
+  await page.getByLabel("Team 2 — Opponent", { exact: true }).fill("Wright");
+  await page.getByRole("option", { name: "Team Wright", exact: true }).click();
   await page.locator('input[name="scheduledDate"]').fill("2026-09-12");
   await page.locator('input[name="scheduledTime"]').fill("18:30");
   await page.getByLabel("Game number (optional)").fill("5");
@@ -219,9 +373,7 @@ test("unknown opponents are explained and invalid collapsed title settings reope
   page,
 }) => {
   await fillGame(page);
-  await page
-    .getByLabel("Team 2 — Opponent", { exact: true })
-    .selectOption("__tbd");
+  await page.getByLabel("Team 2 — Opponent", { exact: true }).fill("");
   await expect(
     page.getByRole("complementary", { name: "Review game" }),
   ).toContainText("Assign the opponent before scoring begins");
@@ -274,31 +426,33 @@ test("expanded options stay inside the setup form on phones and small laptops", 
   });
 });
 
-test("new opponents and TBD save the intended opponent without a stale selection", async ({
+test("unmatched search cannot save a stale opponent and clearing restores TBD", async ({
   page,
 }) => {
   await fillGame(page);
   const picker = page.getByLabel("Team 2 — Opponent", { exact: true });
-  await picker.selectOption("__new");
-  await page.getByLabel("New opponent name").fill("  Team   Granite  ");
+  await picker.fill("No Such Opponent");
   const payloads: Record<string, unknown>[] = [];
   await page.route("**/api/team-schedule", async (route) => {
     payloads.push(route.request().postDataJSON());
     await route.fulfill({ status: 503, json: { error: "Try again shortly." } });
   });
   const save = page.getByRole("button", { name: "Schedule game", exact: true });
-  await save.click();
-  await expect.poll(() => payloads.length).toBe(1);
-  expect(payloads[0]).toMatchObject({ opponentName: "Team Granite" });
-  expect(payloads[0]).not.toHaveProperty("opponentId");
+  await expect(save).toBeDisabled();
+  await expect(
+    page
+      .getByRole("listbox", { name: "Matching opponents" })
+      .getByRole("option"),
+  ).toHaveCount(0);
+  expect(payloads).toHaveLength(0);
+  await picker.fill("");
   await expect(save).toBeEnabled();
-  await picker.selectOption("__tbd");
   await expect(picker).toBeEnabled();
   await save.click();
-  await expect.poll(() => payloads.length).toBe(2);
-  expect(payloads[1]).not.toHaveProperty("opponentId");
-  expect(payloads[1]).not.toHaveProperty("opponentName");
-  expect(payloads[1]).toMatchObject({ config: { awayName: "Opponent TBD" } });
+  await expect.poll(() => payloads.length).toBe(1);
+  expect(payloads[0]).not.toHaveProperty("opponentId");
+  expect(payloads[0]).not.toHaveProperty("opponentName");
+  expect(payloads[0]).toMatchObject({ config: { awayName: "Opponent TBD" } });
 });
 
 test("edit game preserves the current opponent and allows selecting a saved team", async ({
@@ -308,7 +462,7 @@ test("edit game preserves the current opponent and allows selecting a saved team
     page.getByRole("heading", { name: "Edit game", exact: true }),
   ).toBeVisible();
   const picker = page.getByLabel("Team 2 — Opponent", { exact: true });
-  await expect(picker).toHaveValue("opponent");
+  await expect(picker).toHaveValue("Team Wright");
   await page.locator('input[name="scheduledDate"]').fill("2026-09-12");
   const payloads: Record<string, unknown>[] = [];
   await page.route("**/api/team-schedule", async (route) => {
@@ -323,7 +477,8 @@ test("edit game preserves the current opponent and allows selecting a saved team
     opponentId: "opponent",
   });
   await expect(save).toBeEnabled();
-  await picker.selectOption({ label: "Team Wright" });
+  await picker.fill("Wright");
+  await page.getByRole("option", { name: "Team Wright", exact: true }).click();
   await save.click();
   await expect.poll(() => payloads.length).toBe(2);
   expect(payloads[1]).toMatchObject({
@@ -332,26 +487,58 @@ test("edit game preserves the current opponent and allows selecting a saved team
   });
 });
 
-test("saving a new opponent adds it to the dropdown and leaving TBD restores selection", async ({
+test("saving a new opponent adds it to search and leaving TBD restores selection", async ({
   page,
 }) => {
   await fillGame(page);
   const picker = page.getByLabel("Team 2 — Opponent", { exact: true });
-  await picker.selectOption("__new");
-  await page.getByLabel("New opponent name").fill("  Team   Granite  ");
+  await page
+    .getByRole("button", { name: "Create new opponent", exact: true })
+    .click();
+  await page.getByLabel("Saved team name").fill("Team Granite");
+  const opponentDialog = page.getByRole("dialog", {
+    name: "New opponent",
+    exact: true,
+  });
+  await expect(
+    opponentDialog.getByRole("button", { name: "Save", exact: true }),
+  ).toHaveCount(1);
+  await opponentDialog
+    .getByRole("combobox", { name: "Competition level", exact: true })
+    .selectOption("U20");
+  await opponentDialog.getByLabel("Lead", { exact: true }).fill("Alex Lead");
+  await opponentDialog.getByLabel("Fourth", { exact: true }).fill("Sam Skip");
   const payloads: Record<string, unknown>[] = [];
   await page.route("**/api/team-schedule", async (route) => {
     const payload = route.request().postDataJSON();
     payloads.push(payload);
-    if (payload.operation === "createOpponent") {
+    if (
+      payload.operation === "createOpponent" ||
+      payload.operation === "createOpponentDetails"
+    ) {
       await route.fulfill({
         status: 201,
-        json: [
-          {
-            opponent_id: "88888888-8888-4888-8888-888888888888",
-            display_name: "Team Granite",
-          },
-        ],
+        json:
+          payload.operation === "createOpponent"
+            ? [
+                {
+                  opponent_id: "88888888-8888-4888-8888-888888888888",
+                  display_name: "Team Granite",
+                },
+              ]
+            : {
+                opponent: {
+                  id: "88888888-8888-4888-8888-888888888888",
+                  displayName: "Team Granite",
+                },
+                profile: {
+                  opponent_id: "88888888-8888-4888-8888-888888888888",
+                  season_id: payload.input.seasonId,
+                  level: payload.input.level,
+                  roster: payload.input.roster,
+                  revision: 1,
+                },
+              },
       });
     } else
       await route.fulfill({
@@ -359,18 +546,24 @@ test("saving a new opponent adds it to the dropdown and leaving TBD restores sel
         json: { error: "Try again shortly." },
       });
   });
-  await page
-    .getByRole("button", { name: "Save opponent", exact: true })
-    .click();
-  await expect(picker).toHaveValue("88888888-8888-4888-8888-888888888888");
-  expect(payloads[0]).toEqual({
-    operation: "createOpponent",
-    input: { displayName: "Team Granite" },
+  await page.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(picker).toHaveValue("Team Granite");
+  expect(payloads[0]).toMatchObject({
+    operation: "createOpponentDetails",
+    input: {
+      displayName: "Team Granite",
+      seasonId: "33333333-3333-4333-8333-333333333333",
+      level: "U20",
+      roster: { lead: "Alex Lead", fourth: "Sam Skip" },
+      expectedRevision: 0,
+    },
   });
-  await expect(page.getByLabel("New opponent name")).toHaveCount(0);
-  await picker.selectOption("__tbd");
+  expect(payloads).toHaveLength(1);
+  await expect(page.getByLabel("Saved team name")).toHaveCount(0);
+  await picker.fill("");
   await expect(picker).toBeEnabled();
-  await picker.selectOption({ label: "Team Granite" });
+  await picker.fill("Granite");
+  await page.getByRole("option", { name: "Team Granite", exact: true }).click();
   await page
     .getByRole("button", { name: "Schedule game", exact: true })
     .click();

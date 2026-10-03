@@ -55,7 +55,9 @@ test.beforeAll(async () => {
 
 async function scheduleGame(page: Page) {
   const game = await installGameFixture(page);
+  const opponentId = "77777777-7777-4777-8777-777777777777";
   let created = false;
+  let opponentCreated = false;
   await page.route("**/games/new", (route) =>
     route.fulfill({
       contentType: "text/html",
@@ -67,12 +69,33 @@ async function scheduleGame(page: Page) {
   );
   await page.route("**/api/team-schedule", async (route) => {
     const body = route.request().postDataJSON();
+    if (body.operation === "createOpponentDetails") {
+      expect(body.input).toMatchObject({
+        displayName: "Stones",
+        seasonId: "22222222-2222-4222-8222-222222222222",
+        expectedRevision: 0,
+      });
+      opponentCreated = true;
+      await route.fulfill({
+        json: {
+          opponent: { id: opponentId, displayName: "Stones" },
+          profile: {
+            opponent_id: opponentId,
+            season_id: body.input.seasonId,
+            level: body.input.level,
+            roster: body.input.roster,
+            revision: 1,
+          },
+        },
+      });
+      return;
+    }
     expect(body).toMatchObject({
       operation: "createGame",
       scheduledDate: "2026-11-01",
       scheduledTime: "13:00",
       timezone: "America/Toronto",
-      opponentName: "Stones",
+      opponentId,
     });
     game.config = { ...game.config, ...body.config };
     created = true;
@@ -82,8 +105,17 @@ async function scheduleGame(page: Page) {
   });
   await page.goto("/games/new");
   await page
-    .getByRole("textbox", { name: "New opponent name", exact: true })
+    .getByRole("button", { name: "Create new opponent", exact: true })
+    .click();
+  const dialog = page.getByRole("dialog", { name: "New opponent" });
+  await dialog
+    .getByRole("textbox", { name: "Saved team name", exact: true })
     .fill("Stones");
+  await dialog.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(dialog).not.toBeVisible();
+  await expect(
+    page.getByLabel("Team 2 — Opponent", { exact: true }),
+  ).toHaveValue("Stones");
   await page.locator('input[name="scheduledDate"]').fill("2026-11-01");
   await page.locator('input[name="scheduledTime"]').fill("13:00");
   await page
@@ -99,6 +131,7 @@ async function scheduleGame(page: Page) {
     ),
   ).toBeNull();
   expect(created).toBe(true);
+  expect(opponentCreated).toBe(true);
   return game;
 }
 

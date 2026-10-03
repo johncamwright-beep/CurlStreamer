@@ -11,6 +11,7 @@ export default defineConfig({
     "dashboard.spec.ts",
     "game-setup.spec.ts",
     "opponent-links.spec.ts",
+    "opponent-seasons.spec.ts",
     "team-settings.spec.ts",
     "billing.spec.ts",
     "news-editor.spec.ts",

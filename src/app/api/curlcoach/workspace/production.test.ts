@@ -14,6 +14,7 @@ const mocks = vi.hoisted(() => ({
   productionSource: vi.fn(),
   load: vi.fn(),
   save: vi.fn(),
+  lineup: vi.fn(),
   transition: vi.fn(),
   localRead: vi.fn(),
   localWrite: vi.fn(),
@@ -36,6 +37,7 @@ vi.mock("@/lib/providers/curlcoach-production-streamer", () => ({
 vi.mock("@/lib/providers/curlcoach-store", () => ({
   loadCoachState: mocks.load,
   saveCoachState: mocks.save,
+  saveCoachLineup: mocks.lineup,
   transitionCoachState: mocks.transition,
 }));
 vi.mock("@/lib/providers/curlcoach-local", () => ({
@@ -241,4 +243,49 @@ it("rejects cross-origin mutations before loading the production event", async (
   expect(mocks.productionSource).not.toHaveBeenCalled();
   expect(mocks.load).not.toHaveBeenCalled();
   expect(mocks.transition).not.toHaveBeenCalled();
+});
+
+it("saves an actor-scoped eight-rock lineup and rejects malformed or unauthorized requests", async () => {
+  mocks.lineup.mockResolvedValue({
+    ...state(),
+    lineup: Array(8).fill("player-1"),
+    revision: 1,
+  });
+  const body = {
+    source: "streamer",
+    eventId: ids.event,
+    gameId: ids.game,
+    action: "set-lineup",
+    requestId: "00000000-0000-4000-8000-000000000006",
+    expectedRevision: 0,
+    lineup: Array(8).fill("player-1"),
+  };
+  const send = (value: object) =>
+    POST(
+      new Request("http://localhost/api/curlcoach/workspace", {
+        method: "POST",
+        headers: {
+          origin: "http://localhost",
+          "content-type": "application/json",
+        },
+        body: JSON.stringify(value),
+      }),
+    );
+  expect((await send(body)).status).toBe(200);
+  expect(mocks.lineup).toHaveBeenCalledWith(
+    {
+      organizationId: ids.organization,
+      gameId: ids.game,
+      actorUserId: ids.actor,
+    },
+    state(),
+    {
+      action: "set-lineup",
+      requestId: body.requestId,
+      expectedRevision: 0,
+      lineup: body.lineup,
+    },
+  );
+  expect((await send({ ...body, lineup: ["player-1"] })).status).toBe(400);
+  expect((await send({ ...body, gameId: ids.otherGame })).status).toBe(403);
 });

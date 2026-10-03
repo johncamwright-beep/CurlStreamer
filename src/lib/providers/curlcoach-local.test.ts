@@ -1,7 +1,11 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { readCoachState, writeCoachEvent } from "./curlcoach-local";
+import {
+  readCoachState,
+  writeCoachEvent,
+  writeCoachLineup,
+} from "./curlcoach-local";
 import { currentShots, type Command } from "@/lib/curlcoach/model";
 beforeEach(() => {
   vi.stubEnv("NODE_ENV", "test");
@@ -63,4 +67,33 @@ it("rejects disabled access and paths outside the local directory", () => {
   vi.stubEnv("CURLCOACH_ENABLED", "true");
   vi.stubEnv("CURLCOACH_LAB_STORAGE", "../outside");
   expect(() => readCoachState()).toThrow();
+});
+
+it("persists an eight-rock lineup independently of shot history and retries", () => {
+  const first = command();
+  const recorded = writeCoachEvent(first);
+  const lineup = {
+    action: "set-lineup" as const,
+    requestId: crypto.randomUUID(),
+    expectedRevision: 1,
+    lineup: [
+      "lead",
+      "lead",
+      "lead",
+      "second",
+      "second",
+      "second",
+      "third",
+      "third",
+    ],
+  };
+  writeCoachLineup(lineup);
+  writeCoachLineup(lineup);
+  expect(readCoachState().lineup).toEqual(lineup.lineup);
+  expect(readCoachState().lineupEvents).toHaveLength(1);
+  expect(readCoachState().events).toEqual(recorded.events);
+  expect(readCoachState().revision).toBe(2);
+  expect(() =>
+    writeCoachLineup({ ...lineup, requestId: crypto.randomUUID() }),
+  ).toThrow("Report changed");
 });

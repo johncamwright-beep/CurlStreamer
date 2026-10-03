@@ -15,6 +15,7 @@ import {
   loadCoachState,
   saveCoachState,
   transitionCoachState,
+  saveCoachLineup,
   type CurlCoachScope,
 } from "./curlcoach-store";
 
@@ -58,7 +59,9 @@ function command(): Command {
   };
 }
 
-beforeEach(() => rpc.mockReset());
+beforeEach(() => {
+  rpc.mockReset();
+});
 
 describe("CurlCoach private store", () => {
   it("returns supplied canonical state only when the actor has no private session", async () => {
@@ -127,4 +130,37 @@ describe("CurlCoach private store", () => {
     );
     expect(rpc).not.toHaveBeenCalled();
   });
+});
+
+it("commits lineup as its own actor-scoped CAS command and sends exact retries to SQL", async () => {
+  const input = {
+    action: "set-lineup" as const,
+    requestId: "10000000-0000-4000-8000-000000000006",
+    expectedRevision: 0,
+    lineup: Array(8).fill("lead"),
+  };
+  rpc.mockImplementation((_name, args) =>
+    Promise.resolve({ data: args.p_next_state, error: null }),
+  );
+  const committed = await saveCoachLineup(scope, state(), input);
+  expect(committed.events).toEqual([]);
+  await saveCoachLineup(scope, committed, input);
+  expect(rpc).toHaveBeenLastCalledWith(
+    "apply_curlcoach_command",
+    expect.objectContaining({
+      p_actor_user_id: scope.actorUserId,
+      p_organization_id: scope.organizationId,
+      p_game_id: scope.gameId,
+      p_command_type: "set-lineup",
+      p_expected_revision: 0,
+      p_payload: input,
+    }),
+  );
+  await expect(
+    saveCoachLineup(
+      { ...scope, gameId: "10000000-0000-4000-8000-000000000007" },
+      state(),
+      input,
+    ),
+  ).rejects.toThrow("scope mismatch");
 });

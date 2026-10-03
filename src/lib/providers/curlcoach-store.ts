@@ -3,6 +3,9 @@ import { z } from "zod";
 import { createAdminSupabaseClient } from "@/lib/supabase/admin";
 import {
   append,
+  setLineup,
+  lineupCommandSchema,
+  type LineupCommand,
   commandSchema,
   stateSchema,
   type Command,
@@ -52,7 +55,7 @@ async function apply(
   scope: CurlCoachScope,
   requestId: string,
   expectedRevision: number,
-  commandType: "command" | CurlCoachLifecycle,
+  commandType: "command" | "set-lineup" | CurlCoachLifecycle,
   payload: Record<string, unknown>,
   nextState: State,
 ) {
@@ -153,6 +156,26 @@ export async function transitionCoachState(
     expectedRevision,
     action,
     { requestId, expectedRevision, action },
+    validateScopedState(scope, next),
+  );
+}
+
+/** Lineup changes are private, revisioned commands; recorded shot identities stay intact. */
+export async function saveCoachLineup(
+  scopeInput: CurlCoachScope,
+  state: State,
+  input: LineupCommand,
+) {
+  const scope = scopeSchema.parse(scopeInput);
+  const current = validateScopedState(scope, state);
+  const command = lineupCommandSchema.parse(input);
+  const next = setLineup(current, command, scope.actorUserId);
+  return apply(
+    scope,
+    command.requestId,
+    command.expectedRevision,
+    "set-lineup",
+    command,
     validateScopedState(scope, next),
   );
 }

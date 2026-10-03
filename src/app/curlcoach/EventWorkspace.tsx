@@ -31,6 +31,19 @@ import {
 import { updateWorkspaceState } from "@/lib/curlcoach/workspace-state";
 import { eventLevels } from "@/lib/team-hierarchy";
 import { preferredGame } from "@/lib/current-game";
+import {
+  emptyResumeStore,
+  readResumeStore,
+  writeResumeStore,
+  rememberResume,
+  reconcileResume,
+  resumeId,
+  validResumeSnapshot,
+  type ResumeScope,
+  type ResumeSnapshot,
+  type ResumeStore,
+  type TrackerResume,
+} from "@/lib/curlcoach/resume-storage";
 import CoachLab, { turnLabel } from "./CoachLab";
 import ReviewSummary from "./ReviewSummary";
 import MissAnalysis from "./MissAnalysis";
@@ -635,10 +648,12 @@ export default function EventWorkspace({
   unlocked,
   mode = "lab",
   initialEventId,
+  accountScope,
 }: {
   unlocked: boolean;
   mode?: "lab" | "streamer";
   initialEventId?: string;
+  accountScope?: ResumeScope;
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [actionsTarget, setActionsTarget] = useState<HTMLDivElement | null>(
@@ -647,9 +662,13 @@ export default function EventWorkspace({
   const [filtersTarget, setFiltersTarget] = useState<HTMLDivElement | null>(
     null,
   );
-  const drafts = useRef(
-    new Map<string, { draft: Shot; editing: string | null; current?: Shot }>(),
+  const drafts = useRef(new Map<string, TrackerResume>());
+  const resumeStore = useRef<ResumeStore | null>(null);
+  const [trackingAnchor, setTrackingAnchor] = useState<ResumeSnapshot | null>(
+    null,
   );
+  const [resumeResetKey, setResumeResetKey] = useState(0);
+  const pendingResume = useRef<ResumeSnapshot | null>(null);
   const [platformAdmin, setPlatformAdmin] = useState(false);
   useEffect(() => {
     if (mode !== "streamer") return;
@@ -686,10 +705,30 @@ export default function EventWorkspace({
   const [selectionReady, setSelectionReady] = useState(false);
   useEffect(() => {
     const query = new URLSearchParams(location.search);
+    drafts.current.clear();
+    savedStates.current.clear();
+    setData(null);
+    setStatsData(null);
+    let stored: ResumeStore | null = accountScope
+      ? emptyResumeStore(accountScope)
+      : null;
+    try {
+      if (accountScope)
+        stored = readResumeStore(window.localStorage, accountScope);
+    } catch {
+      // Storage may be unavailable; in-memory tracking still works.
+    }
+    resumeStore.current = stored;
+    setTrackingAnchor(stored?.active ?? null);
     if (mode !== "streamer" && query.get("source") === "streamer")
       setSource("streamer");
     if (!initialEventId && query.get("event")) setEventId(query.get("event")!);
     if (query.get("game")) setGameId(query.get("game")!);
+    else if (!query.get("event") && !initialEventId && stored?.active) {
+      setSource(stored.active.source);
+      setEventId(stored.active.eventId);
+      setGameId(stored.active.gameId);
+    }
     const read = () =>
       setView(
         pages.find(
@@ -706,7 +745,12 @@ export default function EventWorkspace({
     setSelectionReady(true);
     window.addEventListener("hashchange", read);
     return () => window.removeEventListener("hashchange", read);
-  }, [initialEventId, mode]);
+  }, [
+    initialEventId,
+    mode,
+    accountScope?.actorId,
+    accountScope?.organizationId,
+  ]);
   const [seasonId, setSeasonId] = useState("");
   const [statsEventId, setStatsEventId] = useState("");
   const [statsData, setStatsData] = useState<Workspace | null>(null);
@@ -769,7 +813,49 @@ export default function EventWorkspace({
         let current: Workspace = result;
         for (const state of savedStates.current.values())
           current = updateWorkspaceState(current, state);
+        for (const loadedGame of current.event.games) {
+          const identity = {
+            source: current.event.source,
+            eventId: current.event.id,
+            gameId: loadedGame.id,
+          };
+          const snapshot =
+            pendingResume.current &&
+            resumeId(pendingResume.current) === resumeId(identity)
+              ? pendingResume.current
+              : resumeStore.current?.drafts.find(
+                  (entry) => resumeId(entry) === resumeId(identity),
+                );
+          if (snapshot) {
+            const reconciled = reconcileResume(
+              snapshot,
+              loadedGame.state,
+              accountScope,
+            );
+            if (reconciled) drafts.current.set(resumeId(identity), reconciled);
+            else drafts.current.delete(resumeId(identity));
+          }
+        }
         setData(current);
+        const resumedGameId =
+          pendingResume.current?.eventId === current.event.id
+            ? pendingResume.current.gameId
+            : null;
+        if (
+          pendingResume.current &&
+          current.event.id === pendingResume.current.eventId
+        ) {
+          if (
+            !current.event.games.some(
+              (g) => g.id === pendingResume.current?.gameId,
+            )
+          )
+            setError(
+              "The tracked game is no longer available to this account.",
+            );
+          pendingResume.current = null;
+          setResumeResetKey((value) => value + 1);
+        }
         setStatsData((previous) =>
           !resetStatistics &&
           previous?.event.organizationId === current.event.organizationId &&
@@ -781,15 +867,15 @@ export default function EventWorkspace({
               )
             : null,
         );
-        setGameId((current) =>
-          result.event.games.some((g: CoachGame) => g.id === current)
-            ? current
-            : (preferredGame<CoachGame>(result.event.games)?.id ?? ""),
+        setGameId(
+          (current) =>
+            resumedGameId ??
+            (result.event.games.some((g: CoachGame) => g.id === current)
+              ? current
+              : (preferredGame<CoachGame>(result.event.games)?.id ?? "")),
         );
       } catch (e) {
         if (!signal?.aborted && sequence === refreshSequence.current) {
-          setData(null);
-          setStatsData(null);
           setError(e instanceof Error ? e.message : "Event unavailable");
         }
       } finally {
@@ -797,7 +883,7 @@ export default function EventWorkspace({
           setBusy(false);
       }
     },
-    [source, eventId],
+    [source, eventId, accountScope?.actorId, accountScope?.organizationId],
   );
   useEffect(() => {
     if (!open || !selectionReady) return;
@@ -875,6 +961,95 @@ export default function EventWorkspace({
       current ? updateWorkspaceState(current, state) : current,
     );
   }
+  function retainDraft(
+    value: TrackerResume,
+    activelyTracking = false,
+    stateRevision?: number,
+  ) {
+    if (!event || !game) return;
+    const snapshot = validResumeSnapshot({
+      ...value,
+      source,
+      eventId: event.id,
+      gameId: game.id,
+      stateRevision:
+        stateRevision ?? game.state.revision ?? game.state.events.length,
+      updatedAt: Date.now(),
+    });
+    if (!snapshot) return;
+    drafts.current.set(resumeId(snapshot), value);
+    if (activelyTracking) setTrackingAnchor(snapshot);
+    if (resumeStore.current) {
+      resumeStore.current = rememberResume(
+        resumeStore.current,
+        snapshot,
+        activelyTracking,
+      );
+      try {
+        writeResumeStore(window.localStorage, resumeStore.current);
+      } catch {
+        // Tracking is available even when browser storage is disabled.
+      }
+    }
+  }
+  function resumeTracking() {
+    const anchor = trackingAnchor;
+    setView("Scoring");
+    setMenuOpen(false);
+    location.hash = "scoring";
+    if (anchor) {
+      const persistedDraft = resumeStore.current?.drafts.find(
+        (entry) => resumeId(entry) === resumeId(anchor),
+      );
+      const activeDraft =
+        drafts.current.get(resumeId(anchor)) ?? persistedDraft;
+      const target: ResumeSnapshot = {
+        ...anchor,
+        stateRevision: persistedDraft?.stateRevision ?? anchor.stateRevision,
+        // Corrections are review work; return to the parked tracking turn.
+        draft:
+          activeDraft?.current ??
+          activeDraft?.draft ??
+          anchor.current ??
+          anchor.draft,
+        editing: null,
+      };
+      if (event?.source === target.source && event.id === target.eventId) {
+        const targetGame = event.games.find(
+          (entry) => entry.id === target.gameId,
+        );
+        if (!targetGame) {
+          setError("The tracked game is no longer available to this account.");
+          return;
+        }
+        const value = reconcileResume(target, targetGame.state, accountScope);
+        if (value) drafts.current.set(resumeId(target), value);
+        else drafts.current.delete(resumeId(target));
+        setGameId(target.gameId);
+        setResumeResetKey((value) => value + 1);
+      } else {
+        pendingResume.current = target;
+        setData(null);
+        setSource(target.source);
+        setEventId(target.eventId);
+        setGameId(target.gameId);
+        if (source === target.source && eventId === target.eventId)
+          void refresh();
+      }
+      remember(target.source, target.eventId, target.gameId);
+    } else if (event && game) {
+      const identity = { source, eventId: event.id, gameId: game.id };
+      const current = drafts.current.get(resumeId(identity));
+      if (current)
+        drafts.current.set(resumeId(identity), {
+          draft: current.current ?? current.draft,
+          current: current.current ?? current.draft,
+          editing: null,
+        });
+      setResumeResetKey((value) => value + 1);
+      remember(source, event.id, game.id);
+    }
+  }
 
   return (
     <div className="coach-workspace">
@@ -890,6 +1065,15 @@ export default function EventWorkspace({
           >
             <span aria-hidden="true">☰</span> {view}
           </button>
+          {open && (
+            <button
+              type="button"
+              onClick={resumeTracking}
+              disabled={busy || (!trackingAnchor && !game)}
+            >
+              Resume tracking
+            </button>
+          )}
           <div
             ref={setActionsTarget}
             hidden={view !== "Scoring"}
@@ -1173,13 +1357,12 @@ export default function EventWorkspace({
                   unlocked
                   actionsTarget={actionsTarget}
                   resume={drafts.current.get(
-                    source + ":" + event.id + ":" + game.id,
+                    resumeId({ source, eventId: event.id, gameId: game.id }),
                   )}
-                  onResume={(value) =>
-                    drafts.current.set(
-                      source + ":" + event.id + ":" + game.id,
-                      value,
-                    )
+                  resumeResetKey={resumeResetKey}
+                  onResume={(value) => retainDraft(value)}
+                  onTrackingProgress={(value) =>
+                    retainDraft(value, true, value.stateRevision)
                   }
                   context={{
                     source,

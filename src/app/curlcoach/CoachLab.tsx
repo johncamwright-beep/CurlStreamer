@@ -20,6 +20,8 @@ import {
 import "./coach.css";
 import { createPortal } from "react-dom";
 import { nextTurn } from "@/lib/curlcoach/next-turn";
+import { resolvedLineup, rockNumber } from "@/lib/curlcoach/lineup";
+import LineupDialog from "./LineupDialog";
 import ReviewSummary from "./ReviewSummary";
 
 export function turnLabel(value: string) {
@@ -44,12 +46,27 @@ const blank: Shot = {
 function blankDraft(playerId: string): Shot {
   return { ...blank, playerId };
 }
+function inferredDraft(
+  state: State | null,
+  players: readonly NonNullable<State["roster"]>[number][],
+): Shot {
+  const shots = currentShots(state?.events ?? []);
+  const latest = [...shots].sort(
+    (a, b) => b.end - a.end || rockNumber(b) - rockNumber(a),
+  )[0];
+  const lineup = resolvedLineup(players, state?.lineup);
+  return latest
+    ? (nextTurn(latest, shots, players, lineup) ?? latest)
+    : blankDraft(lineup[0] ?? "");
+}
 export default function CoachLab({
   unlocked,
   actionsTarget,
   context,
   resume,
   onResume,
+  resumeResetKey = 0,
+  onTrackingProgress,
 }: {
   unlocked: boolean;
   actionsTarget?: HTMLDivElement | null;
@@ -58,6 +75,13 @@ export default function CoachLab({
     draft: Shot;
     editing: string | null;
     current?: Shot;
+  }) => void;
+  resumeResetKey?: number;
+  onTrackingProgress?: (value: {
+    draft: Shot;
+    editing: string | null;
+    current?: Shot;
+    stateRevision: number;
   }) => void;
   context?: {
     source: "sample" | "streamer";
@@ -73,6 +97,10 @@ export default function CoachLab({
   const [state, setState] = useState<State | null>(
     context?.initialState ?? null,
   );
+  const latestState = useRef(state);
+  useEffect(() => {
+    latestState.current = state;
+  }, [state]);
   useEffect(() => {
     if (context) setState(context.initialState);
   }, [context?.initialState]);
@@ -81,24 +109,26 @@ export default function CoachLab({
   const [draft, setDraft] = useState<Shot>(
     () =>
       resume?.draft ??
-      (() => {
-        const shots = currentShots(context?.initialState.events ?? []);
-        const positions = ["Lead", "Second", "Third", "Fourth"];
-        const latest = [...shots].sort(
-          (a, b) =>
-            b.end - a.end ||
-            positions.indexOf(b.position) - positions.indexOf(a.position) ||
-            b.stone - a.stone,
-        )[0];
-        return latest
-          ? (nextTurn(latest, shots, initialPlayers) ?? latest)
-          : blankDraft(initialPlayers[0]?.id ?? "");
-      })(),
+      inferredDraft(context?.initialState ?? null, initialPlayers),
   );
   const [editing, setEditing] = useState<string | null>(
     resume?.editing ?? null,
   );
   const currentDraft = useRef(resume?.current ?? draft);
+  const deliberateDraftChange = useRef(false);
+  const lastReset = useRef(resumeResetKey);
+  useEffect(() => {
+    if (lastReset.current === resumeResetKey) return;
+    lastReset.current = resumeResetKey;
+    const restored =
+      resume?.current ??
+      resume?.draft ??
+      inferredDraft(state, state?.roster ?? context?.roster ?? [...roster]);
+    currentDraft.current = restored;
+    setDraft(restored);
+    setEditing(null);
+    entry.current?.scrollIntoView({ block: "start", behavior: "smooth" });
+  }, [resumeResetKey, resume, state, context?.roster]);
   useEffect(() => {
     onResume?.({
       draft,
@@ -106,6 +136,17 @@ export default function CoachLab({
       current: editing ? currentDraft.current : draft,
     });
   }, [draft, editing, onResume]);
+  useEffect(() => {
+    if (!deliberateDraftChange.current) return;
+    deliberateDraftChange.current = false;
+    if (!editing && state)
+      onTrackingProgress?.({
+        draft,
+        editing: null,
+        current: draft,
+        stateRevision: state.revision ?? state.events.length,
+      });
+  }, [draft, editing, onTrackingProgress, state]);
   const entry = useRef<HTMLElement>(null);
   useEffect(() => {
     if (!editing) currentDraft.current = draft;
@@ -118,7 +159,14 @@ export default function CoachLab({
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
   const [history, setHistory] = useState(false);
+  const [lineupOpen, setLineupOpen] = useState(false);
+  const pendingLineup = useRef<{
+    signature: string;
+    requestId: string;
+    expectedRevision: number;
+  } | null>(null);
   const players = state?.roster ?? context?.roster ?? roster;
+  const lineup = resolvedLineup(players, state?.lineup);
   const closed = state?.status === "closed";
   const rosterReady = players.length > 0;
   useEffect(() => {
@@ -211,6 +259,7 @@ export default function CoachLab({
           shot,
           currentShots(data.events),
           data.roster ?? players,
+          resolvedLineup(data.roster ?? players, data.lineup),
         );
         if (next) {
           const existing = currentShots(data.events).find(
@@ -235,17 +284,30 @@ export default function CoachLab({
         }
       } else if (editing) setDraft(currentDraft.current);
       else if (shot)
-        setDraft({
-          ...blank,
-          end: shot.end,
-          playerId: shot.playerId,
-          position: shot.position,
-          stone: shot.stone === 1 ? 2 : 1,
-          flagged: false,
-          ...(shot.videoReview
-            ? { videoReview: { ...shot.videoReview, positionSeconds: null } }
-            : {}),
+        setDraft(
+          nextTurn(
+            shot,
+            currentShots(data.events),
+            data.roster ?? players,
+            resolvedLineup(data.roster ?? players, data.lineup),
+          ) ?? shot,
+        );
+      if (shot && !editing) {
+        const current =
+          nextTurn(
+            shot,
+            currentShots(data.events),
+            data.roster ?? players,
+            resolvedLineup(data.roster ?? players, data.lineup),
+          ) ?? shot;
+        currentDraft.current = current;
+        onTrackingProgress?.({
+          draft: current,
+          editing: null,
+          current,
+          stateRevision: data.revision ?? data.events.length,
         });
+      }
     } catch (error) {
       setMessage(
         error instanceof Error
@@ -255,6 +317,80 @@ export default function CoachLab({
     } finally {
       setBusy(false);
     }
+  }
+  async function saveLineup(nextLineup: string[]) {
+    if (!context || !state) throw new Error("Open a game to set its lineup.");
+    const signature = JSON.stringify(nextLineup);
+    if (
+      pendingLineup.current &&
+      (state.revision ?? state.events.length) !==
+        pendingLineup.current.expectedRevision &&
+      !state.lineupEvents?.some(
+        (event) => event.requestId === pendingLineup.current?.requestId,
+      )
+    )
+      pendingLineup.current = null;
+    if (pendingLineup.current?.signature !== signature)
+      pendingLineup.current = {
+        signature,
+        requestId: crypto.randomUUID(),
+        expectedRevision: state.revision ?? state.events.length,
+      };
+    const command = pendingLineup.current;
+    const response = await fetch("/api/curlcoach/workspace", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        source: context.source,
+        eventId: context.eventId,
+        gameId: context.gameId,
+        action: "set-lineup",
+        lineup: nextLineup,
+        requestId: command.requestId,
+        expectedRevision: command.expectedRevision,
+      }),
+    });
+    const data = await response.json();
+    if (!response.ok)
+      throw new Error(data.error ?? "Lineup could not be saved.");
+    pendingLineup.current = null;
+    // A durable retry returns its original committed snapshot. A refresh or
+    // another tab may already have advanced this private session beyond it.
+    const current = latestState.current ?? state;
+    const confirmed: State =
+      (current.revision ?? current.events.length) >
+      (data.revision ?? data.events.length)
+        ? current
+        : data;
+    const confirmedLineup = resolvedLineup(
+      confirmed.roster ?? players,
+      confirmed.lineup,
+    );
+    latestState.current = confirmed;
+    setState(confirmed);
+    context.onSaved(confirmed);
+    currentDraft.current = {
+      ...currentDraft.current,
+      playerId: confirmedLineup[rockNumber(currentDraft.current) - 1],
+    };
+    if (!editing) {
+      const updated = {
+        ...draft,
+        playerId: confirmedLineup[rockNumber(draft) - 1],
+      };
+      setDraft(updated);
+      currentDraft.current = updated;
+    }
+    onTrackingProgress?.({
+      draft: currentDraft.current,
+      editing: null,
+      current: currentDraft.current,
+      stateRevision: confirmed.revision ?? confirmed.events.length,
+    });
+    setLineupOpen(false);
+    setMessage(
+      "Game lineup saved. Recorded attempts keep their original player.",
+    );
   }
   async function lifecycle(action: "finish" | "reopen") {
     if (!context || !state) return;
@@ -302,7 +438,21 @@ export default function CoachLab({
         <select
           value={draft[field] ?? ""}
           onChange={(e) =>
-            setDraft({ ...draft, [field]: e.target.value || null })
+            setDraft({
+              ...draft,
+              [field]: e.target.value || null,
+              ...(field === "position"
+                ? {
+                    playerId:
+                      lineup[
+                        rockNumber({
+                          position: e.target.value as Shot["position"],
+                          stone: draft.stone,
+                        }) - 1
+                      ] ?? draft.playerId,
+                  }
+                : {}),
+            })
           }
         >
           {field !== "position" && <option value="">Not recorded</option>}
@@ -326,6 +476,14 @@ export default function CoachLab({
   const sessionActions = (
     <>
       {" "}
+      {context && (
+        <button
+          disabled={busy || closed || !rosterReady}
+          onClick={() => setLineupOpen(true)}
+        >
+          Set lineup
+        </button>
+      )}
       <button
         aria-label="Undo latest change"
         title="Undo latest change"
@@ -364,6 +522,14 @@ export default function CoachLab({
   );
   return (
     <section className={context ? "coach-lab coach-scoring" : "coach-lab"}>
+      {lineupOpen && (
+        <LineupDialog
+          players={players}
+          lineup={state?.lineup}
+          onSave={saveLineup}
+          onCancel={() => setLineupOpen(false)}
+        />
+      )}
       {!context && (
         <header>
           <p className="coach-eyebrow">SHOT TRACKER / LOCAL LAB</p>
@@ -414,7 +580,13 @@ export default function CoachLab({
           <div className="coach-columns">
             <section ref={entry} className="coach-panel">
               <h2>{editing ? "Correct attempt" : "Chart an attempt"}</h2>
+              <p>
+                End {draft.end} · Rock {rockNumber(draft)} of 8
+              </p>
               <form
+                onChangeCapture={() => {
+                  deliberateDraftChange.current = true;
+                }}
                 onSubmit={(e) => {
                   e.preventDefault();
                   const advance =
@@ -468,7 +640,17 @@ export default function CoachLab({
                       <select
                         value={draft.stone}
                         onChange={(e) =>
-                          setDraft({ ...draft, stone: Number(e.target.value) })
+                          setDraft({
+                            ...draft,
+                            stone: Number(e.target.value),
+                            playerId:
+                              lineup[
+                                rockNumber({
+                                  position: draft.position,
+                                  stone: Number(e.target.value),
+                                }) - 1
+                              ] ?? draft.playerId,
+                          })
                         }
                       >
                         <option value="1">1</option>
@@ -629,7 +811,7 @@ export default function CoachLab({
                     <button
                       type="submit"
                       value="next"
-                      disabled={!nextTurn(draft, shots, players)}
+                      disabled={!nextTurn(draft, shots, players, lineup)}
                       title="Save this attempt and move to the next turn"
                     >
                       {busy ? "Saving next turn…" : "Next turn →"}

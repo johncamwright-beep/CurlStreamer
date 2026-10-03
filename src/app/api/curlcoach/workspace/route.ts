@@ -7,11 +7,12 @@ import {
   sameOrigin,
   sessionCookie,
 } from "@/lib/curlcoach/access";
-import { commandSchema } from "@/lib/curlcoach/model";
+import { commandSchema, lineupSchema } from "@/lib/curlcoach/model";
 import { sampleCatalog, sampleEvent } from "@/lib/curlcoach/event";
 import {
   readCoachState,
   writeCoachEvent,
+  writeCoachLineup,
 } from "@/lib/providers/curlcoach-local";
 import { loadStreamerEvent } from "@/lib/providers/curlcoach-streamer";
 import { requireCoachAccount } from "@/lib/curlcoach/production-access";
@@ -20,6 +21,7 @@ import { loadProductionStreamerEvent } from "@/lib/providers/curlcoach-productio
 import {
   loadCoachState,
   saveCoachState,
+  saveCoachLineup,
   transitionCoachState,
 } from "@/lib/providers/curlcoach-store";
 const selection = z
@@ -163,7 +165,8 @@ export async function POST(request: Request) {
     .extend({
       gameId: z.string().min(1).max(100),
       command: commandSchema.optional(),
-      action: z.enum(["finish", "reopen"]).optional(),
+      action: z.enum(["finish", "reopen", "set-lineup"]).optional(),
+      lineup: lineupSchema.optional(),
       requestId: z.uuid().optional(),
       expectedRevision: z.number().int().nonnegative().optional(),
     })
@@ -171,10 +174,12 @@ export async function POST(request: Request) {
       value.command
         ? !value.action &&
           !value.requestId &&
-          value.expectedRevision === undefined
+          value.expectedRevision === undefined &&
+          !value.lineup
         : !!value.action &&
           !!value.requestId &&
-          value.expectedRevision !== undefined,
+          value.expectedRevision !== undefined &&
+          (value.action === "set-lineup" ? !!value.lineup : !value.lineup),
     )
     .safeParse(await request.json().catch(() => null));
   if (!input.success)
@@ -197,12 +202,23 @@ export async function POST(request: Request) {
       );
     let result;
     if (labEnabled()) {
-      if (!input.data.command)
+      if (input.data.action === "set-lineup") {
+        result = writeCoachLineup(
+          {
+            action: "set-lineup",
+            lineup: input.data.lineup!,
+            requestId: input.data.requestId!,
+            expectedRevision: input.data.expectedRevision!,
+          },
+          game.state,
+          actor,
+        );
+      } else if (!input.data.command)
         return NextResponse.json(
           { error: "Private lifecycle requires a connected account." },
           { status: 400 },
         );
-      result = writeCoachEvent(input.data.command, game.state, actor);
+      else result = writeCoachEvent(input.data.command, game.state, actor);
     } else {
       const scope = {
         organizationId: event.organizationId,
@@ -212,13 +228,20 @@ export async function POST(request: Request) {
       const state = await loadCoachState(scope, game.state);
       result = input.data.command
         ? await saveCoachState(scope, state, input.data.command)
-        : await transitionCoachState(
-            scope,
-            state,
-            input.data.action!,
-            input.data.requestId!,
-            input.data.expectedRevision!,
-          );
+        : input.data.action === "set-lineup"
+          ? await saveCoachLineup(scope, state, {
+              action: "set-lineup",
+              lineup: input.data.lineup!,
+              requestId: input.data.requestId!,
+              expectedRevision: input.data.expectedRevision!,
+            })
+          : await transitionCoachState(
+              scope,
+              state,
+              input.data.action!,
+              input.data.requestId!,
+              input.data.expectedRevision!,
+            );
     }
     return NextResponse.json(result, { headers: privateHeaders });
   } catch {

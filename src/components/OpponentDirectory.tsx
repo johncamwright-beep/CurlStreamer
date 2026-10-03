@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { OpponentDetailsDialog } from "./OpponentDetailsDialog";
 import {
@@ -28,6 +28,7 @@ export function OpponentDirectory({
   );
   const [seasonId, setSeasonId] = useState("");
   const [editing, setEditing] = useState<Opponent | "create" | null>(null);
+  const editingTrigger = useRef<HTMLButtonElement | null>(null);
   const [seasonError, setSeasonError] = useState("");
   const [reload, setReload] = useState(0);
   const [savedMessage, setSavedMessage] = useState("");
@@ -155,7 +156,8 @@ export function OpponentDirectory({
           type="button"
           className="btn min-h-11 justify-self-start"
           disabled={!seasonId || seasonArchived || editing !== null}
-          onClick={() => {
+          onClick={(event) => {
+            editingTrigger.current = event.currentTarget;
             setEditing("create");
             setSavedMessage("");
           }}
@@ -170,6 +172,7 @@ export function OpponentDirectory({
           initialName={editing === "create" ? search.trim() : undefined}
           seasonId={seasonId}
           seasonName={seasonName}
+          returnFocusTo={editingTrigger.current}
           onCancel={() => setEditing(null)}
           onSaved={(value) => {
             if (value.profile) {
@@ -257,7 +260,8 @@ export function OpponentDirectory({
                   <button
                     className="btn-secondary"
                     disabled={seasonArchived || editing !== null}
-                    onClick={() => {
+                    onClick={(event) => {
+                      editingTrigger.current = event.currentTarget;
                       setEditing(opponent);
                       setSavedMessage("");
                     }}

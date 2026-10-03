@@ -28,6 +28,7 @@ export function OpponentDetailsDialog({
   canManageSeasonDetails = true,
   seasonId,
   seasonName,
+  returnFocusTo,
   onSaved,
   onCancel,
 }: {
@@ -37,6 +38,7 @@ export function OpponentDetailsDialog({
   canManageSeasonDetails?: boolean;
   seasonId: string;
   seasonName: string;
+  returnFocusTo?: HTMLElement | null;
   onSaved: (value: SavedOpponentDetails) => void;
   onCancel: () => void;
 }) {
@@ -58,12 +60,16 @@ export function OpponentDetailsDialog({
 
   useEffect(() => {
     const element = dialog.current;
-    const previousFocus = document.activeElement;
+    const previousFocus = returnFocusTo ?? document.activeElement;
     element?.showModal();
     return () => {
       element?.close();
-      if (previousFocus instanceof HTMLElement && previousFocus.isConnected)
-        previousFocus.focus();
+      // The opener may be disabled while this dialog is mounted. Restore it
+      // after the closing render has enabled the surrounding controls again.
+      requestAnimationFrame(() => {
+        if (previousFocus instanceof HTMLElement && previousFocus.isConnected)
+          previousFocus.focus();
+      });
     };
   }, []);
 

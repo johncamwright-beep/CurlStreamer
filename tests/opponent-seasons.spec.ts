@@ -132,6 +132,22 @@ test("one Edit dialog saves the canonical name and keeps each season's roster in
     });
   });
   await directory(page, profiles);
+  // Some browsers blur the opener as soon as the directory disables it.
+  // Exercise that behavior even when the local browser preserves focus.
+  await page.evaluate(() => {
+    document.addEventListener(
+      "click",
+      (event) => {
+        const target = event.target;
+        if (
+          target instanceof HTMLButtonElement &&
+          target.textContent?.trim() === "Edit"
+        )
+          target.blur();
+      },
+      true,
+    );
+  });
   await page.getByRole("button", { name: "Edit", exact: true }).click();
   const dialog = page.getByRole("dialog", { name: "Edit opponent" });
   await expect(dialog.getByLabel("Saved team name")).toHaveValue(
@@ -146,6 +162,9 @@ test("one Edit dialog saves the canonical name and keeps each season's roster in
   ).toHaveCount(1);
   await dialog.getByRole("button", { name: "Save", exact: true }).click();
   await expect(dialog).not.toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Edit", exact: true }),
+  ).toBeFocused();
   await expect(page.getByRole("status")).toContainText("2026-27 saved");
   await page.getByLabel("Opponent season").selectOption(second);
   await page.getByRole("button", { name: "Edit", exact: true }).click();

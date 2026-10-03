@@ -57,9 +57,15 @@ export async function POST(
     );
   }
   const parameter = parsed.data === "chooser" ? "chooser" : "token";
+  const query = new URLSearchParams({ [parameter]: token });
+  if (
+    process.env.CURLCAST_M1_DIRECT_SPIKE === "disposable" &&
+    (parsed.data === "chooser" || parsed.data.startsWith("camera-"))
+  )
+    query.set("media", "m2");
   const url = participantUrl(
     request,
-    `/join/${encodeURIComponent(id)}?${parameter}=${encodeURIComponent(token)}`,
+    `/join/${encodeURIComponent(id)}?${query.toString()}`,
   );
   return NextResponse.json(
     { token, url, expiresIn: 1800, expiresAt },

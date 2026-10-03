@@ -1,4 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
+import { installGameFixture } from "./support/game-browser-fixture";
+import { testGameId } from "../src/test/game-fixture";
 
 test.setTimeout(90_000);
 
@@ -11,11 +13,9 @@ const viewports = [
   { width: 1024, height: 768 },
 ];
 
-async function createBroadcast(page: Page) {
-  await page.goto("/");
-  await page.getByRole("button", { name: "Create game" }).click();
-  await page.waitForURL(/\/games\/[^/]+$/);
-  const id = page.url().split("/").at(-1)!;
+async function createBroadcast(page: Page, operator = false) {
+  await installGameFixture(page, operator);
+  const id = testGameId;
   await page.goto(`/broadcast/${id}`);
   await expect(page.getByTestId("broadcast-canvas")).toBeVisible();
   return id;
@@ -107,7 +107,6 @@ test("fits and centres the complete logical program across desktop viewports", a
   await createBroadcast(page);
   for (const viewport of viewports) {
     await page.setViewportSize(viewport);
-    await expect(page.getByTestId("back-to-scoring")).toBeVisible();
     const expectedScale = Math.min(
       viewport.width / PROGRAM_WIDTH,
       viewport.height / PROGRAM_HEIGHT,
@@ -122,17 +121,11 @@ test("fits and centres the complete logical program across desktop viewports", a
       PROGRAM_HEIGHT * expectedScale,
     );
     if ([1920, 1600, 1024].includes(viewport.width)) {
-      const operatorNavigation = page.getByTestId("back-to-scoring");
-      await operatorNavigation.evaluate((element) => {
-        element.style.visibility = "hidden";
-      });
+      await expect(page.getByTestId("back-to-scoring")).toHaveCount(0);
       await page.getByTestId("broadcast-canvas").screenshot({
         path: testInfo.outputPath(
           `broadcast-${viewport.width}x${viewport.height}.png`,
         ),
-      });
-      await operatorNavigation.evaluate((element) => {
-        element.style.visibility = "";
       });
     }
   }
@@ -157,7 +150,7 @@ test("authorized operator navigation stays outside the program without changing 
   context,
 }) => {
   await page.setViewportSize({ width: 1024, height: 768 });
-  const id = await createBroadcast(page);
+  const id = await createBroadcast(page, true);
   const before = await programMeasurements(page);
   const navigation = page.getByTestId("back-to-scoring");
   await expect(navigation).toBeVisible();
@@ -169,12 +162,17 @@ test("authorized operator navigation stays outside the program without changing 
       await navigation.elementHandle(),
     ),
   ).toBe(false);
-  assertFitted(before, 1024, 576);
+  expect(before.logical).toEqual({
+    width: PROGRAM_WIDTH,
+    height: PROGRAM_HEIGHT,
+  });
+  expect(before.rect.left).toBeGreaterThanOrEqual(260);
 
   const anonymous = await context.browser()!.newContext({
     viewport: { width: 1024, height: 768 },
   });
   const anonymousPage = await anonymous.newPage();
+  await installGameFixture(anonymousPage, false);
   await anonymousPage.goto(`/broadcast/${id}`, {
     waitUntil: "domcontentloaded",
   });
@@ -183,11 +181,26 @@ test("authorized operator navigation stays outside the program without changing 
   });
   await expect(anonymousPage.getByTestId("back-to-scoring")).toHaveCount(0);
   const anonymousRect = await programMeasurements(anonymousPage);
-  expect(anonymousRect.rect).toEqual(before.rect);
+  assertFitted(anonymousRect, 1024, 576);
   await anonymous.close();
 
   await navigation.click({ force: true });
   await expect(page).toHaveURL(new RegExp(`/score/${id}$`), {
     timeout: 15_000,
   });
+});
+
+test("operator zoom rail reserves preview space without changing its logical canvas", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1024, height: 768 });
+  await createBroadcast(page, true);
+  await expect(page.getByTestId("camera-zoom-rail")).toBeVisible();
+  const result = await programMeasurements(page);
+  expect(result.logical).toEqual({
+    width: PROGRAM_WIDTH,
+    height: PROGRAM_HEIGHT,
+  });
+  expect(result.rect.right).toBeLessThanOrEqual(result.viewport.width + 1);
+  expect(result.rect.left).toBeGreaterThanOrEqual(260);
 });

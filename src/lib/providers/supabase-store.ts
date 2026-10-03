@@ -1,7 +1,7 @@
 import "server-only";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { randomUUID } from "crypto";
-import type { z } from "zod";
+import { z } from "zod";
 import type { actionSchema } from "../schema";
 import { applyScoringAction } from "../scoring";
 import type { GameConfig, GameState, ParticipantAuthority } from "../types";
@@ -123,9 +123,39 @@ export async function prepareRoleInvitation(
   return { generation: Number(data) };
 }
 
+export async function prepareCameraReconnect(
+  id: string,
+  role: "camera-home" | "camera-away",
+  invitationId: string,
+  expiresAt: string,
+): Promise<{ error?: string; deviceId?: string; generation?: number }> {
+  const { data, error } = await supabase().rpc(
+    "prepare_game_camera_reconnect",
+    {
+      p_game_id: id,
+      p_role: role,
+      p_invitation_id: invitationId,
+      p_expires_at: expiresAt,
+    },
+  );
+  const result = z
+    .object({
+      deviceId: z.uuid(),
+      generation: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER),
+    })
+    .safeParse(data);
+  if (error || !result.success)
+    return {
+      error: "This camera assignment is unavailable. Refresh the game.",
+    };
+  return result.data;
+}
+
 async function getGameRecord(id: string) {
   const { data, error } = await supabase()
     .from("game_states")
+    // API roles may read game_states, but direct reads/joins of games are revoked.
+    // Keep the stored config unchanged: writes use this same versioned snapshot.
     .select("state, version")
     .eq("game_id", id)
     .maybeSingle();
@@ -206,7 +236,7 @@ async function save(game: GameState, expectedVersion: number) {
     p_expected_version: expectedVersion,
     p_state: game,
   });
-  if (error?.code === "40001" || error?.code === "55000")
+  if (error && ["PT409", "40001", "55000"].includes(error.code))
     throw new GameStateConflictError();
   if (error) databaseError("game update", error);
 }
@@ -225,7 +255,8 @@ async function saveScoreEvent(
     p_actor: "server",
     p_state: game,
   });
-  if (error?.code === "40001") throw new Error("Score update conflict");
+  if (error?.code === "PT409" || error?.code === "40001")
+    throw new Error("Score update conflict");
   if (error) databaseError("score update", error);
 }
 
@@ -241,6 +272,67 @@ function applyAction(game: GameState, action: z.infer<typeof actionSchema>) {
   if (action.type === "camera-framing") {
     game.cameraFraming ??= {};
     game.cameraFraming[action.role] = action.mode;
+  }
+  if (action.type === "camera-zoom") {
+    game.cameraZoom ??= {};
+    const current = game.cameraZoom[action.role];
+    game.cameraZoom[action.role] = {
+      supported: current?.supported ?? false,
+      updatedAt: current?.updatedAt ?? now,
+      ...(current?.min !== undefined ? { min: current.min } : {}),
+      ...(current?.max !== undefined ? { max: current.max } : {}),
+      ...(current?.step !== undefined ? { step: current.step } : {}),
+      ...(current?.value !== undefined ? { value: current.value } : {}),
+      command: { id: action.commandId, value: action.value, requestedAt: now },
+    };
+  }
+  if (action.type === "camera-reconnect") {
+    game.cameraReconnect ??= {};
+    game.cameraReconnect[action.role] = {
+      id: action.commandId,
+      requestedAt: now,
+    };
+  }
+  if (action.type === "camera-zoom-status") {
+    game.cameraZoom ??= {};
+    const command = game.cameraZoom[action.role]?.command;
+    game.cameraZoom[action.role] = {
+      supported: action.supported,
+      updatedAt: now,
+      ...(action.supported
+        ? {
+            min: action.min!,
+            max: action.max!,
+            step: action.step!,
+            value: action.value!,
+          }
+        : {}),
+      ...(command ? { command } : {}),
+    };
+  }
+  if (action.type === "camera-audio") {
+    game.cameraAudio ??= {};
+    game.cameraAudio[action.role] = {
+      enabled: action.enabled,
+      volume: action.volume ?? game.cameraAudio[action.role]?.volume ?? 1,
+      status: action.enabled
+        ? game.cameraAudio[action.role]?.enabled
+          ? game.cameraAudio[action.role]!.status
+          : "pending"
+        : "off",
+      updatedAt: now,
+      generation: game.claimGenerations?.[action.role] ?? 0,
+    };
+  }
+  if (action.type === "camera-audio-status") {
+    game.cameraAudio ??= {};
+    const current = game.cameraAudio[action.role];
+    if (current)
+      game.cameraAudio[action.role] = {
+        ...current,
+        status: action.status,
+        updatedAt: now,
+      };
   }
   if (action.type === "audio") game.audioMuted = action.muted;
   if (action.type === "broadcast") game.broadcast = action.value;
@@ -289,7 +381,10 @@ export async function updateGame(
   expectedAuthority?: ParticipantAuthority,
 ) {
   const retryable =
-    action.type === "camera-health" || action.type === "connection";
+    action.type === "camera-health" ||
+    action.type === "connection" ||
+    action.type === "camera-zoom-status" ||
+    action.type === "camera-audio-status";
   const attempts = retryable ? 3 : 1;
   let capturedClaim: string | undefined;
   let capturedGeneration: number | undefined;
@@ -304,7 +399,16 @@ export async function updateGame(
       throw new Error("This game is completed");
     }
     if (expectedAuthority) {
-      if ("role" in action && action.role !== expectedAuthority.role)
+      if (
+        "role" in action &&
+        action.role !== expectedAuthority.role &&
+        !(
+          (action.type === "camera-zoom" ||
+            action.type === "camera-audio" ||
+            action.type === "camera-reconnect") &&
+          expectedAuthority.role === "scorer"
+        )
+      )
         throw new GameStateConflictError("Participant role changed");
       const currentGeneration =
         game.claimGenerations?.[expectedAuthority.role] ?? 0;

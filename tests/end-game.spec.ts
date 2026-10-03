@@ -1,6 +1,80 @@
 import { expect, test, type Route } from "@playwright/test";
 import { gameFixture, testGameId } from "../src/test/game-fixture";
 
+test("Studio close opens a scoped review and Cancel leaves the game active", async ({
+  page,
+}) => {
+  let completionWrites = 0;
+  await page.addInitScript(() => {
+    const w = window as Window & {
+      chrome?: { webview?: { postMessage: (value: unknown) => void } };
+      studioMessages?: unknown[];
+    };
+    w.studioMessages = [];
+    w.chrome = {
+      ...w.chrome,
+      webview: { postMessage: (value) => w.studioMessages!.push(value) },
+    };
+  });
+  await page.route(`**/api/games/${testGameId}`, (route) =>
+    route.fulfill({
+      json: gameFixture(),
+      headers: {
+        "x-curlcast-operator": "true",
+        "x-curlcast-account-role": "owner",
+      },
+    }),
+  );
+  await page.route(`**/api/games/${testGameId}/completion`, (route) => {
+    completionWrites++;
+    return route.fulfill({
+      status: 500,
+      json: { error: "Unexpected completion" },
+    });
+  });
+  await page.goto(`/score/${testGameId}`);
+  await expect(
+    page.getByRole("button", { name: "End Game", exact: true }),
+  ).toBeVisible();
+  await page.evaluate(() =>
+    window.dispatchEvent(
+      new CustomEvent("studio-end-game-request", {
+        detail: { gameId: "22222222-2222-4222-8222-222222222222" },
+      }),
+    ),
+  );
+  await expect(
+    page.getByRole("button", { name: "Review final score" }),
+  ).toHaveCount(0);
+  await page.evaluate(
+    (id) =>
+      window.dispatchEvent(
+        new CustomEvent("studio-end-game-request", { detail: { gameId: id } }),
+      ),
+    testGameId,
+  );
+  await expect(
+    page.getByRole("button", { name: "Review final score" }),
+  ).toBeVisible();
+  expect(completionWrites).toBe(0);
+  await page.getByRole("button", { name: "Cancel", exact: true }).click();
+  await expect(
+    page.getByRole("button", { name: "Review final score" }),
+  ).toHaveCount(0);
+  const messages = await page.evaluate(
+    () => (window as Window & { studioMessages?: unknown[] }).studioMessages,
+  );
+  expect(messages).toContainEqual({
+    type: "studio-end-game-opened",
+    gameId: testGameId,
+  });
+  expect(messages).toContainEqual({
+    type: "studio-end-game-cancelled",
+    gameId: testGameId,
+  });
+  expect(completionWrites).toBe(0);
+});
+
 function completedFixture() {
   return {
     status: "completed" as const,
@@ -113,9 +187,13 @@ test("End Game reviews the score and replaces controls with the saved result", a
     page.getByRole("link", { name: "Watch on YouTube" }),
   ).toHaveAttribute("href", "https://youtu.be/abcdefghijk");
   await expect(page.getByRole("button", { name: "End Game" })).toHaveCount(0);
+  await expect.poll(() => cleanupRetries).toBe(1);
+  await expect(
+    page.getByText("Live video shutdown has not been confirmed."),
+  ).toHaveCount(0);
   await expect(
     page.getByText("LiveKit accepted all room shutdown requests."),
-  ).toBeVisible();
+  ).toHaveCount(0);
   expect(cleanupRetries).toBe(1);
   await page.screenshot({
     path: testInfo.outputPath("completed-summary.png"),

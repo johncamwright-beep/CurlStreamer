@@ -32,6 +32,7 @@ export default async function EditGamePage({
     homeName: game.config.homeName,
     awayName: game.opponentId ? game.config.awayName : null,
     eventName: game.eventId ? game.config.eventName : null,
+    gameNumber: game.gameNumber,
   });
   return (
     <main className="game-setup-page">
@@ -57,6 +58,9 @@ export default async function EditGamePage({
         events={data.events}
         opponents={opponents.value as never[]}
         games={data.games}
+        canManageTeamDetails={
+          data.role === "owner" || data.role === "team_admin"
+        }
         editing={game}
         editingTitle={title}
       />

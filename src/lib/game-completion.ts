@@ -107,7 +107,8 @@ export async function completionActorParameters(
 
 function failure(error: { code?: string }): Result<never> {
   if (error.code === "42501") return { ok: false, kind: "authorization" };
-  if (error.code === "40001") return { ok: false, kind: "conflict" };
+  if (error.code === "PT409" || error.code === "40001")
+    return { ok: false, kind: "conflict" };
   if (error.code === "55000") return { ok: false, kind: "terminal" };
   return { ok: false, kind: "service" };
 }

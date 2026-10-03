@@ -11,9 +11,13 @@ vi.mock("@supabase/supabase-js", () => ({
   createClient: () => ({
     rpc: mocks.rpc,
     from: () => ({
-      select: () => ({
-        eq: () => ({ maybeSingle: mocks.maybeSingle }),
-      }),
+      select: (columns: string) => {
+        if (columns.includes("games("))
+          throw new Error("permission denied for table games");
+        return {
+          eq: () => ({ maybeSingle: mocks.maybeSingle }),
+        };
+      },
     }),
   }),
 }));
@@ -21,8 +25,10 @@ vi.mock("@supabase/supabase-js", () => ({
 import {
   claimRole,
   createGame,
+  getGame,
   listCameraIdentityGenerations,
   prepareRoleInvitation,
+  prepareCameraReconnect,
   releaseRole,
   updateGame,
 } from "./supabase-store";
@@ -80,6 +86,16 @@ describe("Supabase game creation", () => {
       p_config: config,
       p_state: game,
     });
+  });
+
+  it("reads the versioned snapshot without accessing the protected games table", async () => {
+    const game = storedGame();
+    game.config.eventName = "Orion · Game 3";
+    mocks.maybeSingle.mockResolvedValue({
+      data: { state: game, version: 2 },
+      error: null,
+    });
+    expect(await getGame(game.id)).toEqual(game);
   });
 
   it("redacts credentials from logged database errors", async () => {
@@ -509,26 +525,29 @@ describe("Supabase score-event persistence", () => {
     });
   });
 
-  it("surfaces an ordinary stale write as a state conflict", async () => {
-    const game = storedGame();
-    mocks.maybeSingle.mockResolvedValue({
-      data: { state: game, version: 49 },
-      error: null,
-    });
-    mocks.rpc.mockResolvedValue({
-      error: { code: "40001", message: "stale game state" },
-    });
+  it.each(["PT409", "40001"])(
+    "surfaces an ordinary stale write (%s) as a state conflict",
+    async (code) => {
+      const game = storedGame();
+      mocks.maybeSingle.mockResolvedValue({
+        data: { state: game, version: 49 },
+        error: null,
+      });
+      mocks.rpc.mockResolvedValue({
+        error: { code, message: "stale game state" },
+      });
 
-    await expect(
-      updateGame(game.id, {
-        type: "connection",
-        role: "camera-home",
-        connected: true,
-      }),
-    ).rejects.toThrow("Game state update conflict");
-    expect(mocks.maybeSingle).toHaveBeenCalledTimes(3);
-    expect(mocks.rpc).toHaveBeenCalledTimes(3);
-  });
+      await expect(
+        updateGame(game.id, {
+          type: "connection",
+          role: "camera-home",
+          connected: true,
+        }),
+      ).rejects.toThrow("Game state update conflict");
+      expect(mocks.maybeSingle).toHaveBeenCalledTimes(3);
+      expect(mocks.rpc).toHaveBeenCalledTimes(3);
+    },
+  );
 
   it("retries camera live state on fresh scored state without erasing the score", async () => {
     const claimant = "77777777-7777-4777-8777-777777777777";
@@ -864,6 +883,41 @@ describe("Supabase score-event persistence", () => {
 });
 
 describe("Supabase assignment generation RPCs", () => {
+  it("renews only database-selected valid device and generation metadata", async () => {
+    const deviceId = "22222222-2222-4222-8222-222222222222";
+    mocks.rpc.mockResolvedValueOnce({
+      data: { deviceId, generation: 4 },
+      error: null,
+    });
+    await expect(
+      prepareCameraReconnect(
+        "game-1",
+        "camera-home",
+        "renewal",
+        "2030-01-01T00:00:00.000Z",
+      ),
+    ).resolves.toEqual({ deviceId, generation: 4 });
+    expect(mocks.rpc).toHaveBeenCalledWith("prepare_game_camera_reconnect", {
+      p_game_id: "game-1",
+      p_role: "camera-home",
+      p_invitation_id: "renewal",
+      p_expires_at: "2030-01-01T00:00:00.000Z",
+    });
+    mocks.rpc.mockResolvedValueOnce({
+      data: { deviceId: "invalid", generation: -1 },
+      error: null,
+    });
+    expect(
+      (
+        await prepareCameraReconnect(
+          "game-1",
+          "camera-home",
+          "invalid",
+          "2030-01-01T00:00:00.000Z",
+        )
+      ).error,
+    ).toBeTruthy();
+  });
   beforeEach(() => {
     mocks.rpc.mockReset().mockResolvedValue({ error: null });
     mocks.maybeSingle.mockReset();

@@ -1,6 +1,19 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+.studio-usb-audio {
+  container-type: inline-size;
+}
+.studio-usb-channels {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.5rem;
+}
+@container (min-width: 480px) {
+  .studio-usb-channels {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
 :root {
   color-scheme: dark;
 }
@@ -16,7 +29,11 @@ body {
 .app-navigation {
   position: relative;
   z-index: 200;
-  width: 44px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+  width: 104px;
   height: 44px;
 }
 .app-navigation-trigger,
@@ -185,7 +202,8 @@ button {
 }
 .sponsor-frame-bounds-sidebar {
   flex: 1 1 auto;
-  margin-top: 18px;
+  margin-top: 12px;
+  align-items: start;
 }
 .broadcast-camera-deck[data-camera-count="1"] .broadcast-camera-panel {
   height: 100%;
@@ -221,12 +239,13 @@ button {
   padding: 14px;
 }
 .sponsor-frame-label {
-  height: 26px;
+  height: 48px;
   flex: none;
   color: rgb(51 65 85);
-  font-size: 15px;
+  font-size: 18px;
   font-weight: 700;
-  line-height: 18px;
+  line-height: 22px;
+  overflow: hidden;
   text-align: center;
 }
 .sponsor-fitted-image {
@@ -264,6 +283,85 @@ button {
   min-height: 44px;
   box-shadow: 0 8px 24px rgb(0 0 0 / 55%);
 }
+.camera-zoom-rail {
+  position: fixed;
+  z-index: 100;
+  left: max(0.75rem, env(safe-area-inset-left));
+  top: 50%;
+  width: min(15rem, calc(100vw - 1.5rem));
+  padding: 0.8rem;
+  color: #e2e8f0;
+  background: rgb(15 23 42 / 94%);
+  border: 1px solid rgb(148 163 184 / 45%);
+  border-radius: 0.7rem;
+  transform: translateY(-50%);
+  max-height: calc(100dvh - 140px);
+  overflow-y: auto;
+}
+.camera-zoom-rail h2 {
+  margin: 0 0 0.6rem;
+  font-size: 0.95rem;
+}
+.camera-zoom-control + .camera-zoom-control {
+  margin-top: 0.8rem;
+  padding-top: 0.8rem;
+  border-top: 1px solid rgb(148 163 184 / 30%);
+}
+.camera-zoom-control h3,
+.camera-zoom-control p {
+  margin: 0;
+}
+.camera-zoom-control p {
+  min-height: 1.3rem;
+  color: #cbd5e1;
+  font-size: 0.8rem;
+}
+.camera-zoom-buttons {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.4rem;
+  margin: 0.45rem 0;
+}
+.camera-zoom-buttons button {
+  min-height: 44px;
+  font-size: 1.35rem;
+  border: 1px solid #43586c;
+  border-radius: 0.5rem;
+  background: #172b3c;
+}
+.camera-zoom-buttons button:disabled {
+  opacity: 0.4;
+}
+.camera-zoom-buttons button:not(:disabled):hover {
+  background: #205064;
+}
+.camera-zoom-control input {
+  accent-color: #60dbe7;
+}
+.camera-zoom-control input {
+  width: 100%;
+  min-height: 44px;
+}
+@media (max-width: 700px) {
+  .camera-zoom-rail {
+    top: auto;
+    bottom: max(4.5rem, env(safe-area-inset-bottom));
+    width: calc(100vw - 1.5rem);
+    max-height: 224px;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.6rem;
+    transform: none;
+  }
+  .camera-zoom-rail h2 {
+    display: none;
+  }
+  .camera-zoom-control + .camera-zoom-control {
+    margin: 0;
+    padding: 0;
+    border: 0;
+  }
+}
 .app-icon {
   width: 18px;
   height: 18px;
@@ -276,6 +374,15 @@ button {
   justify-content: space-between;
   margin-bottom: 0.5rem;
   font-size: 1.15rem;
+  gap: 1rem;
+}
+.app-navigation-logo {
+  flex: 1;
+  min-width: 0;
+  max-width: 240px;
+}
+.app-navigation-close {
+  flex-shrink: 0;
 }
 .app-navigation-heading {
   margin: 0.8rem 0.75rem 0.35rem;
@@ -293,9 +400,18 @@ button {
   gap: 0.7rem;
 }
 .app-navigation-current {
-  border-top: 1px solid rgb(51 65 85);
-  margin-top: 0.65rem;
-  padding-top: 0.15rem;
+  border: 1px solid #286171;
+  border-radius: 1rem;
+  background: #102e3b;
+  margin: 0.8rem 0;
+  padding: 0.25rem 0.35rem 0.5rem;
+}
+.app-navigation-current .app-navigation-heading {
+  color: #67e8f9;
+}
+.app-navigation-current .app-navigation-link:hover,
+.app-navigation-current .app-navigation-link[aria-current="page"] {
+  background: #1b4656;
 }
 .app-navigation-account {
   border-top: 1px solid rgb(51 65 85);
@@ -329,4 +445,213 @@ button {
   border-bottom: 2px solid rgb(34 211 238);
   color: rgb(103 232 249);
   font-weight: 700;
+}
+
+.account-shortcut-page {
+  position: relative;
+}
+.account-shortcut-header {
+  padding-right: calc(var(--account-header-padding, 0px) + 64px) !important;
+  min-height: 48px;
+}
+.account-shortcut {
+  position: absolute;
+  z-index: 190;
+  display: grid;
+  place-items: center;
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  color: #67e8f9;
+  border: 1px solid #475569;
+  background: #0f1c2b;
+}
+.account-shortcut img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  border-radius: 50%;
+}
+.account-shortcut:focus-visible {
+  outline: 3px solid #67e8f9;
+  outline-offset: 3px;
+}
+
+.input {
+  min-height: 44px;
+  border: 1px solid #475569;
+  border-radius: 0.65rem;
+  padding: 0.65rem 0.8rem;
+  background: #0b1626;
+  color: #f8fafc;
+}
+.input:focus-visible {
+  outline: 2px solid #67e8f9;
+  outline-offset: 2px;
+}
+
+.account-workspace {
+  display: grid;
+  grid-template-columns: 210px minmax(0, 1fr);
+  gap: 1.25rem;
+  align-items: start;
+}
+.account-sidebar {
+  position: sticky;
+  top: 1rem;
+  display: grid;
+  gap: 0.3rem;
+  padding: 0.5rem;
+}
+.account-sidebar button {
+  min-height: 44px;
+  border-radius: 0.65rem;
+  padding: 0.7rem 0.8rem;
+  text-align: left;
+  color: #cbd5e1;
+}
+.account-sidebar button:hover {
+  background: #1e293b;
+}
+.account-sidebar button[aria-current="page"] {
+  background: #164e63;
+  color: #67e8f9;
+  font-weight: 700;
+}
+.account-sidebar button:focus-visible {
+  outline: 2px solid #67e8f9;
+  outline-offset: 2px;
+}
+.account-settings-group:not([hidden]) {
+  display: grid;
+  align-content: start;
+  gap: 0.75rem;
+}
+.account-workspace [hidden] {
+  display: none !important;
+}
+@media (max-width: 700px) {
+  .account-workspace {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .account-sidebar {
+    position: static;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.public-team-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 300px;
+  gap: 1.5rem;
+  align-items: start;
+}
+.public-team-profile {
+  position: static;
+}
+@media (max-width: 800px) {
+  .public-team-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .public-team-profile {
+    position: static;
+  }
+}
+
+.public-team-page {
+  min-height: 100vh;
+  background: var(--page-bg);
+  color: var(--page-text);
+}
+.public-team-app-bar {
+  background: #07111f;
+  color: #f8fafc;
+  border-bottom: 1px solid rgb(51 65 85);
+}
+.public-team-app-bar__content {
+  display: flex;
+  min-height: 96px;
+  max-width: 72rem;
+  margin: 0 auto;
+  padding: 1rem 1.25rem;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+.public-team-app-bar__brand {
+  color: inherit;
+  text-decoration: none;
+}
+.public-team-content-area {
+  background: var(--page-bg);
+  color: var(--page-text);
+}
+.public-team-page .panel {
+  background: var(--panel-bg);
+  color: var(--panel-text);
+  border-color: color-mix(in srgb, var(--panel-text) 22%, transparent);
+}
+.public-team-page .panel :is(.text-slate-300, .text-slate-400) {
+  color: inherit;
+  opacity: 0.8;
+}
+.public-team-page .panel :is(a, .text-cyan-300, .text-cyan-200) {
+  color: var(--panel-link);
+}
+.public-team-content-area header a {
+  color: inherit;
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+.public-team-page .btn-secondary {
+  background: var(--accent);
+  color: var(--accent-text) !important;
+  border-color: var(--accent);
+}
+.public-team-page .border-slate-700 {
+  border-color: color-mix(in srgb, var(--panel-text) 22%, transparent);
+}
+[aria-label="Page color preview"].public-team-page {
+  min-height: 0;
+}
+
+@media (max-width: 640px) {
+  .public-team-app-bar__content {
+    min-height: 80px;
+    padding-block: 0.75rem;
+    flex-wrap: wrap;
+  }
+  .public-team-app-bar__content > :first-child {
+    flex: 1 1 15rem;
+  }
+  .public-team-app-bar__brand {
+    margin-left: auto;
+  }
+}
+
+.public-games-scroll {
+  max-height: 540px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+.public-game-row {
+  height: 108px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border-bottom: 1px solid
+    color-mix(in srgb, var(--panel-text) 20%, transparent);
+}
+.public-team-page .panel button.text-cyan-300 {
+  color: var(--panel-link);
+}
+
+.public-team-page #team-news img {
+  aspect-ratio: 16 / 9;
+  height: auto;
+  max-height: none;
+  object-fit: cover;
+  object-position: center;
 }

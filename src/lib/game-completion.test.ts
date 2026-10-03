@@ -117,6 +117,33 @@ describe("internal game completion boundary", () => {
     );
   });
 
+  it("persists a validated shared watch link with the completion review", async () => {
+    mocks.rpc.mockResolvedValue({ data: [], error: null });
+    await reviewGameCompletion(
+      gameId,
+      await account(),
+      "https://youtu.be/abcdefghijk",
+    );
+
+    expect(mocks.rpc).toHaveBeenCalledWith(
+      "review_game_completion_with_link",
+      expect.objectContaining({
+        p_youtube_watch_url: "https://youtu.be/abcdefghijk",
+      }),
+    );
+  });
+
+  it("does not send an invalid shared watch link to the completion RPC", async () => {
+    expect(
+      await reviewGameCompletion(
+        gameId,
+        await account(),
+        "https://example.com",
+      ),
+    ).toEqual({ ok: false, kind: "service" });
+    expect(mocks.rpc).not.toHaveBeenCalled();
+  });
+
   it.each([
     () => issueOrganizerToken("44444444-4444-4444-8444-444444444444"),
     () => issueParticipantToken(gameId, "scorer", crypto.randomUUID()),
@@ -131,15 +158,18 @@ describe("internal game completion boundary", () => {
     expect(mocks.rpc).not.toHaveBeenCalled();
   });
 
-  it("maps stale reviewed revisions to an explicit conflict", async () => {
-    mocks.rpc.mockResolvedValue({ data: null, error: { code: "40001" } });
-    expect(
-      await completeReviewedGame(gameId, reviewId, {
-        kind: "organizer",
-        token: await issueOrganizerToken(gameId),
-      }),
-    ).toEqual({ ok: false, kind: "conflict" });
-  });
+  it.each(["PT409", "40001"])(
+    "maps stale reviewed revisions (%s) to an explicit conflict",
+    async (code) => {
+      mocks.rpc.mockResolvedValue({ data: null, error: { code } });
+      expect(
+        await completeReviewedGame(gameId, reviewId, {
+          kind: "organizer",
+          token: await issueOrganizerToken(gameId),
+        }),
+      ).toEqual({ ok: false, kind: "conflict" });
+    },
+  );
 
   it("returns the database completion identity on idempotent retries", async () => {
     const completed = {

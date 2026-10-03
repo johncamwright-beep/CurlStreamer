@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type {
   CompletionCleanup,
   CompletionReview,
@@ -11,6 +11,7 @@ export function EndGameControl({
   gameId,
   homeName,
   awayName,
+  sharedYoutubeWatchUrl = null,
   enabled,
   disabled = false,
   onCompleted,
@@ -18,6 +19,7 @@ export function EndGameControl({
   gameId: string;
   homeName: string;
   awayName: string;
+  sharedYoutubeWatchUrl?: string | null;
   enabled: boolean;
   disabled?: boolean;
   onCompleted: (
@@ -26,11 +28,38 @@ export function EndGameControl({
   ) => void;
 }) {
   const [open, setOpen] = useState(false);
-  const [watchUrl, setWatchUrl] = useState("");
+  const [watchUrl, setWatchUrl] = useState(sharedYoutubeWatchUrl ?? "");
   const [review, setReview] = useState<CompletionReview>();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [completionSaved, setCompletionSaved] = useState(false);
+
+  function notifyStudio(type: string) {
+    const bridge = (
+      window as Window & {
+        chrome?: { webview?: { postMessage: (message: unknown) => void } };
+      }
+    ).chrome?.webview;
+    bridge?.postMessage({ type, gameId });
+  }
+
+  useEffect(() => {
+    function requestEndGame(event: Event) {
+      if ((event as CustomEvent).detail?.gameId !== gameId) return;
+      if (!enabled || disabled) {
+        notifyStudio("studio-end-game-unavailable");
+        return;
+      }
+      setOpen(true);
+      notifyStudio("studio-end-game-opened");
+    }
+    window.addEventListener("studio-end-game-request", requestEndGame);
+    return () =>
+      window.removeEventListener("studio-end-game-request", requestEndGame);
+    // The bridge only reports the result of this game-scoped UI request.
+    // Authorization and final confirmation remain in the completion endpoint.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [gameId, enabled, disabled]);
 
   async function request(body: unknown) {
     const token =
@@ -120,7 +149,8 @@ export function EndGameControl({
                   placeholder="https://www.youtube.com/watch?v=…"
                 />
                 <span className="mt-2 block text-sm font-normal text-slate-400">
-                  Visible to viewers on the completed-game page.
+                  Visible to viewers on the completed-game page. A shared link
+                  from game setup is filled in automatically.
                 </span>
               </label>
               <div className="mt-4 flex flex-wrap gap-3">
@@ -134,7 +164,10 @@ export function EndGameControl({
                 <button
                   className="btn-secondary"
                   disabled={busy}
-                  onClick={() => setOpen(false)}
+                  onClick={() => {
+                    setOpen(false);
+                    notifyStudio("studio-end-game-cancelled");
+                  }}
                 >
                   Cancel
                 </button>

@@ -1,6 +1,8 @@
 "use client";
 
 import Link from "next/link";
+import { AccountShortcut } from "./AccountShortcut";
+import { CurlStreamerAppBadge, CurlStreamerLogo } from "./CurlStreamerBrand";
 import { usePathname } from "next/navigation";
 import { useEffect, useId, useRef, useState } from "react";
 import { signOut } from "@/app/account/actions";
@@ -11,12 +13,13 @@ import {
   selectCurrentGame,
   type CurrentGameSelection,
 } from "@/lib/current-game";
-import { createBrowserSupabaseClient } from "@/lib/supabase/browser";
+
+import { useAccountDisplay } from "./AccountDisplayProvider";
 
 type NavLink = { href: string; label: string; icon: AppIconName };
 const plan: NavLink[] = [
   { href: "/dashboard", label: "Games", icon: "game" },
-  { href: "/games/new", label: "Schedule a game", icon: "calendar" },
+  { href: "/games/new", label: "Create game", icon: "calendar" },
   { href: "/seasons", label: "Seasons & events", icon: "list" },
   { href: "/opponents", label: "Opponents", icon: "opponent" },
   { href: "/sponsors", label: "Sponsors", icon: "sponsor" },
@@ -24,10 +27,12 @@ const plan: NavLink[] = [
 
 export function AppNavigation({
   signedIn: knownSignedIn,
+  accountLogo,
   gameContext,
   className = "",
 }: {
   signedIn?: boolean;
+  accountLogo?: string | null;
   gameContext?: CurrentGameSelection;
   className?: string;
 }) {
@@ -36,25 +41,18 @@ export function AppNavigation({
   const trigger = useRef<HTMLButtonElement>(null);
   const panel = useRef<HTMLElement>(null);
   const [open, setOpen] = useState(false);
-  const [signedIn, setSignedIn] = useState(knownSignedIn ?? false);
+  const {
+    platformAdmin,
+    coachAccess,
+    refresh,
+    signedIn: sessionSignedIn,
+  } = useAccountDisplay();
+  const signedIn = knownSignedIn ?? sessionSignedIn;
   const [current, setCurrent] = useState<CurrentGameSelection | null>(null);
 
   useEffect(() => {
-    if (knownSignedIn !== undefined) return setSignedIn(knownSignedIn);
-    try {
-      const client = createBrowserSupabaseClient();
-      void client.auth
-        .getUser()
-        .then(({ data }) => setSignedIn(Boolean(data.user)))
-        .catch(() => setSignedIn(false));
-      const { data } = client.auth.onAuthStateChange((_event, session) =>
-        setSignedIn(Boolean(session?.user)),
-      );
-      return () => data.subscription.unsubscribe();
-    } catch {
-      setSignedIn(false);
-    }
-  }, [knownSignedIn]);
+    if (signedIn) refresh(open);
+  }, [open, signedIn, pathname, refresh]);
 
   useEffect(() => {
     const update = (event?: Event) => {
@@ -124,15 +122,6 @@ export function AppNavigation({
 
   const gameLinks: NavLink[] = current
     ? [
-        ...(current.capabilities.control
-          ? [
-              {
-                href: `/games/${current.id}`,
-                label: "Game control",
-                icon: "control" as const,
-              },
-            ]
-          : []),
         ...(current.capabilities.assignOpponent
           ? [
               {
@@ -145,7 +134,7 @@ export function AppNavigation({
             ? [
                 {
                   href: `/score/${current.id}`,
-                  label: "Scoring",
+                  label: "Game Scoring",
                   icon: "score" as const,
                 },
               ]
@@ -154,7 +143,7 @@ export function AppNavigation({
           ? [
               {
                 href: `/broadcast/${current.id}`,
-                label: "Broadcast preview",
+                label: "Show broadcast",
                 icon: "broadcast" as const,
               },
             ]
@@ -202,6 +191,8 @@ export function AppNavigation({
         <span aria-hidden="true">☰</span>
         <span className="sr-only">Menu</span>
       </button>
+      <CurlStreamerAppBadge />
+      <AccountShortcut initialLogo={accountLogo} />
       {open && (
         <button
           type="button"
@@ -219,7 +210,7 @@ export function AppNavigation({
         inert={!open ? true : undefined}
       >
         <div className="app-navigation-brand">
-          <strong>CurlCast</strong>
+          <CurlStreamerLogo className="app-navigation-logo" />
           <button
             type="button"
             className="app-navigation-close"
@@ -233,7 +224,17 @@ export function AppNavigation({
           <>
             <section>
               <h2 className="app-navigation-heading">Plan &amp; Schedule</h2>
-              <ul>{renderLinks(plan)}</ul>
+              <ul>
+                {renderLinks(plan)}
+                {coachAccess &&
+                  renderLinks([
+                    {
+                      href: "/curlcoach",
+                      label: "Shot Tracker",
+                      icon: "list",
+                    },
+                  ])}
+              </ul>
             </section>
             <section className="app-navigation-current">
               <h2 className="app-navigation-heading">Current Game</h2>
@@ -264,13 +265,20 @@ export function AppNavigation({
               <h2 className="app-navigation-heading">Account</h2>
               <ul>
                 {renderLinks([
-                  { href: "/account", label: "Account", icon: "account" },
                   {
-                    href: "/settings/youtube",
-                    label: "YouTube Settings",
-                    icon: "broadcast",
+                    href: "/account",
+                    label: "Account & Settings",
+                    icon: "account",
                   },
                 ])}
+                {platformAdmin &&
+                  renderLinks([
+                    {
+                      href: "/admin",
+                      label: "Platform administration",
+                      icon: "account",
+                    },
+                  ])}
               </ul>
               <form action={signOut}>
                 <button className="app-navigation-link w-full text-left">

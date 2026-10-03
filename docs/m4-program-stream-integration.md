@@ -1,0 +1,42 @@
+# Managed program and stream readiness — September 8
+
+> Historical implementation notes. Runtime state, pending approvals and milestone status below are superseded by [current project state](PROJECT_STATE.md) and [rehearsal results](m4-controlled-rehearsal.md). Local paths are illustrative; private artifacts are not distributed.
+
+The managed recorder now has a guarded native RTMP output sharing the real ProgramCanvas encoders with its independent MKV recording. Node owns pairing, one-shot target delivery, renewal and cancellation. Separate recording and streaming controls preserve recording through stream failures. The private readiness channel carries `READY\n` plus a bounded 296-byte bootstrap; destinations never enter arguments, environment variables, OBS settings or the renderer.
+
+## Admission and observations
+
+The default DLL denies ARM. A separately compiled `M4_OBS_PRODUCTION_ADMISSION` build accepts only the exact YouTube RTMPS endpoint, an ASCII key of 1–255 characters, a lease of at most 30 seconds, a bound output and the authenticated controller. Production and synthetic test gates cannot be combined. The gated DLL is now selected for the user-approved controlled rehearsal.
+
+Authenticated opcode 4 returns a bounded 32-byte observation separating authority, local output activity, failure and bytes. Active requires the actual OBS start signal; STOP acceptance alone cannot prove output cessation. Status reads cannot grant or renew authority. Node expires every local observation after six seconds, including stopped/failed observations, and provider evidence after ten seconds. An unavailable or stale observation becomes Unknown.
+
+The new desktop observation route validates delivered intent, current game/organization/session/generation and lease before and after read-only provider work. It uses the existing delivery assertion, never consumes another target or renews a lease. YouTube reads confirm the owned channel, exact stream, exact bound broadcast, unlisted visibility and manual lifecycle. Errors are normalized and paginated/mismatched results are rejected. The UI reports Live only with fresh local active output and nonzero bytes, current authority, independent active YouTube reception and the exact broadcast's live lifecycle. A failed or timed-out UI poll clears confirmation.
+
+## Credentials, process containment and sponsors
+
+The process-wide OBS log guard retains counts rather than raw diagnostics. A real local TLS peer echoed a synthetic stream key in its rejection; retained output/logs did not expose the canary. CEF/helper persistence is contained separately: the recorder joins a non-breakaway kill-on-close job before OBS/CEF initialization, creates a fresh user-only cache and writes its ownership marker before launching CEF. Forced recorder termination was checked against actual CEF/mux descendants.
+
+Process errors are not accepted as exit evidence. Normal cache deletion follows actual recorder exit. Startup recovery removes only correctly named, canonical, link-free cache trees with bounded native ownership markers and a twice-confirmed dead owner. Live, reused, unknown or old unmarked owners are retained. This is private disk containment and conservative cleanup, not a memory-only CEF claim.
+
+Uploaded sponsor images are fetched only by Node from the configured HTTPS storage origin and the current organization's fixed sponsor path. The renderer receives opaque local URLs. Redirects and non-image types are rejected; each image is limited to 4 MiB, retained assets to 32 MiB and concurrent loads to four. Fetch/body duration is bounded; removed/replaced assets revoke pending loads and wipe retained bytes. Identical refreshes coalesce safely, while aborted requests cannot revive removed assets. Built-in SVG art remains local and frame sizing remains contain.
+
+## Validation
+
+- Broad unit run: **1,160 passed, 85 skipped**, with middleware HTTP checked separately. Two additional sponsor timeout/queue regressions were then added and passed in the final focused run; the final sponsor suite is 8/8.
+- Final focused sponsor/bridge/operator suite: **19/19**. Provider/helper/route/client suite: **46/46**. Native observation/stream freshness tests passed, including expiry of final stopped evidence. Separate middleware HTTP tests: **2/2**.
+- TypeScript passed after the final local changes. Production Next build passed in an isolated source copy with the existing environment passed to the process. Existing lint warnings remain.
+- Native builds passed MSVC `/W4 /WX`. **18 native cases** passed, plus explicit connecting/failed observations, mutually exclusive build gates, hostile TLS key-echo rejection, actual browser recording/ownership-marker checks and forced CEF/mux process containment. These tests used local synthetic sinks, not YouTube.
+- **Two real Node/native recorder checks** passed against the new default-deny binaries: complete colored browser panels and host-ICE indication decoded after stream STOP; a denied managed target handoff left recording active and a later frame decoded.
+- Real Edge operator checks at **390px** passed with synthetic media/authority fixtures, no page errors or horizontal overflow, all nine visible controls at least 44px high, independent Stop/finalize, and loss/recovery of live confirmation. Screenshot: private setup `m4-readiness-operator-mobile.png`.
+- Full formatting was executed: **245 files still fail**, down from the prior 251-file baseline as touched files were formatted. This is not a green repository-wide formatting result.
+- Standard browser suite initially had **70 passed, 16 failed, 4 skipped**. All 16 failures were then resolved in the tests: current scheduling form plus explicit local API fixtures replace the removed home-page creation flow; the viewer models preview-subscribe/public-viewer capability fallback; scoring fixtures preserve End Game lock semantics and target the scoring status. The affected rerun passed 16/18; the final four vertical-slice cases then passed after explicitly starting the sponsor carousel. All originally failing cases now have passing evidence. These tests preserve real rendering, append-only scoring, role links, anonymous denial cleanup and contain sizing; they do not create hosted games or prove provider transport.
+
+Private evidence logs: `m4-readiness-unit.log`, `m4-readiness-build.log`, `m4-readiness-format.log`, `m4-readiness-e2e.log`, `m4-readiness-youtube-e2e.log`, and `m4-readiness-http.log` under `C:/CurlStreamer-setup`. Dedicated YouTube-settings checks passed **2/2**. Browser follow-up logs are `m4-readiness-browser-regressions.log` and `m4-readiness-browser-final.log`; final formatting is `m4-readiness-format-final.log`.
+
+## Runtime and remaining boundary
+
+`scripts/start-m4-operator-local.ps1 -Readiness` selects `m4-operator-ready.mjs`, `m4-readiness-recorder-build` and `m4-readiness-default-build` under private setup. The production-admission DLL is separate. Old artifacts remain preserved. See [the recorder contract](../native/m4-studio-recorder/README.md) and [native validation](../native/m4-obs-validation/README.md).
+
+Current operator: `http://127.0.0.1:49266/`, PID 17980 at verification, launched with `-Rehearsal`. The native PC check passed; recording and streaming remain idle, with pairing enabled but no desktop paired. The previous operator was confirmed idle before replacement. The prior MKV remains preserved. A fresh real-environment production build runs on loopback port 3000; the restored HTTPS pilot is `https://pilot.example.test`. Manager sign-in is pending in its fresh session.
+
+The user approved the controlled rehearsal and migrations 0025–0030. The migrations were deployed atomically; hosted verification passed for four RLS tables and all 29 expected functions, with required fencing triggers, columns and index present. Deployment evidence is in the private `m4-rehearsal-deployment-manifest.json`; the hosted migration-history table is absent. The two server flags are enabled only in the running app process, and the local rehearsal launch enables pairing/streaming. No provider resource, new invitation or rehearsal media transmission has occurred. M4 still needs the controlled unlisted provider rehearsal, managed two-camera acceptance and deferred endurance. M5 packaging follows. The current plan and approval boundary are in [controlled rehearsal readiness](m4-controlled-rehearsal.md).

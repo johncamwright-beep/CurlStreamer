@@ -51,7 +51,7 @@ describe("hammer scoreboard indicator", () => {
     expect(markup).toContain(
       `aria-label="${name}: Last stone advantage (Hammer)"`,
     );
-    expect(markup).toContain("fill-amber-300");
+    expect(markup).not.toContain("<circle");
     expect(markup).not.toContain("HAMMER ·");
   });
 

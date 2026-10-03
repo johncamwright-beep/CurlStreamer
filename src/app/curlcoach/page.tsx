@@ -35,7 +35,14 @@ export default async function CoachPage() {
   return (
     <>
       <AppNavigation signedIn />
-      <EventWorkspace mode="streamer" unlocked />
+      <EventWorkspace
+        mode="streamer"
+        unlocked
+        accountScope={{
+          actorId: account.userId,
+          organizationId: account.organizationId,
+        }}
+      />
     </>
   );
 }

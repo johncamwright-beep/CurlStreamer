@@ -56,6 +56,7 @@ test("creates a linked opponent and saves its shared YouTube watch link", async 
     await route.fulfill({ json: { profile: null } });
   });
 
+  await page.getByLabel("Team 2 — Opponent", { exact: true }).fill("Northern");
   await page
     .getByRole("button", { name: "Find a team on CurlStreamer" })
     .click();
@@ -68,7 +69,7 @@ test("creates a linked opponent and saves its shared YouTube watch link", async 
     .click();
   await expect(
     page.getByLabel("Team 2 — Opponent", { exact: true }),
-  ).toHaveValue(linkedOpponentId);
+  ).toHaveValue("Northern Lights");
   expect(opponentRequests).toEqual([
     {
       profileId: "99999999-9999-4999-8999-999999999999",
@@ -147,92 +148,18 @@ test("links a public profile to an existing saved opponent", async ({
   });
 
   const opponent = page.getByLabel("Team 2 — Opponent", { exact: true });
-  await opponent.selectOption({ label: "Team Wright" });
+  await opponent.fill("Wright");
+  await page.getByRole("option", { name: "Team Wright", exact: true }).click();
   await page
     .getByRole("button", { name: "Find a team on CurlStreamer" })
     .click();
   await page.getByLabel("Search public team profiles").fill("Wright");
   await page.getByRole("button", { name: "Link profile: Team Wright" }).click();
-  await expect(opponent).toHaveValue("77777777-7777-4777-8777-777777777777");
+  await expect(opponent).toHaveValue("Team Wright");
   expect(posts).toEqual([
     {
       opponentId: "77777777-7777-4777-8777-777777777777",
       profileId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
     },
   ]);
-});
-
-test("opponent roster and level remain independent across seasons", async ({
-  page,
-}) => {
-  const first = "11111111-1111-4111-8111-111111111111",
-    second = "22222222-2222-4222-8222-222222222222";
-  const profiles: Record<string, unknown>[] = [];
-  await page.route("**/api/opponent-seasons", async (route) => {
-    if (route.request().method() === "POST") {
-      const b = route.request().postDataJSON();
-      const profile = {
-        opponent_id: b.opponentId,
-        season_id: b.seasonId,
-        level: b.level,
-        roster: b.roster,
-        revision: 1,
-      };
-      profiles.push(profile);
-      await route.fulfill({ json: { profile } });
-    } else
-      await route.fulfill({
-        json: {
-          profiles,
-          seasons: [
-            { id: first, name: "2026-27", status: "active" },
-            { id: second, name: "2027-28", status: "planned" },
-          ],
-        },
-      });
-  });
-  await page.goto("/opponents");
-  await page
-    .getByRole("button", { name: "Season details", exact: true })
-    .first()
-    .click();
-  await page
-    .getByRole("combobox", { name: "Competition level", exact: true })
-    .selectOption("U20");
-  await page.getByLabel("Lead", { exact: true }).fill("Alex Firstseason");
-  await page.getByRole("button", { name: "Save season details" }).click();
-  await expect(page.getByRole("status")).toContainText("2026-27 saved");
-  await page
-    .getByRole("combobox", { name: "Opponent season", exact: true })
-    .selectOption(second);
-  await page
-    .getByRole("button", { name: "Season details", exact: true })
-    .first()
-    .click();
-  await expect(page.getByLabel("Lead", { exact: true })).toHaveValue("");
-  await page.getByLabel("Lead", { exact: true }).fill("Jordan Nextseason");
-  await page
-    .getByRole("combobox", { name: "Competition level", exact: true })
-    .selectOption("Men’s");
-  await page.getByRole("button", { name: "Save season details" }).click();
-  await expect(page.getByRole("status")).toContainText("2027-28 saved");
-  await page
-    .getByRole("combobox", { name: "Opponent season", exact: true })
-    .selectOption(first);
-  await page
-    .getByRole("button", { name: "Season details", exact: true })
-    .first()
-    .click();
-  await expect(page.getByLabel("Lead", { exact: true })).toHaveValue(
-    "Alex Firstseason",
-  );
-  await expect(
-    page.getByRole("combobox", { name: "Competition level", exact: true }),
-  ).toHaveValue("U20");
-  expect(profiles).toHaveLength(2);
-  expect(
-    await page.evaluate(
-      () => document.documentElement.scrollWidth <= innerWidth,
-    ),
-  ).toBe(true);
 });

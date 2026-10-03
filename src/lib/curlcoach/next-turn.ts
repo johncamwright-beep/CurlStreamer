@@ -1,4 +1,5 @@
 import { roster, type Shot } from "./model";
+import { rockNumber } from "./lineup";
 const positions = ["Lead", "Second", "Third", "Fourth"] as const;
 /** Advance only our charted team's turns; opponents' stones are not entered here. */
 export function nextTurn(
@@ -8,23 +9,28 @@ export function nextTurn(
     id: string;
     position?: (typeof positions)[number];
   }[] = roster,
+  lineup?: readonly string[],
 ): Shot | null {
   const index = positions.indexOf(shot.position);
   const nextIndex = shot.stone === 1 ? index : (index + 1) % positions.length;
   const end = shot.end + (shot.stone === 2 && index === 3 ? 1 : 0);
   if (end > 20) return null;
   const position = positions[nextIndex];
+  const assigned =
+    lineup?.[rockNumber({ position, stone: shot.stone === 1 ? 2 : 1 }) - 1];
   const playerId =
-    position === shot.position
-      ? shot.playerId
-      : ([...recorded]
-          .reverse()
-          .find(
-            (attempt) => attempt.position === position && attempt.end <= end,
-          )?.playerId ??
-        players.find((player) => player.position === position)?.id ??
-        players[nextIndex]?.id ??
-        roster[nextIndex].id);
+    assigned && players.some((player) => player.id === assigned)
+      ? assigned
+      : position === shot.position
+        ? shot.playerId
+        : ([...recorded]
+            .reverse()
+            .find(
+              (attempt) => attempt.position === position && attempt.end <= end,
+            )?.playerId ??
+          players.find((player) => player.position === position)?.id ??
+          players[nextIndex]?.id ??
+          roster[nextIndex].id);
   return {
     playerId,
     position,

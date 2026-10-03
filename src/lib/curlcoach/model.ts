@@ -99,6 +99,21 @@ export const lifecycleSchema = z
     expectedRevision: z.number().int().nonnegative(),
   })
   .strict();
+export const lineupSchema = z.array(z.string().min(1).max(100)).length(8);
+export const lineupCommandSchema = z
+  .object({
+    action: z.literal("set-lineup"),
+    requestId: z.string().uuid(),
+    expectedRevision: z.number().int().nonnegative(),
+    lineup: lineupSchema,
+  })
+  .strict();
+export type LineupCommand = z.infer<typeof lineupCommandSchema>;
+const lineupEventSchema = lineupCommandSchema.extend({
+  revision: z.number().int().positive(),
+  at: z.string().datetime(),
+  actor: z.string().min(1),
+});
 export type ShotEvent = Command & {
   revision: number;
   at: string;
@@ -113,6 +128,8 @@ export type State = {
   revision?: number;
   status?: "open" | "closed";
   roster?: RosterEntry[];
+  lineup?: string[];
+  lineupEvents?: z.infer<typeof lineupEventSchema>[];
 };
 export const stateSchema = z
   .object({
@@ -129,8 +146,62 @@ export const stateSchema = z
     revision: z.number().int().nonnegative().optional(),
     status: z.enum(["open", "closed"]).optional(),
     roster: z.array(rosterEntrySchema).optional(),
+    lineup: lineupSchema.optional(),
+    lineupEvents: z.array(lineupEventSchema).optional(),
   })
-  .strict();
+  .strict()
+  .superRefine((state, ctx) => {
+    const known = new Set((state.roster ?? roster).map((entry) => entry.id));
+    if (
+      state.lineup?.some((id) => !known.has(id)) ||
+      state.lineupEvents?.some((event) =>
+        event.lineup.some((id) => !known.has(id)),
+      )
+    )
+      ctx.addIssue({
+        code: "custom",
+        message: "Lineup player is not in this coaching roster.",
+      });
+  });
+export function setLineup(
+  state: State,
+  input: LineupCommand,
+  actor: string,
+): State {
+  const command = lineupCommandSchema.parse(input);
+  const previous = state.lineupEvents?.find(
+    (event) => event.requestId === command.requestId,
+  );
+  if (previous) {
+    if (
+      previous.expectedRevision !== command.expectedRevision ||
+      JSON.stringify(previous.lineup) !== JSON.stringify(command.lineup)
+    )
+      throw new Error("Request ID already used");
+    return state;
+  }
+  if (state.events.some((event) => event.requestId === command.requestId))
+    throw new Error("Request ID already used");
+  const revision = state.revision ?? state.events.length;
+  if (revision !== command.expectedRevision)
+    throw new Error("Report changed. Reload before changing the lineup.");
+  if (state.status === "closed")
+    throw new Error("Coaching is finished. Reopen before changing the lineup.");
+  return stateSchema.parse({
+    ...state,
+    lineup: command.lineup,
+    revision: revision + 1,
+    lineupEvents: [
+      ...(state.lineupEvents ?? []),
+      {
+        ...command,
+        revision: revision + 1,
+        at: new Date().toISOString(),
+        actor,
+      },
+    ],
+  });
+}
 export function emptyState(): State {
   return {
     organizationId,
@@ -151,6 +222,10 @@ export function currentShots(events: ShotEvent[]) {
   return [...shots].map(([id, shot]) => ({ id, ...shot }));
 }
 export function append(state: State, command: Command, actor: string): State {
+  if (
+    state.lineupEvents?.some((event) => event.requestId === command.requestId)
+  )
+    throw new Error("Request ID already used");
   const previous = state.events.find((e) => e.requestId === command.requestId);
   if (previous) {
     if (

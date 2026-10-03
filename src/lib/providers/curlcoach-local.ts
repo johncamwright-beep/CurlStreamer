@@ -12,6 +12,8 @@ import {
 import { join, resolve, sep } from "node:path";
 import {
   append,
+  setLineup,
+  type LineupCommand,
   emptyState,
   stateSchema,
   type Command,
@@ -68,6 +70,25 @@ export function writeCoachEvent(
   const handle = openSync(lock, "wx");
   try {
     const state = append(readCoachState(initial), command, actor);
+    writeFileSync(`${file}.tmp`, JSON.stringify(state), { mode: 0o600 });
+    renameSync(`${file}.tmp`, file);
+    return state;
+  } finally {
+    closeSync(handle);
+    unlinkSync(lock);
+  }
+}
+
+export function writeCoachLineup(
+  command: LineupCommand,
+  initial = emptyState(),
+  actor = "synthetic-coach",
+) {
+  const { directory, file, lock } = paths(initial);
+  mkdirSync(directory, { recursive: true });
+  const handle = openSync(lock, "wx");
+  try {
+    const state = setLineup(readCoachState(initial), command, actor);
     writeFileSync(`${file}.tmp`, JSON.stringify(state), { mode: 0o600 });
     renameSync(`${file}.tmp`, file);
     return state;

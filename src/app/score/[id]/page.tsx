@@ -24,7 +24,8 @@ import { StudioYouTube } from "@/components/StudioYouTube";
 import { StudioProgramPreview } from "@/components/StudioProgramPreview";
 import { CameraZoomControls } from "@/components/CameraZoomControls";
 import { StudioAudio } from "@/components/StudioAudio";
-import { cameraAudioEnabled } from "@/lib/camera-audio";
+import { cameraAudioControlEnabled } from "@/lib/camera-audio";
+import { useStudioCameraInputs } from "@/components/StudioCameraInputs";
 import { WindowsStudioRequired } from "@/components/WindowsStudioRequired";
 export default function Scorer({
   params,
@@ -32,6 +33,7 @@ export default function Scorer({
   params: Promise<{ id: string }>;
 }) {
   const { id } = use(params);
+  const cameraInputs = useStudioCameraInputs(id);
   const {
     game,
     completion,
@@ -129,7 +131,11 @@ export default function Scorer({
       role,
       {
         ...game.cameraAudio?.[role],
-        enabled: cameraAudioEnabled(game, role),
+        enabled: cameraAudioControlEnabled(
+          game,
+          role,
+          cameraInputs[role]?.kind,
+        ),
         status: game.cameraAudio?.[role]?.status ?? "off",
         updatedAt: game.cameraAudio?.[role]?.updatedAt ?? 0,
       },

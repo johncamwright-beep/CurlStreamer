@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { authorizeGame, authorizationError } from "@/lib/game-authorization";
 import { broadcastGame, type BroadcastGame } from "@/lib/game-projection";
+import { nativeCameraAudioIntent } from "@/lib/camera-audio";
 import type { Sponsor } from "@/lib/types";
 import { studioOrigin } from "@/lib/studio-origin";
 import { traceStudioRequest } from "@/lib/providers/connection-diagnostics-server";
@@ -238,7 +239,10 @@ async function handleGET(
     );
     // The private renderer needs the real UUID to verify that a signed object
     // belongs to the library sponsor. Public Broadcast retains opaque IDs.
-    const game = privateProgramSponsorIds(publicProjection, sponsors);
+    const game = {
+      ...privateProgramSponsorIds(publicProjection, sponsors),
+      nativeCameraAudio: nativeCameraAudioIntent(result.game),
+    };
     await checkAvailableProgramScope(scope);
     return response({ game, organizationId: scope.organizationId });
   } catch (cause) {

@@ -1,7 +1,7 @@
 // Node-owned program authority. Never import into a browser bundle.
 import { performance } from "node:perf_hooks";
 import { z } from "zod";
-import type { BroadcastGame } from "../game-projection";
+import type { PrivateProgramGame } from "../game-projection";
 import { gameSchema } from "../schema";
 import { StudioTransportUnavailable } from "./studio-transport-error";
 import type {
@@ -451,7 +451,7 @@ export class M4ProgramClient {
   }
   /** Reads only this invitation's game. Signed sponsor render URLs remain
    * scoped media capabilities; callers must not persist them or log responses. */
-  async readGame(): Promise<BroadcastGame> {
+  async readGame(): Promise<PrivateProgramGame> {
     if (!this.active || !this.#cookie) {
       this.close();
       throw fail();
@@ -460,7 +460,12 @@ export class M4ProgramClient {
       const { value } = await this.#call(undefined, this.#cookie, "GET");
       if (!this.active) throw fail();
       const { game, organizationId } = z
-        .object({ game: projectedGame, organizationId: z.uuid().optional() })
+        .object({
+          game: projectedGame.extend({
+            nativeCameraAudio: projectedGame.shape.cameraAudio,
+          }),
+          organizationId: z.uuid().optional(),
+        })
         .parse(value);
       if (game.id !== this.#gameId) throw fail();
       this.#organizationId = organizationId;

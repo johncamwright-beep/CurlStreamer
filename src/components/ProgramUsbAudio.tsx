@@ -1,14 +1,40 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
+import type { CameraRole } from "@/lib/m2-studio-protocol";
 import { acquireProgramAudioOutput } from "@/lib/program-audio-output";
 import { usbAudioStart } from "@/lib/usb-audio-timing";
 
 /** Receives Studio's local USB mix only inside the private OBS browser source. */
-export function ProgramUsbAudio() {
+export function ProgramUsbAudio({
+  endpoint = "/usb-audio",
+  generationHeader = "x-m4-usb-audio-generation",
+  role,
+  sourceGeneration,
+  enabled = true,
+  volume = 1,
+}: {
+  endpoint?: string;
+  generationHeader?: string;
+  role?: CameraRole;
+  sourceGeneration?: number;
+  enabled?: boolean;
+  volume?: number;
+} = {}) {
+  const volumeRef = useRef(volume);
+  const gainRef = useRef<GainNode | null>(null);
   useEffect(() => {
+    volumeRef.current = volume;
+    if (gainRef.current) gainRef.current.gain.value = volume;
+  }, [volume]);
+  useEffect(() => {
+    if (!enabled) return;
     const output = acquireProgramAudioOutput();
     const context = output.context;
+    const gain = context.createGain();
+    gain.gain.value = volumeRef.current;
+    gain.connect(output.input);
+    gainRef.current = gain;
     const scheduled = new Set<AudioBufferSourceNode>();
     let generation = "",
       nextAt = 0,
@@ -16,6 +42,7 @@ export function ProgramUsbAudio() {
       timer: ReturnType<typeof setTimeout> | undefined,
       requestController: AbortController | undefined;
     let scheduledFrames = 0,
+      lastPacketAt = 0,
       latestPeak = 0,
       latestRms = 0,
       lastReport = 0;
@@ -32,13 +59,30 @@ export function ProgramUsbAudio() {
         credentials: "same-origin",
         redirect: "error",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          action: "usb-audio-observe",
-          contextState: context.state === "running" ? "running" : "suspended",
-          scheduledFrames: Math.min(480_000, Math.max(0, scheduledFrames)),
-          peak: Math.min(1, latestPeak),
-          rms: Math.min(1, latestRms),
-        }),
+        body: JSON.stringify(
+          role
+            ? {
+                action: "audio-observe",
+                cameraRole: role,
+                sourceGeneration,
+                receiving:
+                  context.state === "running" &&
+                  Date.now() - lastPacketAt < 1000,
+                peak: Math.min(1, latestPeak * volumeRef.current),
+                rms: Math.min(1, latestRms * volumeRef.current),
+              }
+            : {
+                action: "usb-audio-observe",
+                contextState:
+                  context.state === "running" ? "running" : "suspended",
+                scheduledFrames: Math.min(
+                  480_000,
+                  Math.max(0, scheduledFrames),
+                ),
+                peak: Math.min(1, latestPeak),
+                rms: Math.min(1, latestRms),
+              },
+        ),
       })
         .catch(() => undefined)
         .finally(() => {
@@ -62,16 +106,18 @@ export function ProgramUsbAudio() {
       requestController = new AbortController();
       const timeout = setTimeout(() => requestController?.abort(), 500);
       try {
-        const response = await fetch("/usb-audio", {
+        const response = await fetch(endpoint, {
           credentials: "same-origin",
           cache: "no-store",
           redirect: "error",
           signal: requestController.signal,
         });
         if (stopped || requestController.signal.aborted) return;
-        if (!response.ok && response.status !== 204) throw new Error();
-        const currentGeneration =
-          response.headers.get("x-m4-usb-audio-generation") ?? "";
+        if (!response.ok && response.status !== 204) {
+          if ([401, 403, 409, 410].includes(response.status)) flush();
+          throw new Error();
+        }
+        const currentGeneration = response.headers.get(generationHeader) ?? "";
         if (generation && currentGeneration !== generation) flush();
         generation = currentGeneration;
         const raw = await response.arrayBuffer();
@@ -81,6 +127,7 @@ export function ProgramUsbAudio() {
           raw.byteLength % Float32Array.BYTES_PER_ELEMENT === 0
         ) {
           const allSamples = new Float32Array(raw);
+          lastPacketAt = Date.now();
           // Keep ordinary catch-up batches; discard only a substantial backlog.
           const input = allSamples.subarray(
             Math.max(0, allSamples.length - 48_000 * 0.25),
@@ -98,7 +145,7 @@ export function ProgramUsbAudio() {
           source.buffer = buffer;
           const packetGain = context.createGain();
           source.connect(packetGain);
-          packetGain.connect(output.input);
+          packetGain.connect(gain);
           source.onended = () => {
             source.disconnect();
             packetGain.disconnect();
@@ -117,8 +164,14 @@ export function ProgramUsbAudio() {
           nextAt += buffer.duration;
           scheduledFrames += input.length;
           scheduled.add(source);
+        } else if (Date.now() - lastPacketAt >= 1000) {
+          latestPeak = 0;
+          latestRms = 0;
         }
       } catch {
+        latestPeak = 0;
+        latestRms = 0;
+        lastPacketAt = 0;
         // The program bridge is allowed to disappear while OBS is closing.
       } finally {
         clearTimeout(timeout);
@@ -139,8 +192,10 @@ export function ProgramUsbAudio() {
       requestController?.abort();
       reportController?.abort();
       flush();
+      gain.disconnect();
+      gainRef.current = null;
       output.release();
     };
-  }, []);
+  }, [endpoint, generationHeader, role, sourceGeneration, enabled]);
   return null;
 }

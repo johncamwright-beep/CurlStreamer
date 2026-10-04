@@ -25,6 +25,7 @@ export const studioFiles = {
   configuration: "studio.json",
   host: "native/m4_studio_host.exe",
   recorder: "native/m4_studio_recorder.exe",
+  ipCamera: "native/m4_ip_camera.exe",
   defaultPlugin: "native/default/curlstreamer-m4-memory.dll",
   streamPlugin: "native/production/curlstreamer-m4-memory.dll",
   rendererScript: "renderer/m4-program-renderer.js",

@@ -31,6 +31,8 @@ internal sealed class Workspace : Form
     private TaskCompletionSource<Dictionary<string, object>> handoff;
     private bool busy, polling, closing, mayClose, recording, controllerReady, startupFailed;
     private Dictionary<string, object> lastState;
+    private Dictionary<string, Dictionary<string, object>> cameraInputs = new Dictionary<string, Dictionary<string, object>>();
+    private bool cameraSettingsOpen;
     private string closeAfterGame;
     private bool endRequestPending, gameEnded;
     private readonly UsbAudio usbAudio = new UsbAudio();
@@ -88,6 +90,22 @@ internal sealed class Workspace : Form
         var close = new ToolStripMenuItem("Close Studio…"); close.Click += (s, e) => Close();
         studioMenu.DropDownItems.AddRange(new ToolStripItem[] { reload, saved, close });
         menu.Items.Add(studioMenu); Controls.Add(menu); MainMenuStrip = menu;
+        var camerasMenu = new ToolStripMenuItem("Camera sources");
+        foreach (var role in new[] { "camera-home", "camera-away" }) {
+            var cameraRole = role;
+            var item = new ToolStripMenuItem(role == "camera-home" ? "Camera 1 settings…" : "Camera 2 settings…");
+            item.Click += (s, e) => OpenCameraSettings(cameraRole);
+            camerasMenu.DropDownItems.Add(item);
+        }
+        menu.Items.Add(camerasMenu);
+        var cameraToolbar = new FlowLayoutPanel { Dock = DockStyle.Top, Height = 54, Padding = new Padding(12, 5, 12, 5), WrapContents = false };
+        foreach (var role in new[] { "camera-home", "camera-away" }) {
+            var cameraRole = role;
+            var button = MakeButton(role == "camera-home" ? "Camera 1 settings" : "Camera 2 settings");
+            button.Click += (s, e) => OpenCameraSettings(cameraRole);
+            cameraToolbar.Controls.Add(button);
+        }
+        Controls.Add(cameraToolbar); cameraToolbar.BringToFront(); menu.BringToFront();
         Shown += async (s, e) => await Initialize();
         poll.Tick += async (s, e) => await Poll();
         FormClosing += async (s, e) => {
@@ -174,6 +192,8 @@ internal sealed class Workspace : Form
             Verify(Path.Combine(root, "studio.json"), configurationHash);
             var config = json.Deserialize<Dictionary<string, object>>(File.ReadAllText(Path.Combine(root, "studio.json")));
             origin = (string)config["website"];
+            try { cameraInputs = CameraInputs.Load(LifecycleDirectory); }
+            catch { status.Text = "Saved camera settings could not be read. Open Camera sources to enter them again."; }
             if (!WorkspacePolicy.SameOrigin(origin, origin) || new Uri(origin).AbsoluteUri != origin + "/") throw new InvalidDataException();
             var profile = profileDirectory ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "CurlStreamer", "Studio", "WorkspaceProfile");
             var environment = await CoreWebView2Environment.CreateAsync(null, profile);
@@ -254,6 +274,10 @@ internal sealed class Workspace : Form
             var raw = args.WebMessageAsJson;
             if (raw.Length > 4096) return;
             var value = json.Deserialize<Dictionary<string, object>>(raw);
+            if (value.Count == 3 && TextValue(value, "gameId") == runningGame && selectedGame == runningGame && runningGame != null && !busy && !closing && CameraInputs.Role(TextValue(value, "cameraRole"))) {
+                if (TextValue(value, "action") == "configure-camera") { OpenCameraSettings(TextValue(value, "cameraRole")); return; }
+                if (TextValue(value, "action") == "reconnect-camera") { ApplyState(await Command(new { action = "reconnect-camera-input", cameraRole = TextValue(value, "cameraRole") })); return; }
+            }
             if (TextValue(value, "type") != null && TextValue(value, "type").StartsWith("studio-usb-")) {
                 await UsbCommand(value); return;
             }
@@ -375,6 +399,8 @@ internal sealed class Workspace : Form
             if (child == null) await StartController(gameId);
             var checkedState = await Command(new { action = "check" });
             if (TextValue(checkedState, "pc") != "ready") throw new WorkspaceFailure("This PC did not pass the recording check. Check the Studio installation.");
+            foreach (var source in cameraInputs)
+                ApplyState(await Command(new { action = "configure-camera-input", cameraRole = source.Key, source = source.Value }));
             status.Text = "Preparing your camera connection…";
             var code = await PrepareGrant(gameId);
             status.Text = "Connecting cameras…";
@@ -450,6 +476,9 @@ internal sealed class Workspace : Form
         recording = phase == "recording" || phase == "starting" || phase == "stopping" || (phase == "failed" && recording);
         previewMapping = phase == "recording" ? TextValue(state, "previewMapping") : null;
         object cameraStatus;
+        object inputs;
+        if (web.CoreWebView2 != null && WorkspacePolicy.SameOrigin(web.CoreWebView2.Source, origin) && selectedGame == runningGame && state.TryGetValue("cameraInputs", out inputs))
+            web.CoreWebView2.ExecuteScriptAsync("window.dispatchEvent(new CustomEvent('studio-camera-inputs',{detail:" + json.Serialize(new { gameId = runningGame, cameras = SafeCameraInputs(inputs) }) + "}));");
         if (web.CoreWebView2 != null && WorkspacePolicy.SameOrigin(web.CoreWebView2.Source, origin) && selectedGame == runningGame && state.TryGetValue("cameraStatus", out cameraStatus))
             web.CoreWebView2.ExecuteScriptAsync("window.dispatchEvent(new CustomEvent('studio-camera-status',{detail:" + json.Serialize(new { gameId = runningGame, cameras = cameraStatus }) + "}));");
         object phoneAudio;
@@ -475,6 +504,51 @@ internal sealed class Workspace : Form
         try { using (var timeout = new System.Threading.CancellationTokenSource(3000)) using (var response = await local.GetAsync(localAddress + "/state", timeout.Token)) { response.EnsureSuccessStatusCode(); if (!closing && child == observedChild) ApplyState(json.Deserialize<Dictionary<string, object>>(await response.Content.ReadAsStringAsync())); } }
         catch { if (!busy) status.Text = "Recording status is unavailable. Keep Studio open while checking the recording."; }
         finally { polling = false; }
+    }
+    private string CameraInputStatus(string role) {
+        object inputs, slot;
+        var map = lastState != null && lastState.TryGetValue("cameraInputs", out inputs) ? inputs as Dictionary<string, object> : null;
+        var state = map != null && map.TryGetValue(role, out slot) ? slot as Dictionary<string, object> : null;
+        if (state == null) return "Saved settings apply when you connect this game's cameras.";
+        object cameras, fresh;
+        var receiving = lastState.TryGetValue("cameraStatus", out cameras) ? cameras as Dictionary<string, object> : null;
+        if (receiving != null && receiving.TryGetValue(role, out fresh) && fresh is bool && (bool)fresh) return "Receiving fresh camera video.";
+        var error = TextValue(state, "errorCode");
+        if (error == "auth_failed") return "Camera Account rejected. Check the local username and password (not your Tapo email/password).";
+        if (error == "runtime_missing") return "Tapo runtime missing. Check this Studio installation.";
+        if (error == "stale_frames") return "Camera video stopped. Check Wi-Fi and reconnect.";
+        if (error != null) return "Camera could not connect. Check Wi-Fi, the IP address and local RTSP access.";
+        return "Video not yet verified · " + (TextValue(state, "phase") ?? "waiting");
+    }
+    private object SafeCameraInputs(object inputs) {
+        var output = new Dictionary<string, object>();
+        var map = inputs as Dictionary<string, object>;
+        if (map == null) return output;
+        foreach (var role in new[] { "camera-home", "camera-away" }) {
+            object slot; if (!map.TryGetValue(role, out slot)) continue;
+            var source = slot as Dictionary<string, object>; if (source == null) continue;
+            var safe = new Dictionary<string, object>();
+            // Whitelist facts even if a future local controller adds fields.
+            foreach (var key in new[] { "kind", "host", "stream", "rotation", "configured", "phase", "errorCode", "generation" }) { object value; if (source.TryGetValue(key, out value)) safe[key] = value; }
+            output[role] = safe;
+        }
+        return output;
+    }
+    private void OpenCameraSettings(string role) {
+        if (cameraSettingsOpen || busy || closing || !CameraInputs.Role(role)) return;
+        Dictionary<string, object> initial; cameraInputs.TryGetValue(role, out initial);
+        cameraSettingsOpen = true;
+        try {
+            using (var dialog = new CameraInputDialog(role, initial, async source => {
+                if (closing || busy) throw new InvalidOperationException();
+                // Persist only after the local operator accepts the source. When no
+                // operator is running, save for the next checked program startup.
+                if (local != null && runningGame != null) ApplyState(await Command(new { action = "configure-camera-input", cameraRole = role, source = source }));
+                var next = new Dictionary<string, Dictionary<string, object>>(cameraInputs); next[role] = source;
+                CameraInputs.Save(LifecycleDirectory, next); cameraInputs = next;
+                return CameraInputStatus(role);
+            }, () => CameraInputStatus(role))) dialog.ShowDialog(this);
+        } finally { cameraSettingsOpen = false; }
     }
     private async Task UsbCommand(Dictionary<string, object> value) {
         if (usbBusy || closing || selectedGame == null || TextValue(value, "gameId") != selectedGame ||

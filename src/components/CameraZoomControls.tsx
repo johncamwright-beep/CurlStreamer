@@ -5,6 +5,7 @@ import type { GameState } from "@/lib/types";
 import { clampZoom } from "@/lib/providers/livekit-client";
 import { useGame } from "@/components/GameSync";
 import { previewSubscribeAccessToken } from "@/lib/access-session";
+import { useStudioCameraInputs } from "./StudioCameraInputs";
 
 const FRESH_MS = 75_000;
 type Role = "camera-home" | "camera-away";
@@ -40,9 +41,15 @@ export function CameraZoomControls({
   game,
   act,
 }: {
-  game: Pick<GameState, "cameraZoom">;
+  game: Pick<GameState, "cameraZoom"> & Partial<Pick<GameState, "id">>;
   act: (action: unknown) => Promise<void>;
 }) {
+  const cameraInputs = useStudioCameraInputs(game.id);
+  if (
+    cameraInputs["camera-home"]?.kind === "tapo" &&
+    cameraInputs["camera-away"]?.kind === "tapo"
+  )
+    return null;
   return (
     <aside
       data-testid="camera-zoom-rail"
@@ -50,9 +57,11 @@ export function CameraZoomControls({
       aria-label="Camera zoom controls"
     >
       <h2>Camera zoom</h2>
-      {(["camera-home", "camera-away"] as const).map((role) => (
-        <CameraZoomControl key={role} game={game} role={role} act={act} />
-      ))}
+      {(["camera-home", "camera-away"] as const).map((role) =>
+        cameraInputs[role]?.kind === "tapo" ? null : (
+          <CameraZoomControl key={role} game={game} role={role} act={act} />
+        ),
+      )}
     </aside>
   );
 }

@@ -1,16 +1,15 @@
 "use client";
 
-import React, { useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import {
   ProgramCanvas,
   type ProgramCameraRole,
 } from "@/components/ProgramCanvas";
-import type { BroadcastGame } from "@/lib/game-projection";
+import type { PrivateProgramGame } from "@/lib/game-projection";
 import type { DirectMetrics } from "./direct-peer";
 import { connectM4ProgramCamera } from "./m4-program-camera";
-import { ProgramPhoneAudio } from "@/components/ProgramPhoneAudio";
-import { ProgramUsbAudio } from "@/components/ProgramUsbAudio";
+import { M4ProgramAudio } from "./m4-program-audio-browser";
 import {
   StudioTransportUnavailable,
   isTemporaryStudioStatus,
@@ -33,7 +32,15 @@ import {
   ConnectionFailure,
 } from "./camera-connection-coordinator";
 
+import { z } from "zod";
+import {
+  m4CameraInputSnapshotSchema,
+  type M4CameraInputSnapshot,
+} from "../m4-camera-input";
+import { M4IpCameraTransport } from "./m4-ip-camera-browser";
+
 type CameraState = {
+  frameUrl?: string;
   stream?: MediaStream;
   audio?: MediaStream;
   metrics?: DirectMetrics;
@@ -79,8 +86,24 @@ function CameraVideo({ state }: { state: CameraState }) {
   }, [state.stream]);
   return (
     <>
-      <video ref={ref} autoPlay playsInline muted aria-label="Direct camera" />
-      {!state.stream && (
+      {state.frameUrl ? (
+        <img
+          className="portrait-camera-video"
+          src={state.frameUrl}
+          alt="Tapo camera"
+          style={{ objectFit: "contain" }}
+        />
+      ) : (
+        <video
+          className="portrait-camera-video"
+          ref={ref}
+          autoPlay
+          playsInline
+          muted
+          aria-label="Direct camera"
+        />
+      )}
+      {!state.stream && !state.frameUrl && (
         <div
           style={{
             position: "absolute",
@@ -96,7 +119,7 @@ function CameraVideo({ state }: { state: CameraState }) {
         >
           <p>Camera not connected</p>
           <p style={{ fontSize: 20, marginTop: 12 }}>
-            Connect your phone from the game screen.
+            Connect this camera from the game screen.
           </p>
         </div>
       )}
@@ -104,49 +127,25 @@ function CameraVideo({ state }: { state: CameraState }) {
   );
 }
 
-function ProgramRenderer() {
-  const [game, setGame] = useState<BroadcastGame>();
-  const [programMessage, setProgramMessage] = useState("Loading program…");
+function PhoneCameraTransport({
+  role,
+  sourceGeneration,
+  onChange,
+}: {
+  role: ProgramCameraRole;
+  sourceGeneration: number;
+  onChange: (role: ProgramCameraRole, state: CameraState) => void;
+}) {
   const [cameras, setCameras] = useState<
     Record<ProgramCameraRole, CameraState>
   >({
     "camera-home": { message: "Connecting Camera 1…" },
     "camera-away": { message: "Connecting Camera 2…" },
   });
-
-  useEffect(() => {
-    const controller = new AbortController();
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    const poll = async () => {
-      try {
-        const value = (await request(
-          "/program",
-          undefined,
-          controller.signal,
-        )) as {
-          game?: BroadcastGame;
-        };
-        if (!value.game || controller.signal.aborted) throw new Error();
-        setGame(value.game);
-        setProgramMessage("Local program ready");
-        timer = setTimeout(() => void poll(), 1000);
-      } catch {
-        if (!controller.signal.aborted) {
-          setProgramMessage("Reconnecting to Studio…");
-          timer = setTimeout(() => void poll(), 2000);
-        }
-      }
-    };
-    void poll();
-    return () => {
-      controller.abort();
-      clearTimeout(timer);
-    };
-  }, []);
-
+  useEffect(() => onChange(role, cameras[role]), [cameras, role, onChange]);
   useEffect(() => {
     const lifetime = new AbortController();
-    const owners = roles.map((role) => {
+    const owners = [role].map((role) => {
       let sampleAt = 0;
       let observationFlight = false;
       return new CameraConnectionCoordinator({
@@ -199,6 +198,7 @@ function ProgramRenderer() {
                       cameraRole: role,
                       frames: metrics.framesDecoded,
                       verified: metrics.direct,
+                      sourceGeneration,
                     },
                     AbortSignal.any([attempt.signal, deadline.signal]),
                   )
@@ -281,6 +281,108 @@ function ProgramRenderer() {
       lifetime.abort();
       owners.forEach((owner) => owner.close());
     };
+  }, [role, sourceGeneration]);
+  return null;
+}
+
+function ProgramRenderer() {
+  const [game, setGame] = useState<PrivateProgramGame>();
+  const [programMessage, setProgramMessage] = useState("Loading program…");
+  const [cameras, setCameras] = useState<
+    Record<ProgramCameraRole, CameraState>
+  >({
+    "camera-home": { message: "Connecting Camera 1…" },
+    "camera-away": { message: "Connecting Camera 2…" },
+  });
+
+  useEffect(() => {
+    const controller = new AbortController();
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const poll = async () => {
+      try {
+        const value = (await request(
+          "/program",
+          undefined,
+          controller.signal,
+        )) as {
+          game?: PrivateProgramGame;
+        };
+        if (!value.game || controller.signal.aborted) throw new Error();
+        setGame(value.game);
+        setProgramMessage("Local program ready");
+        timer = setTimeout(() => void poll(), 1000);
+      } catch {
+        if (!controller.signal.aborted) {
+          setProgramMessage("Reconnecting to Studio…");
+          timer = setTimeout(() => void poll(), 2000);
+        }
+      }
+    };
+    void poll();
+    return () => {
+      controller.abort();
+      clearTimeout(timer);
+    };
+  }, []);
+
+  const [sources, setSources] =
+    useState<Record<ProgramCameraRole, M4CameraInputSnapshot>>();
+  const onCameraChange = useCallback(
+    (role: ProgramCameraRole, state: CameraState) => {
+      setCameras((current) => ({ ...current, [role]: state }));
+    },
+    [],
+  );
+  useEffect(() => {
+    const controller = new AbortController();
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let deadline: ReturnType<typeof setTimeout> | undefined;
+    const schema = z
+      .object({
+        cameras: z
+          .object({
+            "camera-home": m4CameraInputSnapshotSchema,
+            "camera-away": m4CameraInputSnapshotSchema,
+          })
+          .strict(),
+      })
+      .strict();
+    const poll = async () => {
+      const attempt = new AbortController();
+      deadline = setTimeout(() => attempt.abort(), 3000);
+      try {
+        const value = schema.parse(
+          await request(
+            "/camera-inputs",
+            undefined,
+            AbortSignal.any([controller.signal, attempt.signal]),
+          ),
+        );
+        if (!controller.signal.aborted)
+          setSources((previous) =>
+            previous &&
+            roles.every(
+              (role) =>
+                previous[role].kind === value.cameras[role].kind &&
+                previous[role].generation === value.cameras[role].generation,
+            )
+              ? previous
+              : value.cameras,
+          );
+      } catch {
+        /* A missed metadata poll does not tear down a working camera. */
+      } finally {
+        clearTimeout(deadline);
+        if (!controller.signal.aborted)
+          timer = setTimeout(() => void poll(), 1000);
+      }
+    };
+    void poll();
+    return () => {
+      controller.abort();
+      clearTimeout(timer);
+      clearTimeout(deadline);
+    };
   }, []);
 
   if (!game)
@@ -290,24 +392,42 @@ function ProgramRenderer() {
       </main>
     );
 
-  const verified = roles.filter((role) => cameras[role].metrics?.direct).length;
+  const verified = roles.filter(
+    (role) => cameras[role].metrics?.direct || cameras[role].frameUrl,
+  ).length;
   return (
     <>
-      <ProgramUsbAudio />
-      {roles.map((role) => (
-        <ProgramPhoneAudio
-          key={role}
-          role={role}
-          stream={cameras[role].audio}
-          enabled={game.cameraAudio?.[role]?.enabled === true}
-          volume={game.cameraAudio?.[role]?.volume ?? 1}
-        />
-      ))}
+      <M4ProgramAudio
+        game={game}
+        sources={sources}
+        phoneStreams={{
+          "camera-home": cameras["camera-home"].audio,
+          "camera-away": cameras["camera-away"].audio,
+        }}
+      />
+      {sources &&
+        roles.map((role) =>
+          sources[role].kind === "tapo" ? (
+            <M4IpCameraTransport
+              key={role + sources[role].kind + sources[role].generation}
+              role={role}
+              generation={sources[role].generation}
+              onChange={onCameraChange}
+            />
+          ) : (
+            <PhoneCameraTransport
+              key={role + sources[role].kind + sources[role].generation}
+              role={role}
+              sourceGeneration={sources[role].generation}
+              onChange={onCameraChange}
+            />
+          ),
+        )}
       <ProgramCanvas
         game={game}
         renderCamera={(role) => <CameraVideo state={cameras[role]} />}
         statusLabel={game.broadcast === "live" ? "LIVE" : programMessage}
-        audioStatus={`${verified}/2 direct cameras verified`}
+        audioStatus={`${verified}/2 cameras receiving`}
       />
     </>
   );

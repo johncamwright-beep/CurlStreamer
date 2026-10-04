@@ -10,11 +10,13 @@ export function ProgramPhoneAudio({
   stream,
   enabled,
   volume = 1,
+  sourceGeneration,
 }: {
   role: ProgramCameraRole;
   stream?: MediaStream;
   enabled: boolean;
   volume?: number;
+  sourceGeneration?: number;
 }) {
   const gainRef = useRef<GainNode | null>(null);
   const volumeRef = useRef(volume);
@@ -71,6 +73,7 @@ export function ProgramPhoneAudio({
           body: JSON.stringify({
             action: "audio-observe",
             cameraRole: role,
+            sourceGeneration,
             receiving,
             peak: receiving ? Math.min(1, peak) : 0,
             rms: receiving
@@ -97,6 +100,6 @@ export function ProgramPhoneAudio({
       gainRef.current = null;
       output.release();
     };
-  }, [stream, enabled, role]);
+  }, [stream, enabled, role, sourceGeneration]);
   return null;
 }

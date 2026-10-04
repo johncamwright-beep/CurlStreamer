@@ -10,6 +10,7 @@ import { startM4StudioRecorder } from "./m4-studio-recorder";
 import { recoverM4ProgramCaches } from "./m4-program-cache";
 import type { StudioDiagnostic } from "./m5-studio-diagnostics";
 import type { ConnectionDiagnostic } from "./connection-diagnostics";
+import type { createM4IpCameraManager } from "./m4-ip-camera";
 
 const optionsSchema = z
   .object({
@@ -39,6 +40,7 @@ export async function startM4ProgramHost(
   input: z.input<typeof optionsSchema>,
   diagnostic?: StudioDiagnostic,
   connectionDiagnostic?: ConnectionDiagnostic,
+  cameraInputs?: ReturnType<typeof createM4IpCameraManager>,
 ) {
   const options = optionsSchema.parse(input);
   const cacheRoot = resolve(options.cacheRoot);
@@ -80,6 +82,7 @@ export async function startM4ProgramHost(
       : Promise.reject(new Error("m4_program_host_unavailable"));
   try {
     await client.exchange(options.invitation);
+    await cameraInputs?.start();
     realtime = createM4ProgramRealtime({
       client,
       url: options.realtimeUrl,
@@ -91,6 +94,7 @@ export async function startM4ProgramHost(
       sponsorStorageOrigin: options.realtimeUrl,
       sponsorCacheDirectory: join(cacheRoot, "SponsorAssets"),
       diagnostic: connectionDiagnostic,
+      cameraInputs,
     });
     recorder = await startM4StudioRecorder({
       executable: options.executable,
@@ -102,6 +106,7 @@ export async function startM4ProgramHost(
       diagnostic,
     });
   } catch {
+    await cameraInputs?.stop().catch(() => undefined);
     await bridge?.close().catch(() => undefined);
     await realtime?.close().catch(() => undefined);
     client.close();
@@ -115,6 +120,9 @@ export async function startM4ProgramHost(
   const stop = () =>
     (stopping ??= (async () => {
       let failed = false;
+      await cameraInputs?.stop().catch(() => {
+        failed = true;
+      });
       try {
         await recorder.stop();
       } catch {
@@ -127,15 +135,20 @@ export async function startM4ProgramHost(
       await closed;
     })());
   const closed = recorder.closed.then(async (result) => {
+    let cameraCleanup = true;
+    await cameraInputs?.stop().catch(() => {
+      cameraCleanup = false;
+    });
     await bridge.close().catch(() => undefined);
     await eraseCache().catch(() => undefined);
-    return result;
+    return cameraCleanup ? result : { ...result, finalized: false };
   });
   return {
     stop,
     closed,
     rendererAddress: bridge.address,
     cameraStatus: bridge.cameraStatus,
+    stopPhone: bridge.stopPhone,
     audioStatus: bridge.audioStatus,
     usbAudioStatus: bridge.usbAudioStatus,
     pushUsbAudio: bridge.pushUsbAudio,

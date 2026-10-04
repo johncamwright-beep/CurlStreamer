@@ -294,6 +294,16 @@ describe("M3 restricted program route", () => {
     const activeGame = gameFixture();
     activeGame.id = id;
     activeGame.sponsors = [];
+    activeGame.claims = {};
+    activeGame.cameraAudio = {
+      "camera-home": {
+        enabled: true,
+        generation: 0,
+        status: "pending",
+        updatedAt: 1,
+        volume: 0.5,
+      },
+    };
     mocks.readGame.mockResolvedValue({
       kind: "active",
       game: activeGame,
@@ -301,7 +311,13 @@ describe("M3 restricted program route", () => {
     mocks.gameBroadcastSponsors.mockResolvedValue([sponsor]);
 
     const response = await GET(new Request("https://test"), params);
-    const programSponsor = (await response.json()).game.sponsors[0];
+    const privateGame = (await response.json()).game;
+    const programSponsor = privateGame.sponsors[0];
+    expect(privateGame.nativeCameraAudio["camera-home"]).toEqual({
+      enabled: true,
+      volume: 0.5,
+    });
+    expect(privateGame.cameraAudio["camera-home"].enabled).toBe(false);
     expect(programSponsor).toMatchObject({ id: sponsorId, dataUrl });
     expect(actual.broadcastGame(activeGame, [sponsor]).sponsors[0].id).toBe(
       "broadcast-sponsor-0",

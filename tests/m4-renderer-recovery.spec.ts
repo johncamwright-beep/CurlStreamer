@@ -1,6 +1,24 @@
 import { test, expect, type Page } from "@playwright/test";
 import { build } from "esbuild";
 
+test.beforeEach(async ({ page }) => {
+  const phone = {
+    kind: "phone",
+    host: null,
+    stream: null,
+    rotation: 0,
+    configured: true,
+    phase: "idle",
+    errorCode: null,
+    generation: 0,
+  };
+  await page.route("**/camera-inputs", (route) =>
+    route.fulfill({
+      json: { cameras: { "camera-home": phone, "camera-away": phone } },
+    }),
+  );
+});
+
 test("native renderer retries a camera that stops before its setup promise settles", async ({
   page,
 }) => {
@@ -225,7 +243,7 @@ test("native renderer blocks local authority rejection while a temporary outage 
       .getByText("Camera not connected", { exact: true }),
   ).toBeVisible();
   await expect(page.getByTestId("verification")).toHaveText(
-    "1/2 direct cameras verified",
+    "1/2 cameras receiving",
   );
   // Several retry intervals pass after recovery; explicit denial must remain blocked.
   await page.waitForTimeout(3200);
@@ -307,7 +325,7 @@ test("native renderer waits for canceled setup to settle and fences every retire
     )
     .toBe(2);
   await expect(page.getByTestId("verification")).toHaveText(
-    "2/2 direct cameras verified",
+    "2/2 cameras receiving",
   );
   await page.evaluate(() => {
     const f = (window as any).__recovery;
@@ -325,7 +343,7 @@ test("native renderer waits for canceled setup to settle and fences every retire
   });
   await page.waitForTimeout(1300);
   await expect(page.getByTestId("verification")).toHaveText(
-    "2/2 direct cameras verified",
+    "2/2 cameras receiving",
   );
   expect(
     await page.evaluate(() => {

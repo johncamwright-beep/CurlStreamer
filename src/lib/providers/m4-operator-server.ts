@@ -9,8 +9,24 @@ import { checkM4NativeHost } from "./m4-native-preflight";
 import { startM4ProgramHost } from "./m4-program-host";
 import type { StudioDiagnostic } from "./m5-studio-diagnostics";
 import type { ConnectionDiagnostic } from "./connection-diagnostics";
+import { cameraRoleSchema } from "../m2-studio-protocol";
+import { m4CameraInputSchema } from "../m4-camera-input";
+import { createM4IpCameraManager } from "./m4-ip-camera";
 
 const command = z.discriminatedUnion("action", [
+  z
+    .object({
+      action: z.literal("configure-camera-input"),
+      cameraRole: cameraRoleSchema,
+      source: m4CameraInputSchema,
+    })
+    .strict(),
+  z
+    .object({
+      action: z.literal("reconnect-camera-input"),
+      cameraRole: cameraRoleSchema,
+    })
+    .strict(),
   z.object({ action: z.literal("check") }).strict(),
   z
     .object({
@@ -66,8 +82,10 @@ type ProgramHandle = Omit<
   | "audioStatus"
   | "usbAudioStatus"
   | "pushUsbAudio"
+  | "stopPhone"
 > & {
   pushUsbAudio?: (pcm: Buffer) => void;
+  stopPhone?: (role: "camera-home" | "camera-away") => Promise<void>;
   previewMapping?: string;
   cameraStatus?: () => Record<string, boolean>;
   audioStatus?: () => Record<
@@ -126,7 +144,7 @@ async function body(request: IncomingMessage) {
   try {
     for await (const chunk of request) {
       size += chunk.length;
-      if (size > 1024) {
+      if (size > 8192) {
         chunk.fill(0);
         throw new Error();
       }
@@ -170,6 +188,7 @@ export async function createM4OperatorServer(options: {
   pairingEnabled?: boolean;
   /** Deliberately fail closed: this must be explicitly enabled by the launcher. */
   streamingEnabled?: boolean;
+  ipCamera?: { helperPath: string; runtimePath: string };
   check?: () => Promise<void>;
   desktop?: M4DesktopClient;
   program?: {
@@ -184,6 +203,10 @@ export async function createM4OperatorServer(options: {
     start?: (invitation: string, recording: string) => Promise<ProgramHandle>;
   };
 }) {
+  const cameraInputs = createM4IpCameraManager({
+    ...options.ipCamera,
+    diagnostic: options.connectionDiagnostic,
+  });
   const desktop =
     options.desktop ??
     new M4DesktopClient(options.gameId, options.origin, {
@@ -320,6 +343,7 @@ export async function createM4OperatorServer(options: {
         program === "recording" ? programHandle?.previewMapping : undefined,
       cameraStatus:
         program === "recording" ? programHandle?.cameraStatus?.() : {},
+      cameraInputs: cameraInputs.snapshot(),
       phoneAudio:
         program === "recording" ? (programHandle?.audioStatus?.() ?? {}) : {},
       usbAudio:
@@ -443,6 +467,35 @@ export async function createM4OperatorServer(options: {
     }
     try {
       const input = await body(request);
+      if (
+        input.action === "configure-camera-input" ||
+        input.action === "reconnect-camera-input"
+      ) {
+        if (busy || ["starting", "stopping"].includes(program)) {
+          reply(409, { error: "Action in progress" });
+          return;
+        }
+        if (input.action === "configure-camera-input") {
+          await cameraInputs.configure(input.cameraRole, input.source);
+          if (input.source.kind === "tapo")
+            await programHandle?.stopPhone?.(input.cameraRole);
+        } else {
+          if (
+            program !== "recording" ||
+            cameraInputs.snapshot(input.cameraRole).kind !== "tapo"
+          ) {
+            reply(409, { error: "Tapo camera is not active" });
+            return;
+          }
+          if (programHandle?.cameraStatus?.()[input.cameraRole] === true) {
+            reply(409, { error: "Camera is already receiving video" });
+            return;
+          }
+          await cameraInputs.reconnect(input.cameraRole);
+        }
+        reply(200, snapshot());
+        return;
+      }
       if (busy && input.action !== "stop" && input.action !== "stop-stream") {
         reply(409, { error: "Action in progress" });
         return;
@@ -564,6 +617,7 @@ export async function createM4OperatorServer(options: {
                 },
                 options.diagnostic,
                 options.connectionDiagnostic,
+                cameraInputs,
               ))
           )(invitation, recording);
           if (closing) {
@@ -768,6 +822,9 @@ export async function createM4OperatorServer(options: {
       ++epoch;
       ++streamEpoch;
       closePromise = (async () => {
+        await cameraInputs.close().catch(() => {
+          cleanupFailed = true;
+        });
         const handle = programHandle;
         await handle?.stream?.stop().catch(() => {
           cleanupFailed = true;

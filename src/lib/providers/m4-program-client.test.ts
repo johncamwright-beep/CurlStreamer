@@ -51,6 +51,23 @@ const projected = {
   },
 };
 describe("Node program authority", () => {
+  it("retains the checked private native audio intent without enabling phone audio", async () => {
+    const privateGame = {
+      ...projected,
+      cameraAudio: { "camera-home": { enabled: false, volume: 0.4 } },
+      nativeCameraAudio: { "camera-home": { enabled: true, volume: 0.4 } },
+    };
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(exchange())
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ game: privateGame })),
+      );
+    const client = new M4ProgramClient(game, origin, fetcher);
+    await client.exchange("a".repeat(43));
+    expect(await client.readGame()).toEqual(privateGame);
+    client.close();
+  });
   it("reports an exhausted temporary outage as retryable and logs recovery without credentials", async () => {
     const trace = "33333333-3333-4333-8333-333333333333";
     const diagnostic = vi.fn();

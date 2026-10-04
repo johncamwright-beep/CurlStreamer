@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { cameraAudioEnabled } from "./camera-audio";
+import {
+  cameraAudioEnabled,
+  cameraAudioControlEnabled,
+  nativeCameraAudioIntent,
+} from "./camera-audio";
 
 describe("cameraAudioEnabled", () => {
   const role = "camera-home" as const;
@@ -7,6 +11,51 @@ describe("cameraAudioEnabled", () => {
     claims: { [role]: "assigned-phone" },
     claimGenerations: { [role]: 3 },
   };
+
+  it("uses local Tapo intent without inventing or relaxing phone assignments", () => {
+    const game = {
+      claims: {},
+      claimGenerations: {},
+      cameraAudio: {
+        [role]: {
+          enabled: true,
+          generation: 0,
+          status: "pending" as const,
+          updatedAt: 1,
+          volume: 0.4,
+        },
+      },
+    };
+    expect(cameraAudioControlEnabled(game, role, "tapo")).toBe(true);
+    expect(cameraAudioControlEnabled(game, role, "phone")).toBe(false);
+    expect(cameraAudioControlEnabled(game, role)).toBe(false);
+    expect(nativeCameraAudioIntent(game)[role]).toEqual({
+      enabled: true,
+      volume: 0.4,
+    });
+    game.cameraAudio[role].enabled = false;
+    expect(cameraAudioControlEnabled(game, role, "tapo")).toBe(false);
+    expect(nativeCameraAudioIntent(game)[role]?.enabled).toBe(false);
+  });
+
+  it("rejects released phone generations and legacy intent for Tapo too", () => {
+    for (const generation of [undefined, 2]) {
+      const game = {
+        claims: {},
+        claimGenerations: { [role]: 3 },
+        cameraAudio: {
+          [role]: {
+            enabled: true,
+            generation,
+            status: "pending" as const,
+            updatedAt: 1,
+          },
+        },
+      };
+      expect(cameraAudioControlEnabled(game, role, "tapo")).toBe(false);
+      expect(nativeCameraAudioIntent(game)[role]?.enabled).toBe(false);
+    }
+  });
 
   it("requires a claimed matching assignment generation", () => {
     expect(

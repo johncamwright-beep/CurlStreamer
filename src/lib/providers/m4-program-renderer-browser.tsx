@@ -6,11 +6,10 @@ import {
   ProgramCanvas,
   type ProgramCameraRole,
 } from "@/components/ProgramCanvas";
-import type { BroadcastGame } from "@/lib/game-projection";
+import type { PrivateProgramGame } from "@/lib/game-projection";
 import type { DirectMetrics } from "./direct-peer";
 import { connectM4ProgramCamera } from "./m4-program-camera";
-import { ProgramPhoneAudio } from "@/components/ProgramPhoneAudio";
-import { ProgramUsbAudio } from "@/components/ProgramUsbAudio";
+import { M4ProgramAudio } from "./m4-program-audio-browser";
 import {
   StudioTransportUnavailable,
   isTemporaryStudioStatus,
@@ -287,7 +286,7 @@ function PhoneCameraTransport({
 }
 
 function ProgramRenderer() {
-  const [game, setGame] = useState<BroadcastGame>();
+  const [game, setGame] = useState<PrivateProgramGame>();
   const [programMessage, setProgramMessage] = useState("Loading program…");
   const [cameras, setCameras] = useState<
     Record<ProgramCameraRole, CameraState>
@@ -306,7 +305,7 @@ function ProgramRenderer() {
           undefined,
           controller.signal,
         )) as {
-          game?: BroadcastGame;
+          game?: PrivateProgramGame;
         };
         if (!value.game || controller.signal.aborted) throw new Error();
         setGame(value.game);
@@ -398,7 +397,14 @@ function ProgramRenderer() {
   ).length;
   return (
     <>
-      <ProgramUsbAudio />
+      <M4ProgramAudio
+        game={game}
+        sources={sources}
+        phoneStreams={{
+          "camera-home": cameras["camera-home"].audio,
+          "camera-away": cameras["camera-away"].audio,
+        }}
+      />
       {sources &&
         roles.map((role) =>
           sources[role].kind === "tapo" ? (
@@ -417,32 +423,6 @@ function ProgramRenderer() {
             />
           ),
         )}
-      {sources &&
-        roles
-          .filter((role) => sources[role].kind === "tapo")
-          .map((role) => (
-            <ProgramUsbAudio
-              key={role}
-              endpoint={`/ip-camera/${role}/audio?generation=${sources[role].generation}&after=0`}
-              generationHeader="x-m4-ip-camera-generation"
-              role={role}
-              sourceGeneration={sources[role].generation}
-              enabled={game.cameraAudio?.[role]?.enabled === true}
-              volume={game.cameraAudio?.[role]?.volume ?? 1}
-            />
-          ))}
-      {roles.map((role) => (
-        <ProgramPhoneAudio
-          key={role}
-          role={role}
-          stream={
-            sources?.[role].kind === "phone" ? cameras[role].audio : undefined
-          }
-          sourceGeneration={sources?.[role].generation}
-          enabled={game.cameraAudio?.[role]?.enabled === true}
-          volume={game.cameraAudio?.[role]?.volume ?? 1}
-        />
-      ))}
       <ProgramCanvas
         game={game}
         renderCamera={(role) => <CameraVideo state={cameras[role]} />}

@@ -44,6 +44,11 @@ export interface JoinGame {
   claimedRoles: Record<keyof GameState["claims"], boolean>;
 }
 
+export type PrivateProgramGame = BroadcastGame & {
+  /** Organizer intent for native sources; absent from public broadcast projection. */
+  nativeCameraAudio?: BroadcastGame["cameraAudio"];
+};
+
 /** Explicit allowlists, including nested fields: never serialize stored objects. */
 export function broadcastGame(
   game: GameState,

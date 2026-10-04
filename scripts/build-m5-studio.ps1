@@ -102,8 +102,11 @@ try {
   Remove-Item -LiteralPath $sourcePath
   if ($BaselineStudio) {
     $baselineNotices = Get-Content -LiteralPath (Join-Path $BaselineStudio 'THIRD_PARTY_NOTICES.json') -Raw | ConvertFrom-Json
-    [ordered]@{ version = 1; release = $baseline.release; manifestSha256 = $BaselineManifestSha256.ToLowerInvariant(); retainedNative = @($baseline.files | Where-Object { $_.path.StartsWith('native/') }); sourcePointers = @($baselineNotices.sourcePointers | Where-Object { $_.component.StartsWith('CurlStreamer Studio') }) } |
-      ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $destinationPath 'baseline-provenance.json') -Encoding utf8NoBOM
+    $provenance = [ordered]@{ version = 1; release = $baseline.release; manifestSha256 = $BaselineManifestSha256.ToLowerInvariant(); retainedNative = @($baseline.files | Where-Object { $_.path.StartsWith('native/') -and $_.path -ne 'native/m4_ip_camera.exe' }); sourcePointers = @($baselineNotices.sourcePointers | Where-Object { $_.component.StartsWith('CurlStreamer Studio') }) }
+    # A prior preview can itself retain native binaries from an older release.
+    # Keep that complete attribution chain rather than relabelling its sources.
+    if ($baselineNotices.retainedNativeBaseline) { $provenance.retainedNativeBaseline = $baselineNotices.retainedNativeBaseline }
+    $provenance | ConvertTo-Json -Depth 100 | Set-Content -LiteralPath (Join-Path $destinationPath 'baseline-provenance.json') -Encoding utf8NoBOM
   }
   $files = @(Get-ChildItem -LiteralPath $destinationPath -File -Recurse | Sort-Object FullName | ForEach-Object {
     [ordered]@{ path = [IO.Path]::GetRelativePath($destinationPath, $_.FullName).Replace('\', '/'); sha256 = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant() }

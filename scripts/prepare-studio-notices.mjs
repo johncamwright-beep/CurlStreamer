@@ -350,7 +350,14 @@ const inventory = {
         retainedNativeBaseline: {
           release: baselineProvenance.release,
           manifestSha256: baselineProvenance.manifestSha256,
+          retainedNative: baselineProvenance.retainedNative,
           sourcePointers: baselineProvenance.sourcePointers,
+          ...(baselineProvenance.retainedNativeBaseline
+            ? {
+                retainedNativeBaseline:
+                  baselineProvenance.retainedNativeBaseline,
+              }
+            : {}),
           note: "Retained host, recorder and memory-service binaries are hash-verified against this baseline; its historical source pointers are preserved.",
         },
       }

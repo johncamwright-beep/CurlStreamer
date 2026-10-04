@@ -15,7 +15,7 @@ node scripts/prepare-studio-notices.mjs $stage $setup https://github.com/johncam
 node scripts/check-m5-studio.mjs $stage
 ```
 
-The baseline mode verifies every manifest-listed file before copying it. It retains the patched host, recorder, memory-service binaries, pinned OBS/Node/WebView2 runtime and notice inputs, then rebuilds the launcher, controller, renderer and IP camera receiver. `baseline-provenance.json` records the baseline manifest digest and retained native digests; package metadata uses the existing strict manifest format.
+The baseline mode verifies every manifest-listed file before copying it. It retains the patched host, recorder, memory-service binaries, pinned OBS/Node/WebView2 runtime and notice inputs, then rebuilds the launcher, controller, renderer and IP camera receiver. `baseline-provenance.json` records the baseline manifest digest and retained native digests, excluding the rebuilt IP camera receiver. When a baseline already retains older native components, both provenance and notices preserve its nested baseline chain and original source pointers. Package metadata uses the existing strict manifest format.
 
 The source archive includes current uncommitted and untracked source, plus an inventory of its hashes. Run source preparation again after any source edits, then refresh notices and verify the manifest again. The notice inventory preserves historical references for retained native components and identifies the local source archive for the current launcher, controller, renderer and receiver. A repository reference is not a claim that this staged release has been published.
 

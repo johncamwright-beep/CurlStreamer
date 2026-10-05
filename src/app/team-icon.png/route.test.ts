@@ -67,6 +67,11 @@ describe("team favicon route", () => {
     const response = await GET();
 
     expect(response.status).toBe(200);
+    expect(readFile).toHaveBeenCalledWith(
+      expect.stringMatching(
+        /public[\\/]branding[\\/]curlstreamer-app-icon\.png$/,
+      ),
+    );
     expect(Buffer.from(await response.arrayBuffer())).toEqual(
       Buffer.from("png"),
     );
@@ -99,5 +104,24 @@ describe("team favicon route", () => {
         ([input]) => Buffer.from(input).toString() === "invalid",
       ),
     ).toHaveLength(1);
+  });
+
+  it("keeps a team's uploaded logo as its favicon", async () => {
+    readPublishedTeamProfile.mockResolvedValue({
+      logo_url:
+        "https://project.supabase.co/storage/v1/object/public/team-public-media/benning/logo",
+    });
+    process.env.NEXT_PUBLIC_SUPABASE_URL = "https://project.supabase.co";
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(new Response("team logo", { status: 200 })),
+    );
+
+    const response = await GET();
+
+    expect(response.status).toBe(200);
+    expect(sharp).toHaveBeenLastCalledWith(Buffer.from("team logo"), {
+      limitInputPixels: 20000000,
+    });
   });
 });

@@ -43,6 +43,22 @@ for terminating an unresponsive process after its cleanup deadline and restartin
 failed receivers with bounded backoff. Production callers validate private IPv4
 addresses; the native helper additionally accepts loopback for synthetic tests.
 
+Generic IP cameras use version 2 with `path` instead of `stream`, for example
+`{"version":2,"host":"192.168.1.20","port":8554,"username":"","password":"","path":"/live?channel=2","rotation":0}`.
+Empty credentials omit URL user information for anonymous access. Custom paths
+start with `/`, contain at most 1024 UTF-16 units, and reject controls, whitespace,
+fragments and backslashes. Credentials are bounded UTF-8, escaped only inside the
+helper; custom paths and query strings remain private and are never logged or
+returned in status snapshots. Legacy version 1 and saved Tapo sources still use
+`stream1` or `stream2`. Both versions have exactly seven fields. Only `127.0.0.1`
+is additionally accepted by the helper for the synthetic fixture; production
+schemas reject loopback.
+Version 2 rejects credential user information longer than 127 encoded bytes,
+including the separating colon, before starting network access. RFC3986
+unreserved UTF-8 bytes count as one byte; every other byte counts as three
+(`%HH`). This matches the pinned FFmpeg RTSP authentication buffer and avoids
+silently truncated credentials. Legacy version 1 limits remain compatible.
+
 Stdout consists of an ASCII four-byte tag, unsigned uint32 little-endian payload
 length, then payload. Tags are `JPEG` (JPEG image), `PCMA` (mono 48 kHz signed
 16-bit little-endian PCM), and `STAT` (JSON with an allowlisted `code`: `connecting`,
@@ -65,3 +81,6 @@ The test generates moving H264 using the pinned encoder, serves RTSP/TCP with
 PCMU audio, and verifies actual JPEG decoding, PCM resampling, all four rotated
 dimensions, sanitized authentication failure and stdin-EOF cleanup. It requires
 no physical camera and makes no external network requests.
+It also checks version 2 custom paths and queries on a nondefault local port,
+anonymous access, UTF-8/reserved-character Basic authentication and rejection of
+oversized encoded credentials without diagnostics.

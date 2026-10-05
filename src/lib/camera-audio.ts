@@ -1,13 +1,14 @@
 import type { GameState } from "./types";
 import type { PrivateProgramGame } from "./game-projection";
+import type { M4CameraInputSnapshot } from "./m4-camera-input";
 
 /** Native sources use organizer intent; phone sources retain assignment checks. */
 export function cameraAudioControlEnabled(
   game: Pick<GameState, "cameraAudio" | "claims" | "claimGenerations">,
   role: "camera-home" | "camera-away",
-  sourceKind?: "phone" | "tapo",
+  sourceKind?: M4CameraInputSnapshot["kind"],
 ) {
-  return sourceKind === "tapo"
+  return sourceKind === "tapo" || sourceKind === "rtsp"
     ? Boolean(
         game.cameraAudio?.[role]?.enabled &&
         game.cameraAudio[role]?.generation !== undefined &&
@@ -37,13 +38,13 @@ export function nativeCameraAudioIntent(
   ) as NonNullable<PrivateProgramGame["nativeCameraAudio"]>;
 }
 
-/** Local source selection is authoritative; remote intent cannot select Tapo. */
+/** Local source selection is authoritative; remote intent cannot select an IP camera. */
 export function programCameraAudio(
   game: PrivateProgramGame,
   role: "camera-home" | "camera-away",
-  sourceKind: "phone" | "tapo",
+  sourceKind: M4CameraInputSnapshot["kind"],
 ) {
-  return sourceKind === "tapo"
+  return sourceKind !== "phone"
     ? game.nativeCameraAudio?.[role]
     : game.cameraAudio?.[role];
 }

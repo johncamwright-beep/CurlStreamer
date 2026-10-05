@@ -101,6 +101,40 @@ async function fixture(startGate?: Promise<void>) {
 }
 
 describe("operator camera input commands", () => {
+  it("switches and reconnects a generic private RTSP slot without leaking endpoint secrets", async () => {
+    const f = await fixture();
+    try {
+      expect((await f.startProgram()).status).toBe(200);
+      const result = await f.send(
+        configure("camera-away", {
+          kind: "rtsp",
+          host: "192.168.1.30",
+          port: 8554,
+          path: "/live?key=private-query",
+          username: "",
+          password: "",
+          rotation: 180,
+        }),
+      );
+      expect(result.status).toBe(200);
+      const text = await result.text();
+      expect(text).not.toMatch(
+        /private-query|192\.168\.1\.30|8554|username|password|rtsp:/,
+      );
+      expect(JSON.parse(text).cameraInputs["camera-away"]).toMatchObject({
+        kind: "rtsp",
+        host: null,
+        stream: null,
+        rotation: 180,
+        configured: true,
+      });
+      expect(f.stopPhone.mock.calls).toEqual([["camera-away"]]);
+      expect((await f.send(reconnect("camera-away"))).status).toBe(200);
+      expect((await f.state()).cameraInputs["camera-home"].kind).toBe("phone");
+    } finally {
+      await f.close();
+    }
+  });
   it("requires the operator cookie and origin and rejects commands outside the selected game's schema", async () => {
     const f = await fixture();
     try {

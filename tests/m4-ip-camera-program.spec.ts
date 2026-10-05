@@ -237,7 +237,7 @@ const panel = (page: Page, role: Role) =>
   page.getByTestId(`camera-panel-${role}`);
 
 async function verifyFrame(page: Page, role: Role) {
-  const image = panel(page, role).getByAltText("Tapo camera");
+  const image = panel(page, role).getByAltText("IP camera");
   await expect(image).toBeVisible();
   await expect
     .poll(() =>
@@ -260,6 +260,7 @@ async function verifyFrame(page: Page, role: Role) {
   });
   expect(geometry.fit).toBe("contain");
   expect(geometry.bounded).toBe(true);
+  expect(geometry.width / geometry.height).toBeCloseTo(16 / 9, 1);
   // Verify displayed pixels, including both edges, inside the actual program.
   const { data, info } = await sharp(await image.screenshot())
     .removeAlpha()
@@ -324,7 +325,7 @@ test("program composes mixed phone and Tapo frames while replacing only the sele
     .poll(async () => (await fixture.phones()).starts["camera-away"])
     .toBe(1);
   await expect(
-    panel(page, "camera-away").getByAltText("Tapo camera"),
+    panel(page, "camera-away").getByAltText("IP camera"),
   ).toHaveCount(0);
   fixture.sources["camera-away"] = snapshot("tapo", 3);
   await verifyFrame(page, "camera-away");
@@ -351,6 +352,16 @@ test("program composes both Tapo slots with full image edges and one frame reque
     expect((await fixture.maxActive())[role]).toBe(1);
   }
   expect((await fixture.phones()).starts).toEqual({});
+  const frames = await Promise.all(
+    roles.map((role) => panel(page, role).boundingBox()),
+  );
+  const canvas = (await page.getByTestId("broadcast-canvas").boundingBox())!;
+  expect(frames[0]!.width).toBeGreaterThan(canvas.width * 0.44);
+  expect(frames[0]!.height).toBeGreaterThan(canvas.height * 0.44);
+  expect(Math.abs(frames[0]!.x - frames[1]!.x)).toBeLessThan(1);
+  expect(frames[0]!.y + frames[0]!.height).toBeLessThan(frames[1]!.y);
+  const rail = (await page.getByTestId("program-side-rail").boundingBox())!;
+  expect(frames[0]!.x + frames[0]!.width).toBeLessThan(rail.x);
   const proof = testInfo.outputPath("two-tapo-program.png");
   await page.getByTestId("broadcast-canvas").screenshot({ path: proof });
   await testInfo.attach("two-tapo-program", {
@@ -368,7 +379,7 @@ test("program flushes a changed source and rejects stale, repeated and undecodab
   fixture.mode["camera-away"] = "old-generation";
   fixture.sources["camera-away"] = snapshot("tapo", 2);
   await expect(
-    panel(page, "camera-away").getByAltText("Tapo camera"),
+    panel(page, "camera-away").getByAltText("IP camera"),
   ).toHaveCount(0);
   await page.waitForTimeout(250);
   expect(
@@ -396,7 +407,7 @@ test("program flushes a changed source and rejects stale, repeated and undecodab
   fixture.mode["camera-away"] = "repeated";
   // Repeated counters must not refresh proof; a stale displayed frame expires.
   await expect(
-    panel(page, "camera-away").getByAltText("Tapo camera"),
+    panel(page, "camera-away").getByAltText("IP camera"),
   ).toHaveCount(0, { timeout: 7500 });
   const last = fixture.accepted
     .filter((v) => v.cameraRole === "camera-away")

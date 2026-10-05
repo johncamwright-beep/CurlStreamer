@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
+import { cameraAspect } from "../program-camera-layout";
 import type { CameraRole } from "../m2-studio-protocol";
 
 /** Only the private program renderer can fetch these uncredentialed loopback
@@ -8,13 +9,20 @@ import type { CameraRole } from "../m2-studio-protocol";
 export function M4IpCameraTransport({
   role,
   generation,
+  sourceIdentity,
   onChange,
 }: {
   role: CameraRole;
   generation: number;
+  sourceIdentity: string;
   onChange(
     role: CameraRole,
-    state: { frameUrl?: string; message: string },
+    state: {
+      frameUrl?: string;
+      aspect?: number;
+      sourceIdentity: string;
+      message: string;
+    },
   ): void;
 }) {
   useEffect(() => {
@@ -26,7 +34,7 @@ export function M4IpCameraTransport({
     const clear = () => {
       if (displayed) URL.revokeObjectURL(displayed);
       displayed = undefined;
-      onChange(role, { message: "Reconnecting Tapo camera…" });
+      onChange(role, { sourceIdentity, message: "Reconnecting IP camera…" });
     };
     const poll = async () => {
       const attempt = new AbortController();
@@ -67,8 +75,10 @@ export function M4IpCameraTransport({
         counter = frame;
         lastFrame = Date.now();
         onChange(role, {
+          sourceIdentity,
           frameUrl: displayed,
-          message: "Receiving Tapo video",
+          aspect: cameraAspect(image.naturalWidth, image.naturalHeight),
+          message: "Receiving IP video",
         });
         if (previous) URL.revokeObjectURL(previous);
         await fetch("/camera", {
@@ -96,13 +106,13 @@ export function M4IpCameraTransport({
         }
       }
     };
-    onChange(role, { message: "Connecting Tapo camera…" });
+    onChange(role, { sourceIdentity, message: "Connecting IP camera…" });
     void poll();
     return () => {
       lifetime.abort();
       clearTimeout(timer);
       if (displayed) URL.revokeObjectURL(displayed);
     };
-  }, [role, generation, onChange]);
+  }, [role, generation, sourceIdentity, onChange]);
   return null;
 }

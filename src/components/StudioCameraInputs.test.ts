@@ -39,4 +39,26 @@ describe("native camera source boundary", () => {
       vi.unstubAllGlobals();
     }
   });
+  it("accepts generic IP status but rejects its private connection details", () => {
+    const snapshot = {
+      kind: "rtsp",
+      host: null,
+      stream: null,
+      rotation: 0,
+      configured: true,
+      phase: "streaming",
+      errorCode: null,
+      generation: 5,
+    };
+    expect(studioCameraInputSchema.safeParse(snapshot).success).toBe(true);
+    for (const extra of [
+      { path: "/live?password=secret" },
+      { url: "rtsp://user:secret@192.168.1.2/live" },
+      { username: "user" },
+    ]) {
+      expect(
+        studioCameraInputSchema.safeParse({ ...snapshot, ...extra }).success,
+      ).toBe(false);
+    }
+  });
 });

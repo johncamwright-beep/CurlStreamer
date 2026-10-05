@@ -296,7 +296,9 @@ export function DeviceCard({
             : claimed
               ? "Waiting for phone"
               : "Ready to connect";
-  if (!scorer && cameraInput?.kind === "tapo")
+  const ipCamera = cameraInput && cameraInput.kind !== "phone";
+  const sourceLabel = cameraInput?.kind === "tapo" ? "Tapo" : "IP camera";
+  if (!scorer && ipCamera)
     return (
       <section className="studio-device" aria-label={label}>
         <header>
@@ -312,20 +314,21 @@ export function DeviceCard({
             >
               {connectionStatus?.videoReceiving
                 ? "Receiving video"
-                : `Tapo · ${cameraInput.phase}`}
+                : `${sourceLabel} · ${cameraInput.phase}`}
             </p>
           </div>
         </header>
         <p>
-          Tapo · {cameraInput.host} · {cameraInput.stream} ·{" "}
-          {cameraInput.rotation ?? 0}°
+          {sourceLabel}
+          {cameraInput.host ? ` · ${cameraInput.host}` : ""}
+          {cameraInput.stream ? ` · ${cameraInput.stream}` : ""}
         </p>
         {cameraInput.errorCode && (
           <p role="alert">
             {cameraInput.errorCode === "auth_failed"
               ? "Camera Account rejected. Check the local username and password in Settings."
               : cameraInput.errorCode === "runtime_missing"
-                ? "This Studio installation needs its Tapo camera runtime. Check the installation."
+                ? "This Studio installation needs its IP camera runtime. Check the installation."
                 : cameraInput.errorCode === "stale_frames"
                   ? "Camera video stopped. Check Wi-Fi and reconnect."
                   : "Camera could not connect. Check Wi-Fi, its IP address and RTSP access in Settings."}

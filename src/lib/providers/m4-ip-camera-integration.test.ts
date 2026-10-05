@@ -11,7 +11,7 @@ const closers: (() => Promise<void>)[] = [];
 afterEach(async () => {
   await Promise.all(closers.splice(0).map((close) => close()));
 });
-async function setup() {
+async function setup(input?: unknown) {
   let now = Date.now();
   const children: ChildProcessWithoutNullStreams[] = [];
   const manager = createM4IpCameraManager({
@@ -34,15 +34,18 @@ async function setup() {
       return child;
     }) as never,
   });
-  manager.configure("camera-home", {
-    kind: "tapo",
-    host: "192.168.1.30",
-    username: "local-user",
-    password: "private-secret",
-    port: 554,
-    stream: "stream1",
-    rotation: 90,
-  });
+  manager.configure(
+    "camera-home",
+    input ?? {
+      kind: "tapo",
+      host: "192.168.1.30",
+      username: "local-user",
+      password: "private-secret",
+      port: 554,
+      stream: "stream1",
+      rotation: 90,
+    },
+  );
   await manager.start();
   const jpeg = await sharp({
     create: { width: 16, height: 24, channels: 3, background: "red" },
@@ -99,6 +102,44 @@ async function setup() {
   };
 }
 describe("local phone and Tapo program integration", () => {
+  it("receives a generic RTSP camera without exposing custom path, query or credentials", async () => {
+    const { manager, bridge, headers, path, jpeg, realtime } = await setup({
+      kind: "rtsp",
+      host: "192.168.1.30",
+      port: 8554,
+      path: "/live?key=private-query",
+      username: "local-user",
+      password: "private-secret",
+      rotation: 0,
+    });
+    const metadata = await (
+      await fetch(bridge.address + "/camera-inputs", { headers })
+    ).text();
+    expect(metadata).toContain('"kind":"rtsp"');
+    expect(metadata).not.toMatch(
+      /private-query|private-secret|local-user|8554|192\.168\.1\.30|username|password|path/,
+    );
+    expect(
+      Buffer.from(
+        await (await fetch(bridge.address + path, { headers })).arrayBuffer(),
+      ),
+    ).toEqual(jpeg);
+    expect(
+      (
+        await fetch(bridge.address + "/camera", {
+          method: "POST",
+          headers,
+          body: JSON.stringify({
+            action: "connect",
+            cameraRole: "camera-home",
+          }),
+        })
+      ).status,
+    ).toBe(410);
+    expect(realtime.connect).not.toHaveBeenCalled();
+    manager.configure("camera-home", { kind: "phone" });
+    expect((await fetch(bridge.address + path, { headers })).status).toBe(409);
+  });
   it("keeps secrets local, restricts frames to the renderer, and requires fresh current-generation frame proof", async () => {
     const { manager, bridge, jpeg, headers, generation, path, advance } =
       await setup();

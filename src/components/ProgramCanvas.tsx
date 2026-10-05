@@ -6,12 +6,17 @@ import type { GameState } from "@/lib/types";
 import type { BroadcastGame } from "@/lib/game-projection";
 import { formatBroadcastRailTitle } from "@/lib/game-title";
 import { cameraIsShown } from "@/lib/camera-layout";
+import {
+  portraitCameraAspect,
+  programCameraLayout,
+} from "@/lib/program-camera-layout";
 
 import { SponsorFrame } from "./SponsorFrame";
 export type ProgramCameraRole = "camera-home" | "camera-away";
 export interface ProgramCanvasProps {
   game: GameState | BroadcastGame;
   renderCamera: (role: ProgramCameraRole) => React.ReactNode;
+  cameraAspects?: Partial<Record<ProgramCameraRole, number>>;
   audioStatus?: string;
   statusLabel?: string;
 }
@@ -25,14 +30,32 @@ export function ProgramCanvas(props: ProgramCanvasProps) {
 export function ProgramComposition({
   game,
   renderCamera,
+  cameraAspects,
   audioStatus = "Video only",
   statusLabel = "Local program",
   containMedia = false,
   showStatus = true,
 }: ProgramCanvasProps & { containMedia?: boolean; showStatus?: boolean }) {
-  const camera = (role: ProgramCameraRole) => (
+  const visibleRoles: ProgramCameraRole[] = (
+    ["camera-home", "camera-away"] as const
+  ).filter((role) =>
+    cameraIsShown(game.layout, role === "camera-home" ? "home" : "away"),
+  );
+  const composition = programCameraLayout(
+    visibleRoles.map((role) => cameraAspects?.[role] ?? portraitCameraAspect),
+  );
+  const camera = (role: ProgramCameraRole, index: number) => (
     <div
       data-testid={`camera-panel-${role}`}
+      style={
+        containMedia
+          ? {
+              position: "absolute",
+              aspectRatio: "auto",
+              ...composition.cells[index],
+            }
+          : undefined
+      }
       className="portrait-camera-panel broadcast-camera-panel rounded-2xl border border-white/20 bg-gradient-to-b from-cyan-950 via-slate-700 to-blue-950"
     >
       {renderCamera(role)}
@@ -90,14 +113,28 @@ export function ProgramComposition({
       className={`relative aspect-video w-full overflow-hidden bg-[radial-gradient(circle_at_top,#164e63,#07111f_55%)] ${containMedia ? "[&_video]:!object-contain [&_img]:!object-contain" : ""}`}
       style={{ containerType: "inline-size" }}
     >
-      <div className="broadcast-program-layout absolute inset-[3%]">
+      <div
+        className="broadcast-program-layout absolute inset-[3%]"
+        data-camera-layout={containMedia ? composition.mode : undefined}
+        style={
+          containMedia
+            ? {
+                gridTemplateColumns: composition.deckFraction
+                  ? `minmax(0, ${composition.deckFraction}fr) minmax(0, ${1 - composition.deckFraction}fr)`
+                  : "minmax(0, 1fr)",
+              }
+            : undefined
+        }
+      >
         <div
           data-testid="camera-deck"
           data-camera-count={cameraCount}
           className="broadcast-camera-deck"
+          style={containMedia && !cameraCount ? { display: "none" } : undefined}
         >
-          {showHome && camera("camera-home")}
-          {showAway && camera("camera-away")}
+          {visibleRoles.map((role, index) => (
+            <React.Fragment key={role}>{camera(role, index)}</React.Fragment>
+          ))}
           {visibleSponsorOverlay && sponsor && (
             <SponsorFrame
               sponsors={sponsors}
@@ -132,14 +169,16 @@ export function ProgramComposition({
             </div>
             <Scoreboard game={game} compact broadcast />
           </div>
-          {m.active && m.style === "fullscreen" && sponsor && (
-            <SponsorFrame
-              sponsors={sponsors}
-              desiredIndex={idx}
-              mode="sidebar"
-              teamName={game.config.homeName}
-            />
-          )}
+          {m.active &&
+            (m.style === "fullscreen" || !cameraCount) &&
+            sponsor && (
+              <SponsorFrame
+                sponsors={sponsors}
+                desiredIndex={idx}
+                mode="sidebar"
+                teamName={game.config.homeName}
+              />
+            )}
           <div
             className="relative mt-auto w-full shrink-0 overflow-hidden"
             style={{ aspectRatio: "1558 / 340" }}

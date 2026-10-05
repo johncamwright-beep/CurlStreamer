@@ -5,7 +5,7 @@ import { z } from "zod";
 
 export const studioCameraInputSchema = z
   .object({
-    kind: z.enum(["phone", "tapo"]),
+    kind: z.enum(["phone", "tapo", "rtsp"]),
     host: z.string().nullable().optional(),
     stream: z.enum(["stream1", "stream2"]).nullable().optional(),
     rotation: z

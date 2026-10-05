@@ -47,9 +47,26 @@ static void status(const char *code)
     char safe[96]; int n = snprintf(safe, sizeof(safe), "{\"code\":\"%s\"}", code);
     if (n > 0 && n < (int)sizeof(safe)) record("STAT", safe, (uint32_t)n);
 }
+/* Jansson supplies valid UTF-8. Count UTF-16 units to match native/JS schemas. */
+static int bounded_text(const char *text, size_t bytes, int limit, int path)
+{
+    if (!text || strlen(text)!=bytes) return 0;
+    const unsigned char *v=(const unsigned char *)text; int units=0;
+    while (*v) {
+        unsigned cp=*v++;
+        if (cp>=0xf0) { cp=(cp&7)<<18; cp|=(*v++&63)<<12; cp|=(*v++&63)<<6; cp|=*v++&63; }
+        else if (cp>=0xe0) { cp=(cp&15)<<12; cp|=(*v++&63)<<6; cp|=*v++&63; }
+        else if (cp>=0xc0) { cp=(cp&31)<<6; cp|=*v++&63; }
+        units+=cp>0xffff?2:1;
+        if (units>limit || cp<32 || cp==127) return 0;
+        if (path && (cp==32 || cp=='#' || cp=='\\' || cp==0xa0 || cp==0x1680 ||
+            (cp>=0x2000 && cp<=0x200a) || cp==0x2028 || cp==0x2029 || cp==0x202f || cp==0x205f || cp==0x3000 || cp==0xfeff)) return 0;
+    }
+    return !path || (units>0 && text[0]=='/');
+}
 static int read_config(char *url, size_t capacity)
 {
-    char input[4096] = {0}, user[769] = {0}, password[769] = {0}; DWORD got; size_t n = 0;
+    char input[20000] = {0}, user[1537] = {0}, password[3073] = {0}; DWORD got; size_t n = 0;
     json_t *root = NULL; int valid = 0; ULONGLONG startup_deadline=GetTickCount64()+4000;
     while (n < sizeof(input)-1) {
         DWORD available=0;
@@ -66,18 +83,21 @@ static int read_config(char *url, size_t capacity)
     const char *u=json_string_value(json_object_get(root,"username"));
     const char *p=json_string_value(json_object_get(root,"password"));
     const char *stream=json_string_value(json_object_get(root,"stream"));
-    if (!json_is_integer(ver) || json_integer_value(ver)!=1 || !json_is_integer(port) ||
+    const char *path=json_string_value(json_object_get(root,"path"));
+    int legacy=json_is_integer(ver) && json_integer_value(ver)==1;
+    if (!json_is_integer(ver) || (!legacy && json_integer_value(ver)!=2) || !json_is_integer(port) ||
         json_integer_value(port)<1 || json_integer_value(port)>65535 || !json_is_integer(rot) ||
-        !host || !u || !p || !stream || (strcmp(stream,"stream1") && strcmp(stream,"stream2"))) goto done;
+        !host || !u || !p || (legacy ? (!stream || (strcmp(stream,"stream1") && strcmp(stream,"stream2"))) :
+        (!path || json_string_length(json_object_get(root,"path"))>4096 || !bounded_text(path,json_string_length(json_object_get(root,"path")),1024,1)))) goto done;
     json_int_t angle=json_integer_value(rot);
     if (angle!=0 && angle!=90 && angle!=180 && angle!=270) goto done;
     rotation=(int)angle;
     unsigned a,b,c,d; char tail;
     if (sscanf_s(host,"%u.%u.%u.%u%c",&a,&b,&c,&d,&tail,1)!=4 || a>255 || b>255 || c>255 || d>255 ||
-        !(a==10 || (a==172 && b>=16 && b<=31) || (a==192 && b==168) || a==127)) goto done;
-    if (strlen(u)<1 || strlen(u)>256 || strlen(p)<1 || strlen(p)>256 ||
-        strlen(u)!=json_string_length(json_object_get(root,"username")) ||
-        strlen(p)!=json_string_length(json_object_get(root,"password"))) goto done;
+        !(a==10 || (a==172 && b>=16 && b<=31) || (a==192 && b==168) || (a==127 && b==0 && c==0 && d==1))) goto done;
+    if ((legacy && (!*u || !*p)) || strlen(u)>512 || strlen(p)>1024 ||
+        !bounded_text(u,json_string_length(json_object_get(root,"username")),128,0) ||
+        !bounded_text(p,json_string_length(json_object_get(root,"password")),256,0)) goto done;
     const char *src[2]={u,p}; char *dest[2]={user,password};
     for (int j=0;j<2;++j) {
         size_t at=0;
@@ -86,7 +106,11 @@ static int read_config(char *url, size_t capacity)
             else { snprintf(dest[j]+at,4,"%%%02X",*v); at+=3; }
         }
     }
-    int count=snprintf(url,capacity,"rtsp://%s:%s@%u.%u.%u.%u:%lld/%s",user,password,a,b,c,d,json_integer_value(port),stream);
+    /* Reject before FFmpeg can silently truncate its 128-byte RTSP auth buffer. */
+    if (!legacy && strlen(user)+1+strlen(password)>127) goto done;
+    int count;
+    if (!legacy && !*u && !*p) count=snprintf(url,capacity,"rtsp://%u.%u.%u.%u:%lld%s",a,b,c,d,json_integer_value(port),path);
+    else count=snprintf(url,capacity,"rtsp://%s:%s@%u.%u.%u.%u:%lld%s%s",user,password,a,b,c,d,json_integer_value(port),legacy?"/":"",legacy?stream:path);
     valid=count>0 && (size_t)count<capacity;
 done:
     if (root) {
@@ -94,6 +118,8 @@ done:
         if (secret) SecureZeroMemory((void *)secret,json_string_length(json_object_get(root,"password")));
         secret=json_string_value(json_object_get(root,"username"));
         if (secret) SecureZeroMemory((void *)secret,json_string_length(json_object_get(root,"username")));
+        secret=json_string_value(json_object_get(root,"path"));
+        if (secret) SecureZeroMemory((void *)secret,json_string_length(json_object_get(root,"path")));
         json_decref(root);
     }
     SecureZeroMemory(input,sizeof(input)); SecureZeroMemory(user,sizeof(user)); SecureZeroMemory(password,sizeof(password));
@@ -164,7 +190,7 @@ static int jpeg(picture *p, AVFrame *source, int64_t sequence)
 
 int main(int argc, char **argv)
 {
-    char url[2048]={0}; AVFormatContext *input=NULL; AVCodecContext *video=NULL,*audio=NULL;
+    char url[10000]={0}; AVFormatContext *input=NULL; AVCodecContext *video=NULL,*audio=NULL;
     AVPacket *packet=NULL; AVFrame *decoded=NULL; SwrContext *resampler=NULL; picture pic={0};
     int result=1, vi=-1, ai=-1, ready=0; int64_t sequence=0; ULONGLONG last=0; HANDLE watcher=NULL;
     av_log_set_level(AV_LOG_QUIET); output=GetStdHandle(STD_OUTPUT_HANDLE);

@@ -46,6 +46,9 @@ const sps = first.find((n) => (n[0] & 31) === 7),
 assert(sps && pps);
 const sdp = `v=0\r\no=- 0 0 IN IP4 127.0.0.1\r\ns=Synthetic fixture\r\nc=IN IP4 127.0.0.1\r\nt=0 0\r\na=control:*\r\nm=video 0 RTP/AVP 96\r\na=rtpmap:96 H264/90000\r\na=fmtp:96 packetization-mode=1;sprop-parameter-sets=${sps.toString("base64")},${pps.toString("base64")}\r\na=control:trackID=0\r\nm=audio 0 RTP/AVP 0\r\na=rtpmap:0 PCMU/8000/1\r\na=control:trackID=1\r\n`;
 let reject = false;
+let expectedAuthorization = null;
+let expectedPath = null,
+  seenCustomPath = false;
 const sockets = new Set();
 const server = createServer((socket) => {
   sockets.add(socket);
@@ -82,7 +85,18 @@ const server = createServer((socket) => {
       pending = pending.subarray(end + 4);
       const method = req.split(" ")[0],
         cseq = req.match(/CSeq:\s*(\d+)/i)?.[1];
-      if (reject) {
+      if (method === "DESCRIBE" && expectedPath) {
+        assert.equal(
+          req.split(" ")[1],
+          `rtsp://127.0.0.1:${server.address().port}${expectedPath}`,
+        );
+        seenCustomPath = true;
+      }
+      if (
+        reject ||
+        (expectedAuthorization &&
+          !req.includes(`Authorization: ${expectedAuthorization}`))
+      ) {
         socket.write(
           `RTSP/1.0 401 Unauthorized\r\nCSeq: ${cseq}\r\nWWW-Authenticate: Basic realm="fixture"\r\n\r\n`,
         );
@@ -137,8 +151,24 @@ const server = createServer((socket) => {
   });
 });
 await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
-async function run(rotation, authFailure = false) {
+async function run(
+  rotation,
+  authFailure = false,
+  generic = false,
+  authenticated = false,
+) {
   reject = authFailure;
+  expectedPath = generic ? "/live/custom?channel=2&key=private-query" : null;
+  const username = generic ? (authenticated ? "caméra" : "") : "fixture-user";
+  const password = generic
+    ? authenticated
+      ? "p@ss#:%"
+      : ""
+    : "fixture-password";
+  expectedAuthorization = authenticated
+    ? `Basic ${Buffer.from(username + ":" + password).toString("base64")}`
+    : null;
+  seenCustomPath = false;
   const child = spawn(helper, [runtime], {
     env,
     cwd: runtime,
@@ -166,12 +196,12 @@ async function run(rotation, authFailure = false) {
   );
   child.stdin.write(
     JSON.stringify({
-      version: 1,
+      version: generic ? 2 : 1,
       host: "127.0.0.1",
       port: server.address().port,
-      username: "fixture-user",
-      password: "fixture-password",
-      stream: "stream1",
+      username,
+      password,
+      ...(generic ? { path: expectedPath } : { stream: "stream1" }),
       rotation,
     }) + "\n",
   );
@@ -192,6 +222,11 @@ async function run(rotation, authFailure = false) {
   clearTimeout(timeout);
   assert(Date.now() - stop < 5000, "EOF cleanup within five seconds");
   assert.equal(err.length, 0, "no library diagnostics");
+  if (generic)
+    assert(
+      seenCustomPath,
+      "custom path/query reaches the nondefault RTSP port",
+    );
   if (authFailure)
     assert(
       records.some((r) => r.type === "STAT" && r.body.includes("auth_failed")),
@@ -286,6 +321,19 @@ async function invalidOrSilent(line) {
 }
 try {
   for (const angle of [0, 90, 180, 270]) await run(angle);
+  await run(0, false, true);
+  await run(0, false, true, true);
+  await invalidOrSilent(
+    JSON.stringify({
+      version: 2,
+      host: "127.0.0.1",
+      port: server.address().port,
+      username: "é".repeat(128),
+      password: "界".repeat(256),
+      path: "/live?key=private-query",
+      rotation: 0,
+    }),
+  );
   await run(0, true);
   await invalidOrSilent(
     JSON.stringify({

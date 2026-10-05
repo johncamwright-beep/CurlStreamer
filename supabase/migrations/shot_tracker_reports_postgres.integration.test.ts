@@ -60,7 +60,7 @@ describe.skipIf(!safe)(
       expect(sql(source.slice(start, end)).ok).toBe(true);
       const migration = sql(
         readFileSync(
-          "supabase/migrations/0073_shot_tracker_reports.sql",
+          "supabase/migrations/0074_shot_tracker_reports.sql",
           "utf8",
         ),
       );

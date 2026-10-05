@@ -18,7 +18,7 @@ Team evidence is built independently, never by redacting a coach narrative. Raw 
 
 ## Setup and integration
 
-1. Apply `supabase/migrations/0073_shot_tracker_reports.sql` through the normal migration process.
+1. Apply `supabase/migrations/0074_shot_tracker_reports.sql` through the normal migration process.
 2. Configure server-only `OPENAI_API_KEY`, `SHOT_TRACKER_AI_MODEL` and `SHOT_TRACKER_AI_ENABLED`. The model must support strict structured outputs in the Responses API. Existing `CURLCOACH_ENABLED`, team entitlement and coach grants remain required. No model is silently selected.
 3. Review generated drafts with a coach against labelled examples for all audiences, sparse data, concessions, unknown hammer and conflicting grades before enabling paid production use.
 

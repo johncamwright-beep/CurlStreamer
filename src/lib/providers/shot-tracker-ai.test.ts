@@ -56,6 +56,8 @@ it("sends only aggregate evidence to a fixed server provider and validates struc
   expect(url).toBe("https://api.openai.com/v1/responses");
   const body = JSON.parse(init.body);
   expect(body.store).toBe(false);
+  expect(body.max_output_tokens).toBe(3200);
+  expect(body.text.format.schema.properties.practice.maxItems).toBe(2);
   expect(body.text.format.strict).toBe(true);
   expect(
     body.text.format.schema.properties.summary.properties.text.pattern,

@@ -70,10 +70,10 @@ async function generateOnce(
   });
   const outputSchema = narrativeSchema.extend({
     summary: finding,
-    strengths: z.array(finding).min(1).max(3),
-    priorities: z.array(finding).min(1).max(3),
-    practice: z.array(finding).min(1).max(3),
-    review: z.array(finding).min(1).max(3),
+    strengths: z.array(finding).min(1).max(2),
+    priorities: z.array(finding).min(1).max(2),
+    practice: z.array(finding).min(1).max(2),
+    review: z.array(finding).min(1).max(2),
   });
   const response = await fetch("https://api.openai.com/v1/responses", {
     method: "POST",
@@ -86,7 +86,7 @@ async function generateOnce(
     body: JSON.stringify({
       model: config.model,
       store: false,
-      max_output_tokens: 2400,
+      max_output_tokens: 3200,
       instructions:
         REPORT_INSTRUCTIONS +
         "\n" +

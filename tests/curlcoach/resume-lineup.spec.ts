@@ -574,3 +574,29 @@ test("an old idempotent lineup retry cannot roll back a newer authoritative line
     ).toHaveValue(newerLineup[i]);
   expect(game.state.revision).toBe(3);
 });
+
+test("opening scoring selects the approaching game and earlier games stay review-only", async ({
+  page,
+}) => {
+  const games = await fixture(page);
+  const now = Date.now();
+  games.get(gameOne)!.scheduledStart = new Date(
+    now - 6 * 3600000,
+  ).toISOString();
+  games.get(gameTwo)!.scheduledStart = new Date(now + 15 * 60000).toISOString();
+  await page.reload();
+  const picker = page.getByRole("combobox", { name: "Game", exact: true });
+  await expect(picker).toHaveValue(gameTwo);
+  await picker.selectOption(gameOne);
+  await expect(page.getByLabel("Numeric grade")).toBeDisabled();
+  await expect(page.getByText(/A later game is due/)).toBeVisible();
+  games.get(gameOne)!.state.status = "closed";
+  await page.reload();
+  await picker.selectOption(gameOne);
+  await expect(page.getByLabel("Numeric grade")).toBeDisabled();
+  await expect(
+    page.getByRole("button", { name: "Reopen coaching session" }),
+  ).toHaveCount(0);
+  await picker.selectOption(gameTwo);
+  await expect(page.getByLabel("Numeric grade")).toBeEnabled();
+});

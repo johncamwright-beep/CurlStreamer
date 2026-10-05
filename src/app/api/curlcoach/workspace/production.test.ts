@@ -203,7 +203,7 @@ it("finishes only the actor's private coaching session for the selected game", a
   expect(mocks.save).not.toHaveBeenCalled();
 });
 
-it("reopens only the actor's private coaching session for the selected game", async () => {
+it("refuses reopening a finished coaching game", async () => {
   mocks.transition.mockResolvedValue({
     ...state(),
     revision: 1,
@@ -212,19 +212,22 @@ it("reopens only the actor's private coaching session for the selected game", as
   const payload = lifecycle("reopen");
   const response = await POST(request(payload));
 
-  expect(response.status).toBe(200);
-  expect(mocks.transition).toHaveBeenCalledWith(
-    {
-      organizationId: ids.organization,
-      gameId: ids.game,
-      actorUserId: ids.actor,
-    },
-    expect.anything(),
-    "reopen",
-    payload.requestId,
-    0,
-  );
+  expect(response.status).toBe(409);
+  expect(mocks.transition).not.toHaveBeenCalled();
 });
+
+it.each(["completed", "closed", "deleted"])(
+  "blocks mutations when the shared game is %s even if private coaching is open",
+  async (status) => {
+    const value = workspace();
+    value.event.games[0].status = status;
+    mocks.productionSource.mockResolvedValue(value);
+    const response = await POST(request(lifecycle("finish")));
+    expect(response.status).toBe(409);
+    expect(mocks.transition).not.toHaveBeenCalled();
+    expect(mocks.save).not.toHaveBeenCalled();
+  },
+);
 
 it("rejects a cross-event game before loading or mutating its private state", async () => {
   const response = await POST(request(lifecycle("finish", ids.otherGame)));

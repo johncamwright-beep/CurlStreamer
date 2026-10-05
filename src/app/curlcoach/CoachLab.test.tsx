@@ -48,14 +48,14 @@ describe("production CoachLab session state", () => {
     expect(html).toContain("Finish private coaching session");
   });
 
-  it("renders the finish → closed → reopen lifecycle with charting disabled", () => {
+  it("keeps finished sessions read-only without a reopen control", () => {
     const open = render("open", players);
     const closed = render("closed", players);
     const reopened = render("open", players);
 
     expect(open).toContain("Finish private coaching session");
     expect(closed).toContain("Private coaching session closed.");
-    expect(closed).toContain("Reopen coaching session");
+    expect(closed).not.toContain("Reopen coaching session");
     expect(closed).not.toContain("Finish private coaching session");
     expect(closed).toContain("<fieldset disabled");
     expect(reopened).toContain("Finish private coaching session");

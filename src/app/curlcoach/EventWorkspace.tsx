@@ -32,6 +32,11 @@ import { updateWorkspaceState } from "@/lib/curlcoach/workspace-state";
 import { eventLevels } from "@/lib/team-hierarchy";
 import { preferredGame } from "@/lib/current-game";
 import {
+  scheduledCoachGame,
+  coachingReadOnlyReason,
+  coachingClosed,
+} from "@/lib/curlcoach/game-selection";
+import {
   emptyResumeStore,
   readResumeStore,
   writeResumeStore,
@@ -703,6 +708,12 @@ export default function EventWorkspace({
     [error, setError] = useState(""),
     [busy, setBusy] = useState(false);
   const [selectionReady, setSelectionReady] = useState(false);
+  const chooseScheduledOnOpen = useRef(mode === "streamer");
+  const [scheduleNow, setScheduleNow] = useState(() => Date.now());
+  useEffect(() => {
+    const timer = setInterval(() => setScheduleNow(Date.now()), 30000);
+    return () => clearInterval(timer);
+  }, []);
   useEffect(() => {
     const query = new URLSearchParams(location.search);
     drafts.current.clear();
@@ -724,7 +735,13 @@ export default function EventWorkspace({
       setSource("streamer");
     if (!initialEventId && query.get("event")) setEventId(query.get("event")!);
     if (query.get("game")) setGameId(query.get("game")!);
-    else if (!query.get("event") && !initialEventId && stored?.active) {
+    else if (
+      !query.get("event") &&
+      !initialEventId &&
+      stored?.active &&
+      (mode !== "streamer" ||
+        Date.now() - stored.active.updatedAt < 4 * 3600000)
+    ) {
       setSource(stored.active.source);
       setEventId(stored.active.eventId);
       setGameId(stored.active.gameId);
@@ -867,8 +884,15 @@ export default function EventWorkspace({
               )
             : null,
         );
+        const recommended = scheduledCoachGame(current.event.games);
+        const scheduledDefault =
+          chooseScheduledOnOpen.current && recommended?.scheduledStart
+            ? recommended.id
+            : undefined;
+        chooseScheduledOnOpen.current = false;
         setGameId(
           (current) =>
+            scheduledDefault ??
             resumedGameId ??
             (result.event.games.some((g: CoachGame) => g.id === current)
               ? current
@@ -1271,6 +1295,7 @@ export default function EventWorkspace({
                     {event.games.map((g) => (
                       <option key={g.id} value={g.id}>
                         {g.label} · vs {g.opponent}
+                        {coachingClosed(g) ? " · Closed — review only" : ""}
                       </option>
                     ))}
                   </select>
@@ -1368,6 +1393,10 @@ export default function EventWorkspace({
                     source,
                     eventId: event.id,
                     gameId: game.id,
+                    readOnlyReason:
+                      source === "streamer"
+                        ? coachingReadOnlyReason(game, event.games, scheduleNow)
+                        : null,
                     roster: game.roster ?? game.state.roster,
                     initialState: game.state,
                     broadcastReview: game.broadcastReview,

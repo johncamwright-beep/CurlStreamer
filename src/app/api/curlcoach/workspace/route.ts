@@ -201,6 +201,14 @@ export async function POST(request: Request) {
         { status: 403 },
       );
     let result;
+    if (
+      ["completed", "closed", "deleted"].includes(game.status) ||
+      input.data.action === "reopen"
+    )
+      return NextResponse.json(
+        { error: "This game is closed and available for review only." },
+        { status: 409, headers: privateHeaders },
+      );
     if (labEnabled()) {
       if (input.data.action === "set-lineup") {
         result = writeCoachLineup(

@@ -22,7 +22,7 @@ import {
 import { labEnabled } from "@/lib/curlcoach/access";
 
 function paths(initial = emptyState()) {
-  if (!labEnabled()) throw new Error("CurlCoach local lab unavailable");
+  if (!labEnabled()) throw new Error("Shot Tracker local lab unavailable");
   const root = resolve(process.cwd(), ".curlcoach-local");
   const directory = resolve(
     root,

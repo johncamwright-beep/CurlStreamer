@@ -1,4 +1,4 @@
-# CurlCoach discovery and module plan
+# Shot Tracker discovery and module plan
 
 Status: proposal, September 13, 2026, updated after inspecting the user-supplied Updated Shot Tracker.xlsx. No application functionality implemented. See [the workbook mapping](curlcoach-shot-tracker-mapping.md) for verified fields, calculations and compatibility questions.
 
@@ -8,7 +8,7 @@ Status: proposal, September 13, 2026, updated after inspecting the user-supplied
 - [Curl BC's high-performance resource](https://curlbc.ca/hp/) also recommends the Curling Canada Shot Tracker. Public searches did not locate a verifiable current Excel template. This does not establish that none exists; it may be distributed through the program.
 - Curling Canada's [history of its statistical system](https://ww1.curling.ca/hof/people/brian-cassidy/) describes recording turn, shot category, and execution scores of 0–4, with historical bonus scores of 5–6. This is historical context, not sufficient evidence for the current Shot Tracker rubric. Do not assume the two systems are identical.
 - The user subsequently supplied Updated Shot Tracker.xlsx. Its Details tab credits Renee Sonnenberg and supplies category definitions and exclusions. This resolves the missing-template dependency for initial design. Obtain a completed example and clarify numeric-score guidance and scoreboard analysis before claiming complete calculation parity. The supplied file alone does not establish product endorsement. No outreach has been sent.
-- An existing [Curl Coach product manual](https://www.curlcoach.com/Curl_Coach/pdf/CC1Manual.pdf) surfaced during research. Treat CurlCoach as a working module name until product naming is settled.
+- An existing [Shot Tracker product manual](https://www.curlcoach.com/Curl_Coach/pdf/CC1Manual.pdf) surfaced during research. Treat Shot Tracker as a working module name until product naming is settled.
 
 ## Proposed coach experience
 
@@ -39,11 +39,11 @@ Use an explicit coach mute hold alongside organizer and sponsor holds. Releasing
 
 ## Flags and YouTube review
 
-Store segment metadata in CurlCoach and play the source replay in an embedded YouTube player. The [IFrame API](https://developers.google.com/youtube/iframe_api_reference) supports start/end playback positions and seeking; seeking can invalidate the configured end position, so the review controller must enforce the segment boundary again. These are virtual segments, not independent video files.
+Store segment metadata in Shot Tracker and play the source replay in an embedded YouTube player. The [IFrame API](https://developers.google.com/youtube/iframe_api_reference) supports start/end playback positions and seeking; seeking can invalidate the configured end position, so the review controller must enforce the segment boundary again. These are virtual segments, not independent video files.
 
 Store event time, server receipt time, capture clock offset, broadcast session/video ID, selected lookback/tail and calibrated replay positions. Distinguish rink-side flags from flags made while watching delayed video: use the player position for the latter. Do not derive exact replay timing from game creation time. Calibrate against a recognizable moment, represent gaps or reconnects as separate timing segments, and let the coach adjust replay alignment. Example: a flag at replay 42:10 with a two-minute lookback becomes 40:10–42:10.
 
-Live rewind depends on [YouTube DVR](https://support.google.com/youtube/answer/9296823?hl=en). Native [YouTube Clips](https://support.google.com/youtube/answer/10332730?hl=en) have eligibility restrictions, so they should not be a core dependency. Save flags even before an archive is ready and show pending/unavailable status. Private or removed videos remain subject to YouTube access; CurlCoach access does not grant YouTube access. Keep notes/statistics if a video disappears.
+Live rewind depends on [YouTube DVR](https://support.google.com/youtube/answer/9296823?hl=en). Native [YouTube Clips](https://support.google.com/youtube/answer/10332730?hl=en) have eligibility restrictions, so they should not be a core dependency. Save flags even before an archive is ready and show pending/unavailable status. Private or removed videos remain subject to YouTube access; Shot Tracker access does not grant YouTube access. Keep notes/statistics if a video disappears.
 
 If standalone downloadable clips become necessary, plan an authorized parallel recording and rendering service with storage/retention costs. Do not base that feature on downloading YouTube playback.
 

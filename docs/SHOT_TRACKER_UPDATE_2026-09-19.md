@@ -1,6 +1,6 @@
 # Shot Tracker update — September 19, 2026
 
-- Renamed user-facing CurlCoach labels to Shot Tracker; retained existing URLs, entitlements and private tables.
+- Renamed user-facing Shot Tracker labels to Shot Tracker; retained existing URLs, entitlements and private tables.
 - Default to scoring and the current tournament/game. Explicit event/game selections still win.
 - Current games remain above the main dashboard tabs for their local scheduled day; broadcast activity also appears above the tabs.
 - Removed Setup and redundant context paragraphs. Event/game selectors precede entry; refresh is a labelled icon at top right.

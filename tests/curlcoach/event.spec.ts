@@ -18,7 +18,7 @@ test("seven-game workspace navigation, player/game filters and source availabili
         includeHidden: true,
       })
       .getByRole("link", { includeHidden: true }),
-  ).toHaveCount(6);
+  ).toHaveCount(7);
   await page.screenshot({
     path: `test-results/event-setup-${info.project.name}.png`,
   });

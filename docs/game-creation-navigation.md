@@ -14,6 +14,6 @@ The server validates route input, checks organization and role access, and uses 
 - Authenticated fixture suite: 80 passed and 10 failed on its first complete run. Eight failures passed after correcting test selectors and search setup; the remaining two passed after fixing the no-match feedback layout shift. All 90 authenticated cases passed across that run and targeted reruns (`work/navigation-e2e-auth-final.log`, `work/navigation-e2e-auth-retry.log`, `work/navigation-e2e-profile-final.log`).
 - Final standalone opponent browser regression: 4 passed across desktop and mobile (`work/navigation-combobox-final.log`).
 - Focused opponent component unit tests: 3 passed (`work/navigation-combobox-unit-final.log`).
-- CurlCoach lab browser suite, run sequentially after the authenticated suite: 26 passed (`work/navigation-curlcoach-lab-final.log`).
+- Shot Tracker lab browser suite, run sequentially after the authenticated suite: 26 passed (`work/navigation-curlcoach-lab-final.log`).
 
 The first browser startup attempt collided with a concurrent unit-test Next build. Its output was preserved outside the repository and a clean production build succeeded. An older interrupted browser log has no reliable aggregate result and is not included above. The production browser builds and isolated Supabase fixture used no real account data or database mutations.

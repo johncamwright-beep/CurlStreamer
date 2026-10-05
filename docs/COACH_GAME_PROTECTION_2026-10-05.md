@@ -90,7 +90,7 @@ read-only screen require an application release.
 ## Validation
 
 Formatting, TypeScript, and `git diff --check` passed. Full unit suite:
-1,819 passed, 99 environment-dependent checks skipped. Dedicated CurlCoach
+1,819 passed, 99 environment-dependent checks skipped. Dedicated Shot Tracker
 phone/tablet suite: 32 passed, including approaching-game selection, earlier-game
 write controls, closed-session controls, and existing draft/lineup resume flows.
 The repair and trigger also passed disposable PostgreSQL WASM validation using

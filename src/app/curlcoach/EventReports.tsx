@@ -155,7 +155,7 @@ export default function EventReports({ eventId }: { eventId: string }) {
             )}
             {!status.allowance.reserved &&
               status.allowance.used >= status.allowance.limit && (
-              <p>Your team has reached this season’s 20-event allowance.</p>
+                <p>Your team has reached this season’s 20-event allowance.</p>
               )}
           </div>
         )}

@@ -1,4 +1,4 @@
-# CurlCoach → CurlStreamer integration handoff
+# Shot Tracker → CurlStreamer integration handoff
 
 Prepared September 13, 2026 from the current local worktree. This document
 describes implemented code separately from proposed production integration.
@@ -11,14 +11,14 @@ Environment variable names are included without values.
 - Base commit and current HEAD: `6ced1d19f9a486058cc23535480f3cd570985946`.
 - Original shipping checkout: `C:/GITHuB/CurlStreamer`. This task has not changed
   that checkout. Do not switch, clean, reset, or install into it to retrieve this work.
-- All CurlCoach implementation is uncommitted. Checking out or cherry-picking
+- All Shot Tracker implementation is uncommitted. Checking out or cherry-picking
   this branch alone will **not** transfer the implementation. Inspect the working
   tree and include both modified tracked files and untracked additions when
   preparing a future reviewed integration. A normal `git diff` omits new files.
 - Preserve source files and ignored local practice records. Do not merge, push,
   deploy, apply shared database migrations, or copy service credentials as part
   of this handoff. No commit, merge, or deployment was made for the handoff.
-- CurlStreamer must remain independently usable. CurlCoach is an optional paid
+- CurlStreamer must remain independently usable. Shot Tracker is an optional paid
   module, not a prerequisite for login, team setup, scoring, or broadcasting.
 
 ## Implemented features
@@ -62,10 +62,10 @@ reload through the URL.
 
 Modified tracked files:
 
-| File                | Change                                                                                                                                                                                                                                          |
-| ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `.gitignore`        | Ignores `.curlcoach-local/` and `.pnpm-store/`.                                                                                                                                                                                                 |
-| `src/middleware.ts` | Imports the CurlCoach gate and intercepts only `/curlcoach`, its subpaths, and `/api/curlcoach/` subpaths. Enabled lab requests bypass the normal Supabase middleware path; disabled requests return 404. Other paths retain their prior logic. |
+| File                | Change                                                                                                                                                                                                                                             |
+| ------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `.gitignore`        | Ignores `.curlcoach-local/` and `.pnpm-store/`.                                                                                                                                                                                                    |
+| `src/middleware.ts` | Imports the Shot Tracker gate and intercepts only `/curlcoach`, its subpaths, and `/api/curlcoach/` subpaths. Enabled lab requests bypass the normal Supabase middleware path; disabled requests return 404. Other paths retain their prior logic. |
 
 Untracked additions before this handoff:
 
@@ -181,7 +181,7 @@ Latest shot-review implementation validation, before this documentation-only han
 - `npm run typecheck`: passed.
 - `npm test`: **652 passed, 25 skipped**, across 111 passing test files. Optional
   PostgreSQL integration tests lack a disposable database.
-- Dedicated CurlCoach browser config: **4 passed**, phone and tablet. Covers
+- Dedicated Shot Tracker browser config: **4 passed**, phone and tablet. Covers
   charting, corrections, audited Undo, persistence, compact controls, Next turn,
   failed-save behavior, review timestamp/notes/look-back persistence, event
   navigation/aggregation, and unavailable Streamer source.
@@ -283,14 +283,14 @@ be recovered with current infrastructure, document the exact missing capability.
    baseline. Resolve overlapping changes explicitly; do not replace Streamer
    middleware wholesale or transfer local data/configuration.
 2. Reuse Streamer authentication and membership selection. Add a server-side
-   optional CurlCoach entitlement plus explicit coach permissions. Hide or offer
+   optional Shot Tracker entitlement plus explicit coach permissions. Hide or offer
    upgrade navigation when appropriate, and enforce access on every Coach API.
 3. Move the file provider behind durable scoped storage. Resolve team side and
    roster identities from canonical ownership; do not turn sample identities into
    production members. Keep synthetic mode clearly separate.
 4. Connect event/game/scoreboard reads through existing provider boundaries.
    Preserve standalone Streamer scoring, Undo, cameras, sponsors, and broadcasts.
-5. Add Streamer's timing mapping contract, then wire CurlCoach flags and summaries
+5. Add Streamer's timing mapping contract, then wire Shot Tracker flags and summaries
    to it. Consider immediate durable flag capture so a tap survives navigation
    before the rest of the shot is saved; use idempotency and auditable revisions.
 6. Test enabled, disabled, unpaid, expired, and cross-team states. Core Streamer

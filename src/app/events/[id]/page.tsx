@@ -8,6 +8,8 @@ import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { loadTeamHierarchyData } from "@/lib/team-hierarchy-data";
 import { formatScheduledStart } from "@/lib/team-hierarchy";
 import { formatCanonicalGameTitle } from "@/lib/game-title";
+import { requireCoachAccount } from "@/lib/curlcoach/production-access";
+import EventReports from "@/app/curlcoach/EventReports";
 
 export default async function EventPage({
   params,
@@ -30,6 +32,10 @@ export default async function EventPage({
   if (!event) notFound();
   const season = data.seasons.find((item) => item.id === event.seasonId)!;
   const games = data.games.filter((game) => game.eventId === id);
+  const coachAccount =
+    process.env.CURLCOACH_ENABLED === "true"
+      ? await requireCoachAccount()
+      : null;
   const canEdit =
     data.role !== "viewer" && !event.archivedAt && season.status !== "archived";
   return (
@@ -52,6 +58,7 @@ export default async function EventPage({
           </p>
         )}
       </header>
+      {coachAccount && <EventReports key={event.id} eventId={event.id} />}
       {canEdit && (
         <div className="mb-5">
           <EventForm seasonId={season.id} event={event} />

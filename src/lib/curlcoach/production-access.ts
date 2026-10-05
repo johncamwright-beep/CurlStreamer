@@ -11,7 +11,7 @@ export type CoachAccount = {
 };
 
 /**
- * Establishes the authenticated account scope before a server-only CurlCoach
+ * Establishes the authenticated account scope before a server-only Shot Tracker
  * RPC is called. The database repeats account, membership, entitlement, and
  * explicit coach-grant checks for every private read and write.
  */

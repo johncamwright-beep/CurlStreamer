@@ -1,10 +1,10 @@
-# CurlCoach integrated private sessions
+# Shot Tracker integrated private sessions
 
 Integration branch: `codex/curlcoach-integration`, based on the current internal-network pilot (3196e19). The prototype was preserved in ef01aa1; its original worktree and local practice data remain untouched.
 
 ## Product behavior
 
-CurlCoach is an optional module of CurlStreamer. Existing users, active team memberships, events, games, and score events remain authoritative. There is no second team/account/game database. The coach opens an existing event or Single games, selects a game, and charts private attempts. Completed scores are read from the existing game completion; live scores are projected from existing append-only scoring events.
+Shot Tracker is an optional module of CurlStreamer. Existing users, active team memberships, events, games, and score events remain authoritative. There is no second team/account/game database. The coach opens an existing event or Single games, selects a game, and charts private attempts. Completed scores are read from the existing game completion; live scores are projected from existing append-only scoring events.
 
 **Finish private coaching session** closes charting for that coach and game. The notes and reports remain private and can be reviewed. **Reopen coaching session** permits corrections again. Neither action completes the shared game, changes scoring, stops broadcasting, or publishes any coaching content. Corrections and lifecycle changes retain an append-only command history.
 
@@ -24,7 +24,7 @@ Released September 14, 2026: migration `supabase/migrations/0058_curlcoach.sql` 
 
 Live smoke checks confirmed the existing owner can load real events, games, roster and charting controls, and sees Private coaching in the main menu. Anonymous access returns disabled/403 with private, no-store responses. No sample attempts were written to production. Two-coach isolation and finish/reopen were tested against the isolated PostgreSQL clone; a two-account live pilot walkthrough remains outstanding. Native Studio was not rebuilt for this web release.
 
-Stripe test payments do not grant a paid CurlCoach entitlement. Commercial Stripe product/pricing and live webhook entitlement fulfillment remain a later billing rollout; manual entitlement grants support the pilot.
+Stripe test payments do not grant a paid Shot Tracker entitlement. Commercial Stripe product/pricing and live webhook entitlement fulfillment remain a later billing rollout; manual entitlement grants support the pilot.
 
 Local lab mode remains explicitly labeled and requires `CURLCOACH_LOCAL_LAB=true`, the feature flag, a lab secret, and a nonproduction runtime. It uses only local practice files. No prototype data or service credentials were copied into this integration.
 
@@ -39,7 +39,7 @@ Database test entry: `supabase/migrations/curlcoach_private_storage_postgres.int
 
 ## Licensed seats and dashboard branding — September 14, 2026
 
-Prepared migration 0059 adds an explicit licensed seat count (one by default). Team owners assign those seats to accepted, active team members under Account & Settings → Team access. Two licences allow two assigned coaches; the existing owner-plus-one team login limit is unchanged. Assignments replace access grants only, never move or expose private sessions. Menu access is checked when the menu opens and is labelled CurlCoach. Platform administrators set purchased or pilot seat counts; team owners cannot increase capacity. Reductions below active assignments are rejected until excess seats are unassigned.
+Prepared migration 0059 adds an explicit licensed seat count (one by default). Team owners assign those seats to accepted, active team members under Account & Settings → Team access. Two licences allow two assigned coaches; the existing owner-plus-one team login limit is unchanged. Assignments replace access grants only, never move or expose private sessions. Menu access is checked when the menu opens and is labelled Shot Tracker. Platform administrators set purchased or pilot seat counts; team owners cannot increase capacity. Reductions below active assignments are rejected until excess seats are unassigned.
 
 The database serializes grants using the entitlement row, validates membership/ownership, and records assignment and capacity changes in the audit log. Migration preflight refuses to guess purchased quantities for existing teams with multiple coaches. Stripe checkout quantities do not yet provision these seats automatically; paid product/pricing and webhook fulfillment remain outstanding. Existing explicit pilot entitlements continue to work.
 

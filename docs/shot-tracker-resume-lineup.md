@@ -17,7 +17,7 @@ Apply `0071_curlcoach_lineups.sql` before enabling this website revision. The ac
 - Final full unit suite: 1,756 passed, 99 skipped. Skipped database/native checks require their configured services or equipment.
 - Resume/lineup browser fixtures: 14 passed across phone and tablet, including stale idempotent responses, private account isolation, reloads, event/game browsing, historical corrections, and all eight rocks with a three-player lineup.
 - Styled Next.js lab page: eight-rock 3/3/2 lineups saved and reloaded through the local route on phone and tablet. Modal bounds, horizontal overflow, 44px controls and scrolling to Save were checked; phone and tablet screenshots were inspected.
-- Final full CurlCoach browser suite: 30 passed, zero skipped. The styled case passed again on both devices after strengthening test cleanup.
+- Final full Shot Tracker browser suite: 30 passed, zero skipped. The styled case passed again on both devices after strengthening test cleanup.
 - Final formatting, TypeScript and production build checks passed. The build used test configuration rather than production credentials.
 - Actual lineup migration executed against a PostgreSQL-compatible fixture: 13 checks passed, including authorization, immutable history, revision conflicts, and retry identity. This is fixture validation rather than a production migration.
 - Shared application and navigation browser results are recorded in `game-creation-navigation.md`.

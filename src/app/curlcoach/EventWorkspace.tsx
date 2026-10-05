@@ -52,6 +52,7 @@ import {
 import CoachLab, { turnLabel } from "./CoachLab";
 import ReviewSummary from "./ReviewSummary";
 import MissAnalysis from "./MissAnalysis";
+import EventReports from "./EventReports";
 import ScoringWakeLock from "./ScoringWakeLock";
 import "./coach.css";
 const pages = [
@@ -61,6 +62,7 @@ const pages = [
   "Team statistics",
   "Game analysis",
   "Miss analysis",
+  "Event reports",
 ] as const;
 type Page = (typeof pages)[number];
 const slug = (page: string) => page.toLowerCase().replaceAll(" ", "-");
@@ -775,7 +777,7 @@ export default function EventWorkspace({
   // Component-local only: never persist private coaching data across accounts.
   const savedStates = useRef(new Map<string, State>());
   const refreshSequence = useRef(0);
-  const statistics = view !== "Scoring";
+  const statistics = view !== "Scoring" && view !== "Event reports";
   const selectedSeason = seasonId || data?.event.seasonId || "unassigned";
   const selectedEvent = statsEventId || data?.event.id || "all";
   const seasonReady = statsData?.event.seasonId === selectedSeason;
@@ -1301,7 +1303,7 @@ export default function EventWorkspace({
                   </select>
                 </label>
               )}
-              {view !== "Scoring" && (
+              {view !== "Scoring" && view !== "Event reports" && (
                 <>
                   <label>
                     Game
@@ -1371,6 +1373,15 @@ export default function EventWorkspace({
         ) : (
           <>
             {event.source === "sample" && <p>SYNTHETIC EXAMPLE</p>}
+            {view === "Event reports" &&
+              (mode === "streamer" ? (
+                <EventReports key={event.id} eventId={event.id} />
+              ) : (
+                <p>
+                  AI reports are available for completed events in a connected
+                  Shot Tracker account.
+                </p>
+              ))}
             <div hidden={view !== "Scoring"}>
               <ScoringWakeLock active={open && !!game && view === "Scoring"} />
             </div>

@@ -32,23 +32,23 @@ function validateScopedState(
     parsed.organizationId !== scope.organizationId ||
     parsed.gameId !== scope.gameId
   )
-    throw new Error("CurlCoach state scope mismatch");
+    throw new Error("Shot Tracker state scope mismatch");
   if (
     parsed.revision === undefined ||
     parsed.status === undefined ||
     parsed.roster === undefined
   )
-    throw new Error("CurlCoach production state is incomplete");
+    throw new Error("Shot Tracker production state is incomplete");
   return parsed as ProductionCoachState;
 }
 
 function operationError(operation: string, error: unknown): never {
   const value = error as { code?: unknown; message?: unknown } | null;
-  console.error("CurlCoach store unavailable", {
+  console.error("Shot Tracker store unavailable", {
     operation,
     code: typeof value?.code === "string" ? value.code : "unknown",
   });
-  throw new Error("CurlCoach private storage unavailable");
+  throw new Error("Shot Tracker private storage unavailable");
 }
 
 async function apply(

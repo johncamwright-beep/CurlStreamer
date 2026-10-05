@@ -7,6 +7,8 @@ import { applyScoringAction } from "../scoring";
 import type { GameConfig, GameState, ParticipantAuthority } from "../types";
 import {
   GameStateConflictError,
+  GameClosedError,
+  ScoringWriteConflictError,
   isGameStateConflictError,
 } from "../game-state-conflict";
 
@@ -256,7 +258,9 @@ async function saveScoreEvent(
     p_state: game,
   });
   if (error?.code === "PT409" || error?.code === "40001")
-    throw new Error("Score update conflict");
+    throw new ScoringWriteConflictError("Score update conflict");
+  if (error?.code === "55000")
+    throw new GameClosedError("This game is completed");
   if (error) databaseError("score update", error);
 }
 
@@ -380,7 +384,12 @@ export async function updateGame(
   action: z.infer<typeof actionSchema>,
   expectedAuthority?: ParticipantAuthority,
 ) {
+  const scoringAction =
+    action.type === "score" ||
+    action.type === "hammer" ||
+    action.type === "undo";
   const retryable =
+    scoringAction ||
     action.type === "camera-health" ||
     action.type === "connection" ||
     action.type === "camera-zoom-status" ||
@@ -394,9 +403,10 @@ export async function updateGame(
     const record = await getGameRecord(id);
     if (!record) return undefined;
     const game = record.state;
+    if (game.status === "closed") throw new GameClosedError();
     if (game.status === "completed") {
       if (action.type === "close-game") return game;
-      throw new Error("This game is completed");
+      throw new GameClosedError("This game is completed");
     }
     if (expectedAuthority) {
       if (
@@ -424,7 +434,7 @@ export async function updateGame(
             : "Camera assignment changed",
         );
     }
-    if (retryable && !expectedAuthority) {
+    if (retryable && !scoringAction && !expectedAuthority && "role" in action) {
       const currentClaim = game.claims[action.role];
       const currentGeneration = game.claimGenerations?.[action.role] ?? 0;
       if (!authorityCaptured) {
@@ -438,6 +448,9 @@ export async function updateGame(
         throw new GameStateConflictError("Camera assignment changed");
     }
 
+    // Replay only the original intent against a fresh snapshot. Its scoring
+    // position and participant authority are checked on every attempt, so a
+    // camera heartbeat may be merged but a competing scorer cannot advance it.
     const scoring = applyAction(game, action);
     if (scoring?.idempotent) return game;
     try {

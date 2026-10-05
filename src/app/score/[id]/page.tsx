@@ -1,8 +1,8 @@
 "use client";
 import { TeamLogo } from "@/components/TeamLogo";
 import Link from "next/link";
-import { use, useEffect, useRef, useState } from "react";
-import { useGame } from "@/components/GameSync";
+import { use, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useGame, GameUpdateError } from "@/components/GameSync";
 import { ScoringSummary } from "@/components/ScoringSummary";
 import { ScoringProgramControls } from "@/components/ScoringProgramControls";
 import "./scoring.css";
@@ -33,6 +33,10 @@ export default function Scorer({
   params: Promise<{ id: string }>;
 }) {
   const { id } = use(params);
+  return <ScorerGame key={id} id={id} />;
+}
+
+function ScorerGame({ id }: { id: string }) {
   const cameraInputs = useStudioCameraInputs(id);
   const {
     game,
@@ -57,6 +61,13 @@ export default function Scorer({
   const [scoringError, setScoringError] = useState("");
   const [scoringNotice, setScoringNotice] = useState("");
   const [failedAction, setFailedAction] = useState<ScoringAction>();
+  const failedIntent = useRef<ScoringAction | undefined>(undefined);
+  const [staleIntent, setStaleIntent] = useState(false);
+  // Unlock only after the acknowledged game and enabled controls have committed.
+  // A promise continuation can run before React installs the new render.
+  useLayoutEffect(() => {
+    if (!scoringBusy) scoringFlight.current = false;
+  });
   const [correctingHammer, setCorrectingHammer] = useState(false);
   const [organizerAccess, setOrganizerAccess] = useState(false);
   const [finished, setFinished] = useState<SafeGameCompletion>();
@@ -235,25 +246,35 @@ export default function Scorer({
     return `End ${action.expectedEnd} saved.`;
   }
   async function runScoringAction(action: ScoringAction) {
-    if (scoringFlight.current) return;
+    if (
+      scoringFlight.current ||
+      (failedIntent.current && failedIntent.current !== action)
+    )
+      return;
     scoringFlight.current = true;
     setScoringBusy(true);
     setScoringError("");
     setScoringNotice("");
     try {
       await act(action);
+      failedIntent.current = undefined;
       setFailedAction(undefined);
+      setStaleIntent(false);
       setScoringNotice(successMessage(action));
       if (action.type === "hammer") setCorrectingHammer(false);
     } catch (error) {
+      failedIntent.current = action;
       setFailedAction(action);
+      setStaleIntent(
+        error instanceof GameUpdateError &&
+          error.code === "scoring_stale_intent",
+      );
       setScoringError(
         error instanceof Error
           ? error.message
           : "The scoring change could not be saved.",
       );
     } finally {
-      scoringFlight.current = false;
       setScoringBusy(false);
     }
   }
@@ -564,25 +585,32 @@ export default function Scorer({
             >
               <p>{scoringError}</p>
               <p className="mt-2 text-sm">
-                Retry will safely repeat this same scoring change.
+                {staleIntent
+                  ? "The score changed. Review the current score before entering a new change."
+                  : "Retry will safely repeat this same scoring change."}
               </p>
               <div className="mt-3 flex gap-2">
+                {!staleIntent && (
+                  <button
+                    disabled={scoringBusy}
+                    className="btn-secondary"
+                    onClick={() =>
+                      failedAction && runScoringAction(failedAction)
+                    }
+                  >
+                    {scoringBusy ? "Retrying…" : "Retry same change"}
+                  </button>
+                )}
                 <button
-                  disabled={scoringBusy}
-                  className="btn-secondary"
-                  onClick={() => failedAction && runScoringAction(failedAction)}
-                >
-                  {scoringBusy ? "Retrying…" : "Retry same change"}
-                </button>
-                <button
-                  disabled={scoringBusy}
+                  disabled={scoringBusy || !staleIntent}
                   className="btn-secondary"
                   onClick={() => {
+                    failedIntent.current = undefined;
                     setFailedAction(undefined);
                     setScoringError("");
                   }}
                 >
-                  Dismiss
+                  Review current score
                 </button>
               </div>
             </div>

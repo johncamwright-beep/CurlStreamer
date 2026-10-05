@@ -62,19 +62,39 @@ test.beforeAll(async () => {
         import Scorer from "./src/app/score/[id]/page";
         globalThis.__game = ${JSON.stringify(game)};
         globalThis.__calls = [];
-        globalThis.__act = (action) => {
+        globalThis.__game2 = {...structuredClone(globalThis.__game), id:"scoring-game2"};
+        globalThis.__holdReads = false;
+        globalThis.__reads = [];
+        globalThis.fetch = (url, options = {}) => {
+          if (!String(url).startsWith("/api/games/scoring-game")) return Promise.resolve(new Response("{}"));
+          const state = String(url) === "/api/games/scoring-game2" ? globalThis.__game2 : globalThis.__game;
+          if (options.method !== "PATCH") {
+            const snapshot = structuredClone(state);
+            if (globalThis.__holdReads) return new Promise(resolve => globalThis.__reads.push(() => resolve(new Response(JSON.stringify(snapshot), {headers:{"x-curlcast-account-role":"owner"}}))));
+            return Promise.resolve(new Response(JSON.stringify(snapshot), {headers:{"x-curlcast-account-role":"owner"}}));
+          }
+          const action = JSON.parse(options.body);
           globalThis.__calls.push(action);
           return new Promise((resolve, reject) => {
-            globalThis.__resolveAction = resolve;
+            globalThis.__commitAction = () => {
+              const event = action.type === "score" ? {id:action.intentId,at:2,type:"end",score:{end:action.expectedEnd,team:action.team,points:action.points,blank:action.blank},expectedLastEventId:action.expectedLastEventId} : action.type === "undo" ? {id:action.intentId,at:2,type:"undo",targetId:action.expectedTargetId,expectedLastEventId:action.expectedLastEventId} : {id:action.intentId,at:2,type:"hammer",team:action.team,expectedEnd:action.expectedEnd,expectedLastEventId:action.expectedLastEventId};
+              if (!state.scoreEvents.some(e => e.id === action.intentId)) state.scoreEvents.push(event);
+            };
+            globalThis.__resolveAction = () => {
+              globalThis.__commitAction();
+              resolve(new Response(JSON.stringify(state)));
+            };
             globalThis.__rejectAction = reject;
+            globalThis.__conflictAction = () => resolve(new Response(JSON.stringify({error:"The game changed before this update was saved. Try again.",code:"scoring_stale_intent"}), {status:409}));
+            globalThis.__malformedAction = () => resolve(new Response(JSON.stringify(state)));
           });
         };
-        const params = Promise.resolve({ id: "scoring-game" });
-        createRoot(document.getElementById("root")).render(
-          React.createElement(Suspense, { fallback: "Loading" },
-            React.createElement(Scorer, { params })
-          )
-        );
+        const root = createRoot(document.getElementById("root"));
+        globalThis.__navigate = (id) => {
+          const params = Promise.resolve({id});
+          root.render(React.createElement(Suspense, {fallback:"Loading"}, React.createElement(Scorer, {params})));
+        };
+        globalThis.__navigate("scoring-game");
       `,
       loader: "tsx",
       resolveDir: process.cwd(),
@@ -84,19 +104,6 @@ test.beforeAll(async () => {
         name: "scoring-page-test-boundaries",
         setup(builder) {
           const stubs = new Map([
-            [
-              "@/components/GameSync",
-              `export function useGame() {
-                return {
-                  game: globalThis.__game,
-                  completion: undefined,
-                  error: "",
-                  act: globalThis.__act,
-                  accountOperator: false,
-                  accountRole: "owner"
-                };
-              }`,
-            ],
             [
               "next/link",
               `import React from "react";
@@ -169,7 +176,7 @@ test.afterAll(
     ),
 );
 
-test("guards duplicate score clicks and retries the same intent after conflict", async ({
+test("guards duplicate score clicks and retries the same intent after lost response", async ({
   page,
 }) => {
   await page.goto(origin);
@@ -200,16 +207,15 @@ test("guards duplicate score clicks and retries the same intent after conflict",
     blank: false,
   });
 
-  await page.evaluate(() =>
-    (
-      globalThis as unknown as { __rejectAction: (error: Error) => void }
-    ).__rejectAction(
-      new Error("The game changed before this update was saved. Try again."),
-    ),
-  );
+  await page.evaluate(() => {
+    (globalThis as any).__commitAction();
+    (globalThis as any).__rejectAction(
+      new Error("Connection dropped after saving"),
+    );
+  });
   await expect(
     page.getByRole("alert", { name: "Scoring error" }),
-  ).toContainText("The game changed");
+  ).toContainText("Save confirmation was not received");
   await page.getByRole("button", { name: "Retry same change" }).click();
   const second = await page.evaluate(() =>
     structuredClone((globalThis as unknown as { __calls: unknown[] }).__calls),
@@ -252,4 +258,121 @@ test("shows and submits the exact append-only Undo effect", async ({
   await expect(
     page.getByRole("status", { name: "Scoring update" }),
   ).toContainText("prior change remains in history");
+});
+
+for (const beforeAck of [true, false]) {
+  test(`a delayed poll delivered ${beforeAck ? "before" : "after"} acknowledgement cannot rebind the next end`, async ({
+    page,
+  }) => {
+    await page.goto(origin);
+    const save = page.getByRole("button", { name: "Save 1 point" });
+    await expect(save).toBeEnabled();
+    await page.evaluate(() => {
+      (globalThis as any).__holdReads = true;
+      document.dispatchEvent(new Event("visibilitychange"));
+    });
+    await expect
+      .poll(() => page.evaluate(() => (globalThis as any).__reads.length))
+      .toBe(1);
+    await save.click();
+    await expect(save).toBeDisabled();
+    await expect(
+      page.getByRole("heading", { name: "Record End 2" }),
+    ).toBeVisible();
+    if (beforeAck)
+      await page.evaluate(() => (globalThis as any).__reads.shift()());
+    await page.evaluate(() => (globalThis as any).__resolveAction());
+    await expect(
+      page.getByRole("heading", { name: "Record End 3" }),
+    ).toBeVisible();
+    await page.evaluate((beforeAck) => {
+      if (!beforeAck) (globalThis as any).__reads.shift()();
+      (globalThis as any).__holdReads = false;
+    }, beforeAck);
+    await expect(save).toBeEnabled();
+    await save.click();
+    expect(
+      await page.evaluate(() =>
+        (globalThis as any).__calls.map((action: any) => action.expectedEnd),
+      ),
+    ).toEqual([2, 3]);
+    await page.evaluate(() => (globalThis as any).__resolveAction());
+    await expect(
+      page.getByRole("heading", { name: "Record End 4" }),
+    ).toBeVisible();
+  });
+}
+
+test("missing persisted intent keeps scoring locked until the same change is confirmed", async ({
+  page,
+}) => {
+  await page.goto(origin);
+  const save = page.getByRole("button", { name: "Save 1 point" });
+  await save.click();
+  await page.evaluate(() => (globalThis as any).__malformedAction());
+  await expect(
+    page.getByRole("alert", { name: "Scoring error" }),
+  ).toContainText("Save confirmation was not received");
+  await expect(save).toBeDisabled();
+  await expect(
+    page.getByRole("button", { name: "Review current score" }),
+  ).toBeDisabled();
+  await page.getByRole("button", { name: "Retry same change" }).click();
+  expect(await page.evaluate(() => (globalThis as any).__calls[1])).toEqual(
+    await page.evaluate(() => (globalThis as any).__calls[0]),
+  );
+  await page.evaluate(() => (globalThis as any).__resolveAction());
+  await expect(
+    page.getByRole("heading", { name: "Record End 3" }),
+  ).toBeVisible();
+});
+
+test("a definitive stale intent loads the current score before allowing review", async ({
+  page,
+}) => {
+  await page.goto(origin);
+  await page.getByRole("button", { name: "Save 1 point" }).click();
+  await page.evaluate(() => {
+    (globalThis as any).__game.scoreEvents.push({
+      id: "other-score",
+      at: 2,
+      type: "end",
+      score: { end: 2, team: "away", points: 2, blank: false },
+    });
+    (globalThis as any).__conflictAction();
+  });
+  await expect(
+    page.getByRole("heading", { name: "Record End 3" }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Retry same change" }),
+  ).toHaveCount(0);
+  await page.getByRole("button", { name: "Review current score" }).click();
+  await page.getByRole("button", { name: "Save 1 point" }).click();
+  expect(
+    await page.evaluate(() => (globalThis as any).__calls[1].expectedEnd),
+  ).toBe(3);
+});
+
+test("changing game during a pending save isolates its acknowledgement and scoring locks", async ({
+  page,
+}) => {
+  await page.goto(origin);
+  const save = page.getByRole("button", { name: "Save 1 point" });
+  await save.click();
+  await expect(save).toBeDisabled();
+  await page.evaluate(() => (globalThis as any).__navigate("scoring-game2"));
+  await expect(save).toBeEnabled();
+  await page.evaluate(() => (globalThis as any).__resolveAction());
+  await expect(
+    page.getByRole("heading", { name: "Record End 2" }),
+  ).toBeVisible();
+  await expect(save).toBeEnabled();
+  await expect(page.getByRole("alert", { name: "Scoring error" })).toHaveCount(
+    0,
+  );
+  await save.click();
+  expect(
+    await page.evaluate(() => (globalThis as any).__calls[1].expectedEnd),
+  ).toBe(2);
 });

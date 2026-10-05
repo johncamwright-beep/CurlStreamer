@@ -6,7 +6,10 @@ import type { GameConfig, GameState, ParticipantAuthority } from "../types";
 import type { z } from "zod";
 import type { actionSchema } from "../schema";
 import { applyScoringAction } from "../scoring";
-import { GameStateConflictError } from "../game-state-conflict";
+import {
+  GameClosedError,
+  GameStateConflictError,
+} from "../game-state-conflict";
 
 // Development-only persistence lets separate Next.js workers/browser contexts
 // share one mock authority. It is intentionally outside the repository.
@@ -284,9 +287,10 @@ export function updateGame(
   return mutate((games) => {
     const game = games.get(id);
     if (!game) return;
+    if (game.status === "closed") throw new GameClosedError();
     if (game.status === "completed") {
       if (action.type === "close-game") return game;
-      throw new Error("This game is completed");
+      throw new GameClosedError("This game is completed");
     }
     if (expectedAuthority) {
       if (

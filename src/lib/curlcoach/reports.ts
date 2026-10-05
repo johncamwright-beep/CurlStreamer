@@ -2,8 +2,9 @@ import { z } from "zod";
 import { currentShots, report, shotTypes, type Shot } from "./model";
 import type { CoachEvent } from "./event";
 import { teamScoreStatistics } from "./score-statistics";
+import { playerReportGames, type ReportGame } from "./report-games";
 
-export const REPORT_POLICY = "shot-tracker-event-v3";
+export const REPORT_POLICY = "shot-tracker-event-v4";
 export const audienceSchema = z.enum(["coach", "team", "players"]);
 export type ReportAudience = z.infer<typeof audienceSchema>;
 export const reportRequestSchema = z
@@ -22,6 +23,9 @@ export const narrativeSchema = z
     priorities: z.array(findingSchema).min(1).max(3),
     practice: z.array(findingSchema).min(1).max(3),
     review: z.array(findingSchema).min(1).max(3),
+    games: z
+      .array(findingSchema.extend({ key: z.string() }).strict())
+      .optional(),
   })
   .strict();
 export type Narrative = z.infer<typeof narrativeSchema>;
@@ -37,6 +41,7 @@ export type ReportInput = {
   title: string;
   evidence: Evidence[];
   limitations: string[];
+  games?: ReportGame[];
 };
 export type SavedReport = ReportInput & { narrative: Narrative };
 export type ReportPacket = {
@@ -262,6 +267,16 @@ export function reportInputs(
           shots.filter((s) => s.playerId === p.id),
         ),
       );
+    if (playerId) {
+      const detail = playerReportGames(event, playerId);
+      return {
+        key,
+        title,
+        evidence: [...evidence, ...detail.evidence],
+        limitations,
+        games: detail.games,
+      };
+    }
     return { key, title, evidence, limitations };
   }
 }
@@ -280,15 +295,33 @@ export function validateNarrative(
   forbiddenNames: string[],
 ): Narrative {
   const parsed = narrativeSchema.parse(value);
+  const gameKeys = input.games?.map((g) => g.key) ?? [];
+  if (gameKeys.length) {
+    if (
+      parsed.games?.length !== gameKeys.length ||
+      new Set(parsed.games.map((g) => g.key)).size !== gameKeys.length ||
+      parsed.games.some(
+        (g) =>
+          !gameKeys.includes(g.key) ||
+          g.evidence.some((id) => !id.startsWith(g.key + "-")) ||
+          g.text.split(/\s+/).length > 65,
+      )
+    )
+      throw new Error("Invalid report prose");
+  } else if (parsed.games?.length) throw new Error("Invalid report prose");
   const findings = [
     parsed.summary,
     ...parsed.strengths,
     ...parsed.priorities,
     ...parsed.practice,
     ...parsed.review,
+    ...(parsed.games ?? []),
   ];
   const text = findings.map((f) => f.text).join(" ");
-  if (text.split(/\s+/).length > 650 || /[0-9]|https?:|<[^>]+>/.test(text))
+  if (
+    text.split(/\s+/).length > 650 + 65 * gameKeys.length ||
+    /[0-9]|https?:|<[^>]+>/.test(text)
+  )
     throw new Error("Invalid report prose");
   if (
     findings.some((f) =>

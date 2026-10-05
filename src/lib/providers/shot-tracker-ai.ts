@@ -55,7 +55,24 @@ export async function generateShotTrackerNarrative(
     }),
   });
   // Never return/log upstream bodies, headers, account identifiers or credentials.
-  if (!response.ok) throw new Error("Report provider unavailable");
+  if (!response.ok) {
+    const body = await response.json().catch(() => null);
+    const code = z
+      .enum([
+        "invalid_api_key",
+        "insufficient_quota",
+        "rate_limit_exceeded",
+        "model_not_found",
+        "invalid_json_schema",
+        "unsupported_parameter",
+      ])
+      .safeParse(body?.error?.code);
+    console.error("Shot Tracker AI request failed", {
+      status: response.status,
+      code: code.success ? code.data : "unavailable",
+    });
+    throw new Error("Report provider unavailable");
+  }
   const data = (await response.json()) as {
     status?: string;
     output?: { type: string; content?: { type: string; text?: string }[] }[];

@@ -218,6 +218,24 @@ export async function generateEventReports(
     return packet;
   } catch (error) {
     abort.abort();
+    const reasons = [
+      "Report provider unavailable",
+      "Report generation incomplete",
+      "Report generation unavailable",
+      "Invalid report prose",
+      "Unknown evidence",
+      "Private identity in report",
+      "Individual commentary in team report",
+      "Incorrect product name",
+      "Report lease expired",
+      "Private report storage unavailable",
+    ];
+    console.error("Shot Tracker report failed", {
+      reason:
+        error instanceof Error && reasons.includes(error.message)
+          ? error.message
+          : "validation_or_service_failure",
+    });
     await rpc("finish_shot_tracker_report", account, event.id, {
       ...args,
       p_packet: null,

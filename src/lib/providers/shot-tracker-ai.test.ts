@@ -15,6 +15,7 @@ const input = {
   limitations: [],
 };
 afterEach(() => {
+  vi.restoreAllMocks();
   vi.unstubAllEnvs();
   vi.unstubAllGlobals();
 });
@@ -61,6 +62,7 @@ it("sends only aggregate evidence to a fixed server provider and validates struc
 });
 it("does not expose upstream failures or accept truncated responses", async () => {
   configure();
+  const log = vi.spyOn(console, "error").mockImplementation(() => {});
   vi.stubGlobal(
     "fetch",
     vi
@@ -71,6 +73,13 @@ it("does not expose upstream failures or accept truncated responses", async () =
   );
   await expect(generateShotTrackerNarrative(input, "team", [])).rejects.toThrow(
     "Report provider unavailable",
+  );
+  expect(log).toHaveBeenCalledWith("Shot Tracker AI request failed", {
+    status: 500,
+    code: "unavailable",
+  });
+  expect(JSON.stringify(log.mock.calls)).not.toContain(
+    "private credential details",
   );
   vi.stubGlobal(
     "fetch",

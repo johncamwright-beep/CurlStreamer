@@ -2,6 +2,7 @@
 import { useEffect, useState } from "react";
 import { teamThemeStyle } from "@/lib/team-page-theme";
 import { optimizeUploadImage } from "@/lib/optimize-upload-image";
+import { useAccountDisplay } from "./AccountDisplayProvider";
 import {
   defaultTeamPageSettings,
   throwingPositions,
@@ -21,6 +22,7 @@ export function TeamSettings({
   apiUrl?: string;
   readOnly?: boolean;
 }) {
+  const { seedLogo, refresh } = useAccountDisplay();
   const [settings, setSettings] = useState(defaultTeamPageSettings(name)),
     [savedSettings, setSavedSettings] = useState<TeamPageSettings | null>(null),
     [logo, setLogo] = useState<string | null>(null),
@@ -108,6 +110,7 @@ export function TeamSettings({
         await optimizeUploadImage(file, {
           maxSide: kind === "logo" ? 800 : 1600,
           aspectRatio: kind === "logo" ? undefined : 16 / 9,
+          preserveTransparency: kind === "logo",
         }),
       );
       form.append("kind", kind);
@@ -117,8 +120,14 @@ export function TeamSettings({
       });
       const body = await response.json();
       if (!response.ok) throw Error(body.error);
-      if (kind === "logo") setLogo(body.logo);
-      else if (kind === "gallery") change("gallery", body.gallery);
+      if (kind === "logo") {
+        setLogo(body.logo);
+        if (apiUrl === "/api/account/team") {
+          seedLogo(body.logo);
+          // Cancel older appearance reads before they can replace this upload.
+          refresh(true);
+        }
+      } else if (kind === "gallery") change("gallery", body.gallery);
       else change("photo", body.photo);
       setMessage(
         kind === "logo"
@@ -268,12 +277,16 @@ export function TeamSettings({
               type="file"
               accept="image/png,image/jpeg,image/webp"
               className="mt-2 block min-h-11 w-full"
-              onChange={(e) => void upload(e.target.files?.[0])}
+              onChange={(e) => {
+                const file = e.currentTarget.files?.[0];
+                e.currentTarget.value = "";
+                void upload(file);
+              }}
             />
           </label>
           <p className="text-sm text-slate-400">
-            PNG, JPEG or WebP, up to 20 MB. Resized to JPEG under 300 KB;
-            transparent areas become white. This artwork can appear on your
+            PNG, JPEG or WebP, up to 20 MB. Resized to PNG under 300 KB;
+            transparency is preserved. This artwork can appear on your
             broadcasts and public team page.
           </p>
           {settings.photo && (

@@ -34,6 +34,49 @@ describe("uploadImageDimensions", () => {
 });
 
 describe("optimizeUploadImage", () => {
+  it("keeps logos transparent and reduces PNG dimensions instead of flattening to JPEG", async () => {
+    const bitmap = { width: 1600, height: 800, close: vi.fn() };
+    Object.defineProperty(globalThis, "createImageBitmap", {
+      configurable: true,
+      value: vi.fn().mockResolvedValue(bitmap),
+    });
+    const context = { fillStyle: "", fillRect: vi.fn(), drawImage: vi.fn() };
+    const canvas = {
+      width: 0,
+      height: 0,
+      getContext: vi.fn(() => context),
+      toBlob: vi.fn((callback: BlobCallback, mime: string) => {
+        callback(
+          new Blob([new Uint8Array(canvas.width >= 800 ? 300_001 : 200_000)], {
+            type: mime,
+          }),
+        );
+      }),
+    };
+    Object.defineProperty(globalThis, "document", {
+      configurable: true,
+      value: { createElement: vi.fn(() => canvas) },
+    });
+
+    const result = await optimizeUploadImage(
+      new File(["source"], "team-transparent.png", { type: "image/png" }),
+      { preserveTransparency: true, maxSide: 800 },
+    );
+
+    expect(result.name).toBe("team-transparent.png");
+    expect(result.type).toBe("image/png");
+    expect(result.size).toBeLessThanOrEqual(300_000);
+    expect(context.fillRect).not.toHaveBeenCalled();
+    expect(canvas.toBlob.mock.calls.map((call) => call[1])).toEqual([
+      "image/png",
+      "image/png",
+    ]);
+    expect(context.drawImage.mock.calls[1].slice(-2)).toEqual([640, 320]);
+    expect(bitmap.close).toHaveBeenCalledOnce();
+    expect(canvas.width).toBe(0);
+    expect(canvas.height).toBe(0);
+  });
+
   it("retries at smaller dimensions, emits a small JPEG, and releases canvas and bitmap", async () => {
     const bitmap = {
       width: 3200,

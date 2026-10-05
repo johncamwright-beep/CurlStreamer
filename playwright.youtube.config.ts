@@ -13,6 +13,7 @@ export default defineConfig({
     "opponent-links.spec.ts",
     "opponent-seasons.spec.ts",
     "team-settings.spec.ts",
+    "public-games-spacing.spec.ts",
     "billing.spec.ts",
     "news-editor.spec.ts",
     "news-image-upload.spec.ts",

@@ -168,8 +168,8 @@ export default function EventReports({ eventId }: { eventId: string }) {
                 <p className="mb-2 text-sm">{a.detail}</p>
                 {saved?.stale && (
                   <p>
-                    Event data changed since generation. This saved report
-                    cannot be regenerated.
+                    Source data or report settings changed since generation.
+                    This saved report cannot be regenerated.
                   </p>
                 )}
                 {saved?.status === "failed" && (

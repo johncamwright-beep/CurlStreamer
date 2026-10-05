@@ -61,9 +61,19 @@ it("sends only aggregate evidence to a fixed server provider and validates struc
   const body = JSON.parse(init.body);
   expect(body.store).toBe(false);
   expect(body.max_output_tokens).toBe(3200);
-  const schema = body.text.format.schema;
-  const resolve = (node: Record<string, any>): Record<string, any> =>
-    node.$ref ? resolve(schema.$defs[node.$ref.split("/").pop()]) : node;
+  type SchemaNode = {
+    $ref?: string;
+    properties: Record<string, SchemaNode>;
+    items: SchemaNode;
+    pattern?: string;
+    enum?: string[];
+    maxItems?: number;
+  };
+  const schema = body.text.format.schema as SchemaNode & {
+    $defs: Record<string, SchemaNode>;
+  };
+  const resolve = (node: SchemaNode): SchemaNode =>
+    node.$ref ? resolve(schema.$defs[node.$ref.split("/").pop()!]) : node;
   expect(resolve(schema.properties.practice).maxItems).toBe(2);
   expect(body.text.format.strict).toBe(true);
   expect(

@@ -243,7 +243,7 @@ export async function generateEventReports(
       429,
     );
   const abort = new AbortController();
-  const deadline = setTimeout(() => abort.abort(), 110_000);
+  const deadline = setTimeout(() => abort.abort(), 130_000);
   try {
     const names = reportPlayers(event).flatMap((p) => [
       p.name,
@@ -257,23 +257,16 @@ export async function generateEventReports(
       generatedAt: new Date().toISOString(),
       reports: [],
     };
-    // Two bounded workers keep a one-touch player packet within the request deadline.
-    let next = 0;
-    await Promise.all(
-      Array.from({ length: Math.min(2, inputs.length) }, async () => {
-        while (next < inputs.length) {
-          const index = next++;
-          const input = inputs[index];
-          const narrative = await generateShotTrackerNarrative(
-            input,
-            audience,
-            names,
-            signal,
-          );
-          packet.reports[index] = { ...input, narrative };
-        }
-      }),
-    );
+    // Avoid a burst of large player prompts on lower-throughput API projects.
+    for (const input of inputs) {
+      const narrative = await generateShotTrackerNarrative(
+        input,
+        audience,
+        names,
+        signal,
+      );
+      packet.reports.push({ ...input, narrative });
+    }
     // Refuse to publish if results, grades, roster, membership or completion changed mid-generation.
     const fresh = await loadReportEvent(account, event.id);
     if (

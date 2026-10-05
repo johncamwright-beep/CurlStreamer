@@ -1,5 +1,9 @@
 import { afterEach, expect, it, vi } from "vitest";
 import { generateShotTrackerNarrative } from "./shot-tracker-ai";
+vi.mock("node:timers/promises", () => ({
+  setTimeout: vi.fn().mockResolvedValue(undefined),
+}));
+import { setTimeout as delay } from "node:timers/promises";
 const input = {
   key: "team",
   title: "PRIVATE NAME",
@@ -57,16 +61,32 @@ it("sends only aggregate evidence to a fixed server provider and validates struc
   const body = JSON.parse(init.body);
   expect(body.store).toBe(false);
   expect(body.max_output_tokens).toBe(3200);
-  expect(body.text.format.schema.properties.practice.maxItems).toBe(2);
+  type SchemaNode = {
+    $ref?: string;
+    properties: Record<string, SchemaNode>;
+    items: SchemaNode;
+    pattern?: string;
+    enum?: string[];
+    maxItems?: number;
+  };
+  const schema = body.text.format.schema as SchemaNode & {
+    $defs: Record<string, SchemaNode>;
+  };
+  const resolve = (node: SchemaNode): SchemaNode =>
+    node.$ref ? resolve(schema.$defs[node.$ref.split("/").pop()!]) : node;
+  expect(resolve(schema.properties.practice).maxItems).toBe(2);
   expect(body.text.format.strict).toBe(true);
   expect(
-    body.text.format.schema.properties.summary.properties.text.pattern,
+    resolve(resolve(schema.properties.summary).properties.text).pattern,
   ).toBe("^[^0-9<>]*$");
   expect(body.input).not.toContain("PRIVATE NAME");
   expect(body.instructions).toContain("No player names");
   expect(
-    body.text.format.schema.properties.summary.properties.evidence.items.enum,
+    resolve(
+      resolve(resolve(schema.properties.summary).properties.evidence).items,
+    ).enum,
   ).toEqual(["overall"]);
+  expect(JSON.stringify(schema).match(/"enum":\["overall"\]/g)).toHaveLength(1);
 });
 function generated(text: string, evidence = "overall") {
   const finding = { text, evidence: [evidence] };
@@ -126,7 +146,7 @@ it.each([
   "organization_spend_limit_exceeded",
   "project_spend_limit_exceeded",
   "organization_usage_limit_exceeded",
-  "slow_down",
+  "insufficient_quota",
 ])("classifies %s without exposing upstream details", async (code) => {
   configure();
   const log = vi.spyOn(console, "error").mockImplementation(() => {});
@@ -151,6 +171,50 @@ it.each([
   expect(JSON.stringify(log.mock.calls)).not.toContain(
     "private account details",
   );
+});
+it("honors temporary throttling delays and bounds retries", async () => {
+  configure();
+  const throttled = () =>
+    Response.json(
+      { error: { code: "rate_limit_exceeded" } },
+      { status: 429, headers: { "Retry-After": "2" } },
+    );
+  const fetcher = vi
+    .fn()
+    .mockImplementationOnce(throttled)
+    .mockResolvedValueOnce(generated("Our team can practise shared targets."));
+  vi.stubGlobal("fetch", fetcher);
+  await generateShotTrackerNarrative(input, "team", []);
+  expect(fetcher).toHaveBeenCalledTimes(2);
+  expect(vi.mocked(delay).mock.calls.at(-1)?.[0]).toBeGreaterThanOrEqual(2000);
+  fetcher.mockReset().mockImplementation(throttled);
+  vi.spyOn(console, "error").mockImplementation(() => {});
+  await expect(generateShotTrackerNarrative(input, "team", [])).rejects.toThrow(
+    "Report provider unavailable",
+  );
+  expect(fetcher).toHaveBeenCalledTimes(3);
+});
+it("defers long server waits and does not retry canceled requests", async () => {
+  configure();
+  vi.spyOn(console, "error").mockImplementation(() => {});
+  const fetcher = vi
+    .fn()
+    .mockResolvedValue(
+      Response.json(
+        { error: { code: "rate_limit_exceeded" } },
+        { status: 429, headers: { "Retry-After": "120" } },
+      ),
+    );
+  vi.stubGlobal("fetch", fetcher);
+  await expect(generateShotTrackerNarrative(input, "team", [])).rejects.toThrow(
+    "Report provider unavailable",
+  );
+  expect(fetcher).toHaveBeenCalledTimes(1);
+  const aborted = AbortSignal.abort();
+  await expect(
+    generateShotTrackerNarrative(input, "team", [], aborted),
+  ).rejects.toThrow();
+  expect(fetcher).toHaveBeenCalledTimes(1);
 });
 it("does not expose upstream failures or accept truncated responses", async () => {
   configure();

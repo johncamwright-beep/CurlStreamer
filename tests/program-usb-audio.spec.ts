@@ -12,7 +12,7 @@ test.beforeEach(async ({ page }) => {
     stdin: {
       loader: "tsx",
       resolveDir: process.cwd(),
-      contents: `import React from 'react';import{createRoot}from'react-dom/client';import{ProgramUsbAudio}from'./src/components/ProgramUsbAudio';import{createProgramUsbMix}from'./src/lib/program-usb-mix';import{usbAudioStart}from'./src/lib/usb-audio-timing';window.timing=usbAudioStart;window.mix=createProgramUsbMix;window.mount=()=>createRoot(document.getElementById('root')).render(<ProgramUsbAudio/>);`,
+      contents: `import React from 'react';import{createRoot}from'react-dom/client';import{ProgramUsbAudio}from'./src/components/ProgramUsbAudio';import{ProgramPhoneAudio}from'./src/components/ProgramPhoneAudio';import{createProgramUsbMix}from'./src/lib/program-usb-mix';import{usbAudioStart}from'./src/lib/usb-audio-timing';window.timing=usbAudioStart;window.mix=createProgramUsbMix;window.mount=()=>createRoot(document.getElementById('root')).render(<ProgramUsbAudio/>);window.mountBoth=()=>{const context=new AudioContext();const oscillator=context.createOscillator();const output=context.createMediaStreamDestination();oscillator.connect(output);oscillator.start();window.audioProofContext=context;window.audioProofRoot=createRoot(document.getElementById('root'));window.audioProofRoot.render(<><ProgramUsbAudio/><ProgramPhoneAudio role='camera-home' stream={output.stream} enabled={true}/></>);};`,
     },
   });
   await page.route("**/usb-proof", (r) =>
@@ -176,4 +176,60 @@ test("USB playback continues after a delayed response body exceeds its timeout",
   await expect
     .poll(() => page.evaluate(() => (window as any).reads))
     .toBeGreaterThan(2);
+});
+
+test("phone and USB observation responses drain and dispose successful request signals", async ({
+  page,
+}) => {
+  await page.route("**/usb-audio", (route) => route.fulfill({ status: 204 }));
+  await page.route("**/camera", (route) =>
+    route.fulfill({ json: { ok: true } }),
+  );
+  await page.evaluate(() => {
+    const original = window.fetch.bind(window);
+    const records: Array<{
+      action: string;
+      response: Response;
+      signal: AbortSignal;
+    }> = [];
+    (window as any).observationLifetimes = records;
+    window.fetch = async (input, options) => {
+      const response = await original(input, options);
+      if (
+        String(input) === "/camera" &&
+        options?.method === "POST" &&
+        options.signal
+      )
+        records.push({
+          action: JSON.parse(options.body as string).action,
+          response,
+          signal: options.signal,
+        });
+      return response;
+    };
+    (window as any).mountBoth();
+  });
+  for (const action of ["audio-observe", "usb-audio-observe"])
+    await expect
+      .poll(() =>
+        page.evaluate(
+          (action) =>
+            (window as any).observationLifetimes.filter(
+              (row: {
+                action: string;
+                response: Response;
+                signal: AbortSignal;
+              }) =>
+                row.action === action &&
+                row.response.bodyUsed &&
+                row.signal.aborted,
+            ).length,
+          action,
+        ),
+      )
+      .toBeGreaterThan(1);
+  await page.evaluate(async () => {
+    (window as any).audioProofRoot.unmount();
+    await (window as any).audioProofContext.close();
+  });
 });

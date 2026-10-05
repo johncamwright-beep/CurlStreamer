@@ -50,6 +50,9 @@ export function ProgramPhoneAudio({
     const report = async () => {
       if (pending || abort.signal.aborted) return;
       pending = true;
+      const attempt = new AbortController();
+      const timeout = setTimeout(() => attempt.abort(), 2000);
+      const signal = AbortSignal.any([abort.signal, attempt.signal]);
       try {
         void playout.start();
         if (context.state === "suspended") await context.resume();
@@ -65,12 +68,12 @@ export function ProgramPhoneAudio({
           stream
             .getAudioTracks()
             .some((track) => track.readyState === "live" && !track.muted);
-        await fetch("/camera", {
+        const observation = await fetch("/camera", {
           method: "POST",
           credentials: "same-origin",
           redirect: "error",
           headers: { "content-type": "application/json" },
-          signal: AbortSignal.any([abort.signal, AbortSignal.timeout(2000)]),
+          signal,
           body: JSON.stringify({
             action: "audio-observe",
             rendererInstance: m4RendererInstance(),
@@ -83,9 +86,12 @@ export function ProgramPhoneAudio({
               : 0,
           }),
         });
+        await observation.text();
       } catch {
         /* Missing observations expire rather than showing stale levels. */
       } finally {
+        clearTimeout(timeout);
+        attempt.abort();
         pending = false;
       }
     };

@@ -52,6 +52,7 @@ export function M4IpCameraTransport({
       }
       const attempt = new AbortController();
       const timeout = setTimeout(() => attempt.abort(), 2000);
+      const signal = AbortSignal.any([lifetime.signal, attempt.signal]);
       let bitmap: ImageBitmap | undefined;
       try {
         const response = await fetch(
@@ -60,7 +61,7 @@ export function M4IpCameraTransport({
             credentials: "same-origin",
             cache: "no-store",
             redirect: "error",
-            signal: AbortSignal.any([lifetime.signal, attempt.signal]),
+            signal,
           },
         );
         if (lifetime.signal.aborted) return;
@@ -77,16 +78,12 @@ export function M4IpCameraTransport({
         if (!Number.isSafeInteger(frame) || frame <= counter) throw Error();
         const blob = await response.blob();
         if (blob.size > 2 * 1024 * 1024 || !blob.size) throw Error();
-        bitmap = await decodeM4CameraBitmap(
-          blob,
-          AbortSignal.any([lifetime.signal, attempt.signal]),
-          (input) => {
-            pendingDecodes++;
-            return Promise.resolve()
-              .then(() => createImageBitmap(input))
-              .finally(() => pendingDecodes--);
-          },
-        );
+        bitmap = await decodeM4CameraBitmap(blob, signal, (input) => {
+          pendingDecodes++;
+          return Promise.resolve()
+            .then(() => createImageBitmap(input))
+            .finally(() => pendingDecodes--);
+        });
         if (lifetime.signal.aborted || attempt.signal.aborted || !context)
           return;
         const aspect = cameraAspect(bitmap.width, bitmap.height);
@@ -107,11 +104,11 @@ export function M4IpCameraTransport({
           publishedAspect = aspect;
         }
         displayed = true;
-        await fetch("/camera", {
+        const observation = await fetch("/camera", {
           method: "POST",
           credentials: "same-origin",
           redirect: "error",
-          signal: AbortSignal.any([lifetime.signal, attempt.signal]),
+          signal,
           headers: { "content-type": "application/json" },
           body: JSON.stringify({
             action: "observe",
@@ -122,10 +119,12 @@ export function M4IpCameraTransport({
             sourceGeneration: generation,
           }),
         });
+        await observation.text();
       } catch {
         /* Retain a fresh picture through a missed local request. */
       } finally {
         clearTimeout(timeout);
+        attempt.abort();
         bitmap?.close();
         if (!lifetime.signal.aborted) {
           if (displayed && Date.now() - lastFrame >= 5000) clear();

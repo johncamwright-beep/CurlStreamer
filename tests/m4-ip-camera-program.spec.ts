@@ -825,3 +825,132 @@ test("two stalled bitmap decodes cap retained work and late release resumes poll
   expect((await fixture.maxActive())["camera-away"]).toBe(1);
   expect(fixture.errors).toEqual([]);
 });
+
+test("completed camera observations drain their bodies and release attempt signals", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    const original = window.fetch.bind(window);
+    const records: Array<{ response: Response; signal: AbortSignal }> = [];
+    (
+      window as unknown as { __observationLifetimes: typeof records }
+    ).__observationLifetimes = records;
+    window.fetch = async (input, options) => {
+      const response = await original(input, options);
+      if (
+        String(input) === "/camera" &&
+        options?.method === "POST" &&
+        options.signal
+      )
+        records.push({ response, signal: options.signal });
+      return response;
+    };
+  });
+  const fixture = await install(page, ["tapo", "rtsp"]);
+  await verifyFrame(page, "camera-away");
+  await expect
+    .poll(() =>
+      page.evaluate(() => {
+        const records = (
+          window as unknown as {
+            __observationLifetimes: Array<{
+              response: Response;
+              signal: AbortSignal;
+            }>;
+          }
+        ).__observationLifetimes;
+        return records.filter(
+          (row) => row.response.bodyUsed && row.signal.aborted,
+        ).length;
+      }),
+    )
+    .toBeGreaterThan(4);
+  expect(fixture.errors).toEqual([]);
+  expect((await fixture.maxActive())["camera-away"]).toBe(1);
+});
+
+test("a stalled observation response body expires under the frame deadline and polling recovers", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    const original = window.fetch.bind(window);
+    const state = {
+      stalled: false,
+      bodyRead: false,
+      aborted: false,
+      abortAfterMs: 0,
+    };
+    (
+      window as unknown as { __observationBodyStall: typeof state }
+    ).__observationBodyStall = state;
+    window.fetch = async (input, options) => {
+      const response = await original(input, options);
+      if (
+        String(input) !== "/camera" ||
+        !options?.body ||
+        JSON.parse(options.body as string).action !== "observe" ||
+        state.stalled
+      )
+        return response;
+      state.stalled = true;
+      await response.text();
+      const bodyStarted = performance.now();
+      const body = new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(new TextEncoder().encode("{"));
+          options.signal!.addEventListener(
+            "abort",
+            () => {
+              state.aborted = true;
+              state.abortAfterMs = performance.now() - bodyStarted;
+              controller.error(
+                new DOMException("synthetic body deadline", "AbortError"),
+              );
+            },
+            { once: true },
+          );
+        },
+        pull() {
+          state.bodyRead = true;
+        },
+      });
+      return new Response(body, {
+        headers: { "content-type": "application/json" },
+      });
+    };
+  });
+  const fixture = await install(page, ["phone", "tapo"]);
+  await verifyFrame(page, "camera-away");
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () =>
+          (
+            window as unknown as {
+              __observationBodyStall: { bodyRead: boolean; aborted: boolean };
+            }
+          ).__observationBodyStall,
+      ),
+    )
+    .toMatchObject({ bodyRead: true, aborted: true });
+  expect(
+    await page.evaluate(
+      () =>
+        (
+          window as unknown as {
+            __observationBodyStall: { abortAfterMs: number };
+          }
+        ).__observationBodyStall.abortAfterMs,
+    ),
+  ).toBeGreaterThan(1000);
+  await expect
+    .poll(
+      () =>
+        fixture.accepted.filter((value) => value.cameraRole === "camera-away")
+          .length,
+    )
+    .toBeGreaterThan(2);
+  await verifyFrame(page, "camera-away");
+  expect((await fixture.maxActive())["camera-away"]).toBe(1);
+  expect(fixture.errors).toEqual([]);
+});

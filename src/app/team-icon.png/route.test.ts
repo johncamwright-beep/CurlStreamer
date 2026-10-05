@@ -67,6 +67,11 @@ describe("team favicon route", () => {
     const response = await GET();
 
     expect(response.status).toBe(200);
+    expect(readFile).toHaveBeenCalledWith(
+      expect.stringMatching(
+        /public[\\/]branding[\\/]curlstreamer-app-icon\.png$/,
+      ),
+    );
     expect(Buffer.from(await response.arrayBuffer())).toEqual(
       Buffer.from("png"),
     );
@@ -99,5 +104,51 @@ describe("team favicon route", () => {
         ([input]) => Buffer.from(input).toString() === "invalid",
       ),
     ).toHaveLength(1);
+  });
+
+  it("keeps a team's uploaded logo as its favicon", async () => {
+    readPublishedTeamProfile.mockResolvedValue({
+      logo_url:
+        "https://project.supabase.co/storage/v1/object/public/team-public-media/benning/logo",
+    });
+    process.env.NEXT_PUBLIC_SUPABASE_URL = "https://project.supabase.co";
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(new Response("team logo", { status: 200 })),
+    );
+
+    const response = await GET();
+
+    expect(response.status).toBe(200);
+    expect(sharp).toHaveBeenLastCalledWith(Buffer.from("team logo"), {
+      limitInputPixels: 20000000,
+    });
+  });
+
+  it("revalidates the stable favicon URL and reuses only identical rendered bytes", async () => {
+    const first = await GET();
+    expect(first.headers.get("cache-control")).toBe(
+      "public, max-age=0, must-revalidate",
+    );
+    const etag = first.headers.get("etag");
+    expect(etag).toMatch(/^"[a-f0-9]{64}"$/);
+    headers.mockResolvedValue(
+      new Headers({ host: "benning.curlstreamer.app", "if-none-match": etag! }),
+    );
+    const unchanged = await GET();
+    expect(unchanged.status).toBe(304);
+    expect(await unchanged.text()).toBe("");
+
+    sharp.mockImplementation(() => ({
+      resize: () => ({
+        png: () => ({
+          toBuffer: () => Promise.resolve(Buffer.from("new png")),
+        }),
+      }),
+    }));
+    const replaced = await GET();
+    expect(replaced.status).toBe(200);
+    expect(replaced.headers.get("etag")).not.toBe(etag);
+    expect(await replaced.text()).toBe("new png");
   });
 });

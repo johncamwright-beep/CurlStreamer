@@ -35,6 +35,10 @@ export const studioFiles = {
 const manifestSchema = z
   .object({
     version: z.literal(1),
+    capabilities: z
+      .array(z.literal("program-presentation-v1"))
+      .optional()
+      .default([]),
     release: z.string().regex(/^\d+\.\d+\.\d+(?:-[a-z0-9.]+)?$/),
     obsVersion: z.literal("32.2.2"),
     nodeVersion: z.string().regex(/^v(22|24)\.\d+\.\d+$/),

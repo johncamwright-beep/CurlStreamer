@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { M4ProgramClient } from "./m4-program-client";
 import { createM4ProgramBridge } from "./m4-program-bridge";
 import { StudioTransportUnavailable } from "./studio-transport-error";
+import sharp from "sharp";
 const closers: Array<() => Promise<void>> = [];
 async function documentInstance(page: Response) {
   return (await page.text()).match(
@@ -56,6 +57,344 @@ async function setup() {
   return { client, action, bridge, headers };
 }
 describe("private loopback program API", () => {
+  const organizationId = "22222222-2222-4222-8222-222222222222";
+  const logoSource = `https://storage.invalid/storage/v1/object/public/team-public-media/${organizationId}/33333333-3333-4333-8333-333333333333.png`;
+  async function logoSetup(source = logoSource, response?: Response) {
+    const bytes = await sharp({
+      create: {
+        width: 2,
+        height: 2,
+        channels: 4,
+        background: { r: 0, g: 0, b: 0, alpha: 0 },
+      },
+    })
+      .png()
+      .toBuffer();
+    const readGame = vi
+      .fn()
+      .mockResolvedValue({ config: { homeLogoUrl: source }, sponsors: [] });
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(
+      response ??
+        new Response(new Uint8Array(bytes), {
+          headers: { "content-type": "image/png" },
+        }),
+    );
+    const bridge = await createM4ProgramBridge(
+      {
+        readGame,
+        action: vi.fn(),
+        close: vi.fn(),
+        sponsorOrganizationId: () => organizationId,
+      },
+      undefined,
+      {
+        directory: ".",
+        sponsorStorageOrigin: "https://storage.invalid",
+        teamLogoFetcher: fetcher,
+      },
+    );
+    closers.push(bridge.close);
+    const page = await fetch(bridge.rendererUrl);
+    const headers = {
+      origin: bridge.address,
+      cookie: page.headers.get("set-cookie")!.split(";")[0],
+    };
+    const program = async () =>
+      (await (await fetch(bridge.address + "/program", { headers })).json())
+        .game;
+    const readyProgram = async () => {
+      let value: Awaited<ReturnType<typeof program>>;
+      await vi.waitFor(async () => {
+        value = await program();
+        expect(value.config.homeLogoUrl).toMatch(/^\/team-logo\/[a-f0-9]{32}$/);
+      });
+      return value!;
+    };
+    return {
+      bytes,
+      bridge,
+      fetcher,
+      readGame,
+      headers,
+      program,
+      readyProgram,
+      page,
+    };
+  }
+  it("serves transparent team artwork through an authenticated opaque local path with strict CSP", async () => {
+    const { bytes, bridge, fetcher, headers, program, readyProgram, page } =
+      await logoSetup();
+    expect((await program()).config.homeLogoUrl).toBeUndefined();
+    const value = await readyProgram();
+    expect(value.config.homeLogoUrl).toMatch(/^\/team-logo\/[a-f0-9]{32}$/);
+    expect(JSON.stringify(value)).not.toContain("storage.invalid");
+    expect(page.headers.get("content-security-policy")).toContain(
+      "img-src 'self' data: blob:",
+    );
+    const asset = await fetch(bridge.address + value.config.homeLogoUrl, {
+      headers,
+    });
+    expect(asset.headers.get("content-type")).toBe("image/png");
+    expect(Buffer.from(await asset.arrayBuffer())).toEqual(bytes);
+    expect((await sharp(bytes).metadata()).hasAlpha).toBe(true);
+    expect(
+      (await fetch(bridge.address + value.config.homeLogoUrl)).status,
+    ).toBe(403);
+    expect((await program()).config.homeLogoUrl).toBe(value.config.homeLogoUrl);
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    expect(fetcher).toHaveBeenCalledWith(
+      new URL(logoSource),
+      expect.objectContaining({
+        cache: "no-store",
+        redirect: "error",
+        signal: expect.any(AbortSignal),
+      }),
+    );
+  });
+  it.each([
+    logoSource.replace("storage.invalid", "other.invalid"),
+    logoSource.replace(organizationId, "44444444-4444-4444-8444-444444444444"),
+    logoSource.replace("/public/", "/sign/"),
+    logoSource + "?token=secret",
+    logoSource + "#secret",
+    logoSource.replace("https://", "http://"),
+    logoSource.replace("https://", "https://user:password@"),
+    logoSource.replace(
+      "33333333-3333-4333-8333-333333333333",
+      "------------------------------------",
+    ),
+  ])("does not download an out-of-scope team logo %s", async (source) => {
+    const { fetcher, program } = await logoSetup(source);
+    expect((await program()).config.homeLogoUrl).toBeUndefined();
+    expect(fetcher).not.toHaveBeenCalled();
+  });
+  it.each([
+    new Response("invalid", { headers: { "content-type": "image/png" } }),
+    new Response("invalid", { headers: { "content-type": "text/html" } }),
+    new Response("invalid", {
+      headers: { "content-type": "image/png", "content-length": "1048577" },
+    }),
+    new Response(new Uint8Array(1048577), {
+      headers: { "content-type": "image/png" },
+    }),
+    new Response(null, {
+      status: 302,
+      headers: { location: "https://other.invalid/logo.png" },
+    }),
+  ])(
+    "omits invalid, redirected or oversized logo responses",
+    async (response) => {
+      const { program } = await logoSetup(logoSource, response);
+      expect((await program()).config.homeLogoUrl).toBeUndefined();
+      expect((await program()).config.homeLogoUrl).toBeUndefined();
+    },
+  );
+  it("replaces changed artwork and revokes the old local asset", async () => {
+    const { bytes, bridge, readGame, fetcher, headers, program, readyProgram } =
+      await logoSetup();
+    const first = (await readyProgram()).config.homeLogoUrl;
+    fetcher.mockResolvedValueOnce(
+      new Response(new Uint8Array(bytes), {
+        headers: { "content-type": "image/png" },
+      }),
+    );
+    readGame.mockResolvedValue({
+      config: { homeLogoUrl: logoSource.replace("33333333", "55555555") },
+      sponsors: [],
+    });
+    expect((await program()).config.homeLogoUrl).toBeUndefined();
+    const second = (await readyProgram()).config.homeLogoUrl;
+    expect(second).not.toBe(first);
+    expect((await fetch(bridge.address + first, { headers })).status).toBe(404);
+    expect(fetcher).toHaveBeenCalledTimes(2);
+  });
+  it("preserves normalized transparent WebP bytes and MIME", async () => {
+    const bytes = await sharp({
+      create: {
+        width: 2,
+        height: 2,
+        channels: 4,
+        background: { r: 30, g: 60, b: 90, alpha: 0.5 },
+      },
+    })
+      .webp()
+      .toBuffer();
+    const { bridge, headers, readyProgram } = await logoSetup(
+      logoSource.replace(".png", ".webp"),
+      new Response(new Uint8Array(bytes), {
+        headers: { "content-type": "image/webp" },
+      }),
+    );
+    const asset = await fetch(
+      bridge.address + (await readyProgram()).config.homeLogoUrl,
+      { headers },
+    );
+    expect(asset.headers.get("content-type")).toBe("image/webp");
+    expect(Buffer.from(await asset.arrayBuffer())).toEqual(bytes);
+    expect((await sharp(bytes).metadata()).hasAlpha).toBe(true);
+  });
+  it("revokes old artwork when a replacement fails", async () => {
+    const { bridge, readGame, fetcher, headers, program, readyProgram } =
+      await logoSetup();
+    const first = (await readyProgram()).config.homeLogoUrl;
+    readGame.mockResolvedValue({
+      config: { homeLogoUrl: logoSource.replace("33333333", "55555555") },
+      sponsors: [],
+    });
+    fetcher.mockRejectedValueOnce(Error("download unavailable"));
+    expect((await program()).config.homeLogoUrl).toBeUndefined();
+    expect((await fetch(bridge.address + first, { headers })).status).toBe(404);
+  });
+  it("does not let a superseded download restore old artwork", async () => {
+    const { bytes, readGame, fetcher, program, readyProgram } =
+      await logoSetup();
+    let started!: () => void;
+    const downloading = new Promise<void>((resolve) => {
+      started = resolve;
+    });
+    let finish!: (response: Response) => void;
+    fetcher.mockImplementationOnce(() => {
+      started();
+      return new Promise<Response>((resolve) => {
+        finish = resolve;
+      });
+    });
+    const first = program();
+    await downloading;
+    readGame.mockResolvedValue({
+      config: { homeLogoUrl: logoSource.replace("33333333", "55555555") },
+      sponsors: [],
+    });
+    fetcher.mockResolvedValueOnce(
+      new Response(new Uint8Array(bytes), {
+        headers: { "content-type": "image/png" },
+      }),
+    );
+    expect((await program()).config.homeLogoUrl).toBeUndefined();
+    const second = await readyProgram();
+    expect((await first).config.homeLogoUrl).toBeUndefined();
+    finish(
+      new Response(new Uint8Array(bytes), {
+        headers: { "content-type": "image/png" },
+      }),
+    );
+    expect((await program()).config.homeLogoUrl).toBe(
+      second.config.homeLogoUrl,
+    );
+  });
+  it.each(["fetch", "body"])(
+    "program polling completes before releasing the logo %s download gate",
+    async (stage) => {
+      let body!: ReadableStreamDefaultController<Uint8Array>;
+      const { bytes, program, readyProgram, fetcher } = await logoSetup(
+        logoSource,
+        new Response(
+          new ReadableStream<Uint8Array>({
+            start(controller) {
+              body = controller;
+            },
+          }),
+          {
+            headers: { "content-type": "image/png" },
+          },
+        ),
+      );
+      let releaseFetch!: (response: Response) => void;
+      if (stage === "fetch")
+        fetcher.mockImplementationOnce(
+          () =>
+            new Promise<Response>((resolve) => {
+              releaseFetch = resolve;
+            }),
+        );
+      expect((await program()).config.homeLogoUrl).toBeUndefined();
+      expect((await program()).config.homeLogoUrl).toBeUndefined();
+      expect(fetcher).toHaveBeenCalledTimes(1);
+      expect(fetcher.mock.calls[0][1]?.signal?.aborted).toBe(false);
+      if (stage === "fetch")
+        releaseFetch(
+          new Response(new Uint8Array(bytes), {
+            headers: { "content-type": "image/png" },
+          }),
+        );
+      else {
+        body.enqueue(new Uint8Array(bytes));
+        body.close();
+      }
+      expect((await readyProgram()).config.homeLogoUrl).toMatch(
+        /^\/team-logo\/[a-f0-9]{32}$/,
+      );
+    },
+  );
+  it("preparation alone cannot bypass a terminal program rejection", async () => {
+    const client = {
+      readGame: vi.fn().mockRejectedValue(new Error("terminal")),
+      action: vi.fn(),
+      close: vi.fn(),
+    };
+    const bridge = await createM4ProgramBridge(client);
+    closers.push(bridge.close);
+    const page = await fetch(bridge.rendererUrl);
+    const instance = await documentInstance(page);
+    const prepared = bridge.presentation.set("preparing-end");
+    bridge.presentation.acknowledge(instance, 1);
+    await prepared;
+    expect(
+      (
+        await fetch(bridge.address + "/program", {
+          headers: {
+            origin: bridge.address,
+            authorization: bridge.authorization,
+          },
+        })
+      ).status,
+    ).toBe(409);
+    expect(bridge.rendererHealth().active).toBe(false);
+    expect(
+      (
+        await fetch(bridge.address + "/presentation", {
+          headers: {
+            origin: bridge.address,
+            cookie: page.headers.get("set-cookie")!.split(";")[0],
+          },
+        })
+      ).status,
+    ).toBe(403);
+  });
+  it("a positively verified closing grant retains only an opaque card and renderer health", async () => {
+    const client = {
+      readGame: vi.fn().mockRejectedValue(new Error("terminal")),
+      action: vi.fn(),
+      close: vi.fn(),
+    };
+    const stop = vi.fn().mockResolvedValue(undefined);
+    const bridge = await createM4ProgramBridge(
+      client,
+      { connect: vi.fn(), drain: vi.fn(), close: stop },
+      { directory: "public", closingAuthority: async () => Date.now() + 15000 },
+    );
+    closers.push(bridge.close);
+    const page = await fetch(bridge.rendererUrl);
+    const instance = await documentInstance(page);
+    const prepared = bridge.presentation.set("preparing-end");
+    bridge.presentation.acknowledge(instance, 1);
+    await prepared;
+    expect(
+      (
+        await fetch(bridge.address + "/program", {
+          headers: {
+            origin: bridge.address,
+            authorization: bridge.authorization,
+          },
+        })
+      ).status,
+    ).toBe(409);
+    expect(bridge.rendererHealth().active).toBe(true);
+    expect(stop).toHaveBeenCalled();
+    expect(bridge.presentation.snapshot().mode).toBe("hold");
+    expect(bridge.presentation.snapshot().completion).toBeUndefined();
+    bridge.presentation.acknowledge(instance, 2);
+  });
   it("permits only the claimed renderer to reload and fences old-document health reports", async () => {
     const { bridge, headers } = await setup();
     const page = await fetch(bridge.rendererUrl);

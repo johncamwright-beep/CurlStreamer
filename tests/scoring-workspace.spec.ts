@@ -413,6 +413,10 @@ test("desktop game day keeps scoring primary and settings available on demand", 
   });
   await expect(usb.getByRole("meter")).toHaveCount(4);
   await expect(usb.getByRole("button", { name: "Disconnect" })).toBeVisible();
+  const youtubeControls = page.getByRole("region", {
+    name: "YouTube broadcast",
+    exact: true,
+  });
   if (info.project.name !== "mobile") {
     expect((await usb.boundingBox())!.height).toBeLessThan(190);
     const youtube = await page
@@ -424,6 +428,45 @@ test("desktop game day keeps scoring primary and settings available on demand", 
     expect(sponsors!.height).toBeLessThanOrEqual(166);
     expect(sponsors!.y).toBe(youtube!.y);
     expect(sponsors!.height).toBe(youtube!.height);
+  }
+  for (const mode of ["live", "hold"] as const) {
+    await page.evaluate(
+      ({ gameId, mode }) => {
+        window.dispatchEvent(
+          new CustomEvent("studio-youtube-status", {
+            detail: {
+              gameId,
+              available: true,
+              busy: false,
+              streaming: "armed",
+              live: true,
+              receiving: true,
+              message: "",
+              canReconnect: true,
+              canHoldStream: true,
+              outputActive: true,
+              presentation: { mode },
+            },
+          }),
+        );
+      },
+      { gameId: testGameId, mode },
+    );
+    const broadcastButton = youtubeControls.getByRole("button", {
+      name: mode === "hold" ? "Resume broadcast" : "Pause broadcast",
+      exact: true,
+    });
+    await expect(broadcastButton).toBeEnabled();
+    expect(
+      (await broadcastButton.boundingBox())!.height,
+    ).toBeGreaterThanOrEqual(44);
+    if (info.project.name !== "mobile") {
+      const youtube = (await youtubeControls.boundingBox())!;
+      const sponsors = (await sponsorControls.boundingBox())!;
+      expect(sponsors.height).toBeLessThanOrEqual(166);
+      expect(sponsors.y).toBe(youtube.y);
+      expect(sponsors.height).toBe(youtube.height);
+    }
   }
   await expect(
     page.getByRole("button", { name: "Save 1 point", exact: true }),

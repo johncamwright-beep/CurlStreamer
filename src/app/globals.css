@@ -171,22 +171,44 @@ button {
 .broadcast-information-rail {
   min-height: 0;
   padding: 1.25cqw;
+  padding-top: 0.65cqw;
+}
+.broadcast-rail-heading {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.8cqw;
+}
+.broadcast-team-logo {
+  width: 5.5cqw;
+  height: 5.5cqw;
+  border-radius: 0.4cqw;
 }
 .broadcast-scoreboard {
-  margin-top: 0.833cqw;
+  min-width: 0;
   padding: 1.042cqw;
+  border-radius: 0.625cqw;
 }
 .broadcast-scoreboard > div:first-child span {
   font-size: 1.25cqw;
+  letter-spacing: 0.125cqw;
 }
 .broadcast-scoreboard > div:not(:first-child) {
   margin-top: 0.938cqw;
   gap: 0.938cqw;
   padding-left: 0.833cqw;
+  border-left-width: 0.208cqw;
 }
 .broadcast-scoreboard > div:not(:first-child) > strong {
   font-size: 1.875cqw;
   line-height: 1.1;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+.broadcast-scoreboard > div:not(:first-child) > span {
+  gap: 0.417cqw;
 }
 .broadcast-scoreboard > div:not(:first-child) > span strong {
   font-size: 2.5cqw;
@@ -635,6 +657,10 @@ button {
   overflow-y: auto;
   overscroll-behavior: contain;
   scrollbar-gutter: stable;
+  padding-inline-end: 20px;
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--panel-text) 45%, transparent)
+    transparent;
 }
 .public-game-row {
   height: 108px;

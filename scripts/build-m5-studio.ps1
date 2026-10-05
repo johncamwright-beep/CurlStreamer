@@ -5,6 +5,7 @@ param(
   [string]$Release = "0.5.0-pilot.1",
   [string]$IpCameraHelper,
   [string]$StudioRecorder,
+  [switch]$PresentationControl,
   [string]$BaselineStudio,
   [string]$BaselineManifestSha256
 )
@@ -15,6 +16,7 @@ if (-not $IpCameraHelper) {
 }
 if (-not (Test-Path -LiteralPath $IpCameraHelper -PathType Leaf)) { throw "Build the IP camera receiver before packaging Studio." }
 if ($StudioRecorder -and -not (Test-Path -LiteralPath $StudioRecorder -PathType Leaf)) { throw "Build the program recorder before packaging Studio." }
+if ($PresentationControl -and -not $StudioRecorder) { throw "Presentation support requires an explicitly rebuilt recorder." }
 $destinationPath = [IO.Path]::GetFullPath($Destination)
 if (Test-Path -LiteralPath $destinationPath) { throw "Use a new staging directory; existing installs are never overwritten." }
 if ($Release -notmatch '^\d+\.\d+\.\d+(-[a-z0-9.]+)?$') { throw "Invalid release version." }
@@ -118,6 +120,7 @@ try {
     [ordered]@{ path = [IO.Path]::GetRelativePath($destinationPath, $_.FullName).Replace('\', '/'); sha256 = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant() }
   })
   $manifest = [ordered]@{ version = 1; release = $Release; obsVersion = "32.2.2"; nodeVersion = $nodeVersion; files = $files }
+  if ($PresentationControl) { $manifest.capabilities = @("program-presentation-v1") }
   $manifest |
     ConvertTo-Json -Depth 5 | Set-Content -LiteralPath (Join-Path $destinationPath "manifest.json") -Encoding utf8NoBOM
   Write-Output "Studio preview assembled. This is private staging, pending distribution notices and installer verification."

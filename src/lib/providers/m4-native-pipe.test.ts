@@ -41,6 +41,7 @@ describe.skipIf(process.platform !== "win32")(
             synthetic: true,
             clock: () => now,
           });
+          expect(client.supportsObservations).toBe(false);
           await expect(client.arm(target, 1000)).rejects.toThrow(
             "m4_native_pipe_unavailable",
           );

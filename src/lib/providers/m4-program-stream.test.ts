@@ -71,7 +71,10 @@ describe("independent managed program stream", () => {
         output = "active";
       }),
       observe: vi.fn(async () => ({
-        state: output,
+        state:
+          f.native.snapshot().state === "stopped"
+            ? ("stopped" as const)
+            : output,
         failure: "none" as const,
         authority: f.native.snapshot().state === "stopped" ? 2 : 1,
         bytes: output === "active" ? 1234 : 0,
@@ -227,7 +230,10 @@ describe("independent managed program stream", () => {
     const native = {
       ...f.native,
       observe: vi.fn(async () => ({
-        state: "failed" as const,
+        state:
+          f.native.snapshot().state === "stopped"
+            ? ("stopped" as const)
+            : ("failed" as const),
         failure: "output-error" as const,
         authority: 2,
         bytes: 100,

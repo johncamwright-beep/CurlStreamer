@@ -47,6 +47,42 @@ async function fixture() {
   };
 }
 describe("once-only application handoff", () => {
+  it("reads only the matching committed closing grant without renewing lease", async () => {
+    const wall = vi.spyOn(Date, "now").mockReturnValue(epoch);
+    try {
+      const { client, fetcher } = await fixture();
+      fetcher.mockResolvedValueOnce(response({ ...row, intentId, target }));
+      await client.handoffOutput(intentId, async () => undefined);
+      const remaining = client.remainingLeaseMs();
+      const grant = {
+        sessionId,
+        generation: 1,
+        intentId,
+        deadlineAt: new Date(epoch + 15000).toISOString(),
+      };
+      fetcher.mockResolvedValueOnce(response(grant));
+      await expect(client.closing()).resolves.toEqual(grant);
+      expect(client.remainingLeaseMs()).toBe(remaining);
+      expect(JSON.parse(fetcher.mock.calls.at(-1)![1]!.body as string)).toEqual(
+        { action: "closing", sessionId, generation: 1 },
+      );
+      for (const invalid of [
+        { ...grant, sessionId: intentId },
+        { ...grant, generation: 2 },
+        { ...grant, intentId: sessionId },
+        { ...grant, deadlineAt: new Date(epoch - 1).toISOString() },
+        { ...grant, deadlineAt: new Date(epoch + 31000).toISOString() },
+      ]) {
+        fetcher.mockResolvedValueOnce(response(invalid));
+        await expect(client.closing()).rejects.toThrow();
+      }
+      fetcher.mockResolvedValueOnce(new Response(JSON.stringify(grant)));
+      await expect(client.closing()).rejects.toThrow();
+      expect(client.remainingLeaseMs()).toBe(remaining);
+    } finally {
+      wall.mockRestore();
+    }
+  });
   it("rejects premature heartbeat and fences a late arm after stop", async () => {
     const { client, fetcher } = await fixture();
     fetcher.mockResolvedValueOnce(response({ ...row, intentId, target }));

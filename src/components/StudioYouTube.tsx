@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import { z } from "zod";
+import { requestStudioPresentation } from "@/lib/studio-presentation-client";
 import { WindowsStudioRequired } from "./WindowsStudioRequired";
 
 const stateSchema = z.object({
@@ -13,6 +14,13 @@ const stateSchema = z.object({
   message: z.string().max(300),
   canReconnect: z.boolean().optional().default(false),
   outputActive: z.boolean().optional().default(false),
+  canHoldStream: z.boolean().optional().default(false),
+  presentation: z
+    .object({
+      mode: z.enum(["live", "hold", "preparing-end", "ended"]),
+      generation: z.number().int().nonnegative().optional(),
+    })
+    .optional(),
 });
 export function StudioYouTube({ id }: { id: string }) {
   const [state, setState] = useState<z.infer<typeof stateSchema>>();
@@ -20,6 +28,7 @@ export function StudioYouTube({ id }: { id: string }) {
   const [autoGoLive, setAutoGoLive] = useState(false);
   const [goingLive, setGoingLive] = useState(false);
   const [error, setError] = useState("");
+  const [presentationError, setPresentationError] = useState("");
   const [watchUrl, setWatchUrl] = useState("");
   const [copied, setCopied] = useState(false);
   const [copyError, setCopyError] = useState("");
@@ -29,6 +38,10 @@ export function StudioYouTube({ id }: { id: string }) {
   const failures = useRef(0);
   const halted = useRef(false);
   const confirmedLive = useRef(false);
+  const presentationFlight = useRef<object | undefined>(undefined);
+  const presentationConfirmedUntil = useRef(0);
+  const currentGame = useRef(id);
+  currentGame.current = id;
   const watchingOutput = state && ["armed", "paused"].includes(state.streaming);
   useEffect(() => {
     setBridgeAvailable(
@@ -147,6 +160,10 @@ export function StudioYouTube({ id }: { id: string }) {
   useEffect(() => {
     let last = 0;
     confirmedLive.current = false;
+    presentationFlight.current = undefined;
+    presentationConfirmedUntil.current = 0;
+    setPending(false);
+    setPresentationError("");
     setState(undefined);
     const receive = (event: Event) => {
       const parsed = stateSchema.safeParse((event as CustomEvent).detail);
@@ -159,14 +176,23 @@ export function StudioYouTube({ id }: { id: string }) {
         )
       )
         confirmedLive.current = false;
-      setState(parsed.data);
-      setPending(false);
+      setState((current) =>
+        Date.now() < presentationConfirmedUntil.current &&
+        current?.streaming === "armed" &&
+        parsed.data.streaming === "armed" &&
+        current.presentation?.generation !== undefined &&
+        parsed.data.presentation?.generation !== undefined &&
+        current.presentation.generation > parsed.data.presentation.generation
+          ? { ...parsed.data, presentation: current.presentation }
+          : parsed.data,
+      );
+      if (!presentationFlight.current) setPending(false);
     };
     window.addEventListener("studio-youtube-status", receive);
     const timer = setInterval(() => {
       if (Date.now() - last > 6000) {
         setState(undefined);
-        setPending(false);
+        if (!presentationFlight.current) setPending(false);
       }
     }, 1000);
     return () => {
@@ -174,7 +200,7 @@ export function StudioYouTube({ id }: { id: string }) {
       window.removeEventListener("studio-youtube-status", receive);
     };
   }, [id]);
-  function send(action: "start" | "stop") {
+  async function send(action: "start" | "stop" | "hold" | "resume") {
     const bridge = (
       window as unknown as {
         chrome?: { webview?: { postMessage(value: unknown): void } };
@@ -183,22 +209,76 @@ export function StudioYouTube({ id }: { id: string }) {
     if (
       !bridge ||
       pending ||
+      presentationFlight.current ||
       !state ||
       state.busy ||
-      (action === "stop" && !state.canReconnect)
+      (action === "stop" && !state.canReconnect) ||
+      (["hold", "resume"].includes(action) && !state.canHoldStream)
     )
       return;
-    setAutoGoLive(action === "start");
-    halted.current = action === "stop";
-    nextCheck.current = 0;
-    failures.current = 0;
-    confirmedLive.current = false;
+    if (action === "start" || action === "stop") {
+      setAutoGoLive(action === "start");
+      halted.current = action === "stop";
+      nextCheck.current = 0;
+      failures.current = 0;
+      confirmedLive.current = false;
+    }
     setError("");
+    setPresentationError("");
     setPending(true);
+    if (action === "hold" || action === "resume") {
+      const attempt = {};
+      presentationFlight.current = attempt;
+      try {
+        const receipt = await requestStudioPresentation(id, action);
+        if (
+          currentGame.current !== id ||
+          presentationFlight.current !== attempt
+        )
+          return;
+        const presentation = receipt.presentation;
+        if (!presentation)
+          throw new Error("Studio did not confirm the broadcast picture.");
+        presentationConfirmedUntil.current = Date.now() + 2000;
+        setState((current) => {
+          if (
+            !current ||
+            current.gameId !== id ||
+            (current.presentation?.generation !== undefined &&
+              current.presentation.generation > presentation.generation)
+          )
+            return current;
+          return { ...current, presentation };
+        });
+      } catch (cause) {
+        if (
+          currentGame.current === id &&
+          presentationFlight.current === attempt
+        )
+          setPresentationError(
+            cause instanceof Error
+              ? cause.message
+              : "Studio could not confirm the broadcast picture.",
+          );
+      } finally {
+        if (
+          currentGame.current === id &&
+          presentationFlight.current === attempt
+        ) {
+          presentationFlight.current = undefined;
+          setPending(false);
+        }
+      }
+      return;
+    }
     bridge.postMessage({ type: `studio-youtube-${action}`, gameId: id });
   }
   const active =
     state && ["starting", "armed", "stopping"].includes(state.streaming);
+  const held = state?.presentation?.mode === "hold";
+  const ending = ["preparing-end", "ended"].includes(
+    state?.presentation?.mode ?? "",
+  );
   if (!bridgeAvailable) return <WindowsStudioRequired gameId={id} />;
   return (
     <section
@@ -219,39 +299,67 @@ export function StudioYouTube({ id }: { id: string }) {
         >
           {!state
             ? "Status unavailable"
-            : state.live
-              ? "● LIVE"
-              : state.streaming === "paused"
-                ? "Disconnected"
-                : state?.receiving
-                  ? "Receiving video"
-                  : watchingOutput
-                    ? state.outputActive
-                      ? "Sending video · Checking YouTube…"
-                      : "Checking status…"
-                    : active
-                      ? "Connecting…"
-                      : "Not live"}
+            : held
+              ? state.live
+                ? "● LIVE · Paused"
+                : "Paused · Sending card"
+              : state.live
+                ? "● LIVE"
+                : state.streaming === "paused"
+                  ? "Disconnected"
+                  : state?.receiving
+                    ? "Receiving video"
+                    : watchingOutput
+                      ? state.outputActive
+                        ? "Sending video · Checking YouTube…"
+                        : "Checking status…"
+                      : active
+                        ? "Connecting…"
+                        : "Not live"}
         </strong>
       </div>
       <div className="studio-youtube-actions flex flex-wrap gap-2">
         <button
           className="btn"
+          title={
+            held
+              ? "Return from the temporary pause card to live video on the same watch link."
+              : active && state?.canHoldStream
+                ? "Show a temporary pause card while keeping the stream connected."
+                : active && state?.canReconnect
+                  ? "Disconnect video temporarily. Update Windows Studio to show a pause card while keeping the stream connected."
+                  : undefined
+          }
           disabled={
             !state?.available ||
             state.busy ||
             pending ||
-            Boolean(active && !state.canReconnect)
+            ending ||
+            Boolean(active && !state.canHoldStream && !state.canReconnect)
           }
-          onClick={() => send(active ? "stop" : "start")}
+          onClick={() =>
+            send(
+              held
+                ? "resume"
+                : active
+                  ? state?.canHoldStream
+                    ? "hold"
+                    : "stop"
+                  : "start",
+            )
+          }
         >
           {pending || state?.busy
             ? "Please wait…"
-            : active
-              ? "Disconnect"
-              : state?.streaming === "paused"
-                ? "Reconnect"
-                : "Broadcast to YouTube"}
+            : held
+              ? "Resume broadcast"
+              : active
+                ? state?.canHoldStream
+                  ? "Pause broadcast"
+                  : "Disconnect"
+                : state?.streaming === "paused"
+                  ? "Reconnect"
+                  : "Broadcast to YouTube"}
         </button>
         <a className="btn-secondary" href="/settings/youtube">
           YouTube settings
@@ -273,6 +381,11 @@ export function StudioYouTube({ id }: { id: string }) {
       {error && !state?.live && (
         <p role="alert" className="mt-2 text-sm text-amber-200">
           {error}
+        </p>
+      )}
+      {presentationError && (
+        <p role="alert" className="mt-2 text-sm text-amber-200">
+          {presentationError}
         </p>
       )}
       {watchUrl && (

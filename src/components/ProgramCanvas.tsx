@@ -147,27 +147,28 @@ export function ProgramComposition({
           data-testid="program-side-rail"
           className="broadcast-information-rail flex min-w-0 flex-col rounded-2xl border border-white/10 bg-slate-950/45"
         >
-          <div>
-            <div className="mb-[.6cqw] flex items-center justify-between gap-[.8cqw]">
-              <div className="min-w-0 flex-1">
-                {eventTitle && (
-                  <h1 className="min-w-0 flex-1 text-[1.75cqw] font-black leading-tight">
-                    {eventTitle}
-                  </h1>
-                )}
-                {scheduleLabel && (
-                  <p className="mt-[.3cqw] text-[1cqw] leading-snug text-slate-300">
-                    {scheduleLabel}
-                  </p>
-                )}
-              </div>
-              <TeamLogo
-                teamName={game.config.homeName}
-                imageUrl={game.config.homeLogoUrl}
-                className="ml-auto h-[5.5cqw] w-[5.5cqw] rounded-lg"
-              />
+          <div className="broadcast-rail-heading">
+            <div className="min-w-0 flex-1">
+              <Scoreboard game={game} compact broadcast />
+              {scheduleLabel && (
+                <p
+                  data-testid="broadcast-schedule"
+                  className="mt-[.3cqw] text-[1cqw] leading-snug text-slate-300"
+                >
+                  {scheduleLabel}
+                </p>
+              )}
+              {eventTitle && (
+                <h1 className="mt-[.6cqw] text-[1.75cqw] font-black leading-tight">
+                  {eventTitle}
+                </h1>
+              )}
             </div>
-            <Scoreboard game={game} compact broadcast />
+            <TeamLogo
+              teamName={game.config.homeName}
+              imageUrl={game.config.homeLogoUrl}
+              className="broadcast-team-logo"
+            />
           </div>
           {m.active &&
             (m.style === "fullscreen" || !cameraCount) &&

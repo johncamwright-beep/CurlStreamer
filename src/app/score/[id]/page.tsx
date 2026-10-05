@@ -72,6 +72,16 @@ function ScorerGame({ id }: { id: string }) {
   const [organizerAccess, setOrganizerAccess] = useState(false);
   const [finished, setFinished] = useState<SafeGameCompletion>();
   const [finishedCleanup, setFinishedCleanup] = useState<CompletionCleanup>();
+  const [endingBroadcast, setEndingBroadcast] = useState(false);
+  useEffect(() => {
+    function progress(event: Event) {
+      const detail = (event as CustomEvent).detail;
+      if (detail?.gameId === id && typeof detail.active === "boolean")
+        setEndingBroadcast(detail.active);
+    }
+    window.addEventListener("studio-ending-progress", progress);
+    return () => window.removeEventListener("studio-ending-progress", progress);
+  }, [id]);
   useEffect(
     () => setOrganizerAccess(hasOrganizerAccess(localStorage, id)),
     [id],
@@ -80,6 +90,7 @@ function ScorerGame({ id }: { id: string }) {
   useEffect(() => {
     if (
       (!game && !completed) ||
+      endingBroadcast ||
       !desktop ||
       !m1Pilot ||
       (!accountOperator && !organizerAccess)
@@ -102,11 +113,17 @@ function ScorerGame({ id }: { id: string }) {
     m1Pilot,
     accountOperator,
     organizerAccess,
+    endingBroadcast,
   ]);
   const canEndGame = canManageCompletion(accountRole, organizerAccess);
   if (completed)
     return (
       <main className="mx-auto max-w-3xl p-5">
+        {endingBroadcast && (
+          <p role="status" className="mb-4 text-slate-300">
+            Final score saved. Showing the closing card to viewers…
+          </p>
+        )}
         <CompletedGameSummary
           gameId={id}
           completion={completed}

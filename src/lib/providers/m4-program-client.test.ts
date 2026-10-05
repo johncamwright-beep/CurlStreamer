@@ -51,6 +51,58 @@ const projected = {
   },
 };
 describe("Node program authority", () => {
+  it("retains public uploaded team artwork through the strict projection", async () => {
+    const homeLogoUrl =
+      "https://storage.invalid/storage/v1/object/public/team-public-media/22222222-2222-4222-8222-222222222222/33333333-3333-4333-8333-333333333333.webp";
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(exchange())
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            game: {
+              ...projected,
+              config: {
+                ...projected.config,
+                homeLogoUrl,
+                privateKey: "hidden",
+              },
+            },
+          }),
+        ),
+      );
+    const client = new M4ProgramClient(game, origin, fetcher);
+    await client.exchange("a".repeat(43));
+    expect((await client.readGame()).config).toEqual({
+      ...projected.config,
+      homeLogoUrl,
+    });
+    client.close();
+  });
+  it.each([
+    "http://storage.invalid/logo.png",
+    "https://user:password@storage.invalid/logo.png",
+    "https://storage.invalid/logo.png?token=secret",
+    "https://storage.invalid/logo.png#secret",
+  ])("rejects unsafe team logo source %s", async (homeLogoUrl) => {
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(exchange())
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            game: {
+              ...projected,
+              config: { ...projected.config, homeLogoUrl },
+            },
+          }),
+        ),
+      );
+    const client = new M4ProgramClient(game, origin, fetcher);
+    await client.exchange("a".repeat(43));
+    await expect(client.readGame()).rejects.toThrow("m4_program_unavailable");
+    client.close();
+  });
   it("retains the checked private native audio intent without enabling phone audio", async () => {
     const privateGame = {
       ...projected,

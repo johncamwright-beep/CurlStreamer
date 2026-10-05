@@ -1,6 +1,7 @@
 import { headers } from "next/headers";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
+import { createHash } from "node:crypto";
 import sharp from "sharp";
 import { readPublishedTeamProfile } from "@/lib/providers/public-team-profile";
 export const runtime = "nodejs";
@@ -47,13 +48,14 @@ async function renderIcon(input: Buffer) {
 }
 
 export async function GET() {
-  const host = (await headers()).get("host")?.toLowerCase().split(":")[0] ?? "";
+  const requestHeaders = await headers();
+  const host = requestHeaders.get("host")?.toLowerCase().split(":")[0] ?? "";
   const match = /^([a-z0-9]+(?:-[a-z0-9]+)*)\.curlstreamer\.app$/.exec(host);
   if (!match || match[1] === "www") return new Response(null, { status: 404 });
   const profile = await readPublishedTeamProfile(match[1]);
   if (!profile) return new Response(null, { status: 404 });
   const fallback = await readFile(
-    path.join(process.cwd(), "public/branding/curlstreamer-icon.png"),
+    path.join(process.cwd(), "public/branding/curlstreamer-app-icon.png"),
   );
   let input = fallback;
   if (profile.logo_url) {
@@ -87,12 +89,17 @@ export async function GET() {
   }
   try {
     const png = await renderIcon(input).catch(() => renderIcon(fallback));
+    const etag = `"${createHash("sha256").update(png).digest("hex")}"`;
+    const responseHeaders = {
+      "Content-Type": "image/png",
+      "Cache-Control": "public, max-age=0, must-revalidate",
+      "X-Content-Type-Options": "nosniff",
+      ETag: etag,
+    };
+    if (requestHeaders.get("if-none-match") === etag)
+      return new Response(null, { status: 304, headers: responseHeaders });
     return new Response(new Uint8Array(png), {
-      headers: {
-        "Content-Type": "image/png",
-        "Cache-Control": "public, max-age=3600",
-        "X-Content-Type-Options": "nosniff",
-      },
+      headers: responseHeaders,
     });
   } catch {
     return new Response(null, { status: 503 });

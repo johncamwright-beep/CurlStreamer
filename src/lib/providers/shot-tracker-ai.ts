@@ -25,12 +25,59 @@ export async function generateShotTrackerNarrative(
   forbiddenNames: string[],
   signal?: AbortSignal,
 ): Promise<Narrative> {
+  const requestSignal = signal ?? AbortSignal.timeout(45_000);
+  try {
+    return await generateOnce(input, audience, forbiddenNames, requestSignal);
+  } catch (error) {
+    // Retry validation failures once, never billing, transport, or aborted requests.
+    // Only an allowlisted category is sent back; rejected prose is never reused.
+    if (
+      requestSignal.aborted ||
+      !(error instanceof Error) ||
+      ![
+        "Unknown evidence",
+        "Individual commentary in team report",
+        "Invalid report prose",
+      ].includes(error.message)
+    )
+      throw error;
+    return generateOnce(
+      input,
+      audience,
+      forbiddenNames,
+      requestSignal,
+      `A previous draft failed validation: ${error.message}. Write a fresh, shorter draft that strictly follows all audience and evidence rules.`,
+    );
+  }
+}
+
+async function generateOnce(
+  input: ReportInput,
+  audience: ReportAudience,
+  forbiddenNames: string[],
+  signal: AbortSignal,
+  correction = "",
+): Promise<Narrative> {
   const config = reportAIConfig();
   if (!config) throw new Error("AI reports are not configured");
+  if (!input.evidence.length) throw new Error("No report evidence");
+  const finding = narrativeSchema.shape.summary.extend({
+    evidence: z
+      .array(z.enum(input.evidence.map((e) => e.id) as [string, ...string[]]))
+      .min(1)
+      .max(6),
+  });
+  const outputSchema = narrativeSchema.extend({
+    summary: finding,
+    strengths: z.array(finding).min(1).max(3),
+    priorities: z.array(finding).min(1).max(3),
+    practice: z.array(finding).min(1).max(3),
+    review: z.array(finding).min(1).max(3),
+  });
   const response = await fetch("https://api.openai.com/v1/responses", {
     method: "POST",
     cache: "no-store",
-    signal: signal ?? AbortSignal.timeout(45_000),
+    signal,
     headers: {
       Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
       "Content-Type": "application/json",
@@ -39,7 +86,12 @@ export async function generateShotTrackerNarrative(
       model: config.model,
       store: false,
       max_output_tokens: 2400,
-      instructions: REPORT_INSTRUCTIONS + "\n" + audienceInstructions(audience),
+      instructions:
+        REPORT_INSTRUCTIONS +
+        "\n" +
+        audienceInstructions(audience) +
+        "\n" +
+        correction,
       input: JSON.stringify({
         evidence: input.evidence,
         limitations: input.limitations,
@@ -49,7 +101,7 @@ export async function generateShotTrackerNarrative(
           type: "json_schema",
           name: "shot_tracker_report",
           strict: true,
-          schema: z.toJSONSchema(narrativeSchema),
+          schema: z.toJSONSchema(outputSchema),
         },
       },
     }),

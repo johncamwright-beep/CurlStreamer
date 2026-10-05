@@ -59,6 +59,62 @@ it("sends only aggregate evidence to a fixed server provider and validates struc
   expect(body.text.format.strict).toBe(true);
   expect(body.input).not.toContain("PRIVATE NAME");
   expect(body.instructions).toContain("No player names");
+  expect(
+    body.text.format.schema.properties.summary.properties.evidence.items.enum,
+  ).toEqual(["overall"]);
+});
+function generated(text: string, evidence = "overall") {
+  const finding = { text, evidence: [evidence] };
+  return Response.json({
+    status: "completed",
+    output: [
+      {
+        type: "message",
+        content: [
+          {
+            type: "output_text",
+            text: JSON.stringify({
+              summary: finding,
+              strengths: [finding],
+              priorities: [finding],
+              practice: [finding],
+              review: [finding],
+            }),
+          },
+        ],
+      },
+    ],
+  });
+}
+it("repairs rejected collective prose once without resending rejected content", async () => {
+  configure();
+  const fetcher = vi
+    .fn()
+    .mockResolvedValueOnce(
+      generated("A player needs PRIVATE REJECTED COMMENTARY."),
+    )
+    .mockResolvedValueOnce(generated("Our team can practise shared targets."));
+  vi.stubGlobal("fetch", fetcher);
+  const result = await generateShotTrackerNarrative(input, "team", []);
+  expect(result.summary.text).toBe("Our team can practise shared targets.");
+  expect(fetcher).toHaveBeenCalledTimes(2);
+  const retry = JSON.parse(fetcher.mock.calls[1][1].body);
+  expect(retry.instructions).toContain("Individual commentary in team report");
+  expect(JSON.stringify(retry)).not.toContain("PRIVATE REJECTED COMMENTARY");
+  expect(fetcher.mock.calls[0][1].signal).toBe(fetcher.mock.calls[1][1].signal);
+});
+it("bounds validation repair and still rejects unsupported evidence", async () => {
+  configure();
+  const fetcher = vi
+    .fn()
+    .mockImplementation(() =>
+      Promise.resolve(generated("Our team can practise.", "invented")),
+    );
+  vi.stubGlobal("fetch", fetcher);
+  await expect(generateShotTrackerNarrative(input, "team", [])).rejects.toThrow(
+    "Unknown evidence",
+  );
+  expect(fetcher).toHaveBeenCalledTimes(2);
 });
 it.each([
   "credit_balance_exhausted",

@@ -20,7 +20,7 @@ export function M4ProgramAudio({
       <ProgramUsbAudio />
       {sources &&
         roles
-          .filter((role) => sources[role].kind === "tapo")
+          .filter((role) => sources[role].kind !== "phone")
           .map((role) => (
             <ProgramUsbAudio
               key={role}
@@ -28,8 +28,13 @@ export function M4ProgramAudio({
               generationHeader="x-m4-ip-camera-generation"
               role={role}
               sourceGeneration={sources[role].generation}
-              enabled={programCameraAudio(game, role, "tapo")?.enabled === true}
-              volume={programCameraAudio(game, role, "tapo")?.volume ?? 1}
+              enabled={
+                programCameraAudio(game, role, sources[role].kind)?.enabled ===
+                true
+              }
+              volume={
+                programCameraAudio(game, role, sources[role].kind)?.volume ?? 1
+              }
             />
           ))}
       {roles.map((role) => (

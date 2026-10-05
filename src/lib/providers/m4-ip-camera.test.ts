@@ -76,6 +76,42 @@ describe("local IP camera manager", () => {
   beforeEach(() => vi.useFakeTimers());
   afterEach(() => vi.useRealTimers());
 
+  it("sends custom endpoints only through private stdin and keeps RTSP snapshots anonymous", async () => {
+    const { manager, children, spawnMock } = harness();
+    const source = {
+      kind: "rtsp",
+      host: "192.168.1.30",
+      port: 8554,
+      path: "/live/video?key=private-query",
+      rotation: 270,
+    };
+    manager.configure("camera-home", source);
+    await manager.start();
+    expect(JSON.parse(children[0].secretInput)).toEqual({
+      version: 2,
+      host: source.host,
+      port: 8554,
+      username: "",
+      password: "",
+      path: source.path,
+      rotation: 270,
+    });
+    expect(manager.snapshot("camera-home")).toMatchObject({
+      kind: "rtsp",
+      host: null,
+      stream: null,
+      rotation: 270,
+      configured: true,
+    });
+    expect(JSON.stringify(manager.snapshot())).not.toMatch(
+      /private-query|live\/video|8554|path|username|password/,
+    );
+    expect(JSON.stringify(spawnMock.mock.calls)).not.toContain("private-query");
+    children[0].stdout.write(record("JPEG", jpeg));
+    expect(manager.snapshot("camera-home").phase).toBe("streaming");
+    await manager.close();
+  });
+
   it("accepts only literal RFC1918 hosts and validates options without exposing credentials", () => {
     for (const host of [
       "127.0.0.1",

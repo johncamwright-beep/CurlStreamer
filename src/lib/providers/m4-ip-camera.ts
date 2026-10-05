@@ -227,7 +227,7 @@ export function createM4IpCameraManager(
       if (
         slot.generation !== generation ||
         !active ||
-        slot.config.kind !== "tapo"
+        slot.config.kind === "phone"
       )
         return;
       if (!exited) {
@@ -241,7 +241,12 @@ export function createM4IpCameraManager(
     });
   }
   function begin(slot: Slot) {
-    if (!active || slot.config.kind !== "tapo" || slot.child || slot.retirement)
+    if (
+      !active ||
+      slot.config.kind === "phone" ||
+      slot.child ||
+      slot.retirement
+    )
       return;
     if (slot.authBlocked) {
       slot.phase = "failed";
@@ -377,15 +382,17 @@ export function createM4IpCameraManager(
       // Copy a tiny remainder so it cannot retain an entire previous chunk.
       pending = Buffer.from(pending);
     });
-    const { host, port, username, password, stream, rotation } = slot.config;
+    const { host, port, username, password, rotation } = slot.config;
     child.stdin.write(
       JSON.stringify({
-        version: 1,
+        version: slot.config.kind === "tapo" ? 1 : 2,
         host,
         port,
         username,
         password,
-        stream,
+        ...(slot.config.kind === "tapo"
+          ? { stream: slot.config.stream }
+          : { path: slot.config.path }),
         rotation,
       }) + "\n",
     );
@@ -442,8 +449,8 @@ export function createM4IpCameraManager(
       kind: config.kind,
       host: config.kind === "tapo" ? config.host : null,
       stream: config.kind === "tapo" ? config.stream : null,
-      rotation: config.kind === "tapo" ? config.rotation : 0,
-      configured: config.kind === "tapo",
+      rotation: config.kind !== "phone" ? config.rotation : 0,
+      configured: config.kind !== "phone",
       phase: stale ? "retrying" : slot.phase,
       errorCode: stale ? "stale_frames" : slot.errorCode,
       generation: slot.generation,
@@ -471,7 +478,7 @@ export function createM4IpCameraManager(
         roles.map((role) => {
           const slot = slots[role];
           slot.generation++;
-          if (slot.config.kind === "tapo") diagnostic(slot, "stopped");
+          if (slot.config.kind !== "phone") diagnostic(slot, "stopped");
           slot.phase = "idle";
           slot.errorCode = null;
           return retire(slot);

@@ -477,14 +477,14 @@ export async function createM4OperatorServer(options: {
         }
         if (input.action === "configure-camera-input") {
           await cameraInputs.configure(input.cameraRole, input.source);
-          if (input.source.kind === "tapo")
+          if (input.source.kind !== "phone")
             await programHandle?.stopPhone?.(input.cameraRole);
         } else {
           if (
             program !== "recording" ||
-            cameraInputs.snapshot(input.cameraRole).kind !== "tapo"
+            cameraInputs.snapshot(input.cameraRole).kind === "phone"
           ) {
-            reply(409, { error: "Tapo camera is not active" });
+            reply(409, { error: "IP camera is not active" });
             return;
           }
           if (programHandle?.cameraStatus?.()[input.cameraRole] === true) {

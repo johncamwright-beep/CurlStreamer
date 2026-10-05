@@ -46,8 +46,10 @@ export function CameraZoomControls({
 }) {
   const cameraInputs = useStudioCameraInputs(game.id);
   if (
-    cameraInputs["camera-home"]?.kind === "tapo" &&
-    cameraInputs["camera-away"]?.kind === "tapo"
+    cameraInputs["camera-home"] &&
+    cameraInputs["camera-home"].kind !== "phone" &&
+    cameraInputs["camera-away"] &&
+    cameraInputs["camera-away"].kind !== "phone"
   )
     return null;
   return (
@@ -58,7 +60,7 @@ export function CameraZoomControls({
     >
       <h2>Camera zoom</h2>
       {(["camera-home", "camera-away"] as const).map((role) =>
-        cameraInputs[role]?.kind === "tapo" ? null : (
+        cameraInputs[role] && cameraInputs[role].kind !== "phone" ? null : (
           <CameraZoomControl key={role} game={game} role={role} act={act} />
         ),
       )}

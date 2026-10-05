@@ -35,64 +35,67 @@ vi.mock("@/components/ProgramPhoneAudio", () => ({
 import { M4ProgramAudio } from "./m4-program-audio-browser";
 
 describe("native program audio routing", () => {
-  it("plays unclaimed Tapo intent beside USB while phone stays assignment-bound", () => {
-    const game = gameFixture();
-    game.claims = {};
-    game.cameraAudio = {
-      "camera-home": {
-        enabled: true,
+  it.each(["tapo", "rtsp"] as const)(
+    "plays %s intent beside USB while phone stays assignment-bound",
+    (kind) => {
+      const game = gameFixture();
+      game.claims = {};
+      game.cameraAudio = {
+        "camera-home": {
+          enabled: true,
+          generation: 0,
+          status: "pending",
+          updatedAt: 1,
+          volume: 0.4,
+        },
+      };
+      const projection = {
+        ...broadcastGame(game),
+        nativeCameraAudio: nativeCameraAudioIntent(game),
+      };
+      const phone: M4CameraInputSnapshot = {
+        kind: "phone",
+        configured: false,
+        phase: "idle",
         generation: 0,
-        status: "pending",
-        updatedAt: 1,
-        volume: 0.4,
-      },
-    };
-    const projection = {
-      ...broadcastGame(game),
-      nativeCameraAudio: nativeCameraAudioIntent(game),
-    };
-    const phone: M4CameraInputSnapshot = {
-      kind: "phone",
-      configured: false,
-      phase: "idle",
-      generation: 0,
-      errorCode: null,
-      host: null,
-      stream: null,
-      rotation: 0,
-    };
-    const sources: Record<
-      "camera-home" | "camera-away",
-      M4CameraInputSnapshot
-    > = {
-      "camera-home": { ...phone, kind: "tapo" as const, generation: 3 },
-      "camera-away": phone,
-    };
-    const render = () =>
-      renderToStaticMarkup(
-        <M4ProgramAudio
-          game={projection}
-          sources={sources}
-          phoneStreams={{ "camera-home": {} as MediaStream }}
-        />,
+        errorCode: null,
+        host: null,
+        stream: null,
+        rotation: 0,
+      };
+      const sources: Record<
+        "camera-home" | "camera-away",
+        M4CameraInputSnapshot
+      > = {
+        "camera-home": { ...phone, kind, generation: 3 },
+        "camera-away": phone,
+      };
+      const render = () =>
+        renderToStaticMarkup(
+          <M4ProgramAudio
+            game={projection}
+            sources={sources}
+            phoneStreams={{ "camera-home": {} as MediaStream }}
+          />,
+        );
+      expect(render()).toContain(
+        'data-endpoint="/usb-audio" data-enabled="true"',
       );
-    expect(render()).toContain(
-      'data-endpoint="/usb-audio" data-enabled="true"',
-    );
-    expect(render()).toContain(
-      'data-endpoint="/ip-camera/camera-home/audio?generation=3&amp;after=0" data-enabled="true" data-volume="0.4"',
-    );
-    expect(render()).toContain(
-      'data-phone="camera-home" data-enabled="false" data-stream="false"',
-    );
-    projection.nativeCameraAudio["camera-home"]!.enabled = false;
-    expect(render()).toContain(
-      'data-endpoint="/ip-camera/camera-home/audio?generation=3&amp;after=0" data-enabled="false"',
-    );
-    sources["camera-home"] = { ...phone, generation: 4 };
-    expect(render()).not.toContain("/ip-camera/");
-    expect(render()).toContain(
-      'data-phone="camera-home" data-enabled="false" data-stream="true"',
-    );
-  });
+      expect(render()).toContain(
+        'data-endpoint="/ip-camera/camera-home/audio?generation=3&amp;after=0" data-enabled="true" data-volume="0.4"',
+      );
+      expect(render()).toContain(
+        'data-phone="camera-home" data-enabled="false" data-stream="false"',
+      );
+      projection.nativeCameraAudio["camera-home"]!.enabled = false;
+      expect(render()).toContain(
+        'data-endpoint="/ip-camera/camera-home/audio?generation=3&amp;after=0" data-enabled="false"',
+      );
+      sources["camera-home"] = { ...phone, generation: 4 };
+      expect(render()).not.toContain("/ip-camera/");
+      expect(render()).toContain(
+        'data-phone="camera-home" data-enabled="false" data-stream="true"',
+      );
+    },
+  );
 });

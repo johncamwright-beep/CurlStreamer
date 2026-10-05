@@ -39,7 +39,16 @@ import {
 } from "../m4-camera-input";
 import { M4IpCameraTransport } from "./m4-ip-camera-browser";
 
+import {
+  cameraAspect,
+  landscapeCameraAspect,
+  portraitCameraAspect,
+  retainedCameraAspect,
+} from "../program-camera-layout";
+
 type CameraState = {
+  sourceIdentity?: string;
+  aspect?: number;
   frameUrl?: string;
   stream?: MediaStream;
   audio?: MediaStream;
@@ -73,7 +82,13 @@ async function request(
   return response.json() as Promise<unknown>;
 }
 
-function CameraVideo({ state }: { state: CameraState }) {
+function CameraVideo({
+  state,
+  onAspect,
+}: {
+  state: CameraState;
+  onAspect: (aspect: number) => void;
+}) {
   const ref = useRef<HTMLVideoElement>(null);
   useEffect(() => {
     const video = ref.current;
@@ -90,13 +105,27 @@ function CameraVideo({ state }: { state: CameraState }) {
         <img
           className="portrait-camera-video"
           src={state.frameUrl}
-          alt="Tapo camera"
+          alt="IP camera"
           style={{ objectFit: "contain" }}
         />
       ) : (
         <video
           className="portrait-camera-video"
           ref={ref}
+          onResize={(event) => {
+            const aspect = cameraAspect(
+              event.currentTarget.videoWidth,
+              event.currentTarget.videoHeight,
+            );
+            if (aspect) onAspect(aspect);
+          }}
+          onLoadedMetadata={(event) => {
+            const aspect = cameraAspect(
+              event.currentTarget.videoWidth,
+              event.currentTarget.videoHeight,
+            );
+            if (aspect) onAspect(aspect);
+          }}
           autoPlay
           playsInline
           muted
@@ -142,7 +171,14 @@ function PhoneCameraTransport({
     "camera-home": { message: "Connecting Camera 1…" },
     "camera-away": { message: "Connecting Camera 2…" },
   });
-  useEffect(() => onChange(role, cameras[role]), [cameras, role, onChange]);
+  useEffect(
+    () =>
+      onChange(role, {
+        ...cameras[role],
+        sourceIdentity: `phone:${sourceGeneration}`,
+      }),
+    [cameras, role, sourceGeneration, onChange],
+  );
   useEffect(() => {
     const lifetime = new AbortController();
     const owners = [role].map((role) => {
@@ -329,7 +365,13 @@ function ProgramRenderer() {
     useState<Record<ProgramCameraRole, M4CameraInputSnapshot>>();
   const onCameraChange = useCallback(
     (role: ProgramCameraRole, state: CameraState) => {
-      setCameras((current) => ({ ...current, [role]: state }));
+      setCameras((current) => ({
+        ...current,
+        [role]: {
+          ...state,
+          aspect: retainedCameraAspect(current[role], state),
+        },
+      }));
     },
     [],
   );
@@ -407,11 +449,14 @@ function ProgramRenderer() {
       />
       {sources &&
         roles.map((role) =>
-          sources[role].kind === "tapo" ? (
+          sources[role].kind !== "phone" ? (
             <M4IpCameraTransport
               key={role + sources[role].kind + sources[role].generation}
               role={role}
               generation={sources[role].generation}
+              sourceIdentity={
+                sources[role].kind + ":" + sources[role].generation
+              }
               onChange={onCameraChange}
             />
           ) : (
@@ -425,7 +470,27 @@ function ProgramRenderer() {
         )}
       <ProgramCanvas
         game={game}
-        renderCamera={(role) => <CameraVideo state={cameras[role]} />}
+        cameraAspects={Object.fromEntries(
+          roles.map((role) => [
+            role,
+            cameras[role].aspect ??
+              (sources?.[role].kind && sources[role].kind !== "phone"
+                ? landscapeCameraAspect
+                : portraitCameraAspect),
+          ]),
+        )}
+        renderCamera={(role) => (
+          <CameraVideo
+            state={cameras[role]}
+            onAspect={(aspect) =>
+              setCameras((current) =>
+                current[role].aspect === aspect
+                  ? current
+                  : { ...current, [role]: { ...current[role], aspect } },
+              )
+            }
+          />
+        )}
         statusLabel={game.broadcast === "live" ? "LIVE" : programMessage}
         audioStatus={`${verified}/2 cameras receiving`}
       />

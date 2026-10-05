@@ -201,7 +201,7 @@ export async function createM4ProgramBridge(
         generation < 0 ||
         !Number.isSafeInteger(after) ||
         after < 0 ||
-        current.kind !== "tapo" ||
+        current.kind === "phone" ||
         current.generation !== generation
       )
         return reply(409, { error: "Camera source changed" });
@@ -402,8 +402,8 @@ export async function createM4ProgramBridge(
         reply(403, { error: "Program request denied" });
         return;
       }
-      if (inputs?.snapshot(role.data).kind === "tapo") {
-        reply(410, { error: "This slot uses a Tapo camera" });
+      if (inputs && inputs.snapshot(role.data).kind !== "phone") {
+        reply(410, { error: "This slot uses an IP camera" });
         return;
       }
       try {
@@ -476,9 +476,12 @@ export async function createM4ProgramBridge(
         if (source && sourceGeneration !== source.generation)
           return reply(409, { error: "Camera source changed" });
         const ipFrame =
-          source?.kind === "tapo" ? inputs?.latestFrame(cameraRole) : undefined;
+          source && source.kind !== "phone"
+            ? inputs?.latestFrame(cameraRole)
+            : undefined;
         if (
-          source?.kind === "tapo" &&
+          source &&
+          source.kind !== "phone" &&
           verified &&
           (!ipFrame || frames > ipFrame.counter)
         )
@@ -567,8 +570,11 @@ export async function createM4ProgramBridge(
       if (closed) throw Error();
       let value: unknown;
       if (connect.success) {
-        if (inputs?.snapshot(connect.data.cameraRole).kind === "tapo") {
-          reply(410, { error: "This slot uses a Tapo camera" });
+        if (
+          inputs &&
+          inputs.snapshot(connect.data.cameraRole).kind !== "phone"
+        ) {
+          reply(410, { error: "This slot uses an IP camera" });
           return;
         }
         if (!realtime) throw Error();
@@ -595,8 +601,8 @@ export async function createM4ProgramBridge(
           throw Error();
       } else {
         const input = command.parse(parsed);
-        if (inputs?.snapshot(input.cameraRole).kind === "tapo") {
-          reply(410, { error: "This slot uses a Tapo camera" });
+        if (inputs && inputs.snapshot(input.cameraRole).kind !== "phone") {
+          reply(410, { error: "This slot uses an IP camera" });
           return;
         }
         value = await client.action(input);
@@ -634,7 +640,7 @@ export async function createM4ProgramBridge(
             (!rendererAssets?.cameraInputs ||
               (cameraFrames.get(role)?.generation ===
                 rendererAssets.cameraInputs.snapshot(role).generation &&
-                (rendererAssets.cameraInputs.snapshot(role).kind !== "tapo" ||
+                (rendererAssets.cameraInputs.snapshot(role).kind === "phone" ||
                   Boolean(rendererAssets.cameraInputs.latestFrame(role))))) &&
             Date.now() - (cameraFrames.get(role)?.advancedAt ?? 0) < 5000,
         ]),

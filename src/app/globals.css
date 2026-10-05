@@ -151,7 +151,7 @@ button {
 .broadcast-program-layout {
   display: grid;
   grid-template-columns: minmax(0, 63.8fr) minmax(0, 36.2fr);
-  gap: 12px;
+  gap: 0.8cqw;
 }
 .broadcast-camera-deck {
   position: relative;
@@ -169,30 +169,31 @@ button {
   height: 100%;
 }
 .broadcast-information-rail {
-  padding: 24px;
+  min-height: 0;
+  padding: 1.25cqw;
 }
 .broadcast-scoreboard {
-  margin-top: 16px;
-  padding: 20px;
+  margin-top: 0.833cqw;
+  padding: 1.042cqw;
 }
 .broadcast-scoreboard > div:first-child span {
-  font-size: 24px;
+  font-size: 1.25cqw;
 }
 .broadcast-scoreboard > div:not(:first-child) {
-  margin-top: 18px;
-  gap: 18px;
-  padding-left: 16px;
+  margin-top: 0.938cqw;
+  gap: 0.938cqw;
+  padding-left: 0.833cqw;
 }
 .broadcast-scoreboard > div:not(:first-child) > strong {
-  font-size: 36px;
+  font-size: 1.875cqw;
   line-height: 1.1;
 }
 .broadcast-scoreboard > div:not(:first-child) > span strong {
-  font-size: 48px;
+  font-size: 2.5cqw;
 }
 .broadcast-scoreboard svg {
-  width: 32px;
-  height: 32px;
+  width: 1.667cqw;
+  height: 1.667cqw;
 }
 .sponsor-frame-bounds {
   display: grid;

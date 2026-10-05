@@ -98,14 +98,7 @@ internal sealed class Workspace : Form
             camerasMenu.DropDownItems.Add(item);
         }
         menu.Items.Add(camerasMenu);
-        var cameraToolbar = new FlowLayoutPanel { Dock = DockStyle.Top, Height = 54, Padding = new Padding(12, 5, 12, 5), WrapContents = false };
-        foreach (var role in new[] { "camera-home", "camera-away" }) {
-            var cameraRole = role;
-            var button = MakeButton(role == "camera-home" ? "Camera 1 settings" : "Camera 2 settings");
-            button.Click += (s, e) => OpenCameraSettings(cameraRole);
-            cameraToolbar.Controls.Add(button);
-        }
-        Controls.Add(cameraToolbar); cameraToolbar.BringToFront(); menu.BringToFront();
+        menu.BringToFront();
         Shown += async (s, e) => await Initialize();
         poll.Tick += async (s, e) => await Poll();
         FormClosing += async (s, e) => {
@@ -514,11 +507,11 @@ internal sealed class Workspace : Form
         var receiving = lastState.TryGetValue("cameraStatus", out cameras) ? cameras as Dictionary<string, object> : null;
         if (receiving != null && receiving.TryGetValue(role, out fresh) && fresh is bool && (bool)fresh) return "Receiving fresh camera video.";
         var error = TextValue(state, "errorCode");
-        if (error == "auth_failed") return "Camera Account rejected. Check the local username and password (not your Tapo email/password).";
-        if (error == "runtime_missing") return "Tapo runtime missing. Check this Studio installation.";
+        if (error == "auth_failed") return "Camera login rejected. Check the local username and password.";
+        if (error == "runtime_missing") return "IP camera runtime missing. Check this Studio installation.";
         if (error == "stale_frames") return "Camera video stopped. Check Wi-Fi and reconnect.";
         if (error != null) return "Camera could not connect. Check Wi-Fi, the IP address and local RTSP access.";
-        return "Video not yet verified · " + (TextValue(state, "phase") ?? "waiting");
+        return TextValue(state, "phase") == "connecting" || TextValue(state, "phase") == "retrying" ? "Connecting — waiting for fresh camera video." : "Video not yet verified. Connect this game’s cameras to test.";
     }
     private object SafeCameraInputs(object inputs) {
         var output = new Dictionary<string, object>();
@@ -527,9 +520,19 @@ internal sealed class Workspace : Form
         foreach (var role in new[] { "camera-home", "camera-away" }) {
             object slot; if (!map.TryGetValue(role, out slot)) continue;
             var source = slot as Dictionary<string, object>; if (source == null) continue;
+            var kind = TextValue(source, "kind");
+            if (kind != "phone" && kind != "tapo" && kind != "rtsp") continue;
             var safe = new Dictionary<string, object>();
             // Whitelist facts even if a future local controller adds fields.
-            foreach (var key in new[] { "kind", "host", "stream", "rotation", "configured", "phase", "errorCode", "generation" }) { object value; if (source.TryGetValue(key, out value)) safe[key] = value; }
+            safe["kind"] = kind;
+            object value;
+            if (source.TryGetValue("host", out value) && value is string && CameraInputs.PrivateIPv4((string)value)) safe["host"] = value;
+            if (kind == "tapo" && source.TryGetValue("stream", out value) && (Object.Equals(value, "stream1") || Object.Equals(value, "stream2"))) safe["stream"] = value;
+            if (source.TryGetValue("rotation", out value) && value is int && ((int)value == 0 || (int)value == 90 || (int)value == 180 || (int)value == 270)) safe["rotation"] = value;
+            if (source.TryGetValue("configured", out value) && value is bool) safe["configured"] = value;
+            if (source.TryGetValue("generation", out value) && value is int && (int)value >= 0) safe["generation"] = value;
+            foreach (var phase in new[] { "idle", "connecting", "streaming", "retrying", "failed" }) if (TextValue(source, "phase") == phase) safe["phase"] = phase;
+            foreach (var error in new[] { "auth_failed", "runtime_missing", "stale_frames", "unavailable", "invalid_pipe" }) if (TextValue(source, "errorCode") == error) safe["errorCode"] = error;
             output[role] = safe;
         }
         return output;
@@ -541,6 +544,7 @@ internal sealed class Workspace : Form
         try {
             using (var dialog = new CameraInputDialog(role, initial, async source => {
                 if (closing || busy) throw new InvalidOperationException();
+                CameraInputs.Validate(source);
                 // Persist only after the local operator accepts the source. When no
                 // operator is running, save for the next checked program startup.
                 if (local != null && runningGame != null) ApplyState(await Command(new { action = "configure-camera-input", cameraRole = role, source = source }));

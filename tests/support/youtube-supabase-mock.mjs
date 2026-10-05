@@ -1,6 +1,6 @@
 import { createServer } from "node:http";
 import { randomUUID } from "node:crypto";
-import { dashboardResponse } from "./dashboard-fixtures.mjs";
+import { dashboardFixtureResponse } from "./dashboard-completion-fixtures.mjs";
 
 const userId = "11111111-1111-4111-8111-111111111111";
 const operatorId = "12121212-1212-4121-8121-121212121212";
@@ -55,6 +55,7 @@ const server = createServer(async (request, response) => {
         slug: "public-preview",
         description: "A curling team with a long story. ".repeat(12),
         tagline: "Together on the ice",
+        coaches: ["Taylor Coach", "Morgan Coach"],
         photo: "https://media.test/portrait.png",
         published: true,
         results: true,
@@ -148,8 +149,9 @@ const server = createServer(async (request, response) => {
         photo_url: null,
       },
     ]);
-  const dashboard = dashboardResponse(url);
-  if (dashboard !== null) return send(response, 200, dashboard);
+  const dashboard = await dashboardFixtureResponse(request, url);
+  if (dashboard !== null)
+    return send(response, dashboard.status, dashboard.body);
   if (url.pathname === "/auth/v1/token" && request.method === "POST") {
     let raw = "";
     for await (const chunk of request) raw += chunk;
@@ -228,6 +230,6 @@ const server = createServer(async (request, response) => {
   return send(response, 404, { message: "Unmocked Supabase test request" });
 });
 
-server.listen(3101, "127.0.0.1");
+server.listen(Number(process.env.YOUTUBE_MOCK_PORT ?? 3101), "127.0.0.1");
 for (const signal of ["SIGINT", "SIGTERM"])
   process.on(signal, () => server.close(() => process.exit(0)));

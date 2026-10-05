@@ -4,6 +4,8 @@ import {
   teamMetadata,
   teamStructuredData,
   safeStructuredJson,
+  curlStreamerSearchTitle,
+  curlStreamerWebsiteStructuredData,
 } from "./team-seo";
 it("uses the team subdomain, profile photo and team name for search and sharing", () => {
   const s = {
@@ -16,7 +18,8 @@ it("uses the team subdomain, profile photo and team name for search and sharing"
   expect(metadata.alternates?.canonical).toBe(
     "https://teambenning.curlstreamer.app/",
   );
-  expect(metadata.title).toContain("Team Benning");
+  expect(metadata.title).toBe(`Team Benning | ${curlStreamerSearchTitle}`);
+  expect(metadata.description).toBe(s.description);
   expect(metadata.openGraph).toMatchObject({ images: [{ url: s.photo }] });
 });
 it("excludes hidden social links and safely encodes team-entered text", () => {
@@ -47,4 +50,49 @@ it("uses a stable square team favicon and natural curling search context", () =>
     ],
   });
   expect(metadata).not.toHaveProperty("keywords");
+});
+
+it("prefers the complete bio over the tagline and keeps descriptions bounded", () => {
+  const settings = {
+    ...defaultTeamPageSettings("Team Benning"),
+    tagline: "Short tagline",
+    description: " Ontario curling team\n based in Cornwall. ",
+  };
+  expect(teamMetadata("teambenning", settings, null).description).toBe(
+    "Ontario curling team based in Cornwall.",
+  );
+  settings.description = "Curling team based in Ontario. ".repeat(10);
+  const description = teamMetadata("teambenning", settings, null).description!;
+  expect(description.length).toBeLessThanOrEqual(160);
+  expect(description.endsWith("…")).toBe(true);
+  settings.description = "  ";
+  expect(teamMetadata("teambenning", settings, null).description).toBe(
+    settings.tagline,
+  );
+});
+
+it("includes only configured public coach names in the team identity", () => {
+  const settings = defaultTeamPageSettings("Team Benning");
+  expect(
+    teamStructuredData("teambenning", settings, null).mainEntity,
+  ).not.toHaveProperty("coach");
+  settings.coaches = ["Coach One", "Coach Two"];
+  expect(
+    teamStructuredData("teambenning", settings, null).mainEntity,
+  ).toMatchObject({
+    coach: [
+      { "@type": "Person", name: "Coach One" },
+      { "@type": "Person", name: "Coach Two" },
+    ],
+  });
+});
+
+it("declares the requested CurlStreamer search identity on the marketing homepage", () => {
+  expect(curlStreamerWebsiteStructuredData()).toEqual({
+    "@context": "https://schema.org",
+    "@type": "WebSite",
+    name: "CurlStreamer - Curling Management App",
+    alternateName: "CurlStreamer",
+    url: "https://www.curlstreamer.app/",
+  });
 });

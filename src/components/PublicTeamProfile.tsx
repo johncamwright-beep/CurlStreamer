@@ -38,6 +38,10 @@ export function PublicTeamProfile({
     (event) => year === "all" || event.end_date.slice(0, 4) === year,
   );
   const long = s.description.length > 220;
+  const coaches = (s.coaches ?? [])
+    .map((name) => name.trim())
+    .filter(Boolean)
+    .slice(0, 2);
   return (
     <aside className="public-team-profile panel" aria-label="Team profile">
       <h2 className="text-center text-2xl font-black">{s.name}</h2>
@@ -101,8 +105,26 @@ export function PublicTeamProfile({
           </dl>
         </section>
       )}
+      {coaches.length > 0 && (
+        <section
+          className="mt-5 border-t border-slate-700 pt-4"
+          aria-label="Coaches"
+        >
+          <h3 className="mb-3 font-bold">Coaches</h3>
+          <ul className="grid gap-3">
+            {coaches.map((name, index) => (
+              <li key={index} className="break-words font-semibold">
+                {name}
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
       {s.accomplishments && accomplishments.length > 0 && (
-        <section className="mt-5 border-t border-slate-700 pt-4">
+        <section
+          className="mt-5 border-t border-slate-700 pt-4"
+          aria-label="Accomplishments"
+        >
           <h3 className="mb-3 font-bold">Accomplishments</h3>
           <label className="mb-4 block text-sm">
             Year
@@ -127,11 +149,17 @@ export function PublicTeamProfile({
           )}
           <ul className="grid gap-4">
             {visibleAccomplishments.map((event) => (
-              <li key={event.id} className="flex items-start gap-3">
-                <span className="text-2xl" aria-hidden="true">
+              <li
+                key={event.id}
+                className="grid grid-cols-[2rem_minmax(0,1fr)] items-start gap-3"
+              >
+                <span
+                  className="flex h-8 w-8 items-center justify-center text-2xl leading-none"
+                  aria-hidden="true"
+                >
                   {medals[event.result]}
                 </span>
-                <div>
+                <div className="min-w-0 break-words">
                   <strong className="block">
                     {event.name}
                     {event.show_level && event.level ? ` · ${event.level}` : ""}

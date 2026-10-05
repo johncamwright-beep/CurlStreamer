@@ -18,6 +18,11 @@ export type PublicGame = {
   result: { home: number; away: number } | null;
   youtube: string | null;
 };
+export function publicGamePlayedDate(game: PublicGame) {
+  return [game.scheduled, game.completed].find(
+    (date) => date && Number.isFinite(Date.parse(date)),
+  );
+}
 export function publicGameScheduleLabel(game: PublicGame) {
   const scheduled =
     game.scheduled && /T\d{2}:\d{2}/.test(game.scheduled)
@@ -28,7 +33,7 @@ export function publicGameScheduleLabel(game: PublicGame) {
       game.timezone && isIanaTimezone(game.timezone) ? game.timezone : "UTC";
     return formatScheduledStart(game.scheduled!, timezone);
   }
-  const recordedDate = game.scheduled || game.completed;
+  const recordedDate = publicGamePlayedDate(game);
   if (recordedDate) {
     const date = new Date(recordedDate);
     if (Number.isFinite(date.getTime()))
@@ -40,17 +45,33 @@ export function filterPublicGames(
   games: PublicGame[],
   mode: string,
   event: string,
+  now = Date.now(),
 ) {
+  const played = (game: PublicGame) => {
+    const date = publicGamePlayedDate(game);
+    return date ? Date.parse(date) : undefined;
+  };
   return games
-    .filter(
-      (g) =>
-        Boolean(g.completed) === (mode === "results") &&
-        (!event || g.event_id === event),
-    )
+    .filter((g) => {
+      if (event && g.event_id !== event) return false;
+      if (mode === "recent") {
+        const stamp = played(g);
+        return (
+          stamp !== undefined &&
+          stamp >= now - 14 * 24 * 60 * 60 * 1000 &&
+          stamp <= now
+        );
+      }
+      return Boolean(g.completed) === (mode === "results");
+    })
     .sort((a, b) => {
       const stamp = (g: PublicGame) =>
-        Date.parse((mode === "results" ? g.completed : g.scheduled) || "") || 0;
-      return mode === "results" ? stamp(b) - stamp(a) : stamp(a) - stamp(b);
+        mode === "recent"
+          ? (played(g) ?? 0)
+          : Date.parse(
+              (mode === "results" ? g.completed : g.scheduled) || "",
+            ) || 0;
+      return mode === "upcoming" ? stamp(a) - stamp(b) : stamp(b) - stamp(a);
     });
 }
 export function PublicTeamGames({
@@ -58,13 +79,15 @@ export function PublicTeamGames({
   teamName = "Team",
   upcoming,
   results,
+  now = Date.now(),
 }: {
   games: PublicGame[];
   teamName?: string;
   upcoming: boolean;
   results: boolean;
+  now?: number;
 }) {
-  const [mode, setMode] = useState(upcoming ? "upcoming" : "results");
+  const [mode, setMode] = useState("recent");
   const [event, setEvent] = useState("");
   if (!upcoming && !results) return null;
   const allowed = games.filter((g) => (g.completed ? results : upcoming));
@@ -75,7 +98,11 @@ export function PublicTeamGames({
         .map((g) => [g.event_id!, g.event!]),
     ).entries(),
   ].sort((a, b) => a[1].localeCompare(b[1]));
-  const filtered = filterPublicGames(allowed, mode, event);
+  const selectedMode =
+    (mode === "upcoming" && !upcoming) || (mode === "results" && !results)
+      ? "recent"
+      : mode;
+  const filtered = filterPublicGames(allowed, selectedMode, event, now);
   return (
     <section id="games" className="panel mb-5" aria-label="Team games">
       <div className="mb-3 flex flex-wrap items-end gap-3">
@@ -86,9 +113,10 @@ export function PublicTeamGames({
           Show games
           <select
             className="input min-h-11"
-            value={mode}
+            value={selectedMode}
             onChange={(e) => setMode(e.target.value)}
           >
+            <option value="recent">Recent · Last 14 days</option>
             {upcoming && <option value="upcoming">Upcoming</option>}
             {results && <option value="results">Results</option>}
           </select>
@@ -148,7 +176,7 @@ export function PublicTeamGames({
               </p>
               <time
                 className="text-sm"
-                dateTime={g.scheduled || g.completed || undefined}
+                dateTime={publicGamePlayedDate(g) || undefined}
               >
                 {publicGameScheduleLabel(g)}
               </time>
@@ -175,8 +203,13 @@ export function PublicTeamGames({
         ))}
         {!filtered.length && (
           <p className="py-4">
-            No {mode === "results" ? "results" : "upcoming games"} for this
-            selection.
+            No{" "}
+            {selectedMode === "results"
+              ? "results"
+              : selectedMode === "recent"
+                ? "recent games"
+                : "upcoming games"}{" "}
+            for this selection.
           </p>
         )}
       </div>

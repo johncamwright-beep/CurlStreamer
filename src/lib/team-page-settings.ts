@@ -78,6 +78,7 @@ export const teamPageSettingsSchema = z
       lead: "",
       skip: "fourth",
     }),
+    coaches: z.array(z.string().trim().min(1).max(100)).max(2).default([]),
     accomplishments: z.boolean().default(true),
     description: z.string().trim().max(1000),
     photo: z.union([z.literal(""), z.string().url().max(1000)]).default(""),
@@ -104,6 +105,7 @@ export function defaultTeamPageSettings(name: string): TeamPageSettings {
       .replace(/[^a-z0-9]+/g, "-")
       .replace(/^-|-$/g, ""),
     roster: { fourth: "", third: "", second: "", lead: "", skip: "fourth" },
+    coaches: [],
     accomplishments: true,
     description: "",
     photo: "",

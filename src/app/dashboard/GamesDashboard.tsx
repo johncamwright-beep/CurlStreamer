@@ -15,6 +15,7 @@ import { formatCanonicalGameTitle } from "@/lib/game-title";
 import { youtubeWatchUrlSchema } from "@/lib/youtube-watch";
 import { GameEventFilter } from "@/components/GameEventFilter";
 import { OpponentEditControl } from "@/components/OpponentEditControl";
+import { DashboardRefresh } from "@/components/DashboardRefresh";
 
 export function GamesDashboard({
   account,
@@ -91,6 +92,7 @@ export function GamesDashboard({
           : groups.upcoming;
   return (
     <main className="games-dashboard">
+      <DashboardRefresh organizationId={membership.organization_id} />
       <header className="dashboard-heading">
         <AppNavigation signedIn accountLogo={accountLogo} />
         <div className="dashboard-title">

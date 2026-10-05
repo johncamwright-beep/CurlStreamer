@@ -1,4 +1,6 @@
 import { expect, test } from "@playwright/test";
+import { randomUUID } from "node:crypto";
+import type { APIRequestContext, Page } from "@playwright/test";
 
 test.skip(
   process.env.YOUTUBE_SETTINGS_E2E !== "1",
@@ -10,6 +12,9 @@ test.beforeEach(async ({ page }) => {
   await page.getByLabel("Password").fill("playwright-password");
   await page.getByRole("button", { name: "Sign in" }).click();
   await page.waitForURL("**/dashboard");
+  await expect(
+    page.getByRole("heading", { name: "Games", exact: true }),
+  ).toBeVisible();
 });
 test("dashboard separates reported broadcasts, upcoming games and unfinished games", async ({
   page,
@@ -174,5 +179,191 @@ test("account logo aligns with content across page widths", async ({
         path: info.outputPath("aligned-logo.png"),
         fullPage: true,
       });
+  }
+});
+
+const fixtureURL = `http://127.0.0.1:${process.env.YOUTUBE_MOCK_PORT ?? 3101}/__dashboard-completion-fixture`;
+
+async function completionFixture(request: APIRequestContext, days: number) {
+  const fixture = {
+    seasonId: randomUUID(),
+    eventId: randomUUID(),
+    gameId: randomUUID(),
+    days,
+  };
+  const response = await request.post(fixtureURL, { data: fixture });
+  expect(response.ok()).toBe(true);
+  return fixture;
+}
+
+async function dashboardCounts(
+  page: Page,
+  upcoming: number,
+  results: number,
+  unfinished: number,
+) {
+  const browse = page.getByRole("navigation", { name: "Browse games" });
+  for (const [name, count] of [
+    ["Upcoming", upcoming],
+    ["Events", 1],
+    ["Results", results],
+    ["Unfinished", unfinished],
+  ] as const)
+    await expect(
+      browse
+        .getByRole("link", { name: new RegExp(`^${name}`) })
+        .locator("span"),
+    ).toHaveText(String(count));
+}
+
+async function endFixtureGame(page: Page) {
+  await page.getByRole("button", { name: "End Game", exact: true }).click();
+  await page
+    .getByRole("button", { name: "Review final score", exact: true })
+    .click();
+  await expect(
+    page.getByRole("button", { name: "Confirm End Game", exact: true }),
+  ).toBeVisible();
+  const committed = page.waitForResponse(
+    (response) =>
+      response.url().endsWith("/completion") &&
+      response.request().method() === "POST" &&
+      response.request().postDataJSON()?.action === "complete",
+  );
+  await page
+    .getByRole("button", { name: "Confirm End Game", exact: true })
+    .click();
+  expect((await committed).ok()).toBe(true);
+  await expect(
+    page.getByRole("link", { name: "Back to Games", exact: true }),
+  ).toBeVisible();
+}
+
+for (const scenario of [
+  { name: "upcoming", days: 2, tab: "upcoming" },
+  { name: "unfinished", days: -2, tab: "unfinished" },
+] as const) {
+  test(`confirmed End Game refreshes cached ${scenario.name} dashboard on browser Back`, async ({
+    page,
+    request,
+  }) => {
+    const fixture = await completionFixture(request, scenario.days);
+    try {
+      await page.goto(
+        `/dashboard?season=${fixture.seasonId}&event=${fixture.eventId}&tab=${scenario.tab}`,
+      );
+      await dashboardCounts(
+        page,
+        scenario.days > 0 ? 1 : 0,
+        0,
+        scenario.days < 0 ? 1 : 0,
+      );
+      // Populate the Results route cache before completion as well.
+      await page
+        .getByRole("navigation", { name: "Browse games" })
+        .getByRole("link", { name: /^Results/ })
+        .click();
+      await expect(
+        page.getByRole("heading", { name: "Results will appear here" }),
+      ).toBeVisible();
+      await page
+        .getByRole("navigation", { name: "Browse games" })
+        .getByRole("link", {
+          name: new RegExp(`^${scenario.days > 0 ? "Upcoming" : "Unfinished"}`),
+        })
+        .click();
+      await expect(page).toHaveURL(new RegExp(`tab=${scenario.tab}`));
+      const dashboardURL = page.url();
+      await page.evaluate(() =>
+        Object.defineProperty(window, "dashboardRegressionDocument", {
+          value: true,
+        }),
+      );
+      await page
+        .getByRole("link", { name: /^Open Game:.*Refresh regression opponent/ })
+        .click();
+      await endFixtureGame(page);
+      await page.goBack();
+      await expect(page).toHaveURL(dashboardURL);
+      await dashboardCounts(page, 0, 1, 0);
+      await expect(page.getByLabel("Filter by event")).toHaveValue(
+        fixture.eventId,
+      );
+      await expect(
+        page.getByRole("link", {
+          name: /^Open Game:.*Refresh regression opponent/,
+        }),
+      ).toHaveCount(0);
+      expect(
+        await page.evaluate(() =>
+          Object.hasOwn(window, "dashboardRegressionDocument"),
+        ),
+      ).toBe(true);
+      await page
+        .getByRole("navigation", { name: "Browse games" })
+        .getByRole("link", { name: /^Results/ })
+        .click();
+      await expect(
+        page.getByText("Refresh regression opponent", { exact: true }),
+      ).toBeVisible();
+      await expect(
+        page.getByLabel("Northern Ontario Curling Club final score: 6"),
+      ).toHaveText("6");
+      await page
+        .getByRole("navigation", { name: "Browse games" })
+        .getByRole("link", { name: /^Events/ })
+        .click();
+      await expect(
+        page.getByText("No upcoming games", { exact: true }),
+      ).toBeVisible();
+      await dashboardCounts(page, 0, 1, 0);
+    } finally {
+      await request.delete(fixtureURL, {
+        data: { seasonId: fixture.seasonId },
+      });
+    }
+  });
+}
+
+test("an already open dashboard receives another tab's committed End Game without losing filters or refreshing repeatedly", async ({
+  page,
+  context,
+  request,
+}) => {
+  const fixture = await completionFixture(request, 2);
+  const gamePage = await context.newPage();
+  try {
+    await page.goto(
+      `/dashboard?season=${fixture.seasonId}&event=${fixture.eventId}&tab=events`,
+    );
+    await dashboardCounts(page, 1, 0, 0);
+    await expect(page.locator(".dashboard-event-next")).toContainText("Next:");
+    const dashboardURL = page.url();
+    await gamePage.goto(`/games/${fixture.gameId}`);
+    // Keep the dashboard visible so notification, rather than a focus event,
+    // is responsible for updating the already mounted server projection.
+    await page.bringToFront();
+    let reads = 0;
+    page.on("request", (r) => {
+      if (new URL(r.url()).pathname === "/dashboard" && r.headers().rsc === "1")
+        reads++;
+    });
+    await endFixtureGame(gamePage);
+    await dashboardCounts(page, 0, 1, 0);
+    await expect(page.locator(".dashboard-event-next")).toHaveText(
+      "No upcoming games",
+    );
+    await expect(page).toHaveURL(dashboardURL);
+    await expect(page.getByLabel("Filter by event")).toHaveValue(
+      fixture.eventId,
+    );
+    const settledReads = reads;
+    await page.waitForTimeout(1500);
+    expect(reads).toBe(settledReads);
+    expect(reads).toBeGreaterThan(0);
+    expect(reads).toBeLessThanOrEqual(3);
+  } finally {
+    await gamePage.close();
+    await request.delete(fixtureURL, { data: { seasonId: fixture.seasonId } });
   }
 });

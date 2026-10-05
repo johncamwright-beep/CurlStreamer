@@ -29,7 +29,9 @@ const mocks = vi.hoisted(() => ({
   listGenerations: vi.fn(),
   readToken: vi.fn(),
   stopBroadcast: vi.fn(),
+  revalidatePath: vi.fn(),
 }));
+vi.mock("next/cache", () => ({ revalidatePath: mocks.revalidatePath }));
 vi.mock("@/lib/game-completion", () => ({
   verifiedCompletionAccount: mocks.verified,
   reviewGameCompletion: mocks.review,
@@ -112,6 +114,7 @@ describe("End Game route", () => {
     );
     expect(response.status).toBe(200);
     expect(mocks.review).toHaveBeenCalledWith(gameId, account, null);
+    expect(mocks.revalidatePath).not.toHaveBeenCalled();
   });
 
   it("accepts a cryptographically verified same-game organizer", async () => {
@@ -149,6 +152,13 @@ describe("End Game route", () => {
       "camera-away": [2],
     });
     expect(mocks.stopBroadcast).toHaveBeenCalledWith(gameId, account);
+    expect(mocks.revalidatePath).toHaveBeenCalledExactlyOnceWith("/dashboard");
+    expect(mocks.revalidatePath.mock.invocationCallOrder[0]).toBeGreaterThan(
+      mocks.complete.mock.invocationCallOrder[0],
+    );
+    expect(mocks.revalidatePath.mock.invocationCallOrder[0]).toBeLessThan(
+      mocks.stopBroadcast.mock.invocationCallOrder[0],
+    );
   });
 
   it("does not repeat provider teardown after cleanup is complete", async () => {
@@ -187,5 +197,41 @@ describe("End Game route", () => {
     });
     expect(response.status).toBe(200);
     expect(await response.json()).toMatchObject({ completionSaved: true });
+    expect(mocks.revalidatePath).toHaveBeenCalledExactlyOnceWith("/dashboard");
+  });
+
+  it.each(["authorization", "conflict", "terminal", "unavailable"])(
+    "does not invalidate Games before a failed %s completion",
+    async (kind) => {
+      mocks.complete.mockResolvedValue({ ok: false, kind });
+      const response = await POST(request({ action: "complete", reviewId }), {
+        params: Promise.resolve({ id: gameId }),
+      });
+      expect(response.status).toBe(
+        kind === "authorization" ? 403 : kind === "unavailable" ? 503 : 409,
+      );
+      expect(mocks.revalidatePath).not.toHaveBeenCalled();
+      expect(mocks.stopBroadcast).not.toHaveBeenCalled();
+    },
+  );
+
+  it("keeps the committed result successful if cache invalidation is unavailable", async () => {
+    mocks.revalidatePath.mockImplementation(() => {
+      throw new Error("cache unavailable");
+    });
+    const diagnostic = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const response = await POST(request({ action: "complete", reviewId }), {
+        params: Promise.resolve({ id: gameId }),
+      });
+      expect(response.status).toBe(200);
+      expect(await response.json()).toMatchObject({ completion: summary });
+      expect(mocks.stopBroadcast).toHaveBeenCalledWith(gameId, account);
+      expect(diagnostic).toHaveBeenCalledWith(
+        "Games cache invalidation unavailable after completion",
+      );
+    } finally {
+      diagnostic.mockRestore();
+    }
   });
 });

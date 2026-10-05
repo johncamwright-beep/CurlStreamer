@@ -1,9 +1,214 @@
 import { expect, test } from "@playwright/test";
+import sharp from "sharp";
 import { defaultTeamPageSettings } from "../src/lib/team-page-settings";
 test.skip(
   process.env.YOUTUBE_SETTINGS_E2E !== "1",
   "Uses isolated authenticated account fixture",
 );
+
+test("team logos preserve uploaded alpha, update account appearance and allow the same file again", async ({
+  page,
+}) => {
+  const pixels = Buffer.alloc(16 * 16 * 4);
+  pixels.set([20, 100, 200, 255], (8 * 16 + 8) * 4);
+  pixels.set([20, 100, 200, 128], (8 * 16 + 9) * 4);
+  const png = await sharp(pixels, {
+    raw: { width: 16, height: 16, channels: 4 },
+  })
+    .png()
+    .toBuffer();
+  const file = { name: "team-logo.png", mimeType: "image/png", buffer: png };
+  const oldLogo = "https://media.test/old-logo.png";
+  let logo = oldLogo;
+  let uploads = 0;
+  let appearanceReads = 0;
+  let appearanceCompletions = 0;
+  let holdAppearance = false;
+  let releaseAppearance!: () => void;
+  const appearanceGate = new Promise<void>((resolve) => {
+    releaseAppearance = resolve;
+  });
+  await page.route("https://media.test/**", (route) =>
+    route.fulfill({ contentType: "image/png", body: png }),
+  );
+  await page.route("**/api/account/appearance", async (route) => {
+    appearanceReads++;
+    const snapshot = logo;
+    if (holdAppearance) await appearanceGate;
+    await route.fulfill({ json: { logo: snapshot } });
+    appearanceCompletions++;
+  });
+  await page.route("**/api/account/team", async (route) => {
+    const request = route.request();
+    if (request.method() !== "POST")
+      return route.fulfill({
+        json: {
+          settings: defaultTeamPageSettings("Team Benning"),
+          logo,
+          canEdit: true,
+        },
+      });
+    const form = await new Request(request.url(), {
+      method: "POST",
+      headers: request.headers(),
+      body: new Uint8Array(request.postDataBuffer()!),
+    }).formData();
+    expect(form.get("kind")).toBe("logo");
+    const uploaded = form.get("file") as File;
+    expect(uploaded.type).toBe("image/png");
+    expect(uploaded.size).toBeLessThanOrEqual(300000);
+    const bytes = Buffer.from(await uploaded.arrayBuffer());
+    expect(bytes.subarray(0, 8)).toEqual(
+      Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]),
+    );
+    const decoded = await sharp(bytes).ensureAlpha().raw().toBuffer();
+    expect(decoded[3]).toBe(0);
+    expect(decoded[(8 * 16 + 8) * 4 + 3]).toBe(255);
+    expect(decoded[(8 * 16 + 9) * 4 + 3]).toBe(128);
+    uploads++;
+    if (uploads === 1)
+      return route.fulfill({
+        status: 503,
+        json: { error: "Test upload temporarily unavailable." },
+      });
+    logo = `https://media.test/team-logo-${uploads}.png`;
+    return route.fulfill({ json: { logo } });
+  });
+  await page.goto("/login?next=/account");
+  await page.getByLabel("Email address").fill("admin@youtube.test");
+  await page.getByLabel("Password").fill("playwright-password");
+  await page.getByRole("button", { name: "Sign in", exact: true }).click();
+  await page.waitForURL("**/account");
+  const headerLogo = page.locator(".account-shortcut img");
+  await expect(headerLogo).toHaveAttribute("src", oldLogo);
+  await page.getByRole("button", { name: "Team info", exact: true }).click();
+  const input = page.getByLabel("Upload team logo");
+  const preview = page.getByAltText("Team logo", { exact: true });
+  await expect(preview).toHaveCSS("object-fit", "contain");
+  await expect(page.getByText(/transparency is preserved/)).toBeVisible();
+  await input.setInputFiles(file);
+  await expect(
+    page.getByText("Test upload temporarily unavailable."),
+  ).toBeVisible();
+  await expect(input).toHaveValue("");
+  await expect(headerLogo).toHaveAttribute("src", oldLogo);
+  holdAppearance = true;
+  const readsBeforeRefresh = appearanceReads;
+  await page.getByRole("button", { name: "Open navigation menu" }).click();
+  await expect.poll(() => appearanceReads).toBeGreaterThan(readsBeforeRefresh);
+  await page
+    .getByRole("navigation", { name: "CurlStreamer navigation" })
+    .getByRole("button", { name: "Close navigation menu" })
+    .click();
+  try {
+    await input.setInputFiles(file);
+    await expect(page.getByText("Team logo saved.")).toBeVisible();
+    await expect(preview).toHaveAttribute("src", logo);
+    // The appearance endpoint is still held: this must come from the upload.
+    await expect(headerLogo).toHaveAttribute("src", logo);
+    await expect
+      .poll(() => appearanceReads)
+      .toBeGreaterThan(readsBeforeRefresh + 1);
+  } finally {
+    holdAppearance = false;
+    releaseAppearance();
+  }
+  await expect
+    .poll(() => appearanceCompletions)
+    .toBeGreaterThan(readsBeforeRefresh + 1);
+  await page.evaluate(
+    () =>
+      new Promise<void>((resolve) =>
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+      ),
+  );
+  await expect(headerLogo).toHaveAttribute("src", logo);
+  await input.setInputFiles(file);
+  await expect.poll(() => uploads).toBe(3);
+  await expect(preview).toHaveAttribute(
+    "src",
+    "https://media.test/team-logo-3.png",
+  );
+  await expect(headerLogo).toHaveAttribute(
+    "src",
+    "https://media.test/team-logo-3.png",
+  );
+  await expect(input).toHaveValue("");
+  await expect(headerLogo).toHaveCSS("object-fit", "contain");
+});
+
+test("support uploads update the selected team's preview without changing the administrator's account logo", async ({
+  page,
+}) => {
+  const teamId = "22222222-2222-4222-8222-222222222222";
+  const accountLogo = "https://media.test/account-logo.png";
+  const supportLogo = "https://media.test/support-logo.png";
+  let appearanceReads = 0;
+  await page.route("https://media.test/**", (route) =>
+    route.fulfill({
+      contentType: "image/svg+xml",
+      body: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16"/>',
+    }),
+  );
+  await page.route("**/api/account/appearance", (route) => {
+    appearanceReads++;
+    return route.fulfill({ json: { logo: accountLogo } });
+  });
+  await page.route("**/api/admin", (route) =>
+    route.fulfill({
+      json: {
+        teams: [
+          { id: teamId, name: "Other team", trialExpiresAt: null, members: [] },
+        ],
+        accounts: [],
+        codes: [],
+      },
+    }),
+  );
+  await page.route(`**/api/admin/teams/${teamId}`, (route) =>
+    route.fulfill({
+      json:
+        route.request().method() === "POST"
+          ? { logo: supportLogo }
+          : {
+              settings: defaultTeamPageSettings("Other team"),
+              logo: null,
+              canEdit: true,
+            },
+    }),
+  );
+  await page.goto("/login?next=/admin");
+  await page.getByLabel("Email address").fill("admin@youtube.test");
+  await page.getByLabel("Password").fill("playwright-password");
+  await page.getByRole("button", { name: "Sign in", exact: true }).click();
+  await page.waitForURL("**/admin");
+  const headerLogo = page.locator(".account-shortcut img");
+  await expect(headerLogo).toHaveAttribute("src", accountLogo);
+  await page.getByRole("button", { name: "View as / support" }).click();
+  await page.getByRole("button", { name: "Team info", exact: true }).click();
+  await page.getByRole("button", { name: "Enable support edits" }).click();
+  const readsBeforeUpload = appearanceReads;
+  const png = await sharp({
+    create: {
+      width: 16,
+      height: 16,
+      channels: 4,
+      background: { r: 0, g: 100, b: 200, alpha: 0.5 },
+    },
+  })
+    .png()
+    .toBuffer();
+  await page
+    .getByLabel("Upload team logo")
+    .setInputFiles({ name: "support.png", mimeType: "image/png", buffer: png });
+  await expect(page.getByText("Team logo saved.")).toBeVisible();
+  await expect(page.getByAltText("Team logo", { exact: true })).toHaveAttribute(
+    "src",
+    supportLogo,
+  );
+  await expect(headerLogo).toHaveAttribute("src", accountLogo);
+  expect(appearanceReads).toBe(readsBeforeUpload);
+});
 
 test("team trial code activates with a visible expiry and no payment authorization", async ({
   page,

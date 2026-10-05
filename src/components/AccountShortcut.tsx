@@ -9,7 +9,7 @@ export function AccountShortcut({
   initialLogo?: string | null;
 }) {
   const { logo: savedLogo, seedLogo } = useAccountDisplay();
-  const logo = initialLogo !== undefined ? initialLogo : savedLogo;
+  const logo = savedLogo;
   const marker = useRef<HTMLSpanElement>(null);
   const [placement, setPlacement] = useState<{
     main: HTMLElement;

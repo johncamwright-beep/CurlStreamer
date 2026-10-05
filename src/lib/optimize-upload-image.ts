@@ -5,6 +5,7 @@ export type OptimizeUploadImageOptions = {
   maxBytes?: number;
   maxSide?: number;
   aspectRatio?: number;
+  preserveTransparency?: boolean;
 };
 
 type DecodedImage = {
@@ -69,15 +70,19 @@ async function decodeImage(file: File): Promise<DecodedImage> {
   }
 }
 
-function canvasBlob(canvas: HTMLCanvasElement, quality: number) {
+function canvasBlob(
+  canvas: HTMLCanvasElement,
+  mime: "image/jpeg" | "image/png",
+  quality?: number,
+) {
   return new Promise<Blob | null>((resolve) =>
-    canvas.toBlob(resolve, "image/jpeg", quality),
+    canvas.toBlob(resolve, mime, quality),
   );
 }
 
 /**
- * Converts a browser-decoded image to a metadata-free JPEG sized for upload.
- * Canvas drawing intentionally flattens transparency onto white.
+ * Re-encodes a browser-decoded image without metadata and bounds upload size.
+ * Logo uploads can preserve transparency; photos retain the white-backed JPEG.
  */
 export async function optimizeUploadImage(
   file: File,
@@ -85,6 +90,7 @@ export async function optimizeUploadImage(
     maxBytes = MAX_UPLOAD_IMAGE_BYTES,
     maxSide = MAX_UPLOAD_IMAGE_SIDE,
     aspectRatio,
+    preserveTransparency = false,
   }: OptimizeUploadImageOptions = {},
 ): Promise<File> {
   if (!file.type.startsWith("image/"))
@@ -107,15 +113,20 @@ export async function optimizeUploadImage(
   try {
     const crop = centeredImageCrop(decoded.width, decoded.height, aspectRatio);
     let size = uploadImageDimensions(crop.width, crop.height, maxSide);
-    const qualities = [0.88, 0.78, 0.68, 0.58, 0.48];
+    const mime = preserveTransparency ? "image/png" : "image/jpeg";
+    const qualities = preserveTransparency
+      ? [undefined]
+      : [0.88, 0.78, 0.68, 0.58, 0.48];
     for (;;) {
       canvas.width = size.width;
       canvas.height = size.height;
       const context = canvas.getContext("2d");
       if (!context)
         throw new Error("Image optimization is unavailable in this browser.");
-      context.fillStyle = "#fff";
-      context.fillRect(0, 0, size.width, size.height);
+      if (!preserveTransparency) {
+        context.fillStyle = "#fff";
+        context.fillRect(0, 0, size.width, size.height);
+      }
       context.drawImage(
         decoded.source,
         crop.x,
@@ -129,15 +140,19 @@ export async function optimizeUploadImage(
       );
 
       for (const quality of qualities) {
-        const blob = await canvasBlob(canvas, quality);
+        const blob = await canvasBlob(canvas, mime, quality);
         if (!blob)
           throw new Error("Image optimization is unavailable in this browser.");
         if (blob.size <= maxBytes) {
           const baseName = file.name.replace(/\.[^.]+$/, "") || "photo";
-          return new File([blob], `${baseName}.jpg`, {
-            type: "image/jpeg",
-            lastModified: file.lastModified,
-          });
+          return new File(
+            [blob],
+            `${baseName}.${preserveTransparency ? "png" : "jpg"}`,
+            {
+              type: mime,
+              lastModified: file.lastModified,
+            },
+          );
         }
       }
 

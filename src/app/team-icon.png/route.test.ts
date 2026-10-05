@@ -124,4 +124,31 @@ describe("team favicon route", () => {
       limitInputPixels: 20000000,
     });
   });
+
+  it("revalidates the stable favicon URL and reuses only identical rendered bytes", async () => {
+    const first = await GET();
+    expect(first.headers.get("cache-control")).toBe(
+      "public, max-age=0, must-revalidate",
+    );
+    const etag = first.headers.get("etag");
+    expect(etag).toMatch(/^"[a-f0-9]{64}"$/);
+    headers.mockResolvedValue(
+      new Headers({ host: "benning.curlstreamer.app", "if-none-match": etag! }),
+    );
+    const unchanged = await GET();
+    expect(unchanged.status).toBe(304);
+    expect(await unchanged.text()).toBe("");
+
+    sharp.mockImplementation(() => ({
+      resize: () => ({
+        png: () => ({
+          toBuffer: () => Promise.resolve(Buffer.from("new png")),
+        }),
+      }),
+    }));
+    const replaced = await GET();
+    expect(replaced.status).toBe(200);
+    expect(replaced.headers.get("etag")).not.toBe(etag);
+    expect(await replaced.text()).toBe("new png");
+  });
 });

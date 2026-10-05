@@ -657,6 +657,10 @@ button {
   overflow-y: auto;
   overscroll-behavior: contain;
   scrollbar-gutter: stable;
+  padding-inline-end: 20px;
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--panel-text) 45%, transparent)
+    transparent;
 }
 .public-game-row {
   height: 108px;

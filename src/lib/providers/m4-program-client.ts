@@ -71,6 +71,21 @@ const projectedGame = z.object({
     awayName: gameSchema.shape.awayName,
     homeColor: gameSchema.shape.homeColor,
     awayColor: gameSchema.shape.awayColor,
+    homeLogoUrl: z
+      .string()
+      .max(8192)
+      .url()
+      .refine((value) => {
+        const url = new URL(value);
+        return (
+          url.protocol === "https:" &&
+          !url.username &&
+          !url.password &&
+          !url.search &&
+          !url.hash
+        );
+      })
+      .optional(),
   }),
   score: z.object({
     hammer: z.enum(["home", "away"]).nullable(),

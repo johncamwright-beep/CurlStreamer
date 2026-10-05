@@ -59,6 +59,8 @@ export async function createM4ProgramBridge(
     directory: string;
     sponsorStorageOrigin?: string;
     sponsorCacheDirectory?: string;
+    /** Node-only download injection; never sent to the renderer. */
+    teamLogoFetcher?: typeof fetch;
     diagnostic?: ConnectionDiagnostic;
     cameraInputs?: ReturnType<typeof createM4IpCameraManager>;
     closingAuthority?: () => Promise<number | undefined>;
@@ -122,6 +124,156 @@ export async function createM4ProgramBridge(
     ],
   ]);
   let sponsorAssets: ReturnType<typeof createM4SponsorAssets> | undefined;
+  let teamLogo:
+    { source: string; path: string; mime: string; bytes: Buffer } | undefined;
+  let logoFlight:
+    | {
+        source: string;
+        abort: AbortController;
+      }
+    | undefined;
+  // Artwork never delays critical program polling. A subsequent poll receives
+  // the local path once the background download has completed.
+  const syncTeamLogo = (
+    source: string | undefined,
+    organizationId: string | undefined,
+  ) => {
+    let url: URL | undefined;
+    try {
+      const candidate = new URL(source!),
+        origin = new URL(rendererAssets!.sponsorStorageOrigin!),
+        prefix = `/storage/v1/object/public/team-public-media/${organizationId}/`;
+      if (
+        origin.protocol === "https:" &&
+        origin.origin === rendererAssets?.sponsorStorageOrigin &&
+        z.uuid().safeParse(organizationId).success &&
+        candidate.origin === origin.origin &&
+        !candidate.username &&
+        !candidate.password &&
+        !candidate.search &&
+        !candidate.hash &&
+        candidate.pathname.startsWith(prefix) &&
+        /^[a-f0-9-]{36}\.(?:png|jpe?g|webp)$/.test(
+          candidate.pathname.slice(prefix.length),
+        ) &&
+        z
+          .uuid()
+          .safeParse(candidate.pathname.slice(prefix.length).split(".")[0])
+          .success
+      )
+        url = candidate;
+    } catch {
+      /* Only this program organization's public uploaded artwork is eligible. */
+    }
+    if (!url || teamLogo?.source !== source) {
+      // Public artwork may still be writing to an earlier image response.
+      // Evict the reference without modifying that response's buffer.
+      teamLogo = undefined;
+    }
+    if (!url) {
+      logoFlight?.abort.abort();
+      logoFlight = undefined;
+      return;
+    }
+    if (teamLogo) return teamLogo.path;
+    if (
+      logoFlight &&
+      logoFlight.source === source &&
+      !logoFlight.abort.signal.aborted
+    )
+      return;
+    logoFlight?.abort.abort();
+    const abort = new AbortController();
+    logoFlight = { source: source!, abort };
+    void (async () => {
+      const timer = setTimeout(() => abort.abort(), 5000);
+      let reader: ReadableStreamDefaultReader<Uint8Array> | undefined;
+      let response: Response | undefined;
+      const chunks: Buffer[] = [];
+      const bounded = <T>(operation: Promise<T>) =>
+        new Promise<T>((resolve, reject) => {
+          const failed = () => reject(Error("program_asset_unavailable"));
+          operation
+            .then(resolve, reject)
+            .finally(() => abort.signal.removeEventListener("abort", failed));
+          if (abort.signal.aborted) {
+            failed();
+            return;
+          }
+          abort.signal.addEventListener("abort", failed, { once: true });
+        });
+      try {
+        response = await bounded(
+          (rendererAssets?.teamLogoFetcher ?? fetch)(url, {
+            cache: "no-store",
+            redirect: "error",
+            signal: abort.signal,
+          }),
+        );
+        const mime = response.headers
+          .get("content-type")
+          ?.split(";", 1)[0]
+          .toLowerCase();
+        const max = 1024 * 1024;
+        if (
+          !response.ok ||
+          response.redirected ||
+          !mime ||
+          !["image/png", "image/jpeg", "image/webp"].includes(mime) ||
+          Number(response.headers.get("content-length")) > max ||
+          !response.body
+        )
+          throw Error();
+        reader = response.body.getReader();
+        let size = 0;
+        for (;;) {
+          const part = await bounded(reader.read());
+          if (abort.signal.aborted) throw Error();
+          if (part.done) break;
+          size += part.value.byteLength;
+          if (size > max) throw Error();
+          chunks.push(Buffer.from(part.value));
+        }
+        if (
+          !size ||
+          closed ||
+          abort.signal.aborted ||
+          logoFlight?.abort !== abort
+        )
+          return;
+        const bytes = Buffer.concat(chunks);
+        const valid =
+          mime === "image/png"
+            ? bytes
+                .subarray(0, 8)
+                .equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))
+            : mime === "image/jpeg"
+              ? bytes[0] === 255 && bytes[1] === 216 && bytes[2] === 255
+              : bytes.subarray(0, 4).toString() === "RIFF" &&
+                bytes.subarray(8, 12).toString() === "WEBP";
+        if (!valid) {
+          bytes.fill(0);
+          return;
+        }
+        teamLogo = {
+          source: source!,
+          path: `/team-logo/${randomBytes(16).toString("hex")}`,
+          mime,
+          bytes,
+        };
+        return teamLogo.path;
+      } catch {
+        return undefined;
+      } finally {
+        clearTimeout(timer);
+        abort.abort();
+        void reader?.cancel().catch(() => undefined);
+        if (!reader) void response?.body?.cancel().catch(() => undefined);
+        for (const chunk of chunks) chunk.fill(0);
+        if (logoFlight?.abort === abort) logoFlight = undefined;
+      }
+    })();
+  };
   const server = createServer(async (request, response) => {
     response.setHeader("cache-control", "no-store");
     response.setHeader("x-content-type-options", "nosniff");
@@ -369,12 +521,26 @@ export async function createM4ProgramBridge(
       response.end(asset.bytes);
       return;
     }
+    if (request.method === "GET" && request.url?.startsWith("/team-logo/")) {
+      if (!teamLogo || request.url !== teamLogo.path)
+        return reply(404, { error: "Program asset unavailable" });
+      response.writeHead(200, {
+        "content-type": teamLogo.mime,
+        "content-length": teamLogo.bytes.length,
+      });
+      response.end(teamLogo.bytes);
+      return;
+    }
     if (request.method === "GET" && request.url === "/program") {
       if (presentation.snapshot().mode === "ended") return reply(204, {});
       try {
         const game = await client.readGame();
         if (closed) return reply(409, { error: "Program closed" });
         const organizationId = client.sponsorOrganizationId?.();
+        const homeLogoUrl = syncTeamLogo(
+          game.config.homeLogoUrl,
+          organizationId,
+        );
         if (rendererAssets?.sponsorStorageOrigin && organizationId) {
           sponsorAssets ??= createM4SponsorAssets({
             storageOrigin: rendererAssets.sponsorStorageOrigin,
@@ -391,6 +557,7 @@ export async function createM4ProgramBridge(
         reply(200, {
           game: {
             ...game,
+            config: { ...game.config, homeLogoUrl },
             sponsors,
           },
         });
@@ -823,6 +990,9 @@ export async function createM4ProgramBridge(
         expectedRendererCookie.fill(0);
         client.close();
         sponsorAssets?.close();
+        logoFlight?.abort.abort();
+        logoFlight = undefined;
+        teamLogo = undefined;
         server.closeAllConnections();
         await realtime?.close().catch(() => undefined);
         await new Promise<void>((resolve) => server.close(() => resolve()));

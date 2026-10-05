@@ -87,6 +87,7 @@ export default function CoachLab({
     source: "sample" | "streamer";
     eventId: string;
     gameId: string;
+    readOnlyReason?: string | null;
     roster?: State["roster"];
     initialState: State;
     broadcastReview?: BroadcastReview;
@@ -167,7 +168,7 @@ export default function CoachLab({
   } | null>(null);
   const players = state?.roster ?? context?.roster ?? roster;
   const lineup = resolvedLineup(players, state?.lineup);
-  const closed = state?.status === "closed";
+  const closed = state?.status === "closed" || !!context?.readOnlyReason;
   const rosterReady = players.length > 0;
   useEffect(() => {
     if (rosterReady && !players.some((player) => player.id === draft.playerId))
@@ -218,7 +219,7 @@ export default function CoachLab({
     }
   }
   async function save(shot: Shot | null, id: string, advance = false) {
-    if (!state) return;
+    if (!state || closed) return;
     setBusy(true);
     try {
       const command = {
@@ -563,18 +564,10 @@ export default function CoachLab({
               className="event-notice"
               aria-label="Closed coaching session"
             >
-              <strong>Private coaching session closed.</strong> Review remains
-              available. Reopen this private session to chart or correct
-              attempts; this never completes the shared game or stops its
-              stream.
-              {context?.source === "streamer" && (
-                <button
-                  disabled={busy}
-                  onClick={() => void lifecycle("reopen")}
-                >
-                  Reopen coaching session
-                </button>
-              )}
+              <strong>
+                {context?.readOnlyReason ??
+                  "Private coaching session closed. Review remains available; scoring is locked."}
+              </strong>
             </section>
           )}
           <div className="coach-columns">

@@ -1,6 +1,5 @@
 "use client";
 import Link from "next/link";
-import { GameSummaryPost } from "./GameSummaryPost";
 import { useCallback, useEffect, useState } from "react";
 import type {
   CompletionCleanup,
@@ -146,18 +145,6 @@ export function CompletedGameSummary({
         >
           Watch on YouTube
         </a>
-      )}
-      {cleanupControls && (
-        <GameSummaryPost
-          gameId={gameId}
-          initialSummary={[
-            resultLabel(completion),
-            completion.eventName,
-            completion.youtubeWatchUrl,
-          ]
-            .filter(Boolean)
-            .join("\n")}
-        />
       )}
       {cleanup && cleanup.status !== "complete" && (
         <div

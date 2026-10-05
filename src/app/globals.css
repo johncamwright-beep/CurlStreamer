@@ -153,6 +153,14 @@ button {
   grid-template-columns: minmax(0, 63.8fr) minmax(0, 36.2fr);
   gap: 0.8cqw;
 }
+.broadcast-program-layout[data-camera-layout] {
+  inset: 0;
+  gap: 0;
+}
+.broadcast-program-layout[data-camera-layout] .broadcast-camera-panel {
+  border: 0;
+  border-radius: 0;
+}
 .broadcast-camera-deck {
   position: relative;
   display: grid;

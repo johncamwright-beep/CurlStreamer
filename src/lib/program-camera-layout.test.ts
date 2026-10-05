@@ -40,6 +40,31 @@ describe("full-frame program geometry", () => {
     expect(programCameraLayout([16 / 9]).mode).toBe("single");
     expect(programCameraLayout([]).mode).toBe("none");
   });
+  it("fills the complete program height with touching widescreen feeds", () => {
+    const layout = programCameraLayout([16 / 9, 16 / 9]);
+    expect(layout.deckFraction).toBe(0.5);
+    expect(layout.cells).toEqual([
+      { left: "0%", top: "0%", width: "100%", height: "50%" },
+      { left: "0%", top: "50%", width: "100%", height: "50%" },
+    ]);
+  });
+  it("gives portrait feeds the full height and only the width they need", () => {
+    const layout = programCameraLayout([9 / 16, 9 / 16]);
+    expect(layout.deckFraction).toBe(0.6328125);
+    expect(layout.cells).toEqual([
+      { left: "0%", top: "0%", width: "50%", height: "100%" },
+      { left: "50%", top: "0%", width: "50%", height: "100%" },
+    ]);
+  });
+  it("maximizes mixed feed width while retaining a full-height portrait", () => {
+    const layout = programCameraLayout([9 / 16, 16 / 9]);
+    expect(layout.deckFraction).toBe(0.7);
+    expect(parseFloat(layout.cells[0].height)).toBe(100);
+    expect(parseFloat(layout.cells[1].height)).toBeGreaterThan(38);
+    expect(parseFloat(layout.cells[1].left)).toBeCloseTo(
+      parseFloat(layout.cells[0].width),
+    );
+  });
 });
 
 describe("camera shape across reconnects", () => {

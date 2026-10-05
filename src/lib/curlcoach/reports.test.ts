@@ -83,6 +83,27 @@ describe("event report evidence boundaries", () => {
       "2 scored ends",
     );
   });
+  it("requires one short, game-scoped paragraph per game and rejects cross-game evidence", () => {
+    const input = reportInputs(event(), "players")[0];
+    const value = narrative();
+    value.games = input.games!.map((g) => ({
+      key: g.key,
+      text: "Rehearse the draw target on both turns.",
+      evidence: [g.key + "-overall"],
+    }));
+    expect(validateNarrative(value, input, "players", []).games).toHaveLength(
+      input.games!.length,
+    );
+    const crossGame = structuredClone(value);
+    crossGame.games![0].evidence = ["overall"];
+    expect(() => validateNarrative(crossGame, input, "players", [])).toThrow();
+    const missing = structuredClone(value);
+    missing.games!.pop();
+    expect(() => validateNarrative(missing, input, "players", [])).toThrow();
+    const long = structuredClone(value);
+    long.games![0].text = "word ".repeat(66);
+    expect(() => validateNarrative(long, input, "players", [])).toThrow();
+  });
   it("rejects identity leakage, positional singling-out, unknown evidence, numbers and old branding", () => {
     const input = reportInputs(event(), "team")[0];
     for (const text of [

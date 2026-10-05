@@ -47,6 +47,27 @@ export async function downloadReportPDF(
     write(section.title, 14, true);
     for (const finding of section.findings) write(finding.text);
   }
+  for (const game of report.games ?? []) {
+    if (y > 180) {
+      pdf.addPage();
+      y = 22;
+    }
+    y += 5;
+    write(game.title, 14, true);
+    for (const group of game.groups) {
+      write(group.title, 10, true);
+      write(
+        group.metrics
+          .map(
+            (m) => `${m.label}: ${m.value === "—" ? "not measured" : m.value}`,
+          )
+          .join(" | "),
+        9,
+      );
+    }
+    const summary = report.narrative.games?.find((g) => g.key === game.key);
+    if (summary) write(summary.text);
+  }
   for (let page = 1; page <= pdf.getNumberOfPages(); page++) {
     pdf.setPage(page);
     pdf.setFontSize(9);

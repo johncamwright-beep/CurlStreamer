@@ -151,6 +151,31 @@ test("report navigation is read-only, generation is explicit, and PDFs contain o
   const report = (key: string, title: string) => ({
     key,
     title,
+    ...(key.startsWith("p")
+      ? {
+          games: [
+            {
+              key: "game-1",
+              title: "Opening game",
+              groups: [
+                {
+                  title: "Overall shooting",
+                  metrics: [
+                    { id: "game-1-overall", label: "Overall", value: "75.0%" },
+                  ],
+                },
+                {
+                  title: "Shot types",
+                  metrics: [
+                    { id: "game-1-type-0", label: "Draw", value: "80.0%" },
+                    { id: "game-1-type-1", label: "Peel", value: "—" },
+                  ],
+                },
+              ],
+            },
+          ],
+        }
+      : {}),
     limitations: ["PRIVATE COVERAGE DETAILS"],
     evidence: [
       {
@@ -170,6 +195,17 @@ test("report navigation is read-only, generation is explicit, and PDFs contain o
       },
     ],
     narrative: {
+      ...(key.startsWith("p")
+        ? {
+            games: [
+              {
+                key: "game-1",
+                text: "Your draws provided a useful starting point. Rehearse the target on both turns.",
+                evidence: ["game-1-overall"],
+              },
+            ],
+          }
+        : {}),
       summary: {
         text: "A solid event with room to sharpen draws.",
         evidence: ["overall"],
@@ -285,6 +321,12 @@ test("report navigation is read-only, generation is explicit, and PDFs contain o
   await expect(page.getByRole("article")).not.toContainText("301");
   await expect(page.getByRole("article")).not.toContainText("ungraded");
   await expect(page.getByRole("article")).not.toContainText("PRIVATE");
+  await expect(
+    page.getByRole("heading", { name: "Opening game", exact: true }),
+  ).toBeVisible();
+  await page.getByText("Game statistics", { exact: true }).click();
+  await expect(page.getByText("80.0%", { exact: true })).toBeVisible();
+  await expect(page.getByText("—", { exact: true })).toBeVisible();
   const pending = page.waitForEvent("download");
   await page.getByRole("button", { name: "Download PDF", exact: true }).click();
   const download = await pending;
@@ -295,6 +337,8 @@ test("report navigation is read-only, generation is explicit, and PDFs contain o
   expect(pdf).toContain("Alex Greenwood");
   expect(pdf).not.toContain("Cameron Wright");
   expect(pdf).not.toContain("ungraded");
+  expect(pdf).toContain("Opening game");
+  expect(pdf).toContain("80.0%");
   await download.saveAs("test-results/report-" + info.project.name + ".pdf");
   await page.screenshot({
     path: "test-results/report-redesign-" + info.project.name + ".png",

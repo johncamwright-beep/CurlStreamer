@@ -69,13 +69,25 @@ async function generateOnce(
       .min(1)
       .max(6),
   });
-  const outputSchema = narrativeSchema.extend({
+  const baseSchema = narrativeSchema.omit({ games: true }).extend({
     summary: finding,
     strengths: z.array(finding).min(1).max(2),
     priorities: z.array(finding).min(1).max(2),
     practice: z.array(finding).min(1).max(2),
     review: z.array(finding).min(1).max(2),
   });
+  const gameKeys = input.games?.map((g) => g.key) ?? [];
+  const outputSchema = gameKeys.length
+    ? baseSchema.extend({
+        games: z
+          .array(
+            finding
+              .extend({ key: z.enum(gameKeys as [string, ...string[]]) })
+              .strict(),
+          )
+          .length(gameKeys.length),
+      })
+    : baseSchema;
   const response = await fetch("https://api.openai.com/v1/responses", {
     method: "POST",
     cache: "no-store",
@@ -87,16 +99,20 @@ async function generateOnce(
     body: JSON.stringify({
       model: config.model,
       store: false,
-      max_output_tokens: 3200,
+      max_output_tokens: Math.min(12000, 3200 + 240 * gameKeys.length),
       instructions:
         REPORT_INSTRUCTIONS +
         "\n" +
         audienceInstructions(audience) +
+        (gameKeys.length
+          ? "\nAdd one game paragraph for every supplied game key, in schedule order. Each paragraph should be thirty-five to fifty-five words, at most sixty-five. Explain the clearest supported strength, a useful area to work on and one practical adjustment to rehearse. Use only evidence IDs starting with that game's key followed by a hyphen. Do not transfer event-wide or another game's patterns to this game. If no measurements are available, say the game cannot be assessed; absence of records does not mean the athlete did not play. Sparse categories are tentative; do not diagnose delivery or claim that performance caused the game result. The main event overview should synthesize recurring themes instead of repeating these paragraphs. Shooting percentages and execution/miss-label distributions have different denominators; do not equate them. Be specific about the recorded category rather than generic praise, without reciting numbers."
+          : "") +
         "\n" +
         correction,
       input: JSON.stringify({
         evidence: input.evidence,
         limitations: input.limitations,
+        ...(gameKeys.length ? { gameKeys } : {}),
       }),
       text: {
         format: {

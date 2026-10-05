@@ -323,6 +323,55 @@ function ReportBody({ report }: { report: SavedReport }) {
           </div>
         </section>
       ))}
+      {!!report.games?.length && (
+        <section className="space-y-4" aria-label="Game by game">
+          <h4 className="text-xl font-bold">Game by game</h4>
+          <p className="text-sm">
+            Open a game’s statistics to see every recorded measurement. — means
+            not measured.
+          </p>
+          {report.games.map((game) => (
+            <section
+              key={game.key}
+              className="rounded-lg border border-slate-500/40 p-4 space-y-3"
+            >
+              <div className="flex flex-wrap justify-between gap-2">
+                <h5 className="font-bold">{game.title}</h5>
+                <span className="font-bold">
+                  {game.groups[0]?.metrics[0]?.value} shooting
+                </span>
+              </div>
+              <p className="max-w-prose leading-relaxed">
+                {report.narrative.games?.find((g) => g.key === game.key)?.text}
+              </p>
+              <details>
+                <summary className="min-h-11 cursor-pointer py-3 font-semibold">
+                  Game statistics
+                </summary>
+                <div className="grid gap-4 lg:grid-cols-2">
+                  {game.groups.slice(1).map((group) => (
+                    <div key={group.title}>
+                      <h6 className="mb-2 text-sm font-semibold">
+                        {group.title}
+                      </h6>
+                      <dl className="grid grid-cols-[1fr_auto] gap-x-3 gap-y-1 text-sm">
+                        {group.metrics.map((metric) => (
+                          <div className="contents" key={metric.id}>
+                            <dt>{metric.label}</dt>
+                            <dd className="text-right tabular-nums">
+                              {metric.value}
+                            </dd>
+                          </div>
+                        ))}
+                      </dl>
+                    </div>
+                  ))}
+                </div>
+              </details>
+            </section>
+          ))}
+        </section>
+      )}
     </article>
   );
 }

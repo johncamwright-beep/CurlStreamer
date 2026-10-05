@@ -52,13 +52,15 @@ int wmain(int argc, WCHAR **argv)
     parent_watch watch = {0}; HANDLE monitor = NULL;
     m4_media *media = NULL; int result = 1; char program[256] = {0};
     const WCHAR *stream_plugin = NULL;
+    bool program_control = argc > 1 && !wcscmp(argv[argc - 1], L"--program-control");
+    if (program_control) argc--;
     bool preview_only = argc > 6 && !wcscmp(argv[5], L"--preview-only") && !wcscmp(argv[6], L"-");
     if (argc >= 3 && !wcscmp(argv[argc - 2], L"--stream-plugin")) {
         stream_plugin = argv[argc - 1]; argc -= 2;
     }
     if ((argc != 7 && argc != 11) || wcscmp(argv[1], L"--parent-pid") ||
         wcscmp(argv[3], L"--runtime") || (!preview_only && wcscmp(argv[5], L"--recording"))) return 2;
-    if (preview_only && argc != 11) return 2;
+    if ((preview_only || program_control) && argc != 11) return 2;
     if (argc == 11 && (wcscmp(argv[7], L"--program-cache") ||
         wcscmp(argv[9], L"--webrtc-ip-handling-policy=default") ||
         wcscmp(argv[10], L"--disable-features=WebRtcHideLocalIpsWithMdns"))) return 2;
@@ -91,14 +93,34 @@ int wmain(int argc, WCHAR **argv)
     }
     if (!WriteFile(output, "READY\n", 6, &written, NULL) || written != 6) goto done;
     if (stream_plugin) {
-        bool ready = m4_recorder_stream_bootstrap(media, output, parent, pid);
-        output = NULL; /* bootstrap always consumes this readiness handle */
+        HANDLE readiness = output;
+        if (program_control && !DuplicateHandle(GetCurrentProcess(), output, GetCurrentProcess(), &readiness, 0, FALSE, DUPLICATE_SAME_ACCESS)) goto done;
+        bool ready = m4_recorder_stream_bootstrap(media, readiness, parent, pid);
+        if (!program_control) output = NULL; /* bootstrap consumes readiness */
         if (!ready) goto done;
-    } else { CloseHandle(output); output = NULL; }
-    /* EOF, any input, or parent death means application shutdown. Stream STOP
+    } else if (!program_control) { CloseHandle(output); output = NULL; }
+    /* EOF or parent death means shutdown. The optional control accepts only
+       an exact fixed frame; malformed input retains fail-closed lifecycle. Stream STOP
        has no channel to this process and cannot finalize this recording. */
     while (WaitForSingleObject(parent, 50) == WAIT_TIMEOUT) {
-        if (!PeekNamedPipe(input, NULL, 0, NULL, &available, NULL) || available) break;
+        if (!PeekNamedPipe(input, NULL, 0, NULL, &available, NULL)) break;
+        if (available) {
+            unsigned char command[8] = {0}, ack[24] = {0}; uint32_t request_id = 0; DWORD ack_length = 8;
+            if (!program_control) break;
+            if (!read_exact(input, parent, command, sizeof(command), GetTickCount64() + 2000) || (memcmp(command, "RFR1", 4) && memcmp(command, "RFS1", 4))) goto done;
+            memcpy(&request_id, command + 4, sizeof(request_id));
+            if (!request_id) goto done;
+            if (!memcmp(command, "RFS1", 4)) {
+                uint32_t sequence, changes, age, status;
+                m4_media_program_health(media, &sequence, &changes, &age, &status);
+                memcpy(ack, "RFP1", 4); memcpy(ack + 8, &sequence, 4); memcpy(ack + 12, &changes, 4); memcpy(ack + 16, &age, 4); memcpy(ack + 20, &status, 4); ack_length = 24;
+            } else {
+                bool accepted = m4_media_refresh_program(media);
+                memcpy(ack, accepted ? "RFA1" : "RFF1", 4);
+            }
+            memcpy(ack + 4, &request_id, sizeof(request_id));
+            if (!WriteFile(output, ack, ack_length, &written, NULL) || written != ack_length) goto done;
+        }
         if (!m4_media_active(media)) goto done;
         m4_media_poll_stream(media);
     }

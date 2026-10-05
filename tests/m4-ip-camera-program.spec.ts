@@ -3,6 +3,7 @@ import { build } from "esbuild";
 import { execFileSync } from "node:child_process";
 import { resolve } from "node:path";
 import sharp from "sharp";
+import type { M4RendererHeartbeat } from "../src/lib/providers/m4-renderer-health-browser";
 import type { M4CameraInputSnapshot } from "../src/lib/m4-camera-input";
 
 type Role = "camera-home" | "camera-away";
@@ -128,6 +129,10 @@ async function install(
     Role,
     "live" | "absent" | "old-generation" | "repeated" | "invalid"
   > = { "camera-home": "live", "camera-away": "live" };
+  const frames: Record<Role, Buffer> = {
+    "camera-home": jpeg,
+    "camera-away": jpeg,
+  };
   const counter: Record<Role, number> = { "camera-home": 0, "camera-away": 0 };
   // Count live browser fetches, excluding requests synchronously cancelled by
   // a source change; an intercepted route can finish after its fetch aborts.
@@ -149,6 +154,7 @@ async function install(
         (window as unknown as { __frameFlights: { max: Record<Role, number> } })
           .__frameFlights.max,
     );
+  const heartbeats: M4RendererHeartbeat[] = [];
   const observations: Observation[] = [];
   const accepted: Observation[] = [];
   const errors: string[] = [];
@@ -164,6 +170,10 @@ async function install(
       return route.fulfill({ contentType: "text/javascript", body: renderer });
     if (url.pathname === "/fixture.css")
       return route.fulfill({ contentType: "text/css", body: css });
+    if (url.pathname === "/renderer-health") {
+      heartbeats.push(route.request().postDataJSON() as M4RendererHeartbeat);
+      return route.fulfill({ json: { ok: true } });
+    }
     if (url.pathname === "/program") return route.fulfill({ json: { game } });
     if (url.pathname === "/camera-inputs")
       return route.fulfill({ json: { cameras: sources } });
@@ -192,7 +202,9 @@ async function install(
         const currentCounter =
           behavior === "repeated" ? counter[frameRole] : ++counter[frameRole];
         const body =
-          behavior === "invalid" ? Buffer.from("invalid JPEG fixture") : jpeg;
+          behavior === "invalid"
+            ? Buffer.from("invalid JPEG fixture")
+            : frames[frameRole];
         return await route.fulfill({
           contentType: "image/jpeg",
           headers: {
@@ -217,7 +229,9 @@ async function install(
     return route.fulfill({ status: 404, body: "Fixture asset unavailable" });
   });
   await page.goto("http://127.0.0.1:3000/ip-camera-program-fixture");
-  await expect(page.getByTestId("broadcast-canvas")).toBeVisible();
+  await expect(page.getByTestId("broadcast-canvas")).toBeVisible({
+    timeout: 10000,
+  });
   const phones = () =>
     page.evaluate(
       () =>
@@ -230,21 +244,27 @@ async function install(
           }
         ).__phoneFixture ?? { starts: {}, stops: {} },
     );
-  return { sources, mode, observations, accepted, errors, maxActive, phones };
+  return {
+    sources,
+    frames,
+    mode,
+    observations,
+    accepted,
+    errors,
+    maxActive,
+    phones,
+    heartbeats,
+  };
 }
 
 const panel = (page: Page, role: Role) =>
   page.getByTestId(`camera-panel-${role}`);
 
 async function verifyFrame(page: Page, role: Role) {
-  const image = panel(page, role).getByAltText("IP camera");
+  const image = panel(page, role).getByRole("img", { name: "IP camera" });
   await expect(image).toBeVisible();
   await expect
-    .poll(() =>
-      image.evaluate(
-        (element: HTMLImageElement) => element.complete && element.naturalWidth,
-      ),
-    )
+    .poll(() => image.evaluate((element: HTMLCanvasElement) => element.width))
     .toBe(320);
   const geometry = await image.evaluate((element) => {
     const rect = element.getBoundingClientRect(),
@@ -325,7 +345,7 @@ test("program composes mixed phone and Tapo frames while replacing only the sele
     .poll(async () => (await fixture.phones()).starts["camera-away"])
     .toBe(1);
   await expect(
-    panel(page, "camera-away").getByAltText("IP camera"),
+    panel(page, "camera-away").getByRole("img", { name: "IP camera" }),
   ).toHaveCount(0);
   fixture.sources["camera-away"] = snapshot("tapo", 3);
   await verifyFrame(page, "camera-away");
@@ -379,7 +399,7 @@ test("program flushes a changed source and rejects stale, repeated and undecodab
   fixture.mode["camera-away"] = "old-generation";
   fixture.sources["camera-away"] = snapshot("tapo", 2);
   await expect(
-    panel(page, "camera-away").getByAltText("IP camera"),
+    panel(page, "camera-away").getByRole("img", { name: "IP camera" }),
   ).toHaveCount(0);
   await page.waitForTimeout(250);
   expect(
@@ -407,7 +427,7 @@ test("program flushes a changed source and rejects stale, repeated and undecodab
   fixture.mode["camera-away"] = "repeated";
   // Repeated counters must not refresh proof; a stale displayed frame expires.
   await expect(
-    panel(page, "camera-away").getByAltText("IP camera"),
+    panel(page, "camera-away").getByRole("img", { name: "IP camera" }),
   ).toHaveCount(0, { timeout: 7500 });
   const last = fixture.accepted
     .filter((v) => v.cameraRole === "camera-away")
@@ -417,6 +437,520 @@ test("program flushes a changed source and rejects stale, repeated and undecodab
     fixture.accepted.filter((v) => v.cameraRole === "camera-away").at(-1),
   ).toEqual(last);
   expect((await fixture.phones()).starts["camera-home"]).toBe(1);
+  expect((await fixture.maxActive())["camera-away"]).toBe(1);
+  expect(fixture.errors).toEqual([]);
+});
+
+test("renderer health remains independent of stalled game and source reads and reports stopped animation frames", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    const fixture = window as unknown as {
+      __metadata: { calls: Record<string, number>; aborts: string[] };
+      __pauseHealthRaf: boolean;
+    };
+    fixture.__metadata = { calls: {}, aborts: [] };
+    const fetcher = window.fetch.bind(window);
+    window.fetch = (input, options) => {
+      const path = String(input);
+      if (path === "/program" || path === "/camera-inputs") {
+        fixture.__metadata.calls[path] =
+          (fixture.__metadata.calls[path] ?? 0) + 1;
+        if (fixture.__metadata.calls[path] === 1)
+          return new Promise<Response>((_resolve, reject) => {
+            options?.signal?.addEventListener(
+              "abort",
+              () => {
+                fixture.__metadata.aborts.push(path);
+                reject(
+                  new DOMException(
+                    "Synthetic stalled metadata aborted",
+                    "AbortError",
+                  ),
+                );
+              },
+              { once: true },
+            );
+          });
+      }
+      return fetcher(input, options);
+    };
+    const raf = window.requestAnimationFrame.bind(window);
+    window.requestAnimationFrame = (callback) =>
+      raf((at) => {
+        if (!fixture.__pauseHealthRaf) callback(at);
+      });
+  });
+  const fixture = await install(page, ["tapo", "rtsp"]);
+  await expect.poll(() => fixture.heartbeats.length).toBeGreaterThan(3);
+  expect(fixture.heartbeats[2].frames).toBeGreaterThan(
+    fixture.heartbeats[1].frames,
+  );
+  expect(new Set(fixture.heartbeats.map((body) => body.instance)).size).toBe(1);
+  expect(
+    fixture.heartbeats.every(
+      (body) =>
+        Object.keys(body).sort().join() === "action,frames,instance,visibility",
+    ),
+  ).toBe(true);
+  expect(
+    fixture.heartbeats.every(
+      (body) =>
+        body.action === "renderer-heartbeat" && body.visibility === "visible",
+    ),
+  ).toBe(true);
+  const metadata = await page.evaluate(
+    () =>
+      (
+        window as unknown as {
+          __metadata: { calls: Record<string, number>; aborts: string[] };
+        }
+      ).__metadata,
+  );
+  expect(metadata.aborts.sort()).toEqual(["/camera-inputs", "/program"]);
+  expect(metadata.calls["/program"]).toBeGreaterThan(1);
+  expect(metadata.calls["/camera-inputs"]).toBeGreaterThan(1);
+  for (const role of roles) await verifyFrame(page, role);
+  await page.evaluate(() => {
+    (window as unknown as { __pauseHealthRaf: boolean }).__pauseHealthRaf =
+      true;
+  });
+  const count = fixture.heartbeats.length;
+  await expect.poll(() => fixture.heartbeats.length).toBeGreaterThan(count + 2);
+  const recent = fixture.heartbeats.slice(-2);
+  expect(recent[0].frames).toBe(recent[1].frames);
+  expect(fixture.errors).toEqual([]);
+});
+
+for (const cancellation of ["timeout", "source change"] as const) {
+  test(`a stalled IP bitmap closes once without painting after ${cancellation}`, async ({
+    page,
+  }) => {
+    await page.addInitScript(() => {
+      const decode = window.createImageBitmap.bind(window);
+      let lateBitmap: ImageBitmap | undefined;
+      const draw = CanvasRenderingContext2D.prototype.drawImage;
+      const tracking = window as unknown as { __lateDraws: number };
+      tracking.__lateDraws = 0;
+      CanvasRenderingContext2D.prototype.drawImage = function (
+        this: CanvasRenderingContext2D,
+        image: CanvasImageSource,
+        ...coordinates: number[]
+      ) {
+        if (image === lateBitmap) tracking.__lateDraws++;
+        return Reflect.apply(draw, this, [image, ...coordinates]);
+      } as typeof CanvasRenderingContext2D.prototype.drawImage;
+      const fixture = window as unknown as {
+        __decodeStall?: { finish: () => void; closes: number };
+      };
+      window.createImageBitmap = ((blob: Blob) => {
+        if (!fixture.__decodeStall) {
+          let finish!: () => void;
+          const pending = decode(blob);
+          const result = new Promise<ImageBitmap>((resolve) => {
+            finish = () => {
+              void pending.then((bitmap) => {
+                lateBitmap = bitmap;
+                const close = bitmap.close.bind(bitmap);
+                bitmap.close = () => {
+                  fixture.__decodeStall!.closes++;
+                  close();
+                };
+                resolve(bitmap);
+              });
+            };
+          });
+          fixture.__decodeStall = { finish, closes: 0 };
+          return result;
+        }
+        return decode(blob);
+      }) as typeof window.createImageBitmap;
+    });
+    const fixture = await install(page, ["tapo", "rtsp"]);
+    if (cancellation === "source change") {
+      await expect
+        .poll(() =>
+          page.evaluate(() =>
+            Boolean(
+              (window as unknown as { __decodeStall?: unknown }).__decodeStall,
+            ),
+          ),
+        )
+        .toBe(true);
+      fixture.sources["camera-home"] = snapshot("tapo", 2);
+      fixture.sources["camera-away"] = snapshot("rtsp", 2);
+      for (const role of roles)
+        await expect
+          .poll(
+            () =>
+              fixture.accepted.filter(
+                (value) =>
+                  value.cameraRole === role && value.sourceGeneration === 2,
+              ).length,
+          )
+          .toBeGreaterThan(0);
+    }
+    for (const role of roles) {
+      await expect
+        .poll(
+          () =>
+            fixture.accepted.filter((value) => value.cameraRole === role)
+              .length,
+        )
+        .toBeGreaterThan(0);
+      await verifyFrame(page, role);
+    }
+    await page.evaluate(() =>
+      (
+        window as unknown as { __decodeStall: { finish: () => void } }
+      ).__decodeStall.finish(),
+    );
+    await expect
+      .poll(() =>
+        page.evaluate(
+          () =>
+            (window as unknown as { __decodeStall: { closes: number } })
+              .__decodeStall.closes,
+        ),
+      )
+      .toBe(1);
+    for (const role of roles) {
+      await verifyFrame(page, role);
+      expect((await fixture.maxActive())[role]).toBe(1);
+    }
+    expect(
+      await page.evaluate(
+        () => (window as unknown as { __lateDraws: number }).__lateDraws,
+      ),
+    ).toBe(0);
+    expect(fixture.errors).toEqual([]);
+  });
+}
+test("IP canvas updates pixels and resolution in place, recovers stale frames, and releases replaced sources", async ({
+  page,
+}) => {
+  const fixture = await install(page, ["tapo", "rtsp"]);
+  const camera = panel(page, "camera-away").getByRole("img", {
+    name: "IP camera",
+  });
+  await verifyFrame(page, "camera-away");
+  const original = await camera.elementHandle();
+  await original!.evaluate((canvas: HTMLCanvasElement) => {
+    const state = window as unknown as {
+      __cameraCanvas: HTMLCanvasElement;
+      __dimensionWrites: number;
+    };
+    state.__cameraCanvas = canvas;
+    state.__dimensionWrites = 0;
+    for (const key of ["width", "height"] as const) {
+      const descriptor = Object.getOwnPropertyDescriptor(
+        HTMLCanvasElement.prototype,
+        key,
+      )!;
+      Object.defineProperty(canvas, key, {
+        get() {
+          return descriptor.get!.call(this);
+        },
+        set(value) {
+          state.__dimensionWrites++;
+          descriptor.set!.call(this, value);
+        },
+      });
+    }
+  });
+  const blue = await sharp({
+    create: { width: 320, height: 180, channels: 3, background: "#145ee5" },
+  })
+    .jpeg()
+    .toBuffer();
+  fixture.frames["camera-away"] = blue;
+  await expect
+    .poll(() =>
+      camera.evaluate(
+        (canvas: HTMLCanvasElement) =>
+          canvas.getContext("2d")!.getImageData(160, 90, 1, 1).data[2],
+      ),
+    )
+    .toBeGreaterThan(200);
+  expect(
+    await camera.evaluate(
+      (canvas) =>
+        canvas ===
+        (window as unknown as { __cameraCanvas: HTMLCanvasElement })
+          .__cameraCanvas,
+    ),
+  ).toBe(true);
+  expect(
+    await page.evaluate(
+      () =>
+        (window as unknown as { __dimensionWrites: number }).__dimensionWrites,
+    ),
+  ).toBe(0);
+  fixture.frames["camera-away"] = await sharp({
+    create: { width: 90, height: 160, channels: 3, background: "#19be35" },
+  })
+    .jpeg()
+    .toBuffer();
+  await expect
+    .poll(() =>
+      camera.evaluate((canvas: HTMLCanvasElement) => [
+        canvas.width,
+        canvas.height,
+      ]),
+    )
+    .toEqual([90, 160]);
+  expect(
+    await page.evaluate(
+      () =>
+        (window as unknown as { __dimensionWrites: number }).__dimensionWrites,
+    ),
+  ).toBe(2);
+  expect(
+    await camera.evaluate(
+      (canvas) =>
+        canvas ===
+        (window as unknown as { __cameraCanvas: HTMLCanvasElement })
+          .__cameraCanvas,
+    ),
+  ).toBe(true);
+  fixture.mode["camera-away"] = "absent";
+  await expect(camera).toHaveCount(0, { timeout: 7500 });
+  expect(
+    await original!.evaluate((canvas: HTMLCanvasElement) => canvas.isConnected),
+  ).toBe(false);
+  fixture.mode["camera-away"] = "live";
+  await expect(camera).toBeVisible();
+  expect(
+    await camera.evaluate(
+      (canvas) =>
+        canvas ===
+        (window as unknown as { __cameraCanvas: HTMLCanvasElement })
+          .__cameraCanvas,
+    ),
+  ).toBe(true);
+  fixture.sources["camera-away"] = snapshot("tapo", 2);
+  await expect
+    .poll(() =>
+      original!.evaluate((canvas: HTMLCanvasElement) => [
+        canvas.width,
+        canvas.height,
+        canvas.isConnected,
+      ]),
+    )
+    .toEqual([0, 0, false]);
+  await expect(camera).toBeVisible();
+  expect(
+    await camera.evaluate(
+      (canvas) =>
+        canvas ===
+        (window as unknown as { __cameraCanvas: HTMLCanvasElement })
+          .__cameraCanvas,
+    ),
+  ).toBe(false);
+  expect((await fixture.maxActive())["camera-away"]).toBe(1);
+  expect(fixture.errors).toEqual([]);
+});
+
+test("two stalled bitmap decodes cap retained work and late release resumes polling", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    const decode = window.createImageBitmap.bind(window);
+    const state = { started: 0, closes: 0, finishes: [] as Array<() => void> };
+    (window as unknown as { __bitmapCap: typeof state }).__bitmapCap = state;
+    window.createImageBitmap = ((blob: Blob) => {
+      state.started++;
+      if (state.started > 2) return decode(blob);
+      const pending = decode(blob);
+      return new Promise<ImageBitmap>((resolve) => {
+        state.finishes.push(() => {
+          void pending.then((bitmap) => {
+            const close = bitmap.close.bind(bitmap);
+            bitmap.close = () => {
+              state.closes++;
+              close();
+            };
+            resolve(bitmap);
+          });
+        });
+      });
+    }) as typeof window.createImageBitmap;
+  });
+  const fixture = await install(page, ["phone", "tapo"]);
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () =>
+          (window as unknown as { __bitmapCap: { started: number } })
+            .__bitmapCap.started,
+      ),
+    )
+    .toBe(2);
+  await page.waitForTimeout(2300);
+  expect(
+    await page.evaluate(
+      () =>
+        (window as unknown as { __bitmapCap: { started: number } }).__bitmapCap
+          .started,
+    ),
+  ).toBe(2);
+  expect(
+    fixture.accepted.filter((value) => value.cameraRole === "camera-away"),
+  ).toHaveLength(0);
+  await expect(
+    panel(page, "camera-away").getByRole("img", { name: "IP camera" }),
+  ).toHaveCount(0);
+  await page.evaluate(() =>
+    (
+      window as unknown as { __bitmapCap: { finishes: Array<() => void> } }
+    ).__bitmapCap.finishes.forEach((finish) => finish()),
+  );
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () =>
+          (window as unknown as { __bitmapCap: { closes: number } }).__bitmapCap
+            .closes,
+      ),
+    )
+    .toBe(2);
+  await verifyFrame(page, "camera-away");
+  await expect
+    .poll(
+      () =>
+        fixture.accepted.filter((value) => value.cameraRole === "camera-away")
+          .length,
+    )
+    .toBeGreaterThan(0);
+  expect((await fixture.maxActive())["camera-away"]).toBe(1);
+  expect(fixture.errors).toEqual([]);
+});
+
+test("completed camera observations drain their bodies and release attempt signals", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    const original = window.fetch.bind(window);
+    const records: Array<{ response: Response; signal: AbortSignal }> = [];
+    (
+      window as unknown as { __observationLifetimes: typeof records }
+    ).__observationLifetimes = records;
+    window.fetch = async (input, options) => {
+      const response = await original(input, options);
+      if (
+        String(input) === "/camera" &&
+        options?.method === "POST" &&
+        options.signal
+      )
+        records.push({ response, signal: options.signal });
+      return response;
+    };
+  });
+  const fixture = await install(page, ["tapo", "rtsp"]);
+  await verifyFrame(page, "camera-away");
+  await expect
+    .poll(() =>
+      page.evaluate(() => {
+        const records = (
+          window as unknown as {
+            __observationLifetimes: Array<{
+              response: Response;
+              signal: AbortSignal;
+            }>;
+          }
+        ).__observationLifetimes;
+        return records.filter(
+          (row) => row.response.bodyUsed && row.signal.aborted,
+        ).length;
+      }),
+    )
+    .toBeGreaterThan(4);
+  expect(fixture.errors).toEqual([]);
+  expect((await fixture.maxActive())["camera-away"]).toBe(1);
+});
+
+test("a stalled observation response body expires under the frame deadline and polling recovers", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    const original = window.fetch.bind(window);
+    const state = {
+      stalled: false,
+      bodyRead: false,
+      aborted: false,
+      abortAfterMs: 0,
+    };
+    (
+      window as unknown as { __observationBodyStall: typeof state }
+    ).__observationBodyStall = state;
+    window.fetch = async (input, options) => {
+      const response = await original(input, options);
+      if (
+        String(input) !== "/camera" ||
+        !options?.body ||
+        JSON.parse(options.body as string).action !== "observe" ||
+        state.stalled
+      )
+        return response;
+      state.stalled = true;
+      await response.text();
+      const bodyStarted = performance.now();
+      const body = new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(new TextEncoder().encode("{"));
+          options.signal!.addEventListener(
+            "abort",
+            () => {
+              state.aborted = true;
+              state.abortAfterMs = performance.now() - bodyStarted;
+              controller.error(
+                new DOMException("synthetic body deadline", "AbortError"),
+              );
+            },
+            { once: true },
+          );
+        },
+        pull() {
+          state.bodyRead = true;
+        },
+      });
+      return new Response(body, {
+        headers: { "content-type": "application/json" },
+      });
+    };
+  });
+  const fixture = await install(page, ["phone", "tapo"]);
+  await verifyFrame(page, "camera-away");
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () =>
+          (
+            window as unknown as {
+              __observationBodyStall: { bodyRead: boolean; aborted: boolean };
+            }
+          ).__observationBodyStall,
+      ),
+    )
+    .toMatchObject({ bodyRead: true, aborted: true });
+  expect(
+    await page.evaluate(
+      () =>
+        (
+          window as unknown as {
+            __observationBodyStall: { abortAfterMs: number };
+          }
+        ).__observationBodyStall.abortAfterMs,
+    ),
+  ).toBeGreaterThan(1000);
+  await expect
+    .poll(
+      () =>
+        fixture.accepted.filter((value) => value.cameraRole === "camera-away")
+          .length,
+    )
+    .toBeGreaterThan(2);
+  await verifyFrame(page, "camera-away");
   expect((await fixture.maxActive())["camera-away"]).toBe(1);
   expect(fixture.errors).toEqual([]);
 });

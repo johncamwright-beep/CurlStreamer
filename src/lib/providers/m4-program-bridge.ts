@@ -1,5 +1,5 @@
 import { createServer } from "node:http";
-import { randomBytes, timingSafeEqual } from "node:crypto";
+import { randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { z } from "zod";
@@ -8,6 +8,10 @@ import { createM4UsbAudioQueue } from "./m4-usb-audio";
 import type { createM4IpCameraManager } from "./m4-ip-camera";
 import type { M4ProgramClient } from "./m4-program-client";
 import { StudioTransportUnavailable } from "./studio-transport-error";
+import {
+  createM4RendererHealth,
+  m4RendererHeartbeatSchema,
+} from "./m4-program-health";
 import {
   m4CameraDrainIdentitySchema,
   type M4CameraDrainIdentity,
@@ -75,6 +79,7 @@ export async function createM4ProgramBridge(
   >();
   const rendererCookie = randomBytes(32).toString("base64url");
   const usbAudio = createM4UsbAudioQueue();
+  const rendererHealth = createM4RendererHealth();
   let usbRenderer = {
     contextState: "unavailable",
     scheduledFrames: 0,
@@ -88,7 +93,20 @@ export async function createM4ProgramBridge(
     closed = false,
     authorityEnded = false,
     rendererClaimed = false;
-  const rendererHtml = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>CurlStreamer program</title><link rel="stylesheet" href="/m4-program-renderer.css"></head><body><div id="root"></div><script src="/m4-program-renderer.js" defer></script></body></html>`;
+  const rendererHtml = () => {
+    const instance = randomUUID();
+    rendererHealth.begin(instance);
+    cameraFrames.clear();
+    phoneAudio.clear();
+    usbRenderer = {
+      contextState: "unavailable",
+      scheduledFrames: 0,
+      peak: 0,
+      rms: 0,
+      observedAt: 0,
+    };
+    return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="m4-renderer-instance" content="${instance}"><title>CurlStreamer program</title><link rel="stylesheet" href="/m4-program-renderer.css"></head><body><div id="root"></div><script src="/m4-program-renderer.js" defer></script></body></html>`;
+  };
   const builtinSponsors = new Map([
     [
       "/sponsors/community.svg",
@@ -139,24 +157,31 @@ export async function createM4ProgramBridge(
       (ownerAllowed || rendererAllowed);
     supplied.fill(0);
     cookie.fill(0);
+    const documentNavigation =
+      request.headers["sec-fetch-dest"] === "document" &&
+      request.headers["sec-fetch-mode"] === "navigate";
     // The managed recorder receives only this root URL over its inherited
     // startup frame. The first local navigation atomically receives an
     // HttpOnly capability; no secret is placed in the URL, DOM or JavaScript.
     if (
       !closed &&
-      !rendererClaimed &&
+      !authorityEnded &&
+      (!rendererClaimed
+        ? !ownerAllowed
+        : rendererAllowed && documentNavigation) &&
       hostAllowed &&
       request.method === "GET" &&
       request.url === "/" &&
       !request.headers.origin
     ) {
+      if (!rendererClaimed)
+        response.setHeader(
+          "set-cookie",
+          `m4_program=${rendererCookie}; HttpOnly; SameSite=Strict; Path=/`,
+        );
       rendererClaimed = true;
-      response.setHeader(
-        "set-cookie",
-        `m4_program=${rendererCookie}; HttpOnly; SameSite=Strict; Path=/`,
-      );
       response.writeHead(200, { "content-type": "text/html; charset=utf-8" });
-      response.end(rendererHtml);
+      response.end(rendererHtml());
       return;
     }
     if (!allowed) {
@@ -245,8 +270,10 @@ export async function createM4ProgramBridge(
       return;
     }
     if (request.method === "GET" && request.url === "/") {
+      if (!rendererAllowed || !documentNavigation)
+        return reply(403, { error: "Program request denied" });
       response.writeHead(200, { "content-type": "text/html; charset=utf-8" });
-      response.end(rendererHtml);
+      response.end(rendererHtml());
       return;
     }
     if (request.method === "GET" && request.url === "/favicon.ico") {
@@ -338,6 +365,7 @@ export async function createM4ProgramBridge(
       } catch (cause) {
         if (!(cause instanceof StudioTransportUnavailable)) {
           authorityEnded = true;
+          rendererHealth.close();
           usbAudio.reset();
           cameraFrames.clear();
           phoneAudio.clear();
@@ -423,7 +451,7 @@ export async function createM4ProgramBridge(
     }
     if (
       request.method !== "POST" ||
-      request.url !== "/camera" ||
+      (request.url !== "/camera" && request.url !== "/renderer-health") ||
       request.headers["content-type"] !== "application/json"
     ) {
       reply(403, { error: "Program request denied" });
@@ -435,10 +463,20 @@ export async function createM4ProgramBridge(
     try {
       for await (const chunk of request) {
         size += chunk.length;
-        if (size > 40000) throw Error();
+        if (size > (request.url === "/renderer-health" ? 1024 : 40000))
+          throw Error();
         chunks.push(chunk);
       }
       const parsed = JSON.parse(Buffer.concat(chunks).toString("utf8"));
+      if (request.url === "/renderer-health") {
+        if (!rendererAllowed)
+          return reply(403, { error: "Program request denied" });
+        const heartbeat = m4RendererHeartbeatSchema.safeParse(parsed);
+        if (!heartbeat.success || !rendererHealth.observe(heartbeat.data))
+          return reply(409, { error: "Renderer observation rejected" });
+        reply(200, { ok: true });
+        return;
+      }
       const diagnostic = z
         .object({
           action: z.literal("diagnostic"),
@@ -462,6 +500,7 @@ export async function createM4ProgramBridge(
       const observation = z
         .object({
           action: z.literal("observe"),
+          rendererInstance: z.uuid(),
           cameraRole: cameraRoleSchema,
           frames: z.number().int().nonnegative(),
           verified: z.boolean(),
@@ -470,6 +509,8 @@ export async function createM4ProgramBridge(
         .strict()
         .safeParse(parsed);
       if (observation.success && rendererAllowed) {
+        if (!rendererHealth.accepts(observation.data.rendererInstance))
+          return reply(409, { error: "Renderer observation rejected" });
         const { cameraRole, frames, verified, sourceGeneration } =
           observation.data;
         const source = inputs?.snapshot(cameraRole);
@@ -506,6 +547,7 @@ export async function createM4ProgramBridge(
       const audioObservation = z
         .object({
           action: z.literal("audio-observe"),
+          rendererInstance: z.uuid(),
           cameraRole: cameraRoleSchema,
           peak: z.number().finite().min(0).max(1),
           rms: z.number().finite().min(0).max(1),
@@ -515,6 +557,8 @@ export async function createM4ProgramBridge(
         .strict()
         .safeParse(parsed);
       if (audioObservation.success && rendererAllowed) {
+        if (!rendererHealth.accepts(audioObservation.data.rendererInstance))
+          return reply(409, { error: "Renderer observation rejected" });
         const { cameraRole, peak, rms, receiving } = audioObservation.data;
         if (
           inputs &&
@@ -535,6 +579,7 @@ export async function createM4ProgramBridge(
       const usbObservation = z
         .object({
           action: z.literal("usb-audio-observe"),
+          rendererInstance: z.uuid(),
           contextState: z.enum(["running", "suspended", "closed"]),
           scheduledFrames: z.number().int().nonnegative().max(480000),
           peak: z.number().finite().min(0).max(1),
@@ -543,6 +588,8 @@ export async function createM4ProgramBridge(
         .strict()
         .safeParse(parsed);
       if (usbObservation.success && rendererAllowed) {
+        if (!rendererHealth.accepts(usbObservation.data.rendererInstance))
+          return reply(409, { error: "Renderer observation rejected" });
         if (usbRenderer.contextState !== usbObservation.data.contextState) {
           try {
             rendererAssets?.diagnostic?.({
@@ -631,6 +678,7 @@ export async function createM4ProgramBridge(
   let closing: Promise<void> | undefined;
   return {
     address,
+    rendererHealth: rendererHealth.snapshot,
     cameraStatus: () =>
       Object.fromEntries(
         (["camera-home", "camera-away"] as const).map((role) => [
@@ -701,6 +749,7 @@ export async function createM4ProgramBridge(
     close: () =>
       (closing ??= (async () => {
         closed = true;
+        rendererHealth.close();
         usbAudio.reset();
         expected.fill(0);
         expectedRendererCookie.fill(0);

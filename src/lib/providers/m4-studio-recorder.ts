@@ -6,6 +6,21 @@ import { M4NativePipeClient } from "./m4-native-pipe";
 import { M4ProgramStream } from "./m4-program-stream";
 import type { StudioDiagnostic } from "./m5-studio-diagnostics";
 
+/** A valid negative refresh acknowledgment leaves the inherited channel usable. */
+export function readM4ProgramControlAck(
+  tag: "RFR1" | "RFS1",
+  id: number,
+  ack: Buffer,
+): "accepted" | "rejected" {
+  if (ack.length !== (tag === "RFS1" ? 24 : 8) || ack.readUInt32LE(4) !== id)
+    throw new Error("m4_recording_unavailable");
+  const response = ack.subarray(0, 4).toString("ascii");
+  if (tag === "RFR1" && response === "RFF1") return "rejected";
+  if (response !== (tag === "RFS1" ? "RFP1" : "RFA1"))
+    throw new Error("m4_recording_unavailable");
+  return "accepted";
+}
+
 const localProgram = z
   .object({
     url: z
@@ -94,6 +109,7 @@ export async function startM4StudioRecorder(paths: {
           ]
         : []),
       ...(paths.streamPlugin ? ["--stream-plugin", paths.streamPlugin] : []),
+      ...(source ? ["--program-control"] : []),
     ],
     {
       cwd: dirname(paths.executable),
@@ -155,6 +171,8 @@ export async function startM4StudioRecorder(paths: {
     const bootstrap = await readM4RecorderReady(
       child.stdout,
       Boolean(paths.streamPlugin),
+      15000,
+      Boolean(source),
     );
     if (bootstrap) {
       try {
@@ -173,7 +191,104 @@ export async function startM4StudioRecorder(paths: {
     }
     if (exited) throw fail();
     void closed.then(() => stream?.stop().catch(() => undefined));
-    return { stop, closed, ...(stream ? { stream } : {}) };
+    let requestId = 0;
+    let controlFlight = false;
+    let controlFailed = false;
+    const command = async (tag: "RFR1" | "RFS1") => {
+      if (!source || exited || stopPromise || controlFlight || controlFailed)
+        throw fail();
+      controlFlight = true;
+      const id = ++requestId;
+      if (id > 0xffffffff) {
+        controlFlight = false;
+        throw fail();
+      }
+      try {
+        return await new Promise<Buffer>((resolve, reject) => {
+          const ack = Buffer.alloc(tag === "RFS1" ? 24 : 8);
+          let received = 0;
+          let settled = false;
+          const cleanup = () => {
+            clearTimeout(timer);
+            child.stdout.removeListener("data", data);
+            child.stdout.removeListener("error", unavailable);
+            child.stdout.removeListener("end", unavailable);
+            child.removeListener("exit", unavailable);
+          };
+          const unavailable = () => {
+            if (settled) return;
+            settled = true;
+            controlFailed = true;
+            cleanup();
+            ack.fill(0);
+            reject(fail());
+          };
+          const data = (chunk: Buffer) => {
+            if (!Buffer.isBuffer(chunk) || received + chunk.length > ack.length)
+              return unavailable();
+            chunk.copy(ack, received);
+            received += chunk.length;
+            chunk.fill(0);
+            if (received !== ack.length) return;
+            try {
+              readM4ProgramControlAck(tag, id, ack);
+            } catch {
+              return unavailable();
+            }
+            settled = true;
+            cleanup();
+            resolve(ack);
+          };
+          const timer = setTimeout(unavailable, 5000);
+          child.stdout.on("data", data);
+          child.stdout.once("error", unavailable);
+          child.stdout.once("end", unavailable);
+          child.once("exit", unavailable);
+          const request = Buffer.alloc(8);
+          request.write(tag);
+          request.writeUInt32LE(id, 4);
+          child.stdin.write(request, (error) => {
+            request.fill(0);
+            if (error) unavailable();
+          });
+        });
+      } finally {
+        controlFlight = false;
+      }
+    };
+    const refreshProgram = async () => {
+      const ack = await command("RFR1");
+      try {
+        if (ack.subarray(0, 4).toString("ascii") === "RFF1") throw fail();
+      } finally {
+        ack.fill(0);
+      }
+    };
+    const programHealth = async () => {
+      const ack = await command("RFS1");
+      try {
+        const status = ack.readUInt32LE(20);
+        if (status > 1) {
+          controlFailed = true;
+          throw fail();
+        }
+        return {
+          rawSequence: ack.readUInt32LE(8),
+          paintChanges: ack.readUInt32LE(12),
+          ageMs: ack.readUInt32LE(16),
+          active: status === 1,
+        };
+      } finally {
+        ack.fill(0);
+      }
+    };
+    return {
+      stop,
+      closed,
+      refreshProgram,
+      programHealth,
+      ...(stream ? { stream } : {}),
+    };
   } catch {
     await stop().catch(() => undefined);
     throw fail();

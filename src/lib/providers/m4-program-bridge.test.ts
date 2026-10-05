@@ -1,8 +1,42 @@
+import { request as httpRequest } from "node:http";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { M4ProgramClient } from "./m4-program-client";
 import { createM4ProgramBridge } from "./m4-program-bridge";
 import { StudioTransportUnavailable } from "./studio-transport-error";
 const closers: Array<() => Promise<void>> = [];
+async function documentInstance(page: Response) {
+  return (await page.text()).match(
+    /name="m4-renderer-instance" content="([a-f0-9-]+)"/,
+  )![1];
+}
+async function navigation(url: string, headers: Record<string, string>) {
+  return new Promise<Response>((resolve, reject) => {
+    const request = httpRequest(
+      url,
+      {
+        headers: {
+          ...headers,
+          "sec-fetch-dest": "document",
+          "sec-fetch-mode": "navigate",
+        },
+      },
+      (response) => {
+        const chunks: Buffer[] = [];
+        response.on("data", (chunk) => chunks.push(chunk));
+        response.on("end", () =>
+          resolve(
+            new Response(Buffer.concat(chunks), {
+              status: response.statusCode,
+              headers: response.headers as Record<string, string>,
+            }),
+          ),
+        );
+      },
+    );
+    request.on("error", reject);
+    request.end();
+  });
+}
 afterEach(async () => {
   await Promise.all(closers.splice(0).map((close) => close()));
 });
@@ -22,6 +56,133 @@ async function setup() {
   return { client, action, bridge, headers };
 }
 describe("private loopback program API", () => {
+  it("permits only the claimed renderer to reload and fences old-document health reports", async () => {
+    const { bridge, headers } = await setup();
+    const page = await fetch(bridge.rendererUrl);
+    const cookie = page.headers.get("set-cookie")!.split(";")[0];
+    const instance = (await page.text()).match(
+      /name="m4-renderer-instance" content="([a-f0-9-]+)"/,
+    )![1];
+    const post = (
+      body: unknown,
+      supplied: Record<string, string> = { cookie, origin: bridge.address },
+    ) =>
+      fetch(bridge.address + "/renderer-health", {
+        method: "POST",
+        headers: { ...supplied, "content-type": "application/json" },
+        body: JSON.stringify(body),
+      });
+    const report = {
+      action: "renderer-heartbeat",
+      instance,
+      frames: 1,
+      visibility: "visible",
+    };
+    const observations = [
+      {
+        action: "observe",
+        cameraRole: "camera-home",
+        frames: 1,
+        verified: true,
+      },
+      {
+        action: "audio-observe",
+        cameraRole: "camera-home",
+        peak: 0.5,
+        rms: 0.2,
+        receiving: true,
+      },
+      {
+        action: "usb-audio-observe",
+        contextState: "running",
+        scheduledFrames: 2400,
+        peak: 0.5,
+        rms: 0.2,
+      },
+    ];
+    const observe = (body: Record<string, unknown>, rendererInstance: string) =>
+      fetch(bridge.address + "/camera", {
+        method: "POST",
+        headers: {
+          cookie,
+          origin: bridge.address,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({ ...body, rendererInstance }),
+      });
+    for (const body of observations)
+      expect((await observe(body, instance)).status).toBe(200);
+    expect((await post(report)).status).toBe(200);
+    expect(bridge.rendererHealth()).toMatchObject({ active: true, frames: 1 });
+    expect((await post({ ...report, token: "secret" })).status).toBe(409);
+    expect((await fetch(bridge.rendererUrl)).status).toBe(403);
+    expect((await fetch(bridge.rendererUrl, { headers })).status).toBe(403);
+    expect((await post(report, headers)).status).toBe(403);
+    for (const destination of ["image", "empty"]) {
+      expect(
+        (
+          await fetch(bridge.rendererUrl, {
+            headers: {
+              cookie,
+              "sec-fetch-dest": destination,
+              "sec-fetch-mode": destination === "image" ? "no-cors" : "cors",
+            },
+          })
+        ).status,
+      ).toBe(403);
+      expect(bridge.rendererHealth()).toMatchObject({ active: true });
+      expect(bridge.cameraStatus()["camera-home"]).toBe(true);
+      expect(bridge.audioStatus()["camera-home"]).toMatchObject({
+        receiving: true,
+        peak: 0.5,
+      });
+      expect(bridge.usbAudioStatus()).toMatchObject({
+        renderer: { contextState: "running", scheduledFrames: 2400 },
+      });
+      expect((await post({ ...report, frames: 2 })).status).toBe(200);
+    }
+    expect(
+      (
+        await fetch(bridge.rendererUrl, {
+          headers: {
+            authorization: bridge.authorization,
+            "sec-fetch-dest": "document",
+            "sec-fetch-mode": "navigate",
+          },
+        })
+      ).status,
+    ).toBe(403);
+    const reload = await navigation(bridge.rendererUrl, {
+      cookie,
+      "sec-fetch-site": "none",
+    });
+    expect(reload.status).toBe(200);
+    expect(reload.headers.get("set-cookie")).toBeNull();
+    const next = (await reload.text()).match(
+      /name="m4-renderer-instance" content="([a-f0-9-]+)"/,
+    )![1];
+    expect(next).not.toBe(instance);
+    expect(bridge.cameraStatus()["camera-home"]).toBe(false);
+    expect(bridge.audioStatus()["camera-home"].receiving).toBe(false);
+    expect(bridge.usbAudioStatus().renderer.contextState).toBe("unavailable");
+    for (const body of observations)
+      expect((await observe(body, instance)).status).toBe(409);
+    for (const body of observations)
+      expect((await observe(body, next)).status).toBe(200);
+    expect((await post({ ...report, frames: 100 })).status).toBe(409);
+    expect((await post({ ...report, instance: next })).status).toBe(200);
+    expect((await post({ ...report, instance: next, frames: 0 })).status).toBe(
+      409,
+    );
+    expect(
+      (
+        await post(
+          { ...report, instance: next },
+          { cookie, origin: "http://evil.invalid" },
+        )
+      ).status,
+    ).toBe(403);
+  });
   it("preserves the retryable classification through the local program endpoint", async () => {
     const { client, bridge, headers } = await setup();
     vi.spyOn(client, "readGame").mockRejectedValue(
@@ -96,6 +257,7 @@ describe("private loopback program API", () => {
     const clock = vi.spyOn(Date, "now").mockImplementation(() => now);
     const body = {
       action: "usb-audio-observe",
+      rendererInstance: await documentInstance(page),
       contextState: "running",
       scheduledFrames: 2400,
       peak: 0.4,
@@ -148,6 +310,7 @@ describe("private loopback program API", () => {
     try {
       const body = {
         action: "observe",
+        rendererInstance: await documentInstance(page),
         cameraRole: "camera-home",
         frames: 5,
         verified: true,
@@ -204,6 +367,7 @@ describe("private loopback program API", () => {
       });
     const body = {
       action: "audio-observe",
+      rendererInstance: await documentInstance(page),
       cameraRole: "camera-home",
       peak: 0.8,
       rms: 0.25,

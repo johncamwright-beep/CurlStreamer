@@ -21,6 +21,9 @@ bool m4_media_prepare_stream(m4_media *media, const wchar_t *runtime_bin, const 
 /* Transfers the overlapped private pipe only on success. */
 bool m4_media_attach_stream(m4_media *media, HANDLE pipe, const unsigned char capability[32], uint32_t parent_pid);
 void m4_media_poll_stream(m4_media *media);
+/* Queues the pinned browser refresh button. Acceptance is not frame proof. */
+bool m4_media_refresh_program(m4_media *media);
+void m4_media_program_health(const m4_media *media, uint32_t *sequence, uint32_t *paint_changes, uint32_t *age_ms, uint32_t *status);
 bool m4_media_active(const m4_media *media);
 uint64_t m4_media_bytes(const m4_media *media);
 /* One-shot graceful stop. True only after the actual successful OBS stop signal.

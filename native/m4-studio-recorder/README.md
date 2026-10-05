@@ -78,3 +78,21 @@ its recorder, and requires every observed descendant to exit. Forced termination
 never claims MKV finalization. The private cache ownership marker is checked.
 Production admission remains separately gated, and neither these isolated tests nor
 an accepted ARM reply establishes YouTube delivery or dual-output performance.
+
+## Browser paint recovery control
+
+Program callers may append `--program-control` after all other arguments. In this mode the inherited readiness stdout stays open after the existing READY/bootstrap bytes; callers must consume exactly those startup bytes without waiting for EOF. Legacy callers retain the original EOF readiness behavior.
+
+The parent-only stdin accepts exactly eight bytes: ASCII `RFR1` (queue browser refresh) or `RFS1` (query program health), followed by a nonzero uint32 little-endian request ID. Partial commands have a two-second native deadline; malformed input fails closed. EOF still finalizes recording. Control never contains a URL, grant, key or free-form diagnostic string.
+
+Refresh returns eight bytes: `RFA1` when the pinned `refreshnocache` browser property was invoked, or `RFF1` when unavailable, then the matching request ID. Acceptance proves only a queued reload. It does not prove recovered media. Recording, encoders, RTMP authority and camera-helper ownership remain intact.
+
+Health returns 24 bytes: `RFP1`, request ID, raw preview sequence, painted-marker change counter, milliseconds since the last marker change, and active status (0 or 1); all numeric fields are uint32 little-endian. Unknown/no marker age is UINT32_MAX. The program renderer supplies a 12×12 bottom-right grayscale marker alternating RGB 8/40 every 500 ms. The 1280×720 raw preview callback samples its scaled interior at (1276,716), counting changes of at least eight grayscale levels. This distinguishes repeated OBS output from fresh browser painting without relying on motion in the cameras or sponsor content. A renderer heartbeat must also remain fresh.
+
+Run the actual isolated test against a newly built recorder and pinned OBS runtime:
+
+```powershell
+node native/m4-studio-recorder/program-recovery-validation.mjs <absolute-recorder.exe> <absolute-OBS-bin-directory>
+```
+
+It deliberately stops marker changes, verifies continued raw OBS frames and stale painting, refreshes the browser, checks actual recovered paint, retains the native PID and growing MKV, then gracefully finalizes its own recording. It does not touch an installed Studio session.

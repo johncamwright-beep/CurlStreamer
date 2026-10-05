@@ -4,6 +4,7 @@ import { useEffect, useRef } from "react";
 import type { CameraRole } from "@/lib/m2-studio-protocol";
 import { acquireProgramAudioOutput } from "@/lib/program-audio-output";
 import { usbAudioStart } from "@/lib/usb-audio-timing";
+import { m4RendererInstance } from "@/lib/providers/m4-renderer-health-browser";
 
 /** Receives Studio's local USB mix only inside the private OBS browser source. */
 export function ProgramUsbAudio({
@@ -51,10 +52,11 @@ export function ProgramUsbAudio({
       if (stopped || reportController || performance.now() - lastReport < 500)
         return;
       lastReport = performance.now();
-      reportController = new AbortController();
-      const reportTimeout = setTimeout(() => reportController?.abort(), 500);
+      const attempt = new AbortController();
+      reportController = attempt;
+      const reportTimeout = setTimeout(() => attempt.abort(), 500);
       void fetch("/camera", {
-        signal: reportController.signal,
+        signal: attempt.signal,
         method: "POST",
         credentials: "same-origin",
         redirect: "error",
@@ -63,6 +65,7 @@ export function ProgramUsbAudio({
           role
             ? {
                 action: "audio-observe",
+                rendererInstance: m4RendererInstance(),
                 cameraRole: role,
                 sourceGeneration,
                 receiving:
@@ -73,6 +76,7 @@ export function ProgramUsbAudio({
               }
             : {
                 action: "usb-audio-observe",
+                rendererInstance: m4RendererInstance(),
                 contextState:
                   context.state === "running" ? "running" : "suspended",
                 scheduledFrames: Math.min(
@@ -84,10 +88,12 @@ export function ProgramUsbAudio({
               },
         ),
       })
+        .then((response) => response.text())
         .catch(() => undefined)
         .finally(() => {
           clearTimeout(reportTimeout);
-          reportController = undefined;
+          attempt.abort();
+          if (reportController === attempt) reportController = undefined;
         });
     };
     const flush = () => {
@@ -103,16 +109,17 @@ export function ProgramUsbAudio({
       scheduledFrames = 0;
     };
     const poll = async () => {
-      requestController = new AbortController();
-      const timeout = setTimeout(() => requestController?.abort(), 500);
+      const attempt = new AbortController();
+      requestController = attempt;
+      const timeout = setTimeout(() => attempt.abort(), 500);
       try {
         const response = await fetch(endpoint, {
           credentials: "same-origin",
           cache: "no-store",
           redirect: "error",
-          signal: requestController.signal,
+          signal: attempt.signal,
         });
-        if (stopped || requestController.signal.aborted) return;
+        if (stopped || attempt.signal.aborted) return;
         if (!response.ok && response.status !== 204) {
           if ([401, 403, 409, 410].includes(response.status)) flush();
           throw new Error();
@@ -121,7 +128,7 @@ export function ProgramUsbAudio({
         if (generation && currentGeneration !== generation) flush();
         generation = currentGeneration;
         const raw = await response.arrayBuffer();
-        if (stopped || requestController.signal.aborted) return;
+        if (stopped || attempt.signal.aborted) return;
         if (
           raw.byteLength &&
           raw.byteLength % Float32Array.BYTES_PER_ELEMENT === 0
@@ -175,7 +182,8 @@ export function ProgramUsbAudio({
         // The program bridge is allowed to disappear while OBS is closing.
       } finally {
         clearTimeout(timeout);
-        requestController = undefined;
+        attempt.abort();
+        if (requestController === attempt) requestController = undefined;
         report();
         if (!stopped) timer = setTimeout(() => void poll(), 50);
       }

@@ -11,6 +11,7 @@ import { recoverM4ProgramCaches } from "./m4-program-cache";
 import type { StudioDiagnostic } from "./m5-studio-diagnostics";
 import type { ConnectionDiagnostic } from "./connection-diagnostics";
 import type { createM4IpCameraManager } from "./m4-ip-camera";
+import { startM4ProgramWatchdog } from "./m4-program-health";
 
 const optionsSchema = z
   .object({
@@ -76,6 +77,7 @@ export async function startM4ProgramHost(
   let realtime: ReturnType<typeof createM4ProgramRealtime> | undefined;
   let bridge: Awaited<ReturnType<typeof createM4ProgramBridge>> | undefined;
   let recorder: Awaited<ReturnType<typeof startM4StudioRecorder>> | undefined;
+  let watchdog: ReturnType<typeof startM4ProgramWatchdog> | undefined;
   const eraseCache = () =>
     safeCache
       ? rm(cacheDirectory, { recursive: true, force: true, maxRetries: 3 })
@@ -116,9 +118,18 @@ export async function startM4ProgramHost(
     throw new Error("m4_program_host_unavailable");
   }
 
+  if (recorder.programHealth && recorder.refreshProgram)
+    watchdog = startM4ProgramWatchdog({
+      renderer: bridge.rendererHealth,
+      paint: recorder.programHealth,
+      refresh: () => recorder.refreshProgram().then(() => true),
+      diagnostic: connectionDiagnostic,
+    });
+
   let stopping: Promise<void> | undefined;
   const stop = () =>
     (stopping ??= (async () => {
+      watchdog?.close();
       let failed = false;
       await cameraInputs?.stop().catch(() => {
         failed = true;
@@ -135,6 +146,7 @@ export async function startM4ProgramHost(
       await closed;
     })());
   const closed = recorder.closed.then(async (result) => {
+    watchdog?.close();
     let cameraCleanup = true;
     await cameraInputs?.stop().catch(() => {
       cameraCleanup = false;

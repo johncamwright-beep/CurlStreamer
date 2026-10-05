@@ -38,6 +38,10 @@ import {
   type M4CameraInputSnapshot,
 } from "../m4-camera-input";
 import { M4IpCameraTransport } from "./m4-ip-camera-browser";
+import {
+  m4RendererInstance,
+  startM4RendererHeartbeat,
+} from "./m4-renderer-health-browser";
 
 import {
   cameraAspect,
@@ -49,7 +53,7 @@ import {
 type CameraState = {
   sourceIdentity?: string;
   aspect?: number;
-  frameUrl?: string;
+  canvas?: HTMLCanvasElement;
   stream?: MediaStream;
   audio?: MediaStream;
   metrics?: DirectMetrics;
@@ -90,6 +94,20 @@ function CameraVideo({
   onAspect: (aspect: number) => void;
 }) {
   const ref = useRef<HTMLVideoElement>(null);
+  const canvasHost = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const canvas = state.canvas;
+    const host = canvasHost.current;
+    if (!canvas || !host) return;
+    canvas.className = "portrait-camera-video";
+    canvas.style.objectFit = "contain";
+    canvas.setAttribute("role", "img");
+    canvas.setAttribute("aria-label", "IP camera");
+    host.appendChild(canvas);
+    return () => {
+      if (canvas.parentElement === host) canvas.remove();
+    };
+  }, [state.canvas]);
   useEffect(() => {
     const video = ref.current;
     if (!video) return;
@@ -101,13 +119,8 @@ function CameraVideo({
   }, [state.stream]);
   return (
     <>
-      {state.frameUrl ? (
-        <img
-          className="portrait-camera-video"
-          src={state.frameUrl}
-          alt="IP camera"
-          style={{ objectFit: "contain" }}
-        />
+      {state.canvas ? (
+        <div ref={canvasHost} style={{ position: "absolute", inset: 0 }} />
       ) : (
         <video
           className="portrait-camera-video"
@@ -132,7 +145,7 @@ function CameraVideo({
           aria-label="Direct camera"
         />
       )}
-      {!state.stream && !state.frameUrl && (
+      {!state.stream && !state.canvas && (
         <div
           style={{
             position: "absolute",
@@ -231,6 +244,7 @@ function PhoneCameraTransport({
                     "/camera",
                     {
                       action: "observe",
+                      rendererInstance: m4RendererInstance(),
                       cameraRole: role,
                       frames: metrics.framesDecoded,
                       verified: metrics.direct,
@@ -322,6 +336,13 @@ function PhoneCameraTransport({
 }
 
 function ProgramRenderer() {
+  useEffect(
+    () =>
+      startM4RendererHeartbeat((body, signal) =>
+        request("/renderer-health", body, signal),
+      ),
+    [],
+  );
   const [game, setGame] = useState<PrivateProgramGame>();
   const [programMessage, setProgramMessage] = useState("Loading program…");
   const [cameras, setCameras] = useState<
@@ -334,12 +355,15 @@ function ProgramRenderer() {
   useEffect(() => {
     const controller = new AbortController();
     let timer: ReturnType<typeof setTimeout> | undefined;
+    let deadline: ReturnType<typeof setTimeout> | undefined;
     const poll = async () => {
+      const attempt = new AbortController();
+      deadline = setTimeout(() => attempt.abort(), 3000);
       try {
         const value = (await request(
           "/program",
           undefined,
-          controller.signal,
+          AbortSignal.any([controller.signal, attempt.signal]),
         )) as {
           game?: PrivateProgramGame;
         };
@@ -352,12 +376,15 @@ function ProgramRenderer() {
           setProgramMessage("Reconnecting to Studio…");
           timer = setTimeout(() => void poll(), 2000);
         }
+      } finally {
+        clearTimeout(deadline);
       }
     };
     void poll();
     return () => {
       controller.abort();
       clearTimeout(timer);
+      clearTimeout(deadline);
     };
   }, []);
 
@@ -435,7 +462,7 @@ function ProgramRenderer() {
     );
 
   const verified = roles.filter(
-    (role) => cameras[role].metrics?.direct || cameras[role].frameUrl,
+    (role) => cameras[role].metrics?.direct || cameras[role].canvas,
   ).length;
   return (
     <>

@@ -1,4 +1,5 @@
 import "server-only";
+import { setTimeout as delay } from "node:timers/promises";
 import { z } from "zod";
 import {
   REPORT_INSTRUCTIONS,
@@ -88,7 +89,7 @@ async function generateOnce(
           .length(gameKeys.length),
       })
     : baseSchema;
-  const response = await fetch("https://api.openai.com/v1/responses", {
+  const response = await requestReport({
     method: "POST",
     cache: "no-store",
     signal,
@@ -119,7 +120,9 @@ async function generateOnce(
           type: "json_schema",
           name: "shot_tracker_report",
           strict: true,
-          schema: z.toJSONSchema(outputSchema),
+          // Reuse the finding/evidence definitions instead of repeating every
+          // game evidence ID in each section of the request.
+          schema: z.toJSONSchema(outputSchema, { reused: "ref" }),
         },
       },
     }),
@@ -165,4 +168,37 @@ async function generateOnce(
     .map((c) => c.text ?? "")
     .join("");
   return validateNarrative(JSON.parse(text), input, audience, forbiddenNames);
+}
+
+async function requestReport(init: RequestInit): Promise<Response> {
+  for (let attempt = 0; ; attempt++) {
+    init.signal?.throwIfAborted();
+    const response = await fetch("https://api.openai.com/v1/responses", init);
+    if (response.status !== 429 || attempt >= 2) return response;
+    const body = await response
+      .clone()
+      .json()
+      .catch(() => null);
+    // Quota/billing errors also use 429, but waiting cannot repair them.
+    if (!["rate_limit_exceeded", "slow_down"].includes(body?.error?.code))
+      return response;
+    const hint = response.headers.get("retry-after");
+    const seconds = hint === null ? NaN : Number(hint);
+    const serverWait =
+      Number.isFinite(seconds) && seconds >= 0
+        ? seconds * 1000
+        : hint
+          ? Date.parse(hint) - Date.now()
+          : NaN;
+    const wait =
+      Number.isFinite(serverWait) && serverWait >= 0
+        ? serverWait
+        : 5000 * 2 ** attempt;
+    // Never retry sooner than the provider asks. The packet deadline also
+    // cancels both the wait and subsequent requests.
+    if (wait > 30_000) return response;
+    await delay(wait + Math.floor(Math.random() * 250), undefined, {
+      signal: init.signal ?? undefined,
+    });
+  }
 }

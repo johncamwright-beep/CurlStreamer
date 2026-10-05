@@ -135,6 +135,30 @@ export default function EventReports({ eventId }: { eventId: string }) {
           </p>
         )}
         {status?.reason && <p role="status">{status.reason}</p>}
+        {status?.allowance && (
+          <div className="text-sm space-y-1">
+            <p>
+              {status.allowance.used} of {status.allowance.limit} event report
+              sets reserved this season (September–August).
+            </p>
+            <p>
+              One coach report, one team report and one set of individual
+              reports per event. Starting generation reserves an event slot;
+              retries use the same slot. Saved reports can always be reopened
+              while you have access.
+            </p>
+            {!status.allowance.owned && (
+              <p>
+                This event’s report set belongs to another coaching account.
+                Reports remain private to their author.
+              </p>
+            )}
+            {!status.allowance.reserved &&
+              status.allowance.used >= status.allowance.limit && (
+              <p>Your team has reached this season’s 20-event allowance.</p>
+              )}
+          </div>
+        )}
         <div className="grid gap-3 md:grid-cols-3">
           {audiences.map((a) => {
             const saved = status?.entries.find((e) => e.audience === a.id);
@@ -143,7 +167,10 @@ export default function EventReports({ eventId }: { eventId: string }) {
                 <h3 className="font-bold">{a.label}</h3>
                 <p className="mb-2 text-sm">{a.detail}</p>
                 {saved?.stale && (
-                  <p>Event data changed. Refresh this report.</p>
+                  <p>
+                    Event data changed since generation. This saved report
+                    cannot be regenerated.
+                  </p>
                 )}
                 {saved?.status === "failed" && (
                   <p>Previous generation did not finish. You can retry.</p>
@@ -151,24 +178,25 @@ export default function EventReports({ eventId }: { eventId: string }) {
                 <button
                   className="btn min-h-11"
                   disabled={
-                    !!busy ||
-                    !!processing ||
-                    !status?.configured ||
-                    !status.eligible
+                    !saved?.packet &&
+                    (!!busy ||
+                      !!processing ||
+                      !status?.configured ||
+                      !status.eligible ||
+                      !status.allowance?.owned ||
+                      status.allowance.completed.includes(a.id) ||
+                      (!status.allowance.reserved &&
+                        status.allowance.used >= status.allowance.limit))
                   }
                   onClick={() =>
-                    saved?.status === "ready" && !saved.stale
-                      ? setSelected(a.id)
-                      : void generate(a.id)
+                    saved?.packet ? setSelected(a.id) : void generate(a.id)
                   }
                 >
                   {busy === a.id || saved?.status === "processing"
                     ? "Generating…"
-                    : saved?.status === "ready" && !saved.stale
+                    : saved?.packet
                       ? `Open ${a.label.toLowerCase()}`
-                      : saved?.stale
-                        ? `Refresh ${a.label.toLowerCase()}`
-                        : `Generate ${a.label.toLowerCase()}`}
+                      : `Generate ${a.label.toLowerCase()}`}
                 </button>
                 {saved?.packet && (
                   <button

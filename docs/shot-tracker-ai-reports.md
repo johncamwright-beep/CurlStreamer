@@ -18,7 +18,7 @@ Team evidence is built independently, never by redacting a coach narrative. Raw 
 
 ## Setup and integration
 
-1. Apply `supabase/migrations/0074_shot_tracker_reports.sql` through the normal migration process.
+1. Apply `supabase/migrations/0074_shot_tracker_reports.sql`, then `0075_shot_tracker_report_allowance.sql` through the normal migration process. Do not replay 0074 in an environment where the report table already exists.
 2. Configure server-only `OPENAI_API_KEY`, `SHOT_TRACKER_AI_MODEL` and `SHOT_TRACKER_AI_ENABLED`. The model must support strict structured outputs in the Responses API. Existing `CURLCOACH_ENABLED`, team entitlement and coach grants remain required. No model is silently selected.
 3. Review generated drafts with a coach against labelled examples for all audiences, sparse data, concessions, unknown hammer and conflicting grades before enabling paid production use.
 
@@ -30,19 +30,22 @@ No replacement login, teams, subscriptions or billing. Shot Tracker remains an o
 
 Private reports are scoped by organisation, authenticated coach, event and audience. RLS and revoked direct table privileges leave only service-role RPCs. Each RPC repeats membership, entitlement and coach-grant checks. Routes validate with Zod and require same-origin writes.
 
-Fingerprints include shot state/roster, games and completion, line scores, initial hammer, event title, policy and configured model. Changed data marks reports stale; repeated clicks reopen saved content. Sources are checked again before saving. Content is retained across versions; cache access updates recency. Different coaches do not share report caches.
+Fingerprints include shot state/roster, games and completion, line scores, initial hammer, event title, policy and configured model. Changed data marks reports stale but never enables regeneration after success. Repeated clicks reopen the saved snapshot, including when AI configuration is disabled or the event later reopens. Sources are checked again before saving. Different coaches do not share report contents.
 
-An organisation-wide claim lock prevents duplicate or simultaneous generation. Failed/abandoned claims recover after three minutes. Thirty generation attempts across recently updated report records limit distinct requests and retries; an individual packet has at most eight model calls, two at a time. This is an initial operational allowance, not a billing plan. The deployment must permit the route's declared maximum duration. Streaming deployment settings are unchanged.
+Each team has twenty event reservations per billing season (September 1 through August 31, America/Toronto). The first accepted generation reserves one slot, including if generation subsequently fails. Coach, team and individual packets plus failed-attempt retries all use that slot. Successful packets cannot be regenerated, even after source/model/policy changes or season rollover. Renaming or moving a scheduled event cannot reset the allowance. The reservation ledger survives deletion of an event or originating user, preventing delete-and-recreate allowance resets. Deleting the entire team deletes its ledger through the existing organization lifecycle.
+
+The first coach to reserve an event owns its private report set; another coach cannot create another set for that event or read the first coach's reports. The migration backfills existing attempted events, preferring the earliest successful author, and preserves existing private successes. Existing usage above twenty is retained but no additional events can be reserved that season. It does not change login, memberships, subscriptions, prices, entitlement checks, Stripe configuration or deployment configuration.
+
+An organisation-wide database claim lock prevents concurrent requests from exceeding the final available slot. Failed/abandoned claims recover after three minutes, including after source changes. The existing thirty-attempt daily guard remains. At most eight individual narratives run with two workers; each narrative permits one validation-only repair, for at most sixteen provider requests per individual-packet attempt. Billing/network/refusal failures are not automatically retried. Output is bounded at 3,200 tokens per request and a shared 110-second packet deadline. The deployment must permit the route's declared maximum duration. Streaming settings are unchanged.
 
 Validation failure, refusal, timeout or persistence failure never publishes a partial packet. Existing saved reports remain reviewable. A failed request gives a fixed error and a retry after cooldown. In-progress requests are polled; abandoned leases become retryable.
 
 ## Verification
 
-- Main suite: 1,882 tests passed; 100 existing opt-in tests skipped.
-- Focused tests cover audience isolation, exclusions/zeros, concessions, request validation, privacy checks, provider failures, cache reuse and invalidation.
-- Migration executed in a dedicated local PostgreSQL cluster: private access, duplicate claims, lease ownership, cached success, audience separation, completion and entitlement checks passed.
-- Production build passed with placeholder test configuration; pre-existing unrelated lint warnings remain.
-- Phone/tablet report and event navigation tests passed. Default E2E is blocked by the existing user server on port 3000, which was preserved.
-- No production migration, deployment, live model call or credential configuration was performed.
+- Focused tests cover audience isolation, exclusions/zeros, concessions, request validation, privacy checks, provider failures and permanent cache reuse.
+- PostgreSQL tests execute both migrations against a dedicated local cluster: private access, duplicate claims, leases, existing-data backfill, two requests racing for the twentieth slot, season boundary/rollover, deletion persistence, completed-packet immutability and teammate isolation.
+- Phone/tablet tests cover allowance exhaustion, reserved-event continuation, another author's reservation, stale saved reopening and completion gating. Default E2E has a known occupied-port baseline; preserve the user's server.
+- Live isolated-preview tests generated and reopened coach, collective team and four individual reports. These remain review drafts. Policy v2 adds explicit grounding instructions and regression checks for observed coverage overclaims and unfair comparisons. Validation is not proof of factual interpretation; coach review remains required.
+- Production release and migration are separate approval steps. The isolated test database must be removed after validation; never remove the parent production project.
 
 PostgreSQL tests opt in with `SHOT_TRACKER_TEST_DATABASE_URL` (localhost disposable/test database) and `CURLCAST_PSQL`. They create/drop an isolated database and use the existing real access-check function against minimal fixtures. Do not target application storage.

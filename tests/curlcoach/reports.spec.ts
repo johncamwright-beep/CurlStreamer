@@ -30,12 +30,15 @@ test.beforeAll(async () => {
   });
   js = r.outputFiles[0].text;
 });
-test("three one-touch audiences, saved reopening, stale refresh and completion gating", async ({
+test("one-touch audiences, immutable saved reports, season allowance and completion gating", async ({
   page,
 }, info) => {
   let eligible = true,
     stale = false,
-    posts = 0;
+    posts = 0,
+    used = 0,
+    reserved = false,
+    owned = true;
   const entries: unknown[] = [];
   const finding = {
     text: "Our team can repeat a shared target drill.",
@@ -88,6 +91,14 @@ test("three one-touch audiences, saved reopening, stale refresh and completion g
     await route.fulfill({
       json: {
         configured: true,
+        allowance: {
+          seasonStart: "2026-09-01",
+          used,
+          limit: 20,
+          reserved,
+          owned,
+          completed: [],
+        },
         eligible,
         reason: eligible
           ? null
@@ -135,11 +146,31 @@ test("three one-touch audiences, saved reopening, stale refresh and completion g
   stale = true;
   await page.reload();
   await expect(
-    page.getByRole("button", { name: "Refresh team report", exact: true }),
+    page.getByRole("button", { name: "Open team report", exact: true }),
   ).toBeEnabled();
   await expect(page.getByRole("article")).toHaveCount(0);
   await page.getByRole("button", { name: "View saved team report" }).click();
   await expect(page.getByRole("article")).toContainText("Out of date");
+  expect(posts).toBe(1);
+  used = 20;
+  await page.reload();
+  await expect(
+    page.getByRole("button", { name: "Generate coach report", exact: true }),
+  ).toBeDisabled();
+  await expect(
+    page.getByRole("button", { name: "Open team report", exact: true }),
+  ).toBeEnabled();
+  reserved = true;
+  await page.reload();
+  await expect(
+    page.getByRole("button", { name: "Generate coach report", exact: true }),
+  ).toBeEnabled();
+  owned = false;
+  await page.reload();
+  await expect(
+    page.getByRole("button", { name: "Generate coach report", exact: true }),
+  ).toBeDisabled();
+  owned = true;
   eligible = false;
   await page.reload();
   await expect(

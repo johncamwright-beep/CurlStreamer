@@ -3,7 +3,7 @@ import { currentShots, report, shotTypes, type Shot } from "./model";
 import type { CoachEvent } from "./event";
 import { teamScoreStatistics } from "./score-statistics";
 
-export const REPORT_POLICY = "shot-tracker-event-v1";
+export const REPORT_POLICY = "shot-tracker-event-v2";
 export const audienceSchema = z.enum(["coach", "team", "players"]);
 export type ReportAudience = z.infer<typeof audienceSchema>;
 export const reportRequestSchema = z
@@ -47,6 +47,14 @@ export type ReportPacket = {
   reports: SavedReport[];
 };
 export type ReportStatus = {
+  allowance: {
+    seasonStart: string;
+    used: number;
+    limit: number;
+    reserved: boolean;
+    owned: boolean;
+    completed: ReportAudience[];
+  };
   configured: boolean;
   eligible: boolean;
   reason: string | null;
@@ -288,6 +296,24 @@ export function validateNarrative(
     )
   )
     throw new Error("Unknown evidence");
+  // Reject specific overclaims observed in live evaluation. These checks supplement,
+  // rather than replace, a coach's review of the evidence and shot difficulty.
+  if (
+    findings.some(
+      (f) =>
+        /\b(lowest overall|highest overall|lowest average|highest count of.*miss|best player|worst player|weakest|strongest)\b/i.test(
+          f.text,
+        ) ||
+        (audience === "coach" &&
+          f.evidence.filter((id) => id.startsWith("player-")).length > 1),
+    ) ||
+    [parsed.summary, ...parsed.strengths].some((f) =>
+      /\b(all games were (closely|fully) tracked|comprehensive (sample|coverage)|improved across games|improvement over the event|finishing strong was a clear trend|leading to (a win|winning|closing out))\b/i.test(
+        f.text,
+      ),
+    )
+  )
+    throw new Error("Unsupported report interpretation");
   if (
     forbiddenNames.some(
       (name) =>

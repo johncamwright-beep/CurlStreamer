@@ -38,6 +38,7 @@ export async function generateShotTrackerNarrative(
         "Unknown evidence",
         "Individual commentary in team report",
         "Invalid report prose",
+        "Unsupported report interpretation",
       ].includes(error.message)
     )
       throw error;

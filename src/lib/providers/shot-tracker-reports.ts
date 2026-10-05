@@ -99,6 +99,18 @@ export async function getEventReports(
     )
     .parse(await rpc("read_shot_tracker_reports", account, event.id));
   return {
+    allowance: z
+      .object({
+        seasonStart: z.string(),
+        used: z.number().int().nonnegative(),
+        limit: z.literal(20),
+        reserved: z.boolean(),
+        owned: z.boolean(),
+        completed: z.array(z.enum(["coach", "team", "players"])),
+      })
+      .parse(
+        await rpc("read_shot_tracker_report_allowance", account, event.id),
+      ),
     configured: !!reportAIConfig(),
     eligible: !eventReportEligibility(event),
     reason: eventReportEligibility(event),
@@ -153,11 +165,15 @@ export async function generateEventReports(
   if (claim.status === "ready") return claim.packet!;
   if (claim.status !== "claimed")
     throw new ReportError(
-      claim.status === "limit"
-        ? "The team's daily report allowance is reached. Try again tomorrow."
-        : claim.status === "cooldown"
-          ? "Please wait three minutes before retrying this report."
-          : "A team report is already being generated. Check again shortly.",
+      claim.status === "locked"
+        ? "This event's report set is already reserved or completed by a coaching account. Saved reports remain private to their author."
+        : claim.status === "season_limit"
+          ? "Your team has used all 20 event report sets for this season. Saved reports remain available."
+          : claim.status === "limit"
+            ? "The team's daily report allowance is reached. Try again tomorrow."
+            : claim.status === "cooldown"
+              ? "Please wait three minutes before retrying this report."
+              : "A team report is already being generated. Check again shortly.",
       429,
     );
   const abort = new AbortController();
@@ -223,6 +239,7 @@ export async function generateEventReports(
       "Report generation incomplete",
       "Report generation unavailable",
       "Invalid report prose",
+      "Unsupported report interpretation",
       "Unknown evidence",
       "Private identity in report",
       "Individual commentary in team report",

@@ -72,6 +72,16 @@ it("returns cached versions without a provider request", async () => {
   });
   expect(m.generate).not.toHaveBeenCalled();
 });
+it.each(["locked", "season_limit"])(
+  "rejects %s before making any provider call",
+  async (status) => {
+    m.rpc.mockResolvedValue({ error: null, data: { status } });
+    await expect(
+      generateEventReports(account, event(), "team"),
+    ).rejects.toMatchObject({ status: 429 });
+    expect(m.generate).not.toHaveBeenCalled();
+  },
+);
 it("passes the actor scope into storage and rejects duplicate claims", async () => {
   m.rpc.mockResolvedValue({ error: null, data: { status: "processing" } });
   await expect(

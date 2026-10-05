@@ -91,6 +91,9 @@ describe("event report evidence boundaries", () => {
       "The back end struggled.",
       "Our team scored 90%.",
       "Curl Coach suggests practice.",
+      "Our team has a comprehensive sample.",
+      "All games were closely tracked.",
+      "The lowest overall shooting needs attention.",
     ]) {
       expect(() =>
         validateNarrative(narrative(text), input, "team", ["Alex"]),

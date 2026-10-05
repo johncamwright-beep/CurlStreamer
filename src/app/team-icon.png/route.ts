@@ -53,7 +53,7 @@ export async function GET() {
   const profile = await readPublishedTeamProfile(match[1]);
   if (!profile) return new Response(null, { status: 404 });
   const fallback = await readFile(
-    path.join(process.cwd(), "public/branding/curlstreamer-icon.png"),
+    path.join(process.cwd(), "public/branding/curlstreamer-app-icon.png"),
   );
   let input = fallback;
   if (profile.logo_url) {

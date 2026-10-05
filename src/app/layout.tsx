@@ -8,7 +8,13 @@ export const metadata = {
     "facebook-domain-verification": "olaxpryf8jwf9guaoiwetqcoiq3jty",
   },
   icons: {
-    icon: "/branding/curlstreamer-icon.png",
+    icon: [
+      {
+        url: "/branding/curlstreamer-app-icon.png",
+        type: "image/png",
+        sizes: "1024x1024",
+      },
+    ],
   },
 };
 export default function RootLayout({

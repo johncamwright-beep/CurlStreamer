@@ -298,3 +298,81 @@ describe.skipIf(
     );
   }, 40000);
 });
+
+describe.skipIf(!executable || !runtime || process.platform !== "win32")(
+  "native browser recovery control",
+  () => {
+    it("recovers actual painted marker and keeps recording through acknowledged refresh", async () => {
+      const directory = await mkdtemp(join(tmpdir(), "m4-control-recovery-"));
+      const recording = join(directory, "continued.mkv");
+      let loads = 0;
+      const server = createServer((_, response) => {
+        loads++;
+        response.writeHead(200, {
+          "content-type": "text/html",
+          "cache-control": "no-store",
+        });
+        response.end(
+          `<!doctype html><style>html,body{margin:0;background:#173245}#marker{position:fixed;bottom:0;right:0;width:12px;height:12px;z-index:2147483647;background:rgb(8,8,8)}</style><div id="marker"></div><script>let value=false;const timer=setInterval(()=>{value=!value;document.getElementById('marker').style.background=value?'rgb(40,40,40)':'rgb(8,8,8)'},500);setTimeout(()=>clearInterval(timer),3500)</script>`,
+        );
+      });
+      await new Promise<void>((resolve) =>
+        server.listen(0, "127.0.0.1", resolve),
+      );
+      const address = server.address();
+      if (!address || typeof address === "string") throw Error();
+      let recorder:
+        Awaited<ReturnType<typeof startM4StudioRecorder>> | undefined;
+      try {
+        recorder = await startM4StudioRecorder({
+          executable: executable!,
+          runtime: runtime!,
+          recording,
+          streamPlugin,
+          program: {
+            url: `http://127.0.0.1:${address.port}/`,
+            cacheDirectory: join(
+              directory,
+              "curlstreamer-m4-cef-" + "b".repeat(32),
+            ),
+          },
+        });
+        let exited = false;
+        void recorder.closed.then(() => {
+          exited = true;
+        });
+        await delay(1500);
+        const moving = await recorder.programHealth();
+        expect(moving.active).toBe(true);
+        expect(moving.paintChanges).toBeGreaterThan(1);
+        expect(moving.ageMs).toBeLessThan(1500);
+        await delay(4500);
+        const frozen = await recorder.programHealth();
+        expect(frozen.rawSequence).toBeGreaterThan(moving.rawSequence);
+        expect(frozen.ageMs).toBeGreaterThan(1500);
+        const bytes = (await stat(recording)).size;
+        await recorder.refreshProgram();
+        await delay(1500);
+        const recovered = await recorder.programHealth();
+        expect(recovered.paintChanges).toBeGreaterThan(frozen.paintChanges);
+        expect(recovered.ageMs).toBeLessThan(1500);
+        expect(loads).toBeGreaterThanOrEqual(2);
+        expect(exited).toBe(false);
+        const flushDeadline = Date.now() + 5000;
+        while (
+          (await stat(recording)).size <= bytes &&
+          Date.now() < flushDeadline
+        )
+          await delay(100);
+        expect((await stat(recording)).size).toBeGreaterThan(bytes);
+        if (recorder.stream)
+          expect(recorder.stream.snapshot().state).toBe("idle");
+        await recorder.stop();
+        expect(await recorder.closed).toEqual({ finalized: true });
+      } finally {
+        await recorder?.stop().catch(() => undefined);
+        await new Promise<void>((resolve) => server.close(() => resolve()));
+      }
+    }, 40000);
+  },
+);

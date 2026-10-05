@@ -20,6 +20,7 @@ export const connectionDiagnosticSchema = z
       "session",
       "audio",
       "youtube",
+      "program",
     ]),
     code: z.enum([
       "started",
@@ -62,6 +63,11 @@ export const connectionDiagnosticSchema = z
       "studio_recovery_pending",
       "subscription_required",
       "sample",
+      "renderer_stale",
+      "paint_stale",
+      "refresh_requested",
+      "refresh_failed",
+      "recovery_exhausted",
     ]),
     role: z.enum(["camera-home", "camera-away"]).optional(),
     stage: z

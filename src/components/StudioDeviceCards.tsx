@@ -314,7 +314,9 @@ export function DeviceCard({
             >
               {connectionStatus?.videoReceiving
                 ? "Receiving video"
-                : `${sourceLabel} · ${cameraInput.phase}`}
+                : cameraInput.phase === "streaming"
+                  ? `${sourceLabel} connected · Waiting for program video`
+                  : `${sourceLabel} · ${cameraInput.phase}`}
             </p>
           </div>
         </header>

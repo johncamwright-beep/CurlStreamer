@@ -4,6 +4,7 @@ import { useEffect, useRef } from "react";
 import type { CameraRole } from "@/lib/m2-studio-protocol";
 import { acquireProgramAudioOutput } from "@/lib/program-audio-output";
 import { usbAudioStart } from "@/lib/usb-audio-timing";
+import { m4RendererInstance } from "@/lib/providers/m4-renderer-health-browser";
 
 /** Receives Studio's local USB mix only inside the private OBS browser source. */
 export function ProgramUsbAudio({
@@ -63,6 +64,7 @@ export function ProgramUsbAudio({
           role
             ? {
                 action: "audio-observe",
+                rendererInstance: m4RendererInstance(),
                 cameraRole: role,
                 sourceGeneration,
                 receiving:
@@ -73,6 +75,7 @@ export function ProgramUsbAudio({
               }
             : {
                 action: "usb-audio-observe",
+                rendererInstance: m4RendererInstance(),
                 contextState:
                   context.state === "running" ? "running" : "suspended",
                 scheduledFrames: Math.min(

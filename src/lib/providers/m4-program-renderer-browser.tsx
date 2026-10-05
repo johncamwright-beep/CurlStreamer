@@ -38,6 +38,10 @@ import {
   type M4CameraInputSnapshot,
 } from "../m4-camera-input";
 import { M4IpCameraTransport } from "./m4-ip-camera-browser";
+import {
+  m4RendererInstance,
+  startM4RendererHeartbeat,
+} from "./m4-renderer-health-browser";
 
 import {
   cameraAspect,
@@ -231,6 +235,7 @@ function PhoneCameraTransport({
                     "/camera",
                     {
                       action: "observe",
+                      rendererInstance: m4RendererInstance(),
                       cameraRole: role,
                       frames: metrics.framesDecoded,
                       verified: metrics.direct,
@@ -322,6 +327,13 @@ function PhoneCameraTransport({
 }
 
 function ProgramRenderer() {
+  useEffect(
+    () =>
+      startM4RendererHeartbeat((body, signal) =>
+        request("/renderer-health", body, signal),
+      ),
+    [],
+  );
   const [game, setGame] = useState<PrivateProgramGame>();
   const [programMessage, setProgramMessage] = useState("Loading program…");
   const [cameras, setCameras] = useState<
@@ -334,12 +346,15 @@ function ProgramRenderer() {
   useEffect(() => {
     const controller = new AbortController();
     let timer: ReturnType<typeof setTimeout> | undefined;
+    let deadline: ReturnType<typeof setTimeout> | undefined;
     const poll = async () => {
+      const attempt = new AbortController();
+      deadline = setTimeout(() => attempt.abort(), 3000);
       try {
         const value = (await request(
           "/program",
           undefined,
-          controller.signal,
+          AbortSignal.any([controller.signal, attempt.signal]),
         )) as {
           game?: PrivateProgramGame;
         };
@@ -352,12 +367,15 @@ function ProgramRenderer() {
           setProgramMessage("Reconnecting to Studio…");
           timer = setTimeout(() => void poll(), 2000);
         }
+      } finally {
+        clearTimeout(deadline);
       }
     };
     void poll();
     return () => {
       controller.abort();
       clearTimeout(timer);
+      clearTimeout(deadline);
     };
   }, []);
 

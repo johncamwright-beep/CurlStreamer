@@ -9,4 +9,18 @@ The pipeline separates camera invitation and realtime authentication from the re
 
 The pipeline forwards WebRTC signaling because the renderer needs it to establish the direct media path. It does not claim that SDP is non-sensitive or that all browser state is memory-only. Invitation cookies and Supabase realtime tokens are specifically kept out of these renderer responses. No module logs raw signaling or credentials.
 
-The renderer mounts the shared `ProgramCanvas`, polls the private projection and connects both cameras through the adapter. Node starts the bridge and recorder together and supplies private invitation/Supabase configuration. External sponsors use the bounded Node proxy described in the integration notes. Owned private cache cleanup follows recorder exit. Real physical-camera evidence exists; long endurance remains deferred.
+The renderer mounts the shared `ProgramCanvas`, polls the private projection and connects both cameras through the adapter. Node starts the bridge and recorder together and supplies private invitation/Supabase configuration. External sponsors use the bounded Node proxy described in the integration notes. Owned private cache cleanup follows recorder exit. Physical device endurance must be assessed separately from synthetic validation.
+
+## Composed picture health and recovery
+
+The October 5 freeze showed active IP capture workers and fresh OBS preview timestamps, but identical composed frames and stale camera observations. A running recorder or fresh raw callback does not prove that the browser picture is advancing. Renderer termination versus a hang was not established by the original logs.
+
+The renderer now sends an independent, bounded heartbeat with its animation-frame counter. A small dark paint marker in the program corner alternates every half-second; the native raw-frame callback checks its actual pixels. Together these distinguish stalled JavaScript, stalled browser paint and a stalled preview request, including when cameras and sponsors legitimately show a static picture.
+
+After startup grace, the program owner attempts a browser-source `refreshnocache` operation when heartbeat or paint progress is stale. Recovery is serial, has bounded command acknowledgements, and permits at most three refreshes in ten minutes. An accepted refresh is not recorded as recovered until heartbeat and native paint proof become fresh. The operation retains the recorder, recording file, encoders, stream output, broadcast link and IP receiver workers. It does not start YouTube. A failure beyond the retry limit requires operator troubleshooting.
+
+Authenticated renderer reloads retain the existing HttpOnly capability. Every new document receives a public UUID epoch. Heartbeat, camera-frame and audio observations must match it; delayed reports from the retired document cannot restore its status. Second uncredentialed root navigations, owner-only health reports and cross-origin requests remain denied.
+
+Connection diagnostics use the fixed `program` layer with `renderer_stale`, `paint_stale`, `refresh_requested`, `refresh_failed`, `recovery_exhausted` and `recovered` codes. No raw CEF errors, URLs, camera credentials or stream keys are logged. Capture-active tiles report that they are waiting for program video until actual renderer observations are fresh.
+
+Game metadata requests have a three-second deadline. IP image decoding is cancellable and its temporary image/URLs are released on failure or replacement. The Windows picture-in-picture preview retries an image that has not completed after three seconds, retains the last good picture, and requests five frames per second instead of fifteen. This reduces preview copying by about two thirds without changing the 30 fps broadcast output or media sizing.

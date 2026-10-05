@@ -4,7 +4,11 @@ import { describe, expect, it } from "vitest";
 import { DeviceCard } from "./StudioDeviceCards";
 
 describe("Studio camera source tiles", () => {
-  function tile(receiving: boolean, kind: "tapo" | "rtsp" = "tapo") {
+  function tile(
+    receiving: boolean,
+    kind: "tapo" | "rtsp" = "tapo",
+    phase: "connecting" | "streaming" = "connecting",
+  ) {
     return renderToStaticMarkup(
       <DeviceCard
         id="game-1"
@@ -24,12 +28,19 @@ describe("Studio camera source tiles", () => {
           stream: kind === "tapo" ? "stream1" : null,
           rotation: 90,
           configured: true,
-          phase: "connecting",
+          phase,
           generation: 1,
         }}
       />,
     );
   }
+  it("does not claim streaming when capture is active but program frames are stale", () => {
+    expect(tile(false, "tapo", "streaming")).toContain(
+      "Tapo connected · Waiting for program video",
+    );
+    expect(tile(false, "tapo", "streaming")).not.toContain("Tapo · streaming");
+    expect(tile(true, "tapo", "streaming")).toContain("Receiving video");
+  });
   it("shows native settings and recovery only when video is unavailable", () => {
     expect(tile(false)).toContain("Settings");
     expect(tile(false)).toContain("Reconnect camera");

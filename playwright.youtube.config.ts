@@ -19,6 +19,7 @@ export default defineConfig({
     "onboarding.spec.ts",
   ],
   fullyParallel: false,
+  workers: 2,
   webServer: [
     {
       command: `${node} tests/support/youtube-supabase-mock.mjs`,

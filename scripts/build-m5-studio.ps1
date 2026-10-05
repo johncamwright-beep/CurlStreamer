@@ -4,6 +4,7 @@ param(
   [Parameter(Mandatory = $true)][string]$Configuration,
   [string]$Release = "0.5.0-pilot.1",
   [string]$IpCameraHelper,
+  [string]$StudioRecorder,
   [string]$BaselineStudio,
   [string]$BaselineManifestSha256
 )
@@ -13,6 +14,7 @@ if (-not $IpCameraHelper) {
   $IpCameraHelper = & (Join-Path $PSScriptRoot 'build-m4-ip-camera.ps1') -SetupRoot $SetupRoot -Destination (Join-Path $repository 'build/ip-camera') | Select-Object -Last 1
 }
 if (-not (Test-Path -LiteralPath $IpCameraHelper -PathType Leaf)) { throw "Build the IP camera receiver before packaging Studio." }
+if ($StudioRecorder -and -not (Test-Path -LiteralPath $StudioRecorder -PathType Leaf)) { throw "Build the program recorder before packaging Studio." }
 $destinationPath = [IO.Path]::GetFullPath($Destination)
 if (Test-Path -LiteralPath $destinationPath) { throw "Use a new staging directory; existing installs are never overwritten." }
 if ($Release -notmatch '^\d+\.\d+\.\d+(-[a-z0-9.]+)?$') { throw "Invalid release version." }
@@ -75,6 +77,10 @@ try {
     "native/production/curlstreamer-m4-memory.dll" = "native-toolchain/m4-readiness-production-build/Release/curlstreamer-m4-memory.dll"
   }
   foreach ($entry in $components.GetEnumerator()) {
+    if ($entry.Key -eq 'native/m4_studio_recorder.exe' -and $StudioRecorder) {
+      Copy-Item -LiteralPath $StudioRecorder -Destination (Join-Path $destinationPath $entry.Key)
+      continue
+    }
     if ($BaselineStudio) { continue }
     Copy-Item -LiteralPath (Join-Path $SetupRoot $entry.Value) -Destination (Join-Path $destinationPath $entry.Key)
   }
@@ -102,7 +108,7 @@ try {
   Remove-Item -LiteralPath $sourcePath
   if ($BaselineStudio) {
     $baselineNotices = Get-Content -LiteralPath (Join-Path $BaselineStudio 'THIRD_PARTY_NOTICES.json') -Raw | ConvertFrom-Json
-    $provenance = [ordered]@{ version = 1; release = $baseline.release; manifestSha256 = $BaselineManifestSha256.ToLowerInvariant(); retainedNative = @($baseline.files | Where-Object { $_.path.StartsWith('native/') -and $_.path -ne 'native/m4_ip_camera.exe' }); sourcePointers = @($baselineNotices.sourcePointers | Where-Object { $_.component.StartsWith('CurlStreamer Studio') }) }
+    $provenance = [ordered]@{ version = 1; release = $baseline.release; manifestSha256 = $BaselineManifestSha256.ToLowerInvariant(); retainedNative = @($baseline.files | Where-Object { $_.path.StartsWith('native/') -and $_.path -ne 'native/m4_ip_camera.exe' -and (-not $StudioRecorder -or $_.path -ne 'native/m4_studio_recorder.exe') }); sourcePointers = @($baselineNotices.sourcePointers | Where-Object { $_.component.StartsWith('CurlStreamer Studio') }) }
     # A prior preview can itself retain native binaries from an older release.
     # Keep that complete attribution chain rather than relabelling its sources.
     if ($baselineNotices.retainedNativeBaseline) { $provenance.retainedNativeBaseline = $baselineNotices.retainedNativeBaseline }

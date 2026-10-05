@@ -30,6 +30,10 @@ struct m4_media {
     HANDLE preview_mapping;
     unsigned char *preview_memory;
     bool preview_attached;
+    volatile LONG paint_changes;
+    volatile LONG marker_gray;
+    volatile LONG marker_initialized;
+    volatile LONG64 paint_changed_at;
 };
 /* A process-owned, read-only preview for the signed-in Windows shell. Frames
  * stay in memory and are sampled from the same OBS output as the recording. */
@@ -42,6 +46,14 @@ static void preview_frame(void *context, struct video_data *frame)
 {
     m4_media *m = context;
     if (!m->preview_memory || !frame->data[0] || frame->linesize[0] < PREVIEW_WIDTH * 4) return;
+    const unsigned char *pixel = frame->data[0] + 716 * frame->linesize[0] + 1276 * 4;
+    LONG gray = ((LONG)pixel[0] + pixel[1] + pixel[2]) / 3;
+    LONG previous = InterlockedCompareExchange(&m->marker_gray, 0, 0);
+    if (!InterlockedCompareExchange(&m->marker_initialized, 1, 0) || abs(gray - previous) >= 8) {
+        InterlockedExchange(&m->marker_gray, gray);
+        InterlockedExchange64(&m->paint_changed_at, (LONG64)GetTickCount64());
+        InterlockedIncrement(&m->paint_changes);
+    }
     volatile LONG *sequence = (volatile LONG *)m->preview_memory;
     InterlockedIncrement(sequence);
     FILETIME now; GetSystemTimeAsFileTime(&now);
@@ -321,6 +333,28 @@ bool m4_media_attach_stream(m4_media *m, HANDLE pipe, const unsigned char capabi
 { return m && m->attach && m->service && m->attach(m->service, pipe, capability, parent_pid); }
 void m4_media_poll_stream(m4_media *m)
 { if (m && m->start_stream && m->service) m->start_stream(m->service); }
+void m4_media_program_health(const m4_media *m, uint32_t *sequence, uint32_t *paint_changes, uint32_t *age_ms, uint32_t *status)
+{
+    *sequence = 0; *paint_changes = 0; *age_ms = UINT32_MAX; *status = 0;
+    if (!m || !m->preview_memory) return;
+    *sequence = (uint32_t)InterlockedCompareExchange((volatile LONG *)m->preview_memory, 0, 0);
+    *paint_changes = (uint32_t)InterlockedCompareExchange((volatile LONG *)&m->paint_changes, 0, 0);
+    ULONGLONG at = (ULONGLONG)InterlockedCompareExchange64((volatile LONG64 *)&m->paint_changed_at, 0, 0);
+    ULONGLONG age = at ? GetTickCount64() - at : UINT32_MAX;
+    *age_ms = age > UINT32_MAX ? UINT32_MAX : (uint32_t)age;
+    *status = m4_media_active(m) ? 1 : 0;
+}
+bool m4_media_refresh_program(m4_media *m)
+{
+    if (!m || !m->program || !m->started || m->stop_requested || !m4_media_active(m)) return false;
+    obs_properties_t *properties = obs_source_properties(m->program);
+    if (!properties) return false;
+    obs_property_t *refresh = obs_properties_get(properties, "refreshnocache");
+    bool accepted = refresh && obs_property_get_type(refresh) == OBS_PROPERTY_BUTTON;
+    if (accepted) obs_property_button_clicked(refresh, m->program);
+    obs_properties_destroy(properties);
+    return accepted;
+}
 bool m4_media_active(const m4_media *m)
 { return m && m->started && !m->stop_requested && (m->record ? obs_output_active(m->record) : m->initialized); }
 uint64_t m4_media_bytes(const m4_media *m)

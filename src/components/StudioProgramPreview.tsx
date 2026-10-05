@@ -1,6 +1,17 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 
+const PREVIEW_INTERVAL_MS = 1000 / 5;
+const REQUEST_TIMEOUT_MS = 3000;
+const RETRY_DELAY_MS = 1000;
+
+type PreviewFrame = {
+  key: string;
+  source: string;
+  loaded: () => void;
+  failed: () => void;
+};
+
 export function StudioProgramPreview({
   gameId,
   embedded = false,
@@ -9,55 +20,84 @@ export function StudioProgramPreview({
   embedded?: boolean;
 }) {
   const [supported, setSupported] = useState(false);
-  const [frames, setFrames] = useState<[number | null, number | null]>([
-    0,
-    null,
-  ]);
+  const [frames, setFrames] = useState<
+    [PreviewFrame | null, PreviewFrame | null]
+  >([null, null]);
   const [visible, setVisible] = useState<0 | 1 | null>(null);
   const [reconnecting, setReconnecting] = useState(false);
-  const next = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  const frameNumber = useRef(0);
-  const requestedAt = useRef(0);
-  const lastLoadedAt = useRef(0);
-  const schedule = (slot: 0 | 1, loaded: boolean) => {
-    if (loaded) {
-      lastLoadedAt.current = performance.now();
-      setVisible(slot);
-      setReconnecting(false);
-    } else if (
-      lastLoadedAt.current > 0 &&
-      performance.now() - lastLoadedAt.current > 3000
-    ) {
-      setReconnecting(true);
-    }
-    clearTimeout(next.current);
-    next.current = setTimeout(
-      () => {
-        const target = loaded ? ((1 - slot) as 0 | 1) : slot;
-        requestedAt.current = performance.now();
-        const value = ++frameNumber.current;
-        setFrames((previous) => {
-          const updated = [...previous] as [number | null, number | null];
-          updated[target] = value;
-          return updated;
-        });
-      },
-      loaded
-        ? Math.max(0, 1000 / 15 - (performance.now() - requestedAt.current))
-        : 1000,
-    );
-  };
+  const images = useRef<[HTMLImageElement | null, HTMLImageElement | null]>([
+    null,
+    null,
+  ]);
+  const generation = useRef(0);
   useEffect(() => {
-    setFrames([0, null]);
+    const currentImages = images.current;
+    const currentGeneration = ++generation.current;
+    let active = true;
+    let frameNumber = 0;
+    let hasPicture = false;
+    let pending: PreviewFrame | null = null;
+    let next: ReturnType<typeof setTimeout> | undefined;
+    let watchdog: ReturnType<typeof setTimeout> | undefined;
+    setFrames([null, null]);
     setVisible(null);
     setReconnecting(false);
-    frameNumber.current = 0;
-    lastLoadedAt.current = 0;
     const available = navigator.userAgent.includes("StudioProgramPreview/1");
     setSupported(available);
     if (!available) return;
-    requestedAt.current = performance.now();
-    return () => clearTimeout(next.current);
+    function requestFrame(slot: 0 | 1) {
+      if (!active) return;
+      const started = performance.now();
+      const frame: PreviewFrame = {
+        key: `${currentGeneration}:${frameNumber}`,
+        source: `/__studio-preview/${gameId}?frame=${frameNumber++}`,
+        loaded: () => finish(true),
+        failed: () => finish(false),
+      };
+      function finish(loaded: boolean) {
+        // A timeout, source change or newer request retires this attempt.
+        // Late image callbacks must never swap the visible picture or timers.
+        if (!active || pending !== frame) return;
+        pending = null;
+        clearTimeout(watchdog);
+        if (loaded) {
+          hasPicture = true;
+          setVisible(slot);
+          setReconnecting(false);
+        } else {
+          // Clear only the pending image: the other slot holds the last good
+          // picture. Removing its source also abandons a stuck image request.
+          currentImages[slot]?.removeAttribute("src");
+          setFrames((previous) => {
+            const updated = [...previous] as typeof previous;
+            updated[slot] = null;
+            return updated;
+          });
+          setReconnecting(hasPicture);
+        }
+        next = setTimeout(
+          () => requestFrame(loaded ? ((1 - slot) as 0 | 1) : slot),
+          loaded
+            ? Math.max(0, PREVIEW_INTERVAL_MS - (performance.now() - started))
+            : RETRY_DELAY_MS,
+        );
+      }
+      pending = frame;
+      watchdog = setTimeout(() => finish(false), REQUEST_TIMEOUT_MS);
+      setFrames((previous) => {
+        const updated = [...previous] as typeof previous;
+        updated[slot] = frame;
+        return updated;
+      });
+    }
+    requestFrame(0);
+    return () => {
+      active = false;
+      pending = null;
+      clearTimeout(next);
+      clearTimeout(watchdog);
+      for (const image of currentImages) image?.removeAttribute("src");
+    };
   }, [gameId]);
   return (
     <section
@@ -81,12 +121,15 @@ export function StudioProgramPreview({
             // successful frame visible while the next one is loading.
             // eslint-disable-next-line @next/next/no-img-element
             <img
-              key={slot}
-              src={`/__studio-preview/${gameId}?frame=${frame}`}
+              key={frame.key}
+              ref={(element) => {
+                images.current[slot] = element;
+              }}
+              src={frame.source}
               alt={visible === slot ? "Actual Studio program output" : ""}
               aria-hidden={visible !== slot}
-              onLoad={() => schedule(slot, true)}
-              onError={() => schedule(slot, false)}
+              onLoad={frame.loaded}
+              onError={frame.failed}
               style={{
                 position: "absolute",
                 inset: 0,

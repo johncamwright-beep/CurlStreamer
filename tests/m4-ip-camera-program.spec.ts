@@ -3,6 +3,7 @@ import { build } from "esbuild";
 import { execFileSync } from "node:child_process";
 import { resolve } from "node:path";
 import sharp from "sharp";
+import type { M4RendererHeartbeat } from "../src/lib/providers/m4-renderer-health-browser";
 import type { M4CameraInputSnapshot } from "../src/lib/m4-camera-input";
 
 type Role = "camera-home" | "camera-away";
@@ -149,6 +150,7 @@ async function install(
         (window as unknown as { __frameFlights: { max: Record<Role, number> } })
           .__frameFlights.max,
     );
+  const heartbeats: M4RendererHeartbeat[] = [];
   const observations: Observation[] = [];
   const accepted: Observation[] = [];
   const errors: string[] = [];
@@ -164,6 +166,10 @@ async function install(
       return route.fulfill({ contentType: "text/javascript", body: renderer });
     if (url.pathname === "/fixture.css")
       return route.fulfill({ contentType: "text/css", body: css });
+    if (url.pathname === "/renderer-health") {
+      heartbeats.push(route.request().postDataJSON() as M4RendererHeartbeat);
+      return route.fulfill({ json: { ok: true } });
+    }
     if (url.pathname === "/program") return route.fulfill({ json: { game } });
     if (url.pathname === "/camera-inputs")
       return route.fulfill({ json: { cameras: sources } });
@@ -217,7 +223,9 @@ async function install(
     return route.fulfill({ status: 404, body: "Fixture asset unavailable" });
   });
   await page.goto("http://127.0.0.1:3000/ip-camera-program-fixture");
-  await expect(page.getByTestId("broadcast-canvas")).toBeVisible();
+  await expect(page.getByTestId("broadcast-canvas")).toBeVisible({
+    timeout: 10000,
+  });
   const phones = () =>
     page.evaluate(
       () =>
@@ -230,7 +238,16 @@ async function install(
           }
         ).__phoneFixture ?? { starts: {}, stops: {} },
     );
-  return { sources, mode, observations, accepted, errors, maxActive, phones };
+  return {
+    sources,
+    mode,
+    observations,
+    accepted,
+    errors,
+    maxActive,
+    phones,
+    heartbeats,
+  };
 }
 
 const panel = (page: Page, role: Role) =>
@@ -418,5 +435,157 @@ test("program flushes a changed source and rejects stale, repeated and undecodab
   ).toEqual(last);
   expect((await fixture.phones()).starts["camera-home"]).toBe(1);
   expect((await fixture.maxActive())["camera-away"]).toBe(1);
+  expect(fixture.errors).toEqual([]);
+});
+
+test("renderer health remains independent of stalled game and source reads and reports stopped animation frames", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    const fixture = window as unknown as {
+      __metadata: { calls: Record<string, number>; aborts: string[] };
+      __pauseHealthRaf: boolean;
+    };
+    fixture.__metadata = { calls: {}, aborts: [] };
+    const fetcher = window.fetch.bind(window);
+    window.fetch = (input, options) => {
+      const path = String(input);
+      if (path === "/program" || path === "/camera-inputs") {
+        fixture.__metadata.calls[path] =
+          (fixture.__metadata.calls[path] ?? 0) + 1;
+        if (fixture.__metadata.calls[path] === 1)
+          return new Promise<Response>((_resolve, reject) => {
+            options?.signal?.addEventListener(
+              "abort",
+              () => {
+                fixture.__metadata.aborts.push(path);
+                reject(
+                  new DOMException(
+                    "Synthetic stalled metadata aborted",
+                    "AbortError",
+                  ),
+                );
+              },
+              { once: true },
+            );
+          });
+      }
+      return fetcher(input, options);
+    };
+    const raf = window.requestAnimationFrame.bind(window);
+    window.requestAnimationFrame = (callback) =>
+      raf((at) => {
+        if (!fixture.__pauseHealthRaf) callback(at);
+      });
+  });
+  const fixture = await install(page, ["tapo", "rtsp"]);
+  await expect.poll(() => fixture.heartbeats.length).toBeGreaterThan(3);
+  expect(fixture.heartbeats[2].frames).toBeGreaterThan(
+    fixture.heartbeats[1].frames,
+  );
+  expect(new Set(fixture.heartbeats.map((body) => body.instance)).size).toBe(1);
+  expect(
+    fixture.heartbeats.every(
+      (body) =>
+        Object.keys(body).sort().join() === "action,frames,instance,visibility",
+    ),
+  ).toBe(true);
+  expect(
+    fixture.heartbeats.every(
+      (body) =>
+        body.action === "renderer-heartbeat" && body.visibility === "visible",
+    ),
+  ).toBe(true);
+  const metadata = await page.evaluate(
+    () =>
+      (
+        window as unknown as {
+          __metadata: { calls: Record<string, number>; aborts: string[] };
+        }
+      ).__metadata,
+  );
+  expect(metadata.aborts.sort()).toEqual(["/camera-inputs", "/program"]);
+  expect(metadata.calls["/program"]).toBeGreaterThan(1);
+  expect(metadata.calls["/camera-inputs"]).toBeGreaterThan(1);
+  for (const role of roles) await verifyFrame(page, role);
+  await page.evaluate(() => {
+    (window as unknown as { __pauseHealthRaf: boolean }).__pauseHealthRaf =
+      true;
+  });
+  const count = fixture.heartbeats.length;
+  await expect.poll(() => fixture.heartbeats.length).toBeGreaterThan(count + 2);
+  const recent = fixture.heartbeats.slice(-2);
+  expect(recent[0].frames).toBe(recent[1].frames);
+  expect(fixture.errors).toEqual([]);
+});
+
+test("a stalled IP decode expires and cannot publish after its late completion", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    const decode = HTMLImageElement.prototype.decode;
+    const fixture = window as unknown as {
+      __decodeStall?: {
+        image: HTMLImageElement;
+        url: string;
+        finish: () => void;
+      };
+    };
+    HTMLImageElement.prototype.decode = function () {
+      if (this.src.startsWith("blob:") && !fixture.__decodeStall) {
+        let finish!: () => void;
+        const result = new Promise<void>((resolve) => {
+          finish = resolve;
+        });
+        fixture.__decodeStall = { image: this, url: this.src, finish };
+        return result;
+      }
+      return decode.call(this);
+    };
+  });
+  const fixture = await install(page, ["tapo", "rtsp"]);
+  await expect
+    .poll(
+      () =>
+        fixture.accepted.filter((value) => value.cameraRole === "camera-home")
+          .length,
+    )
+    .toBeGreaterThan(0);
+  await expect
+    .poll(
+      () =>
+        fixture.accepted.filter((value) => value.cameraRole === "camera-away")
+          .length,
+    )
+    .toBeGreaterThan(0);
+  const expired = await page.evaluate(async () => {
+    const pending = (
+      window as unknown as {
+        __decodeStall: {
+          image: HTMLImageElement;
+          url: string;
+          finish: () => void;
+        };
+      }
+    ).__decodeStall;
+    const released = pending.image.getAttribute("src") === "";
+    let revoked = false;
+    try {
+      await fetch(pending.url);
+    } catch {
+      revoked = true;
+    }
+    pending.finish();
+    return { released, revoked, url: pending.url };
+  });
+  expect(expired.released).toBe(true);
+  expect(expired.revoked).toBe(true);
+  for (const role of roles) {
+    await verifyFrame(page, role);
+    expect(
+      await panel(page, role).getByAltText("IP camera").getAttribute("src"),
+    ).not.toBe(expired.url);
+    expect((await fixture.maxActive())[role]).toBe(1);
+  }
   expect(fixture.errors).toEqual([]);
 });

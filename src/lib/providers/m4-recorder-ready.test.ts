@@ -44,6 +44,14 @@ describe("recorder private readiness channel", () => {
       expect(bytes.every((byte) => byte === 0)).toBe(true);
     }
   });
+  it("accepts a complete control-enabled readiness without closing the pipe", async () => {
+    const pipe = new PassThrough();
+    const reading = readM4RecorderReady(pipe, false, 100, true);
+    pipe.write(Buffer.from("READY\n"));
+    await expect(reading).resolves.toBeUndefined();
+    expect(pipe.destroyed).toBe(false);
+    pipe.destroy();
+  });
   it("bounds a stalled startup and destroys its inherited channel", async () => {
     const pipe = new PassThrough();
     const reading = readM4RecorderReady(pipe, true, 20);

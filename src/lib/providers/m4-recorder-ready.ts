@@ -6,6 +6,7 @@ export async function readM4RecorderReady(
   input: Readable,
   streaming: boolean,
   timeoutMs = 15000,
+  keepOpen = false,
 ) {
   const fail = () => new Error("m4_recording_unavailable");
   const frame = Buffer.alloc(streaming ? 302 : 6);
@@ -40,6 +41,11 @@ export async function readM4RecorderReady(
               .equals(Buffer.from("READY\n").subarray(0, prefixLength))
           )
             failed();
+          if (keepOpen && received === frame.length && !settled) {
+            settled = true;
+            cleanup();
+            resolve();
+          }
         } finally {
           chunk.fill(0);
         }

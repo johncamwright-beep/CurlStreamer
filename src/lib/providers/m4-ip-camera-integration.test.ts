@@ -76,9 +76,11 @@ async function setup(input?: unknown) {
     await bridge.close();
     await manager.close();
   });
-  const cookie = (await fetch(bridge.rendererUrl)).headers
-    .get("set-cookie")!
-    .split(";")[0];
+  const page = await fetch(bridge.rendererUrl);
+  const rendererInstance = (await page.text()).match(
+    /name="m4-renderer-instance" content="([a-f0-9-]+)"/,
+  )![1];
+  const cookie = page.headers.get("set-cookie")!.split(";")[0];
   const headers = {
     cookie,
     origin: bridge.address,
@@ -95,6 +97,7 @@ async function setup(input?: unknown) {
     send,
     headers,
     generation,
+    rendererInstance,
     path,
     advance: () => {
       now += 6000;
@@ -141,8 +144,16 @@ describe("local phone and Tapo program integration", () => {
     expect((await fetch(bridge.address + path, { headers })).status).toBe(409);
   });
   it("keeps secrets local, restricts frames to the renderer, and requires fresh current-generation frame proof", async () => {
-    const { manager, bridge, jpeg, headers, generation, path, advance } =
-      await setup();
+    const {
+      manager,
+      bridge,
+      jpeg,
+      headers,
+      generation,
+      rendererInstance,
+      path,
+      advance,
+    } = await setup();
     const read = (path: string, custom = headers) =>
       fetch(bridge.address + path, { headers: custom });
     const metadata = await (await read("/camera-inputs")).text();
@@ -170,6 +181,7 @@ describe("local phone and Tapo program integration", () => {
         headers,
         body: JSON.stringify({
           action: "observe",
+          rendererInstance,
           cameraRole: "camera-home",
           frames,
           verified: true,
@@ -188,7 +200,8 @@ describe("local phone and Tapo program integration", () => {
     expect(bridge.cameraStatus()["camera-home"]).toBe(false);
   });
   it("converts bounded camera PCM and discards meters from an old source generation", async () => {
-    const { manager, bridge, send, headers, generation } = await setup();
+    const { manager, bridge, send, headers, generation, rendererInstance } =
+      await setup();
     const pcm = Buffer.alloc(4);
     pcm.writeInt16LE(16384);
     pcm.writeInt16LE(-16384, 2);
@@ -207,6 +220,7 @@ describe("local phone and Tapo program integration", () => {
         headers,
         body: JSON.stringify({
           action: "audio-observe",
+          rendererInstance,
           cameraRole: "camera-home",
           receiving: true,
           peak: 0.5,

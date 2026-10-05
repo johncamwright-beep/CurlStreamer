@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect } from "react";
+import { decodeM4CameraImage } from "./m4-camera-image-browser";
+import { m4RendererInstance } from "./m4-renderer-health-browser";
 import { cameraAspect } from "../program-camera-layout";
 import type { CameraRole } from "../m2-studio-protocol";
 
@@ -40,6 +42,7 @@ export function M4IpCameraTransport({
       const attempt = new AbortController();
       const timeout = setTimeout(() => attempt.abort(), 2000);
       let next: string | undefined;
+      let image: HTMLImageElement | undefined;
       try {
         const response = await fetch(
           `/ip-camera/${role}/frame?generation=${generation}&after=${counter}`,
@@ -65,9 +68,12 @@ export function M4IpCameraTransport({
         const blob = await response.blob();
         if (blob.size > 2 * 1024 * 1024 || !blob.size) throw Error();
         next = URL.createObjectURL(blob);
-        const image = new Image();
+        image = new Image();
         image.src = next;
-        await image.decode();
+        await decodeM4CameraImage(
+          image,
+          AbortSignal.any([lifetime.signal, attempt.signal]),
+        );
         if (lifetime.signal.aborted || attempt.signal.aborted) return;
         const previous = displayed;
         displayed = next;
@@ -89,6 +95,7 @@ export function M4IpCameraTransport({
           headers: { "content-type": "application/json" },
           body: JSON.stringify({
             action: "observe",
+            rendererInstance: m4RendererInstance(),
             cameraRole: role,
             frames: counter,
             verified: true,
@@ -99,6 +106,7 @@ export function M4IpCameraTransport({
         /* Retain a fresh picture through a missed local request. */
       } finally {
         clearTimeout(timeout);
+        if (image) image.src = "";
         if (next) URL.revokeObjectURL(next);
         if (!lifetime.signal.aborted) {
           if (displayed && Date.now() - lastFrame >= 5000) clear();

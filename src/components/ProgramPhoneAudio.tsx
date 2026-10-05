@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import { m4RendererInstance } from "@/lib/providers/m4-renderer-health-browser";
 import type { ProgramCameraRole } from "./ProgramCanvas";
 import { acquireProgramAudioOutput } from "@/lib/program-audio-output";
 import { createRemoteAudioPlayout } from "@/lib/remote-audio-playout";
@@ -72,6 +73,7 @@ export function ProgramPhoneAudio({
           signal: AbortSignal.any([abort.signal, AbortSignal.timeout(2000)]),
           body: JSON.stringify({
             action: "audio-observe",
+            rendererInstance: m4RendererInstance(),
             cameraRole: role,
             sourceGeneration,
             receiving,

@@ -52,6 +52,8 @@ int wmain(int argc, WCHAR **argv)
     parent_watch watch = {0}; HANDLE monitor = NULL;
     m4_media *media = NULL; int result = 1; char program[256] = {0};
     const WCHAR *stream_plugin = NULL;
+    bool presentation_control = argc > 1 && !wcscmp(argv[argc - 1], L"--presentation-control");
+    if (presentation_control) argc--;
     bool program_control = argc > 1 && !wcscmp(argv[argc - 1], L"--program-control");
     if (program_control) argc--;
     bool preview_only = argc > 6 && !wcscmp(argv[5], L"--preview-only") && !wcscmp(argv[6], L"-");
@@ -60,6 +62,7 @@ int wmain(int argc, WCHAR **argv)
     }
     if ((argc != 7 && argc != 11) || wcscmp(argv[1], L"--parent-pid") ||
         wcscmp(argv[3], L"--runtime") || (!preview_only && wcscmp(argv[5], L"--recording"))) return 2;
+    if (presentation_control && !program_control) return 2;
     if ((preview_only || program_control) && argc != 11) return 2;
     if (argc == 11 && (wcscmp(argv[7], L"--program-cache") ||
         wcscmp(argv[9], L"--webrtc-ip-handling-policy=default") ||
@@ -92,6 +95,7 @@ int wmain(int argc, WCHAR **argv)
         if (!m4_media_active(media) || !m4_media_bytes(media)) goto done;
     }
     if (!WriteFile(output, "READY\n", 6, &written, NULL) || written != 6) goto done;
+    if (presentation_control && (!WriteFile(output, "PCV1\x01\x00\x00\x00", 8, &written, NULL) || written != 8)) goto done;
     if (stream_plugin) {
         HANDLE readiness = output;
         if (program_control && !DuplicateHandle(GetCurrentProcess(), output, GetCurrentProcess(), &readiness, 0, FALSE, DUPLICATE_SAME_ACCESS)) goto done;
@@ -107,13 +111,16 @@ int wmain(int argc, WCHAR **argv)
         if (available) {
             unsigned char command[8] = {0}, ack[24] = {0}; uint32_t request_id = 0; DWORD ack_length = 8;
             if (!program_control) break;
-            if (!read_exact(input, parent, command, sizeof(command), GetTickCount64() + 2000) || (memcmp(command, "RFR1", 4) && memcmp(command, "RFS1", 4))) goto done;
+            if (!read_exact(input, parent, command, sizeof(command), GetTickCount64() + 2000) || (memcmp(command, "RFR1", 4) && memcmp(command, "RFS1", 4) && (!presentation_control || (memcmp(command, "RFM1", 4) && memcmp(command, "RFU1", 4))))) goto done;
             memcpy(&request_id, command + 4, sizeof(request_id));
             if (!request_id) goto done;
             if (!memcmp(command, "RFS1", 4)) {
                 uint32_t sequence, changes, age, status;
                 m4_media_program_health(media, &sequence, &changes, &age, &status);
                 memcpy(ack, "RFP1", 4); memcpy(ack + 8, &sequence, 4); memcpy(ack + 12, &changes, 4); memcpy(ack + 16, &age, 4); memcpy(ack + 20, &status, 4); ack_length = 24;
+            } else if (!memcmp(command, "RFM1", 4) || !memcmp(command, "RFU1", 4)) {
+                bool accepted = m4_media_mute_program(media, !memcmp(command, "RFM1", 4));
+                memcpy(ack, accepted ? "RFA1" : "RFF1", 4);
             } else {
                 bool accepted = m4_media_refresh_program(media);
                 memcpy(ack, accepted ? "RFA1" : "RFF1", 4);

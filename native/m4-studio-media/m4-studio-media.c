@@ -344,6 +344,12 @@ void m4_media_program_health(const m4_media *m, uint32_t *sequence, uint32_t *pa
     *age_ms = age > UINT32_MAX ? UINT32_MAX : (uint32_t)age;
     *status = m4_media_active(m) ? 1 : 0;
 }
+bool m4_media_mute_program(m4_media *m, bool muted)
+{
+    if (!m || !m->program || !m4_media_active(m)) return false;
+    obs_source_set_muted(m->program, muted);
+    return obs_source_muted(m->program) == muted;
+}
 bool m4_media_refresh_program(m4_media *m)
 {
     if (!m || !m->program || !m->started || m->stop_requested || !m4_media_active(m)) return false;

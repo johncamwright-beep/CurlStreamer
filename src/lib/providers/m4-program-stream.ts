@@ -30,6 +30,7 @@ export type M4StreamSnapshot = {
  * never evidence that an encoder sent packets or that YouTube received them. */
 export class M4ProgramStream {
   #state: State = "idle";
+  #intentId?: string;
   #abort?: AbortController;
   #closed?: Promise<void>;
   #stop?: Promise<void>;
@@ -108,6 +109,7 @@ export class M4ProgramStream {
     if (this.snapshot().state !== "idle" || !desktop.snapshot().authorized)
       throw unavailable();
     this.#state = "starting";
+    this.#intentId = intentId;
     this.#abort = new AbortController();
     const runtime = new M4StudioRuntime(
       new M4ApplicationOutput(desktop, this.native),
@@ -233,6 +235,38 @@ export class M4ProgramStream {
     }
   }
 
+  async confirmActiveOutput() {
+    if (
+      this.#state !== "armed" ||
+      !this.native.observe ||
+      this.#abort?.signal.aborted
+    )
+      throw unavailable();
+    const value = await this.native.observe();
+    if (
+      this.#state !== "armed" ||
+      this.#abort?.signal.aborted ||
+      value.authority !== 1 ||
+      value.failure !== "none" ||
+      value.state !== "active" ||
+      value.bytes <= 0
+    )
+      throw unavailable();
+    this.#local = { value, at: performance.now() };
+  }
+  closingIdentity(desktop: M4DesktopClient) {
+    const identity = desktop.closingIdentity();
+    return identity &&
+      this.#state === "armed" &&
+      this.snapshot().localOutput?.state === "active" &&
+      this.#intentId
+      ? {
+          ...identity,
+          intentId: this.#intentId,
+          capability: "final-card-v1" as const,
+        }
+      : null;
+  }
   async pause() {
     if (
       this.#state !== "armed" ||

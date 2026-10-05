@@ -1,3 +1,4 @@
+import { createM4ProgramPresentation } from "./m4-program-presentation";
 import { createServer } from "node:http";
 import { randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
 import { readFile } from "node:fs/promises";
@@ -60,6 +61,7 @@ export async function createM4ProgramBridge(
     sponsorCacheDirectory?: string;
     diagnostic?: ConnectionDiagnostic;
     cameraInputs?: ReturnType<typeof createM4IpCameraManager>;
+    closingAuthority?: () => Promise<number | undefined>;
   },
 ) {
   const key = randomBytes(32).toString("base64url");
@@ -80,6 +82,8 @@ export async function createM4ProgramBridge(
   const rendererCookie = randomBytes(32).toString("base64url");
   const usbAudio = createM4UsbAudioQueue();
   const rendererHealth = createM4RendererHealth();
+  const presentation = createM4ProgramPresentation(rendererHealth.accepts);
+  let validatedClosingDeadline = 0;
   let usbRenderer = {
     contextState: "unavailable",
     scheduledFrames: 0,
@@ -105,7 +109,7 @@ export async function createM4ProgramBridge(
       rms: 0,
       observedAt: 0,
     };
-    return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="m4-renderer-instance" content="${instance}"><title>CurlStreamer program</title><link rel="stylesheet" href="/m4-program-renderer.css"></head><body><div id="root"></div><script src="/m4-program-renderer.js" defer></script></body></html>`;
+    return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="m4-renderer-instance" content="${instance}"><meta name="m4-presentation" content="${Buffer.from(JSON.stringify(presentation.snapshot())).toString("base64")}"><title>CurlStreamer program</title><link rel="stylesheet" href="/m4-program-renderer.css"></head><body><div id="root"></div><script src="/m4-program-renderer.js" defer></script></body></html>`;
   };
   const builtinSponsors = new Map([
     [
@@ -187,6 +191,33 @@ export async function createM4ProgramBridge(
     if (!allowed) {
       reply(403, { error: "Program request denied" });
       return;
+    }
+    if (request.method === "GET" && request.url === "/presentation") {
+      if (!rendererAllowed) return reply(403, { error: "Presentation denied" });
+      return reply(200, presentation.snapshot());
+    }
+    if (request.method === "POST" && request.url === "/presentation-painted") {
+      if (!rendererAllowed) return reply(403, { error: "Presentation denied" });
+      let raw = "";
+      try {
+        for await (const chunk of request) {
+          raw += chunk.toString();
+          if (raw.length > 1024) throw new Error();
+        }
+        const ack = z
+          .object({
+            instance: z.uuid(),
+            generation: z.number().int().nonnegative(),
+          })
+          .strict()
+          .parse(JSON.parse(raw));
+        return reply(
+          presentation.acknowledge(ack.instance, ack.generation) ? 200 : 409,
+          {},
+        );
+      } catch {
+        return reply(400, { error: "Invalid presentation acknowledgement" });
+      }
     }
     const inputs = rendererAssets?.cameraInputs;
     if (request.method === "GET" && request.url === "/camera-inputs") {
@@ -339,6 +370,7 @@ export async function createM4ProgramBridge(
       return;
     }
     if (request.method === "GET" && request.url === "/program") {
+      if (presentation.snapshot().mode === "ended") return reply(204, {});
       try {
         const game = await client.readGame();
         if (closed) return reply(409, { error: "Program closed" });
@@ -364,7 +396,38 @@ export async function createM4ProgramBridge(
         });
       } catch (cause) {
         if (!(cause instanceof StudioTransportUnavailable)) {
+          if (
+            presentation.snapshot().mode === "preparing-end" &&
+            rendererAssets?.closingAuthority
+          ) {
+            const deadline = await rendererAssets
+              .closingAuthority()
+              .catch(() => undefined);
+            if (
+              deadline &&
+              deadline > Date.now() &&
+              deadline <= Date.now() + 30_000
+            ) {
+              validatedClosingDeadline = deadline;
+              await inputs?.stop().catch(() => undefined);
+              await realtime?.close().catch(() => undefined);
+              usbAudio.reset();
+              cameraFrames.clear();
+              phoneAudio.clear();
+              // The score snapshot arrives separately; this temporary opaque
+              // picture cannot falsely claim a finalized score.
+              if (presentation.snapshot().mode === "preparing-end")
+                void presentation.set("hold").catch(() => undefined);
+            }
+          }
+        }
+        if (
+          !(cause instanceof StudioTransportUnavailable) &&
+          validatedClosingDeadline <= Date.now() &&
+          !presentation.closing()
+        ) {
           authorityEnded = true;
+          presentation.close();
           rendererHealth.close();
           usbAudio.reset();
           cameraFrames.clear();
@@ -678,6 +741,11 @@ export async function createM4ProgramBridge(
   let closing: Promise<void> | undefined;
   return {
     address,
+    presentation,
+    async stopPresentationCameras() {
+      await rendererAssets?.cameraInputs?.stop().catch(() => undefined);
+      await realtime?.close().catch(() => undefined);
+    },
     rendererHealth: rendererHealth.snapshot,
     cameraStatus: () =>
       Object.fromEntries(

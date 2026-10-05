@@ -236,4 +236,71 @@ describe("internal game completion boundary", () => {
       value: { reviewId: storedReview },
     });
   });
+  it("issues only the negotiated scope to atomic closing RPC and strips returned extra fields", async () => {
+    const closing = {
+      sessionId: gameId,
+      generation: 2,
+      intentId: reviewId,
+      capability: "final-card-v1" as const,
+    };
+    mocks.rpc.mockResolvedValue({
+      data: {
+        completion_id: gameId,
+        review_id: reviewId,
+        input_revision: 4,
+        result: {
+          outcome: "tie",
+          label: "Tie",
+          totals: { home: 2, away: 2 },
+          ends: [],
+        },
+        completed_at: "2026-10-05T12:00:00+00:00",
+        cleanup_status: "pending",
+        closing: {
+          sessionId: gameId,
+          generation: 2,
+          intentId: reviewId,
+          deadlineAt: "2026-10-05T12:00:15+00:00",
+          bearer: "private",
+        },
+      },
+      error: null,
+    });
+    const result = await completeReviewedGame(
+      gameId,
+      reviewId,
+      await account(),
+      closing,
+    );
+    expect(result).toMatchObject({
+      ok: true,
+      value: {
+        closing: { sessionId: gameId, generation: 2, intentId: reviewId },
+      },
+    });
+    expect(JSON.stringify(result)).not.toContain("private");
+    expect(mocks.rpc).toHaveBeenCalledWith(
+      "complete_reviewed_game_with_closing",
+      expect.objectContaining({
+        p_game_id: gameId,
+        p_closing: closing,
+        p_verified_organizer: false,
+      }),
+    );
+  });
+  it("cannot issue a closing grant with another game's organizer token", async () => {
+    const credential = {
+      kind: "organizer" as const,
+      token: await issueOrganizerToken(reviewId),
+    };
+    expect(
+      await completeReviewedGame(gameId, reviewId, credential, {
+        sessionId: gameId,
+        generation: 1,
+        intentId: reviewId,
+        capability: "final-card-v1",
+      }),
+    ).toMatchObject({ ok: false, kind: "authorization" });
+    expect(mocks.rpc).not.toHaveBeenCalled();
+  });
 });

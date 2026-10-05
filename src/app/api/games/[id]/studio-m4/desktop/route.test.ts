@@ -5,6 +5,7 @@ const mocks = vi.hoisted(() => ({
   exchange: vi.fn(),
   heartbeat: vi.fn(),
   stop: vi.fn(),
+  closing: vi.fn(),
   verified: vi.fn(),
   token: vi.fn(),
 }));
@@ -14,6 +15,7 @@ vi.mock("@/lib/providers/m4-desktop-authority", () => ({
   exchangeM4DesktopPairing: mocks.exchange,
   heartbeatM4Desktop: mocks.heartbeat,
   stopM4Desktop: mocks.stop,
+  readM4CompletionClosing: mocks.closing,
 }));
 vi.mock("@/lib/game-completion", () => ({
   verifiedCompletionAccount: mocks.verified,
@@ -285,5 +287,84 @@ describe("M4 restricted desktop authority routes", () => {
     );
     expect(result.status).toBe(503);
     expect(await result.text()).not.toContain(bearer);
+  });
+});
+
+describe("desktop closing grant recovery", () => {
+  const grant = {
+    sessionId,
+    generation: 2,
+    intentId: id,
+    deadlineAt: "2026-10-05T12:00:15+00:00",
+  };
+  it("requires existing bearer and returns only matched closing scope with server Date", async () => {
+    mocks.closing.mockResolvedValue({ ...grant, bearer: "private" });
+    const result = await desktop(
+      req(
+        { ...heartbeat, action: "closing" },
+        { authorization: `Bearer ${bearer}` },
+      ),
+      context,
+    );
+    expect(result.status).toBe(200);
+    expect(result.headers.get("date")).toBeTruthy();
+    expect(result.headers.get("cache-control")).toBe("no-store");
+    expect(await result.json()).toEqual(grant);
+    expect(mocks.closing).toHaveBeenCalledExactlyOnceWith(id, {
+      sessionId,
+      generation: 2,
+      bearer,
+    });
+    expect(mocks.heartbeat).not.toHaveBeenCalled();
+    expect(mocks.stop).not.toHaveBeenCalled();
+  });
+  it.each([
+    { origin: "https://pilot.example" },
+    { "sec-fetch-site": "none" },
+    { cookie: "curlcast_m3_program=opaque" },
+  ])("rejects browser or camera-only authority %j", async (headers) => {
+    const authorization =
+      "cookie" in headers ? {} : { authorization: `Bearer ${bearer}` };
+    const safeHeaders = new Headers();
+    for (const [key, value] of Object.entries({ ...headers, ...authorization }))
+      if (typeof value === "string") safeHeaders.set(key, value);
+    expect(
+      (
+        await desktop(
+          req({ ...heartbeat, action: "closing" }, safeHeaders),
+          context,
+        )
+      ).status,
+    ).toBe(403);
+    expect(mocks.closing).not.toHaveBeenCalled();
+  });
+  it("keeps grant recovery available for an existing desktop when new pairing is disabled", async () => {
+    mocks.enabled.mockReturnValue(false);
+    mocks.closing.mockResolvedValue(grant);
+    expect(
+      (
+        await desktop(
+          req(
+            { ...heartbeat, action: "closing" },
+            { authorization: `Bearer ${bearer}` },
+          ),
+          context,
+        )
+      ).status,
+    ).toBe(200);
+  });
+  it("does not accept deadlines or target identifiers from the caller", async () => {
+    expect(
+      (
+        await desktop(
+          req(
+            { ...heartbeat, action: "closing", deadlineAt: grant.deadlineAt },
+            { authorization: `Bearer ${bearer}` },
+          ),
+          context,
+        )
+      ).status,
+    ).toBe(400);
+    expect(mocks.closing).not.toHaveBeenCalled();
   });
 });

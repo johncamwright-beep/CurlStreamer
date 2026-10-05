@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useCallback, useEffect, useRef, useState } from "react";
+import { ProgramPresentation } from "@/components/ProgramPresentation";
 import { createRoot } from "react-dom/client";
 import {
   ProgramCanvas,
@@ -456,9 +457,12 @@ function ProgramRenderer() {
 
   if (!game)
     return (
-      <main className="program-loading" role="status">
-        {programMessage}
-      </main>
+      <>
+        <ProgramPresentation />
+        <main className="program-loading" role="status">
+          {programMessage}
+        </main>
+      </>
     );
 
   const verified = roles.filter(
@@ -466,6 +470,7 @@ function ProgramRenderer() {
   ).length;
   return (
     <>
+      <ProgramPresentation />
       <M4ProgramAudio
         game={game}
         sources={sources}

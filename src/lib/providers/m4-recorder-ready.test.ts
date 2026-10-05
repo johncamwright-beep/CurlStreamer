@@ -12,6 +12,27 @@ function frame() {
   return result;
 }
 describe("recorder private readiness channel", () => {
+  it("requires positively negotiated presentation readiness, never treating an old native frame as support", async () => {
+    const legacy = frame();
+    await expect(
+      readM4RecorderReady(Readable.from([legacy]), true, 100, false, true),
+    ).rejects.toThrow("m4_recording_unavailable");
+    const native = frame();
+    const expanded = Buffer.concat([
+      native.subarray(0, 6),
+      Buffer.from([80, 67, 86, 49, 1, 0, 0, 0]),
+      native.subarray(6),
+    ]);
+    const result = await readM4RecorderReady(
+      Readable.from([expanded]),
+      true,
+      100,
+      false,
+      true,
+    );
+    expect(result?.capability).toEqual(Buffer.alloc(32, 79));
+    result?.capability.fill(0);
+  });
   it("consumes fragmented readiness and bootstrap, wiping received bytes", async () => {
     const message = frame();
     const chunks = Array.from(message, (byte) => Buffer.from([byte]));

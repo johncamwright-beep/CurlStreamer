@@ -23,6 +23,8 @@ bool m4_media_attach_stream(m4_media *media, HANDLE pipe, const unsigned char ca
 void m4_media_poll_stream(m4_media *media);
 /* Queues the pinned browser refresh button. Acceptance is not frame proof. */
 bool m4_media_refresh_program(m4_media *media);
+/* Final browser-source mute; encoders and RTMP remain running. */
+bool m4_media_mute_program(m4_media *media, bool muted);
 void m4_media_program_health(const m4_media *media, uint32_t *sequence, uint32_t *paint_changes, uint32_t *age_ms, uint32_t *status);
 bool m4_media_active(const m4_media *media);
 uint64_t m4_media_bytes(const m4_media *media);

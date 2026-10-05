@@ -13,6 +13,12 @@ const stateSchema = z.object({
   message: z.string().max(300),
   canReconnect: z.boolean().optional().default(false),
   outputActive: z.boolean().optional().default(false),
+  canHoldStream: z.boolean().optional().default(false),
+  presentation: z
+    .object({
+      mode: z.enum(["live", "hold", "preparing-end", "ended"]),
+    })
+    .optional(),
 });
 export function StudioYouTube({ id }: { id: string }) {
   const [state, setState] = useState<z.infer<typeof stateSchema>>();
@@ -174,7 +180,7 @@ export function StudioYouTube({ id }: { id: string }) {
       window.removeEventListener("studio-youtube-status", receive);
     };
   }, [id]);
-  function send(action: "start" | "stop") {
+  function send(action: "start" | "stop" | "hold" | "resume") {
     const bridge = (
       window as unknown as {
         chrome?: { webview?: { postMessage(value: unknown): void } };
@@ -185,20 +191,27 @@ export function StudioYouTube({ id }: { id: string }) {
       pending ||
       !state ||
       state.busy ||
-      (action === "stop" && !state.canReconnect)
+      (action === "stop" && !state.canReconnect) ||
+      (["hold", "resume"].includes(action) && !state.canHoldStream)
     )
       return;
-    setAutoGoLive(action === "start");
-    halted.current = action === "stop";
-    nextCheck.current = 0;
-    failures.current = 0;
-    confirmedLive.current = false;
+    if (action === "start" || action === "stop") {
+      setAutoGoLive(action === "start");
+      halted.current = action === "stop";
+      nextCheck.current = 0;
+      failures.current = 0;
+      confirmedLive.current = false;
+    }
     setError("");
     setPending(true);
     bridge.postMessage({ type: `studio-youtube-${action}`, gameId: id });
   }
   const active =
     state && ["starting", "armed", "stopping"].includes(state.streaming);
+  const held = state?.presentation?.mode === "hold";
+  const ending = ["preparing-end", "ended"].includes(
+    state?.presentation?.mode ?? "",
+  );
   if (!bridgeAvailable) return <WindowsStudioRequired gameId={id} />;
   return (
     <section
@@ -219,19 +232,23 @@ export function StudioYouTube({ id }: { id: string }) {
         >
           {!state
             ? "Status unavailable"
-            : state.live
-              ? "● LIVE"
-              : state.streaming === "paused"
-                ? "Disconnected"
-                : state?.receiving
-                  ? "Receiving video"
-                  : watchingOutput
-                    ? state.outputActive
-                      ? "Sending video · Checking YouTube…"
-                      : "Checking status…"
-                    : active
-                      ? "Connecting…"
-                      : "Not live"}
+            : held
+              ? state.live
+                ? "● LIVE · Paused"
+                : "Paused · Sending card"
+              : state.live
+                ? "● LIVE"
+                : state.streaming === "paused"
+                  ? "Disconnected"
+                  : state?.receiving
+                    ? "Receiving video"
+                    : watchingOutput
+                      ? state.outputActive
+                        ? "Sending video · Checking YouTube…"
+                        : "Checking status…"
+                      : active
+                        ? "Connecting…"
+                        : "Not live"}
         </strong>
       </div>
       <div className="studio-youtube-actions flex flex-wrap gap-2">
@@ -241,22 +258,49 @@ export function StudioYouTube({ id }: { id: string }) {
             !state?.available ||
             state.busy ||
             pending ||
-            Boolean(active && !state.canReconnect)
+            ending ||
+            Boolean(active && !state.canHoldStream && !state.canReconnect)
           }
-          onClick={() => send(active ? "stop" : "start")}
+          onClick={() =>
+            send(
+              held
+                ? "resume"
+                : active
+                  ? state?.canHoldStream
+                    ? "hold"
+                    : "stop"
+                  : "start",
+            )
+          }
         >
           {pending || state?.busy
             ? "Please wait…"
-            : active
-              ? "Disconnect"
-              : state?.streaming === "paused"
-                ? "Reconnect"
-                : "Broadcast to YouTube"}
+            : held
+              ? "Resume broadcast"
+              : active
+                ? state?.canHoldStream
+                  ? "Pause broadcast"
+                  : "Disconnect"
+                : state?.streaming === "paused"
+                  ? "Reconnect"
+                  : "Broadcast to YouTube"}
         </button>
         <a className="btn-secondary" href="/settings/youtube">
           YouTube settings
         </a>
       </div>
+      {held && (
+        <p className="mt-2 text-sm text-slate-300">
+          Viewers see a temporary pause card. Resume returns to this same watch
+          link.
+        </p>
+      )}
+      {active && !state?.canHoldStream && state?.canReconnect && (
+        <p className="mt-2 text-sm text-slate-300">
+          Update Windows Studio to show a pause card while keeping the stream
+          connected.
+        </p>
+      )}
       {active && !state?.canReconnect && (
         <p className="mt-2 text-sm">
           Update Windows Studio to disconnect and reconnect on the same watch

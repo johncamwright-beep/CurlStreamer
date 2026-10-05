@@ -1,4 +1,5 @@
 // Temporary local operator surface for the pilot; the packaged Studio shell is pending.
+import { programCompletionSchema } from "../program-presentation";
 import { createServer, type IncomingMessage } from "node:http";
 import { randomBytes } from "node:crypto";
 import { mkdir } from "node:fs/promises";
@@ -51,6 +52,25 @@ const command = z.discriminatedUnion("action", [
   z.object({ action: z.literal("stop-stream") }).strict(),
   z.object({ action: z.literal("pause-stream") }).strict(),
   z.object({ action: z.literal("resume-stream") }).strict(),
+  z.object({ action: z.literal("hold-stream") }).strict(),
+  z.object({ action: z.literal("release-hold") }).strict(),
+  z.object({ action: z.literal("prepare-ending") }).strict(),
+  z.object({ action: z.literal("cancel-ending") }).strict(),
+  z.object({ action: z.literal("finish-ending") }).strict(),
+  z
+    .object({
+      action: z.literal("show-ending"),
+      completion: programCompletionSchema,
+      closing: z
+        .object({
+          sessionId: z.uuid(),
+          generation: z.number().int().positive(),
+          intentId: z.uuid(),
+          deadlineAt: z.iso.datetime({ offset: true }),
+        })
+        .strict(),
+    })
+    .strict(),
 ]);
 const invitationCode = z.string().regex(/^[A-Za-z0-9_-]{43}$/);
 
@@ -83,7 +103,11 @@ type ProgramHandle = Omit<
   | "usbAudioStatus"
   | "pushUsbAudio"
   | "stopPhone"
+  | "presentation"
 > & {
+  presentation?: NonNullable<
+    Awaited<ReturnType<typeof startM4ProgramHost>>["presentation"]
+  >;
   pushUsbAudio?: (pcm: Buffer) => void;
   stopPhone?: (role: "camera-home" | "camera-away") => Promise<void>;
   previewMapping?: string;
@@ -111,6 +135,12 @@ type ProgramHandle = Omit<
     stop(): Promise<void>;
     pause?(): Promise<void>;
     resume?(): Promise<void>;
+    closingIdentity?(desktop: M4DesktopClient): {
+      sessionId: string;
+      generation: number;
+      intentId: string;
+      capability: "final-card-v1";
+    } | null;
     snapshot(): {
       state:
         | "idle"
@@ -200,6 +230,7 @@ export async function createM4OperatorServer(options: {
     cacheRoot: string;
     rendererRoot: string;
     streamPlugin?: string;
+    presentationControl?: boolean;
     start?: (invitation: string, recording: string) => Promise<ProgramHandle>;
   };
 }) {
@@ -317,6 +348,10 @@ export async function createM4OperatorServer(options: {
         options.pairingEnabled === true &&
         Boolean(programHandle?.stream),
       streaming,
+      canHoldStream: programHandle?.presentation?.supported === true,
+      canGracefulEnd: programHandle?.presentation?.supported === true,
+      presentation: programHandle?.presentation?.snapshot(),
+      closing: programHandle?.stream?.closingIdentity?.(desktop) ?? null,
       canReconnect: Boolean(
         programHandle?.stream?.pause && programHandle.stream.resume,
       ),
@@ -555,6 +590,29 @@ export async function createM4OperatorServer(options: {
         reply(409, { error: "Output recovery is not ready" });
         return;
       }
+      if (
+        [
+          "hold-stream",
+          "release-hold",
+          "prepare-ending",
+          "cancel-ending",
+          "show-ending",
+          "finish-ending",
+        ].includes(input.action) &&
+        (!programHandle?.presentation || program !== "recording")
+      ) {
+        reply(409, { error: "Presentation is not supported" });
+        return;
+      }
+      if (
+        ["hold-stream", "release-hold"].includes(input.action) &&
+        (!desktop.snapshot().authorized ||
+          programHandle?.stream?.snapshot().state !== "armed" ||
+          programHandle.stream.snapshot().localOutput?.state !== "active")
+      ) {
+        reply(409, { error: "No active output" });
+        return;
+      }
       const attempt = ++epoch;
       let programSettled: (() => void) | undefined;
       if (input.action === "start-program") {
@@ -564,7 +622,46 @@ export async function createM4OperatorServer(options: {
       }
       ++busy;
       try {
-        if (input.action === "check") {
+        if (
+          input.action === "hold-stream" ||
+          input.action === "release-hold" ||
+          input.action === "prepare-ending" ||
+          input.action === "cancel-ending" ||
+          input.action === "show-ending" ||
+          input.action === "finish-ending"
+        ) {
+          const handle = programHandle!;
+          if (input.action === "hold-stream")
+            await handle.presentation!.set("hold");
+          else if (
+            input.action === "release-hold" ||
+            input.action === "cancel-ending"
+          )
+            await handle.presentation!.set("live");
+          else if (input.action === "prepare-ending")
+            await handle.presentation!.set("preparing-end");
+          else if (input.action === "show-ending") {
+            const identity = await desktop.closing();
+            if (
+              !identity ||
+              identity.sessionId !== input.closing.sessionId ||
+              identity.generation !== input.closing.generation ||
+              identity.intentId !== input.closing.intentId ||
+              identity.deadlineAt !== input.closing.deadlineAt
+            )
+              throw new Error("Closing output mismatch");
+            await handle.presentation!.set(
+              "ended",
+              input.completion,
+              Date.parse(input.closing.deadlineAt),
+            );
+            await handle.presentation!.dwell(5000);
+          } else {
+            await handle.stream?.stop();
+            if (handle.stream?.snapshot().localOutput?.state !== "stopped")
+              throw new Error("Output stop unconfirmed");
+          }
+        } else if (input.action === "check") {
           pc = "checking";
           message = "Checking this PC…";
           await (options.check ?? (() => checkM4NativeHost(options.paths)))();
@@ -614,10 +711,12 @@ export async function createM4OperatorServer(options: {
                   cacheRoot: configuration.cacheRoot,
                   rendererRoot: configuration.rendererRoot,
                   streamPlugin: configuration.streamPlugin,
+                  presentationControl: configuration.presentationControl,
                 },
                 options.diagnostic,
                 options.connectionDiagnostic,
                 cameraInputs,
+                () => desktop.closing(),
               ))
           )(invitation, recording);
           if (closing) {
@@ -734,6 +833,19 @@ export async function createM4OperatorServer(options: {
           message = "Desktop released.";
         }
       } catch {
+        if (
+          [
+            "hold-stream",
+            "release-hold",
+            "prepare-ending",
+            "cancel-ending",
+            "show-ending",
+            "finish-ending",
+          ].includes(input.action)
+        ) {
+          reply(409, { error: "Presentation change was not confirmed" });
+          return;
+        }
         if (
           attempt === epoch ||
           input.action === "start-program" ||

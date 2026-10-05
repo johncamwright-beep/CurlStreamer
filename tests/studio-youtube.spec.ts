@@ -175,3 +175,87 @@ test("Studio YouTube sends game-scoped commands and expires live status", async 
   ).toBeDisabled();
   await expect(page.getByText(/Update Windows Studio/)).toBeVisible();
 });
+
+test("capable Studio pauses on a card and resumes without disconnecting or changing the watch link", async ({
+  page,
+}) => {
+  const bundle = await build({
+    bundle: true,
+    write: false,
+    platform: "browser",
+    format: "iife",
+    jsx: "automatic",
+    tsconfig: "tsconfig.json",
+    stdin: {
+      contents: `import React from 'react';import {createRoot} from 'react-dom/client';import {StudioYouTube} from './src/components/StudioYouTube';window.sent=[];window.chrome={webview:{postMessage(v){window.sent.push(v)}}};createRoot(document.getElementById('root')).render(<StudioYouTube id="fixture-game"/>);`,
+      loader: "tsx",
+      resolveDir: process.cwd(),
+    },
+  });
+  await page.route("**/youtube-hold-fixture", (r) =>
+    r.fulfill({
+      contentType: "text/html",
+      body: '<div id="root"></div><script src="/youtube-hold-fixture.js"></script>',
+    }),
+  );
+  await page.route("**/youtube-hold-fixture.js", (r) =>
+    r.fulfill({
+      contentType: "text/javascript",
+      body: bundle.outputFiles[0].text,
+    }),
+  );
+  const watchUrl = "https://www.youtube.com/watch?v=abcdefghijk";
+  const mutations: unknown[] = [];
+  await page.route("**/api/games/fixture-game/studio-m4", (r) => {
+    if (r.request().method() === "POST")
+      mutations.push(r.request().postDataJSON());
+    return r.fulfill({ json: { watchUrl } });
+  });
+  await page.goto("/youtube-hold-fixture");
+  const report = async (mode: "live" | "hold") =>
+    page.evaluate(
+      (mode) =>
+        window.dispatchEvent(
+          new CustomEvent("studio-youtube-status", {
+            detail: {
+              gameId: "fixture-game",
+              available: true,
+              busy: false,
+              streaming: "armed",
+              live: true,
+              receiving: true,
+              outputActive: true,
+              message: "",
+              canReconnect: true,
+              canHoldStream: true,
+              presentation: { mode },
+            },
+          }),
+        ),
+      mode,
+    );
+  await report("live");
+  await page
+    .getByRole("button", { name: "Pause broadcast", exact: true })
+    .click();
+  await report("hold");
+  await expect(page.getByRole("status")).toHaveText("● LIVE · Paused");
+  await expect(
+    page.getByRole("link", { name: "Watch on YouTube" }),
+  ).toHaveAttribute("href", watchUrl);
+  await page
+    .getByRole("button", { name: "Resume broadcast", exact: true })
+    .click();
+  await report("live");
+  await expect(page.getByRole("status")).toHaveText("● LIVE");
+  expect(
+    await page.evaluate(() => (window as unknown as { sent: unknown[] }).sent),
+  ).toEqual([
+    { type: "studio-youtube-hold", gameId: "fixture-game" },
+    { type: "studio-youtube-resume", gameId: "fixture-game" },
+  ]);
+  expect(mutations).toHaveLength(0);
+  await expect(
+    page.getByRole("link", { name: "Watch on YouTube" }),
+  ).toHaveAttribute("href", watchUrl);
+});

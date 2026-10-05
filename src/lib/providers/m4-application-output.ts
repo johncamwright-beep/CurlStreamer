@@ -16,7 +16,8 @@ export class M4ApplicationOutput {
     private native: Pick<
       M4NativePipeClient,
       "arm" | "renew" | "stop" | "snapshot"
-    >,
+    > &
+      Partial<Pick<M4NativePipeClient, "observe">>,
   ) {}
   snapshot() {
     return { desktop: this.desktop.snapshot(), native: this.native.snapshot() };
@@ -71,6 +72,24 @@ export class M4ApplicationOutput {
     return this.#stop;
   }
   async #cleanup() {
+    if (this.native.observe) {
+      // A database stopped receipt is used to release provider cleanup. It must
+      // follow actual encoder stop, rather than the private authority STOP ACK.
+      try {
+        await this.native.stop();
+        const until = performance.now() + 4000;
+        for (;;) {
+          const observation = await this.native.observe();
+          if (observation.state === "stopped") break;
+          if (performance.now() >= until) throw fail();
+          await new Promise((resolve) => setTimeout(resolve, 50));
+        }
+        await this.desktop.stop();
+        return this.snapshot();
+      } catch {
+        throw fail();
+      }
+    }
     const results = await Promise.allSettled([
       this.native.stop(),
       this.desktop.stop(),

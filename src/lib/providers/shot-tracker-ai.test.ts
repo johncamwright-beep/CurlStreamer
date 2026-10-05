@@ -57,6 +57,9 @@ it("sends only aggregate evidence to a fixed server provider and validates struc
   const body = JSON.parse(init.body);
   expect(body.store).toBe(false);
   expect(body.text.format.strict).toBe(true);
+  expect(
+    body.text.format.schema.properties.summary.properties.text.pattern,
+  ).toBe("^[^0-9<>]*$");
   expect(body.input).not.toContain("PRIVATE NAME");
   expect(body.instructions).toContain("No player names");
   expect(

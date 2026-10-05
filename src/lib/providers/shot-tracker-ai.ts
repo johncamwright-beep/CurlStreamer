@@ -62,6 +62,7 @@ async function generateOnce(
   if (!config) throw new Error("AI reports are not configured");
   if (!input.evidence.length) throw new Error("No report evidence");
   const finding = narrativeSchema.shape.summary.extend({
+    text: narrativeSchema.shape.summary.shape.text.regex(/^[^0-9<>]*$/),
     evidence: z
       .array(z.enum(input.evidence.map((e) => e.id) as [string, ...string[]]))
       .min(1)

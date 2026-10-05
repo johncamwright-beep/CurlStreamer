@@ -254,6 +254,15 @@ export function StudioYouTube({ id }: { id: string }) {
       <div className="studio-youtube-actions flex flex-wrap gap-2">
         <button
           className="btn"
+          title={
+            held
+              ? "Return from the temporary pause card to live video on the same watch link."
+              : active && state?.canHoldStream
+                ? "Show a temporary pause card while keeping the stream connected."
+                : active && state?.canReconnect
+                  ? "Disconnect video temporarily. Update Windows Studio to show a pause card while keeping the stream connected."
+                  : undefined
+          }
           disabled={
             !state?.available ||
             state.busy ||
@@ -289,18 +298,6 @@ export function StudioYouTube({ id }: { id: string }) {
           YouTube settings
         </a>
       </div>
-      {held && (
-        <p className="mt-2 text-sm text-slate-300">
-          Viewers see a temporary pause card. Resume returns to this same watch
-          link.
-        </p>
-      )}
-      {active && !state?.canHoldStream && state?.canReconnect && (
-        <p className="mt-2 text-sm text-slate-300">
-          Update Windows Studio to show a pause card while keeping the stream
-          connected.
-        </p>
-      )}
       {active && !state?.canReconnect && (
         <p className="mt-2 text-sm">
           Update Windows Studio to disconnect and reconnect on the same watch

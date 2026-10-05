@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import { expect, test } from "@playwright/test";
 test.skip(!process.env.CURLCOACH_E2E, "Use the Shot Tracker config");
 let js = "";
+let libraryJs = "";
 let css = "";
 test.beforeAll(async () => {
   execFileSync(process.execPath, [
@@ -29,153 +30,281 @@ test.beforeAll(async () => {
     },
   });
   js = r.outputFiles[0].text;
+  const library = await build({
+    bundle: true,
+    format: "iife",
+    jsx: "automatic",
+    platform: "browser",
+    write: false,
+    tsconfig: "tsconfig.json",
+    stdin: {
+      loader: "tsx",
+      resolveDir: process.cwd(),
+      contents: `import React from 'react';import{createRoot}from'react-dom/client';import Library from './src/app/curlcoach/EventReportLibrary';createRoot(document.getElementById('root')).render(<Library/>);`,
+    },
+  });
+  libraryJs = library.outputFiles[0].text;
 });
-test("one-touch audiences, immutable saved reports, season allowance and completion gating", async ({
+test("event library offers generate or view without automatic generation", async ({
+  page,
+}) => {
+  let posts = 0;
+  await page.route("**/api/curlcoach/report-events", (route) =>
+    route.fulfill({
+      json: {
+        events: [
+          {
+            id: "finished",
+            name: "Finished event",
+            date: "2026-10-01",
+            complete: true,
+            saved: 3,
+            processing: false,
+          },
+          {
+            id: "new",
+            name: "New event",
+            date: "2026-10-02",
+            complete: true,
+            saved: 0,
+            processing: false,
+          },
+          {
+            id: "future",
+            name: "Future event",
+            date: "2026-11-01",
+            complete: false,
+            saved: 0,
+            processing: false,
+          },
+        ],
+      },
+    }),
+  );
+  await page.route("**/api/curlcoach/reports**", (route) => {
+    if (route.request().method() === "POST") posts++;
+    return route.fulfill({
+      json: {
+        configured: true,
+        eligible: true,
+        reason: null,
+        allowance: {
+          seasonStart: "2026-09-01",
+          used: 1,
+          limit: 20,
+          reserved: false,
+          owned: true,
+          completed: [],
+        },
+        entries: [],
+      },
+    });
+  });
+  await page.route("**/library-fixture", (route) =>
+    route.fulfill({
+      contentType: "text/html",
+      body:
+        '<html><head><meta name="viewport" content="width=device-width, initial-scale=1"><style>' +
+        css +
+        '</style></head><body><div id="root"></div><script>' +
+        libraryJs +
+        "</script></body></html>",
+    }),
+  );
+  await page.goto("/library-fixture");
+  await expect(
+    page
+      .getByRole("listitem")
+      .filter({ hasText: "Future event" })
+      .getByRole("button"),
+  ).toBeDisabled();
+  await page.getByRole("button", { name: "View reports", exact: true }).click();
+  await expect(
+    page.getByRole("navigation", { name: "Event report list" }),
+  ).toBeVisible();
+  expect(posts).toBe(0);
+  await page.getByRole("button", { name: "← All events", exact: true }).click();
+  await page
+    .getByRole("listitem")
+    .filter({ hasText: "New event" })
+    .getByRole("button", { name: "Generate reports" })
+    .click();
+  await expect(
+    page.getByRole("button", { name: "Generate reports", exact: true }),
+  ).toBeEnabled();
+  expect(posts).toBe(0);
+});
+test("report navigation is read-only, generation is explicit, and PDFs contain only the selected report", async ({
   page,
 }, info) => {
-  let eligible = true,
-    stale = false,
-    posts = 0,
+  let posts = 0,
     used = 0,
     reserved = false,
+    eligible = true,
     owned = true;
-  const entries: unknown[] = [];
-  const finding = {
-    text: "Our team can repeat a shared target drill.",
-    evidence: ["overall"],
-  };
+  const entries: {
+    audience: string;
+    status: string;
+    stale: boolean;
+    packet: unknown;
+  }[] = [];
+  const report = (key: string, title: string) => ({
+    key,
+    title,
+    limitations: ["PRIVATE COVERAGE DETAILS"],
+    evidence: [
+      {
+        id: "overall",
+        label: "Recorded shooting",
+        value:
+          "76.3%; 301 graded / 306 recorded; 3 ungraded; 2 excluded; 42 low grades",
+        sample: 301,
+        confidence: "event",
+      },
+      {
+        id: "type-0",
+        label: "Draw",
+        value: "85.6%; 32 graded",
+        sample: 32,
+        confidence: "event",
+      },
+    ],
+    narrative: {
+      summary: {
+        text: "A solid event with room to sharpen draws.",
+        evidence: ["overall"],
+      },
+      strengths: [
+        {
+          text: "Your draws gave you good opportunities.",
+          evidence: ["type-0"],
+        },
+      ],
+      priorities: [
+        { text: "Work on finishing behind the guard.", evidence: ["overall"] },
+      ],
+      practice: [
+        {
+          text: "Place a guard and repeat the draw on both turns.",
+          evidence: ["type-0"],
+        },
+      ],
+      review: [{ text: "PRIVATE REVIEW QUESTION", evidence: ["overall"] }],
+    },
+  });
   await page.route("**/api/curlcoach/reports**", async (route) => {
     if (route.request().method() === "POST") {
       posts++;
-      const body = route.request().postDataJSON();
-      expect(Object.keys(body).sort()).toEqual(["audience", "eventId"]);
+      reserved = true;
+      used = 1;
+      const { audience } = route.request().postDataJSON();
       const packet = {
-        eventName: "Synthetic completed event",
-        audience: body.audience,
+        audience,
+        eventName: "Synthetic event",
         policy: "fixture",
         generatedAt: new Date().toISOString(),
-        reports: [
-          {
-            key: body.audience,
-            title: body.audience === "team" ? "Team report" : "Coach report",
-            limitations: ["SYNTHETIC BROWSER FIXTURE"],
-            evidence: [
-              {
-                id: "overall",
-                label: "Recorded shooting",
-                value: "75%; 40 graded",
-                sample: 40,
-                confidence: "event",
-              },
-            ],
-            narrative: {
-              summary: finding,
-              strengths: [finding],
-              priorities: [finding],
-              practice: [finding],
-              review: [finding],
-            },
-          },
-        ],
+        reports:
+          audience === "players"
+            ? [report("p1", "Alex Greenwood"), report("p2", "Cameron Wright")]
+            : [
+                report(
+                  audience,
+                  audience === "coach" ? "Coach report" : "Team report",
+                ),
+              ],
       };
-      entries.splice(0, entries.length, {
-        audience: body.audience,
-        status: "ready",
-        stale: false,
-        packet,
-      });
-      stale = false;
+      entries.push({ audience, status: "ready", stale: true, packet });
       await route.fulfill({ json: { packet } });
       return;
     }
     await route.fulfill({
       json: {
         configured: true,
+        eligible,
+        reason: eligible ? null : "Event still in progress",
         allowance: {
           seasonStart: "2026-09-01",
           used,
           limit: 20,
           reserved,
           owned,
-          completed: [],
+          completed: entries.map((e) => e.audience),
         },
-        eligible,
-        reason: eligible
-          ? null
-          : "Reports become available when every game is completed.",
-        entries: entries.map((e) => ({ ...(e as object), stale })),
+        entries,
       },
     });
   });
   await page.route("**/report-fixture", (route) =>
     route.fulfill({
       contentType: "text/html",
-      body: `<html><head><meta name="viewport" content="width=device-width, initial-scale=1"><style>${css}body{padding:16px}</style></head><body><p>SYNTHETIC BROWSER FIXTURE</p><div id="root"></div><script>${js}</script></body></html>`,
+      body:
+        '<html><head><meta name="viewport" content="width=device-width, initial-scale=1"><style>' +
+        css +
+        '</style></head><body><div id="root"></div><script>' +
+        js +
+        "</script></body></html>",
     }),
   );
   await page.goto("/report-fixture");
-  await expect(
-    page.getByRole("button", { name: "Generate team report", exact: true }),
-  ).toBeEnabled();
-  await page
-    .getByRole("button", { name: "Generate team report", exact: true })
-    .click();
-  await expect(page.getByRole("article")).toContainText("Team report");
-  await expect(
-    page.getByText("All recorded evidence", { exact: true }),
-  ).toHaveCount(1);
-  expect(posts).toBe(1);
-  await page
-    .getByRole("button", { name: "Open team report", exact: true })
-    .click();
-  expect(posts).toBe(1);
-  await expect(page.locator("textarea,input")).toHaveCount(0);
-  await expect(
-    page.getByRole("button", { name: "Generate coach report", exact: true }),
-  ).toBeVisible();
-  await expect(
-    page.getByRole("button", {
-      name: "Generate individual reports",
-      exact: true,
-    }),
-  ).toBeVisible();
-  await page.screenshot({
-    path: `test-results/shot-tracker-reports-${info.project.name}.png`,
-    fullPage: true,
-  });
-  stale = true;
-  await page.reload();
-  await expect(
-    page.getByRole("button", { name: "Open team report", exact: true }),
-  ).toBeEnabled();
+  const nav = page.getByRole("navigation", { name: "Event report list" });
+  await nav.getByRole("button", { name: "Team report", exact: true }).click();
+  expect(posts).toBe(0);
   await expect(page.getByRole("article")).toHaveCount(0);
-  await page.getByRole("button", { name: "View saved team report" }).click();
-  await expect(page.getByRole("article")).toContainText("Out of date");
-  expect(posts).toBe(1);
   used = 20;
   await page.reload();
   await expect(
-    page.getByRole("button", { name: "Generate coach report", exact: true }),
+    page.getByRole("button", { name: "Generate reports", exact: true }),
   ).toBeDisabled();
-  await expect(
-    page.getByRole("button", { name: "Open team report", exact: true }),
-  ).toBeEnabled();
   reserved = true;
   await page.reload();
   await expect(
-    page.getByRole("button", { name: "Generate coach report", exact: true }),
+    page.getByRole("button", { name: "Generate reports", exact: true }),
   ).toBeEnabled();
   owned = false;
   await page.reload();
   await expect(
-    page.getByRole("button", { name: "Generate coach report", exact: true }),
+    page.getByRole("button", { name: "Generate reports", exact: true }),
   ).toBeDisabled();
   owned = true;
+  used = 0;
+  reserved = false;
+  await page.reload();
+  await page
+    .getByRole("button", { name: "Generate reports", exact: true })
+    .click();
+  await expect(
+    nav.getByRole("button", { name: "Cameron Wright", exact: true }),
+  ).toBeVisible();
+  expect(posts).toBe(3);
+  await nav
+    .getByRole("button", { name: "Alex Greenwood", exact: true })
+    .click();
+  await expect(page.getByRole("article")).toHaveCount(1);
+  await expect(page.getByRole("article")).toContainText("76.3%");
+  await expect(page.getByRole("article")).toContainText("85.6%");
+  await expect(page.getByRole("article")).not.toContainText("301");
+  await expect(page.getByRole("article")).not.toContainText("ungraded");
+  await expect(page.getByRole("article")).not.toContainText("PRIVATE");
+  const pending = page.waitForEvent("download");
+  await page.getByRole("button", { name: "Download PDF", exact: true }).click();
+  const download = await pending;
+  expect(download.suggestedFilename()).toContain("Alex Greenwood");
+  const file = await download.path();
+  const pdf = readFileSync(file!, "latin1");
+  expect(pdf.startsWith("%PDF")).toBe(true);
+  expect(pdf).toContain("Alex Greenwood");
+  expect(pdf).not.toContain("Cameron Wright");
+  expect(pdf).not.toContain("ungraded");
+  await download.saveAs("test-results/report-" + info.project.name + ".pdf");
+  await page.screenshot({
+    path: "test-results/report-redesign-" + info.project.name + ".png",
+    fullPage: true,
+  });
   eligible = false;
   await page.reload();
-  await expect(
-    page.getByRole("button", { name: "Generate coach report", exact: true }),
-  ).toBeDisabled();
+  await nav.getByRole("button", { name: "Team report", exact: true }).click();
+  await expect(page.getByRole("article")).toBeVisible();
+  expect(posts).toBe(3);
 });
 
 test("Shot Tracker is available at its product-named address", async ({

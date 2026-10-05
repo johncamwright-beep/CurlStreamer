@@ -1,6 +1,10 @@
 import "server-only";
 import { createHash, randomUUID } from "node:crypto";
 import { z } from "zod";
+import {
+  listEvents,
+  listTeamHierarchyGames,
+} from "@/lib/team-hierarchy-service";
 import type { CoachAccount } from "@/lib/curlcoach/production-access";
 import type { CoachEvent } from "@/lib/curlcoach/event";
 import {
@@ -133,6 +137,68 @@ export class ReportError extends Error {
   ) {
     super(message);
   }
+}
+export async function listReportEvents(account: CoachAccount) {
+  const [events, games] = await Promise.all([
+    listEvents(account.user),
+    listTeamHierarchyGames(account.user),
+  ]);
+  if (!events.ok || !games.ok) throw new Error("Event list unavailable");
+  const catalog = z
+    .array(
+      z.object({
+        id: z.uuid(),
+        name: z.string(),
+        start_date: z.string().nullish(),
+      }),
+    )
+    .parse(events.value);
+  const schedule = z
+    .array(
+      z.object({ event_id: z.string().nullable(), game_status: z.string() }),
+    )
+    .parse(games.value);
+  const results: {
+    id: string;
+    name: string;
+    date: string | null;
+    complete: boolean;
+    saved: number;
+    processing: boolean;
+  }[] = [];
+  let next = 0;
+  await Promise.all(
+    Array.from({ length: Math.min(4, catalog.length) }, async () => {
+      while (next < catalog.length) {
+        const e = catalog[next++];
+        const rows = z
+          .array(z.object({ status: z.string(), updated_at: z.string() }))
+          .parse(await rpc("read_shot_tracker_reports", account, e.id));
+        const eventGames = schedule.filter(
+          (g) => g.event_id === e.id && g.game_status !== "deleted",
+        );
+        results.push({
+          id: e.id,
+          name: e.name,
+          date: e.start_date ?? null,
+          complete:
+            eventGames.length > 0 &&
+            eventGames.every((g) => g.game_status === "completed"),
+          saved: rows.filter((r) => r.status === "ready").length,
+          processing: rows.some(
+            (r) =>
+              r.status === "processing" &&
+              Date.parse(r.updated_at) > Date.now() - 180000,
+          ),
+        });
+      }
+    }),
+  );
+  return results.sort(
+    (a, b) =>
+      (b.date ?? "").localeCompare(a.date ?? "") ||
+      a.name.localeCompare(b.name),
+  );
 }
 export async function generateEventReports(
   account: CoachAccount,

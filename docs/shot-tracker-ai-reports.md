@@ -1,18 +1,18 @@
 # Shot Tracker event reports
 
-The event detail page and Shot Tracker's **Event reports** navigation offer three fixed actions after all scheduled, nondeleted games are completed:
+Shot Tracker's **Event reports** navigation and /shot-tracker/reports show an event library with Generate reports for completed events without saved reports and View reports for saved sets. Opening an event only loads its status; the explicit Generate reports button requests the missing audiences in sequence, sharing one event reservation. There is no automatic generation or user prompt. The report viewer has a left-hand list and one selected report:
 
 - **Coach report:** private team analysis, with player follow-up and named evidence available to the coach.
 - **Team report:** collective performance, shared strengths and shared improvement. The model receives no player names, positions, notes, shot records or individual aggregates. Output checks reject names and positional commentary.
 - **Individual reports:** one separate report per recorded roster member, based only on that athlete's shooting evidence. Team results provide context, not individual responsibility for outcomes.
 
-No user prompt or custom instructions are accepted. Reports remain private to the generating coach; selecting a team or player audience does not grant access, send or publish anything. The coach can print the selected packet or save it as PDF using the browser.
+No user prompt or custom instructions are accepted. Reports remain private to the generating coach; selecting a team or player audience does not grant access, send or publish anything. The top-right Download PDF button exports only the selected report locally using jsPDF, without another model request. The presentation shows overall/category shooting percentages and four narrative sections: Overall, What went well, Where to improve, and Next practice. Source counts, coverage, exclusions and evidence references remain internal.
 
 ## Evidence policy
 
 `src/lib/curlcoach/reports.ts` contains the versioned instructions, calculations and output schemas. Current shots are derived from append-only history. Zero grades count; missing and excluded grades do not enter the shooting percentage. Numbers are computed in code and attached to narrative through validated evidence references. Models produce qualitative observations, not calculations. Schema/reference/identity checks do not prove every interpretation correct: drafts require coach review and representative evaluations before paid production enablement.
 
-All shared games must be completed. Concessions are valid early finishes. A private shot session remaining open does not invalidate a completed shared game, but is disclosed. Recorded shots beyond the final line score count toward shooting; an unfinished end is not invented or counted as a blank. Missing/gapped scoreboards are excluded from outcome totals. Unknown hammer ends are excluded from hammer denominators and disclosed. Later hammer follows scoring and blanks; the multiple-with-hammer denominator includes blanks. No undefined advantage metric or official grading benchmark is invented.
+All shared games must be completed. Concessions are valid early finishes. A private shot session remaining open does not invalidate a completed shared game, and remains in the internal evidence. Recorded shots beyond the final line score count toward shooting; an unfinished end is not invented or counted as a blank. Missing/gapped scoreboards are excluded from outcome totals. Unknown hammer ends are excluded from hammer denominators and retained in the internal evidence. Later hammer follows scoring and blanks; the multiple-with-hammer denominator includes blanks. No undefined advantage metric or official grading benchmark is invented.
 
 Team evidence is built independently, never by redacting a coach narrative. Raw names, notes and video links are not sent to the model. Individual reports use separate provider calls. The reports do not claim video inspection or official Curling Canada matrix compatibility.
 
@@ -24,7 +24,7 @@ Team evidence is built independently, never by redacting a coach narrative. Raw 
 
 Missing AI configuration disables generation while leaving saved reports accessible. The provider lives under `src/lib/providers/shot-tracker-ai.ts`: fixed endpoint, `store: false`, strict JSON schema, bounded output and deadline. Upstream bodies and credentials are never logged. Official reference: https://developers.openai.com/api/docs/guides/structured-outputs?api-mode=responses
 
-No replacement login, teams, subscriptions or billing. Shot Tracker remains an optional paid module; CurlStreamer works independently. Legacy `curlcoach` route, environment and database identifiers remain for compatibility, while product language is **Shot Tracker**. No new npm dependencies, bucket permissions or automatic sharing paths.
+No replacement login, teams, subscriptions or billing. Shot Tracker remains an optional paid module; CurlStreamer works independently. Legacy `curlcoach` route, environment and database identifiers remain for compatibility, while product language is **Shot Tracker**. The jsPDF browser dependency supports local PDF export. No new bucket permissions or automatic sharing paths.
 
 ## Storage and recovery
 
@@ -45,7 +45,7 @@ Validation failure, refusal, timeout or persistence failure never publishes a pa
 - Focused tests cover audience isolation, exclusions/zeros, concessions, request validation, privacy checks, provider failures and permanent cache reuse.
 - PostgreSQL tests execute both migrations against a dedicated local cluster: private access, duplicate claims, leases, existing-data backfill, two requests racing for the twentieth slot, season boundary/rollover, deletion persistence, completed-packet immutability and teammate isolation.
 - Phone/tablet tests cover allowance exhaustion, reserved-event continuation, another author's reservation, stale saved reopening and completion gating. Default E2E has a known occupied-port baseline; preserve the user's server.
-- Live isolated-preview tests generated and reopened coach, collective team and four individual reports. These remain review drafts. Policy v2 adds explicit grounding instructions and regression checks for observed coverage overclaims and unfair comparisons. Validation is not proof of factual interpretation; coach review remains required.
+- Live isolated-preview tests generated and reopened coach, collective team and four individual reports. These remain review drafts. Policy v3 adds plain-language coaching instructions, practical drills and suppression of statistical audit prose. Previously saved narratives retain their original wording under the permanent-cache rule; the redesigned presentation applies to both old and new reports. Validation is not proof of factual interpretation; coach review remains required.
 - Production release and migration are separate approval steps. The isolated test database must be removed after validation; never remove the parent production project.
 
 PostgreSQL tests opt in with `SHOT_TRACKER_TEST_DATABASE_URL` (localhost disposable/test database) and `CURLCAST_PSQL`. They create/drop an isolated database and use the existing real access-check function against minimal fixtures. Do not target application storage.

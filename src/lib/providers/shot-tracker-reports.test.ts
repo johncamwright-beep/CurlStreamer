@@ -6,6 +6,12 @@ const m = vi.hoisted(() => ({
   source: vi.fn(),
   load: vi.fn(),
   generate: vi.fn(),
+  events: vi.fn(),
+  games: vi.fn(),
+}));
+vi.mock("@/lib/team-hierarchy-service", () => ({
+  listEvents: m.events,
+  listTeamHierarchyGames: m.games,
 }));
 vi.mock("@/lib/supabase/admin", () => ({
   createAdminSupabaseClient: () => ({ rpc: m.rpc }),
@@ -20,6 +26,7 @@ vi.mock("./shot-tracker-ai", () => ({
 }));
 import {
   generateEventReports,
+  listReportEvents,
   reportFingerprint,
 } from "./shot-tracker-reports";
 const account = { userId: "coach-one", organizationId: "org" } as CoachAccount;
@@ -46,6 +53,52 @@ beforeEach(() => {
   });
 });
 afterEach(() => vi.unstubAllEnvs());
+it("lists completed and unfinished events without generating or exposing report packets", async () => {
+  const id = "00000000-0000-4000-8000-000000000001";
+  const other = "00000000-0000-4000-8000-000000000002";
+  m.events.mockResolvedValue({
+    ok: true,
+    value: [
+      { id, name: "Finished", start_date: "2026-10-01" },
+      { id: other, name: "Upcoming", start_date: "2026-11-01" },
+    ],
+  });
+  m.games.mockResolvedValue({
+    ok: true,
+    value: [
+      { event_id: id, game_status: "completed" },
+      { event_id: id, game_status: "deleted" },
+      { event_id: other, game_status: "scheduled" },
+    ],
+  });
+  m.rpc.mockImplementation(async (_name, args) => ({
+    error: null,
+    data:
+      args.p_event === id
+        ? [
+            {
+              status: "ready",
+              updated_at: new Date().toISOString(),
+              packet: { private: "content" },
+            },
+          ]
+        : [],
+  }));
+  const result = await listReportEvents(account);
+  expect(result.map((e) => [e.name, e.complete, e.saved])).toEqual([
+    ["Upcoming", false, 0],
+    ["Finished", true, 1],
+  ]);
+  expect(JSON.stringify(result)).not.toContain("private");
+  expect(m.generate).not.toHaveBeenCalled();
+  for (const [name, args] of m.rpc.mock.calls) {
+    expect(name).toBe("read_shot_tracker_reports");
+    expect(args).toMatchObject({
+      p_actor: account.userId,
+      p_org: account.organizationId,
+    });
+  }
+});
 it("invalidates cached evidence when scores, roster, status or grades change", () => {
   const e = event(),
     hash = reportFingerprint(e, "team");

@@ -52,7 +52,7 @@ import {
 import CoachLab, { turnLabel } from "./CoachLab";
 import ReviewSummary from "./ReviewSummary";
 import MissAnalysis from "./MissAnalysis";
-import EventReports from "./EventReports";
+import EventReportLibrary from "./EventReportLibrary";
 import ScoringWakeLock from "./ScoringWakeLock";
 import "./coach.css";
 const pages = [
@@ -1375,7 +1375,7 @@ export default function EventWorkspace({
             {event.source === "sample" && <p>SYNTHETIC EXAMPLE</p>}
             {view === "Event reports" &&
               (mode === "streamer" ? (
-                <EventReports key={event.id} eventId={event.id} />
+                <EventReportLibrary />
               ) : (
                 <p>
                   AI reports are available for completed events in a connected

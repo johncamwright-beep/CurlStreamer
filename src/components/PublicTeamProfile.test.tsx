@@ -65,3 +65,57 @@ it("defaults to this year while offering past event years", () => {
   expect(html).toContain("No accomplishments recorded for");
   expect(html).not.toContain("Past championship");
 });
+
+it("renders up to two coach names between Players and Accomplishments", () => {
+  const settings = defaultTeamPageSettings("Team Wright");
+  const html = renderToStaticMarkup(
+    <PublicTeamProfile
+      settings={{
+        ...settings,
+        roster: { ...settings.roster, fourth: "Player One" },
+        coaches: ["  Coach One  ", "Coach Two", "Ignored Coach"],
+      }}
+      logo={null}
+      accomplishments={[{ ...accomplishment, show_level: true }]}
+    />,
+  );
+  expect(html).toContain("Coach One");
+  expect(html).toContain("Coach Two");
+  expect(html).not.toContain("Ignored Coach");
+  expect(html.indexOf(">Players<")).toBeLessThan(html.indexOf(">Coaches<"));
+  expect(html.indexOf(">Coaches<")).toBeLessThan(
+    html.indexOf(">Accomplishments<"),
+  );
+  const absent = renderToStaticMarkup(
+    <PublicTeamProfile
+      settings={{ ...settings, coaches: [] }}
+      logo={null}
+      accomplishments={[]}
+    />,
+  );
+  expect(absent).not.toContain(">Coaches<");
+});
+
+it("keeps medal and star icons in the same fixed column with wrapping event text", () => {
+  const html = renderToStaticMarkup(
+    <PublicTeamProfile
+      settings={defaultTeamPageSettings("Team Wright")}
+      logo={null}
+      accomplishments={[
+        { ...accomplishment, show_level: true },
+        {
+          ...accomplishment,
+          id: "qualified",
+          name: "A longer qualifying event name",
+          result: "qualified",
+          show_level: false,
+        },
+      ]}
+    />,
+  );
+  expect(html.match(/grid-cols-\[2rem_minmax\(0,1fr\)\]/g)).toHaveLength(2);
+  expect(html.match(/h-8 w-8 items-center justify-center/g)).toHaveLength(2);
+  expect(html).toContain("🥇");
+  expect(html).toContain("★");
+  expect(html).toContain('class="min-w-0 break-words"');
+});

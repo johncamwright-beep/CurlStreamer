@@ -6,6 +6,7 @@ import type {
   SafeGameCompletion,
 } from "@/lib/game-completion";
 import { organizerAccessToken } from "@/lib/access-session";
+import { announceGameCompletion } from "@/lib/dashboard-refresh";
 
 export function EndGameControl({
   gameId,
@@ -99,6 +100,8 @@ export function EndGameControl({
         action: "complete",
         reviewId: review.reviewId,
       });
+      if (value.completion || value.completionSaved)
+        announceGameCompletion(gameId);
       if (value.completion) onCompleted(value.completion, value.cleanup);
       else if (value.completionSaved) {
         setCompletionSaved(true);

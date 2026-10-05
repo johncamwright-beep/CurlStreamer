@@ -35,6 +35,47 @@ beforeEach(() => {
   mocks.context.mockResolvedValue(null);
 });
 describe("team settings writes", () => {
+  it("persists normalized public coach names for the authenticated team", async () => {
+    mocks.context.mockResolvedValue({ organizationId: "trusted-org" });
+    mocks.rpc.mockResolvedValue({ error: null });
+    const settings = {
+      ...defaultTeamPageSettings("Team Benning"),
+      coaches: ["  Alex Smith  ", "Sam Lee"],
+    };
+    const response = await PATCH(
+      new Request("https://test/api/account/team", {
+        method: "PATCH",
+        body: JSON.stringify(settings),
+      }),
+    );
+    expect(response.status).toBe(200);
+    expect(mocks.rpc).toHaveBeenCalledWith("update_team_public_profile", {
+      p_org: "trusted-org",
+      p_settings: { ...settings, coaches: ["Alex Smith", "Sam Lee"] },
+    });
+    expect(await response.json()).toMatchObject({
+      saved: true,
+      settings: { coaches: ["Alex Smith", "Sam Lee"] },
+    });
+    expect(mocks.context).toHaveBeenCalledWith(true);
+  });
+  it.each([["Alex", "Sam", "Jordan"], ["  "], ["A".repeat(101)], [42]])(
+    "rejects invalid coaches before persistence %j",
+    async (...coaches) => {
+      mocks.context.mockResolvedValue({ organizationId: "trusted-org" });
+      const response = await PATCH(
+        new Request("https://test/api/account/team", {
+          method: "PATCH",
+          body: JSON.stringify({
+            ...defaultTeamPageSettings("Team Benning"),
+            coaches,
+          }),
+        }),
+      );
+      expect(response.status).toBe(400);
+      expect(mocks.rpc).not.toHaveBeenCalled();
+    },
+  );
   it("rejects non administrators before database access", async () => {
     expect(
       (

@@ -4,18 +4,40 @@ import type { Metadata } from "next";
 import type { PublicGame } from "@/components/PublicTeamGames";
 import { youtubeWatchUrlSchema } from "@/lib/youtube-watch";
 
+export const curlStreamerSearchTitle = "CurlStreamer - Curling Management App";
+
+function teamDescription(s: TeamPageSettings) {
+  const text = (
+    s.description.trim() ||
+    s.tagline.trim() ||
+    `${s.name} curling games, results, livestreams and team information.`
+  )
+    .replace(/\s+/g, " ")
+    .trim();
+  if (text.length <= 160) return text;
+  const shortened = text.slice(0, 159);
+  const boundary = shortened.lastIndexOf(" ");
+  return `${boundary > 100 ? shortened.slice(0, boundary) : shortened}…`;
+}
+
+export function curlStreamerWebsiteStructuredData() {
+  return {
+    "@context": "https://schema.org",
+    "@type": "WebSite",
+    name: curlStreamerSearchTitle,
+    alternateName: "CurlStreamer",
+    url: "https://www.curlstreamer.app/",
+  };
+}
+
 export function teamMetadata(
   slug: string,
   s: TeamPageSettings,
   logo: string | null,
 ): Metadata {
   const url = `https://${slug}.curlstreamer.app/`;
-  const title = `${s.name} | Games, Results & Team News`;
-  const description =
-    `${s.name} curling: ${s.tagline || s.description || "Team news and player profiles."} Follow curling games, results and livestreams.`.slice(
-      0,
-      160,
-    );
+  const title = `${s.name} | ${curlStreamerSearchTitle}`;
+  const description = teamDescription(s);
   const photo = s.photo || logo;
   return {
     title,
@@ -79,6 +101,9 @@ export function teamStructuredData(
           name: s.roster[position],
           description: `${position[0].toUpperCase()}${position.slice(1)}${s.roster.skip === position ? " / Skip" : ""}`,
         })),
+      ...(s.coaches.length
+        ? { coach: s.coaches.map((name) => ({ "@type": "Person", name })) }
+        : {}),
       ...(s.upcoming
         ? {
             event: games

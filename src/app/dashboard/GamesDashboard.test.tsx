@@ -3,7 +3,10 @@ import { afterAll, describe, expect, it, vi } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 vi.mock("server-only", () => ({}));
 vi.mock("@/components/AppNavigation", () => ({ AppNavigation: () => null }));
-vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: vi.fn() }) }));
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({ refresh: vi.fn() }),
+  usePathname: () => "/dashboard",
+}));
 vi.stubGlobal("React", React);
 afterAll(() => vi.unstubAllGlobals());
 import { GamesDashboard } from "./GamesDashboard";

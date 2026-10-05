@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
+import { readFileSync } from "node:fs";
+import { indexNowKey, indexNowKeyPath } from "@/lib/indexnow";
 
 const mocks = vi.hoisted(() => ({
   createServerClient: vi.fn(),
@@ -11,6 +13,57 @@ vi.mock("@supabase/ssr", () => ({
 import { middleware } from "./middleware";
 
 describe("middleware configuration boundary", () => {
+  it("ships the exact public IndexNow ownership key", () => {
+    expect(indexNowKey).toMatch(/^[a-f0-9]{32}$/);
+    expect(
+      readFileSync(
+        new URL(`../public${indexNowKeyPath}`, import.meta.url),
+        "utf8",
+      ).trim(),
+    ).toBe(indexNowKey);
+  });
+  it.each([
+    "teambenning.curlstreamer.app",
+    "www.curlstreamer.app",
+    "curlstreamer.app",
+  ])(
+    "serves the exact IndexNow file on %s without authentication",
+    async (host) => {
+      vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", undefined);
+      vi.stubEnv("NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY", undefined);
+      const response = await middleware(
+        new NextRequest(`https://${host}${indexNowKeyPath}`, {
+          headers: { host },
+        }),
+      );
+      expect(response.headers.get("x-middleware-next")).toBe("1");
+      expect(mocks.createServerClient).not.toHaveBeenCalled();
+    },
+  );
+  it.each([
+    "/other.txt",
+    `${indexNowKeyPath}.txt`,
+    `/nested${indexNowKeyPath}`,
+    "/account",
+    "/api/games/game-1",
+  ])("keeps team-host nonroot path %s unavailable", async (path) => {
+    const response = await middleware(
+      new NextRequest(`https://teambenning.curlstreamer.app${path}`, {
+        headers: { host: "teambenning.curlstreamer.app" },
+      }),
+    );
+    expect(response.status).toBe(404);
+    expect(response.headers.get("x-middleware-next")).toBeNull();
+    expect(mocks.createServerClient).not.toHaveBeenCalled();
+  });
+  it("keeps unrelated text files on the main host behind session refresh", async () => {
+    await middleware(
+      new NextRequest("https://www.curlstreamer.app/other.txt", {
+        headers: { host: "www.curlstreamer.app" },
+      }),
+    );
+    expect(mocks.getUser).toHaveBeenCalledOnce();
+  });
   it.each(["robots.txt", "sitemap.xml"])(
     "serves team %s without an authentication request",
     async (path) => {

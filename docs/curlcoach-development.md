@@ -1,4 +1,4 @@
-# CurlCoach isolated development
+# Shot Tracker isolated development
 
 Status: first local shot-charting slice implemented, September 13, 2026.
 This is a synthetic local lab, not a production coaching service.
@@ -8,7 +8,7 @@ This is a synthetic local lab, not a production coaching service.
 - Worktree: `C:/Users/john/.codex/worktrees/e76d/CurlStreamer`.
 - Branch: `codex/curlcoach`; baseline: `6ced1d19f9a486058cc23535480f3cd570985946`.
 - The shipping checkout at `C:/GITHuB/CurlStreamer` remains on `main`. Never
-  switch, edit, clean, or install dependencies there for CurlCoach work.
+  switch, edit, clean, or install dependencies there for Shot Tracker work.
 - [Module plan](curlcoach-plan.md) and [tracker mapping](curlcoach-shot-tracker-mapping.md)
   remain byte-for-byte copies of the original untracked documents. The workbook
   has not been copied or opened during development. Do not commit workbooks,
@@ -36,7 +36,7 @@ Open `http://127.0.0.1:3010/curlcoach` and enter the local key. On another
 machine, install a compatible Node.js LTS/npm and run `npm ci` first; omit the
 machine-specific PATH line. Do not copy shipping `.env.local`, pull deployment
 variables, or use real service credentials. Use a fresh terminal without
-inherited service configuration. The CurlCoach route bypasses Supabase Auth
+inherited service configuration. The Shot Tracker route bypasses Supabase Auth
 and uses its own signed local session, scoped to the synthetic organization,
 game, and coach. Other application routes retain their existing authentication.
 
@@ -95,7 +95,7 @@ select storage. Do not run a production build with shared credentials.
 
 The existing full E2E command needs ports 3000 and 3101; it refuses existing
 servers. Do not stop the shipping application to free them. Defer that suite
-if those ports are occupied. The independent CurlCoach test uses port 3012 and
+if those ports are occupied. The independent Shot Tracker test uses port 3012 and
 a fresh ignored synthetic data directory on each run:
 
 ```powershell

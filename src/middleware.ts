@@ -21,6 +21,7 @@ export async function middleware(request: NextRequest) {
   }
   if (
     (request.nextUrl.pathname === "/curlcoach" ||
+      request.nextUrl.pathname === "/shot-tracker" ||
       request.nextUrl.pathname.startsWith("/api/curlcoach/")) &&
     process.env.NODE_ENV !== "production" &&
     process.env.CURLCOACH_ENABLED === "true" &&

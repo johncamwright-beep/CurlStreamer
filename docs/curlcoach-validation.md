@@ -1,4 +1,4 @@
-# CurlCoach local milestone validation
+# Shot Tracker local milestone validation
 
 September 13, 2026. Branch `codex/curlcoach`, baseline
 `6ced1d19f9a486058cc23535480f3cd570985946`.
@@ -10,13 +10,13 @@ September 13, 2026. Branch `codex/curlcoach`, baseline
   integration tests have no disposable database configured). A subsequent
   focused Streamer check also passed, including no-result handling.
 - Production build: passed. Existing camera/media lint warnings remain.
-- Independent CurlCoach browser suite: 4 passed (phone and tablet), including
+- Independent Shot Tracker browser suite: 4 passed (phone and tablet), including
   charting, correction, readable history, removal, audited Undo, persistence
   after reload, no horizontal overflow, controls at least 44px high, six-page
   navigation, all-seven-game aggregation, player/game filters, and an explicit
   unavailable state for the disconnected Streamer source.
 - Separate YouTube/dashboard/game-setup fixture suite: 18 passed.
-- Changed CurlCoach files and middleware: Prettier check passed.
+- Changed Shot Tracker files and middleware: Prettier check passed.
 - `git diff --check`: passed.
 - Both copied planning document hashes still match the original checkout.
 
@@ -48,7 +48,7 @@ Scoring fields now use a tighter responsive grid while retaining 44px touch
 targets. Next turn saves the current attempt before advancing through both
 stones for each throwing position, then to the next end. A failed save keeps
 the draft in place; an already recorded next slot opens for correction.
-The full unit suite passed 649 tests (25 skipped), and all four CurlCoach
+The full unit suite passed 649 tests (25 skipped), and all four Shot Tracker
 phone/tablet browser checks passed, including save failure and advancement.
 
 ## Scope limits

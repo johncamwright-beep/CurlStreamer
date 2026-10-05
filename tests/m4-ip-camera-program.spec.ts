@@ -15,7 +15,7 @@ type Observation = {
 };
 const roles: Role[] = ["camera-home", "camera-away"];
 const snapshot = (
-  kind: "phone" | "tapo",
+  kind: "phone" | "tapo" | "rtsp",
   generation: number,
 ): M4CameraInputSnapshot => ({
   kind,
@@ -118,7 +118,7 @@ test.beforeAll(async () => {
 
 async function install(
   page: Page,
-  kinds: ["phone" | "tapo", "phone" | "tapo"],
+  kinds: ["phone" | "tapo" | "rtsp", "phone" | "tapo" | "rtsp"],
 ) {
   const sources: Record<Role, M4CameraInputSnapshot> = {
     "camera-home": snapshot(kinds[0], 1),
@@ -340,10 +340,10 @@ test("program composes mixed phone and Tapo frames while replacing only the sele
   expect(fixture.errors).toEqual([]);
 });
 
-test("program composes both Tapo slots with full image edges and one frame request per role", async ({
+test("program stacks legacy Tapo and generic RTSP frames with full image edges and one frame request per role", async ({
   page,
 }, testInfo) => {
-  const fixture = await install(page, ["tapo", "tapo"]);
+  const fixture = await install(page, ["tapo", "rtsp"]);
   for (const role of roles) await verifyFrame(page, role);
   for (const role of roles) {
     await expect
@@ -362,9 +362,9 @@ test("program composes both Tapo slots with full image edges and one frame reque
   expect(frames[0]!.y + frames[0]!.height).toBeLessThan(frames[1]!.y);
   const rail = (await page.getByTestId("program-side-rail").boundingBox())!;
   expect(frames[0]!.x + frames[0]!.width).toBeLessThan(rail.x);
-  const proof = testInfo.outputPath("two-tapo-program.png");
+  const proof = testInfo.outputPath("tapo-and-rtsp-program.png");
   await page.getByTestId("broadcast-canvas").screenshot({ path: proof });
-  await testInfo.attach("two-tapo-program", {
+  await testInfo.attach("tapo-and-rtsp-program", {
     path: proof,
     contentType: "image/png",
   });

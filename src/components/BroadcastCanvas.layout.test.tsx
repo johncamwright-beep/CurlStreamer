@@ -62,7 +62,7 @@ describe("1920x1080 broadcast video layout", () => {
     expect(css).toMatch(
       /grid-template-columns: minmax\(0, 63\.8fr\) minmax\(0, 36\.2fr\)/,
     );
-    expect(css).toMatch(/\.broadcast-program-layout[\s\S]*gap: 12px/);
+    expect(css).toMatch(/\.broadcast-program-layout[^}]*gap: 0\.8cqw/);
     expect(css).toMatch(
       /\[data-camera-count="2"\][\s\S]*grid-template-columns: repeat\(2, max-content\)/,
     );
@@ -106,10 +106,32 @@ describe("1920x1080 broadcast video layout", () => {
   });
 
   it("gives the rail readable scoring and aspect-preserving sponsor space", () => {
-    expect(css).toMatch(/\.broadcast-scoreboard[\s\S]*padding: 20px/);
-    expect(css).toMatch(
-      /\.broadcast-scoreboard > div:not\(:first-child\) > strong[\s\S]*font-size: 36px/,
+    const scaledProperty = (selector: string, property: string) => {
+      const rule = css.slice(css.indexOf(selector + " {"));
+      const value = rule
+        .slice(0, rule.indexOf("}"))
+        .match(new RegExp(property + ":\\s*([0-9.]+)cqw"));
+      expect(
+        value,
+        selector + " " + property + " must scale with the canvas",
+      ).not.toBeNull();
+      return Number(value![1]);
+    };
+    const padding = scaledProperty(".broadcast-scoreboard", "padding");
+    const teamSize = scaledProperty(
+      ".broadcast-scoreboard > div:not(:first-child) > strong",
+      "font-size",
     );
+    const scoreSize = scaledProperty(
+      ".broadcast-scoreboard > div:not(:first-child) > span strong",
+      "font-size",
+    );
+    // Preserve broadcast readability at 1080p while scaling proportionally in previews.
+    expect((padding * 1920) / 100).toBeCloseTo(20, 1);
+    expect((teamSize * 1920) / 100).toBeCloseTo(36, 1);
+    expect((scoreSize * 1920) / 100).toBeCloseTo(48, 1);
+    expect((padding * 960) / 100).toBeCloseTo(10, 1);
+    expect(scoreSize).toBeGreaterThan(teamSize);
     expect(css).toMatch(/\.sponsor-frame-bounds-sidebar[\s\S]*flex: 1 1 auto/);
     expect(css).toMatch(/\.safe-video \{\s*object-fit: contain/);
   });

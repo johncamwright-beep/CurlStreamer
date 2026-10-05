@@ -29,7 +29,7 @@ AppMutex=Local\CurlStreamerStudio
 [Files]
 Source: "{#StudioSource}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 [Icons]
-Name: "{userprograms}\CurlStreamer Studio"; Filename: "{app}\CurlStreamer Studio.exe"
+Name: "{userprograms}\CurlStreamer Studio"; Filename: "{app}\CurlStreamer Studio.exe"; IconFilename: "{app}\CurlStreamer Studio.exe"; IconIndex: 0; AppUserModelID: "CurlStreamer.Studio"
 [Registry]
 Root: HKCU; Subkey: "Software\Classes\curlstreamer"; ValueType: string; ValueData: "URL:CurlStreamer Studio"; Flags: uninsdeletekey
 Root: HKCU; Subkey: "Software\Classes\curlstreamer"; ValueType: string; ValueName: "URL Protocol"; ValueData: ""

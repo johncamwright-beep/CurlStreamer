@@ -77,29 +77,6 @@ internal sealed class Workspace : Form
         bottom.Controls.Add(status);
         web.Dock = DockStyle.Fill;
         Controls.Add(web); Controls.Add(bottom);
-        var menu = new MenuStrip();
-        var studioMenu = new ToolStripMenuItem("Studio");
-        var reload = new ToolStripMenuItem("Reload scoring screen");
-        reload.ShortcutKeys = Keys.Control | Keys.R;
-        reload.Click += (s, e) => {
-            if (!busy && !closing && web.CoreWebView2 != null) {
-                closeAfterGame = null; endRequestPending = false;
-                web.CoreWebView2.Reload();
-            }
-        };
-        var saved = new ToolStripMenuItem(File.Exists(Path.Combine(LifecycleDirectory, "recording-warning.json")) ? "Saved videos — check previous recording" : "Saved videos"); saved.Click += (s, e) => OpenRecordings();
-        var close = new ToolStripMenuItem("Close Studio…"); close.Click += (s, e) => Close();
-        studioMenu.DropDownItems.AddRange(new ToolStripItem[] { reload, saved, close });
-        menu.Items.Add(studioMenu); Controls.Add(menu); MainMenuStrip = menu;
-        var camerasMenu = new ToolStripMenuItem("Camera sources");
-        foreach (var role in new[] { "camera-home", "camera-away" }) {
-            var cameraRole = role;
-            var item = new ToolStripMenuItem(role == "camera-home" ? "Camera 1 settings…" : "Camera 2 settings…");
-            item.Click += (s, e) => OpenCameraSettings(cameraRole);
-            camerasMenu.DropDownItems.Add(item);
-        }
-        menu.Items.Add(camerasMenu);
-        menu.BringToFront();
         Shown += async (s, e) => await Initialize();
         poll.Tick += async (s, e) => await Poll();
         FormClosing += async (s, e) => {
@@ -118,6 +95,15 @@ internal sealed class Workspace : Form
             await CloseWorkspace();
         };
         UpdateButtons();
+    }
+    protected override bool ProcessCmdKey(ref Message message, Keys keyData) {
+        if (keyData == (Keys.Control | Keys.R)) { ReloadWorkspace(); return true; }
+        return base.ProcessCmdKey(ref message, keyData);
+    }
+    private void ReloadWorkspace() {
+        if (busy || closing || web.CoreWebView2 == null) return;
+        closeAfterGame = null; endRequestPending = false;
+        web.CoreWebView2.Reload();
     }
     private Button MakeButton(string text) { var b = new Button { Text = text }; Style(b); return b; }
     private void Style(Button b) { b.UseMnemonic = false; b.AutoSize = true; b.Height = 44; b.MinimumSize = new Size(80, 44); b.Padding = new Padding(14, 0, 14, 0); b.Margin = new Padding(0, 0, 10, 0); b.ForeColor = Color.FromArgb(220, 230, 238); b.BackColor = Color.FromArgb(21, 38, 54); b.FlatStyle = FlatStyle.Flat; b.FlatAppearance.BorderColor = Color.FromArgb(52, 73, 91); b.FlatAppearance.MouseOverBackColor = Color.FromArgb(39, 69, 83); b.Cursor = Cursors.Hand; }
@@ -187,12 +173,19 @@ internal sealed class Workspace : Form
             var config = json.Deserialize<Dictionary<string, object>>(File.ReadAllText(Path.Combine(root, "studio.json")));
             origin = (string)config["website"];
             try { cameraInputs = CameraInputs.Load(LifecycleDirectory); }
-            catch { status.Text = "Saved camera settings could not be read. Open Camera sources to enter them again."; }
+            catch { status.Text = "Saved camera settings could not be read. Use Settings on each camera to enter them again."; }
             if (!WorkspacePolicy.SameOrigin(origin, origin) || new Uri(origin).AbsoluteUri != origin + "/") throw new InvalidDataException();
             var profile = profileDirectory ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "CurlStreamer", "Studio", "WorkspaceProfile");
             var environment = await CoreWebView2Environment.CreateAsync(null, profile);
             await web.EnsureCoreWebView2Async(environment);
             var core = web.CoreWebView2;
+            // WinForms WebView2 forwards its accelerator keys through KeyDown.
+            web.KeyDown += (s, e) => {
+                if (e.KeyData == (Keys.Control | Keys.R)) {
+                    e.Handled = true;
+                    BeginInvoke((Action)ReloadWorkspace);
+                }
+            };
             core.Settings.AreHostObjectsAllowed = false;
             core.Settings.UserAgent += " CurlStreamerStudio/0.3";
             core.Settings.UserAgent += " StudioProgramPreview/1";
@@ -240,7 +233,7 @@ internal sealed class Workspace : Form
             };
             core.NavigationCompleted += (s, e) => {
                 selectedGame = WorkspacePolicy.Game(core.Source, origin);
-                if (!e.IsSuccess && !recording) status.Text = "The workspace could not load. Check your internet connection and choose Refresh.";
+                if (!e.IsSuccess && !recording) status.Text = "The workspace could not load. Check your internet connection and press Ctrl+R to reload.";
                 else if (!recording && !busy) status.Text = selectedGame == null ? "Choose a game from your schedule to get started." : "Preparing this game for your camera phones.";
                 UpdateButtons();
             };

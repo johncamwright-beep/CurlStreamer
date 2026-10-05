@@ -2,6 +2,7 @@ import { test, expect, type Page } from "@playwright/test";
 import { build } from "esbuild";
 import { execFileSync } from "node:child_process";
 import { resolve } from "node:path";
+import { readFileSync } from "node:fs";
 import sharp from "sharp";
 import type { M4RendererHeartbeat } from "../src/lib/providers/m4-renderer-health-browser";
 import type { M4CameraInputSnapshot } from "../src/lib/m4-camera-input";
@@ -46,10 +47,18 @@ const game = {
     "camera-away": { enabled: false },
   },
   cameraFraming: { "camera-home": "contain", "camera-away": "contain" },
-  sponsors: [],
+  sponsors: [
+    {
+      id: "fixture-sponsor",
+      name: "Full-frame sponsor fixture",
+      dataUrl: "/fixture-sponsor.svg",
+      enabled: true,
+      rotation: 0,
+    },
+  ],
   sponsorMode: {
-    active: false,
-    style: "overlay",
+    active: true,
+    style: "fullscreen",
     intervalSeconds: 10,
     startedAt: null,
     rotationOffset: 0,
@@ -170,6 +179,16 @@ async function install(
       return route.fulfill({ contentType: "text/javascript", body: renderer });
     if (url.pathname === "/fixture.css")
       return route.fulfill({ contentType: "text/css", body: css });
+    if (url.pathname === "/branding/curlstreamer-logo.png")
+      return route.fulfill({
+        contentType: "image/png",
+        body: readFileSync(resolve("public/branding/curlstreamer-logo.png")),
+      });
+    if (url.pathname === "/fixture-sponsor.svg")
+      return route.fulfill({
+        contentType: "image/svg+xml",
+        body: '<svg xmlns="http://www.w3.org/2000/svg" width="640" height="360"><rect width="640" height="360" fill="white"/><rect width="24" height="360" fill="#145ee5"/><rect x="616" width="24" height="360" fill="#19be35"/><text x="320" y="185" text-anchor="middle" font-family="sans-serif" font-size="44" fill="#07111f">Sponsor fixture</text></svg>',
+      });
     if (url.pathname === "/renderer-health") {
       heartbeats.push(route.request().postDataJSON() as M4RendererHeartbeat);
       return route.fulfill({ json: { ok: true } });
@@ -260,6 +279,30 @@ async function install(
 const panel = (page: Page, role: Role) =>
   page.getByTestId(`camera-panel-${role}`);
 
+async function verifySponsor(page: Page) {
+  const sponsor = page.getByTestId("sponsor-sidebar");
+  const art = sponsor.getByRole("img", { name: "Full-frame sponsor fixture" });
+  await expect(art).toBeVisible();
+  const geometry = await art.evaluate((image) => {
+    const bounds = image.getBoundingClientRect();
+    return {
+      aspect: bounds.width / bounds.height,
+      fit: getComputedStyle(image).objectFit,
+    };
+  });
+  expect(geometry.aspect).toBeCloseTo(16 / 9, 1);
+  expect(geometry.fit).toBe("contain");
+  expect(
+    await sponsor
+      .locator("p")
+      .evaluate(
+        (label) =>
+          label.scrollWidth <= label.clientWidth + 1 &&
+          label.scrollHeight <= label.clientHeight + 1,
+      ),
+  ).toBe(true);
+}
+
 async function verifyFrame(page: Page, role: Role) {
   const image = panel(page, role).getByRole("img", { name: "IP camera" });
   await expect(image).toBeVisible();
@@ -323,6 +366,12 @@ test("program composes mixed phone and Tapo frames while replacing only the sele
   await expect
     .poll(() => phone.evaluate((video: HTMLVideoElement) => video.videoWidth))
     .toBe(90);
+  const programBounds = (await page
+    .getByTestId("broadcast-canvas")
+    .boundingBox())!;
+  const phoneBounds = (await phone.boundingBox())!;
+  expect(phoneBounds.y).toBeCloseTo(programBounds.y, 1);
+  expect(phoneBounds.height).toBeCloseTo(programBounds.height, 1);
   const phonePixels = await sharp(await phone.screenshot())
     .removeAlpha()
     .raw()
@@ -335,6 +384,7 @@ test("program composes mixed phone and Tapo frames while replacing only the sele
     phonePixels.data[middle] + 70,
   );
   const proof = testInfo.outputPath("mixed-phone-tapo-program.png");
+  await verifySponsor(page);
   await page.getByTestId("broadcast-canvas").screenshot({ path: proof });
   await testInfo.attach("mixed-phone-tapo-program", {
     path: proof,
@@ -360,6 +410,39 @@ test("program composes mixed phone and Tapo frames while replacing only the sele
   expect(fixture.errors).toEqual([]);
 });
 
+test("portrait program feeds touch and use the complete canvas height", async ({
+  page,
+}, testInfo) => {
+  const fixture = await install(page, ["phone", "phone"]);
+  for (const role of roles)
+    await expect
+      .poll(() =>
+        panel(page, role)
+          .getByLabel("Direct camera")
+          .evaluate((video: HTMLVideoElement) => video.videoWidth),
+      )
+      .toBe(90);
+  const program = (await page.getByTestId("broadcast-canvas").boundingBox())!;
+  const frames = await Promise.all(
+    roles.map((role) => panel(page, role).boundingBox()),
+  );
+  for (const frame of frames) {
+    expect(frame!.y).toBeCloseTo(program.y, 1);
+    expect(frame!.height).toBeCloseTo(program.height, 1);
+    expect(frame!.width / frame!.height).toBeCloseTo(9 / 16, 3);
+  }
+  expect(frames[0]!.x).toBeCloseTo(program.x, 1);
+  expect(frames[0]!.x + frames[0]!.width).toBeCloseTo(frames[1]!.x, 1);
+  const proof = testInfo.outputPath("portrait-pair-program.png");
+  await verifySponsor(page);
+  await page.getByTestId("broadcast-canvas").screenshot({ path: proof });
+  await testInfo.attach("portrait-pair-program", {
+    path: proof,
+    contentType: "image/png",
+  });
+  expect(fixture.errors).toEqual([]);
+});
+
 test("program stacks legacy Tapo and generic RTSP frames with full image edges and one frame request per role", async ({
   page,
 }, testInfo) => {
@@ -379,10 +462,19 @@ test("program stacks legacy Tapo and generic RTSP frames with full image edges a
   expect(frames[0]!.width).toBeGreaterThan(canvas.width * 0.44);
   expect(frames[0]!.height).toBeGreaterThan(canvas.height * 0.44);
   expect(Math.abs(frames[0]!.x - frames[1]!.x)).toBeLessThan(1);
-  expect(frames[0]!.y + frames[0]!.height).toBeLessThan(frames[1]!.y);
+  const program = (await page.getByTestId("broadcast-canvas").boundingBox())!;
+  expect(frames[0]!.x).toBeCloseTo(program.x, 1);
+  expect(frames[0]!.y).toBeCloseTo(program.y, 1);
+  expect(frames[0]!.height).toBeCloseTo(program.height / 2, 1);
+  expect(frames[0]!.y + frames[0]!.height).toBeCloseTo(frames[1]!.y, 1);
+  expect(frames[1]!.y + frames[1]!.height).toBeCloseTo(
+    program.y + program.height,
+    1,
+  );
   const rail = (await page.getByTestId("program-side-rail").boundingBox())!;
-  expect(frames[0]!.x + frames[0]!.width).toBeLessThan(rail.x);
+  expect(frames[0]!.x + frames[0]!.width).toBeCloseTo(rail.x, 1);
   const proof = testInfo.outputPath("tapo-and-rtsp-program.png");
+  await verifySponsor(page);
   await page.getByTestId("broadcast-canvas").screenshot({ path: proof });
   await testInfo.attach("tapo-and-rtsp-program", {
     path: proof,

@@ -2,6 +2,7 @@ using System;
 using System.Diagnostics;
 using System.Drawing;
 using System.IO;
+using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Text.RegularExpressions;
 using System.Threading;
@@ -25,9 +26,15 @@ internal sealed class Studio : Form
     private bool confirmed;
     private bool exitAfterStop;
 
+    // Match the installed shortcut so Windows consistently groups and brands Studio.
+    private const string AppUserModelId = "CurlStreamer.Studio";
+    [DllImport("shell32.dll", CharSet = CharSet.Unicode)]
+    private static extern int SetCurrentProcessExplicitAppUserModelID(string appId);
+
     [STAThread]
     private static void Main(string[] arguments)
     {
+        SetCurrentProcessExplicitAppUserModelID(AppUserModelId);
         string launchGame = null;
         try {
             if (arguments.Length > 1) throw new InvalidDataException();

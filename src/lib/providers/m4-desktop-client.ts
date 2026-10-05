@@ -1,6 +1,7 @@
 // Native Node entry points only; node:crypto intentionally prevents browser use.
 import { createHash, randomBytes } from "node:crypto";
 import { z } from "zod";
+import { programClosingGrantSchema } from "../program-presentation";
 import type {
   ConnectionDiagnostic,
   ConnectionDiagnosticInput,
@@ -126,6 +127,44 @@ export class M4DesktopClient {
   snapshot() {
     this.#expire();
     return { state: this.#state, authorized: this.#state === "active" };
+  }
+  /** Reads a committed narrow closing grant without renewing any authority. */
+  async closing() {
+    if (
+      !this.snapshot().authorized ||
+      !this.#session ||
+      !this.#bearer ||
+      !this.#activeIntent
+    )
+      return undefined;
+    const response = await this.#request(
+      "",
+      {
+        action: "closing",
+        sessionId: this.#session.sessionId,
+        generation: this.#session.generation,
+      },
+      this.#bearer,
+    );
+    const value = programClosingGrantSchema.parse(response.value);
+    if (
+      value.sessionId !== this.#session.sessionId ||
+      value.generation !== this.#session.generation ||
+      value.intentId !== this.#activeIntent ||
+      Date.parse(value.deadlineAt) <= Date.now() ||
+      Date.parse(value.deadlineAt) > Date.now() + 30_000
+    )
+      throw fail();
+    return value;
+  }
+  /** Public identity only; never includes the private bearer or stream target. */
+  closingIdentity() {
+    return this.snapshot().authorized && this.#session
+      ? {
+          sessionId: this.#session.sessionId,
+          generation: this.#session.generation,
+        }
+      : undefined;
   }
   /** Non-secret authority duration, including a native stop margin. */
   remainingLeaseMs() {

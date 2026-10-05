@@ -22,3 +22,11 @@ if(M4_STREAM_PLUGIN AND M4_FFMPEG AND M4_NODE)
     "${M4_RUNTIME_BIN}" "${M4_STREAM_PLUGIN}" "${M4_FFMPEG}" "${CMAKE_BINARY_DIR}/evidence")
   set_tests_properties(recorder_stream_independence PROPERTIES TIMEOUT 100)
 endif()
+
+if(M4_FFMPEG AND M4_NODE)
+  enable_testing()
+  add_test(NAME recorder_program_presentation COMMAND "${M4_NODE}"
+    "${CMAKE_CURRENT_SOURCE_DIR}/presentation-validation.mjs" "$<TARGET_FILE:m4_studio_recorder>"
+    "${M4_RUNTIME_BIN}" "${M4_FFMPEG}" "${CMAKE_BINARY_DIR}/presentation-evidence")
+  set_tests_properties(recorder_program_presentation PROPERTIES TIMEOUT 90)
+endif()

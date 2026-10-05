@@ -56,6 +56,75 @@ async function setup() {
   return { client, action, bridge, headers };
 }
 describe("private loopback program API", () => {
+  it("preparation alone cannot bypass a terminal program rejection", async () => {
+    const client = {
+      readGame: vi.fn().mockRejectedValue(new Error("terminal")),
+      action: vi.fn(),
+      close: vi.fn(),
+    };
+    const bridge = await createM4ProgramBridge(client);
+    closers.push(bridge.close);
+    const page = await fetch(bridge.rendererUrl);
+    const instance = await documentInstance(page);
+    const prepared = bridge.presentation.set("preparing-end");
+    bridge.presentation.acknowledge(instance, 1);
+    await prepared;
+    expect(
+      (
+        await fetch(bridge.address + "/program", {
+          headers: {
+            origin: bridge.address,
+            authorization: bridge.authorization,
+          },
+        })
+      ).status,
+    ).toBe(409);
+    expect(bridge.rendererHealth().active).toBe(false);
+    expect(
+      (
+        await fetch(bridge.address + "/presentation", {
+          headers: {
+            origin: bridge.address,
+            cookie: page.headers.get("set-cookie")!.split(";")[0],
+          },
+        })
+      ).status,
+    ).toBe(403);
+  });
+  it("a positively verified closing grant retains only an opaque card and renderer health", async () => {
+    const client = {
+      readGame: vi.fn().mockRejectedValue(new Error("terminal")),
+      action: vi.fn(),
+      close: vi.fn(),
+    };
+    const stop = vi.fn().mockResolvedValue(undefined);
+    const bridge = await createM4ProgramBridge(
+      client,
+      { connect: vi.fn(), drain: vi.fn(), close: stop },
+      { directory: "public", closingAuthority: async () => Date.now() + 15000 },
+    );
+    closers.push(bridge.close);
+    const page = await fetch(bridge.rendererUrl);
+    const instance = await documentInstance(page);
+    const prepared = bridge.presentation.set("preparing-end");
+    bridge.presentation.acknowledge(instance, 1);
+    await prepared;
+    expect(
+      (
+        await fetch(bridge.address + "/program", {
+          headers: {
+            origin: bridge.address,
+            authorization: bridge.authorization,
+          },
+        })
+      ).status,
+    ).toBe(409);
+    expect(bridge.rendererHealth().active).toBe(true);
+    expect(stop).toHaveBeenCalled();
+    expect(bridge.presentation.snapshot().mode).toBe("hold");
+    expect(bridge.presentation.snapshot().completion).toBeUndefined();
+    bridge.presentation.acknowledge(instance, 2);
+  });
   it("permits only the claimed renderer to reload and fences old-document health reports", async () => {
     const { bridge, headers } = await setup();
     const page = await fetch(bridge.rendererUrl);

@@ -2,6 +2,7 @@ import { z } from "zod";
 import { traceStudioRequest } from "@/lib/providers/connection-diagnostics-server";
 import {
   heartbeatM4Desktop,
+  readM4CompletionClosing,
   stopM4Desktop,
   m4DesktopEnabled,
 } from "@/lib/providers/m4-desktop-authority";
@@ -19,7 +20,7 @@ import {
 export const dynamic = "force-dynamic";
 const bodySchema = z
   .object({
-    action: z.enum(["heartbeat", "stop"]),
+    action: z.enum(["heartbeat", "stop", "closing"]),
     sessionId: identifier,
     generation: z.number().int().positive(),
   })
@@ -40,13 +41,26 @@ async function post(request: Request, context: Context) {
     );
     if (!bearer.success) return unavailable(403);
     // Turning off new pairing must not prevent an existing authority from stopping.
-    if (body.data.action !== "stop" && !m4DesktopEnabled())
+    if (body.data.action === "heartbeat" && !m4DesktopEnabled())
       return unavailable();
     const authority = {
       sessionId: body.data.sessionId,
       generation: body.data.generation,
       bearer: bearer.data,
     };
+    if (body.data.action === "closing") {
+      const closing = z
+        .object({
+          sessionId: identifier,
+          generation: z.number().int().positive(),
+          intentId: identifier,
+          deadlineAt: z.iso.datetime({ offset: true }),
+        })
+        .parse(await readM4CompletionClosing(id.data, authority));
+      const result = reply(closing);
+      result.headers.set("date", new Date().toUTCString());
+      return result;
+    }
     return reply(
       lease.parse(
         await (

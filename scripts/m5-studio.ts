@@ -111,6 +111,9 @@ try {
         recordingRoot,
         cacheRoot: join(dataRoot, "Cache"),
         rendererRoot: join(root, "renderer"),
+        presentationControl: manifest.capabilities.includes(
+          "program-presentation-v1",
+        ),
         ...(configuration.streamingEnabled
           ? { streamPlugin: join(root, studioFiles.streamPlugin) }
           : {}),

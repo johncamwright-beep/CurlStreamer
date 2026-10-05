@@ -175,3 +175,40 @@ export function heartbeatM4Desktop(
 export function stopM4Desktop(gameId: string, credential: M4DesktopCredential) {
   return desktopAction(gameId, credential, "stop");
 }
+
+/** Existing bearer can recover only its committed, immutable final-card deadline. */
+export async function readM4CompletionClosing(
+  gameId: string,
+  credential: M4DesktopCredential,
+) {
+  return guarded(async () => {
+    id.parse(gameId);
+    const parsed = authority.parse(credential);
+    const row = await rpc(
+      "read_m4_completion_closing",
+      {
+        p_game_id: gameId,
+        p_session_id: parsed.sessionId,
+        p_generation: parsed.generation,
+        p_bearer_hash: digest(parsed.bearer),
+      },
+      z.object({
+        session_id: id,
+        generation: z.coerce.number().pipe(generation),
+        intent_id: id,
+        deadline_at: instant,
+      }),
+    );
+    if (
+      row.session_id !== parsed.sessionId ||
+      row.generation !== parsed.generation
+    )
+      throw new Error("m4_desktop_unavailable");
+    return {
+      sessionId: row.session_id,
+      generation: row.generation,
+      intentId: row.intent_id,
+      deadlineAt: row.deadline_at,
+    };
+  });
+}

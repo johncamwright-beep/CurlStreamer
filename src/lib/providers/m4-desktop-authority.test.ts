@@ -12,6 +12,7 @@ import {
   exchangeM4DesktopPairing,
   heartbeatM4Desktop,
   stopM4Desktop,
+  readM4CompletionClosing,
 } from "./m4-desktop-authority";
 const game = "11111111-1111-4111-8111-111111111111";
 const sessionId = "22222222-2222-4222-8222-222222222222";
@@ -160,5 +161,63 @@ describe("M4 desktop authority server boundary", () => {
     ).rejects.toThrow();
     await expect(heartbeatM4Desktop("not-id", credential)).rejects.toThrow();
     expect(mocks.rpc).not.toHaveBeenCalled();
+  });
+});
+
+describe("read-only final-card authority", () => {
+  const grant = {
+    session_id: sessionId,
+    generation: 1,
+    intent_id: game,
+    deadline_at: "2026-10-05T12:00:15+00:00",
+  };
+  it("sends only bearer hash and strips extras without renewing desktop lease", async () => {
+    mocks.rpc.mockResolvedValue({
+      data: [{ ...grant, encrypted_credentials: "private", bearer }],
+      error: null,
+    });
+    expect(await readM4CompletionClosing(game, credential)).toEqual({
+      sessionId,
+      generation: 1,
+      intentId: game,
+      deadlineAt: grant.deadline_at,
+    });
+    expect(mocks.rpc).toHaveBeenCalledExactlyOnceWith(
+      "read_m4_completion_closing",
+      {
+        p_game_id: game,
+        p_session_id: sessionId,
+        p_generation: 1,
+        p_bearer_hash: digest(bearer),
+      },
+    );
+    expect(JSON.stringify(mocks.rpc.mock.calls)).not.toContain(bearer);
+  });
+  it.each([
+    { generation: 2 },
+    { session_id: game },
+    { deadline_at: "invalid" },
+  ])("rejects inconsistent scope %j", async (change) => {
+    mocks.rpc.mockResolvedValue({
+      data: [{ ...grant, ...change }],
+      error: null,
+    });
+    await expect(readM4CompletionClosing(game, credential)).rejects.toThrow(
+      "m4_desktop_unavailable",
+    );
+  });
+  it("preserves only safe denied classification", async () => {
+    mocks.rpc.mockResolvedValue({
+      data: null,
+      error: { code: "42501", message: bearer },
+    });
+    const result = await readM4CompletionClosing(game, credential).catch(
+      (error: unknown) => error,
+    );
+    expect(result).toMatchObject({
+      code: "42501",
+      message: "m4_desktop_unavailable",
+    });
+    expect(JSON.stringify(result)).not.toContain(bearer);
   });
 });

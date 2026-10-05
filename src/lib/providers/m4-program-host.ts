@@ -27,6 +27,7 @@ const optionsSchema = z
     runtime: z.string().min(1),
     recording: z.string().min(1),
     previewOnly: z.boolean().optional(),
+    presentationControl: z.boolean().optional(),
     cacheRoot: z.string().min(1),
     rendererRoot: z.string().min(1),
     streamPlugin: z.string().min(1).optional(),
@@ -42,6 +43,9 @@ export async function startM4ProgramHost(
   diagnostic?: StudioDiagnostic,
   connectionDiagnostic?: ConnectionDiagnostic,
   cameraInputs?: ReturnType<typeof createM4IpCameraManager>,
+  closingAuthority?: () => Promise<
+    import("../program-presentation").ProgramClosingGrant | undefined
+  >,
 ) {
   const options = optionsSchema.parse(input);
   const cacheRoot = resolve(options.cacheRoot);
@@ -97,12 +101,27 @@ export async function startM4ProgramHost(
       sponsorCacheDirectory: join(cacheRoot, "SponsorAssets"),
       diagnostic: connectionDiagnostic,
       cameraInputs,
+      closingAuthority: async () => {
+        const grant = await closingAuthority?.();
+        const nativeRecorder = recorder;
+        if (!grant || !nativeRecorder?.muteProgram) return undefined;
+        const deadline = Date.parse(grant.deadlineAt);
+        await nativeRecorder.muteProgram(true);
+        clearTimeout(endingTimer);
+        endingTimer = setTimeout(
+          () => void nativeRecorder.stream?.stop().catch(() => undefined),
+          Math.max(0, deadline - Date.now()),
+        );
+        endingTimer.unref?.();
+        return deadline;
+      },
     });
     recorder = await startM4StudioRecorder({
       executable: options.executable,
       runtime: options.runtime,
       recording: options.recording,
       previewOnly: options.previewOnly,
+      presentationControl: options.presentationControl,
       program: { url: bridge.rendererUrl, cacheDirectory },
       streamPlugin: options.streamPlugin,
       diagnostic,
@@ -126,9 +145,11 @@ export async function startM4ProgramHost(
       diagnostic: connectionDiagnostic,
     });
 
+  let endingTimer: ReturnType<typeof setTimeout> | undefined;
   let stopping: Promise<void> | undefined;
   const stop = () =>
     (stopping ??= (async () => {
+      clearTimeout(endingTimer);
       watchdog?.close();
       let failed = false;
       await cameraInputs?.stop().catch(() => {
@@ -146,6 +167,7 @@ export async function startM4ProgramHost(
       await closed;
     })());
   const closed = recorder.closed.then(async (result) => {
+    clearTimeout(endingTimer);
     watchdog?.close();
     let cameraCleanup = true;
     await cameraInputs?.stop().catch(() => {
@@ -158,6 +180,57 @@ export async function startM4ProgramHost(
   return {
     stop,
     closed,
+    ...(recorder.muteProgram
+      ? {
+          presentation: {
+            supported: true as const,
+            snapshot: bridge.presentation.snapshot,
+            dwell: bridge.presentation.dwell,
+            async set(
+              mode: import("../program-presentation").ProgramPresentation["mode"],
+              completion?: import("../program-presentation").ProgramCompletion,
+              deadlineAt?: number,
+            ) {
+              if (mode === "preparing-end") {
+                clearTimeout(endingTimer);
+                endingTimer = setTimeout(
+                  () => void recorder.stream?.stop().catch(() => undefined),
+                  30_000,
+                );
+                endingTimer.unref?.();
+              }
+              if (mode === "live") clearTimeout(endingTimer);
+              if (mode === "ended") {
+                if (
+                  !deadlineAt ||
+                  deadlineAt <= Date.now() ||
+                  deadlineAt > Date.now() + 30_000
+                )
+                  throw new Error("closing_deadline_invalid");
+                clearTimeout(endingTimer);
+                endingTimer = setTimeout(
+                  () => void recorder.stream?.stop().catch(() => undefined),
+                  Math.max(0, deadlineAt - Date.now()),
+                );
+                endingTimer.unref?.();
+              }
+              if (mode === "hold" || mode === "ended")
+                await recorder.muteProgram!(true);
+              const state = await bridge.presentation.set(
+                mode,
+                completion,
+                deadlineAt,
+              );
+              if (mode === "hold" || mode === "ended")
+                await recorder.stream?.confirmActiveOutput();
+              if (mode === "ended") await bridge.stopPresentationCameras();
+              if (mode === "live" && state.mode === "live")
+                await recorder.muteProgram!(false);
+              return state;
+            },
+          },
+        }
+      : {}),
     rendererAddress: bridge.address,
     cameraStatus: bridge.cameraStatus,
     stopPhone: bridge.stopPhone,

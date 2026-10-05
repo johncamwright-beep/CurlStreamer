@@ -60,6 +60,7 @@ describe.skipIf(process.platform !== "win32")(
           observations: true,
         });
         try {
+          expect(client.supportsObservations).toBe(true);
           await client.arm(
             {
               serverUrl: "rtmps://synthetic.invalid/live2",

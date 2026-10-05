@@ -8,14 +8,14 @@ import type { StudioDiagnostic } from "./m5-studio-diagnostics";
 
 /** A valid negative refresh acknowledgment leaves the inherited channel usable. */
 export function readM4ProgramControlAck(
-  tag: "RFR1" | "RFS1",
+  tag: "RFR1" | "RFS1" | "RFM1" | "RFU1",
   id: number,
   ack: Buffer,
 ): "accepted" | "rejected" {
   if (ack.length !== (tag === "RFS1" ? 24 : 8) || ack.readUInt32LE(4) !== id)
     throw new Error("m4_recording_unavailable");
   const response = ack.subarray(0, 4).toString("ascii");
-  if (tag === "RFR1" && response === "RFF1") return "rejected";
+  if (tag !== "RFS1" && response === "RFF1") return "rejected";
   if (response !== (tag === "RFS1" ? "RFP1" : "RFA1"))
     throw new Error("m4_recording_unavailable");
   return "accepted";
@@ -69,6 +69,7 @@ export async function startM4StudioRecorder(paths: {
   runtime: string;
   recording: string;
   previewOnly?: boolean;
+  presentationControl?: boolean;
   streamPlugin?: string;
   program?: { url: string; cacheDirectory: string };
   diagnostic?: StudioDiagnostic;
@@ -110,6 +111,9 @@ export async function startM4StudioRecorder(paths: {
         : []),
       ...(paths.streamPlugin ? ["--stream-plugin", paths.streamPlugin] : []),
       ...(source ? ["--program-control"] : []),
+      ...(source && paths.presentationControl
+        ? ["--presentation-control"]
+        : []),
     ],
     {
       cwd: dirname(paths.executable),
@@ -173,6 +177,7 @@ export async function startM4StudioRecorder(paths: {
       Boolean(paths.streamPlugin),
       15000,
       Boolean(source),
+      Boolean(source && paths.presentationControl),
     );
     if (bootstrap) {
       try {
@@ -194,7 +199,8 @@ export async function startM4StudioRecorder(paths: {
     let requestId = 0;
     let controlFlight = false;
     let controlFailed = false;
-    const command = async (tag: "RFR1" | "RFS1") => {
+    let controlQueue: Promise<unknown> = Promise.resolve();
+    const commandNow = async (tag: "RFR1" | "RFS1" | "RFM1" | "RFU1") => {
       if (!source || exited || stopPromise || controlFlight || controlFailed)
         throw fail();
       controlFlight = true;
@@ -256,6 +262,20 @@ export async function startM4StudioRecorder(paths: {
         controlFlight = false;
       }
     };
+    const command = (tag: "RFR1" | "RFS1" | "RFM1" | "RFU1") => {
+      const next = controlQueue.then(() => commandNow(tag));
+      controlQueue = next.catch(() => undefined);
+      return next;
+    };
+    const muteProgram = async (muted: boolean) => {
+      if (!paths.presentationControl) throw fail();
+      const ack = await command(muted ? "RFM1" : "RFU1");
+      try {
+        if (ack.subarray(0, 4).toString("ascii") !== "RFA1") throw fail();
+      } finally {
+        ack.fill(0);
+      }
+    };
     const refreshProgram = async () => {
       const ack = await command("RFR1");
       try {
@@ -287,6 +307,7 @@ export async function startM4StudioRecorder(paths: {
       closed,
       refreshProgram,
       programHealth,
+      ...(paths.presentationControl ? { muteProgram } : {}),
       ...(stream ? { stream } : {}),
     };
   } catch {

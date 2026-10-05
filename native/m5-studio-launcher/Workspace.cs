@@ -35,6 +35,7 @@ internal sealed class Workspace : Form
     private bool cameraSettingsOpen;
     private string closeAfterGame;
     private bool endRequestPending, gameEnded;
+    private DateTime endingUntil = DateTime.MinValue;
     private readonly UsbAudio usbAudio = new UsbAudio();
     private readonly object usbLock = new object();
     private readonly List<float> usbSamples = new List<float>();
@@ -265,8 +266,15 @@ internal sealed class Workspace : Form
             !WorkspacePolicy.SameOrigin(web.CoreWebView2.Source, origin) || WorkspacePolicy.Game(args.Source, origin) != selectedGame) return;
         try {
             var raw = args.WebMessageAsJson;
-            if (raw.Length > 4096) return;
+            if (raw.Length > 8192) return;
             var value = json.Deserialize<Dictionary<string, object>>(raw);
+            var presentationType = TextValue(value, "type");
+            if (presentationType == "studio-youtube-hold" || presentationType == "studio-youtube-resume" || presentationType == "studio-ending-prepare" || presentationType == "studio-ending-show" || presentationType == "studio-ending-cancel" || presentationType == "studio-ending-finish") {
+                if (TextValue(value, "gameId") != runningGame || selectedGame != runningGame || busy || closing || !recording) return;
+                var requestNonce = TextValue(value, "nonce");
+                Guid parsedNonce; if (!Guid.TryParse(requestNonce, out parsedNonce)) return;
+                await PresentationCommand(presentationType, requestNonce, value); return;
+            }
             if (value.Count == 3 && TextValue(value, "gameId") == runningGame && selectedGame == runningGame && runningGame != null && !busy && !closing && CameraInputs.Role(TextValue(value, "cameraRole"))) {
                 if (TextValue(value, "action") == "configure-camera") { OpenCameraSettings(TextValue(value, "cameraRole")); return; }
                 if (TextValue(value, "action") == "reconnect-camera") { ApplyState(await Command(new { action = "reconnect-camera-input", cameraRole = TextValue(value, "cameraRole") })); return; }
@@ -286,6 +294,7 @@ internal sealed class Workspace : Form
                     gameEnded = true; ForgetGame(); lastGame = null;
                     for (int wait = 0; busy && !closing && wait < 120; wait++) await Task.Delay(1000);
                     if (busy || closing) { status.Text = "Game ended. Wait for the current Studio action, then close Studio."; return; }
+                    if (endingUntil > DateTime.UtcNow) return;
                     if (closeAfterGame == selectedGame) { closeAfterGame = null; endRequestPending = false; await CloseWorkspace(); }
                     else if (recording && runningGame == selectedGame) await StopRecording();
                     return;
@@ -304,6 +313,43 @@ internal sealed class Workspace : Form
                 (string)value["nonce"] != handoffNonce) return;
             handoff.TrySetResult(value);
         } catch { /* Web messages never become arbitrary native commands. */ }
+    }
+    private bool StateFlag(string key) {
+        object value; return lastState != null && lastState.TryGetValue(key, out value) && value is bool && (bool)value;
+    }
+    private async Task PresentationCommand(string type, string nonce, Dictionary<string, object> value) {
+        var gameId = runningGame; object presentation = null, closeReceipt = null; bool ok = false;
+        if (!StateFlag(type.StartsWith("studio-ending-") ? "canGracefulEnd" : "canHoldStream")) {
+            await PublishPresentationResult(gameId, nonce, false, null, null); return;
+        }
+        busy = true;
+        try {
+            Dictionary<string, object> result;
+            if (type == "studio-ending-prepare") {
+                endingUntil = DateTime.UtcNow.AddSeconds(30);
+                result = await Command(new { action = "prepare-ending" });
+                result.TryGetValue("closing", out closeReceipt);
+            } else if (type == "studio-ending-show") {
+                object completion, closingValue;
+                if (value.Count != 5 || !value.TryGetValue("completion", out completion) || !value.TryGetValue("closing", out closingValue)) throw new InvalidDataException();
+                var receipt = closingValue as Dictionary<string, object>; DateTime deadline;
+                if (receipt == null || !DateTime.TryParse(TextValue(receipt, "deadlineAt"), null, System.Globalization.DateTimeStyles.AdjustToUniversal | System.Globalization.DateTimeStyles.AssumeUniversal, out deadline) || deadline <= DateTime.UtcNow || deadline > DateTime.UtcNow.AddSeconds(30)) throw new InvalidDataException();
+                endingUntil = deadline;
+                result = await Command(new { action = "show-ending", completion = completion, closing = closingValue });
+            } else if (type == "studio-ending-finish") {
+                result = await Command(new { action = "finish-ending" }); endingUntil = DateTime.MinValue;
+            } else {
+                var action = type == "studio-youtube-hold" ? "hold-stream" : type == "studio-youtube-resume" ? "release-hold" : "cancel-ending";
+                result = await Command(new { action = action });
+                if (type == "studio-ending-cancel") endingUntil = DateTime.MinValue;
+            }
+            ApplyState(result); result.TryGetValue("presentation", out presentation); ok = true;
+        } catch { if (type == "studio-ending-prepare" || type == "studio-ending-cancel") endingUntil = DateTime.MinValue; }
+        finally { busy = false; PublishYouTubeStatus(lastState); UpdateButtons(); }
+        await PublishPresentationResult(gameId, nonce, ok, presentation, closeReceipt);
+    }
+    private Task PublishPresentationResult(string gameId, string nonce, bool ok, object presentation, object closeReceipt) {
+        return web.ExecuteScriptAsync("window.dispatchEvent(new CustomEvent('studio-presentation-result',{detail:" + json.Serialize(new { gameId = gameId, nonce = nonce, ok = ok, presentation = presentation, closing = closeReceipt, error = ok ? null : "Studio could not confirm this presentation change." }) + "}));");
     }
     private async Task<string> PrepareGrant(string gameId) {
         if (!WorkspacePolicy.SameOrigin(web.CoreWebView2.Source, origin) || WorkspacePolicy.Game(web.CoreWebView2.Source, origin) != gameId) throw new InvalidDataException();
@@ -486,8 +532,9 @@ internal sealed class Workspace : Form
             var offline = state == null;
             object available; var enabled = !offline && state.TryGetValue("streamingAvailable", out available) && available is bool && (bool)available;
             object recovery; var canReconnect = !offline && state.TryGetValue("canReconnect", out recovery) && recovery is bool && (bool)recovery;
+            object presentation; if (offline || !state.TryGetValue("presentation", out presentation)) presentation = null;
             object output; var localOutput = !offline && state.TryGetValue("localOutput", out output) ? output as Dictionary<string, object> : null;
-            web.CoreWebView2.ExecuteScriptAsync("window.dispatchEvent(new CustomEvent('studio-youtube-status',{detail:" + json.Serialize(new { gameId = runningGame, available = !offline && enabled, busy = !offline && busy, canReconnect = canReconnect, streaming = offline ? "failed" : TextValue(state, "streaming") ?? "idle", outputActive = localOutput != null && TextValue(localOutput, "state") == "active", live = !offline && TextValue(state, "broadcast") == "live", receiving = !offline && TextValue(state, "youtubeReception") == "confirmed", message = offline || enabled ? youtubeError : "YouTube streaming is not enabled in this Studio installation." }) + "}));");
+            web.CoreWebView2.ExecuteScriptAsync("window.dispatchEvent(new CustomEvent('studio-youtube-status',{detail:" + json.Serialize(new { gameId = runningGame, available = !offline && enabled, busy = !offline && busy, canReconnect = canReconnect, canHoldStream = !offline && StateFlag("canHoldStream"), canGracefulEnd = !offline && StateFlag("canGracefulEnd"), presentation = presentation, streaming = offline ? "failed" : TextValue(state, "streaming") ?? "idle", outputActive = localOutput != null && TextValue(localOutput, "state") == "active", live = !offline && TextValue(state, "broadcast") == "live", receiving = !offline && TextValue(state, "youtubeReception") == "confirmed", message = offline || enabled ? youtubeError : "YouTube streaming is not enabled in this Studio installation." }) + "}));");
         }
     }
     private async Task Poll() {
@@ -497,6 +544,7 @@ internal sealed class Workspace : Form
         try { using (var timeout = new System.Threading.CancellationTokenSource(3000)) using (var response = await local.GetAsync(localAddress + "/state", timeout.Token)) { response.EnsureSuccessStatusCode(); if (!closing && child == observedChild) ApplyState(json.Deserialize<Dictionary<string, object>>(await response.Content.ReadAsStringAsync())); } }
         catch { if (!busy) status.Text = "Recording status is unavailable. Keep Studio open while checking the recording."; }
         finally { polling = false; }
+        if (gameEnded && endingUntil != DateTime.MinValue && endingUntil <= DateTime.UtcNow && !busy && !closing) { endingUntil = DateTime.MinValue; await StopRecording(); }
     }
     private string CameraInputStatus(string role) {
         object inputs, slot;

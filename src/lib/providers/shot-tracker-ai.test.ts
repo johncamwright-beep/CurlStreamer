@@ -60,6 +60,37 @@ it("sends only aggregate evidence to a fixed server provider and validates struc
   expect(body.input).not.toContain("PRIVATE NAME");
   expect(body.instructions).toContain("No player names");
 });
+it.each([
+  "credit_balance_exhausted",
+  "organization_spend_limit_exceeded",
+  "project_spend_limit_exceeded",
+  "organization_usage_limit_exceeded",
+  "slow_down",
+])("classifies %s without exposing upstream details", async (code) => {
+  configure();
+  const log = vi.spyOn(console, "error").mockImplementation(() => {});
+  vi.stubGlobal(
+    "fetch",
+    vi
+      .fn()
+      .mockResolvedValue(
+        Response.json(
+          { error: { code, message: "private account details" } },
+          { status: 429 },
+        ),
+      ),
+  );
+  await expect(generateShotTrackerNarrative(input, "team", [])).rejects.toThrow(
+    "Report provider unavailable",
+  );
+  expect(log).toHaveBeenCalledWith("Shot Tracker AI request failed", {
+    status: 429,
+    code,
+  });
+  expect(JSON.stringify(log.mock.calls)).not.toContain(
+    "private account details",
+  );
+});
 it("does not expose upstream failures or accept truncated responses", async () => {
   configure();
   const log = vi.spyOn(console, "error").mockImplementation(() => {});

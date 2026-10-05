@@ -51,7 +51,12 @@ vi.mock("@/lib/providers/sponsor-library", () => ({
   gameLibrarySponsors: mocks.gameLibrarySponsors,
 }));
 import { GET, PATCH } from "./route";
-import { GameStateConflictError } from "@/lib/game-state-conflict";
+import {
+  GameClosedError,
+  GameStateConflictError,
+  ScoringIntentConflictError,
+  ScoringWriteConflictError,
+} from "@/lib/game-state-conflict";
 
 // Real loopback HTTP transport, route, authorization and signed tokens.
 // Only external account, persistence, and sponsor providers are replaced.
@@ -727,6 +732,64 @@ describe("GET /api/games/[id] over HTTP", () => {
     );
     expect(response.status).toBe(401);
     expect(response.headers.get("cache-control")).toBe("no-store");
+  });
+
+  it("validates PATCH route input before accessing providers", async () => {
+    const response = await PATCH(
+      new Request(`${origin}/api/games/invalid$id`, { method: "PATCH" }),
+      { params: Promise.resolve({ id: "invalid$id" }) },
+    );
+    expect(response.status).toBe(400);
+    expect(mocks.getUser).not.toHaveBeenCalled();
+    expect(mocks.getGame).not.toHaveBeenCalled();
+    expect(mocks.updateGame).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    [new ScoringIntentConflictError(), 409, "scoring_stale_intent"],
+    [new ScoringWriteConflictError(), 409, "scoring_write_conflict"],
+    [new GameClosedError(), 410, undefined],
+    [new GameClosedError("This game is completed"), 410, undefined],
+  ])(
+    "distinguishes terminal scoring/lifecycle failures: %s",
+    async (error, status, code) => {
+      anonymous();
+      mocks.updateGame.mockRejectedValue(error);
+      const response = await PATCH(
+        new Request(`${origin}/api/games/${testGameId}`, {
+          method: "PATCH",
+          headers: {
+            authorization: `Bearer ${await issueOrganizerToken(testGameId)}`,
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({ type: "layout", layout: "home" }),
+        }),
+        { params: Promise.resolve({ id: testGameId }) },
+      );
+      expect(response.status).toBe(status);
+      expect((await response.json()).code).toBe(code);
+    },
+  );
+
+  it("uses only the token authorization snapshot before the authoritative write", async () => {
+    anonymous();
+    const response = await PATCH(
+      new Request(`${origin}/api/games/${testGameId}`, {
+        method: "PATCH",
+        headers: {
+          authorization: `Bearer ${await issueOrganizerToken(testGameId)}`,
+          "content-type": "application/json",
+          "x-curlcast-game-context": "include",
+        },
+        body: JSON.stringify({ type: "layout", layout: "home" }),
+      }),
+      { params: Promise.resolve({ id: testGameId }) },
+    );
+    expect(response.status).toBe(200);
+    expect(mocks.getGame).toHaveBeenCalledOnce();
+    expect(mocks.updateGame).toHaveBeenCalledOnce();
+    expect(mocks.gameLibrarySponsors).not.toHaveBeenCalled();
+    expect(mocks.hierarchy).not.toHaveBeenCalled();
   });
 
   it("returns 409 when an ordinary state write loses its version race", async () => {

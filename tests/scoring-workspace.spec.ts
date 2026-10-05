@@ -1,5 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import { gameFixture, testGameId } from "../src/test/game-fixture";
+import { applyScoringAction } from "../src/lib/scoring";
 
 async function setup(page: Page, desktop = false) {
   await page.route(
@@ -25,6 +26,8 @@ async function setup(page: Page, desktop = false) {
     if (route.request().method() === "PATCH") {
       const action = route.request().postDataJSON();
       actions.push(action);
+      if (["score", "hammer", "undo"].includes(action.type))
+        applyScoringAction(game, action);
       if (action.type === "layout") game.layout = action.layout;
       if (action.type === "sponsor-mode") {
         game.sponsorMode.active = action.active;
@@ -68,7 +71,8 @@ async function setup(page: Page, desktop = false) {
 test("score entry preserves selected team and points in one saved intent", async ({
   page,
 }, info) => {
-  const { actions } = await setup(page);
+  const { actions, game } = await setup(page);
+  const originalEvents = structuredClone(game.scoreEvents);
   await expect(page.getByRole("region", { name: "Match score" })).toContainText(
     "Northern Ontario Curling Club",
   );
@@ -97,6 +101,25 @@ test("score entry preserves selected team and points in one saved intent", async
     expectedEnd: 2,
     blank: false,
   });
+  expect(game.scoreEvents.slice(0, -1)).toEqual(originalEvents);
+  expect(game.scoreEvents.at(-1)).toMatchObject({
+    id: actions[0].intentId,
+    type: "end",
+    expectedLastEventId: originalEvents.at(-1)?.id,
+    score: { end: 2, team: "away", points: 3, blank: false },
+  });
+  await expect(
+    page.getByRole("heading", { name: "Record End 3" }),
+  ).toBeVisible();
+  await expect(page.getByRole("region", { name: "Match score" })).toContainText(
+    "End 3",
+  );
+  await expect(
+    page.getByRole("region", { name: "Match score" }).locator("strong"),
+  ).toHaveText(["2", "3"]);
+  await expect(
+    page.getByRole("button", { name: "Save 3 points" }),
+  ).toBeEnabled();
   await page.screenshot({
     path: info.outputPath(`scoring-workspace-${info.project.name}.png`),
     fullPage: true,

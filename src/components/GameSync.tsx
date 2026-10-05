@@ -1,14 +1,24 @@
 "use client";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { GameState } from "@/lib/types";
 import type { BroadcastGame, JoinGame } from "@/lib/game-projection";
 import { clearCurrentGameIfMatching } from "@/lib/current-game";
 import type { SafeGameCompletion } from "@/lib/game-completion";
 import { gamePollDelay } from "@/lib/game-polling";
 import { GameRefreshGate } from "@/lib/game-refresh-gate";
+import { GameWriteFence } from "@/lib/game-write-fence";
 import { fetchGameWithSelectedAccess } from "@/lib/media-access-client";
 import type { GameNavigationMetadata } from "@/lib/game-entry";
+import { scoringIntentMatches } from "@/lib/scoring-acknowledgement";
 type GameView = "broadcast" | "join" | undefined;
+export class GameUpdateError extends Error {
+  constructor(
+    message: string,
+    readonly code?: string,
+  ) {
+    super(message);
+  }
+}
 export type GameLifecycle = "active" | "completed" | "closed" | "deleted";
 type ViewState<V extends GameView> = V extends "broadcast"
   ? GameState | BroadcastGame
@@ -35,8 +45,20 @@ export function useGame<V extends GameView = undefined>(
   pollingState.current = { lifecycle, error };
   const refreshGate = useRef(new GameRefreshGate());
   const contextGate = useRef(new GameRefreshGate());
+  const writeScope = useMemo(
+    () => ({
+      fence: new GameWriteFence(),
+      queue: Promise.resolve() as Promise<unknown>,
+    }),
+    [id, view, invitation],
+  );
+  const currentWriteScope = useRef(writeScope);
+  currentWriteScope.current = writeScope;
   const refresh = useCallback(
     async (includeNavigationMetadata = false) => {
+      if (currentWriteScope.current !== writeScope) return;
+      const readEpoch = writeScope.fence.read();
+      if (readEpoch === undefined) return;
       const reportError = (message: string) => {
         // The next poll is scheduled before React necessarily commits a render.
         // Recovery must not inherit the previous outage's ten-second delay.
@@ -60,12 +82,22 @@ export function useGame<V extends GameView = undefined>(
           includeNavigationMetadata && includeContext && view !== "join",
         );
       } catch {
+        if (
+          currentWriteScope.current !== writeScope ||
+          !writeScope.fence.accepts(readEpoch)
+        )
+          return;
         if (!refreshGate.current.accept(ticket)) return;
         reportError("Game service is temporarily unavailable.");
         return;
       }
       if (r.ok) {
         const body = await r.json().catch(() => null);
+        if (
+          currentWriteScope.current !== writeScope ||
+          !writeScope.fence.accepts(readEpoch)
+        )
+          return;
         if (
           !body ||
           typeof body !== "object" ||
@@ -106,8 +138,14 @@ export function useGame<V extends GameView = undefined>(
         setM1Pilot(r.headers.get("x-curlcast-m1-pilot") === "true");
         pollingState.current.lifecycle = nextLifecycle;
         reportError("");
+        return true;
       } else {
         const body = await r.json().catch(() => null);
+        if (
+          currentWriteScope.current !== writeScope ||
+          !writeScope.fence.accepts(readEpoch)
+        )
+          return;
         const nextLifecycle =
           r.status === 410 && ["closed", "deleted"].includes(body?.lifecycle)
             ? (body.lifecycle as "closed" | "deleted")
@@ -131,7 +169,7 @@ export function useGame<V extends GameView = undefined>(
         reportError(body?.error ?? "Game is unavailable.");
       }
     },
-    [id, view, invitation, includeContext],
+    [id, view, invitation, includeContext, writeScope],
   );
   useEffect(() => {
     refreshGate.current.reset();
@@ -196,41 +234,109 @@ export function useGame<V extends GameView = undefined>(
   }, [id, refresh, includeContext, keepLiveWhenHidden]);
   const act = useCallback(
     async (action: unknown) => {
-      const token = localStorage.getItem(`curlcast-access-${id}`);
-      const r = await fetch(`/api/games/${id}`, {
-        method: "PATCH",
-        headers: {
-          "content-type": "application/json",
-          ...(token ? { authorization: `Bearer ${token}` } : {}),
-        },
-        body: JSON.stringify(action),
-      });
-      if (!r.ok) {
-        const body = (await r.json().catch(() => null)) as {
-          error?: string;
-        } | null;
-        await refresh();
-        throw new Error(body?.error ?? "That update could not be saved.");
-      }
-      const next = await r.json();
-      setGame(next);
-      const channel = new BroadcastChannel(`curlcast-${id}`);
-      channel.postMessage("update");
-      channel.close();
+      // Serialize program and scoring writes too: an older PATCH response must
+      // never overwrite a newer scoring acknowledgement.
+      const operation = writeScope.queue
+        .catch(() => undefined)
+        .then(async () => {
+          if (currentWriteScope.current !== writeScope)
+            throw new GameUpdateError(
+              "The selected game changed. Reload its controls.",
+              "game_unavailable",
+            );
+          writeScope.fence.begin();
+          let failure: GameUpdateError | undefined;
+          try {
+            const token = localStorage.getItem(`curlcast-access-${id}`);
+            const r = await fetch(`/api/games/${id}`, {
+              method: "PATCH",
+              headers: {
+                "content-type": "application/json",
+                ...(token ? { authorization: `Bearer ${token}` } : {}),
+              },
+              body: JSON.stringify(action),
+              signal: AbortSignal.timeout(15_000),
+            });
+            if (!r.ok) {
+              const body = (await r.json().catch(() => null)) as {
+                error?: string;
+                code?: string;
+              } | null;
+              throw new GameUpdateError(
+                body?.error ?? "That update could not be saved.",
+                body?.code,
+              );
+            }
+            const next = await r.json();
+            if (currentWriteScope.current !== writeScope)
+              throw new GameUpdateError(
+                "The selected game changed. Reload its controls.",
+                "game_unavailable",
+              );
+            if (
+              !next?.config ||
+              next.id !== id ||
+              !Array.isArray(next.scoreEvents) ||
+              !scoringIntentMatches(next.scoreEvents, action)
+            )
+              throw new GameUpdateError(
+                "Save confirmation was not received. Retry the same change to confirm it safely.",
+                "save_unconfirmed",
+              );
+            if (
+              !refreshGate.current.accept(refreshGate.current.start(), "active")
+            )
+              throw new GameUpdateError(
+                "This game is no longer available for scoring.",
+                "game_unavailable",
+              );
+            setGame(next);
+            const channel = new BroadcastChannel(`curlcast-${id}`);
+            channel.postMessage("update");
+            channel.close();
+          } catch (error) {
+            failure =
+              error instanceof GameUpdateError
+                ? error
+                : new GameUpdateError(
+                    "Save confirmation was not received. Retry the same change to confirm it safely.",
+                    "save_unconfirmed",
+                  );
+          } finally {
+            writeScope.fence.finish();
+          }
+          if (failure) {
+            const recovered = await refresh();
+            if (failure.code === "scoring_stale_intent" && !recovered)
+              throw new GameUpdateError(
+                "The game changed, but its current score could not be loaded. Retry to refresh it safely.",
+                "save_unconfirmed",
+              );
+            throw failure;
+          }
+        });
+      writeScope.queue = operation;
+      await operation;
     },
-    [id, refresh],
+    [id, refresh, writeScope],
   );
+  const refreshGame = useCallback(async () => {
+    await refresh();
+  }, [refresh]);
+  const refreshContext = useCallback(async () => {
+    await refresh(true);
+  }, [refresh]);
   return {
     game,
     completion,
     lifecycle,
     error,
     act,
-    refresh,
+    refresh: refreshGame,
     accountOperator,
     accountRole,
     m1Pilot,
     navigationMetadata,
-    refreshContext: () => refresh(true),
+    refreshContext,
   };
 }

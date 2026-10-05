@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
-import { decodeM4CameraImage } from "./m4-camera-image-browser";
+import { decodeM4CameraBitmap } from "./m4-camera-image-browser";
 import { m4RendererInstance } from "./m4-renderer-health-browser";
 import { cameraAspect } from "../program-camera-layout";
 import type { CameraRole } from "../m2-studio-protocol";
@@ -20,7 +20,7 @@ export function M4IpCameraTransport({
   onChange(
     role: CameraRole,
     state: {
-      frameUrl?: string;
+      canvas?: HTMLCanvasElement;
       aspect?: number;
       sourceIdentity: string;
       message: string;
@@ -30,19 +30,29 @@ export function M4IpCameraTransport({
   useEffect(() => {
     const lifetime = new AbortController();
     let timer: ReturnType<typeof setTimeout> | undefined;
-    let displayed: string | undefined;
+    const canvas = document.createElement("canvas");
+    const context = canvas.getContext("2d");
+    let displayed = false;
+    let publishedAspect: number | undefined;
     let counter = 0;
     let lastFrame = 0;
+    // createImageBitmap cannot be cancelled. Leave room for recovery after one
+    // stalled decode, but never accumulate unbounded decoder work on retries.
+    let pendingDecodes = 0;
     const clear = () => {
-      if (displayed) URL.revokeObjectURL(displayed);
-      displayed = undefined;
+      context?.clearRect(0, 0, canvas.width, canvas.height);
+      displayed = false;
       onChange(role, { sourceIdentity, message: "Reconnecting IP camera…" });
     };
     const poll = async () => {
+      if (pendingDecodes >= 2) {
+        if (displayed && Date.now() - lastFrame >= 5000) clear();
+        if (!lifetime.signal.aborted) timer = setTimeout(() => void poll(), 50);
+        return;
+      }
       const attempt = new AbortController();
       const timeout = setTimeout(() => attempt.abort(), 2000);
-      let next: string | undefined;
-      let image: HTMLImageElement | undefined;
+      let bitmap: ImageBitmap | undefined;
       try {
         const response = await fetch(
           `/ip-camera/${role}/frame?generation=${generation}&after=${counter}`,
@@ -67,26 +77,36 @@ export function M4IpCameraTransport({
         if (!Number.isSafeInteger(frame) || frame <= counter) throw Error();
         const blob = await response.blob();
         if (blob.size > 2 * 1024 * 1024 || !blob.size) throw Error();
-        next = URL.createObjectURL(blob);
-        image = new Image();
-        image.src = next;
-        await decodeM4CameraImage(
-          image,
+        bitmap = await decodeM4CameraBitmap(
+          blob,
           AbortSignal.any([lifetime.signal, attempt.signal]),
+          (input) => {
+            pendingDecodes++;
+            return Promise.resolve()
+              .then(() => createImageBitmap(input))
+              .finally(() => pendingDecodes--);
+          },
         );
-        if (lifetime.signal.aborted || attempt.signal.aborted) return;
-        const previous = displayed;
-        displayed = next;
-        next = undefined;
+        if (lifetime.signal.aborted || attempt.signal.aborted || !context)
+          return;
+        const aspect = cameraAspect(bitmap.width, bitmap.height);
+        if (canvas.width !== bitmap.width) canvas.width = bitmap.width;
+        if (canvas.height !== bitmap.height) canvas.height = bitmap.height;
+        context.drawImage(bitmap, 0, 0);
+        bitmap.close();
+        bitmap = undefined;
         counter = frame;
         lastFrame = Date.now();
-        onChange(role, {
-          sourceIdentity,
-          frameUrl: displayed,
-          aspect: cameraAspect(image.naturalWidth, image.naturalHeight),
-          message: "Receiving IP video",
-        });
-        if (previous) URL.revokeObjectURL(previous);
+        if (!displayed || aspect !== publishedAspect) {
+          onChange(role, {
+            sourceIdentity,
+            canvas,
+            aspect,
+            message: "Receiving IP video",
+          });
+          publishedAspect = aspect;
+        }
+        displayed = true;
         await fetch("/camera", {
           method: "POST",
           credentials: "same-origin",
@@ -106,8 +126,7 @@ export function M4IpCameraTransport({
         /* Retain a fresh picture through a missed local request. */
       } finally {
         clearTimeout(timeout);
-        if (image) image.src = "";
-        if (next) URL.revokeObjectURL(next);
+        bitmap?.close();
         if (!lifetime.signal.aborted) {
           if (displayed && Date.now() - lastFrame >= 5000) clear();
           timer = setTimeout(() => void poll(), 50);
@@ -119,7 +138,9 @@ export function M4IpCameraTransport({
     return () => {
       lifetime.abort();
       clearTimeout(timer);
-      if (displayed) URL.revokeObjectURL(displayed);
+      canvas.width = 0;
+      canvas.height = 0;
+      canvas.remove();
     };
   }, [role, generation, sourceIdentity, onChange]);
   return null;

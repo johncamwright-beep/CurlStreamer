@@ -129,6 +129,10 @@ async function install(
     Role,
     "live" | "absent" | "old-generation" | "repeated" | "invalid"
   > = { "camera-home": "live", "camera-away": "live" };
+  const frames: Record<Role, Buffer> = {
+    "camera-home": jpeg,
+    "camera-away": jpeg,
+  };
   const counter: Record<Role, number> = { "camera-home": 0, "camera-away": 0 };
   // Count live browser fetches, excluding requests synchronously cancelled by
   // a source change; an intercepted route can finish after its fetch aborts.
@@ -198,7 +202,9 @@ async function install(
         const currentCounter =
           behavior === "repeated" ? counter[frameRole] : ++counter[frameRole];
         const body =
-          behavior === "invalid" ? Buffer.from("invalid JPEG fixture") : jpeg;
+          behavior === "invalid"
+            ? Buffer.from("invalid JPEG fixture")
+            : frames[frameRole];
         return await route.fulfill({
           contentType: "image/jpeg",
           headers: {
@@ -240,6 +246,7 @@ async function install(
     );
   return {
     sources,
+    frames,
     mode,
     observations,
     accepted,
@@ -254,14 +261,10 @@ const panel = (page: Page, role: Role) =>
   page.getByTestId(`camera-panel-${role}`);
 
 async function verifyFrame(page: Page, role: Role) {
-  const image = panel(page, role).getByAltText("IP camera");
+  const image = panel(page, role).getByRole("img", { name: "IP camera" });
   await expect(image).toBeVisible();
   await expect
-    .poll(() =>
-      image.evaluate(
-        (element: HTMLImageElement) => element.complete && element.naturalWidth,
-      ),
-    )
+    .poll(() => image.evaluate((element: HTMLCanvasElement) => element.width))
     .toBe(320);
   const geometry = await image.evaluate((element) => {
     const rect = element.getBoundingClientRect(),
@@ -342,7 +345,7 @@ test("program composes mixed phone and Tapo frames while replacing only the sele
     .poll(async () => (await fixture.phones()).starts["camera-away"])
     .toBe(1);
   await expect(
-    panel(page, "camera-away").getByAltText("IP camera"),
+    panel(page, "camera-away").getByRole("img", { name: "IP camera" }),
   ).toHaveCount(0);
   fixture.sources["camera-away"] = snapshot("tapo", 3);
   await verifyFrame(page, "camera-away");
@@ -396,7 +399,7 @@ test("program flushes a changed source and rejects stale, repeated and undecodab
   fixture.mode["camera-away"] = "old-generation";
   fixture.sources["camera-away"] = snapshot("tapo", 2);
   await expect(
-    panel(page, "camera-away").getByAltText("IP camera"),
+    panel(page, "camera-away").getByRole("img", { name: "IP camera" }),
   ).toHaveCount(0);
   await page.waitForTimeout(250);
   expect(
@@ -424,7 +427,7 @@ test("program flushes a changed source and rejects stale, repeated and undecodab
   fixture.mode["camera-away"] = "repeated";
   // Repeated counters must not refresh proof; a stale displayed frame expires.
   await expect(
-    panel(page, "camera-away").getByAltText("IP camera"),
+    panel(page, "camera-away").getByRole("img", { name: "IP camera" }),
   ).toHaveCount(0, { timeout: 7500 });
   const last = fixture.accepted
     .filter((v) => v.cameraRole === "camera-away")
@@ -519,38 +522,299 @@ test("renderer health remains independent of stalled game and source reads and r
   expect(fixture.errors).toEqual([]);
 });
 
-test("a stalled IP decode expires and cannot publish after its late completion", async ({
+for (const cancellation of ["timeout", "source change"] as const) {
+  test(`a stalled IP bitmap closes once without painting after ${cancellation}`, async ({
+    page,
+  }) => {
+    await page.addInitScript(() => {
+      const decode = window.createImageBitmap.bind(window);
+      let lateBitmap: ImageBitmap | undefined;
+      const draw = CanvasRenderingContext2D.prototype.drawImage;
+      const tracking = window as unknown as { __lateDraws: number };
+      tracking.__lateDraws = 0;
+      CanvasRenderingContext2D.prototype.drawImage = function (
+        this: CanvasRenderingContext2D,
+        image: CanvasImageSource,
+        ...coordinates: number[]
+      ) {
+        if (image === lateBitmap) tracking.__lateDraws++;
+        return Reflect.apply(draw, this, [image, ...coordinates]);
+      } as typeof CanvasRenderingContext2D.prototype.drawImage;
+      const fixture = window as unknown as {
+        __decodeStall?: { finish: () => void; closes: number };
+      };
+      window.createImageBitmap = ((blob: Blob) => {
+        if (!fixture.__decodeStall) {
+          let finish!: () => void;
+          const pending = decode(blob);
+          const result = new Promise<ImageBitmap>((resolve) => {
+            finish = () => {
+              void pending.then((bitmap) => {
+                lateBitmap = bitmap;
+                const close = bitmap.close.bind(bitmap);
+                bitmap.close = () => {
+                  fixture.__decodeStall!.closes++;
+                  close();
+                };
+                resolve(bitmap);
+              });
+            };
+          });
+          fixture.__decodeStall = { finish, closes: 0 };
+          return result;
+        }
+        return decode(blob);
+      }) as typeof window.createImageBitmap;
+    });
+    const fixture = await install(page, ["tapo", "rtsp"]);
+    if (cancellation === "source change") {
+      await expect
+        .poll(() =>
+          page.evaluate(() =>
+            Boolean(
+              (window as unknown as { __decodeStall?: unknown }).__decodeStall,
+            ),
+          ),
+        )
+        .toBe(true);
+      fixture.sources["camera-home"] = snapshot("tapo", 2);
+      fixture.sources["camera-away"] = snapshot("rtsp", 2);
+      for (const role of roles)
+        await expect
+          .poll(
+            () =>
+              fixture.accepted.filter(
+                (value) =>
+                  value.cameraRole === role && value.sourceGeneration === 2,
+              ).length,
+          )
+          .toBeGreaterThan(0);
+    }
+    for (const role of roles) {
+      await expect
+        .poll(
+          () =>
+            fixture.accepted.filter((value) => value.cameraRole === role)
+              .length,
+        )
+        .toBeGreaterThan(0);
+      await verifyFrame(page, role);
+    }
+    await page.evaluate(() =>
+      (
+        window as unknown as { __decodeStall: { finish: () => void } }
+      ).__decodeStall.finish(),
+    );
+    await expect
+      .poll(() =>
+        page.evaluate(
+          () =>
+            (window as unknown as { __decodeStall: { closes: number } })
+              .__decodeStall.closes,
+        ),
+      )
+      .toBe(1);
+    for (const role of roles) {
+      await verifyFrame(page, role);
+      expect((await fixture.maxActive())[role]).toBe(1);
+    }
+    expect(
+      await page.evaluate(
+        () => (window as unknown as { __lateDraws: number }).__lateDraws,
+      ),
+    ).toBe(0);
+    expect(fixture.errors).toEqual([]);
+  });
+}
+test("IP canvas updates pixels and resolution in place, recovers stale frames, and releases replaced sources", async ({
+  page,
+}) => {
+  const fixture = await install(page, ["tapo", "rtsp"]);
+  const camera = panel(page, "camera-away").getByRole("img", {
+    name: "IP camera",
+  });
+  await verifyFrame(page, "camera-away");
+  const original = await camera.elementHandle();
+  await original!.evaluate((canvas: HTMLCanvasElement) => {
+    const state = window as unknown as {
+      __cameraCanvas: HTMLCanvasElement;
+      __dimensionWrites: number;
+    };
+    state.__cameraCanvas = canvas;
+    state.__dimensionWrites = 0;
+    for (const key of ["width", "height"] as const) {
+      const descriptor = Object.getOwnPropertyDescriptor(
+        HTMLCanvasElement.prototype,
+        key,
+      )!;
+      Object.defineProperty(canvas, key, {
+        get() {
+          return descriptor.get!.call(this);
+        },
+        set(value) {
+          state.__dimensionWrites++;
+          descriptor.set!.call(this, value);
+        },
+      });
+    }
+  });
+  const blue = await sharp({
+    create: { width: 320, height: 180, channels: 3, background: "#145ee5" },
+  })
+    .jpeg()
+    .toBuffer();
+  fixture.frames["camera-away"] = blue;
+  await expect
+    .poll(() =>
+      camera.evaluate(
+        (canvas: HTMLCanvasElement) =>
+          canvas.getContext("2d")!.getImageData(160, 90, 1, 1).data[2],
+      ),
+    )
+    .toBeGreaterThan(200);
+  expect(
+    await camera.evaluate(
+      (canvas) =>
+        canvas ===
+        (window as unknown as { __cameraCanvas: HTMLCanvasElement })
+          .__cameraCanvas,
+    ),
+  ).toBe(true);
+  expect(
+    await page.evaluate(
+      () =>
+        (window as unknown as { __dimensionWrites: number }).__dimensionWrites,
+    ),
+  ).toBe(0);
+  fixture.frames["camera-away"] = await sharp({
+    create: { width: 90, height: 160, channels: 3, background: "#19be35" },
+  })
+    .jpeg()
+    .toBuffer();
+  await expect
+    .poll(() =>
+      camera.evaluate((canvas: HTMLCanvasElement) => [
+        canvas.width,
+        canvas.height,
+      ]),
+    )
+    .toEqual([90, 160]);
+  expect(
+    await page.evaluate(
+      () =>
+        (window as unknown as { __dimensionWrites: number }).__dimensionWrites,
+    ),
+  ).toBe(2);
+  expect(
+    await camera.evaluate(
+      (canvas) =>
+        canvas ===
+        (window as unknown as { __cameraCanvas: HTMLCanvasElement })
+          .__cameraCanvas,
+    ),
+  ).toBe(true);
+  fixture.mode["camera-away"] = "absent";
+  await expect(camera).toHaveCount(0, { timeout: 7500 });
+  expect(
+    await original!.evaluate((canvas: HTMLCanvasElement) => canvas.isConnected),
+  ).toBe(false);
+  fixture.mode["camera-away"] = "live";
+  await expect(camera).toBeVisible();
+  expect(
+    await camera.evaluate(
+      (canvas) =>
+        canvas ===
+        (window as unknown as { __cameraCanvas: HTMLCanvasElement })
+          .__cameraCanvas,
+    ),
+  ).toBe(true);
+  fixture.sources["camera-away"] = snapshot("tapo", 2);
+  await expect
+    .poll(() =>
+      original!.evaluate((canvas: HTMLCanvasElement) => [
+        canvas.width,
+        canvas.height,
+        canvas.isConnected,
+      ]),
+    )
+    .toEqual([0, 0, false]);
+  await expect(camera).toBeVisible();
+  expect(
+    await camera.evaluate(
+      (canvas) =>
+        canvas ===
+        (window as unknown as { __cameraCanvas: HTMLCanvasElement })
+          .__cameraCanvas,
+    ),
+  ).toBe(false);
+  expect((await fixture.maxActive())["camera-away"]).toBe(1);
+  expect(fixture.errors).toEqual([]);
+});
+
+test("two stalled bitmap decodes cap retained work and late release resumes polling", async ({
   page,
 }) => {
   await page.addInitScript(() => {
-    const decode = HTMLImageElement.prototype.decode;
-    const fixture = window as unknown as {
-      __decodeStall?: {
-        image: HTMLImageElement;
-        url: string;
-        finish: () => void;
-      };
-    };
-    HTMLImageElement.prototype.decode = function () {
-      if (this.src.startsWith("blob:") && !fixture.__decodeStall) {
-        let finish!: () => void;
-        const result = new Promise<void>((resolve) => {
-          finish = resolve;
+    const decode = window.createImageBitmap.bind(window);
+    const state = { started: 0, closes: 0, finishes: [] as Array<() => void> };
+    (window as unknown as { __bitmapCap: typeof state }).__bitmapCap = state;
+    window.createImageBitmap = ((blob: Blob) => {
+      state.started++;
+      if (state.started > 2) return decode(blob);
+      const pending = decode(blob);
+      return new Promise<ImageBitmap>((resolve) => {
+        state.finishes.push(() => {
+          void pending.then((bitmap) => {
+            const close = bitmap.close.bind(bitmap);
+            bitmap.close = () => {
+              state.closes++;
+              close();
+            };
+            resolve(bitmap);
+          });
         });
-        fixture.__decodeStall = { image: this, url: this.src, finish };
-        return result;
-      }
-      return decode.call(this);
-    };
+      });
+    }) as typeof window.createImageBitmap;
   });
-  const fixture = await install(page, ["tapo", "rtsp"]);
+  const fixture = await install(page, ["phone", "tapo"]);
   await expect
-    .poll(
-      () =>
-        fixture.accepted.filter((value) => value.cameraRole === "camera-home")
-          .length,
+    .poll(() =>
+      page.evaluate(
+        () =>
+          (window as unknown as { __bitmapCap: { started: number } })
+            .__bitmapCap.started,
+      ),
     )
-    .toBeGreaterThan(0);
+    .toBe(2);
+  await page.waitForTimeout(2300);
+  expect(
+    await page.evaluate(
+      () =>
+        (window as unknown as { __bitmapCap: { started: number } }).__bitmapCap
+          .started,
+    ),
+  ).toBe(2);
+  expect(
+    fixture.accepted.filter((value) => value.cameraRole === "camera-away"),
+  ).toHaveLength(0);
+  await expect(
+    panel(page, "camera-away").getByRole("img", { name: "IP camera" }),
+  ).toHaveCount(0);
+  await page.evaluate(() =>
+    (
+      window as unknown as { __bitmapCap: { finishes: Array<() => void> } }
+    ).__bitmapCap.finishes.forEach((finish) => finish()),
+  );
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () =>
+          (window as unknown as { __bitmapCap: { closes: number } }).__bitmapCap
+            .closes,
+      ),
+    )
+    .toBe(2);
+  await verifyFrame(page, "camera-away");
   await expect
     .poll(
       () =>
@@ -558,34 +822,6 @@ test("a stalled IP decode expires and cannot publish after its late completion",
           .length,
     )
     .toBeGreaterThan(0);
-  const expired = await page.evaluate(async () => {
-    const pending = (
-      window as unknown as {
-        __decodeStall: {
-          image: HTMLImageElement;
-          url: string;
-          finish: () => void;
-        };
-      }
-    ).__decodeStall;
-    const released = pending.image.getAttribute("src") === "";
-    let revoked = false;
-    try {
-      await fetch(pending.url);
-    } catch {
-      revoked = true;
-    }
-    pending.finish();
-    return { released, revoked, url: pending.url };
-  });
-  expect(expired.released).toBe(true);
-  expect(expired.revoked).toBe(true);
-  for (const role of roles) {
-    await verifyFrame(page, role);
-    expect(
-      await panel(page, role).getByAltText("IP camera").getAttribute("src"),
-    ).not.toBe(expired.url);
-    expect((await fixture.maxActive())[role]).toBe(1);
-  }
+  expect((await fixture.maxActive())["camera-away"]).toBe(1);
   expect(fixture.errors).toEqual([]);
 });

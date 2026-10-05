@@ -157,13 +157,18 @@ export async function createM4ProgramBridge(
       (ownerAllowed || rendererAllowed);
     supplied.fill(0);
     cookie.fill(0);
+    const documentNavigation =
+      request.headers["sec-fetch-dest"] === "document" &&
+      request.headers["sec-fetch-mode"] === "navigate";
     // The managed recorder receives only this root URL over its inherited
     // startup frame. The first local navigation atomically receives an
     // HttpOnly capability; no secret is placed in the URL, DOM or JavaScript.
     if (
       !closed &&
       !authorityEnded &&
-      (!rendererClaimed || rendererAllowed) &&
+      (!rendererClaimed
+        ? !ownerAllowed
+        : rendererAllowed && documentNavigation) &&
       hostAllowed &&
       request.method === "GET" &&
       request.url === "/" &&
@@ -265,7 +270,7 @@ export async function createM4ProgramBridge(
       return;
     }
     if (request.method === "GET" && request.url === "/") {
-      if (!rendererAllowed)
+      if (!rendererAllowed || !documentNavigation)
         return reply(403, { error: "Program request denied" });
       response.writeHead(200, { "content-type": "text/html; charset=utf-8" });
       response.end(rendererHtml());

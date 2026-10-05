@@ -1,45 +1,74 @@
 import { describe, expect, it, vi } from "vitest";
-import { decodeM4CameraImage } from "./m4-camera-image-browser";
-
-describe("bounded camera image decode", () => {
-  it("aborts a stalled decode and releases its image even when it completes late", async () => {
+import { decodeM4CameraBitmap } from "./m4-camera-image-browser";
+const blob = new Blob(["frame"]);
+describe("bounded camera bitmap decode", () => {
+  it("aborts a stalled decode and closes its late bitmap exactly once", async () => {
     const controller = new AbortController();
-    let finish!: () => void;
-    const image = {
-      src: "blob:pending-camera",
-      decode: vi.fn(
-        () =>
-          new Promise<void>((resolve) => {
-            finish = resolve;
-          }),
-      ),
-    };
-    const pending = decodeM4CameraImage(image, controller.signal);
+    let finish!: (bitmap: ImageBitmap) => void;
+    const decode = vi.fn(
+      () =>
+        new Promise<ImageBitmap>((resolve) => {
+          finish = resolve;
+        }),
+    );
+    const bitmap = { close: vi.fn() } as unknown as ImageBitmap;
+    const pending = decodeM4CameraBitmap(blob, controller.signal, decode);
+    await Promise.resolve();
     const rejected = expect(pending).rejects.toMatchObject({
       name: "AbortError",
     });
     controller.abort();
     await rejected;
-    expect(image.src).toBe("");
-    finish();
+    finish(bitmap);
     await Promise.resolve();
-    expect(image.src).toBe("");
+    await Promise.resolve();
+    expect(bitmap.close).toHaveBeenCalledTimes(1);
+    controller.abort();
+    expect(bitmap.close).toHaveBeenCalledTimes(1);
   });
-  it("does not start decoding an already-retired source", async () => {
+  it("does not decode an already-retired source", async () => {
     const controller = new AbortController();
     controller.abort();
-    const image = { src: "blob:old-generation", decode: vi.fn(async () => {}) };
+    const decode = vi.fn();
     await expect(
-      decodeM4CameraImage(image, controller.signal),
+      decodeM4CameraBitmap(blob, controller.signal, decode),
     ).rejects.toMatchObject({ name: "AbortError" });
-    expect(image.decode).not.toHaveBeenCalled();
-    expect(image.src).toBe("");
+    expect(decode).not.toHaveBeenCalled();
   });
-  it("accepts a current decoded frame and detaches its abort listener", async () => {
+  it("transfers current bitmap ownership and detaches cancellation", async () => {
     const controller = new AbortController();
-    const image = { src: "blob:current", decode: vi.fn(async () => {}) };
-    await decodeM4CameraImage(image, controller.signal);
+    const bitmap = { close: vi.fn() } as unknown as ImageBitmap;
+    expect(
+      await decodeM4CameraBitmap(blob, controller.signal, async () => bitmap),
+    ).toBe(bitmap);
     controller.abort();
-    expect(image.src).toBe("blob:current");
+    expect(bitmap.close).not.toHaveBeenCalled();
+    bitmap.close();
+    expect(bitmap.close).toHaveBeenCalledTimes(1);
+  });
+  it("rejects undecodable frames and safely consumes late failures", async () => {
+    const controller = new AbortController();
+    await expect(
+      decodeM4CameraBitmap(blob, controller.signal, async () => {
+        throw new Error("bad JPEG");
+      }),
+    ).rejects.toThrow("bad JPEG");
+    let fail!: (error: Error) => void;
+    const pending = decodeM4CameraBitmap(
+      blob,
+      controller.signal,
+      () =>
+        new Promise((_resolve, reject) => {
+          fail = reject;
+        }),
+    );
+    await Promise.resolve();
+    const rejected = expect(pending).rejects.toMatchObject({
+      name: "AbortError",
+    });
+    controller.abort();
+    await rejected;
+    fail(new Error("late failure"));
+    await Promise.resolve();
   });
 });

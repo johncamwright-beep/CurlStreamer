@@ -53,7 +53,7 @@ import {
 type CameraState = {
   sourceIdentity?: string;
   aspect?: number;
-  frameUrl?: string;
+  canvas?: HTMLCanvasElement;
   stream?: MediaStream;
   audio?: MediaStream;
   metrics?: DirectMetrics;
@@ -94,6 +94,20 @@ function CameraVideo({
   onAspect: (aspect: number) => void;
 }) {
   const ref = useRef<HTMLVideoElement>(null);
+  const canvasHost = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const canvas = state.canvas;
+    const host = canvasHost.current;
+    if (!canvas || !host) return;
+    canvas.className = "portrait-camera-video";
+    canvas.style.objectFit = "contain";
+    canvas.setAttribute("role", "img");
+    canvas.setAttribute("aria-label", "IP camera");
+    host.appendChild(canvas);
+    return () => {
+      if (canvas.parentElement === host) canvas.remove();
+    };
+  }, [state.canvas]);
   useEffect(() => {
     const video = ref.current;
     if (!video) return;
@@ -105,13 +119,8 @@ function CameraVideo({
   }, [state.stream]);
   return (
     <>
-      {state.frameUrl ? (
-        <img
-          className="portrait-camera-video"
-          src={state.frameUrl}
-          alt="IP camera"
-          style={{ objectFit: "contain" }}
-        />
+      {state.canvas ? (
+        <div ref={canvasHost} style={{ position: "absolute", inset: 0 }} />
       ) : (
         <video
           className="portrait-camera-video"
@@ -136,7 +145,7 @@ function CameraVideo({
           aria-label="Direct camera"
         />
       )}
-      {!state.stream && !state.frameUrl && (
+      {!state.stream && !state.canvas && (
         <div
           style={{
             position: "absolute",
@@ -453,7 +462,7 @@ function ProgramRenderer() {
     );
 
   const verified = roles.filter(
-    (role) => cameras[role].metrics?.direct || cameras[role].frameUrl,
+    (role) => cameras[role].metrics?.direct || cameras[role].canvas,
   ).length;
   return (
     <>

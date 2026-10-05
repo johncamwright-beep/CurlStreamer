@@ -1,20 +1,44 @@
-/** Abort Image.decode as well as fetch; Chromium can leave decode pending. */
-export async function decodeM4CameraImage(
-  image: Pick<HTMLImageElement, "decode" | "src">,
+/** Transfer a decoded bitmap to the caller, or close it if cancellation wins. */
+export function decodeM4CameraBitmap(
+  blob: Blob,
   signal: AbortSignal,
-) {
-  let abort: (() => void) | undefined;
-  try {
-    await new Promise<void>((resolve, reject) => {
-      abort = () => {
-        image.src = "";
-        reject(new DOMException("Camera image decode cancelled", "AbortError"));
-      };
-      if (signal.aborted) return abort();
-      signal.addEventListener("abort", abort, { once: true });
-      void image.decode().then(resolve, reject);
-    });
-  } finally {
-    if (abort) signal.removeEventListener("abort", abort);
-  }
+  decode: (blob: Blob) => Promise<ImageBitmap> = createImageBitmap,
+): Promise<ImageBitmap> {
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    const abort = () => {
+      if (settled) return;
+      settled = true;
+      signal.removeEventListener("abort", abort);
+      reject(new DOMException("Camera bitmap decode cancelled", "AbortError"));
+    };
+    if (signal.aborted) return abort();
+    signal.addEventListener("abort", abort, { once: true });
+    void Promise.resolve()
+      .then(() => {
+        if (signal.aborted)
+          throw new DOMException(
+            "Camera bitmap decode cancelled",
+            "AbortError",
+          );
+        return decode(blob);
+      })
+      .then(
+        (bitmap) => {
+          if (settled) {
+            bitmap.close();
+            return;
+          }
+          settled = true;
+          signal.removeEventListener("abort", abort);
+          resolve(bitmap);
+        },
+        (error: unknown) => {
+          if (settled) return;
+          settled = true;
+          signal.removeEventListener("abort", abort);
+          reject(error);
+        },
+      );
+  });
 }

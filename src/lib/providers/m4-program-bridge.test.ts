@@ -1,3 +1,4 @@
+import { request as httpRequest } from "node:http";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { M4ProgramClient } from "./m4-program-client";
 import { createM4ProgramBridge } from "./m4-program-bridge";
@@ -7,6 +8,34 @@ async function documentInstance(page: Response) {
   return (await page.text()).match(
     /name="m4-renderer-instance" content="([a-f0-9-]+)"/,
   )![1];
+}
+async function navigation(url: string, headers: Record<string, string>) {
+  return new Promise<Response>((resolve, reject) => {
+    const request = httpRequest(
+      url,
+      {
+        headers: {
+          ...headers,
+          "sec-fetch-dest": "document",
+          "sec-fetch-mode": "navigate",
+        },
+      },
+      (response) => {
+        const chunks: Buffer[] = [];
+        response.on("data", (chunk) => chunks.push(chunk));
+        response.on("end", () =>
+          resolve(
+            new Response(Buffer.concat(chunks), {
+              status: response.statusCode,
+              headers: response.headers as Record<string, string>,
+            }),
+          ),
+        );
+      },
+    );
+    request.on("error", reject);
+    request.end();
+  });
 }
 afterEach(async () => {
   await Promise.all(closers.splice(0).map((close) => close()));
@@ -89,8 +118,43 @@ describe("private loopback program API", () => {
     expect((await fetch(bridge.rendererUrl)).status).toBe(403);
     expect((await fetch(bridge.rendererUrl, { headers })).status).toBe(403);
     expect((await post(report, headers)).status).toBe(403);
-    const reload = await fetch(bridge.rendererUrl, {
-      headers: { cookie, "sec-fetch-site": "none" },
+    for (const destination of ["image", "empty"]) {
+      expect(
+        (
+          await fetch(bridge.rendererUrl, {
+            headers: {
+              cookie,
+              "sec-fetch-dest": destination,
+              "sec-fetch-mode": destination === "image" ? "no-cors" : "cors",
+            },
+          })
+        ).status,
+      ).toBe(403);
+      expect(bridge.rendererHealth()).toMatchObject({ active: true });
+      expect(bridge.cameraStatus()["camera-home"]).toBe(true);
+      expect(bridge.audioStatus()["camera-home"]).toMatchObject({
+        receiving: true,
+        peak: 0.5,
+      });
+      expect(bridge.usbAudioStatus()).toMatchObject({
+        renderer: { contextState: "running", scheduledFrames: 2400 },
+      });
+      expect((await post({ ...report, frames: 2 })).status).toBe(200);
+    }
+    expect(
+      (
+        await fetch(bridge.rendererUrl, {
+          headers: {
+            authorization: bridge.authorization,
+            "sec-fetch-dest": "document",
+            "sec-fetch-mode": "navigate",
+          },
+        })
+      ).status,
+    ).toBe(403);
+    const reload = await navigation(bridge.rendererUrl, {
+      cookie,
+      "sec-fetch-site": "none",
     });
     expect(reload.status).toBe(200);
     expect(reload.headers.get("set-cookie")).toBeNull();

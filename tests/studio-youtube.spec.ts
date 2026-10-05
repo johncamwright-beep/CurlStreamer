@@ -361,6 +361,11 @@ test("Studio pause waits for a correlated native receipt and reports failures wh
       (window as unknown as { renderGame(id: string): void }).renderGame(id),
     nextGame,
   );
+  // React replaces the game's status listener in its effect. Wait for that
+  // reset before delivering the first native status for the new game.
+  await expect(
+    page.getByRole("button", { name: "Broadcast to YouTube", exact: true }),
+  ).toBeDisabled();
   await page.evaluate(
     (gameId) =>
       window.dispatchEvent(

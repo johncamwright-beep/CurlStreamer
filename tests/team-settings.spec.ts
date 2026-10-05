@@ -177,13 +177,17 @@ test("support uploads update the selected team's preview without changing the ad
             },
     }),
   );
-  await page.goto("/login?next=/admin");
+  await page.goto("/login?next=/account");
   await page.getByLabel("Email address").fill("admin@youtube.test");
   await page.getByLabel("Password").fill("playwright-password");
   await page.getByRole("button", { name: "Sign in", exact: true }).click();
-  await page.waitForURL("**/admin");
+  await page.waitForURL("**/account");
   const headerLogo = page.locator(".account-shortcut img");
   await expect(headerLogo).toHaveAttribute("src", accountLogo);
+  await page
+    .getByRole("link", { name: "Platform administration", exact: true })
+    .click();
+  await page.waitForURL("**/admin");
   await page.getByRole("button", { name: "View as / support" }).click();
   await page.getByRole("button", { name: "Team info", exact: true }).click();
   await page.getByRole("button", { name: "Enable support edits" }).click();
@@ -206,6 +210,11 @@ test("support uploads update the selected team's preview without changing the ad
     "src",
     supportLogo,
   );
+  expect(appearanceReads).toBe(readsBeforeUpload);
+  // The admin view has no account shortcut. Return through client navigation
+  // to inspect the same shared appearance state without a new appearance read.
+  await page.getByRole("link", { name: "Back to my account" }).click();
+  await page.waitForURL("**/account");
   await expect(headerLogo).toHaveAttribute("src", accountLogo);
   expect(appearanceReads).toBe(readsBeforeUpload);
 });

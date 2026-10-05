@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { programPresentationSchema } from "./program-presentation";
 
 const closingPreparationSchema = z.object({
   sessionId: z.string().uuid(),
@@ -10,6 +11,7 @@ const receiptSchema = z.object({
   gameId: z.string().uuid(),
   nonce: z.string().uuid(),
   ok: z.boolean(),
+  presentation: programPresentationSchema.nullable().optional(),
   closing: closingPreparationSchema.nullable().optional(),
   error: z.string().max(300).nullable().optional(),
 });
@@ -20,7 +22,7 @@ export type StudioClosingPreparation = z.infer<typeof closingPreparationSchema>;
  * the completion endpoint independently validates the desktop/output authority. */
 export function requestStudioPresentation(
   gameId: string,
-  action: "prepare" | "show" | "cancel" | "finish",
+  action: "prepare" | "show" | "cancel" | "finish" | "hold" | "resume",
   payload: Record<string, unknown> = {},
   timeoutMs = 12000,
 ): Promise<z.infer<typeof receiptSchema>> {
@@ -62,7 +64,10 @@ export function requestStudioPresentation(
     try {
       bridge.postMessage({
         ...payload,
-        type: `studio-ending-${action}`,
+        type:
+          action === "hold" || action === "resume"
+            ? `studio-youtube-${action}`
+            : `studio-ending-${action}`,
         gameId,
         nonce,
       });

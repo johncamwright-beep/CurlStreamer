@@ -176,9 +176,10 @@ test("Studio YouTube sends game-scoped commands and expires live status", async 
   await expect(page.getByText(/Update Windows Studio/)).toBeVisible();
 });
 
-test("capable Studio pauses on a card and resumes without disconnecting or changing the watch link", async ({
+test("Studio pause waits for a correlated native receipt and reports failures while live", async ({
   page,
 }) => {
+  const gameId = "11111111-1111-4111-8111-111111111111";
   const bundle = await build({
     bundle: true,
     write: false,
@@ -187,7 +188,7 @@ test("capable Studio pauses on a card and resumes without disconnecting or chang
     jsx: "automatic",
     tsconfig: "tsconfig.json",
     stdin: {
-      contents: `import React from 'react';import {createRoot} from 'react-dom/client';import {StudioYouTube} from './src/components/StudioYouTube';window.sent=[];window.chrome={webview:{postMessage(v){window.sent.push(v)}}};createRoot(document.getElementById('root')).render(<StudioYouTube id="fixture-game"/>);`,
+      contents: `import React from 'react';import {createRoot} from 'react-dom/client';import {StudioYouTube} from './src/components/StudioYouTube';window.sent=[];window.chrome={webview:{postMessage(v){window.sent.push(v)}}};const root=createRoot(document.getElementById('root'));window.renderGame=id=>root.render(<StudioYouTube id={id}/>);window.renderGame('${gameId}');`,
       loader: "tsx",
       resolveDir: process.cwd(),
     },
@@ -206,19 +207,20 @@ test("capable Studio pauses on a card and resumes without disconnecting or chang
   );
   const watchUrl = "https://www.youtube.com/watch?v=abcdefghijk";
   const mutations: unknown[] = [];
-  await page.route("**/api/games/fixture-game/studio-m4", (r) => {
+  await page.route(`**/api/games/${gameId}/studio-m4`, (r) => {
     if (r.request().method() === "POST")
       mutations.push(r.request().postDataJSON());
     return r.fulfill({ json: { watchUrl } });
   });
+  await page.clock.install();
   await page.goto("/youtube-hold-fixture");
-  const report = async (mode: "live" | "hold") =>
+  const report = async (mode: "live" | "hold", generation: number) =>
     page.evaluate(
-      (mode) =>
+      ({ mode, generation, gameId }) =>
         window.dispatchEvent(
           new CustomEvent("studio-youtube-status", {
             detail: {
-              gameId: "fixture-game",
+              gameId,
               available: true,
               busy: false,
               streaming: "armed",
@@ -228,34 +230,172 @@ test("capable Studio pauses on a card and resumes without disconnecting or chang
               message: "",
               canReconnect: true,
               canHoldStream: true,
-              presentation: { mode },
+              presentation: { mode, generation },
             },
           }),
         ),
-      mode,
+      { mode, generation, gameId },
     );
-  await report("live");
+  const sent = () =>
+    page.evaluate(
+      () =>
+        (
+          window as unknown as {
+            sent: { type: string; gameId: string; nonce: string }[];
+          }
+        ).sent,
+    );
+  const receipt = (detail: unknown) =>
+    page.evaluate(
+      (detail) =>
+        window.dispatchEvent(
+          new CustomEvent("studio-presentation-result", { detail }),
+        ),
+      detail,
+    );
+  const waiting = page.getByRole("button", {
+    name: "Please wait…",
+    exact: true,
+  });
+  const pause = page.getByRole("button", {
+    name: "Pause broadcast",
+    exact: true,
+  });
+  const resume = page.getByRole("button", {
+    name: "Resume broadcast",
+    exact: true,
+  });
+  await report("live", 0);
   await page
     .getByRole("button", { name: "Pause broadcast", exact: true })
     .click();
-  await report("hold");
+  const hold = (await sent())[0];
+  expect(hold).toMatchObject({ type: "studio-youtube-hold", gameId });
+  expect(hold.nonce).toMatch(
+    /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
+  );
+  await report("live", 0);
+  await expect(waiting).toBeDisabled();
+  await receipt({
+    ...hold,
+    gameId: "22222222-2222-4222-8222-222222222222",
+    ok: true,
+    presentation: { mode: "hold", generation: 1 },
+  });
+  await receipt({
+    ...hold,
+    nonce: "33333333-3333-4333-8333-333333333333",
+    ok: true,
+    presentation: { mode: "hold", generation: 1 },
+  });
+  await expect(waiting).toBeDisabled();
+  await receipt({
+    ...hold,
+    ok: true,
+    error: null,
+    presentation: { mode: "hold", generation: 1 },
+  });
+  await expect(resume).toBeEnabled();
   await expect(page.getByRole("status")).toHaveText("● LIVE · Paused");
+  // A delayed pre-command poll cannot overwrite the acknowledged picture.
+  await report("live", 0);
+  await expect(resume).toBeEnabled();
   await expect(
     page.getByRole("link", { name: "Watch on YouTube" }),
   ).toHaveAttribute("href", watchUrl);
   await page
     .getByRole("button", { name: "Resume broadcast", exact: true })
     .click();
-  await report("live");
+  const release = (await sent())[1];
+  expect(release).toMatchObject({ type: "studio-youtube-resume", gameId });
+  expect(release.nonce).not.toBe(hold.nonce);
+  await report("hold", 1);
+  await expect(waiting).toBeDisabled();
+  await receipt({
+    ...release,
+    ok: true,
+    error: null,
+    presentation: { mode: "live", generation: 2 },
+  });
+  await expect(pause).toBeEnabled();
   await expect(page.getByRole("status")).toHaveText("● LIVE");
-  expect(
-    await page.evaluate(() => (window as unknown as { sent: unknown[] }).sent),
-  ).toEqual([
-    { type: "studio-youtube-hold", gameId: "fixture-game" },
-    { type: "studio-youtube-resume", gameId: "fixture-game" },
-  ]);
+  await pause.click();
+  await receipt({
+    ...(await sent())[2],
+    ok: false,
+    error: "Studio could not confirm this presentation change.",
+    presentation: null,
+  });
+  await expect(page.getByRole("alert")).toHaveText(
+    "Studio could not confirm this presentation change.",
+  );
+  await expect(pause).toBeEnabled();
+  await expect(page.getByRole("status")).toHaveText("● LIVE");
+  await pause.click();
+  await expect(page.getByRole("alert")).toHaveCount(0);
+  await page.clock.fastForward(5000);
+  await report("live", 2);
+  await expect(waiting).toBeDisabled();
+  await page.clock.fastForward(5000);
+  await report("live", 2);
+  await page.clock.fastForward(2000);
+  await expect(page.getByRole("alert")).toHaveText(
+    "Studio did not confirm the broadcast card in time.",
+  );
+  await expect(pause).toBeEnabled();
   expect(mutations).toHaveLength(0);
   await expect(
     page.getByRole("link", { name: "Watch on YouTube" }),
   ).toHaveAttribute("href", watchUrl);
+  // A restarted program has a new generation sequence; the receipt fence is
+  // bounded, so it cannot permanently retain the previous program's picture.
+  await report("live", 0);
+  await pause.click();
+  const previousGameRequest = (await sent())[4];
+  const nextGame = "44444444-4444-4444-8444-444444444444";
+  await page.route(`**/api/games/${nextGame}/studio-m4`, (r) =>
+    r.fulfill({ json: {} }),
+  );
+  await page.evaluate(
+    (id) =>
+      (window as unknown as { renderGame(id: string): void }).renderGame(id),
+    nextGame,
+  );
+  // React replaces the game's status listener in its effect. Wait for that
+  // reset before delivering the first native status for the new game.
+  await expect(
+    page.getByRole("button", { name: "Broadcast to YouTube", exact: true }),
+  ).toBeDisabled();
+  await page.evaluate(
+    (gameId) =>
+      window.dispatchEvent(
+        new CustomEvent("studio-youtube-status", {
+          detail: {
+            gameId,
+            available: true,
+            busy: false,
+            streaming: "armed",
+            live: true,
+            receiving: true,
+            outputActive: true,
+            message: "",
+            canHoldStream: true,
+            presentation: { mode: "live", generation: 0 },
+          },
+        }),
+      ),
+    nextGame,
+  );
+  await pause.click();
+  const nextGameRequest = (await sent())[5];
+  expect(nextGameRequest.gameId).toBe(nextGame);
+  await receipt({ ...previousGameRequest, ok: false, error: "Old game error" });
+  await expect(waiting).toBeDisabled();
+  await expect(page.getByRole("alert")).toHaveCount(0);
+  await receipt({
+    ...nextGameRequest,
+    ok: true,
+    presentation: { mode: "hold", generation: 1 },
+  });
+  await expect(resume).toBeEnabled();
 });

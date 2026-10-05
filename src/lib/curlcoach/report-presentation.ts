@@ -17,10 +17,26 @@ export function reportPercentages(report: SavedReport) {
   });
 }
 export function reportSections(report: SavedReport) {
+  const names = new Map(
+    report.evidence.flatMap((e) => {
+      if (!e.id.startsWith("player-")) return [];
+      const match = e.label.match(/^(Player [A-H]) · (.+)$/);
+      return match ? [[match[1], match[2]] as const] : [];
+    }),
+  );
   return [
     { title: "Overall", findings: [report.narrative.summary] },
     { title: "What went well", findings: report.narrative.strengths },
     { title: "Where to improve", findings: report.narrative.priorities },
     { title: "Next practice", findings: report.narrative.practice },
-  ];
+  ].map((section) => ({
+    ...section,
+    findings: section.findings.map((finding) => ({
+      ...finding,
+      text: finding.text.replace(
+        /\bPlayer [A-H]\b/g,
+        (alias) => names.get(alias) ?? alias,
+      ),
+    })),
+  }));
 }

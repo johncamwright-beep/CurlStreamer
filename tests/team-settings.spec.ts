@@ -267,6 +267,8 @@ test("account sections preserve edits, support back navigation and save a team p
     .fill("Together on the ice");
   await page.getByLabel("third", { exact: true }).fill("Sam");
   await page.getByLabel("Skip throws").selectOption("third");
+  await page.getByLabel("Coach 1", { exact: true }).fill("  Alex Smith  ");
+  await page.getByLabel("Coach 2", { exact: true }).fill("Sam Lee");
   await page.getByLabel("Upload team photo").setInputFiles({
     name: "team.png",
     mimeType: "image/png",
@@ -289,12 +291,41 @@ test("account sections preserve edits, support back navigation and save a team p
   ).toHaveAttribute("src", photo);
   await page.getByRole("button", { name: "Save changes", exact: true }).click();
   await expect(page.getByText("Team settings saved.")).toBeVisible();
+  expect(settings.coaches).toEqual(["Alex Smith", "Sam Lee"]);
   await page.reload();
   await expect(page.getByLabel("Team tagline", { exact: true })).toHaveValue(
     "Together on the ice",
   );
   await expect(page.getByLabel("third", { exact: true })).toHaveValue("Sam");
   await expect(page.getByLabel("Skip throws")).toHaveValue("third");
+  await expect(page.getByLabel("Coach 1", { exact: true })).toHaveValue(
+    "Alex Smith",
+  );
+  await expect(page.getByLabel("Coach 2", { exact: true })).toHaveValue(
+    "Sam Lee",
+  );
+  await expect(page.getByLabel("Coach 1", { exact: true })).toHaveAttribute(
+    "maxlength",
+    "100",
+  );
+  await page.getByLabel("Coach 1", { exact: true }).fill("");
+  await expect(page.getByLabel("Coach 2", { exact: true })).toHaveValue(
+    "Sam Lee",
+  );
+  await page.getByRole("button", { name: "Save changes", exact: true }).click();
+  await expect(page.getByText("Team settings saved.")).toBeVisible();
+  expect(settings.coaches).toEqual(["Sam Lee"]);
+  await page.reload();
+  await expect(page.getByLabel("Coach 1", { exact: true })).toHaveValue(
+    "Sam Lee",
+  );
+  await expect(page.getByLabel("Coach 2", { exact: true })).toHaveValue("");
+  await page.getByLabel("Coach 1", { exact: true }).fill(" ");
+  await page.getByRole("button", { name: "Save changes", exact: true }).click();
+  await expect(page.getByText("Team settings saved.")).toBeVisible();
+  expect(settings.coaches).toEqual([]);
+  await page.reload();
+  await expect(page.getByLabel("Coach 1", { exact: true })).toHaveValue("");
   await expect(page.getByLabel("About the team")).toHaveValue(
     "Our team biography.",
   );
@@ -322,6 +353,22 @@ test("public page filters games and keeps five rows in its scrolling tile", asyn
     }),
   );
   await page.goto("/teams/public-preview");
+  await expect(page).toHaveTitle(
+    "Test Curling Club | CurlStreamer - Curling Management App",
+  );
+  await expect(page.locator('meta[name="description"]')).toHaveAttribute(
+    "content",
+    /^A curling team with a long story\./,
+  );
+  await expect(page.locator("#team-news")).toHaveAttribute(
+    "data-nosnippet",
+    "",
+  );
+  const coaches = page.getByRole("region", { name: "Coaches", exact: true });
+  await expect(coaches.getByRole("listitem")).toHaveText([
+    "Taylor Coach",
+    "Morgan Coach",
+  ]);
   await expect(
     page.getByRole("heading", { name: "Test Curling Club Games", exact: true }),
   ).toBeVisible();
@@ -348,6 +395,22 @@ test("public page filters games and keeps five rows in its scrolling tile", asyn
   ).toBeVisible();
 
   const games = page.getByRole("region", { name: "Team games", exact: true });
+  await expect(games.getByLabel("Show games")).toHaveValue("recent");
+  const now = Date.now();
+  const recentDates = Array.from({ length: 14 }, (_, i) =>
+    Date.UTC(2026, 9, i + 1, 12),
+  )
+    .filter((stamp) => stamp <= now && stamp >= now - 14 * 24 * 60 * 60 * 1000)
+    .sort((a, b) => b - a);
+  await expect(games.getByRole("article")).toHaveCount(recentDates.length);
+  expect(
+    await games
+      .locator("article time")
+      .evaluateAll((times) =>
+        times.map((time) => Date.parse(time.getAttribute("datetime")!)),
+      ),
+  ).toEqual(recentDates);
+  await games.getByLabel("Show games").selectOption("upcoming");
   await expect(games.getByRole("article")).toHaveCount(7);
   await expect(
     games.getByRole("link", { name: "Watch on YouTube", exact: true }),
@@ -388,6 +451,20 @@ test("public page filters games and keeps five rows in its scrolling tile", asyn
   await expect(
     page.getByText("1st place · 2026", { exact: true }),
   ).toBeVisible();
+  const accomplishmentLayout = await page
+    .getByRole("region", { name: "Accomplishments", exact: true })
+    .locator("li")
+    .evaluateAll((rows) =>
+      rows.map((row) => ({
+        iconWidth: row.querySelector("span")!.getBoundingClientRect().width,
+        textLeft: row.querySelector("div")!.getBoundingClientRect().left,
+      })),
+    );
+  expect(accomplishmentLayout).toHaveLength(2);
+  expect(accomplishmentLayout.map((row) => row.iconWidth)).toEqual([32, 32]);
+  expect(accomplishmentLayout[0].textLeft).toBe(
+    accomplishmentLayout[1].textLeft,
+  );
   await expect(page.locator(".public-team-content-area")).toHaveCSS(
     "background-color",
     "rgb(237, 242, 247)",

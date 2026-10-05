@@ -1,11 +1,16 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 import { publicSupabaseConfig } from "@/lib/supabase/config";
+import { indexNowKeyPath } from "@/lib/indexnow";
 
 export async function middleware(request: NextRequest) {
   const host = (request.headers.get("host") ?? "").toLowerCase().split(":")[0];
   const teamHost = /^([a-z0-9]+(?:-[a-z0-9]+)*)\.curlstreamer\.app$/.exec(host);
-  if (["/robots.txt", "/sitemap.xml"].includes(request.nextUrl.pathname))
+  if (
+    ["/robots.txt", "/sitemap.xml", indexNowKeyPath].includes(
+      request.nextUrl.pathname,
+    )
+  )
     return NextResponse.next();
   if (teamHost && teamHost[1] !== "www") {
     if (request.nextUrl.pathname !== "/")

@@ -34,8 +34,9 @@ export function TeamSettings({
       const response = await fetch(apiUrl, { cache: "no-store" });
       const body = await response.json();
       if (!response.ok) throw Error(body.error);
-      setSettings(body.settings);
-      setSavedSettings(body.settings);
+      const loaded = teamPageSettingsSchema.parse(body.settings);
+      setSettings(loaded);
+      setSavedSettings(loaded);
       setLogo(body.logo);
       setCanEdit(body.canEdit && !readOnly);
       setReady(true);
@@ -59,6 +60,10 @@ export function TeamSettings({
     setBusy(true);
     setMessage("");
     try {
+      const normalized = {
+        ...settings,
+        coaches: settings.coaches.map((coach) => coach.trim()).filter(Boolean),
+      };
       const response = await fetch(apiUrl, {
         method: "PATCH",
         headers: {
@@ -66,14 +71,14 @@ export function TeamSettings({
           ...(publish ? { "X-Team-Publish": "confirm" } : {}),
         },
         body: JSON.stringify(
-          publish ? { ...settings, published: true } : settings,
+          publish ? { ...normalized, published: true } : normalized,
         ),
       });
       const body = await response.json();
       if (!response.ok) throw Error(body.error);
       const saved = teamPageSettingsSchema.parse(
         body.settings ??
-          (publish ? { ...settings, published: true } : settings),
+          (publish ? { ...normalized, published: true } : normalized),
       );
       setSettings(saved);
       setSavedSettings(saved);
@@ -226,6 +231,29 @@ export function TeamSettings({
                 ))}
               </select>
             </label>
+          </fieldset>
+          <fieldset className="grid gap-3 rounded-lg border border-slate-700 p-3">
+            <legend className="px-2 font-bold">Coaches</legend>
+            <p className="text-sm text-slate-400">
+              Add up to two coach names to your public team page. Both names are
+              optional.
+            </p>
+            {[0, 1].map((index) => (
+              <label key={index}>
+                Coach {index + 1}
+                <input
+                  className="input mt-1 min-h-11 w-full"
+                  maxLength={100}
+                  value={settings.coaches[index] ?? ""}
+                  onChange={(e) => {
+                    const coaches = [...settings.coaches];
+                    while (coaches.length < 2) coaches.push("");
+                    coaches[index] = e.target.value;
+                    change("coaches", coaches);
+                  }}
+                />
+              </label>
+            ))}
           </fieldset>
           {logo && (
             <img

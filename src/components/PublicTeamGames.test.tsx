@@ -4,8 +4,10 @@ import { expect, it } from "vitest";
 import {
   filterPublicGames,
   PublicTeamGames,
+  publicGamePlayedDate,
   type PublicGame,
 } from "./PublicTeamGames";
+const now = Date.parse("2026-10-22T15:00:00Z");
 
 const game = (
   id: string,
@@ -42,6 +44,7 @@ it("combines event and status filters and orders upcoming soonest, results newes
 it("does not render game categories that the team has hidden", () => {
   const html = renderToStaticMarkup(
     <PublicTeamGames
+      now={Date.parse("2026-10-04T15:00:00Z")}
       games={[game("a", "Hidden", "2026-09-01")]}
       upcoming={false}
       results={true}
@@ -76,6 +79,7 @@ it("only offers real event records, not standalone game titles", () => {
 it("links an opponent only when its published slug is safe", () => {
   const html = renderToStaticMarkup(
     <PublicTeamGames
+      now={Date.parse("2026-10-04T15:00:00Z")}
       games={[
         {
           ...game("a", "Orion", "2026-10-01"),
@@ -96,6 +100,7 @@ it("links an opponent only when its published slug is safe", () => {
 it("shows an upcoming game's start in the game's timezone", () => {
   const html = renderToStaticMarkup(
     <PublicTeamGames
+      now={now}
       games={[
         {
           ...game("a", "Orion", "2026-10-20T22:30:00Z"),
@@ -114,6 +119,7 @@ it("shows an upcoming game's start in the game's timezone", () => {
 it("shows a completed game's scheduled start rather than its completion time", () => {
   const html = renderToStaticMarkup(
     <PublicTeamGames
+      now={now}
       games={[
         {
           ...game("a", "Orion", "2026-10-20T22:30:00Z", "2026-10-22T01:00:00Z"),
@@ -128,4 +134,69 @@ it("shows a completed game's scheduled start rather than its completion time", (
   expect(html).toContain("3:30");
   expect(html).toContain("PDT");
   expect(html).not.toContain("Oct 21, 2026");
+});
+
+it("defaults to Recent and includes only the last 14 days through now, newest played first", () => {
+  const games = [
+    game("edge", "Orion", "2026-10-08T15:00:00Z"),
+    game("today", "Orion", "2026-10-22T14:00:00Z"),
+    game("old", "Orion", "2026-10-08T14:59:59Z", "2026-10-21T10:00:00Z"),
+    game("future", "Orion", "2026-10-22T15:00:01Z"),
+    game("fallback", "Orion", "invalid", "2026-10-21T12:00:00Z"),
+    { ...game("undated", "Orion", "invalid"), scheduled: null },
+  ];
+  expect(
+    filterPublicGames(games, "recent", "Orion", now).map((g) => g.id),
+  ).toEqual(["today", "fallback", "edge"]);
+  const html = renderToStaticMarkup(
+    <PublicTeamGames games={games} upcoming results now={now} />,
+  );
+  expect(html).toContain(
+    '<option value="recent" selected="">Recent · Last 14 days</option>',
+  );
+  expect(html).toContain('id="game-today"');
+  expect(html).not.toContain('id="game-old"');
+  expect(html).not.toContain('id="game-future"');
+  expect(
+    filterPublicGames(games, "results", "Orion", now).map((g) => g.id),
+  ).toContain("old");
+});
+
+it("Recent respects each publication flag while preserving event filters", () => {
+  const games = [
+    game("active", "Orion", "2026-10-22T14:00:00Z"),
+    game("result", "Orion", "2026-10-21T14:00:00Z", "2026-10-21T15:00:00Z"),
+    game("other", "Other", "2026-10-20T14:00:00Z"),
+  ];
+  const resultsOnly = renderToStaticMarkup(
+    <PublicTeamGames games={games} upcoming={false} results now={now} />,
+  );
+  expect(resultsOnly).toContain('id="game-result"');
+  expect(resultsOnly).not.toContain('id="game-active"');
+  const upcomingOnly = renderToStaticMarkup(
+    <PublicTeamGames games={games} upcoming results={false} now={now} />,
+  );
+  expect(upcomingOnly).toContain('id="game-active"');
+  expect(upcomingOnly).not.toContain('id="game-result"');
+  expect(filterPublicGames(games, "recent", "Orion", now)).toHaveLength(2);
+  expect(
+    renderToStaticMarkup(
+      <PublicTeamGames
+        games={games}
+        upcoming={false}
+        results={false}
+        now={now}
+      />,
+    ),
+  ).toBe("");
+});
+
+it("uses the completed date only when a valid scheduled played date is absent", () => {
+  const fallback = game("fallback", "Orion", "invalid", "2026-10-21T12:00:00Z");
+  expect(publicGamePlayedDate(fallback)).toBe(fallback.completed);
+  const html = renderToStaticMarkup(
+    <PublicTeamGames games={[fallback]} upcoming={false} results now={now} />,
+  );
+  expect(html).toContain('dateTime="2026-10-21T12:00:00Z"');
+  expect(html).toContain("2026-10-21 · Start time not recorded");
 });

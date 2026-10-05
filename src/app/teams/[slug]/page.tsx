@@ -126,6 +126,7 @@ export default async function PublicTeamPage({
                 teamName={s.name}
                 upcoming={s.upcoming}
                 results={s.results}
+                now={Date.now()}
               />
               {s.socials && (s.facebook || s.instagram) && (
                 <section className="panel mb-5">
@@ -156,7 +157,11 @@ export default async function PublicTeamPage({
                 </section>
               )}
               {s.news && (
-                <section id="team-news" className="panel mb-5 grid gap-2">
+                <section
+                  id="team-news"
+                  data-nosnippet=""
+                  className="panel mb-5 grid gap-2"
+                >
                   <h2 className="text-xl font-bold">{s.name} News</h2>
                   {news?.map((item) => (
                     <details

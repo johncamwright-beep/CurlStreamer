@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import {
   completeReviewedGame,
@@ -151,6 +152,14 @@ export async function POST(
     authority,
   );
   if (!completed.ok) return failure(completed.kind);
+  // Invalidate the Games projection only after the final result is committed.
+  // Teardown can fail independently without changing that saved result.
+  try {
+    revalidatePath("/dashboard");
+  } catch {
+    // Cache recovery must not turn a committed completion into a failed save.
+    console.error("Games cache invalidation unavailable after completion");
+  }
   const cleanupResult = await cleanup(gameId, authority);
   const summary = await readGameCompletionSummary(gameId).catch(
     () => undefined,

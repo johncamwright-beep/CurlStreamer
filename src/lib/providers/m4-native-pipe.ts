@@ -148,6 +148,9 @@ export class M4NativePipeClient {
       throw unavailable();
     }
   }
+  get supportsObservations() {
+    return this.#observations;
+  }
   snapshot() {
     return { state: this.#state, deliveryAttempted: this.#attempted };
   }

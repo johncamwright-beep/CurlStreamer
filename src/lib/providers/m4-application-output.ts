@@ -17,7 +17,7 @@ export class M4ApplicationOutput {
       M4NativePipeClient,
       "arm" | "renew" | "stop" | "snapshot"
     > &
-      Partial<Pick<M4NativePipeClient, "observe">>,
+      Partial<Pick<M4NativePipeClient, "observe" | "supportsObservations">>,
   ) {}
   snapshot() {
     return { desktop: this.desktop.snapshot(), native: this.native.snapshot() };
@@ -72,7 +72,8 @@ export class M4ApplicationOutput {
     return this.#stop;
   }
   async #cleanup() {
-    if (this.native.observe) {
+    if (this.native.supportsObservations === true) {
+      if (!this.native.observe) throw fail();
       // A database stopped receipt is used to release provider cleanup. It must
       // follow actual encoder stop, rather than the private authority STOP ACK.
       try {

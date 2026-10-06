@@ -77,6 +77,7 @@ export default async function EditGamePage({
       </div>
       {completed ? (
         <CompletedResultEditor
+          key={game.id}
           gameId={game.id}
           initialSnapshot={
             initialResult?.success ? initialResult.data : undefined

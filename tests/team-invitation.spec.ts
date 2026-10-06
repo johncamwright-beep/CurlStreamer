@@ -18,11 +18,14 @@ test("invitation guides a new account without offering acceptance before sign-in
     page.getByRole("button", { name: "Join team", exact: true }),
   ).toHaveCount(0);
   await page.getByRole("link", { name: "Create account to join" }).click();
-  expect(new URL(page.url()).searchParams.get("next")).toBe(destination);
+  await expect
+    .poll(() => new URL(page.url()).searchParams.get("next"))
+    .toBe(destination);
   await expect(
     page.getByText("Create your own login using any email", { exact: false }),
   ).toBeVisible();
   await page.getByRole("link", { name: "Return to Sign In" }).click();
+  await page.waitForURL((url) => url.pathname === "/login");
   expect(new URL(page.url()).searchParams.get("next")).toBe(destination);
 });
 test("signed-in recipient explicitly joins and sees the team dashboard button", async ({
@@ -55,7 +58,7 @@ test("invalid links explain how to recover without creating an account", async (
   page,
 }) => {
   await page.goto("/join-team?token=invalid");
-  await expect(page.getByRole("alert")).toContainText(
+  await expect(page.getByRole("main").getByRole("alert")).toContainText(
     "Ask the team owner for a new link",
   );
   await expect(

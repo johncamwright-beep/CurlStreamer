@@ -37,6 +37,15 @@ const resultMessages: Record<string, string> = {
     "The connection could not be confirmed. Check the channel shown below and test it before starting a fresh reconnect. Contact support if the problem repeats.",
 };
 
+const withdrawalMessages: Record<string, string> = {
+  revocation_unconfirmed_data_removed:
+    "CurlStreamer removed the stored YouTube authorization and automatically created video links after an interrupted disconnect. Google-side revocation could not be confirmed. Remove CurlStreamer in Google Account permissions or contact hello@curlstreamer.app.",
+  authorization_revoked_use_youtube_studio:
+    "Your YouTube authorization is no longer valid. CurlStreamer removed the stored channel data and automatically created video links. If a broadcast is still running, finish it in YouTube Studio and resolve the unfinished broadcast in CurlStreamer before reconnecting.",
+  authorization_unverified_data_removed:
+    "CurlStreamer could not reconfirm your YouTube connection within its retention period and removed the stored channel data and automatically created video links. Check Google Account permissions, then reconnect when the connection is available. If a broadcast is still running, finish it in YouTube Studio and resolve the unfinished broadcast in CurlStreamer first.",
+};
+
 export async function YouTubeAccountPanel({
   searchParams,
 }: {
@@ -105,6 +114,28 @@ export async function YouTubeAccountPanel({
         )}
       {canManage && (
         <YouTubeConnectionGuide channelTitle={connection?.channelTitle} />
+      )}
+      {row?.last_error_code && withdrawalMessages[row.last_error_code] && (
+        <div
+          role="alert"
+          className="grid gap-2 rounded-lg bg-amber-950/50 p-4 text-amber-100"
+        >
+          <p>{withdrawalMessages[row.last_error_code]}</p>
+          <div className="flex flex-wrap gap-4">
+            <a
+              className="inline-flex min-h-11 items-center underline"
+              href="https://myaccount.google.com/permissions"
+            >
+              Google Account permissions
+            </a>
+            <a
+              className="inline-flex min-h-11 items-center underline"
+              href="https://studio.youtube.com"
+            >
+              YouTube Studio
+            </a>
+          </div>
+        </div>
       )}
       <YouTubeSettingsControls
         connection={connection}

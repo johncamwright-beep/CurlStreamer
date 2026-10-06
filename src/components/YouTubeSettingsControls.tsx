@@ -29,6 +29,7 @@ export function YouTubeSettingsControls({
   const [busy, setBusy] = useState<"test" | "disconnect" | null>(null);
   const [confirmDisconnect, setConfirmDisconnect] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const disconnectPending = connection?.lastErrorCode === "disconnect_pending";
 
   async function mutate(action: "test" | "disconnect") {
     setBusy(action);
@@ -79,6 +80,33 @@ export function YouTubeSettingsControls({
 
   return (
     <div className="grid gap-4">
+      <p className="text-sm text-slate-300">
+        Before connecting, read the{" "}
+        <a className="text-cyan-300 underline" href="/privacy">
+          Privacy Policy
+        </a>{" "}
+        and{" "}
+        <a className="text-cyan-300 underline" href="/terms">
+          Terms of Service
+        </a>
+        . By connecting, you accept these policies and the{" "}
+        <a
+          className="text-cyan-300 underline"
+          href="https://www.youtube.com/t/terms"
+        >
+          YouTube Terms of Service
+        </a>
+        . CurlStreamer will use the channel you choose to manage your game
+        broadcasts and thumbnails. Google authorization is stored encrypted on
+        our server. You can withdraw access here or in{" "}
+        <a
+          className="text-cyan-300 underline"
+          href="https://myaccount.google.com/permissions"
+        >
+          Google Account permissions
+        </a>
+        .
+      </p>
       {connection ? (
         <div className="grid gap-3 rounded-lg border border-slate-700 p-4">
           <dl>
@@ -95,8 +123,9 @@ export function YouTubeSettingsControls({
           </dl>
           {connection.status === "reconnect_required" && (
             <p role="alert" className="text-amber-200">
-              YouTube authorization needs attention. Reconnect this channel
-              before a future broadcast.
+              {disconnectPending
+                ? "Disconnection is pending. This channel is blocked from further use. Select Retry disconnect to finish revoking access with Google, or contact hello@curlstreamer.app."
+                : "YouTube authorization needs attention. Reconnect this channel before a future broadcast."}
             </p>
           )}
           {canManage && confirmDisconnect && (
@@ -106,10 +135,12 @@ export function YouTubeSettingsControls({
               aria-label="Confirm channel disconnection"
             >
               <p>
-                Disconnect {connection.channelTitle}? You will need to reconnect
-                before creating or starting broadcasts. Your games and
-                recordings will not be deleted. Unfinished broadcasts may
-                prevent disconnection.
+                Disconnect {connection.channelTitle} and revoke CurlStreamer’s
+                Google access? You will need to reconnect before creating or
+                starting broadcasts. Your scores and game records remain, but
+                automatically created YouTube links and stored channel details
+                will be removed. Recordings remain on YouTube. Unfinished
+                broadcasts may prevent disconnection.
               </p>
               <div className="flex flex-wrap gap-3">
                 <button
@@ -134,7 +165,7 @@ export function YouTubeSettingsControls({
               <button
                 type="button"
                 className="btn-secondary min-h-11"
-                disabled={busy !== null}
+                disabled={busy !== null || disconnectPending}
                 onClick={() => void mutate("test")}
               >
                 {busy === "test" ? "Testing…" : "Test connection"}
@@ -142,6 +173,11 @@ export function YouTubeSettingsControls({
               <a
                 className="btn min-h-11 text-center"
                 href="/api/settings/youtube/oauth/start"
+                aria-disabled={busy !== null || disconnectPending}
+                onClick={(event) => {
+                  if (busy !== null || disconnectPending)
+                    event.preventDefault();
+                }}
               >
                 Reconnect
               </a>
@@ -149,9 +185,17 @@ export function YouTubeSettingsControls({
                 type="button"
                 className="min-h-11 rounded-lg border border-red-500 px-4 py-2 text-red-200"
                 disabled={busy !== null}
-                onClick={() => setConfirmDisconnect(true)}
+                onClick={() =>
+                  disconnectPending
+                    ? void mutate("disconnect")
+                    : setConfirmDisconnect(true)
+                }
               >
-                {busy === "disconnect" ? "Disconnecting…" : "Disconnect"}
+                {busy === "disconnect"
+                  ? "Disconnecting…"
+                  : disconnectPending
+                    ? "Retry disconnect"
+                    : "Disconnect"}
               </button>
             </div>
           )}

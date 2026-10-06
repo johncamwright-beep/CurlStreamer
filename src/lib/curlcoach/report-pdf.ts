@@ -14,7 +14,11 @@ export async function downloadReportPDF(
   });
   let y = 22;
   const clean = (s: string) =>
-    s.replace(/[–—]/g, "-").replace(/[‘’]/g, "'").replace(/[“”]/g, '"');
+    s
+      .normalize("NFKC")
+      .replace(/[–—]/g, "-")
+      .replace(/[‘’]/g, "'")
+      .replace(/[“”]/g, '"');
   const write = (text: string, size = 11, bold = false) => {
     pdf.setFont("helvetica", bold ? "bold" : "normal");
     pdf.setFontSize(size);

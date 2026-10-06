@@ -10,7 +10,10 @@ test("styled lineup fits the viewport and saves a three-player eight-rock order 
     .getByLabel("Local lab key")
     .fill("curlcoach-e2e-only-key-thirty-two-characters");
   await page.getByRole("button", { name: "Unlock lab" }).click();
-  const open = page.getByRole("button", { name: "Set lineup", exact: true });
+  const open = page.getByRole("button", {
+    name: /^(Edit lineup|Start Charting)$/,
+    exact: true,
+  });
   await expect(open).toBeEnabled();
   expect(
     await open.evaluate((node) => node.getBoundingClientRect().height),
@@ -80,7 +83,7 @@ test("styled lineup fits the viewport and saves a three-player eight-rock order 
       path: `work/lineup-styled-modal-${info.project.name}.png`,
     });
     const save = dialog.getByRole("button", {
-      name: "Save lineup",
+      name: /^(Save lineup|Confirm lineup & start)$/,
       exact: true,
     });
     await save.scrollIntoViewIfNeeded();
@@ -131,7 +134,10 @@ test("styled lineup fits the viewport and saves a three-player eight-rock order 
         response.request().postDataJSON().action === "set-lineup",
     );
     await dialog
-      .getByRole("button", { name: "Save lineup", exact: true })
+      .getByRole("button", {
+        name: /^(Save lineup|Confirm lineup & start)$/,
+        exact: true,
+      })
       .click();
     expect((await restored).ok()).toBe(true);
     await expect(dialog).not.toBeVisible();

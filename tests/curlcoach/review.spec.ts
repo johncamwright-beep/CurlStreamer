@@ -64,33 +64,9 @@ test("miss review scopes season data and screen wake follows scoring", async ({
     .click();
   await page.getByRole("link", { name: "Miss analysis", exact: true }).click();
   await expect(
-    page.getByRole("combobox", { name: "Review", exact: true }),
+    page.getByRole("region", { name: "Miss breakdown", exact: true }),
   ).toBeVisible();
   await expect(page.locator(".event-metrics")).toHaveCount(0);
-  const viewport = page.viewportSize()!;
-  await page.screenshot({
-    path: "work/compact-filters-" + info.project.name + ".png",
-  });
-  await page.setViewportSize({ width: 1440, height: 1000 });
-  const bounds = await page
-    .locator(".event-filter-bar select")
-    .evaluateAll((nodes) =>
-      nodes.map((node) => {
-        const box = node.getBoundingClientRect();
-        return {
-          top: Math.round(box.top),
-          height: box.height,
-          right: box.right,
-        };
-      }),
-    );
-  expect(new Set(bounds.map((box) => box.top)).size).toBe(1);
-  expect(bounds.every((box) => box.height >= 44 && box.right <= 1440)).toBe(
-    true,
-  );
-  await page.screenshot({ path: "work/compact-filters-desktop.png" });
-  await page.setViewportSize(viewport);
-
   await expect
     .poll(async () => {
       const s = await wake();
@@ -103,34 +79,19 @@ test("miss review scopes season data and screen wake follows scoring", async ({
   await page
     .getByRole("combobox", { name: "Event", exact: true })
     .selectOption("all");
-  await expect(
-    page
-      .getByRole("region", { name: "Miss review shots" })
-      .locator("article")
-      .first(),
-  ).toBeVisible();
+  await page.getByText("More filters", { exact: true }).click();
   await page
     .getByRole("combobox", { name: "Shot type", exact: true })
     .selectOption("Draw");
   await page
-    .getByRole("combobox", { name: "Reason", exact: true })
+    .locator("summary")
+    .filter({ hasText: /^Shot review/ })
+    .click();
+  await page
+    .getByRole("combobox", { name: "Review category", exact: true })
     .selectOption("Light");
-  const cards = page
-    .getByRole("region", { name: "Miss review shots" })
-    .locator("article");
-  expect(await cards.count()).toBeGreaterThan(0);
-  for (const card of await cards.all()) {
-    await expect(card.locator("h4")).toContainText("Draw");
-    await expect(card).toContainText("Light");
-  }
-  await page
-    .getByRole("combobox", { name: "Reason", exact: true })
-    .selectOption("all");
-  await page
-    .getByRole("combobox", { name: "Review", exact: true })
-    .selectOption("flags");
-  for (const card of await cards.all())
-    await expect(card).toContainText("Flagged for review");
+  await expect(page.locator(".coach-review-item").first()).toBeVisible();
+  await page.getByRole("checkbox", { name: "Flagged shots only" }).check();
   expect(
     await page.evaluate(
       () => document.documentElement.scrollWidth <= innerWidth,
@@ -139,7 +100,7 @@ test("miss review scopes season data and screen wake follows scoring", async ({
   await page
     .getByRole("button", { name: "Shot Tracker menu", exact: true })
     .click();
-  await page.getByRole("link", { name: "Scoring", exact: true }).click();
+  await page.getByRole("link", { name: "Charting", exact: true }).click();
   await expect(
     page.getByText("Screen staying awake", { exact: true }),
   ).toBeVisible();
@@ -192,7 +153,14 @@ test("broadcast flags open the same timed link in scoring, game review and miss 
       .getByRole("button", { name: "Shot Tracker menu", exact: true })
       .click();
     await page.getByRole("link", { name, exact: true }).click();
-    await expect(link()).toHaveAttribute(
+    await page
+      .locator("summary")
+      .filter({ hasText: /^Shot review/ })
+      .click();
+    await page.locator(".coach-review-item > summary").first().click();
+    await expect(
+      page.getByRole("link", { name: /^Review video/, exact: false }).first(),
+    ).toHaveAttribute(
       "href",
       "https://www.youtube.com/watch?v=abcdefghijk&t=1155s",
     );

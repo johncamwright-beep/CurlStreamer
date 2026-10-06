@@ -5,11 +5,13 @@ import type { RosterEntry } from "@/lib/curlcoach/model";
 import { resolvedLineup } from "@/lib/curlcoach/lineup";
 
 export default function LineupDialog({
+  starting = false,
   players,
   lineup,
   onSave,
   onCancel,
 }: {
+  starting?: boolean;
   players: readonly RosterEntry[];
   lineup?: readonly string[];
   onSave: (lineup: string[]) => Promise<void>;
@@ -127,7 +129,11 @@ export default function LineupDialog({
             className="btn min-h-11"
             disabled={busy || draft.length !== 8}
           >
-            {busy ? "Saving…" : "Save lineup"}
+            {busy
+              ? "Saving…"
+              : starting
+                ? "Confirm lineup & start"
+                : "Save lineup"}
           </button>
         </div>
       </form>

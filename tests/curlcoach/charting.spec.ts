@@ -14,6 +14,22 @@ test("scoped local lab charts, corrects and audits a synthetic shot", async ({
     .fill("curlcoach-e2e-only-key-thirty-two-characters");
   await page.getByRole("button", { name: "Unlock lab" }).click();
   await expect(
+    page.getByRole("button", { name: /^(Start Charting|Edit lineup)$/ }),
+  ).toBeVisible();
+  if (
+    await page
+      .getByRole("button", { name: "Start Charting", exact: true })
+      .isVisible()
+  ) {
+    await page
+      .getByRole("button", { name: "Start Charting", exact: true })
+      .click();
+    await page
+      .getByRole("button", { name: "Confirm lineup & start", exact: true })
+      .click();
+  }
+
+  await expect(
     page.getByRole("button", { name: "Save attempt", exact: true }),
   ).toBeEnabled();
   await page.getByLabel("End", { exact: true }).fill("20");

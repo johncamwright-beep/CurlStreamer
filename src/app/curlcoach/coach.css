@@ -954,3 +954,65 @@
   border: 0;
   margin-bottom: 0;
 }
+
+.analysis-more {
+  width: 100%;
+}
+.analysis-more summary,
+.event-card > summary,
+.coach-review-item > summary {
+  min-height: 44px;
+  cursor: pointer;
+  padding: 10px 0;
+}
+.analysis-more .event-filter-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: end;
+}
+.analysis-bars {
+  display: grid;
+  gap: 8px;
+}
+.analysis-bars button {
+  display: grid;
+  grid-template-columns: minmax(120px, 1fr) minmax(80px, 2fr) minmax(100px, 1fr);
+  align-items: center;
+  gap: 12px;
+  min-height: 44px;
+  text-align: left;
+}
+.analysis-bars meter {
+  width: 100%;
+  accent-color: #20c9de;
+}
+.analysis-bars button[aria-pressed="true"] {
+  outline: 2px solid #20c9de;
+}
+@media (max-width: 600px) {
+  .analysis-bars button {
+    grid-template-columns: 1fr 1fr;
+  }
+  .analysis-bars meter {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+  .analysis-bars strong {
+    text-align: right;
+    font-size: 0.85rem;
+  }
+}
+
+.analysis-check {
+  display: flex !important;
+  flex-direction: row;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+}
+.analysis-check input {
+  width: 22px;
+  height: 22px;
+  min-height: 22px;
+}

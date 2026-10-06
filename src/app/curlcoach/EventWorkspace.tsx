@@ -1,24 +1,14 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
-  deficiencies,
-  executions,
-  report,
   roster,
   shotTypes,
   turns,
   type RosterEntry,
-  type Shot,
   type State,
 } from "@/lib/curlcoach/model";
 import {
   eventShots,
-  family,
-  gameShots,
-  grouped,
-  matrix,
-  outcomePercent,
-  workbookCategoryPercent,
   type CoachEvent,
   type CoachGame,
   type Workspace,
@@ -45,419 +35,31 @@ import {
   resumeId,
   validResumeSnapshot,
   type ResumeScope,
-  type ResumeSnapshot,
   type ResumeStore,
   type TrackerResume,
 } from "@/lib/curlcoach/resume-storage";
 import CoachLab, { turnLabel } from "./CoachLab";
-import ReviewSummary from "./ReviewSummary";
-import MissAnalysis from "./MissAnalysis";
+
+import AnalysisPanels from "./AnalysisPanels";
+import Table from "./AnalysisTable";
+import {
+  defaultShotFilters,
+  filterAnalysisShots,
+} from "@/lib/curlcoach/analysis";
 import EventReportLibrary from "./EventReportLibrary";
 import ScoringWakeLock from "./ScoringWakeLock";
 import "./coach.css";
 const pages = [
-  "Scoring",
-  "Shot breakdown",
-  "End-by-end scores",
-  "Team statistics",
-  "Game analysis",
+  "Charting",
+  "Shot performance",
   "Miss analysis",
+  "Game analysis",
   "Event reports",
 ] as const;
 type Page = (typeof pages)[number];
 const slug = (page: string) => page.toLowerCase().replaceAll(" ", "-");
 const pct = (value: number | null) =>
   value === null ? "—" : `${value.toFixed(1)}%`;
-const outcome = (shots: Shot[], deficiency: string) => {
-  const count = shots.filter(
-    (shot) => !shot.excluded && shot.deficiency === deficiency,
-  ).length;
-  return `${count} · ${pct(outcomePercent(shots, deficiency))}`;
-};
-function Summary({ shots }: { shots: Shot[] }) {
-  const r = report(shots);
-  return (
-    <div className="event-metrics event-shot-metrics">
-      <div>
-        <span>Shooting</span>
-        <strong>{pct(r.percent)}</strong>
-      </div>
-      <div>
-        <span>Graded / shots</span>
-        <strong>
-          {r.scored} / {r.attempts}
-        </strong>
-      </div>
-      <div>
-        <span>Ungraded</span>
-        <strong>{r.missing}</strong>
-      </div>
-      <div>
-        <span>Excluded</span>
-        <strong>{r.excluded}</strong>
-      </div>
-    </div>
-  );
-}
-function Table({
-  title,
-  columns,
-  rows,
-  shotSelector = false,
-  selectorLabel = "Shot type",
-  optionLabel,
-}: {
-  title: string;
-  columns: readonly string[];
-  rows: { label: string; values: (string | number)[] }[];
-  shotSelector?: boolean;
-  selectorLabel?: string;
-  optionLabel?: (label: string) => string;
-}) {
-  const [shot, setShot] = useState("");
-  const selectedShot = rows.some((row) => row.label === shot)
-    ? shot
-    : (rows[0]?.label ?? "");
-  const visibleRows = shotSelector
-    ? rows.filter((row) => row.label === selectedShot)
-    : rows;
-  return (
-    <section className="event-card">
-      <h3>{title}</h3>
-      {shotSelector && (
-        <label className="event-shot-selector">
-          {selectorLabel}
-          <select
-            aria-label={title + " " + selectorLabel.toLowerCase()}
-            value={selectedShot}
-            onChange={(event) => setShot(event.target.value)}
-          >
-            {rows.map((row) => (
-              <option key={row.label} value={row.label}>
-                {optionLabel?.(row.label) ?? row.label}
-              </option>
-            ))}
-          </select>
-        </label>
-      )}
-      <div
-        className="event-table-scroll"
-        tabIndex={0}
-        role="region"
-        aria-label={title}
-      >
-        <table>
-          <thead>
-            <tr>
-              <th scope="col">
-                {title.includes("Turn") ? "Turn / target" : "Category"}
-              </th>
-              {columns.map((c) => (
-                <th scope="col" key={c}>
-                  {c}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {visibleRows.map((row) => (
-              <tr key={row.label}>
-                <th scope="row">{row.label}</th>
-                {row.values.map((value, i) => (
-                  <td key={i} data-label={columns[i]}>
-                    {value}
-                  </td>
-                ))}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </section>
-  );
-}
-function ShootingTable({ shots }: { shots: Shot[] }) {
-  const groups = [
-    { label: "Overall", ...report(shots) },
-    ...grouped(shots, ["Draws", "Hits"], family),
-    ...grouped(shots, shotTypes, (s) => s.type),
-  ];
-  return (
-    <Table
-      title="Shooting by shot type"
-      shotSelector
-      columns={[
-        "Recorded",
-        "Graded",
-        "Missing",
-        "Excluded",
-        "Shooting",
-        "Workbook category %",
-      ]}
-      rows={groups.map((r) => ({
-        label: r.label,
-        values: [
-          r.attempts,
-          r.scored,
-          r.missing,
-          r.excluded,
-          pct(r.percent),
-          pct(
-            r.label === "Overall"
-              ? r.percent
-              : workbookCategoryPercent(
-                  shots.filter(
-                    (s) => family(s) === r.label || s.type === r.label,
-                  ),
-                ),
-          ),
-        ],
-      }))}
-    />
-  );
-}
-function ResultTable({
-  shots,
-  title,
-  types,
-  aggregateLabel,
-}: {
-  shots: Shot[];
-  title: string;
-  types: readonly string[];
-  aggregateLabel: string;
-}) {
-  return (
-    <Table
-      title={title}
-      shotSelector
-      columns={[...deficiencies, "Shooting"]}
-      rows={grouped(shots, types, (s) => s.type, aggregateLabel).map((r) => {
-        const category = shots.filter((s) =>
-          r.label === aggregateLabel
-            ? s.type !== null && types.includes(s.type)
-            : s.type === r.label,
-        );
-        return {
-          label: r.label,
-          values: [
-            ...deficiencies.map((deficiency) => outcome(category, deficiency)),
-            pct(r.percent),
-          ],
-        };
-      })}
-    />
-  );
-}
-function TurnDeficiencyTable({
-  shots,
-  title = "Turn / deficiency",
-}: {
-  shots: Shot[];
-  title?: string;
-}) {
-  return (
-    <Table
-      title={title}
-      shotSelector
-      selectorLabel="Turn / target"
-      optionLabel={(label) =>
-        label === "All Turns" ? label : turnLabel(label)
-      }
-      columns={[...deficiencies, "Shooting"]}
-      rows={grouped(
-        shots,
-        turns,
-        (s) => s.turn,
-        "All Turns",
-        () => true,
-      ).map((r) => {
-        const category = shots.filter((s) =>
-          r.label === "All Turns" ? true : s.turn === r.label,
-        );
-        return {
-          label: r.label,
-          values: [
-            ...deficiencies.map((deficiency) => outcome(category, deficiency)),
-            pct(r.percent),
-          ],
-        };
-      })}
-    />
-  );
-}
-function DataTables({
-  shots,
-  summary = true,
-}: {
-  shots: Shot[];
-  summary?: boolean;
-}) {
-  return (
-    <>
-      {summary && <Summary shots={shots} />}
-      <TurnDeficiencyTable shots={shots} />
-      <Table
-        title="Shot type performance"
-        shotSelector
-        columns={executions}
-        rows={[
-          ...matrix(
-            shots,
-            ["Draws", "Hits"],
-            executions,
-            family,
-            (s) => s.execution,
-          ),
-          ...matrix(
-            shots,
-            ["Total"],
-            executions,
-            () => "Total",
-            (s) => s.execution,
-          ),
-        ]}
-      />
-      <Table
-        title="Total execution"
-        columns={["Count", "Share of recorded execution"]}
-        rows={executions.map((label) => {
-          const count = shots.filter(
-            (s) => !s.excluded && s.execution === label,
-          ).length;
-          const total = shots.filter((s) => !s.excluded && s.execution).length;
-          return {
-            label,
-            values: [count, pct(total ? (count / total) * 100 : null)],
-          };
-        })}
-      />
-      <ResultTable
-        title="Result / draw type"
-        shots={shots}
-        types={shotTypes.slice(0, 5)}
-        aggregateLabel="All Draws"
-      />
-      <ResultTable
-        title="Result / hit type"
-        shots={shots}
-        types={shotTypes.slice(5)}
-        aggregateLabel="All Hits"
-      />
-      <ShootingTable shots={shots} />
-    </>
-  );
-}
-function PlayerAnalysis({
-  shots,
-  games,
-  player,
-}: {
-  shots: Shot[];
-  games: CoachGame[];
-  player: string;
-}) {
-  const filtered = (game: CoachGame) =>
-    gameShots(game).filter((s) => player === "all" || s.playerId === player);
-  const eligible = shots.filter((s) => !s.excluded);
-  return (
-    <>
-      <Summary shots={shots} />
-      <section className="event-card">
-        <h3>Shooting by game</h3>
-        <div className="event-bars">
-          {games.map((game) => {
-            const r = report(filtered(game));
-            return (
-              <div key={game.id}>
-                <span>{game.label}</span>
-                <div className="event-bar-track">
-                  <div style={{ width: `${r.percent ?? 0}%` }} />
-                </div>
-                <strong>{pct(r.percent)}</strong>
-                <small>{r.scored} graded</small>
-              </div>
-            );
-          })}
-        </div>
-      </section>
-      <ShootingTable shots={shots} />
-      <Table
-        title="Execution distribution"
-        columns={["Count", "%"]}
-        rows={executions.map((label) => {
-          const n = eligible.filter((s) => s.execution === label).length;
-          const total = eligible.filter((s) => s.execution !== null).length;
-          return { label, values: [n, pct(total ? (n / total) * 100 : null)] };
-        })}
-      />
-      <div className="event-two">
-        {["Draws", "Hits"].map((f) => (
-          <Table
-            key={f}
-            title={`${f} deficiencies`}
-            columns={["Count", "%"]}
-            rows={deficiencies.map((label) => {
-              const pool = eligible.filter(
-                (s) => family(s) === f && s.deficiency !== null,
-              );
-              const n = pool.filter((s) => s.deficiency === label).length;
-              return {
-                label,
-                values: [n, pct(pool.length ? (n / pool.length) * 100 : null)],
-              };
-            })}
-          />
-        ))}
-      </div>
-      <Table
-        title="Turn / target frequency"
-        columns={["Count", "Shooting"]}
-        rows={grouped(eligible, turns, (s) => s.turn).map((r) => ({
-          label: r.label,
-          values: [r.attempts, pct(r.percent)],
-        }))}
-      />
-      <Table
-        title="Shot-by-shot execution"
-        shotSelector
-        columns={executions}
-        rows={matrix(
-          shots,
-          shotTypes,
-          executions,
-          (s) => s.type,
-          (s) => s.execution,
-        )}
-      />
-      <div className="event-two">
-        {["Draws", "Hits"].map((f) => (
-          <Table
-            key={f}
-            title={`${f} execution / deficiency`}
-            columns={deficiencies}
-            rows={matrix(
-              shots.filter((s) => family(s) === f),
-              executions,
-              deficiencies,
-              (s) => s.execution,
-              (s) => s.deficiency,
-            )}
-          />
-        ))}
-      </div>
-      <div className="event-two">
-        {["Draws", "Hits"].map((f) => (
-          <TurnDeficiencyTable
-            key={f}
-            title={`Turn analysis · ${f}`}
-            shots={shots.filter((s) => family(s) === f)}
-          />
-        ))}
-      </div>
-    </>
-  );
-}
 function Scoreboard({
   event,
   singleGame,
@@ -663,19 +265,11 @@ export default function EventWorkspace({
   accountScope?: ResumeScope;
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
-  const [actionsTarget, setActionsTarget] = useState<HTMLDivElement | null>(
-    null,
-  );
-  const [filtersTarget, setFiltersTarget] = useState<HTMLDivElement | null>(
-    null,
-  );
+  const [shotFilters, setShotFilters] = useState(defaultShotFilters);
   const drafts = useRef(new Map<string, TrackerResume>());
   const resumeStore = useRef<ResumeStore | null>(null);
-  const [trackingAnchor, setTrackingAnchor] = useState<ResumeSnapshot | null>(
-    null,
-  );
+
   const [resumeResetKey, setResumeResetKey] = useState(0);
-  const pendingResume = useRef<ResumeSnapshot | null>(null);
   const [platformAdmin, setPlatformAdmin] = useState(false);
   useEffect(() => {
     if (mode !== "streamer") return;
@@ -695,7 +289,7 @@ export default function EventWorkspace({
     return () => controller.abort();
   }, [mode]);
   const [open, setOpen] = useState(unlocked),
-    [view, setView] = useState<Page>("Scoring"),
+    [view, setView] = useState<Page>("Charting"),
     [source, setSource] = useState<"sample" | "streamer">(
       mode === "streamer" ? "streamer" : "sample",
     ),
@@ -732,7 +326,6 @@ export default function EventWorkspace({
       // Storage may be unavailable; in-memory tracking still works.
     }
     resumeStore.current = stored;
-    setTrackingAnchor(stored?.active ?? null);
     if (mode !== "streamer" && query.get("source") === "streamer")
       setSource("streamer");
     if (!initialEventId && query.get("event")) setEventId(query.get("event")!);
@@ -754,11 +347,15 @@ export default function EventWorkspace({
           (p) =>
             slug(p) ===
             ({
-              "data-tables": "shot-breakdown",
-              team: "team-statistics",
-              "scoreboard-analysis": "end-by-end-scores",
+              scoring: "charting",
+              "data-tables": "shot-performance",
+              "shot-breakdown": "shot-performance",
+              team: "shot-performance",
+              "team-statistics": "shot-performance",
+              "scoreboard-analysis": "game-analysis",
+              "end-by-end-scores": "game-analysis",
             }[location.hash.slice(1)] ?? location.hash.slice(1)),
-        ) ?? "Scoring",
+        ) ?? "Charting",
       );
     read();
     setSelectionReady(true);
@@ -777,7 +374,7 @@ export default function EventWorkspace({
   // Component-local only: never persist private coaching data across accounts.
   const savedStates = useRef(new Map<string, State>());
   const refreshSequence = useRef(0);
-  const statistics = view !== "Scoring" && view !== "Event reports";
+  const statistics = view !== "Charting" && view !== "Event reports";
   const selectedSeason = seasonId || data?.event.seasonId || "unassigned";
   const selectedEvent = statsEventId || data?.event.id || "all";
   const seasonReady = statsData?.event.seasonId === selectedSeason;
@@ -838,13 +435,9 @@ export default function EventWorkspace({
             eventId: current.event.id,
             gameId: loadedGame.id,
           };
-          const snapshot =
-            pendingResume.current &&
-            resumeId(pendingResume.current) === resumeId(identity)
-              ? pendingResume.current
-              : resumeStore.current?.drafts.find(
-                  (entry) => resumeId(entry) === resumeId(identity),
-                );
+          const snapshot = resumeStore.current?.drafts.find(
+            (entry) => resumeId(entry) === resumeId(identity),
+          );
           if (snapshot) {
             const reconciled = reconcileResume(
               snapshot,
@@ -856,25 +449,6 @@ export default function EventWorkspace({
           }
         }
         setData(current);
-        const resumedGameId =
-          pendingResume.current?.eventId === current.event.id
-            ? pendingResume.current.gameId
-            : null;
-        if (
-          pendingResume.current &&
-          current.event.id === pendingResume.current.eventId
-        ) {
-          if (
-            !current.event.games.some(
-              (g) => g.id === pendingResume.current?.gameId,
-            )
-          )
-            setError(
-              "The tracked game is no longer available to this account.",
-            );
-          pendingResume.current = null;
-          setResumeResetKey((value) => value + 1);
-        }
         setStatsData((previous) =>
           !resetStatistics &&
           previous?.event.organizationId === current.event.organizationId &&
@@ -895,7 +469,6 @@ export default function EventWorkspace({
         setGameId(
           (current) =>
             scheduledDefault ??
-            resumedGameId ??
             (result.event.games.some((g: CoachGame) => g.id === current)
               ? current
               : (preferredGame<CoachGame>(result.event.games)?.id ?? "")),
@@ -970,7 +543,8 @@ export default function EventWorkspace({
           analysisGames.some((g) => g.id === s.gameId),
         )
       : [],
-    selected = all.filter((s) => player === "all" || s.playerId === player);
+    playerShots = all.filter((s) => player === "all" || s.playerId === player),
+    selected = filterAnalysisShots(playerShots, analysisGames, shotFilters);
   function remember(source: string, event: string, game = "") {
     history.replaceState(
       null,
@@ -1004,7 +578,6 @@ export default function EventWorkspace({
     });
     if (!snapshot) return;
     drafts.current.set(resumeId(snapshot), value);
-    if (activelyTracking) setTrackingAnchor(snapshot);
     if (resumeStore.current) {
       resumeStore.current = rememberResume(
         resumeStore.current,
@@ -1016,64 +589,6 @@ export default function EventWorkspace({
       } catch {
         // Tracking is available even when browser storage is disabled.
       }
-    }
-  }
-  function resumeTracking() {
-    const anchor = trackingAnchor;
-    setView("Scoring");
-    setMenuOpen(false);
-    location.hash = "scoring";
-    if (anchor) {
-      const persistedDraft = resumeStore.current?.drafts.find(
-        (entry) => resumeId(entry) === resumeId(anchor),
-      );
-      const activeDraft =
-        drafts.current.get(resumeId(anchor)) ?? persistedDraft;
-      const target: ResumeSnapshot = {
-        ...anchor,
-        stateRevision: persistedDraft?.stateRevision ?? anchor.stateRevision,
-        // Corrections are review work; return to the parked tracking turn.
-        draft:
-          activeDraft?.current ??
-          activeDraft?.draft ??
-          anchor.current ??
-          anchor.draft,
-        editing: null,
-      };
-      if (event?.source === target.source && event.id === target.eventId) {
-        const targetGame = event.games.find(
-          (entry) => entry.id === target.gameId,
-        );
-        if (!targetGame) {
-          setError("The tracked game is no longer available to this account.");
-          return;
-        }
-        const value = reconcileResume(target, targetGame.state, accountScope);
-        if (value) drafts.current.set(resumeId(target), value);
-        else drafts.current.delete(resumeId(target));
-        setGameId(target.gameId);
-        setResumeResetKey((value) => value + 1);
-      } else {
-        pendingResume.current = target;
-        setData(null);
-        setSource(target.source);
-        setEventId(target.eventId);
-        setGameId(target.gameId);
-        if (source === target.source && eventId === target.eventId)
-          void refresh();
-      }
-      remember(target.source, target.eventId, target.gameId);
-    } else if (event && game) {
-      const identity = { source, eventId: event.id, gameId: game.id };
-      const current = drafts.current.get(resumeId(identity));
-      if (current)
-        drafts.current.set(resumeId(identity), {
-          draft: current.current ?? current.draft,
-          current: current.current ?? current.draft,
-          editing: null,
-        });
-      setResumeResetKey((value) => value + 1);
-      remember(source, event.id, game.id);
     }
   }
 
@@ -1091,22 +606,6 @@ export default function EventWorkspace({
           >
             <span aria-hidden="true">☰</span> {view}
           </button>
-          {open && (
-            <button
-              type="button"
-              onClick={resumeTracking}
-              disabled={busy || (!trackingAnchor && !game)}
-            >
-              Resume tracking
-            </button>
-          )}
-          <div
-            ref={setActionsTarget}
-            hidden={view !== "Scoring"}
-            className="coach-session-actions"
-            role="group"
-            aria-label="Scoring session actions"
-          />
         </div>
         <div
           id="coach-menu"
@@ -1120,7 +619,7 @@ export default function EventWorkspace({
             }
           }}
         >
-          <a className="event-brand" href="#scoring">
+          <a className="event-brand" href="#charting">
             SHOT <span>TRACKER</span>
           </a>
           <nav aria-label="Shot Tracker pages">
@@ -1245,10 +744,11 @@ export default function EventWorkspace({
                 <label>
                   Event
                   <select
-                    value={event?.id ?? eventId}
+                    value={eventId || event?.id}
                     disabled={!data}
                     onChange={(e) => {
-                      setData(null);
+                      setBusy(true);
+                      setError("");
                       setEventId(e.target.value);
                       setAnalysisGame("all");
                       setPlayer("all");
@@ -1263,7 +763,68 @@ export default function EventWorkspace({
                   </select>
                 </label>
               )}
-              {statistics && (
+              {view === "Charting" && event && (
+                <label className="event-game-picker">
+                  Game
+                  <select
+                    value={gameId}
+                    onChange={(e) => {
+                      setGameId(e.target.value);
+                      remember(source, event.id, e.target.value);
+                    }}
+                  >
+                    {event.games.map((g) => (
+                      <option key={g.id} value={g.id}>
+                        {g.label} · vs {g.opponent}
+                        {coachingClosed(g) ? " · Closed — review only" : ""}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
+              {view !== "Charting" && view !== "Event reports" && (
+                <>
+                  <label>
+                    Game
+                    <select
+                      value={analysisGame}
+                      onChange={(e) => {
+                        setAnalysisGame(e.target.value);
+                        setPlayer("all");
+                      }}
+                    >
+                      <option value="all">All games</option>
+                      {statsGames.map((g) => (
+                        <option key={g.id} value={g.id}>
+                          {g.label} · vs {g.opponent}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  {
+                    <label>
+                      Team / player
+                      <select
+                        value={player}
+                        onChange={(e) => setPlayer(e.target.value)}
+                      >
+                        <option value="all">Whole team</option>
+                        {analysisPlayers.map((p) => (
+                          <option key={p.id} value={p.id}>
+                            {p.name}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  }
+                </>
+              )}
+            </div>
+          )}
+          {statistics && (
+            <details className="event-card analysis-more">
+              <summary>More filters</summary>
+              <div className="event-filter-bar">
                 <label>
                   Competition
                   <select
@@ -1283,65 +844,72 @@ export default function EventWorkspace({
                     <option value="unrecorded">Not recorded</option>
                   </select>
                 </label>
-              )}
-              {view === "Scoring" && event && (
-                <label className="event-game-picker">
-                  Game
-                  <select
-                    value={gameId}
-                    onChange={(e) => {
-                      setGameId(e.target.value);
-                      remember(source, event.id, e.target.value);
-                    }}
-                  >
-                    {event.games.map((g) => (
-                      <option key={g.id} value={g.id}>
-                        {g.label} · vs {g.opponent}
-                        {coachingClosed(g) ? " · Closed — review only" : ""}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              )}
-              {view !== "Scoring" && view !== "Event reports" && (
-                <>
-                  <label>
-                    Game
+                {(
+                  [
+                    ["type", "Shot type", ["Draws", "Hits", ...shotTypes]],
+                    ["turn", "Turn / target", [...turns]],
+                    [
+                      "end",
+                      "End",
+                      Array.from(
+                        {
+                          length: Math.max(
+                            10,
+                            ...analysisGames.map((g) => g.scheduledEnds),
+                            ...all.map((s) => s.end),
+                          ),
+                        },
+                        (_, i) => String(i + 1),
+                      ),
+                    ],
+                    ["hammer", "Hammer before end", ["with", "without"]],
+                    [
+                      "margin",
+                      "Score difference before end",
+                      ["4", "3", "2", "1", "0", "-1", "-2", "-3", "-4"],
+                    ],
+                  ] as const
+                ).map(([key, label, options]) => (
+                  <label key={key}>
+                    {label}
                     <select
-                      value={analysisGame}
-                      onChange={(e) => {
-                        setAnalysisGame(e.target.value);
-                        setPlayer("all");
-                      }}
+                      value={shotFilters[key]}
+                      onChange={(e) =>
+                        setShotFilters((current) => ({
+                          ...current,
+                          [key]: e.target.value,
+                        }))
+                      }
                     >
-                      <option value="all">All games</option>
-                      {statsGames.map((g) => (
-                        <option key={g.id} value={g.id}>
-                          {g.label} · vs {g.opponent}
+                      <option value="all">All</option>
+                      {options.map((value) => (
+                        <option key={value} value={value}>
+                          {key === "margin"
+                            ? Number(value) === 0
+                              ? "Tied"
+                              : (Number(value) > 0 ? "Up " : "Down ") +
+                                Math.abs(Number(value)) +
+                                (Math.abs(Number(value)) === 4 ? "+" : "")
+                            : value}
                         </option>
                       ))}
                     </select>
                   </label>
-                  {view !== "End-by-end scores" && (
-                    <label>
-                      Team / player
-                      <select
-                        value={player}
-                        onChange={(e) => setPlayer(e.target.value)}
-                      >
-                        <option value="all">Whole team</option>
-                        {analysisPlayers.map((p) => (
-                          <option key={p.id} value={p.id}>
-                            {p.name}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                  )}
-                </>
-              )}
-              <div ref={setFiltersTarget} className="event-extra-filters" />
-            </div>
+                ))}
+                <button
+                  onClick={() => {
+                    setShotFilters(defaultShotFilters);
+                    setCompetitionLevel("all");
+                  }}
+                >
+                  Reset more filters
+                </button>
+              </div>
+              <p className="score-stat-caption">
+                Shot filters use the score and hammer at the start of the end.
+                Unknown situations are excluded when filtered.
+              </p>
+            </details>
           )}
         </header>
         <p role="status" aria-live="polite">
@@ -1360,15 +928,19 @@ export default function EventWorkspace({
             </label>
             <button disabled={busy}>Unlock lab</button>
           </form>
-        ) : !event ? (
+        ) : !event || (eventId && event.id !== eventId) ? (
           <section className="event-card">
-            <h2>Event data is unavailable</h2>
-            <p>{error || "Loading the selected event."}</p>
-            <p>
-              {mode === "streamer"
-                ? "The selected Streamer game is unavailable to this coach."
-                : "Use Local examples to explore the seven-game Shorty Jenkins workspace."}
-            </p>
+            <h2>{error ? "Event data is unavailable" : "Loading event…"}</h2>
+            {error && (
+              <>
+                <p>{error}</p>
+                <p>
+                  {mode === "streamer"
+                    ? "The selected Streamer game is unavailable to this coach."
+                    : "Use Local examples to explore the seven-game Shorty Jenkins workspace."}
+                </p>
+              </>
+            )}
           </section>
         ) : (
           <>
@@ -1382,16 +954,44 @@ export default function EventWorkspace({
                   Shot Tracker account.
                 </p>
               ))}
-            <div hidden={view !== "Scoring"}>
-              <ScoringWakeLock active={open && !!game && view === "Scoring"} />
+            <div hidden={view !== "Charting"}>
+              {game &&
+                (source === "sample" ||
+                  !coachingReadOnlyReason(
+                    game,
+                    event?.games ?? [],
+                    scheduleNow,
+                  )) &&
+                (!!game.state.lineupEvents?.length ||
+                  !!game.state.events.length) && (
+                  <ScoringWakeLock active={open && view === "Charting"} />
+                )}
             </div>
 
-            <div hidden={view !== "Scoring"}>
+            <div hidden={view !== "Charting"}>
               {game ? (
                 <CoachLab
                   key={`${source}:${event.id}:${game.id}`}
                   unlocked
-                  actionsTarget={actionsTarget}
+                  onResumeTracking={() => {
+                    const current = drafts.current.get(
+                      resumeId({ source, eventId: event.id, gameId: game.id }),
+                    );
+                    if (current)
+                      drafts.current.set(
+                        resumeId({
+                          source,
+                          eventId: event.id,
+                          gameId: game.id,
+                        }),
+                        {
+                          ...current,
+                          draft: current.current ?? current.draft,
+                          editing: null,
+                        },
+                      );
+                    setResumeResetKey((value) => value + 1);
+                  }}
                   resume={drafts.current.get(
                     resumeId({ source, eventId: event.id, gameId: game.id }),
                   )}
@@ -1402,6 +1002,7 @@ export default function EventWorkspace({
                   }
                   context={{
                     source,
+                    label: `${game.label} · vs ${game.opponent}`,
                     eventId: event.id,
                     gameId: game.id,
                     readOnlyReason:
@@ -1419,88 +1020,69 @@ export default function EventWorkspace({
               )}
             </div>
 
-            {view === "Miss analysis" && (
-              <MissAnalysis
-                filtersTarget={filtersTarget}
-                shots={selected}
-                games={analysisGames}
-                players={analysisPlayers}
-              />
-            )}
-            {view === "Shot breakdown" && <DataTables shots={selected} />}
-            {view === "Team statistics" && (
-              <>
-                <PlayerAnalysis
-                  shots={selected}
-                  games={analysisGames}
-                  player={player}
-                />
-              </>
-            )}
-            {view === "Game analysis" &&
-              (analysisGames.length ? (
+            {statistics && !statsReady ? (
+              <section className="event-card" role="status">
+                {statsError || "Loading analysis�"}
+              </section>
+            ) : (
+              statistics && (
                 <>
-                  <Summary shots={selected} />
-                  <ReviewSummary
+                  <AnalysisPanels
+                    key={view}
+                    mode={
+                      view === "Miss analysis"
+                        ? "misses"
+                        : view === "Game analysis"
+                          ? "game"
+                          : "performance"
+                    }
                     shots={selected}
-                    players={analysisPlayers.filter(
-                      (p) => player === "all" || p.id === player,
-                    )}
-                  />
-                  <Table
-                    title="Player performance"
-                    columns={["Graded", "Missing", "Shooting"]}
-                    rows={analysisPlayers
-                      .filter((p) => player === "all" || p.id === player)
-                      .map((p) => {
-                        const r = report(
-                          selected.filter((s) => s.playerId === p.id),
-                        );
-                        return {
-                          label: p.name,
-                          values: [r.scored, r.missing, pct(r.percent)],
-                        };
-                      })}
-                  />
-                  <Table
-                    title="End performance"
-                    shotSelector
-                    selectorLabel="End"
-                    columns={["Recorded", "Graded", "Shooting"]}
-                    rows={grouped(
-                      selected,
-                      Array.from(
-                        {
-                          length: Math.max(
-                            8,
-                            ...analysisGames.map((g) => g.scheduledEnds),
-                            ...selected.map((s) => s.end),
-                          ),
-                        },
-                        (_, i) => String(i + 1),
+                    games={analysisGames}
+                    players={analysisPlayers}
+                    catalog={analysisData?.catalog ?? []}
+                    seasonShots={filterAnalysisShots(
+                      eventShots({
+                        ...event,
+                        games: seasonReady
+                          ? (statsData?.event.games.filter(
+                              (g) =>
+                                competitionLevel === "all" ||
+                                (g.competitionLevel ?? "unrecorded") ===
+                                  competitionLevel,
+                            ) ?? [])
+                          : [],
+                      }).filter(
+                        (s) => player === "all" || s.playerId === player,
                       ),
-                      (s) => String(s.end),
-                      "All Ends",
-                    ).map((r) => ({
-                      label:
-                        r.label === "All Ends" ? r.label : `End ${r.label}`,
-                      values: [r.attempts, r.scored, pct(r.percent)],
-                    }))}
+                      seasonReady
+                        ? (statsData?.event.games.filter(
+                            (g) =>
+                              competitionLevel === "all" ||
+                              (g.competitionLevel ?? "unrecorded") ===
+                                competitionLevel,
+                          ) ?? [])
+                        : [],
+                      shotFilters,
+                    )}
+                    seasonReady={seasonReady}
+                    byEvent={selectedEvent === "all"}
                   />
-                  <DataTables shots={selected} summary={false} />
+                  {view === "Game analysis" && (
+                    <>
+                      <p className="score-stat-caption">
+                        Game outcomes below describe the whole team across the
+                        selected games. Player and More filters apply to
+                        shooting analysis above.
+                      </p>
+                      <Scoreboard
+                        event={{ ...event, games: analysisGames }}
+                        singleGame={analysisGame !== "all"}
+                      />
+                    </>
+                  )}
                 </>
-              ) : (
-                <p>No games in this event.</p>
-              ))}
-            {view === "End-by-end scores" &&
-              (analysisGames.length ? (
-                <Scoreboard
-                  event={{ ...event, games: analysisGames }}
-                  singleGame={analysisGame !== "all"}
-                />
-              ) : (
-                <p>No games in this event.</p>
-              ))}
+              )
+            )}
           </>
         )}
       </main>

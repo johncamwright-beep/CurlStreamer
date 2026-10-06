@@ -63,12 +63,15 @@ async function generateOnce(
   const config = reportAIConfig();
   if (!config) throw new Error("AI reports are not configured");
   if (!input.evidence.length) throw new Error("No report evidence");
+  const gameKeys = input.games?.map((g) => g.key) ?? [];
   const finding = narrativeSchema.shape.summary.extend({
-    text: narrativeSchema.shape.summary.shape.text.regex(/^[^0-9<>]*$/),
+    text: narrativeSchema.shape.summary.shape.text
+      .max(gameKeys.length ? 450 : 1200)
+      .regex(/^[^0-9<>]*$/),
     evidence: z
       .array(z.enum(input.evidence.map((e) => e.id) as [string, ...string[]]))
       .min(1)
-      .max(6),
+      .max(gameKeys.length ? 3 : 6),
   });
   const baseSchema = narrativeSchema.omit({ games: true }).extend({
     summary: finding,
@@ -77,7 +80,6 @@ async function generateOnce(
     practice: z.array(finding).min(1).max(2),
     review: z.array(finding).min(1).max(2),
   });
-  const gameKeys = input.games?.map((g) => g.key) ?? [];
   const outputSchema = gameKeys.length
     ? baseSchema.extend({
         games: z
@@ -100,7 +102,7 @@ async function generateOnce(
     body: JSON.stringify({
       model: config.model,
       store: false,
-      max_output_tokens: Math.min(12000, 3200 + 240 * gameKeys.length),
+      max_output_tokens: Math.min(12000, 3200 + 400 * gameKeys.length),
       instructions:
         REPORT_INSTRUCTIONS +
         "\n" +
@@ -153,10 +155,18 @@ async function generateOnce(
   }
   const data = (await response.json()) as {
     status?: string;
+    incomplete_details?: { reason?: string };
     output?: { type: string; content?: { type: string; text?: string }[] }[];
   };
-  if (data.status !== "completed")
+  if (data.status !== "completed") {
+    const reason = z
+      .enum(["max_output_tokens", "content_filter"])
+      .safeParse(data.incomplete_details?.reason);
+    console.error("Shot Tracker AI response incomplete", {
+      reason: reason.success ? reason.data : "unavailable",
+    });
     throw new Error("Report generation incomplete");
+  }
   const content =
     data.output
       ?.filter((o) => o.type === "message")

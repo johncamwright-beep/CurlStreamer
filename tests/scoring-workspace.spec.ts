@@ -563,22 +563,22 @@ test("desktop game day keeps scoring primary and settings available on demand", 
   const camera1 = page.getByRole("region", { name: "Camera 1", exact: true });
   const camera2 = page.getByRole("region", { name: "Camera 2", exact: true });
   await camera1
-    .getByRole("button", { name: "Hide camera", exact: true })
+    .getByRole("button", { name: "Hide from broadcast", exact: true })
     .click();
   await expect(
-    camera1.getByRole("button", { name: "Show camera", exact: true }),
+    camera1.getByRole("button", { name: "Show in broadcast", exact: true }),
   ).toBeVisible();
   await camera2
-    .getByRole("button", { name: "Hide camera", exact: true })
+    .getByRole("button", { name: "Hide from broadcast", exact: true })
     .click();
   await expect(
-    camera2.getByRole("button", { name: "Show camera", exact: true }),
+    camera2.getByRole("button", { name: "Show in broadcast", exact: true }),
   ).toBeVisible();
   await camera1
-    .getByRole("button", { name: "Show camera", exact: true })
+    .getByRole("button", { name: "Show in broadcast", exact: true })
     .click();
   await camera2
-    .getByRole("button", { name: "Show camera", exact: true })
+    .getByRole("button", { name: "Show in broadcast", exact: true })
     .click();
   expect(actions.slice(4)).toEqual(
     ["away", "none", "home", "split"].map((layout) => ({

@@ -141,13 +141,19 @@ export async function transitionCoachState(
     throw new Error("Report changed. Reload before changing coaching status.");
   if (!isCommittedRetry && action === "finish" && current.status !== "open")
     throw new Error("Coaching is already finished.");
-  if (!isCommittedRetry && action === "reopen" && current.status !== "closed")
+  if (
+    !isCommittedRetry &&
+    action === "reopen" &&
+    current.status !== "closed" &&
+    current.reopened
+  )
     throw new Error("Coaching is already open.");
   const next = isCommittedRetry
     ? current
     : ({
         ...current,
         status: desiredStatus,
+        reopened: action === "reopen",
         revision: current.revision + 1,
       } as State);
   return apply(
@@ -177,5 +183,29 @@ export async function saveCoachLineup(
     "set-lineup",
     command,
     validateScopedState(scope, next),
+  );
+}
+
+export async function loadCoachStates(
+  organizationId: string,
+  actorUserId: string,
+  states: State[],
+) {
+  if (!states.length) return [];
+  const scopes = states.map((state) =>
+    scopeSchema.parse({ organizationId, actorUserId, gameId: state.gameId }),
+  );
+  const { data, error } = await createAdminSupabaseClient().rpc(
+    "read_curlcoach_states",
+    {
+      p_actor_user_id: actorUserId,
+      p_organization_id: organizationId,
+      p_game_ids: scopes.map((s) => s.gameId),
+    },
+  );
+  if (error) return operationError("read-many", error);
+  const rows = z.record(z.string(), z.unknown()).parse(data);
+  return states.map((state, i) =>
+    validateScopedState(scopes[i], (rows[state.gameId] ?? state) as State),
   );
 }

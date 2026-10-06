@@ -177,3 +177,29 @@ Charting currently uses the Streamer **home team** and provisional position
 identities. Streamer game configuration does not contain a player roster;
 Setup explains this instead of presenting the example names as real players.
 Editable roster snapshots and full coach memberships remain the next milestone.
+
+## Consolidated analysis and charting lifecycle
+
+The sidebar now has Charting, Shot performance, Miss analysis, Game analysis,
+and Event reports. Legacy hashes redirect to the equivalent consolidated view.
+Analysis shares season/event/game/player selections and optional shot, turn,
+end, starting hammer, score-margin, and competition filters. Game-outcome
+statistics always describe the full team; the UI explicitly separates them
+from player-filtered shooting. Season comparisons retain shot and competition
+filters and include the selected games in the baseline. AI report generation
+remains explicit and separate from calculated analysis.
+
+Miss share uses diagnosed non-Make shots; miss frequency uses all diagnosed
+shots. Neither includes missing diagnoses or excluded attempts. Graded shooting
+uses the 0–5 denominator consistently, with a small-sample label below ten
+attempts. Detailed counts, execution categories, trends, notes and video links
+are available in expandable sections.
+
+Migration 0077 adds actor-scoped batched private-state reads and an audited
+explicit reopen for charting only. It does not reopen shared games or restart
+broadcasts. Empty new sessions require a confirmed lineup before shot writes;
+legacy sessions with existing shot history remain chartable. Closed games render
+only the closed panel and Reopen action. Deleted games remain blocked. Validate
+the actual migration with scripts/check-shot-tracker-lifecycle.mjs and an
+isolated PGlite module path. Browser coverage uses playwright.curlcoach.config.ts
+on port 3012 to avoid the shared development server.

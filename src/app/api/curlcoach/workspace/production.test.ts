@@ -13,6 +13,7 @@ const mocks = vi.hoisted(() => ({
   account: vi.fn(),
   productionSource: vi.fn(),
   load: vi.fn(),
+  loadMany: vi.fn(),
   save: vi.fn(),
   lineup: vi.fn(),
   transition: vi.fn(),
@@ -36,6 +37,7 @@ vi.mock("@/lib/providers/curlcoach-production-streamer", () => ({
 }));
 vi.mock("@/lib/providers/curlcoach-store", () => ({
   loadCoachState: mocks.load,
+  loadCoachStates: mocks.loadMany,
   saveCoachState: mocks.save,
   saveCoachLineup: mocks.lineup,
   transitionCoachState: mocks.transition,
@@ -119,6 +121,7 @@ beforeEach(() => {
   });
   mocks.productionSource.mockResolvedValue(workspace());
   mocks.load.mockResolvedValue(state());
+  mocks.loadMany.mockResolvedValue([state()]);
   mocks.save.mockResolvedValue(state());
   mocks.transition.mockResolvedValue({
     ...state(),
@@ -151,14 +154,9 @@ it("loads each production game from durable private storage, never the local lab
   );
 
   expect(response.status).toBe(200);
-  expect(mocks.load).toHaveBeenCalledWith(
-    {
-      organizationId: ids.organization,
-      gameId: ids.game,
-      actorUserId: ids.actor,
-    },
+  expect(mocks.loadMany).toHaveBeenCalledWith(ids.organization, ids.actor, [
     expect.objectContaining({ gameId: ids.game }),
-  );
+  ]);
   expect(mocks.localRead).not.toHaveBeenCalled();
   expect(mocks.localSource).not.toHaveBeenCalled();
   expect((await response.json()).event.source).toBe("streamer");
@@ -203,7 +201,7 @@ it("finishes only the actor's private coaching session for the selected game", a
   expect(mocks.save).not.toHaveBeenCalled();
 });
 
-it("refuses reopening a finished coaching game", async () => {
+it("explicitly reopens only the actor private charting session", async () => {
   mocks.transition.mockResolvedValue({
     ...state(),
     revision: 1,
@@ -212,8 +210,8 @@ it("refuses reopening a finished coaching game", async () => {
   const payload = lifecycle("reopen");
   const response = await POST(request(payload));
 
-  expect(response.status).toBe(409);
-  expect(mocks.transition).not.toHaveBeenCalled();
+  expect(response.status).toBe(200);
+  expect(mocks.transition).toHaveBeenCalled();
 });
 
 it.each(["completed", "closed", "deleted"])(

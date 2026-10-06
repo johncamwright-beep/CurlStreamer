@@ -127,6 +127,8 @@ export type State = {
   /** Present on private persisted sessions; optional for legacy sample fixtures. */
   revision?: number;
   status?: "open" | "closed";
+  /** Explicit, audited permission to chart a completed game. */
+  reopened?: boolean;
   roster?: RosterEntry[];
   lineup?: string[];
   lineupEvents?: z.infer<typeof lineupEventSchema>[];
@@ -145,6 +147,7 @@ export const stateSchema = z
     ),
     revision: z.number().int().nonnegative().optional(),
     status: z.enum(["open", "closed"]).optional(),
+    reopened: z.boolean().optional(),
     roster: z.array(rosterEntrySchema).optional(),
     lineup: lineupSchema.optional(),
     lineupEvents: z.array(lineupEventSchema).optional(),

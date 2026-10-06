@@ -38,6 +38,18 @@ it("never recommends a privately finished or shared completed game", () => {
     coachingReadOnlyReason({ ...morning, status: "completed" }, [], now),
   ).toContain("closed");
 });
+it("allows explicit private reopen without recommending a completed game as the next draw", () => {
+  const reopened = {
+    ...morning,
+    status: "completed",
+    state: { ...morning.state, status: "open" as const, reopened: true },
+  };
+  expect(coachingReadOnlyReason(reopened, [reopened, evening])).toBeNull();
+  expect(scheduledCoachGame([reopened])).toBeUndefined();
+  expect(
+    coachingReadOnlyReason({ ...reopened, status: "deleted" }, []),
+  ).toContain("closed");
+});
 it("keeps the current draw near its start, handles explicit timezone offsets, and does not recommend old games", () => {
   expect(
     scheduledCoachGame(

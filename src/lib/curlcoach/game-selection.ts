@@ -2,7 +2,8 @@ import type { CoachGame } from "./event";
 
 export function coachingClosed(game: Pick<CoachGame, "status" | "state">) {
   return (
-    ["completed", "closed", "deleted"].includes(game.status) ||
+    game.status === "deleted" ||
+    (["completed", "closed"].includes(game.status) && !game.state.reopened) ||
     game.state.status === "closed"
   );
 }
@@ -12,7 +13,11 @@ export function coachingClosed(game: Pick<CoachGame, "status" | "state">) {
 export function scheduledCoachGame<
   T extends Pick<CoachGame, "status" | "state" | "scheduledStart">,
 >(games: T[], now = Date.now()): T | undefined {
-  const open = games.filter((game) => !coachingClosed(game));
+  const open = games.filter(
+    (game) =>
+      !["completed", "closed", "deleted"].includes(game.status) &&
+      !coachingClosed(game),
+  );
   const timed = open.filter(
     (game) =>
       game.scheduledStart && Number.isFinite(Date.parse(game.scheduledStart)),
@@ -42,6 +47,7 @@ export function coachingReadOnlyReason(
 ) {
   if (coachingClosed(game))
     return "This game is closed. Scores and notes are available for review only.";
+  if (game.state.reopened) return null;
   const next = scheduledCoachGame(games, now);
   if (
     next &&

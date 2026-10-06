@@ -20,6 +20,7 @@ import type { CoachAccount } from "@/lib/curlcoach/production-access";
 import { loadProductionStreamerEvent } from "@/lib/providers/curlcoach-production-streamer";
 import {
   loadCoachState,
+  loadCoachStates,
   saveCoachState,
   saveCoachLineup,
   transitionCoachState,
@@ -126,21 +127,17 @@ export async function GET(request: Request) {
     );
     const { event, catalog, actor } = result;
     const seasons = "seasons" in result ? result.seasons : [];
-    event.games = await Promise.all(
-      event.games.map(async (game) => ({
-        ...game,
-        state: labEnabled()
-          ? readCoachState(game.state)
-          : await loadCoachState(
-              {
-                organizationId: event.organizationId,
-                gameId: game.id,
-                actorUserId: actor,
-              },
-              game.state,
-            ),
-      })),
-    );
+    const states = labEnabled()
+      ? event.games.map((game) => readCoachState(game.state))
+      : await loadCoachStates(
+          event.organizationId,
+          actor,
+          event.games.map((game) => game.state),
+        );
+    event.games = event.games.map((game, index) => ({
+      ...game,
+      state: states[index],
+    }));
     return NextResponse.json(
       { event, catalog, seasons, refreshedAt: new Date().toISOString() },
       { headers: { "Cache-Control": "no-store" } },
@@ -201,10 +198,7 @@ export async function POST(request: Request) {
         { status: 403 },
       );
     let result;
-    if (
-      ["completed", "closed", "deleted"].includes(game.status) ||
-      input.data.action === "reopen"
-    )
+    if (game.status === "deleted")
       return NextResponse.json(
         { error: "This game is closed and available for review only." },
         { status: 409, headers: privateHeaders },
@@ -234,6 +228,24 @@ export async function POST(request: Request) {
         actorUserId: actor,
       };
       const state = await loadCoachState(scope, game.state);
+      if (
+        ["completed", "closed"].includes(game.status) &&
+        !state.reopened &&
+        input.data.action !== "reopen"
+      )
+        return NextResponse.json(
+          { error: "This game is closed. Reopen it before charting." },
+          { status: 409, headers: privateHeaders },
+        );
+      if (
+        input.data.command &&
+        !state.events.length &&
+        !state.lineupEvents?.length
+      )
+        return NextResponse.json(
+          { error: "Confirm the game lineup before charting." },
+          { status: 409, headers: privateHeaders },
+        );
       result = input.data.command
         ? await saveCoachState(scope, state, input.data.command)
         : input.data.action === "set-lineup"

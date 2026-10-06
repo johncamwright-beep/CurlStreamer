@@ -18,7 +18,6 @@ import {
   type State,
 } from "@/lib/curlcoach/model";
 import "./coach.css";
-import { createPortal } from "react-dom";
 import { nextTurn } from "@/lib/curlcoach/next-turn";
 import { resolvedLineup, rockNumber } from "@/lib/curlcoach/lineup";
 import LineupDialog from "./LineupDialog";
@@ -61,7 +60,7 @@ function inferredDraft(
 }
 export default function CoachLab({
   unlocked,
-  actionsTarget,
+  onResumeTracking,
   context,
   resume,
   onResume,
@@ -69,7 +68,7 @@ export default function CoachLab({
   onTrackingProgress,
 }: {
   unlocked: boolean;
-  actionsTarget?: HTMLDivElement | null;
+  onResumeTracking?: () => void;
   resume?: { draft: Shot; editing: string | null; current?: Shot };
   onResume?: (value: {
     draft: Shot;
@@ -85,6 +84,7 @@ export default function CoachLab({
   }) => void;
   context?: {
     source: "sample" | "streamer";
+    label?: string;
     eventId: string;
     gameId: string;
     readOnlyReason?: string | null;
@@ -170,6 +170,8 @@ export default function CoachLab({
   const lineup = resolvedLineup(players, state?.lineup);
   const closed = state?.status === "closed" || !!context?.readOnlyReason;
   const rosterReady = players.length > 0;
+  const started =
+    !context || !!state?.lineupEvents?.length || !!state?.events.length;
   useEffect(() => {
     if (rosterReady && !players.some((player) => player.id === draft.playerId))
       setDraft((current) => ({ ...current, playerId: players[0].id }));
@@ -219,7 +221,7 @@ export default function CoachLab({
     }
   }
   async function save(shot: Shot | null, id: string, advance = false) {
-    if (!state || closed) return;
+    if (!state || closed || !started) return;
     setBusy(true);
     try {
       const command = {
@@ -482,7 +484,12 @@ export default function CoachLab({
           disabled={busy || closed || !rosterReady}
           onClick={() => setLineupOpen(true)}
         >
-          Set lineup
+          Edit lineup
+        </button>
+      )}
+      {onResumeTracking && (
+        <button onClick={onResumeTracking} disabled={busy}>
+          Resume tracking
         </button>
       )}
       <button
@@ -525,6 +532,7 @@ export default function CoachLab({
     <section className={context ? "coach-lab coach-scoring" : "coach-lab"}>
       {lineupOpen && (
         <LineupDialog
+          starting={!started}
           players={players}
           lineup={state?.lineup}
           onSave={saveLineup}
@@ -548,6 +556,20 @@ export default function CoachLab({
       <p role="status" aria-live="polite">
         {message}
       </p>
+      {context && !closed && (
+        <header className="coach-panel">
+          <h2>{context.label ?? "Selected game"}</h2>
+          {!closed && started && (
+            <div
+              className="coach-session-actions"
+              role="group"
+              aria-label="Game actions"
+            >
+              {sessionActions}
+            </div>
+          )}
+        </header>
+      )}
       {!open ? (
         <form action={unlock} className="coach-panel">
           <h2>Unlock your local session</h2>
@@ -557,19 +579,37 @@ export default function CoachLab({
           </label>
           <button disabled={busy}>Unlock lab</button>
         </form>
+      ) : closed ? (
+        <section className="coach-panel" aria-label="Closed coaching session">
+          <h2>Game closed</h2>
+          <p>
+            {context?.readOnlyReason ?? "This game is closed for charting."}
+          </p>
+          {context && (
+            <button disabled={busy} onClick={() => void lifecycle("reopen")}>
+              Reopen
+            </button>
+          )}
+        </section>
+      ) : !started ? (
+        <section className="coach-panel">
+          <h2>Ready to chart this game</h2>
+          <p>Confirm the lineup before tracking the first rock.</p>
+          {!rosterReady && (
+            <p>
+              Add your team roster before charting attempts.{" "}
+              <a href="/account">Open Account team setup</a>
+            </p>
+          )}
+          <button
+            disabled={busy || !rosterReady}
+            onClick={() => setLineupOpen(true)}
+          >
+            Start Charting
+          </button>
+        </section>
       ) : (
         <>
-          {closed && (
-            <section
-              className="event-notice"
-              aria-label="Closed coaching session"
-            >
-              <strong>
-                {context?.readOnlyReason ??
-                  "Private coaching session closed. Review remains available; scoring is locked."}
-              </strong>
-            </section>
-          )}
           <div className="coach-columns">
             <section ref={entry} className="coach-panel">
               <h2>{editing ? "Correct attempt" : "Chart an attempt"}</h2>
@@ -938,10 +978,8 @@ export default function CoachLab({
             )}
             players={players}
           />
-          <section className="coach-panel" hidden={!!actionsTarget && !history}>
-            {actionsTarget
-              ? createPortal(sessionActions, actionsTarget)
-              : sessionActions}
+          <section className="coach-panel" hidden={!!context && !history}>
+            {!context && sessionActions}
             {history && (
               <ol>
                 {[...(state?.events ?? [])].reverse().map((event) => (

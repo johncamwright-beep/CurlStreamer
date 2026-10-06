@@ -51,6 +51,8 @@ foreach ($directory in @("app", "node", "native/default", "native/production", "
 }
 if ($BaselineStudio) {
   foreach ($component in $baseline.files) {
+    # Replace the shell icon only after validating the entire baseline above.
+    if ($component.path -match '^icons/curlstreamer-shell-') { continue }
     $target = Join-Path $destinationPath $component.path
     New-Item -ItemType Directory -Force -Path (Split-Path -Parent $target) | Out-Null
     Copy-Item -LiteralPath (Join-Path $BaselineStudio $component.path) -Destination $target
@@ -67,6 +69,7 @@ try {
   New-Item -ItemType Directory -Path "$destinationPath/renderer/branding" -Force | Out-Null
   Copy-Item -LiteralPath (Join-Path $repository 'public/branding/curlstreamer-logo.png') -Destination "$destinationPath/renderer/branding/curlstreamer-logo.png"
   Copy-Item -LiteralPath (Join-Path $repository "public/branding/team-benning.png") -Destination "$destinationPath/renderer/branding/team-benning.png"
+  & (Join-Path $PSScriptRoot 'stage-studio-shell-icon.ps1') -SourceIcon (Join-Path $repository 'public/branding/curlstreamer.ico') -StudioSource $destinationPath | Out-Null
   Copy-Item -LiteralPath $node -Destination (Join-Path $destinationPath "node/node.exe")
   # Re-serialize only the public allowlist. No environment file or OBS profile is copied.
   [ordered]@{ version = 1; website = $settings.website; realtimeUrl = $settings.realtimeUrl; realtimeKey = $settings.realtimeKey; streamingEnabled = ($settings.streamingEnabled -eq $true) } |

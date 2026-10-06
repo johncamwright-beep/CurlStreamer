@@ -94,7 +94,29 @@ assets. The smoke check uses an empty data profile and unarmed native PC check;
 no pairing, recording or provider activation is requested by that check.
 
 Layout: `CurlStreamer Studio.exe`, `studio.json`, `manifest.json`, `node/`,
-`app/`, `native/`, `renderer/`, `obs/`. The private assembly is not a release asset.
+`app/`, `native/`, `renderer/`, `icons/`, `obs/`. The private assembly is not a release asset.
+
+### Windows shell icon
+
+New assemblies include `icons/curlstreamer-shell-<sha256>.ico`, using the existing
+cyan logo on its navy background. The manifest pins the ICO, and the installer
+points its Start shortcut to that file while retaining the `CurlStreamer.Studio`
+application identity. Changing the artwork changes the icon filename, so upgrades
+do not rely on Windows noticing a replacement resource inside the same EXE.
+Older assemblies remain verifiable and use their embedded EXE icon.
+
+`scripts/check-studio-shell-icon.ps1` compares an isolated shortcut's Windows
+shell image with its packaged ICO at 16, 32, 96 and 256 pixels. The Windows CI
+fixture also rejects ambiguous icons and filenames that disagree with the
+manifest hash. It never launches Studio or changes user shortcuts.
+
+A correct EXE or shell image does not prove that Start search displays the logo:
+Windows Search maintains a separate tile/icon cache. Check the installed
+shortcut and application identity first, then verify the visible Start result.
+Any local cache repair must preserve Studio, the search index and Start layout;
+keep backups of the exact disposable tile/icon cache files before regenerating
+them. Development EXEs appearing below the installed app are indexed build files,
+not additional installed Start shortcuts; retain release/rollback evidence.
 
 ## Evidence and remaining work
 

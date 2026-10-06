@@ -35,12 +35,23 @@ $configuration = Get-Content -LiteralPath (Join-Path $sourceRoot 'studio.json') 
 if ($configuration.version -ne 1 -or $configuration.realtimeKey -notmatch '^sb_publishable_[A-Za-z0-9_-]+$' -or $configuration.streamingEnabled -isnot [bool]) { throw "Invalid private preview configuration." }
 if ($configuration.streamingEnabled -and -not $AllowStreamingPreview) { throw "Streaming preview packaging requires explicit opt-in." }
 if (@($configuration.PSObject.Properties.Name | Where-Object { $_ -notin @('version','website','realtimeUrl','realtimeKey','streamingEnabled') }).Count) { throw "Unexpected Studio configuration." }
+$shellIcons = @($manifest.files | Where-Object { $_.path -match '^icons/curlstreamer-shell-' })
+$shellIcon = $null
+if ($shellIcons.Count -gt 1) { throw 'Studio assembly contains ambiguous shell icons.' }
+if ($shellIcons.Count -eq 1) {
+  $candidate = $shellIcons[0]
+  if ($candidate.path -notmatch '^icons/curlstreamer-shell-([a-f0-9]{64})\.ico$' -or $Matches[1] -ne $candidate.sha256) { throw 'Shell icon filename must match its content hash.' }
+  $shellIcon = $candidate.path.Replace('/', '\')
+}
+# Older assemblies retain their EXE icon. All new studio builds stage an ICO.
 if ($VerifyOnly) { Write-Output "PASS: $($manifest.files.Count) component hashes, complete Studio assembly, safe public configuration, no extra or linked files."; return }
 if (-not $CompilerPath -or -not (Test-Path -LiteralPath $CompilerPath -PathType Leaf)) { throw 'Provide the Inno Setup compiler path, or use -VerifyOnly for assembly verification.' }
 New-Item -ItemType Directory -Path $outputRoot -Force | Out-Null
 $installerPath = Join-Path $outputRoot "CurlStreamer-Studio-$($manifest.release)-Setup.exe"
 if (Test-Path -LiteralPath $installerPath) { throw "Use a new output directory; existing installers are never overwritten." }
-& $CompilerPath "/DStudioSource=$sourceRoot" "/DStudioVersion=$($manifest.release)" "/DInstallerOutput=$outputRoot" (Join-Path $PSScriptRoot '../native/m5-studio-launcher/installer.iss') *> (Join-Path $outputRoot 'compile.log')
+$compilerArguments = @("/DStudioSource=$sourceRoot", "/DStudioVersion=$($manifest.release)", "/DInstallerOutput=$outputRoot")
+if ($shellIcon) { $compilerArguments += "/DStudioShellIcon=$shellIcon" }
+& $CompilerPath @compilerArguments (Join-Path $PSScriptRoot '../native/m5-studio-launcher/installer.iss') *> (Join-Path $outputRoot 'compile.log')
 if ($LASTEXITCODE -ne 0) { throw "Installer compilation failed. See compile.log." }
 $innoLicense = Join-Path (Split-Path -Parent $CompilerPath) 'license.txt'
 if (-not (Test-Path -LiteralPath $innoLicense)) { throw "Inno Setup license.txt is required beside ISCC.exe." }

@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
   thumbnail: vi.fn(),
   update: vi.fn(),
   from: vi.fn(),
+  media: vi.fn(),
 }));
 
 vi.mock("@/lib/supabase/admin", () => ({
@@ -28,8 +29,14 @@ vi.mock("./youtube-live", () => ({
 vi.mock("./youtube-thumbnail", () => ({
   uploadScheduledThumbnail: mocks.thumbnail,
 }));
+vi.mock("./youtube-thumbnail-media", () => ({
+  loadScheduledThumbnailMedia: mocks.media,
+}));
 
-import { provisionScheduledYouTubeBroadcast } from "./scheduled-youtube";
+import {
+  provisionScheduledYouTubeBroadcast,
+  refreshScheduledYouTubeThumbnail,
+} from "./scheduled-youtube";
 
 describe("scheduled YouTube provisioning", () => {
   beforeEach(() => {
@@ -42,6 +49,7 @@ describe("scheduled YouTube provisioning", () => {
     };
     mocks.from.mockReturnValue({ update: vi.fn(() => updateQuery) });
     mocks.thumbnail.mockResolvedValue(undefined);
+    mocks.media.mockResolvedValue({});
     mocks.update.mockResolvedValue(undefined);
     mocks.credentials.mockResolvedValue({
       encrypted_credentials: "encrypted",
@@ -393,4 +401,37 @@ describe("scheduled YouTube provisioning", () => {
     });
     expect(mocks.broadcast).not.toHaveBeenCalled();
   });
+});
+
+it("refreshes existing artwork using authorized team media without reserving or editing a broadcast", async () => {
+  const media = {
+    teamLogo: "data:image/png;base64,logo",
+    teamPhoto: "data:image/png;base64,photo",
+  };
+  mocks.media.mockResolvedValue(media);
+  const info = {
+    homeName: "Rocks",
+    awayName: "Ice",
+    eventName: "Final",
+    scheduledStart: "2026-10-09T23:00:00Z",
+    timezone: "America/Toronto",
+  };
+  vi.clearAllMocks();
+  await refreshScheduledYouTubeThumbnail(
+    { id: "user" } as never,
+    "game",
+    "abcdefghijk",
+    info,
+  );
+  expect(mocks.credentials).toHaveBeenCalledWith({ id: "user" }, "game");
+  expect(mocks.media).toHaveBeenCalledWith(
+    "11111111-1111-4111-8111-111111111111",
+  );
+  expect(mocks.thumbnail).toHaveBeenCalledWith("access", "abcdefghijk", {
+    ...info,
+    ...media,
+  });
+  expect(mocks.rpc).not.toHaveBeenCalled();
+  expect(mocks.broadcast).not.toHaveBeenCalled();
+  expect(mocks.update).not.toHaveBeenCalled();
 });

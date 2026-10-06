@@ -16,6 +16,7 @@ import { firstValidYoutubeWatchUrl } from "@/lib/youtube-watch";
 import { GameEventFilter } from "@/components/GameEventFilter";
 import { OpponentEditControl } from "@/components/OpponentEditControl";
 import { DashboardRefresh } from "@/components/DashboardRefresh";
+import { YouTubeThumbnailUpdate } from "@/components/YouTubeThumbnailUpdate";
 
 export function GamesDashboard({
   account,
@@ -479,6 +480,11 @@ function GameCard({
               </Link>
             )}
             <GameDeletionControl gameId={game.id} title={title} matchup="" />
+            {game.config.youtubeEnabled &&
+              !game.config.sharedYoutubeWatchUrl &&
+              game.scheduledYouTubeWatchUrl &&
+              !completed &&
+              !closed && <YouTubeThumbnailUpdate gameId={game.id} />}
           </div>
         </details>
       )}

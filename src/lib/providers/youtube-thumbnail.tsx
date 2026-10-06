@@ -11,6 +11,9 @@ export type ScheduledThumbnail = {
   eventName: string;
   scheduledStart: string;
   timezone: string;
+  /** Prepared image data URLs; remote asset retrieval belongs to the caller. */
+  teamLogo?: string;
+  teamPhoto?: string;
 };
 
 export async function renderScheduledThumbnail(info: ScheduledThumbnail) {
@@ -30,6 +33,8 @@ export async function renderScheduledThumbnail(info: ScheduledThumbnail) {
     minute: "2-digit",
     timeZoneName: "short",
   }).format(new Date(info.scheduledStart));
+  const matchupFontSize =
+    Math.max(info.homeName.length, info.awayName.length) > 36 ? 38 : 52;
   const response = new ImageResponse(
     <div
       style={{
@@ -39,102 +44,161 @@ export async function renderScheduledThumbnail(info: ScheduledThumbnail) {
         height: "100%",
         background: "linear-gradient(125deg, #071522, #103c48)",
         color: "#f8fafc",
-        padding: "42px 64px",
+        padding: "36px 48px 40px",
         fontFamily: "sans-serif",
+        borderBottom: "8px solid #63dce8",
       }}
     >
       <div
         style={{
           display: "flex",
-          alignItems: "center",
+          height: 156,
+          alignItems: "flex-start",
           justifyContent: "space-between",
+          flexShrink: 0,
         }}
       >
-        <img
-          src={`data:image/png;base64,${logo.toString("base64")}`}
-          width={530}
-          height={134}
-        />
-        <div
-          style={{
-            display: "flex",
-            fontSize: 20,
-            color: "#63dce8",
-            letterSpacing: 3,
-          }}
-        >
-          UPCOMING GAME
+        <div style={{ display: "flex", flexDirection: "column" }}>
+          <img
+            alt="CurlStreamer"
+            src={`data:image/png;base64,${logo.toString("base64")}`}
+            width={330}
+            height={84}
+            style={{ objectFit: "contain" }}
+          />
+          <div
+            style={{
+              display: "flex",
+              fontSize: 19,
+              color: "#63dce8",
+              letterSpacing: 4,
+              marginTop: 20,
+            }}
+          >
+            UPCOMING GAME
+          </div>
         </div>
+        {info.teamLogo ? (
+          <img
+            alt="Team logo"
+            src={info.teamLogo}
+            width={260}
+            height={156}
+            style={{ objectFit: "contain" }}
+          />
+        ) : null}
       </div>
       <div
         style={{
           display: "flex",
-          flexDirection: "column",
           flex: 1,
-          justifyContent: "center",
+          gap: 36,
+          marginTop: 18,
+          minHeight: 0,
         }}
       >
         <div
           style={{
             display: "flex",
-            fontSize: 50,
-            fontWeight: 700,
-            lineHeight: 1.15,
+            flexDirection: "column",
+            width: info.teamPhoto ? 650 : "100%",
+            justifyContent: "space-between",
           }}
         >
-          {info.homeName}
+          <div style={{ display: "flex", flexDirection: "column" }}>
+            <div
+              style={{
+                display: "flex",
+                fontSize: matchupFontSize,
+                fontWeight: 700,
+                lineHeight: 1.1,
+              }}
+            >
+              {info.homeName}
+            </div>
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                fontSize: 22,
+                color: "#63dce8",
+                letterSpacing: 3,
+                margin: "14px 0",
+              }}
+            >
+              VS
+            </div>
+            <div
+              style={{
+                display: "flex",
+                fontSize: matchupFontSize,
+                fontWeight: 700,
+                lineHeight: 1.1,
+              }}
+            >
+              {info.awayName}
+            </div>
+            {info.eventName !== "Single Game" ? (
+              <div
+                style={{
+                  display: "flex",
+                  fontSize: info.eventName.length > 70 ? 22 : 27,
+                  lineHeight: 1.25,
+                  color: "#d6e3ee",
+                  marginTop: 24,
+                }}
+              >
+                {info.eventName}
+              </div>
+            ) : null}
+          </div>
+          <div
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              borderTop: "2px solid #3f6673",
+              paddingTop: 18,
+              marginTop: 20,
+              fontSize: 24,
+            }}
+          >
+            <div style={{ display: "flex" }}>{date}</div>
+            <div
+              style={{
+                display: "flex",
+                color: "#63dce8",
+                fontSize: 40,
+                fontWeight: 700,
+                marginTop: 8,
+              }}
+            >
+              {time}
+            </div>
+          </div>
         </div>
-        <div
-          style={{
-            display: "flex",
-            fontSize: 25,
-            color: "#63dce8",
-            margin: "10px 0",
-          }}
-        >
-          VS
-        </div>
-        <div
-          style={{
-            display: "flex",
-            fontSize: 50,
-            fontWeight: 700,
-            lineHeight: 1.15,
-          }}
-        >
-          {info.awayName}
-        </div>
-        <div
-          style={{
-            display: "flex",
-            fontSize: 28,
-            color: "#d6e3ee",
-            marginTop: 25,
-          }}
-        >
-          {info.eventName === "Single Game" ? "" : info.eventName}
-        </div>
-      </div>
-      <div
-        style={{
-          display: "flex",
-          flexDirection: "column",
-          borderTop: "2px solid #3f6673",
-          paddingTop: 18,
-          fontSize: 28,
-        }}
-      >
-        <div style={{ display: "flex" }}>{date}</div>
-        <div
-          style={{
-            display: "flex",
-            color: "#63dce8",
-            fontSize: 38,
-            marginTop: 6,
-          }}
-        >
-          {time}
-        </div>
+        {info.teamPhoto ? (
+          <div
+            style={{
+              display: "flex",
+              width: 498,
+              height: "100%",
+              background: "#081e2b",
+              border: "2px solid #3f6673",
+              borderRadius: 20,
+              alignItems: "center",
+              justifyContent: "center",
+              padding: 14,
+            }}
+          >
+            <img
+              alt="Team photo"
+              src={info.teamPhoto}
+              width={466}
+              height={428}
+              style={{ objectFit: "contain" }}
+            />
+          </div>
+        ) : null}
       </div>
     </div>,
     { width: 1280, height: 720 },

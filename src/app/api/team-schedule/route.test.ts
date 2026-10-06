@@ -11,6 +11,7 @@ const mocks = vi.hoisted(() => ({
   listOpponentSeasons: vi.fn(),
   saveOpponentDetails: vi.fn(),
   provisionScheduledYouTubeBroadcast: vi.fn(),
+  refreshScheduledYouTubeThumbnail: vi.fn(),
 }));
 
 vi.mock("@/lib/supabase/server", () => ({
@@ -44,6 +45,7 @@ vi.mock("@/lib/team-hierarchy-service", async (importOriginal) => ({
 }));
 vi.mock("@/lib/providers/scheduled-youtube", () => ({
   provisionScheduledYouTubeBroadcast: mocks.provisionScheduledYouTubeBroadcast,
+  refreshScheduledYouTubeThumbnail: mocks.refreshScheduledYouTubeThumbnail,
 }));
 
 import { GET, POST } from "./route";
@@ -474,6 +476,70 @@ describe("team schedule timezone boundary", () => {
       expect.anything(),
       expect.objectContaining({ gameId, visibility: "public" }),
     );
+  });
+
+  it("updates existing artwork without editing the game or reserving a new video", async () => {
+    const hierarchy = await mocks.loadTeamHierarchyData();
+    hierarchy.games[0].config = { ...config, youtubeEnabled: true };
+    hierarchy.games[0].scheduledYouTubeWatchUrl =
+      "https://www.youtube.com/watch?v=abcdefghijk";
+    mocks.refreshScheduledYouTubeThumbnail.mockResolvedValue(undefined);
+    const response = await POST(
+      new Request("http://localhost/api/team-schedule", {
+        method: "POST",
+        body: JSON.stringify({ operation: "refreshYouTubeThumbnail", gameId }),
+      }),
+    );
+    expect(response.status).toBe(200);
+    expect(mocks.refreshScheduledYouTubeThumbnail).toHaveBeenCalledWith(
+      expect.anything(),
+      gameId,
+      "abcdefghijk",
+      expect.objectContaining({ homeName: "Rocks" }),
+    );
+    expect(mocks.updateScheduledTeamGame).not.toHaveBeenCalled();
+    expect(mocks.provisionScheduledYouTubeBroadcast).not.toHaveBeenCalled();
+  });
+
+  it.each(["viewer", "game_operator"])(
+    "rejects %s thumbnail mutations before reading team data",
+    async (role) => {
+      mocks.getAccountContext.mockResolvedValue({
+        ok: true,
+        account: { membership: { role } },
+      });
+      const response = await POST(
+        new Request("http://localhost/api/team-schedule", {
+          method: "POST",
+          body: JSON.stringify({
+            operation: "refreshYouTubeThumbnail",
+            gameId,
+          }),
+        }),
+      );
+      expect(response.status).toBe(403);
+      expect(mocks.refreshScheduledYouTubeThumbnail).not.toHaveBeenCalled();
+      expect(mocks.loadTeamHierarchyData).not.toHaveBeenCalled();
+    },
+  );
+
+  it("rejects external shared video artwork without calling Google", async () => {
+    const hierarchy = await mocks.loadTeamHierarchyData();
+    hierarchy.games[0].config = {
+      ...config,
+      youtubeEnabled: true,
+      sharedYoutubeWatchUrl: "https://www.youtube.com/watch?v=abcdefghijk",
+    };
+    hierarchy.games[0].scheduledYouTubeWatchUrl =
+      "https://www.youtube.com/watch?v=abcdefghijk";
+    const response = await POST(
+      new Request("http://localhost/api/team-schedule", {
+        method: "POST",
+        body: JSON.stringify({ operation: "refreshYouTubeThumbnail", gameId }),
+      }),
+    );
+    expect(response.status).toBe(400);
+    expect(mocks.refreshScheduledYouTubeThumbnail).not.toHaveBeenCalled();
   });
 
   it("rejects unsupported visibility before a game or provider is created", async () => {

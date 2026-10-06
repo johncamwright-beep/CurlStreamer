@@ -32,7 +32,10 @@ import { gameSchema } from "@/lib/schema";
 import { initialGameState } from "@/lib/team-games";
 import { loadTeamHierarchyData } from "@/lib/team-hierarchy-data";
 import { getAccountContext } from "@/lib/auth/account";
-import { provisionScheduledYouTubeBroadcast } from "@/lib/providers/scheduled-youtube";
+import {
+  provisionScheduledYouTubeBroadcast,
+  refreshScheduledYouTubeThumbnail,
+} from "@/lib/providers/scheduled-youtube";
 
 const id = z.uuid();
 const requestSchema = z.discriminatedUnion("operation", [
@@ -57,6 +60,9 @@ const requestSchema = z.discriminatedUnion("operation", [
     input: eventInputSchema,
   }),
   z.object({ operation: z.literal("retryYouTube"), gameId: id }),
+  z
+    .object({ operation: z.literal("refreshYouTubeThumbnail"), gameId: id })
+    .strict(),
   z.object({ operation: z.literal("archiveEvent"), eventId: id }),
   z.object({
     operation: z.literal("createOpponent"),
@@ -130,6 +136,11 @@ export async function POST(request: Request) {
   const body = parsed.data;
   const account = await getAccountContext(user);
   if (!account.ok || !account.account.membership)
+    return hierarchyFailure({ kind: "authorization" });
+  if (
+    body.operation === "refreshYouTubeThumbnail" &&
+    !["owner", "team_admin"].includes(account.account.membership.role)
+  )
     return hierarchyFailure({ kind: "authorization" });
   if (
     ["createOpponentDetails", "updateOpponentDetails"].includes(
@@ -365,6 +376,48 @@ export async function POST(request: Request) {
         };
       }
       break;
+    }
+    case "refreshYouTubeThumbnail": {
+      const hierarchy = await loadTeamHierarchyData(user);
+      const game = hierarchy.ok
+        ? hierarchy.games.find((candidate) => candidate.id === body.gameId)
+        : undefined;
+      if (!game)
+        return hierarchyFailure({
+          kind: hierarchy.ok ? "authorization" : "service",
+        });
+      // Only an app-owned reserved page may receive team artwork. Shared links
+      // never authorize changes to somebody else's video.
+      if (
+        !game.config.youtubeEnabled ||
+        game.config.sharedYoutubeWatchUrl ||
+        !game.scheduledStart ||
+        !game.scheduledYouTubeWatchUrl
+      )
+        return hierarchyFailure({ kind: "validation" });
+      const videoId = new URL(game.scheduledYouTubeWatchUrl).searchParams.get(
+        "v",
+      );
+      if (!videoId || !/^[A-Za-z0-9_-]{11}$/.test(videoId))
+        return hierarchyFailure({ kind: "validation" });
+      try {
+        await refreshScheduledYouTubeThumbnail(user, game.id, videoId, {
+          homeName: game.config.homeName,
+          awayName: game.config.awayName,
+          eventName: game.config.eventName,
+          scheduledStart: game.scheduledStart,
+          timezone: game.timezone ?? "America/Toronto",
+        });
+      } catch {
+        return NextResponse.json(
+          {
+            error:
+              "The thumbnail could not be updated. Check the connected YouTube channel and try again. Your game and video link have not changed.",
+          },
+          { status: 503 },
+        );
+      }
+      return NextResponse.json({ updated: true });
     }
     case "retryYouTube": {
       const hierarchy = await loadTeamHierarchyData(user);

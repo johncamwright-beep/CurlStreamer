@@ -109,7 +109,9 @@ export type M4CameraInputSnapshot = {
   phase: M4CameraInputPhase;
   errorCode: M4CameraInputError;
   generation: number;
+  zoom?: number;
 };
+export const m4CameraZoomSchema = z.number().min(1).max(4).multipleOf(0.1);
 export const m4CameraInputSnapshotSchema = z
   .object({
     kind: z.enum(["phone", "tapo", "rtsp"]),
@@ -133,5 +135,6 @@ export const m4CameraInputSnapshotSchema = z
       ])
       .nullable(),
     generation: z.number().int().nonnegative(),
+    zoom: m4CameraZoomSchema.default(1),
   })
   .strict();

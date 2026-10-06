@@ -5,7 +5,11 @@ import type { GameState } from "@/lib/types";
 import { clampZoom } from "@/lib/providers/livekit-client";
 import { useGame } from "@/components/GameSync";
 import { previewSubscribeAccessToken } from "@/lib/access-session";
-import { useStudioCameraInputs } from "./StudioCameraInputs";
+import {
+  cameraInputNativeZoom,
+  useStudioCameraInputs,
+  type StudioCameraInput,
+} from "./StudioCameraInputs";
 
 const FRESH_MS = 75_000;
 type Role = "camera-home" | "camera-away";
@@ -45,13 +49,6 @@ export function CameraZoomControls({
   act: (action: unknown) => Promise<void>;
 }) {
   const cameraInputs = useStudioCameraInputs(game.id);
-  if (
-    cameraInputs["camera-home"] &&
-    cameraInputs["camera-home"].kind !== "phone" &&
-    cameraInputs["camera-away"] &&
-    cameraInputs["camera-away"].kind !== "phone"
-  )
-    return null;
   return (
     <aside
       data-testid="camera-zoom-rail"
@@ -60,11 +57,151 @@ export function CameraZoomControls({
     >
       <h2>Camera zoom</h2>
       {(["camera-home", "camera-away"] as const).map((role) =>
-        cameraInputs[role] && cameraInputs[role].kind !== "phone" ? null : (
+        cameraInputs[role] && cameraInputs[role].kind !== "phone" ? (
+          <IpCameraZoomControl
+            key={`${game.id}:${role}:${cameraInputs[role].kind}:${cameraInputs[role].generation}`}
+            id={game.id}
+            role={role}
+            source={cameraInputs[role]}
+          />
+        ) : (
           <CameraZoomControl key={role} game={game} role={role} act={act} />
         ),
       )}
     </aside>
+  );
+}
+
+function IpCameraZoomControl({
+  id,
+  role,
+  source,
+}: {
+  id?: string;
+  role: Role;
+  source: StudioCameraInput;
+}) {
+  const label = role === "camera-home" ? "Camera 1" : "Camera 2";
+  const [confirmed, setConfirmed] = useState(source.zoom ?? 1);
+  const [draft, setDraft] = useState<number>();
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState("");
+  const latest = useRef<number | undefined>(undefined);
+  const desired = useRef<number | undefined>(undefined);
+  const sending = useRef(false);
+  const active = useRef(true);
+  useEffect(() => {
+    active.current = true;
+    return () => {
+      active.current = false;
+    };
+  }, []);
+  useEffect(() => {
+    if (!sending.current && desired.current === undefined)
+      setConfirmed(source.zoom ?? 1);
+  }, [source.zoom]);
+  const clamp = (value: number) =>
+    Math.round(Math.max(1, Math.min(4, value)) * 10) / 10;
+  const send = async () => {
+    if (sending.current || !id) return;
+    sending.current = true;
+    setPending(true);
+    setError("");
+    try {
+      while (latest.current !== undefined && active.current) {
+        const value = latest.current;
+        latest.current = undefined;
+        const applied = await cameraInputNativeZoom(
+          id,
+          role,
+          source.generation,
+          value,
+        );
+        if (!active.current) return;
+        setConfirmed(applied);
+        if (desired.current === value) {
+          desired.current = undefined;
+          setDraft(undefined);
+        }
+      }
+    } catch (reason) {
+      if (!active.current) return;
+      latest.current = undefined;
+      desired.current = undefined;
+      setDraft(undefined);
+      setError(
+        reason instanceof Error
+          ? reason.message
+          : "Could not change IP camera zoom. Try again.",
+      );
+    } finally {
+      sending.current = false;
+      if (active.current) setPending(false);
+    }
+  };
+  const edit = (value: number) => {
+    const next = clamp(value);
+    desired.current = next;
+    latest.current = next;
+    setDraft(next);
+  };
+  const request = (value: number) => {
+    edit(value);
+    void send();
+  };
+  const displayed = draft ?? confirmed;
+  const enabled = Boolean(id && source.configured);
+  return (
+    <section className="camera-zoom-control" aria-label={`${label} zoom`}>
+      <h3>{label}</h3>
+      <p aria-live="polite">
+        {confirmed.toFixed(1)}× digital zoom{pending ? " · sending…" : ""}
+      </p>
+      <div className="camera-zoom-buttons">
+        <button
+          className="min-h-11"
+          type="button"
+          disabled={!enabled || displayed <= 1}
+          aria-label={`${label} zoom out`}
+          onClick={() => request((desired.current ?? confirmed) - 0.1)}
+        >
+          −
+        </button>
+        <button
+          className="min-h-11"
+          type="button"
+          disabled={!enabled || displayed >= 4}
+          aria-label={`${label} zoom in`}
+          onClick={() => request((desired.current ?? confirmed) + 0.1)}
+        >
+          +
+        </button>
+      </div>
+      <input
+        className="min-h-11"
+        aria-label={`${label} zoom level`}
+        type="range"
+        min="1"
+        max="4"
+        step="0.1"
+        value={displayed}
+        disabled={!enabled}
+        onChange={(event) => edit(Number(event.target.value))}
+        onPointerUp={() => void send()}
+        onKeyUp={() => void send()}
+        onBlur={() => void send()}
+      />
+      <button
+        className="camera-zoom-reset secondary min-h-11"
+        type="button"
+        disabled={!enabled}
+        aria-label={`${label} reset zoom`}
+        onClick={() => request(1)}
+      >
+        Reset 1×
+      </button>
+      {error && <p role="alert">{error}</p>}
+    </section>
   );
 }
 

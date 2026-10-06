@@ -90,9 +90,11 @@ async function request(
 function CameraVideo({
   state,
   onAspect,
+  zoom = 1,
 }: {
   state: CameraState;
   onAspect: (aspect: number) => void;
+  zoom?: number;
 }) {
   const ref = useRef<HTMLVideoElement>(null);
   const canvasHost = useRef<HTMLDivElement>(null);
@@ -110,6 +112,13 @@ function CameraVideo({
     };
   }, [state.canvas]);
   useEffect(() => {
+    // Zoom only the IP picture. Its original aspect still determines layout;
+    // the scoreboard, sponsors and phone hardware zoom remain independent.
+    if (!state.canvas) return;
+    state.canvas.style.transformOrigin = "center";
+    state.canvas.style.transform = zoom === 1 ? "" : `scale(${zoom})`;
+  }, [state.canvas, zoom]);
+  useEffect(() => {
     const video = ref.current;
     if (!video) return;
     video.srcObject = state.stream ?? null;
@@ -121,7 +130,10 @@ function CameraVideo({
   return (
     <>
       {state.canvas ? (
-        <div ref={canvasHost} style={{ position: "absolute", inset: 0 }} />
+        <div
+          ref={canvasHost}
+          style={{ position: "absolute", inset: 0, overflow: "hidden" }}
+        />
       ) : (
         <video
           className="portrait-camera-video"
@@ -434,7 +446,8 @@ function ProgramRenderer() {
             roles.every(
               (role) =>
                 previous[role].kind === value.cameras[role].kind &&
-                previous[role].generation === value.cameras[role].generation,
+                previous[role].generation === value.cameras[role].generation &&
+                (previous[role].zoom ?? 1) === (value.cameras[role].zoom ?? 1),
             )
               ? previous
               : value.cameras,
@@ -514,6 +527,13 @@ function ProgramRenderer() {
         renderCamera={(role) => (
           <CameraVideo
             state={cameras[role]}
+            zoom={
+              sources?.[role].kind !== "phone" &&
+              cameras[role].sourceIdentity ===
+                `${sources?.[role].kind}:${sources?.[role].generation}`
+                ? (sources?.[role].zoom ?? 1)
+                : 1
+            }
             onAspect={(aspect) =>
               setCameras((current) =>
                 current[role].aspect === aspect

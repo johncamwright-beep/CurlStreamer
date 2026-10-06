@@ -373,12 +373,17 @@ button {
   width: 100%;
   min-height: 44px;
 }
+.camera-zoom-reset {
+  grid-column: 1 / -1;
+  width: 100%;
+  min-height: 44px;
+}
 @media (max-width: 700px) {
   .camera-zoom-rail {
     top: auto;
     bottom: max(4.5rem, env(safe-area-inset-bottom));
     width: calc(100vw - 1.5rem);
-    max-height: 224px;
+    max-height: min(280px, calc(100dvh - 140px));
     display: grid;
     grid-template-columns: 1fr 1fr;
     gap: 0.6rem;

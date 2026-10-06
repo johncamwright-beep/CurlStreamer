@@ -22,6 +22,12 @@ const reconnect = (cameraRole = "camera-home") => ({
   action: "reconnect-camera-input",
   cameraRole,
 });
+const zoom = (generation = 1, value = 2, cameraRole = "camera-home") => ({
+  action: "set-camera-zoom",
+  cameraRole,
+  generation,
+  value,
+});
 async function fixture(startGate?: Promise<void>) {
   const directory = await mkdtemp(join(tmpdir(), "m4-input-operator-"));
   let finalize!: (result: { finalized: boolean }) => void;
@@ -101,6 +107,40 @@ async function fixture(startGate?: Promise<void>) {
 }
 
 describe("operator camera input commands", () => {
+  it("permits zoom only for the active generation and preserves independent private state", async () => {
+    const f = await fixture();
+    try {
+      await f.send(configure());
+      expect((await f.send(zoom())).status).toBe(409);
+      expect((await f.startProgram()).status).toBe(200);
+      const generation = (await f.state()).cameraInputs["camera-home"]
+        .generation;
+      expect((await f.send(zoom(generation, 2, "camera-away"))).status).toBe(
+        409,
+      );
+      expect((await f.send(zoom(generation - 1))).status).toBe(409);
+      const response = await f.send(zoom(generation, 2.3));
+      expect(response.status).toBe(200);
+      const text = await response.text();
+      expect(text).not.toMatch(
+        /private-camera-user|private-camera-password|username|password|rtsp:/,
+      );
+      expect(JSON.parse(text).cameraInputs).toMatchObject({
+        "camera-home": { generation, zoom: 2.3 },
+        "camera-away": { zoom: 1 },
+      });
+      expect((await f.send(reconnect())).status).toBe(200);
+      expect((await f.state()).cameraInputs["camera-home"].zoom).toBe(2.3);
+      expect((await f.send(zoom(generation))).status).toBe(409);
+      await f.send(configure());
+      const replacement = (await f.state()).cameraInputs["camera-home"];
+      expect(replacement.zoom).toBe(1);
+      expect((await f.send({ action: "stop-program" })).status).toBe(200);
+      expect((await f.send(zoom(replacement.generation))).status).toBe(409);
+    } finally {
+      await f.close();
+    }
+  });
   it("switches and reconnects a generic private RTSP slot without leaking endpoint secrets", async () => {
     const f = await fixture();
     try {
@@ -147,6 +187,7 @@ describe("operator camera input commands", () => {
       for (const overrides of deniedHeaders) {
         expect((await f.send(configure(), overrides)).status).toBe(403);
         expect((await f.send(reconnect(), overrides)).status).toBe(403);
+        expect((await f.send(zoom(), overrides)).status).toBe(403);
       }
       for (const command of [
         configure("camera-other"),
@@ -154,6 +195,13 @@ describe("operator camera input commands", () => {
         configure("camera-home", { ...source, host: "8.8.8.8" }),
         configure("camera-home", { ...source, port: 8554 }),
         { ...configure(), gameId: "22222222-2222-4222-8222-222222222222" },
+        zoom(1, 2, "camera-other"),
+        zoom(-1),
+        zoom(1.5),
+        zoom(1, 0.9),
+        zoom(1, 4.1),
+        zoom(1, 1.05),
+        { ...zoom(), gameId },
       ]) {
         expect((await f.send(command)).status).toBe(400);
       }
@@ -261,6 +309,9 @@ describe("operator camera input commands", () => {
       ).toBe(409);
       expect((await f.send(reconnect())).status).toBe(409);
       expect((await f.state()).cameraInputs).toEqual(before);
+      expect(
+        (await f.send(zoom(before["camera-home"].generation))).status,
+      ).toBe(409);
       expect(f.stopPhone).not.toHaveBeenCalled();
       release();
       expect((await pending).status).toBe(200);

@@ -1,11 +1,46 @@
 using System;
 using System.IO;
+using System.Collections.Generic;
 internal static class WorkspacePolicyTests
 {
     private static void Assert(bool pass) { if (!pass) throw new Exception("Workspace boundary regression"); }
     private static int Main()
     {
         const string origin = "https://studio.example", id = "11111111-1111-4111-8111-111111111111";
+        var zoomRequest = new Dictionary<string, object> { { "action", "zoom-camera" }, { "gameId", id }, { "cameraRole", "camera-home" }, { "generation", 3 }, { "value", 2.5m }, { "nonce", Guid.NewGuid().ToString("D") } };
+        string role, nonce; int generation; double zoom;
+        Assert(WorkspacePolicy.CameraZoomRequest(zoomRequest, id, id, out role, out generation, out zoom, out nonce));
+        Assert(role == "camera-home" && generation == 3 && zoom == 2.5);
+        Assert(!WorkspacePolicy.CameraZoomRequest(zoomRequest, null, id, out role, out generation, out zoom, out nonce));
+        Assert(!WorkspacePolicy.CameraZoomRequest(zoomRequest, id, "other-game", out role, out generation, out zoom, out nonce));
+        foreach (var invalid in new object[] { true, "2", 0.9, 4.1, 2.55, Double.NaN, Double.PositiveInfinity }) {
+            var request = new Dictionary<string, object>(zoomRequest); request["value"] = invalid;
+            Assert(!WorkspacePolicy.CameraZoomRequest(request, id, id, out role, out generation, out zoom, out nonce));
+        }
+        foreach (var field in new[] { "gameId", "cameraRole", "generation", "nonce" }) {
+            var request = new Dictionary<string, object>(zoomRequest); request[field] = "invalid";
+            Assert(!WorkspacePolicy.CameraZoomRequest(request, id, id, out role, out generation, out zoom, out nonce));
+        }
+        var extraZoomField = new Dictionary<string, object>(zoomRequest); extraZoomField["url"] = "http://other.example";
+        Assert(!WorkspacePolicy.CameraZoomRequest(extraZoomField, id, id, out role, out generation, out zoom, out nonce));
+        var zoomSources = new Dictionary<string, object> { { "camera-home", new Dictionary<string, object> { { "kind", "tapo" }, { "generation", 3 } } } };
+        Assert(WorkspacePolicy.CameraZoomSource(zoomSources, "camera-home", 3));
+        Assert(!WorkspacePolicy.CameraZoomSource(zoomSources, "camera-home", 2));
+        Assert(!WorkspacePolicy.CameraZoomSource(zoomSources, "camera-away", 3));
+        var otherSource = new Dictionary<string, object> { { "kind", "rtsp" }, { "generation", 8 }, { "zoom", 3.0 } };
+        zoomSources["camera-away"] = otherSource;
+        var receivedSources = new Dictionary<string, object> {
+            { "camera-home", new Dictionary<string, object> { { "kind", "tapo" }, { "generation", 3 }, { "zoom", 2.5 } } },
+            { "camera-away", new Dictionary<string, object> { { "kind", "rtsp" }, { "generation", 8 }, { "zoom", 1.0 } } }
+        };
+        var mergedSources = (Dictionary<string, object>)WorkspacePolicy.MergeCameraZoomInputs(zoomSources, receivedSources, "camera-home", 3);
+        Assert(Object.ReferenceEquals(mergedSources["camera-away"], otherSource));
+        Assert((double)((Dictionary<string, object>)mergedSources["camera-home"])["zoom"] == 2.5);
+        bool staleZoomDenied = false;
+        try { WorkspacePolicy.MergeCameraZoomInputs(zoomSources, receivedSources, "camera-home", 2); } catch (InvalidDataException) { staleZoomDenied = true; }
+        Assert(staleZoomDenied);
+        ((Dictionary<string, object>)zoomSources["camera-home"])["kind"] = "phone";
+        Assert(!WorkspacePolicy.CameraZoomSource(zoomSources, "camera-home", 3));
         Assert(WorkspacePolicy.Microphone(origin, origin + "/score/" + id, origin, id, true));
         Assert(!WorkspacePolicy.Microphone(origin, origin + "/score/" + id, origin, id, false));
         Assert(!WorkspacePolicy.Microphone("https://other.example", origin + "/score/" + id, origin, id, true));

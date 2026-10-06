@@ -10,6 +10,7 @@ import type {
 import { cameraRoleSchema, type CameraRole } from "../m2-studio-protocol";
 import {
   m4CameraInputSchema,
+  m4CameraZoomSchema,
   type M4CameraInput,
   type M4CameraInputSnapshot,
   type M4CameraInputError,
@@ -57,6 +58,7 @@ type Slot = {
   config: M4CameraInput;
   generation: number;
   phase: M4CameraInputSnapshot["phase"];
+  zoom: number;
   errorCode: M4CameraInputError;
   child?: ChildProcessWithoutNullStreams;
   retirement?: Promise<boolean>;
@@ -130,6 +132,7 @@ export function createM4IpCameraManager(
         role,
         config: { kind: "phone" },
         generation: 0,
+        zoom: 1,
         phase: "idle",
         errorCode: null,
         failures: 0,
@@ -407,13 +410,14 @@ export function createM4IpCameraManager(
     }, 250);
     slot.watchdog.unref?.();
   }
-  function configure(role: CameraRole, input: unknown) {
+  function configure(role: CameraRole, input: unknown, preserveZoom = false) {
     if (disposed) throw Error("camera_manager_closed");
     const result = m4CameraInputSchema.safeParse(input);
     if (!result.success) throw Error("invalid_camera_input");
     const slot = slotFor(role);
     slot.generation++;
     slot.config = result.data;
+    if (!preserveZoom) slot.zoom = 1;
     slot.failures = 0;
     slot.authBlocked = false;
     slot.phase = "idle";
@@ -454,13 +458,28 @@ export function createM4IpCameraManager(
       phase: stale ? "retrying" : slot.phase,
       errorCode: stale ? "stale_frames" : slot.errorCode,
       generation: slot.generation,
+      zoom: slot.zoom,
     };
   }
   return {
-    configure,
+    configure: (role: CameraRole, input: unknown) => configure(role, input),
     snapshot,
+    setZoom(role: CameraRole, generation: number, value: number) {
+      if (disposed) throw Error("camera_manager_closed");
+      const slot = slotFor(role);
+      if (
+        !Number.isSafeInteger(generation) ||
+        generation < 0 ||
+        !m4CameraZoomSchema.safeParse(value).success
+      )
+        throw Error("invalid_camera_zoom");
+      if (slot.config.kind === "phone" || slot.generation !== generation)
+        throw Error("camera_source_changed");
+      slot.zoom = value;
+      return snapshot(role);
+    },
     reconnect(role: CameraRole) {
-      return configure(role, slotFor(role).config);
+      return configure(role, slotFor(role).config, true);
     },
     async start() {
       if (disposed) throw Error("camera_manager_closed");

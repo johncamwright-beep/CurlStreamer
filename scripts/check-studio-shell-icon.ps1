@@ -41,6 +41,8 @@ try {
   $link.IconLocation = $iconPath + ',0'
   $link.Save()
   [StudioShellIconFixture]::AppId($linkPath)
+  $verifiedLink = $wsh.CreateShortcut($linkPath)
+  if ($verifiedLink.TargetPath -ne (Join-Path $sourceRoot 'CurlStreamer Studio.exe') -or $verifiedLink.IconLocation -ne ($iconPath+',0')) { throw 'Persisted shortcut target or standalone ICO reference differs.' }
   $appId = [StudioShellIconFixture]::ReadAppId($linkPath)
   if ($appId -ne 'CurlStreamer.Studio') { throw 'Fixture shortcut lost its application identity.' }
   $images = @()
@@ -51,6 +53,7 @@ try {
       try {
         $bitmap = [Drawing.Image]::FromHbitmap($handle)
         try {
+          if ($bitmap.Width -ne $size -or $bitmap.Height -ne $size) { throw 'Shell image factory returned the wrong dimensions.' }
           $output = Join-Path $evidenceRoot ($item.name+'-'+$size+'.png')
           $bitmap.Save($output,[Drawing.Imaging.ImageFormat]::Png)
           $hash = (Get-FileHash $output).Hash.ToLowerInvariant()

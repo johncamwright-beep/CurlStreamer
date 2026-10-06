@@ -300,8 +300,11 @@ export function DeviceCard({
   const sourceLabel = cameraInput?.kind === "tapo" ? "Tapo" : "IP camera";
   if (!scorer && ipCamera)
     return (
-      <section className="studio-device" aria-label={label}>
-        <header>
+      <section
+        className="studio-device studio-camera-device"
+        aria-label={label}
+      >
+        <header className="studio-device-camera-header">
           <span className="studio-device-number" aria-hidden="true">
             {role === "camera-home" ? "1" : "2"}
           </span>
@@ -319,46 +322,8 @@ export function DeviceCard({
                   : `${sourceLabel} · ${cameraInput.phase}`}
             </p>
           </div>
-        </header>
-        <p>
-          {sourceLabel}
-          {cameraInput.host ? ` · ${cameraInput.host}` : ""}
-          {cameraInput.stream ? ` · ${cameraInput.stream}` : ""}
-        </p>
-        {cameraInput.errorCode && (
-          <p role="alert">
-            {cameraInput.errorCode === "auth_failed"
-              ? "Camera Account rejected. Check the local username and password in Settings."
-              : cameraInput.errorCode === "runtime_missing"
-                ? "This Studio installation needs its IP camera runtime. Check the installation."
-                : cameraInput.errorCode === "stale_frames"
-                  ? "Camera video stopped. Check Wi-Fi and reconnect."
-                  : "Camera could not connect. Check Wi-Fi, its IP address and RTSP access in Settings."}
-          </p>
-        )}
-        {onAudio && (
-          <div className="studio-device-mic-controls">
-            <button
-              className="studio-device-action secondary min-h-11"
-              aria-pressed={micEnabled === true}
-              disabled={busy || !enabled}
-              onClick={async () => {
-                setBusy(true);
-                setError("");
-                try {
-                  await onAudio(role, !micEnabled);
-                } catch {
-                  setError(
-                    "Could not change the camera microphone. Try again.",
-                  );
-                } finally {
-                  setBusy(false);
-                }
-              }}
-            >
-              {micEnabled ? "Turn mic off" : "Turn mic on"}
-            </button>
-            <label className="flex min-h-11 items-center gap-2 text-sm">
+          {onAudio && (
+            <label className="studio-device-mic-volume">
               Mic volume
               <input
                 type="range"
@@ -409,9 +374,47 @@ export function DeviceCard({
                 }}
               />
             </label>
-          </div>
+          )}
+        </header>
+        <p>
+          {sourceLabel}
+          {cameraInput.host ? ` · ${cameraInput.host}` : ""}
+          {cameraInput.stream ? ` · ${cameraInput.stream}` : ""}
+        </p>
+        {cameraInput.errorCode && (
+          <p role="alert">
+            {cameraInput.errorCode === "auth_failed"
+              ? "Camera Account rejected. Check the local username and password in Settings."
+              : cameraInput.errorCode === "runtime_missing"
+                ? "This Studio installation needs its IP camera runtime. Check the installation."
+                : cameraInput.errorCode === "stale_frames"
+                  ? "Camera video stopped. Check Wi-Fi and reconnect."
+                  : "Camera could not connect. Check Wi-Fi, its IP address and RTSP access in Settings."}
+          </p>
         )}
-        <div className="studio-device-actions">
+        <div className="studio-device-primary-actions">
+          {onAudio && (
+            <button
+              className="studio-device-action secondary min-h-11"
+              aria-pressed={micEnabled === true}
+              disabled={busy || !enabled}
+              onClick={async () => {
+                setBusy(true);
+                setError("");
+                try {
+                  await onAudio(role, !micEnabled);
+                } catch {
+                  setError(
+                    "Could not change the camera microphone. Try again.",
+                  );
+                } finally {
+                  setBusy(false);
+                }
+              }}
+            >
+              {micEnabled ? "Turn mic off" : "Turn mic on"}
+            </button>
+          )}
           <button
             className="studio-device-action secondary min-h-11"
             disabled={!enabled}
@@ -421,17 +424,6 @@ export function DeviceCard({
           >
             Settings
           </button>
-          {!connectionStatus?.videoReceiving && (
-            <button
-              className="studio-device-action secondary min-h-11"
-              disabled={!enabled}
-              onClick={() =>
-                cameraInputNativeAction(id, role, "reconnect-camera")
-              }
-            >
-              Reconnect camera
-            </button>
-          )}
           {onVisibility && (
             <button
               className="studio-device-action secondary studio-device-visibility"
@@ -449,17 +441,32 @@ export function DeviceCard({
             </button>
           )}
         </div>
+        {!connectionStatus?.videoReceiving && (
+          <div className="studio-device-actions">
+            <button
+              className="studio-device-action secondary min-h-11"
+              disabled={!enabled}
+              onClick={() =>
+                cameraInputNativeAction(id, role, "reconnect-camera")
+              }
+            >
+              Reconnect camera
+            </button>
+          </div>
+        )}
         {error && <p role="alert">{error}</p>}
       </section>
     );
   return (
     <section
-      className="studio-device"
+      className={
+        scorer ? "studio-device" : "studio-device studio-camera-device"
+      }
       data-scorer={scorer}
       aria-label={label}
       aria-busy={busy}
     >
-      <header>
+      <header className={scorer ? undefined : "studio-device-camera-header"}>
         <span className="studio-device-number" aria-hidden="true">
           {scorer ? "S" : role === "camera-home" ? "1" : "2"}
         </span>
@@ -473,37 +480,8 @@ export function DeviceCard({
             {stateLabel}
           </p>
         </div>
-      </header>
-      {!scorer && cameraInput && (
-        <button
-          className="studio-device-action secondary min-h-11"
-          disabled={!enabled}
-          onClick={() => cameraInputNativeAction(id, role, "configure-camera")}
-        >
-          Source settings
-        </button>
-      )}
-      {role !== "scorer" && onAudio && claimed && (
-        <div className="studio-device-mic-controls">
-          <button
-            className="studio-device-action secondary"
-            aria-pressed={micEnabled === true}
-            disabled={busy || !enabled}
-            onClick={async () => {
-              setBusy(true);
-              setError("");
-              try {
-                await onAudio(role, !micEnabled);
-              } catch {
-                setError("Could not change the phone microphone. Try again.");
-              } finally {
-                setBusy(false);
-              }
-            }}
-          >
-            {micEnabled ? "Turn mic off" : "Turn mic on"}
-          </button>
-          <label className="flex min-h-11 items-center gap-2 text-sm">
+        {!scorer && onAudio && claimed && (
+          <label className="studio-device-mic-volume">
             Mic volume
             <input
               type="range"
@@ -555,6 +533,61 @@ export function DeviceCard({
               }}
             />
           </label>
+        )}
+      </header>
+      {!scorer && (
+        <div className="studio-device-primary-actions">
+          {onAudio && claimed && (
+            <button
+              className="studio-device-action secondary"
+              aria-pressed={micEnabled === true}
+              disabled={busy || !enabled}
+              onClick={async () => {
+                setBusy(true);
+                setError("");
+                try {
+                  await onAudio(role, !micEnabled);
+                } catch {
+                  setError("Could not change the phone microphone. Try again.");
+                } finally {
+                  setBusy(false);
+                }
+              }}
+            >
+              {micEnabled ? "Turn mic off" : "Turn mic on"}
+            </button>
+          )}
+          {!scorer && cameraInput && (
+            <button
+              className="studio-device-action secondary min-h-11"
+              disabled={!enabled}
+              onClick={() =>
+                cameraInputNativeAction(id, role, "configure-camera")
+              }
+            >
+              Settings
+            </button>
+          )}
+
+          {!scorer && onVisibility && (
+            <button
+              className="studio-device-action secondary studio-device-visibility"
+              aria-pressed={shown}
+              disabled={busy || layoutBusy || !enabled}
+              onClick={async () => {
+                setError("");
+                try {
+                  await onVisibility();
+                } catch {
+                  setError(
+                    "Could not change the broadcast picture. Try again.",
+                  );
+                }
+              }}
+            >
+              {shown ? "Hide from broadcast" : "Show in broadcast"}
+            </button>
+          )}
         </div>
       )}
       <div className="studio-device-actions">
@@ -574,23 +607,6 @@ export function DeviceCard({
           </button>
         )}
         {recoveryMessage && <p role="status">{recoveryMessage}</p>}
-        {!scorer && onVisibility && (
-          <button
-            className="studio-device-action secondary studio-device-visibility"
-            aria-pressed={shown}
-            disabled={busy || layoutBusy || !enabled}
-            onClick={async () => {
-              setError("");
-              try {
-                await onVisibility();
-              } catch {
-                setError("Could not change the broadcast picture. Try again.");
-              }
-            }}
-          >
-            {shown ? "Hide camera" : "Show camera"}
-          </button>
-        )}
         {claimed ? (
           <>
             {scorer && (

@@ -12,7 +12,7 @@ import type { DashboardBroadcast } from "@/lib/dashboard-broadcasts";
 import { groupGames, type GamesTab } from "@/lib/game-hub";
 import { formatScheduledStart } from "@/lib/team-hierarchy";
 import { formatCanonicalGameTitle } from "@/lib/game-title";
-import { youtubeWatchUrlSchema } from "@/lib/youtube-watch";
+import { firstValidYoutubeWatchUrl } from "@/lib/youtube-watch";
 import { GameEventFilter } from "@/components/GameEventFilter";
 import { OpponentEditControl } from "@/components/OpponentEditControl";
 import { DashboardRefresh } from "@/components/DashboardRefresh";
@@ -324,13 +324,12 @@ function GameCard({
     : "Schedule not set";
   const completed = game.status === "completed";
   const closed = game.status === "closed";
-  const parsedWatch = youtubeWatchUrlSchema.safeParse(
-    game.config.sharedYoutubeWatchUrl ||
-      (completed
-        ? (game.youtubeWatchUrl ?? "")
-        : (broadcast?.watchUrl ?? game.scheduledYouTubeWatchUrl ?? "")),
+  const watchUrl = firstValidYoutubeWatchUrl(
+    game.config.sharedYoutubeWatchUrl,
+    ...(completed ? [game.youtubeWatchUrl] : []),
+    broadcast?.watchUrl,
+    game.scheduledYouTubeWatchUrl,
   );
-  const watchUrl = parsedWatch.success ? parsedWatch.data : null;
   const label = completed
     ? game.completionResult?.outcome === "no_result"
       ? "Completed"
@@ -372,9 +371,18 @@ function GameCard({
               aria-hidden="true"
             />
             <strong>
-              {side === "away" && !game.opponentId
-                ? "Opponent TBD"
-                : game.config[`${side}Name`]}
+              {completed ? (
+                <Link
+                  href={`/games/${game.id}`}
+                  aria-label={`${game.config[`${side}Name`]} game details`}
+                >
+                  {game.config[`${side}Name`]}
+                </Link>
+              ) : side === "away" && !game.opponentId ? (
+                "Opponent TBD"
+              ) : (
+                game.config[`${side}Name`]
+              )}
             </strong>
             {completed && game.completionResult?.totals && (
               <b
@@ -407,9 +415,18 @@ function GameCard({
           </p>
         )}
       <div className="dashboard-actions">
-        {completed || closed || role === "viewer" ? (
+        {completed ? (
+          administrator && (
+            <Link
+              className="btn-secondary min-h-11"
+              href={`/games/${game.id}/edit`}
+            >
+              Edit game
+            </Link>
+          )
+        ) : closed || role === "viewer" ? (
           <Link className="btn-secondary" href={`/games/${game.id}`}>
-            {completed ? "View result" : "View game"}
+            View game
           </Link>
         ) : (
           <TeamGameLinks

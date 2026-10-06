@@ -9,6 +9,9 @@ import { GameCreationForm } from "../../new/GameCreationForm";
 import { formatCanonicalGameTitle } from "@/lib/game-title";
 import { formatScheduledStart } from "@/lib/team-hierarchy";
 import { gameCapabilities } from "@/lib/current-game";
+import { CompletedResultEditor } from "@/components/CompletedResultEditor";
+import { readCompletedResult } from "@/lib/providers/completed-result";
+import { completedResultReplySchema } from "@/lib/completed-result-client";
 
 export default async function EditGamePage({
   params,
@@ -27,7 +30,19 @@ export default async function EditGamePage({
   if (!data.ok || !opponents.ok) return <AccountServiceUnavailable />;
   if (data.role === "viewer") redirect("/dashboard");
   const game = data.games.find((item) => item.id === id);
-  if (!game?.seasonId) notFound();
+  if (!game) notFound();
+  const completed = game.status === "completed";
+  const administrator = data.role === "owner" || data.role === "team_admin";
+  if (completed && !administrator) redirect("/dashboard");
+  if (!completed && !game.seasonId) notFound();
+  const result = completed ? await readCompletedResult(game.id) : null;
+  if (result && !result.ok) {
+    if (result.kind === "authorization") redirect("/dashboard");
+    return <AccountServiceUnavailable />;
+  }
+  const initialResult = result?.ok
+    ? completedResultReplySchema.safeParse(result.value)
+    : null;
   const title = formatCanonicalGameTitle({
     homeName: game.config.homeName,
     awayName: game.opponentId ? game.config.awayName : null,
@@ -48,22 +63,39 @@ export default async function EditGamePage({
                   game.timezone ?? "UTC",
                 )
               : "Schedule not set",
-            capabilities: gameCapabilities(data.role, !game.opponentId),
+            capabilities: completed
+              ? {
+                  control: false,
+                  scoring: false,
+                  broadcast: false,
+                  editSchedule: administrator,
+                  assignOpponent: false,
+                }
+              : gameCapabilities(data.role, !game.opponentId),
           }}
         />
       </div>
-      <GameCreationForm
-        teamName={data.teamName}
-        seasons={data.seasons}
-        events={data.events}
-        opponents={opponents.value as never[]}
-        games={data.games}
-        canManageTeamDetails={
-          data.role === "owner" || data.role === "team_admin"
-        }
-        editing={game}
-        editingTitle={title}
-      />
+      {completed ? (
+        <CompletedResultEditor
+          gameId={game.id}
+          initialSnapshot={
+            initialResult?.success ? initialResult.data : undefined
+          }
+        />
+      ) : (
+        <GameCreationForm
+          teamName={data.teamName}
+          seasons={data.seasons}
+          events={data.events}
+          opponents={opponents.value as never[]}
+          games={data.games}
+          canManageTeamDetails={
+            data.role === "owner" || data.role === "team_admin"
+          }
+          editing={game}
+          editingTitle={title}
+        />
+      )}
     </main>
   );
 }

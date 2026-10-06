@@ -307,6 +307,25 @@ function ScorerGame({ id }: { id: string }) {
       expectedLastEventId,
     });
   }
+  const scoringStatus = scoringBusy
+    ? failedAction
+      ? "Retrying scoring change…"
+      : "Saving scoring change…"
+    : scoringNotice;
+  const scoringStatusBadge = scoringStatus ? (
+    <span
+      role="status"
+      aria-label="Scoring update"
+      aria-live="polite"
+      aria-atomic="true"
+      className={`scoring-status-badge${scoringBusy ? "" : " scoring-status-badge-success"}`}
+      title={scoringStatus}
+    >
+      {scoringStatus}
+    </span>
+  ) : (
+    <span className="scoring-eyebrow">Score entry</span>
+  );
   return (
     <main
       className={
@@ -410,9 +429,12 @@ function ScorerGame({ id }: { id: string }) {
               className="scoring-card scoring-entry"
               aria-labelledby="initial-hammer-heading"
             >
-              <h2 id="initial-hammer-heading" className="text-xl font-bold">
-                Who has hammer in End 1?
-              </h2>
+              <div className="scoring-section-heading">
+                <h2 id="initial-hammer-heading" className="text-xl font-bold">
+                  Who has hammer in End 1?
+                </h2>
+                {scoringStatusBadge}
+              </div>
               <div className="mt-4 grid grid-cols-2 gap-3">
                 {(["home", "away"] as const).map((side) => (
                   <button
@@ -441,7 +463,7 @@ function ScorerGame({ id }: { id: string }) {
             >
               <div className="scoring-section-heading">
                 <h2 id="record-end-heading">Record End {score.currentEnd}</h2>
-                <span className="scoring-eyebrow">Score entry</span>
+                {scoringStatusBadge}
               </div>
               <p className="scoring-field-label">Which team scored?</p>
               <div
@@ -585,15 +607,6 @@ function ScorerGame({ id }: { id: string }) {
               )}
             </section>
           )}
-          {scoringBusy && (
-            <p
-              role="status"
-              aria-label="Scoring update"
-              className="scoring-feedback"
-            >
-              Saving scoring change…
-            </p>
-          )}
           {scoringError && (
             <div
               role="alert"
@@ -631,15 +644,6 @@ function ScorerGame({ id }: { id: string }) {
                 </button>
               </div>
             </div>
-          )}
-          {scoringNotice && (
-            <p
-              role="status"
-              aria-label="Scoring update"
-              className="scoring-feedback scoring-feedback-success"
-            >
-              {scoringNotice}
-            </p>
           )}
 
           {desktop && (

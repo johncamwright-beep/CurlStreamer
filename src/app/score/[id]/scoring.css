@@ -249,7 +249,23 @@
   border-color: #854d50;
   background: #3a212b;
 }
-.scoring-feedback-success {
+.scoring-status-badge {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 55%;
+  padding: 4px 8px;
+  border: 1px solid #35556c;
+  border-radius: 999px;
+  background: #132d3b;
+  color: #d0f0fc;
+  font-size: 11px;
+  line-height: 1.4;
+  text-align: right;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.scoring-status-badge-success {
   color: #c2f3df;
   border-color: #386953;
   background: #142f29;

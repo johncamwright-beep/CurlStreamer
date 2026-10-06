@@ -57,9 +57,7 @@ export default async function GamesPage({
     : "upcoming";
   const broadcasts = await loadDashboardBroadcasts(
     result.account,
-    games
-      .filter((g) => g.status !== "completed" && g.status !== "closed")
-      .map((g) => g.id),
+    games.filter((g) => g.status !== "closed").map((g) => g.id),
   );
   return (
     <>

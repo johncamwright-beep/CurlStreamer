@@ -315,8 +315,9 @@ export function EndGameControl({
                 </p>
               )}
               <p className="mt-2 text-amber-200">
-                This result is final and cannot be edited. All participants will
-                be disconnected.
+                This ends scoring. Your team owner or administrator can correct
+                the saved result later from Edit game. All participants will be
+                disconnected.
               </p>
               {canGracefulEnd && (
                 <p className="mt-2 text-slate-300">

@@ -249,6 +249,65 @@ it("loads timing only for authorized selected games", async () => {
     "2026-09-19T12:00:00Z",
   );
 });
+it("keeps fallback game numbers within each event when season data replaces an event response", async () => {
+  const season = "00000000-0000-4000-8000-000000000050";
+  const other = "00000000-0000-4000-8000-000000000051";
+  m.seasons.mockResolvedValue({
+    ok: true,
+    value: [{ id: season, name: "Season" }],
+  });
+  m.events.mockResolvedValue({
+    ok: true,
+    value: [
+      { id: eid, name: "Event A", season_id: season },
+      { id: other, name: "Event B", season_id: season },
+    ],
+  });
+  const { value } = await m.games();
+  const rows = [other, eid, other, eid].map((event_id, index) => ({
+    ...value[0],
+    id: `00000000-0000-4000-8000-${String(index + 100).padStart(12, "0")}`,
+    event_id,
+    season_id: season,
+    game_number: null,
+  }));
+  m.games.mockResolvedValue({ ok: true, value: rows });
+  const event = await loadProductionStreamerEvent(
+    eid,
+    undefined,
+    undefined,
+    account,
+  );
+  const combined = await loadProductionStreamerEvent(
+    undefined,
+    undefined,
+    season,
+    account,
+  );
+  expect(
+    combined.event.games.filter((g) => g.eventId === eid).map((g) => g.label),
+  ).toEqual(event.event.games.map((g) => g.label));
+  expect(combined.event.games.map((g) => g.label)).toEqual([
+    "Game 1",
+    "Game 1",
+    "Game 2",
+    "Game 2",
+  ]);
+  rows[1].game_label = "Semifinal";
+  rows[3].game_number = 7;
+  const labelled = await loadProductionStreamerEvent(
+    undefined,
+    undefined,
+    season,
+    account,
+  );
+  expect(labelled.event.games.map((g) => g.label)).toEqual([
+    "Game 1",
+    "Semifinal",
+    "Game 2",
+    "Game 7",
+  ]);
+});
 
 it("bounds concurrent active-score reads while preserving game order", async () => {
   const { value } = await m.games();

@@ -19,7 +19,10 @@ export async function POST(request: Request) {
     } = await (await createServerSupabaseClient()).auth.getUser();
     if (!user?.email_confirmed_at)
       return reply(
-        { error: "Sign in with the verified email address that was invited." },
+        {
+          error:
+            "Sign in and confirm your email address before joining the team.",
+        },
         401,
       );
     const parsed = z
@@ -42,7 +45,7 @@ export async function POST(request: Request) {
           error:
             error.code === "23514"
               ? "This account already belongs to a team, or the team has reached its two-login limit."
-              : "This invitation is expired, revoked, or intended for a different email address.",
+              : "This invitation has expired, was revoked, or has already been used. Ask the team owner for a new link.",
         },
         409,
       );

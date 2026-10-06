@@ -11,6 +11,17 @@ vi.mock("@/lib/supabase/server", () => ({
 import { GET } from "./route";
 
 describe("confirmation behind a reverse proxy", () => {
+  it("preserves the invitation through a failed confirmation", async () => {
+    const next = "/join-team?token=" + "a".repeat(43);
+    const response = await GET(
+      new Request(
+        `https://localhost:3000/auth/confirm?next=${encodeURIComponent(next)}`,
+      ),
+    );
+    const destination = new URL(response.headers.get("location")!);
+    expect(destination.pathname).toBe("/login");
+    expect(destination.searchParams.get("next")).toBe(next);
+  });
   beforeEach(() => {
     vi.stubEnv("APP_BASE_URL", "https://test.example.com");
     exchangeCodeForSession.mockResolvedValue({ error: null });

@@ -45,11 +45,13 @@ export async function POST(request: Request) {
     return reply(
       {
         error:
-          (error as { code?: string }).code === "23514"
-            ? "A team can have only two logins, including a pending invitation. The invited email must not already belong to another team."
-            : "The member change could not be saved.",
+          (error as { code?: string }).code === "54000"
+            ? "Too many invitations sent recently. Please try again in an hour."
+            : (error as { code?: string }).code === "23514"
+              ? "A team can have only two logins, including a pending invitation."
+              : "The member change could not be saved.",
       },
-      409,
+      (error as { code?: string }).code === "54000" ? 429 : 409,
     );
   }
 }

@@ -100,11 +100,12 @@ test("team owners can create, share, and revoke a teammate invitation", async ({
   await expect(access.getByText("1 of 2 logins in use")).toBeVisible();
   await access.getByLabel("Email address").fill("teammate@example.test");
   await access.getByLabel("Access level").selectOption("game_operator");
-  await access.getByRole("button", { name: "Create invitation" }).click();
+  await access.getByRole("button", { name: "Send invitation" }).click();
 
   await expect(
     access.getByRole("status").filter({
-      hasText: "Invitation created. Share the link below with your teammate.",
+      hasText:
+        "Invitation created. Email sending is not connected yet; share the link below.",
     }),
   ).toBeVisible();
   await expect(access.getByLabel("Invitation link")).toHaveValue(
@@ -114,14 +115,14 @@ test("team owners can create, share, and revoke a teammate invitation", async ({
     access.getByText("Pending: teammate@example.test"),
   ).toBeVisible();
   await expect(
-    access.getByRole("button", { name: "Create invitation" }),
+    access.getByRole("button", { name: "Send invitation" }),
   ).toBeDisabled();
 
   await access.getByRole("button", { name: "Revoke invitation" }).click();
   await expect(access.getByText("Invitation revoked.")).toBeVisible();
   await expect(access.getByText("1 of 2 logins in use")).toBeVisible();
   await expect(
-    access.getByRole("button", { name: "Create invitation" }),
+    access.getByRole("button", { name: "Send invitation" }),
   ).toBeEnabled();
   expect(
     await page.evaluate(
@@ -205,7 +206,7 @@ test("platform administrators keep team access read-only until support edits are
   await expect(access.getByText("1 of 2 logins in use")).toBeVisible();
   await expect(access.getByLabel("Email address")).toBeDisabled();
   await expect(
-    access.getByRole("button", { name: "Create invitation" }),
+    access.getByRole("button", { name: "Send invitation" }),
   ).toBeDisabled();
   expect(inviteRequests).toBe(0);
 
@@ -213,7 +214,7 @@ test("platform administrators keep team access read-only until support edits are
   await expect(access.getByLabel("Email address")).toBeEnabled();
   await access.getByLabel("Email address").fill("support@example.test");
   await access.getByLabel("Access level").selectOption("team_admin");
-  const create = access.getByRole("button", { name: "Create invitation" });
+  const create = access.getByRole("button", { name: "Send invitation" });
   await expect(create).toBeEnabled();
   const box = await create.boundingBox();
   expect(box?.height).toBeGreaterThanOrEqual(44);

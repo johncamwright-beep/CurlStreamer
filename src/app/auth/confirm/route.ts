@@ -14,15 +14,18 @@ export async function GET(request: Request) {
   const url = new URL(request.url);
   const publicOrigin = new URL(confirmationUrl()).origin;
   const next = approvedRedirect(url.searchParams.get("next"));
+  const loginDestination = (query: string) => {
+    const target = new URL(`/login?${query}`, publicOrigin);
+    if (url.searchParams.has("next")) target.searchParams.set("next", next);
+    return target;
+  };
   const code = url.searchParams.get("code");
   const oauthError = url.searchParams.get("error");
   const token_hash = url.searchParams.get("token_hash");
   const type = url.searchParams.get("type") as EmailOtpType | null;
   if (oauthError) {
     const outcome = oauthError === "access_denied" ? "cancelled" : "failed";
-    return NextResponse.redirect(
-      new URL(`/login?oauth=${outcome}`, publicOrigin),
-    );
+    return NextResponse.redirect(loginDestination(`oauth=${outcome}`));
   }
   const supabase = await createServerSupabaseClient();
   const result = code
@@ -31,8 +34,6 @@ export async function GET(request: Request) {
       ? await supabase.auth.verifyOtp({ token_hash, type })
       : { error: new Error("invalid confirmation") };
   if (result.error)
-    return NextResponse.redirect(
-      new URL("/login?confirmation=invalid", publicOrigin),
-    );
+    return NextResponse.redirect(loginDestination("confirmation=invalid"));
   return NextResponse.redirect(new URL(next, publicOrigin));
 }

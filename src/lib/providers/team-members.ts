@@ -2,6 +2,7 @@ import "server-only";
 import { createHash, randomBytes } from "node:crypto";
 import { z } from "zod";
 import { createAdminSupabaseClient } from "@/lib/supabase/admin";
+import { sendTeamInvitationEmail } from "./invitation-email";
 export const memberActionSchema = z.discriminatedUnion("action", [
   z
     .object({
@@ -57,6 +58,13 @@ export async function manageMember(
   if (!token) return { saved: true };
   const url = new URL("/join-team", baseUrl);
   url.searchParams.set("token", token);
-  // A copyable link is always available; transactional invitation email is not configured yet.
-  return { inviteUrl: url.toString(), emailSent: false };
+  const delivery =
+    body.action === "invite"
+      ? await sendTeamInvitationEmail({
+          to: body.email,
+          url: url.toString(),
+          role: body.role,
+        })
+      : { emailSent: false };
+  return { inviteUrl: url.toString(), ...delivery };
 }

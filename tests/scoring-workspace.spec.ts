@@ -493,7 +493,7 @@ test("desktop game day keeps scoring primary and settings available on demand", 
   await expect(
     page
       .getByRole("region", { name: "Camera 1", exact: true })
-      .getByRole("button", { name: "Hide camera", exact: true }),
+      .getByRole("button", { name: "Hide from broadcast", exact: true }),
   ).toBeVisible();
   expect(actions).toEqual([]);
   await expect(

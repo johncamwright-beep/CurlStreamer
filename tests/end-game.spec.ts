@@ -169,7 +169,10 @@ test("End Game reviews the score and replaces controls with the saved result", a
     page.getByText("YouTube: https://youtu.be/abcdefghijk"),
   ).toBeVisible();
   await expect(
-    page.getByText("This result is final and cannot be edited."),
+    page.getByText(
+      "This ends scoring. Your team owner or administrator can correct the saved result later from Edit game.",
+      { exact: false },
+    ),
   ).toBeVisible();
   await page.screenshot({
     path: testInfo.outputPath("score-confirmation.png"),

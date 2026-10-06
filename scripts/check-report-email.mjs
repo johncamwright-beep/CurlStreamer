@@ -1,6 +1,11 @@
 import { readFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 import assert from "node:assert/strict";
+if (!process.argv[2]) {
+  throw new Error(
+    "Usage: node scripts/check-report-email.mjs <path-to-pglite/dist/index.js>",
+  );
+}
 const { PGlite } = await import(pathToFileURL(process.argv[2]).href);
 const db = new PGlite();
 const actor = "11111111-1111-4111-8111-111111111111",

@@ -22,6 +22,6 @@ The server rebuilds the recipient plan at send time and rejects a stale preview.
 
 ## Release and validation
 
-Apply `supabase/migrations/0080_private_player_report_email.sql` before deploying the email controls. Contacts are inaccessible to anonymous/authenticated database clients. Delivery claim/finish functions are service-only and recheck report authorization. `node scripts/check-report-email.mjs` validates the migration against an isolated PGlite database, including private grants, duplicate prevention and rate limits.
+Apply `supabase/migrations/0080_private_player_report_email.sql` before deploying the email controls. Contacts are inaccessible to anonymous/authenticated database clients. Delivery claim/finish functions are service-only and recheck report authorization. `node scripts/check-report-email.mjs <path-to-pglite/dist/index.js>` validates the migration against an isolated PGlite database, including private grants, duplicate prevention and rate limits.
 
 Reuse existing server-only `ZOHO_SMTP_HOST`, `ZOHO_SMTP_PORT`, `ZOHO_SMTP_USER`, `ZOHO_SMTP_PASSWORD` and `INVITATION_FROM_EMAIL`. No new dependency or API key is required. Never log SMTP credentials. Local browser tests mock send requests and cannot contact real recipients.

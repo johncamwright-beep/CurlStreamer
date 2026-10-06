@@ -4,6 +4,7 @@ import { currentShots, report, shotTypes, type Shot } from "./model";
 import type { CoachEvent } from "./event";
 import { teamScoreStatistics } from "./score-statistics";
 import { playerReportGames, type ReportGame } from "./report-games";
+import type { ReportBasis } from "./report-counts";
 
 export const REPORT_POLICY = "shot-tracker-event-v5";
 export const audienceSchema = z.enum(["coach", "team", "players"]);
@@ -31,6 +32,7 @@ export const narrativeSchema = z
   .strict();
 export type Narrative = z.infer<typeof narrativeSchema>;
 export type Evidence = {
+  basis?: ReportBasis;
   id: string;
   label: string;
   value: string;
@@ -119,8 +121,15 @@ export function reportInputs(
       "Shot difficulty, tactical intent and causes of misses are not established. Practice targets are suggestions, not national standards.",
       "Completed games may end early by concession. Unfinished ends are not invented or counted as blanks; their recorded shots still count toward execution.",
     ];
-    const add = (id: string, label: string, value: string, sample: number) =>
+    const add = (
+      id: string,
+      label: string,
+      value: string,
+      sample: number,
+      basis?: ReportBasis,
+    ) =>
       evidence.push({
+        ...(basis ? { basis } : {}),
         id,
         label,
         value,
@@ -141,6 +150,14 @@ export function reportInputs(
         label,
         `${percent(r.percent)}; ${r.scored} graded / ${r.attempts} recorded; ${r.missing} ungraded; ${r.excluded} excluded; ${low} low grades (0–2)`,
         r.scored,
+        {
+          numerator: subset
+            .filter((s) => !s.excluded && s.grade !== null)
+            .reduce((n, s) => n + (s.grade ?? 0), 0),
+          denominator: 5 * r.scored,
+          unit: "points",
+          shots: r.scored,
+        },
       );
     }
     shooting("overall", "Recorded shooting", shots);
@@ -163,6 +180,11 @@ export function reportInputs(
       "Partial, limited or missed outcomes",
       `${percent(misses.rate)} of classified execution outcomes`,
       misses.classified,
+      {
+        numerator: misses.misses,
+        denominator: misses.classified,
+        unit: "shots",
+      },
     );
     for (const c of misses.categories)
       if (c.count)
@@ -185,6 +207,7 @@ export function reportInputs(
           `${r.label}: most frequent miss tag (ties shown)`,
           `${r.topTag}: ${percent(r.topPercent)} of misses for this shot type`,
           r.misses,
+          { numerator: r.topCount, denominator: r.misses, unit: "shots" },
         );
     });
     misses.byTurn.forEach((r, i) =>
@@ -309,6 +332,16 @@ export function reportInputs(
           shots.filter((s) => s.playerId === p.id),
         ),
       );
+    for (const e of evidence) {
+      if (e.basis) continue;
+      const pair = e.value.match(/(\d+) of (\d+)/);
+      if (pair)
+        e.basis = {
+          numerator: Number(pair[1]),
+          denominator: Number(pair[2]),
+          unit: "shots",
+        };
+    }
     if (playerId) {
       const detail = playerReportGames(event, playerId);
       return {

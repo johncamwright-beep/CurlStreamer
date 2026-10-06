@@ -1,4 +1,5 @@
 import type { SavedReport } from "./reports";
+import { evidenceBasis } from "./report-counts";
 
 /** Keep source counts for validation, but show only useful shooting percentages. */
 export function reportPercentages(report: SavedReport) {
@@ -11,6 +12,7 @@ export function reportPercentages(report: SavedReport) {
             id: e.id,
             label: e.id === "overall" ? "Overall shooting" : e.label,
             value: percent[0],
+            basis: evidenceBasis(e),
           },
         ]
       : [];
@@ -52,7 +54,7 @@ export function reportSections(report: SavedReport) {
                     /\bPlayer [A-H]\b/g,
                     (alias) => names.get(alias) ?? alias,
                   ),
-                  value,
+                  value: `${value} (${evidenceBasis(e)})`,
                 },
               ]
             : [];

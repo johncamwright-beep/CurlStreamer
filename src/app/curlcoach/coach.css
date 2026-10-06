@@ -651,6 +651,8 @@
 
 .coach-workspace {
   grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: auto 1fr;
+  align-content: start;
 }
 .event-sidebar {
   position: sticky;

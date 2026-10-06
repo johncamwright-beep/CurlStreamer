@@ -4,6 +4,10 @@ Reports remain an explicit, once-per-event action within the existing twenty-eve
 
 ## Miss diagnosis and PDF
 
+All displayed percentages include their available sample basis. Shooting is a weighted grade: points out of five possible per graded shot, with the number of shots shown separately. It must not be described as binary completions. Miss and execution distributions show actual outcomes out of the applicable denominator. Existing reports can gain exact bases only against an identical saved source; otherwise their stored sample size is displayed without inventing a numerator.
+
+Every report ends with the shared charting-code legend. PDFs embed licensed Bitstream Vera regular/bold fonts and compress the logo, avoiding reliance on a reader's local font substitution. This mitigates font portability problems; a Windows “Font Capture” Acrobat application failure may still require Acrobat's own update/repair. Do not disable Acrobat security protections or claim that export changes repair the reader installation.
+
 Policy v5 gives future coach, team and individual narratives shot-type, turn and game miss evidence. A miss rate is the share of classified, non-excluded execution outcomes marked Partial, Limited or Miss. A miss category share uses those miss outcomes as its denominator, including outcomes with no directional tag. This differs from the grade-based shooting percentage. Ties and small samples are shown; a tag is not proof of a delivery fault.
 
 The report shows the most frequent categories, shot and turn concentrations, game comparisons, supporting percentages beside narrative findings, and two practical exercises selected from the recorded patterns. Team-facing analysis contains no player identifiers. Practice suggestions are observations to test, not a technical diagnosis or national performance standard. Background coaching resources: [Curling Canada drills](https://www.curling.ca/curling-drills/).

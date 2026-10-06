@@ -1,6 +1,8 @@
 "use client";
 import { ReportEmail } from "./ReportEmail";
 import { MissReport } from "./MissReport";
+import { reportLegend } from "@/lib/curlcoach/report-legend";
+import { basisText, evidenceBasis } from "@/lib/curlcoach/report-counts";
 import {
   useCallback,
   useEffect,
@@ -357,6 +359,7 @@ function ReportBody({ report }: { report: SavedReport }) {
             >
               {m.value}
             </p>
+            <p className="mt-1 text-sm text-slate-300">{m.basis}</p>
           </div>
         ))}
       </div>
@@ -396,6 +399,11 @@ function ReportBody({ report }: { report: SavedReport }) {
                 <h5 className="font-bold">{game.title}</h5>
                 <span className="font-bold">
                   {game.groups[0]?.metrics[0]?.value} shooting
+                  {game.groups[0]?.metrics[0]?.basis && (
+                    <small className="block font-normal">
+                      {basisText(game.groups[0].metrics[0].basis)}
+                    </small>
+                  )}
                 </span>
               </div>
               <p className="max-w-prose leading-relaxed">
@@ -416,7 +424,22 @@ function ReportBody({ report }: { report: SavedReport }) {
                           <div className="contents" key={metric.id}>
                             <dt>{metric.label}</dt>
                             <dd className="text-right tabular-nums">
-                              {metric.value}
+                              <span>{metric.value}</span>
+                              {metric.value !== "—" && (
+                                <small className="block text-slate-300">
+                                  {metric.basis
+                                    ? basisText(metric.basis)
+                                    : report.evidence.find(
+                                          (e) => e.id === metric.id,
+                                        )
+                                      ? evidenceBasis(
+                                          report.evidence.find(
+                                            (e) => e.id === metric.id,
+                                          )!,
+                                        )
+                                      : "Sample unavailable"}
+                                </small>
+                              )}
                             </dd>
                           </div>
                         ))}
@@ -429,6 +452,17 @@ function ReportBody({ report }: { report: SavedReport }) {
           ))}
         </section>
       )}
+      <section aria-label="Report legend">
+        <h4 className="mb-3 text-lg font-bold">Report legend</h4>
+        <dl className="space-y-3">
+          {reportLegend.map(([code, meaning]) => (
+            <div key={code}>
+              <dt className="font-semibold">{code}</dt>
+              <dd className="text-sm text-slate-300">{meaning}</dd>
+            </div>
+          ))}
+        </dl>
+      </section>
     </article>
   );
 }

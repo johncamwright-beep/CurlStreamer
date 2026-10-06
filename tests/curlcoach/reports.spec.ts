@@ -333,8 +333,10 @@ test("report navigation is read-only, generation is explicit, and PDFs contain o
   await expect(page.getByRole("article")).toHaveCount(1);
   await expect(page.getByRole("article")).toContainText("76.3%");
   await expect(page.getByRole("article")).toContainText("85.6%");
-  await expect(page.getByRole("article")).not.toContainText("301");
-  await expect(page.getByRole("article")).not.toContainText("ungraded");
+  await expect(page.getByRole("article")).toContainText("301 graded shots");
+  await expect(
+    page.getByRole("heading", { name: "Report legend", exact: true }),
+  ).toBeVisible();
   await expect(page.getByRole("article")).not.toContainText("PRIVATE");
   await expect(
     page.getByRole("heading", { name: "Opening game", exact: true }),
@@ -351,10 +353,9 @@ test("report navigation is read-only, generation is explicit, and PDFs contain o
   expect(pdf.startsWith("%PDF")).toBe(true);
   expect(pdf).toContain("Alex Greenwood");
   expect(pdf).not.toContain("Cameron Wright");
-  expect(pdf).not.toContain("ungraded");
-  expect(pdf).toContain("Opening game");
-  expect(pdf).toContain("Game 1:");
-  expect(pdf).toContain("80.0%");
+  expect(pdf).toContain("/FontFile2");
+  expect(pdf).not.toContain("/BaseFont /Helvetica");
+  expect(pdf.length).toBeLessThan(500000);
   await download.saveAs("test-results/report-" + info.project.name + ".pdf");
   await page.screenshot({
     path: "test-results/report-redesign-" + info.project.name + ".png",
@@ -380,6 +381,14 @@ test("Shot Tracker is available at its product-named address", async ({
       includeHidden: true,
     }),
   ).toBeAttached();
+  for (const size of [
+    { width: 390, height: 844 },
+    { width: 1880, height: 1000 },
+  ]) {
+    await page.setViewportSize(size);
+    const menu = await page.locator(".event-sidebar").boundingBox();
+    expect(menu!.height).toBeLessThan(100);
+  }
 });
 
 test("event sections preserve drafts and never generate on navigation", async ({

@@ -60,8 +60,9 @@ export function AuthForm({
               before signing in.
             </p>
             <p className="mt-3">
-              This is a separate email from your team invitation. Check Spam or
-              Junk if it hasn’t arrived.
+              {joiningTeam &&
+                "This is a separate email from your team invitation. "}
+              Check Spam or Junk if it hasn’t arrived.
             </p>
             {joiningTeam && (
               <p className="mt-3">

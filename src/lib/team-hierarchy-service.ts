@@ -29,6 +29,7 @@ type Result<T> =
         | "conflict"
         | "gameNumberConflict"
         | "opponentNameConflict"
+        | "youtubeVisibilityLocked"
         | "service";
       issues?: unknown;
     };
@@ -49,6 +50,8 @@ function failure(
   operation: string,
 ): Result<never> {
   diagnostic(operation, error);
+  if (error.code === "22023" && error.message === "youtube_visibility_locked")
+    return { ok: false, kind: "youtubeVisibilityLocked" };
   if (error.code === "23505" && operation === "save_opponent_details")
     return { ok: false, kind: "opponentNameConflict" };
   if (

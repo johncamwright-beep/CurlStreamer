@@ -9,6 +9,9 @@ const credentialsSchema = z.array(
     encrypted_credentials: z.string().min(1),
     channel_id: z.string().min(1),
     connection_version: z.coerce.number().int().nonnegative(),
+    youtube_visibility: z
+      .enum(["private", "unlisted", "public"])
+      .default("unlisted"),
   }),
 );
 

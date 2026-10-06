@@ -77,6 +77,7 @@ describe("M4 desktop output observation", () => {
       channelId: "channel",
       streamId: "stream",
       broadcastId: "broadcast",
+      visibility: "unlisted",
     });
     expect(JSON.stringify(mocks.rpc.mock.calls)).not.toContain(
       credential.bearer,
@@ -87,6 +88,7 @@ describe("M4 desktop output observation", () => {
     { youtube_channel_id: "other" },
     { youtube_connection_version: 4 },
     { broadcast_generation: 3 },
+    { youtube_visibility: "public" },
     { expires_at: "2026-09-08T14:01:00Z" },
     { lease_expires_at: "2026-09-08T10:00:20Z" },
   ])(
@@ -100,6 +102,21 @@ describe("M4 desktop output observation", () => {
       ).rejects.toThrow(/^m4_desktop_observation_unavailable$/);
     },
   );
+  it("checks Public output against the visibility saved with its authorized delivery", async () => {
+    mocks.rpc.mockResolvedValue({
+      data: [{ ...row, youtube_visibility: "public" }],
+      error: null,
+    });
+    await expect(
+      observeM4DesktopOutput(game, credential, intentId),
+    ).resolves.toEqual({ intentId, sessionId, generation: 1, ...observation });
+    expect(mocks.observe).toHaveBeenCalledWith("access-secret", {
+      channelId: "channel",
+      streamId: "stream",
+      broadcastId: "broadcast",
+      visibility: "public",
+    });
+  });
   it("does not return an observation after revocation during provider work", async () => {
     mocks.rpc
       .mockResolvedValueOnce({ data: [row], error: null })

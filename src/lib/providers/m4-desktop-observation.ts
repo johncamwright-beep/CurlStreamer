@@ -40,6 +40,9 @@ const metadata = z.object({
     .int()
     .nonnegative()
     .max(Number.MAX_SAFE_INTEGER),
+  youtube_visibility: z
+    .enum(["unlisted", "public", "private"])
+    .default("unlisted"),
   expires_at: instant,
   lease_expires_at: instant,
 });
@@ -100,6 +103,7 @@ export async function observeM4DesktopOutput(
       channelId: initial.youtube_channel_id,
       streamId: initial.youtube_stream_id,
       broadcastId: initial.youtube_broadcast_id,
+      visibility: initial.youtube_visibility,
     });
     const current = await read();
     for (const key of [
@@ -113,6 +117,7 @@ export async function observeM4DesktopOutput(
       "youtube_stream_id",
       "youtube_channel_id",
       "youtube_connection_version",
+      "youtube_visibility",
       "expires_at",
     ] as const)
       if (current[key] !== initial[key]) throw new Error();

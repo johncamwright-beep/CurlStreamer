@@ -3,15 +3,57 @@ test.skip(
   process.env.YOUTUBE_SETTINGS_E2E !== "1",
   "Uses the isolated authenticated Supabase fixture",
 );
-test.beforeEach(async ({ page }, info) => {
+function reservedFixtureIds(info: import("@playwright/test").TestInfo) {
+  const suffix = info.project.name === "mobile" ? "15" : "13";
+  const kind = info.title.includes("reserved public") ? "1" : "2";
+  return {
+    gameId: `66666666-6666-4666-8666-000000000${suffix}${kind}`,
+    seasonId: `33333333-3333-4333-8333-000000000${suffix}${kind}`,
+    eventId: `55555555-5555-4555-8555-000000000${suffix}${kind}`,
+  };
+}
+test.beforeEach(async ({ page, request }, info) => {
+  const reserved = /reserved (public|unlisted)/.test(info.title);
+  if (reserved) {
+    const response = await request.post(
+      "http://127.0.0.1:3101/__dashboard-completion-fixture",
+      {
+        data: {
+          ...reservedFixtureIds(info),
+          days: 2,
+          seasonStatus: "draft",
+          config: {
+            awayName: "Team Wright",
+            youtubeEnabled: true,
+            youtubeVisibility: info.title.includes("reserved public")
+              ? "public"
+              : "unlisted",
+          },
+          youtubeScheduledStatus: "ready",
+          youtubeScheduledWatchUrl:
+            "https://www.youtube.com/watch?v=abcdefghijk",
+        },
+      },
+    );
+    expect(response.ok()).toBe(true);
+  }
   const target = info.title.startsWith("edit game")
-    ? "/games/66666666-6666-4666-8666-000000000002/edit"
+    ? `/games/${reserved ? reservedFixtureIds(info).gameId : "66666666-6666-4666-8666-000000000002"}/edit`
     : "/games/new";
   await page.goto(`/login?next=${encodeURIComponent(target)}`);
   await page.getByLabel("Email address").fill("admin@youtube.test");
   await page.getByLabel("Password").fill("playwright-password");
   await page.getByRole("button", { name: "Sign in" }).click();
   await page.waitForURL(`**${target}`);
+});
+test.afterEach(async ({ request }, info) => {
+  if (/reserved (public|unlisted)/.test(info.title)) {
+    const response = await request.delete(
+      "http://127.0.0.1:3101/__dashboard-completion-fixture",
+      { data: { seasonId: reservedFixtureIds(info).seasonId } },
+    );
+    expect(response.ok()).toBe(true);
+  }
 });
 async function fillGame(page: import("@playwright/test").Page) {
   await page.getByLabel("Team 2 — Opponent", { exact: true }).fill("Wright");
@@ -287,8 +329,10 @@ test("summary and saved payload reserve an unlisted YouTube watch page", async (
     .filter({ hasText: /^Streaming/ })
     .click();
   await page.getByRole("radio", { name: "Yes" }).check();
+  await expect(page.getByLabel("Broadcast visibility")).toHaveValue("unlisted");
   await expect(review).toContainText("10 ends");
   await expect(review).toContainText("YouTube watch link will be reserved");
+  await expect(review).toContainText("Unlisted");
   const payloads: unknown[] = [];
   await page.route("**/api/team-schedule", async (route) => {
     payloads.push(route.request().postDataJSON());
@@ -330,6 +374,62 @@ test("summary and saved payload reserve an unlisted YouTube watch page", async (
     path: info.outputPath(`setup-summary-${info.project.name}.png`),
     fullPage: true,
   });
+});
+
+test("public YouTube visibility is explained, retained and saved without starting a stream", async ({
+  page,
+}) => {
+  await fillGame(page);
+  const streaming = page.locator("summary").filter({ hasText: /^Streaming/ });
+  await streaming.click();
+  await page.getByRole("radio", { name: "Yes", exact: true }).check();
+  const visibility = page.getByLabel("Broadcast visibility");
+  await expect(visibility).toHaveValue("unlisted");
+  await visibility.selectOption("public");
+  await expect(page.locator("#youtube-visibility-help")).toContainText(
+    "anyone can find and watch this game on YouTube",
+  );
+  await expect(page.locator("#youtube-visibility-help")).toContainText(
+    "you start the stream manually",
+  );
+  await expect(streaming).toContainText("reserve a public YouTube watch link");
+  await expect(
+    page.getByRole("complementary", { name: "Review game" }),
+  ).toContainText("YouTube watch link will be reserved · Public");
+  await page.getByRole("radio", { name: "No / shared link" }).check();
+  await page.getByRole("radio", { name: "Yes", exact: true }).check();
+  await expect(visibility).toHaveValue("public");
+  const payloads: Record<string, unknown>[] = [];
+  const postUrls: string[] = [];
+  page.on("request", (request) => {
+    if (request.method() === "POST") postUrls.push(request.url());
+  });
+  await page.route("**/api/team-schedule", async (route) => {
+    const payload = route.request().postDataJSON();
+    payloads.push(payload);
+    await route.fulfill({
+      json: {
+        game: { id: payload.gameId },
+        youtube: { status: "ready", thumbnailStatus: "ready" },
+      },
+    });
+  });
+  await page
+    .getByRole("button", { name: "Schedule game", exact: true })
+    .click();
+  await expect(
+    page.getByRole("heading", { name: "Game scheduled", exact: true }),
+  ).toBeVisible();
+  expect(payloads).toHaveLength(1);
+  expect(payloads[0]).toMatchObject({
+    operation: "createGame",
+    config: { youtubeEnabled: true, youtubeVisibility: "public" },
+  });
+  expect(postUrls).toHaveLength(1);
+  expect(postUrls[0]).toMatch(/\/api\/team-schedule$/);
+  await page.getByRole("button", { name: "Yes, schedule another" }).click();
+  await streaming.click();
+  await expect(visibility).toHaveValue("public");
 });
 
 test("a pending YouTube page explains the uncertainty and retries the same game", async ({
@@ -485,6 +585,49 @@ test("edit game preserves the current opponent and allows selecting a saved team
     operation: "updateGame",
     opponentId: "77777777-7777-4777-8777-777777777777",
   });
+});
+
+test("edit game retains reserved public visibility", async ({ page }) => {
+  await page
+    .locator("summary")
+    .filter({ hasText: /^Streaming/ })
+    .click();
+  await page.getByRole("radio", { name: "Yes", exact: true }).check();
+  await expect(page.getByLabel("Broadcast visibility")).toHaveValue("public");
+  await expect(page.getByLabel("Broadcast visibility")).toBeDisabled();
+  await expect(page.locator("#youtube-visibility-help")).toContainText(
+    "Visibility is fixed once YouTube watch-page reservation begins",
+  );
+  const payloads: Record<string, unknown>[] = [];
+  await page.route("**/api/team-schedule", async (route) => {
+    payloads.push(route.request().postDataJSON());
+    await route.fulfill({ status: 503, json: { error: "Try again shortly." } });
+  });
+  await page.getByRole("button", { name: "Save changes", exact: true }).click();
+  await expect.poll(() => payloads.length).toBe(1);
+  expect(payloads[0]).toMatchObject({
+    operation: "updateGame",
+    config: { youtubeEnabled: true, youtubeVisibility: "public" },
+  });
+  await expect(page.getByLabel("Broadcast visibility")).toHaveValue("public");
+});
+
+test("edit game keeps reserved unlisted visibility fixed", async ({ page }) => {
+  await page
+    .locator("summary")
+    .filter({ hasText: /^Streaming/ })
+    .click();
+  await page.getByRole("radio", { name: "Yes", exact: true }).check();
+  const visibility = page.getByLabel("Broadcast visibility");
+  await expect(visibility).toHaveValue("unlisted");
+  await expect(visibility).toBeDisabled();
+  await expect(page.locator("#youtube-visibility-help")).toContainText(
+    "Choose Public when scheduling a future game",
+  );
+  await page.getByRole("radio", { name: "No / shared link" }).check();
+  await page.getByRole("radio", { name: "Yes", exact: true }).check();
+  await expect(visibility).toHaveValue("unlisted");
+  await expect(visibility).toBeDisabled();
 });
 
 test("saving a new opponent adds it to search and leaving TBD restores selection", async ({

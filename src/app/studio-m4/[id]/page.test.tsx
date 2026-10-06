@@ -29,7 +29,7 @@ describe("M4 broadcast manager page", () => {
       await Page({ params: Promise.resolve({ id }) }),
     );
     expect(disabled).toContain("Local YouTube control is unavailable");
-    expect(disabled).not.toContain("Prepare unlisted broadcast");
+    expect(disabled).not.toContain("Prepare broadcast");
 
     vi.stubEnv("CURLCAST_M4_LOCAL_YOUTUBE", "disposable");
     const enabled = renderToStaticMarkup(

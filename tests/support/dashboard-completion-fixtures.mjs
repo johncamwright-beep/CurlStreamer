@@ -28,6 +28,7 @@ export async function dashboardFixtureResponse(request, url) {
         initialHammer: "home",
         youtubeTitle: "Mock dashboard regression",
         youtubeVisibility: "unlisted",
+        ...input.config,
       };
       fixtures.set(input.seasonId, {
         ...input,
@@ -43,6 +44,8 @@ export async function dashboardFixtureResponse(request, url) {
           schedule_timezone: "America/Toronto",
           created_at: new Date().toISOString(),
           game_status: "active",
+          youtube_scheduled_status: input.youtubeScheduledStatus,
+          youtube_scheduled_watch_url: input.youtubeScheduledWatchUrl,
           config,
         },
       });
@@ -60,7 +63,7 @@ export async function dashboardFixtureResponse(request, url) {
         name: "Refresh regression season",
         start_date: "2026-09-01",
         end_date: "2027-04-01",
-        status: "archived",
+        status: f.seasonStatus ?? "archived",
       }));
     if (url.pathname.endsWith("/rpc/list_events"))
       added = records.map((f) => ({

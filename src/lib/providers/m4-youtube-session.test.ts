@@ -156,6 +156,24 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 describe("M4 provider orchestration", () => {
+  it("prepares the saved Public visibility with manual lifecycle", async () => {
+    state(session({ visibility: "public" }));
+    mocks.game.mockResolvedValue({
+      config: { youtubeVisibility: "public", eventName: "Final" },
+    });
+    await prepareM4Session(gameId, credential);
+    expect(mocks.broadcast).toHaveBeenCalledWith(
+      expect.objectContaining({ visibility: "public", manualLifecycle: true }),
+      expect.any(Function),
+      true,
+    );
+  });
+  it("fences a saved visibility change before provider preparation", async () => {
+    state(session());
+    mocks.game.mockResolvedValue({ config: { youtubeVisibility: "public" } });
+    await prepareM4Session(gameId, credential);
+    expect(mocks.broadcast).not.toHaveBeenCalled();
+  });
   it("preserves a retired watch page without creating a replacement", async () => {
     mocks.rpc.mockResolvedValueOnce({
       data: session({
@@ -578,6 +596,33 @@ describe("M4 explicit automatic go-live", () => {
       youtubeStreamId: "stream-id",
       watchUrl,
     });
+  it("observes Public against saved session visibility", async () => {
+    state({ ...prepared(), visibility: "public" });
+    mocks.observe.mockResolvedValue({
+      streamStatus: "active",
+      broadcastStatus: "ready",
+      broadcastLive: false,
+    });
+    await goLiveM4Session(gameId, credential);
+    expect(mocks.observe).toHaveBeenCalledWith(
+      "private-access",
+      expect.objectContaining({ visibility: "public" }),
+    );
+  });
+  it("fences a visibility edit during provider verification", async () => {
+    mocks.rpc
+      .mockResolvedValueOnce({ data: prepared() })
+      .mockResolvedValueOnce({ data: { ...prepared(), visibility: "public" } });
+    mocks.observe.mockResolvedValue({
+      streamStatus: "active",
+      broadcastStatus: "ready",
+      broadcastLive: false,
+    });
+    await expect(goLiveM4Session(gameId, credential)).rejects.toThrow(
+      "m4_operation_fenced",
+    );
+    expect(mocks.transition).not.toHaveBeenCalled();
+  });
   it("verifies active video and rechecks authority before requesting live", async () => {
     state(prepared());
     mocks.observe.mockResolvedValue({

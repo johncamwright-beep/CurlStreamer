@@ -78,14 +78,7 @@ const requestSchema = z.discriminatedUnion("operation", [
       scheduledTime: z.string().regex(/^\d{2}:\d{2}$/),
       timezone: z.string().min(1).max(100),
       gameNumber: z.number().int().positive().nullable(),
-      config: gameSchema.refine(
-        (value) =>
-          !value.youtubeEnabled || value.youtubeVisibility === "unlisted",
-        {
-          message: "Scheduled Studio broadcasts must be unlisted.",
-          path: ["youtubeVisibility"],
-        },
-      ),
+      config: gameSchema,
     })
     .refine(
       (value) =>
@@ -110,6 +103,10 @@ const messages = {
     "An opponent with that name already exists. Choose another name or edit the existing opponent.",
   ],
   service: [503, "The team schedule is temporarily unavailable."],
+  youtubeVisibilityLocked: [
+    409,
+    "YouTube visibility is fixed once its watch page is reserved or Studio is prepared. Choose Public when creating your next game.",
+  ],
 } as const;
 
 export async function POST(request: Request) {
@@ -303,6 +300,7 @@ export async function POST(request: Request) {
           const youtube = await provisionScheduledYouTubeBroadcast(user, {
             gameId: existing.id,
             title: snapshotConfig.youtubeTitle,
+            visibility: snapshotConfig.youtubeVisibility,
             scheduledStart,
             thumbnail: {
               homeName: snapshotConfig.homeName,
@@ -347,6 +345,7 @@ export async function POST(request: Request) {
         const youtube = await provisionScheduledYouTubeBroadcast(user, {
           gameId,
           title: config.youtubeTitle,
+          visibility: config.youtubeVisibility,
           scheduledStart,
           thumbnail: {
             homeName: config.homeName,
@@ -381,6 +380,7 @@ export async function POST(request: Request) {
       const youtube = await provisionScheduledYouTubeBroadcast(user, {
         gameId: game.id,
         title: game.config.youtubeTitle,
+        visibility: game.config.youtubeVisibility,
         scheduledStart: game.scheduledStart,
         thumbnail: {
           homeName: game.config.homeName,

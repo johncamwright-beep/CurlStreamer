@@ -23,7 +23,7 @@ export type M4ManagerSession = z.infer<typeof sessionSchema>;
 function statusText(session: M4ManagerSession | undefined) {
   if (!session) return "Checking the preparation session…";
   if (session.status === "prepared")
-    return "Prepared. The unlisted broadcast and its stream exist. Live status is checked manually in YouTube.";
+    return "Prepared. The broadcast and its stream exist. Live status is checked manually in YouTube.";
   if (session.status === "failed")
     return "The previous operation is uncertain. Do not prepare a replacement; retire the owned resources after checking the provider.";
   if (session.status === "stopped")
@@ -204,7 +204,7 @@ export function M4BroadcastManager({ id }: { id: string }) {
           <h1 className="mt-2 text-3xl font-black">Broadcast manager</h1>
         </div>
         <p>
-          Prepare one unlisted, manual-lifecycle broadcast and stream.
+          Prepare one broadcast and stream using the game’s saved visibility.
           Preparation never starts delivery or makes the broadcast live.
         </p>
         <p role="status" className="rounded-lg bg-slate-800 p-3">
@@ -231,7 +231,7 @@ export function M4BroadcastManager({ id }: { id: string }) {
               onClick={() => void act("prepare")}
               className="min-h-11 rounded-lg bg-cyan-400 px-4 py-3 font-bold text-slate-950 disabled:opacity-50"
             >
-              {busy ? "Working…" : "Prepare unlisted broadcast"}
+              {busy ? "Working…" : "Prepare broadcast"}
             </button>
             <button
               type="button"

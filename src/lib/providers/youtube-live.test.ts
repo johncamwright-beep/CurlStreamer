@@ -22,19 +22,26 @@ describe("YouTube Live provider", () => {
           items: [
             {
               id: "video",
-              status: { lifeCycleStatus: "ready" },
+              status: { lifeCycleStatus: "ready", privacyStatus: "public" },
               snippet: { description: "CurlCast broadcast session game" },
+              contentDetails: { enableAutoStart: false, enableAutoStop: false },
             },
           ],
         }),
       )
-      .mockResolvedValueOnce(json({ id: "video" }));
+      .mockResolvedValueOnce(
+        json({
+          id: "video",
+          snippet: { description: "CurlCast broadcast session game" },
+        }),
+      );
     await updateScheduledYouTubeTime(
       "token",
       "video",
       "game",
       "Game — 8:00 AM EDT",
       "2026-09-17T12:00:00.000Z",
+      "public",
       fetcher,
     );
     const init = fetcher.mock.calls[1][1];
@@ -46,6 +53,9 @@ describe("YouTube Live provider", () => {
         title: "Game — 8:00 AM EDT",
       },
     });
+    expect(JSON.parse(init.body)).not.toHaveProperty("status");
+    expect(fetcher.mock.calls[1][0]).toContain("part=snippet");
+    expect(fetcher.mock.calls[1][0]).not.toContain("status");
   });
   it("does not reschedule a live broadcast", async () => {
     const fetcher = vi.fn().mockResolvedValue(
@@ -53,8 +63,9 @@ describe("YouTube Live provider", () => {
         items: [
           {
             id: "video",
-            status: { lifeCycleStatus: "live" },
+            status: { lifeCycleStatus: "live", privacyStatus: "unlisted" },
             snippet: { description: "CurlCast broadcast session game" },
+            contentDetails: { enableAutoStart: false, enableAutoStop: false },
           },
         ],
       }),
@@ -66,9 +77,81 @@ describe("YouTube Live provider", () => {
         "game",
         "Game",
         "2026-09-17T12:00:00Z",
+        "unlisted",
         fetcher,
       ),
     ).rejects.toThrow("already_started");
+    expect(fetcher).toHaveBeenCalledTimes(1);
+  });
+  it.each([
+    { id: "other" },
+    { snippet: { description: "wrong marker", channelId: "channel" } },
+    {
+      snippet: {
+        description: "CurlCast broadcast session game",
+        channelId: "other",
+      },
+    },
+    { contentDetails: { enableAutoStart: true, enableAutoStop: false } },
+  ])(
+    "rejects reserved-page identity or lifecycle mismatches before updating: %j",
+    async (override) => {
+      const fetcher = vi.fn<typeof fetch>().mockResolvedValue(
+        json({
+          items: [
+            {
+              id: "video",
+              snippet: {
+                description: "CurlCast broadcast session game",
+                channelId: "channel",
+              },
+              status: { lifeCycleStatus: "ready", privacyStatus: "unlisted" },
+              contentDetails: {
+                enableAutoStart: false,
+                enableAutoStop: false,
+              },
+              ...override,
+            },
+          ],
+        }),
+      );
+      await expect(
+        updateScheduledYouTubeTime(
+          "token",
+          "video",
+          "game",
+          "Final",
+          "2026-11-01T06:30:00Z",
+          "unlisted",
+          fetcher,
+          "channel",
+        ),
+      ).rejects.toThrow();
+      expect(fetcher).toHaveBeenCalledTimes(1);
+    },
+  );
+  it("rejects a reserved-page privacy mismatch before any update", async () => {
+    const item = {
+      id: "video",
+      snippet: { description: "CurlCast broadcast session game" },
+      status: { lifeCycleStatus: "ready", privacyStatus: "unlisted" },
+      contentDetails: { enableAutoStart: false, enableAutoStop: false },
+    };
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(json({ items: [item] }))
+      .mockResolvedValueOnce(json(item));
+    await expect(
+      updateScheduledYouTubeTime(
+        "token",
+        "video",
+        "game",
+        "Final",
+        "2026-11-01T06:30:00Z",
+        "public",
+        fetcher,
+      ),
+    ).rejects.toThrow("youtube_manual_configuration_mismatch");
     expect(fetcher).toHaveBeenCalledTimes(1);
   });
   const manualValues = {
@@ -181,13 +264,32 @@ describe("YouTube Live provider", () => {
     },
   );
   it.each(["public", "private"] as const)(
-    "rejects manual %s visibility before contacting YouTube",
+    "creates and reuses exact manual %s visibility without transitioning",
     async (visibility) => {
-      const fetcher = vi.fn<typeof fetch>();
+      const broadcast = {
+        ...manualBroadcast,
+        status: { lifeCycleStatus: "ready", privacyStatus: visibility },
+      };
+      const fetcher = vi
+        .fn<typeof fetch>()
+        .mockResolvedValueOnce(json({ items: [] }))
+        .mockResolvedValueOnce(json(broadcast))
+        .mockResolvedValueOnce(json({ items: [broadcast] }));
       await expect(
         findOrCreateYouTubeBroadcast({ ...manualValues, visibility }, fetcher),
-      ).rejects.toThrow("youtube_manual_configuration_mismatch");
-      expect(fetcher).not.toHaveBeenCalled();
+      ).resolves.toMatchObject({ id: "manual-id" });
+      await expect(
+        findOrCreateYouTubeBroadcast(
+          { ...manualValues, visibility },
+          fetcher,
+          false,
+        ),
+      ).resolves.toMatchObject({ id: "manual-id" });
+      expect(JSON.parse(String(fetcher.mock.calls[1][1]?.body))).toMatchObject({
+        status: { privacyStatus: visibility },
+        contentDetails: { enableAutoStart: false, enableAutoStop: false },
+      });
+      expect(fetcher).toHaveBeenCalledTimes(3);
     },
   );
   it("creates a broadcast with the exact configured title and visibility", async () => {
@@ -198,7 +300,7 @@ describe("YouTube Live provider", () => {
         json({
           id: "broadcast-id",
           snippet: { description: "CurlCast broadcast session session-key" },
-          status: { lifeCycleStatus: "ready" },
+          status: { lifeCycleStatus: "ready", privacyStatus: "unlisted" },
         }),
       );
     const value = await findOrCreateYouTubeBroadcast(
@@ -237,7 +339,7 @@ describe("YouTube Live provider", () => {
             {
               id: "on-page-two",
               snippet: { description },
-              status: { lifeCycleStatus: "ready" },
+              status: { lifeCycleStatus: "ready", privacyStatus: "unlisted" },
             },
           ],
         }),
@@ -292,7 +394,7 @@ describe("YouTube Live provider", () => {
               description:
                 "CurlCast broadcast session 11111111-1111-4111-8111-111111111111",
             },
-            status: { lifeCycleStatus: "ready" },
+            status: { lifeCycleStatus: "ready", privacyStatus: "private" },
           },
         ],
       }),

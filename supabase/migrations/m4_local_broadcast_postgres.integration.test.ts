@@ -174,6 +174,7 @@ function fixture() {
     id = randomUUID();
   const seeded =
     psql(`insert into public.organizations(id,name) values('${org}','M4 test');${account(owner, org)}${game(id, org, owner)}
+    insert into public.team_access(organization_id,paid_expires_at) values('${org}',now()+interval '1 day') on conflict(organization_id) do update set paid_expires_at=excluded.paid_expires_at;
     insert into public.broadcast_settings(organization_id,provider,encrypted_credentials,channel_id,channel_title,connection_status,connection_version) values('${org}','youtube','opaque','channel-m4','M4','connected',1);`);
   expect(seeded.stderr).toBe("");
   return { org, owner, id };
@@ -289,7 +290,7 @@ describe.skipIf(!enabled)("M4 local broadcast PostgreSQL authority", () => {
       ).stdout,
     ).toBe("preparing");
   });
-  it("enforces same-team authority, unlisted preparation, and completed-game late-write fencing", () => {
+  it("enforces same-team authority, valid visibility, and completed-game late-write fencing", () => {
     const a = fixture(),
       b = fixture();
     expect(claim(a.id, b.owner).ok).toBe(false);
@@ -299,7 +300,7 @@ describe.skipIf(!enabled)("M4 local broadcast PostgreSQL authority", () => {
       ).ok,
     ).toBe(false);
     psql(
-      `update public.games set config=jsonb_set(config,'{youtubeVisibility}','"public"') where id='${a.id}'`,
+      `update public.games set config=jsonb_set(config,'{youtubeVisibility}','"invalid"') where id='${a.id}'`,
     );
     expect(claim(a.id, a.owner).ok).toBe(false);
     psql(

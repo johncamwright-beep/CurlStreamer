@@ -56,6 +56,161 @@ describe("scheduled YouTube provisioning", () => {
       watchUrl: "https://www.youtube.com/watch?v=abcdefghijk",
     });
   });
+  it("creates Public using canonical saved privacy", async () => {
+    mocks.credentials.mockResolvedValue({
+      encrypted_credentials: "encrypted",
+      organization_id: "11111111-1111-4111-8111-111111111111",
+      channel_id: "channel",
+      connection_version: 1,
+      youtube_visibility: "public",
+    });
+    mocks.rpc
+      .mockResolvedValueOnce({
+        data: [{ action: "run", youtube_visibility: "public" }],
+        error: null,
+      })
+      .mockResolvedValueOnce({
+        data: [
+          {
+            status: "ready",
+            watch_url: "https://www.youtube.com/watch?v=abcdefghijk",
+          },
+        ],
+        error: null,
+      });
+    await provisionScheduledYouTubeBroadcast({ id: "user" } as never, {
+      gameId: "game",
+      title: "Final",
+      scheduledStart: "2026-11-01T06:30:00Z",
+      visibility: "public",
+    });
+    expect(mocks.broadcast).toHaveBeenCalledWith(
+      expect.objectContaining({ visibility: "public", manualLifecycle: true }),
+      expect.any(Function),
+      true,
+      expect.any(Function),
+    );
+  });
+  it("rejects stale route privacy before OAuth and provider intent", async () => {
+    await expect(
+      provisionScheduledYouTubeBroadcast({ id: "user" } as never, {
+        gameId: "game",
+        title: "Final",
+        scheduledStart: "2026-11-01T06:30:00Z",
+        visibility: "public",
+      }),
+    ).resolves.toMatchObject({
+      status: "pending",
+      errorCode: "youtube_manual_configuration_mismatch",
+    });
+    expect(mocks.refresh).not.toHaveBeenCalled();
+    expect(mocks.rpc).not.toHaveBeenCalled();
+  });
+  it("uses claim privacy when a legitimate edit wins after credential preflight", async () => {
+    mocks.credentials.mockResolvedValue({
+      encrypted_credentials: "encrypted",
+      organization_id: "11111111-1111-4111-8111-111111111111",
+      channel_id: "channel",
+      connection_version: 1,
+      youtube_visibility: "public",
+    });
+    mocks.rpc
+      .mockResolvedValueOnce({
+        data: [{ action: "run", youtube_visibility: "unlisted" }],
+        error: null,
+      })
+      .mockResolvedValueOnce({
+        data: [
+          {
+            status: "ready",
+            watch_url: "https://www.youtube.com/watch?v=abcdefghijk",
+          },
+        ],
+        error: null,
+      });
+    await provisionScheduledYouTubeBroadcast({ id: "user" } as never, {
+      gameId: "game",
+      title: "Final",
+      scheduledStart: "2026-11-01T06:30:00Z",
+      visibility: "public",
+    });
+    expect(mocks.broadcast).toHaveBeenCalledWith(
+      expect.objectContaining({ visibility: "unlisted" }),
+      expect.any(Function),
+      true,
+      expect.any(Function),
+    );
+  });
+  it.each([null, [], [{ action: "run", youtube_visibility: "invalid" }]])(
+    "fails closed on invalid claim metadata: %j",
+    async (data) => {
+      mocks.rpc.mockResolvedValueOnce({ data, error: null });
+      await expect(
+        provisionScheduledYouTubeBroadcast({ id: "user" } as never, {
+          gameId: "game",
+          title: "Final",
+          scheduledStart: "2026-11-01T06:30:00Z",
+          visibility: "unlisted",
+        }),
+      ).resolves.toMatchObject({
+        status: "failed",
+        errorCode: "youtube_manual_configuration_mismatch",
+      });
+      expect(mocks.broadcast).not.toHaveBeenCalled();
+      expect(mocks.update).not.toHaveBeenCalled();
+    },
+  );
+  it("updates Public on the saved watch page and retries without recreation", async () => {
+    mocks.credentials.mockResolvedValue({
+      encrypted_credentials: "encrypted",
+      organization_id: "11111111-1111-4111-8111-111111111111",
+      channel_id: "channel",
+      connection_version: 1,
+      youtube_visibility: "public",
+    });
+    mocks.rpc.mockResolvedValue({
+      data: [
+        {
+          action: "none",
+          youtube_visibility: "public",
+          watch_url: "https://www.youtube.com/watch?v=abcdefghijk",
+        },
+      ],
+      error: null,
+    });
+    mocks.update.mockRejectedValueOnce(
+      new Error("youtube_provider_unavailable"),
+    );
+    const values = {
+      gameId: "game",
+      title: "Final",
+      scheduledStart: "2026-11-01T06:30:00Z",
+      visibility: "public" as const,
+    };
+    await expect(
+      provisionScheduledYouTubeBroadcast({ id: "user" } as never, values),
+    ).resolves.toMatchObject({
+      status: "pending",
+      watchUrl: "https://www.youtube.com/watch?v=abcdefghijk",
+    });
+    await expect(
+      provisionScheduledYouTubeBroadcast({ id: "user" } as never, values),
+    ).resolves.toMatchObject({
+      status: "ready",
+      watchUrl: "https://www.youtube.com/watch?v=abcdefghijk",
+    });
+    expect(mocks.update).toHaveBeenCalledWith(
+      "access",
+      "abcdefghijk",
+      "game",
+      "Final",
+      values.scheduledStart,
+      "public",
+      fetch,
+      "channel",
+    );
+    expect(mocks.broadcast).not.toHaveBeenCalled();
+  });
 
   it("retries a persistence failure by discovery only", async () => {
     mocks.rpc
@@ -76,6 +231,7 @@ describe("scheduled YouTube provisioning", () => {
       gameId: "33333333-3333-4333-8333-333333333333",
       title: "Final",
       scheduledStart: "2026-11-01T06:30:00.000Z",
+      visibility: "unlisted" as const,
     };
     await expect(
       provisionScheduledYouTubeBroadcast(user, values),
@@ -104,6 +260,7 @@ describe("scheduled YouTube provisioning", () => {
         gameId: "33333333-3333-4333-8333-333333333333",
         title: "Final",
         scheduledStart: "2026-11-01T06:30:00.000Z",
+        visibility: "unlisted" as const,
       },
     );
     expect(result.status).toBe("pending");
@@ -131,6 +288,7 @@ describe("scheduled YouTube provisioning", () => {
       gameId: "33333333-3333-4333-8333-333333333333",
       title: "Final",
       scheduledStart: "2026-11-01T06:30:00.000Z",
+      visibility: "unlisted" as const,
     };
     await expect(
       provisionScheduledYouTubeBroadcast(user, values),
@@ -161,6 +319,7 @@ describe("scheduled YouTube provisioning", () => {
           gameId: "33333333-3333-4333-8333-333333333333",
           title: "Final",
           scheduledStart: "2026-11-01T06:30:00.000Z",
+          visibility: "unlisted" as const,
         },
       ),
     ).resolves.toMatchObject({ status: "pending" });
@@ -184,6 +343,7 @@ describe("scheduled YouTube provisioning", () => {
       gameId: "game",
       title: "Game",
       scheduledStart: "2026-10-20T22:30:00Z",
+      visibility: "unlisted" as const,
       thumbnail: {
         homeName: "Team A",
         awayName: "Team B",
@@ -224,6 +384,7 @@ describe("scheduled YouTube provisioning", () => {
           gameId: "33333333-3333-4333-8333-333333333333",
           title: "Final",
           scheduledStart: "2026-11-01T06:30:00.000Z",
+          visibility: "unlisted" as const,
         },
       ),
     ).resolves.toEqual({

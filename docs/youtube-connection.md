@@ -4,6 +4,22 @@ The settings slice connects one team-owned YouTube channel. It verifies OAuth
 access and channel identity only; it does not create, start, test, or publish a
 live broadcast.
 
+## Game broadcast visibility
+
+Game creation defaults to **Unlisted**. Choose **Public** under Broadcast
+visibility to make the scheduled watch page discoverable on YouTube. Saving a
+game reserves its watch page; it does not start sending video or go live.
+Studio starts the broadcast only when its operator explicitly chooses to
+broadcast. Preparation, provider verification, and reconnection use the saved
+game visibility and retain manual start/stop behavior for either choice.
+
+Choose visibility before reserving the watch page. It becomes fixed when
+reservation starts or Studio prepares the game, preventing overlapping edits
+from changing the audience of an existing broadcast. Other upcoming game
+details still update the same watch page. Failed preparation retries retain
+the selected visibility and must not silently create a replacement watch page
+or start a stream. Existing games keep their saved visibility.
+
 ## Google OAuth prerequisites
 
 Create a Google Cloud project, enable YouTube Data API v3, configure the OAuth

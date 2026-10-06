@@ -4,6 +4,8 @@ import { z } from "zod";
 import { youtubeGoogleRequest } from "./youtube";
 
 const API = "https://www.googleapis.com/youtube/v3";
+const visibilitySchema = z.enum(["private", "unlisted", "public"]);
+export type YouTubeVisibility = z.infer<typeof visibilitySchema>;
 
 const broadcastSchema = z.object({
   id: z.string().min(1),
@@ -17,7 +19,7 @@ const broadcastSchema = z.object({
   contentDetails: z.unknown().optional(),
 });
 const manualBroadcastSchema = z.object({
-  status: z.object({ privacyStatus: z.literal("unlisted") }),
+  status: z.object({ privacyStatus: visibilitySchema }),
   contentDetails: z.object({
     enableAutoStart: z.literal(false),
     enableAutoStop: z.literal(false),
@@ -66,53 +68,77 @@ export async function updateScheduledYouTubeTime(
   sessionKey: string,
   title: string,
   scheduledStartTime: string,
+  visibility: YouTubeVisibility,
   fetcher: typeof fetch = fetch,
+  expectedChannelId?: string,
 ) {
+  visibilitySchema.parse(visibility);
   const data = z
     .object({
       items: z.array(
         z.object({
           id: z.string(),
-          status: z.object({ lifeCycleStatus: z.string() }),
+          status: z.object({
+            lifeCycleStatus: z.string(),
+            privacyStatus: visibilitySchema,
+          }),
           snippet: z.object({
             description: z.string(),
+            channelId: z.string().optional(),
             scheduledEndTime: z.string().optional(),
           }),
+          contentDetails: manualBroadcastSchema.shape.contentDetails,
         }),
       ),
     })
     .parse(
       await youtubeRequest(
-        `/liveBroadcasts?part=snippet,status&id=${encodeURIComponent(broadcastId)}`,
+        `/liveBroadcasts?part=snippet,status,contentDetails&id=${encodeURIComponent(broadcastId)}`,
         accessToken,
         {},
         fetcher,
       ),
     );
   const broadcast = data.items[0];
-  if (!broadcast || broadcast.snippet.description !== marker(sessionKey))
+  if (
+    data.items.length !== 1 ||
+    !broadcast ||
+    broadcast.id !== broadcastId ||
+    broadcast.snippet.description !== marker(sessionKey) ||
+    (expectedChannelId !== undefined &&
+      broadcast.snippet.channelId !== expectedChannelId)
+  )
     throw new Error("youtube_broadcast_mismatch");
   if (!["created", "ready"].includes(broadcast.status.lifeCycleStatus))
     throw new Error("youtube_broadcast_already_started");
-  await youtubeRequest(
-    "/liveBroadcasts?part=snippet",
-    accessToken,
-    {
-      method: "PUT",
-      body: JSON.stringify({
-        id: broadcastId,
-        snippet: {
-          title,
-          description: broadcast.snippet.description,
-          scheduledStartTime,
-          ...(broadcast.snippet.scheduledEndTime
-            ? { scheduledEndTime: broadcast.snippet.scheduledEndTime }
-            : {}),
-        },
-      }),
-    },
-    fetcher,
+  if (broadcast.status.privacyStatus !== visibility)
+    throw new Error("youtube_manual_configuration_mismatch");
+  const updated = broadcastSchema.parse(
+    await youtubeRequest(
+      "/liveBroadcasts?part=snippet",
+      accessToken,
+      {
+        method: "PUT",
+        body: JSON.stringify({
+          id: broadcastId,
+          snippet: {
+            title,
+            description: broadcast.snippet.description,
+            scheduledStartTime,
+            ...(broadcast.snippet.scheduledEndTime
+              ? { scheduledEndTime: broadcast.snippet.scheduledEndTime }
+              : {}),
+          },
+        }),
+      },
+      fetcher,
+    ),
   );
+  if (
+    updated.id !== broadcastId ||
+    updated.snippet.description !== marker(sessionKey)
+  )
+    throw new Error("youtube_manual_configuration_mismatch");
 }
 
 async function pagedItems<T>(
@@ -183,7 +209,7 @@ export async function findOrCreateYouTubeBroadcast(
     accessToken: string;
     sessionKey: string;
     title: string;
-    visibility: "private" | "unlisted" | "public";
+    visibility: YouTubeVisibility;
     manualLifecycle?: boolean;
     scheduledStartTime?: string;
   },
@@ -191,8 +217,7 @@ export async function findOrCreateYouTubeBroadcast(
   allowCreate = true,
   onBeforeInsert?: () => void,
 ): Promise<YouTubeBroadcast> {
-  if (values.manualLifecycle && values.visibility !== "unlisted")
-    throw new Error("youtube_manual_configuration_mismatch");
+  visibilitySchema.parse(values.visibility);
   const description = marker(values.sessionKey);
   const existing = await findYouTubeBroadcast(
     values.accessToken,
@@ -232,7 +257,10 @@ export async function findOrCreateYouTubeBroadcast(
       ),
     );
   }
-  if (values.manualLifecycle && !manualBroadcastSchema.safeParse(value).success)
+  if (
+    value.status?.privacyStatus !== values.visibility ||
+    (values.manualLifecycle && !manualBroadcastSchema.safeParse(value).success)
+  )
     throw new Error("youtube_manual_configuration_mismatch");
   return {
     id: value.id,

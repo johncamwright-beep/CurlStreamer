@@ -1,5 +1,11 @@
 "use client";
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import {
   reportPercentages,
   reportSections,
@@ -30,7 +36,13 @@ const audiences = [
       "A separate strengths and development report for each recorded player.",
   },
 ] as const;
-export default function EventReports({ eventId }: { eventId: string }) {
+export default function EventReports({
+  eventId,
+  renderLayout,
+}: {
+  eventId: string;
+  renderLayout?: (navigation: ReactNode, content: ReactNode) => ReactNode;
+}) {
   const [status, setStatus] = useState<ReportStatus | null>(null),
     [error, setError] = useState(""),
     [busy, setBusy] = useState<ReportAudience | null>(null),
@@ -160,11 +172,70 @@ export default function EventReports({ eventId }: { eventId: string }) {
       setDownloading(false);
     }
   }
-  return (
+  const navigation = (
+    <nav aria-label="Event report list" className="flex flex-col gap-1">
+      {audiences.flatMap((a) => {
+        const saved = status?.entries.find((e) => e.audience === a.id)?.packet;
+        const choices =
+          a.id === "players" && saved?.reports.length
+            ? saved.reports.map((r) => ({
+                key: "players:" + r.key,
+                label: r.title,
+              }))
+            : [{ key: a.id, label: a.label }];
+        return (
+          <div key={a.id} className="flex flex-col gap-1">
+            {renderLayout && a.id === "players" && !!saved?.reports.length && (
+              <button
+                className="min-h-11 rounded px-3 py-3 text-left text-sm font-semibold hover:bg-slate-500/20"
+                aria-expanded={selectedAudience === "players"}
+                onClick={() => setSelected("players")}
+              >
+                Individual reports
+              </button>
+            )}
+            {choices
+              .filter(
+                () =>
+                  !renderLayout ||
+                  a.id !== "players" ||
+                  !saved?.reports.length ||
+                  selectedAudience === "players",
+              )
+              .map((c) => (
+                <button
+                  key={c.key}
+                  aria-current={
+                    selected === c.key ||
+                    (selected === "players" &&
+                      c.key === "players:" + saved?.reports[0]?.key)
+                      ? "page"
+                      : undefined
+                  }
+                  className={
+                    "min-h-11 rounded px-3 py-3 text-left text-sm " +
+                    (selected === c.key ||
+                    (selected === "players" &&
+                      c.key === "players:" + saved?.reports[0]?.key)
+                      ? "bg-cyan-400 font-bold text-slate-950"
+                      : "hover:bg-slate-500/20")
+                  }
+                  onClick={() => setSelected(c.key)}
+                >
+                  {c.label}
+                </button>
+              ))}
+          </div>
+        );
+      })}
+    </nav>
+  );
+  const content = (
     <section
       className="event-card shot-tracker-reports space-y-5"
       aria-label="Shot Tracker event reports"
     >
+      {" "}
       <header className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h2 className="text-xl font-bold">Event reports</h2>
@@ -213,80 +284,48 @@ export default function EventReports({ eventId }: { eventId: string }) {
         <p>Generation is unavailable. Saved reports can still be viewed.</p>
       )}
       {error && <p role="alert">{error}</p>}
-      <div className="grid gap-5 md:grid-cols-[220px_minmax(0,1fr)]">
-        <nav
-          aria-label="Event report list"
-          className="flex flex-col gap-1 border-b border-slate-500 pb-4 md:border-b-0 md:border-r md:pr-4"
-        >
-          {audiences.flatMap((a) => {
-            const saved = status?.entries.find(
-              (e) => e.audience === a.id,
-            )?.packet;
-            const choices =
-              a.id === "players" && saved?.reports.length
-                ? saved.reports.map((r) => ({
-                    key: "players:" + r.key,
-                    label: r.title,
-                  }))
-                : [{ key: a.id, label: a.label }];
-            return choices.map((c) => (
-              <button
-                key={c.key}
-                aria-current={
-                  selected === c.key ||
-                  (selected === "players" &&
-                    c.key === "players:" + saved?.reports[0]?.key)
-                    ? "page"
-                    : undefined
-                }
-                className={
-                  "min-h-11 rounded px-3 py-3 text-left text-sm " +
-                  (selected === c.key ||
-                  (selected === "players" &&
-                    c.key === "players:" + saved?.reports[0]?.key)
-                    ? "bg-cyan-400 font-bold text-slate-950"
-                    : "hover:bg-slate-500/20")
-                }
-                onClick={() => setSelected(c.key)}
-              >
-                {c.label}
-              </button>
-            ));
-          })}
-        </nav>
-        <div className="min-w-0">
-          {current && packet ? (
-            <>
-              <div className="mb-5 flex flex-wrap items-start justify-between gap-3">
-                <div>
-                  <h3 className="text-2xl font-bold">{current.title}</h3>
-                  <p className="mt-1 text-sm">{packet.eventName}</p>
-                </div>
-                <button
-                  className="btn min-h-11"
-                  onClick={() => void download()}
-                  disabled={downloading}
-                >
-                  {downloading ? "Preparing PDF…" : "Download PDF"}
-                </button>
+      <div className="min-w-0">
+        {current && packet ? (
+          <>
+            <div className="mb-5 flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <h3 className="text-2xl font-bold">{current.title}</h3>
+                <p className="mt-1 text-sm">{packet.eventName}</p>
               </div>
-              <ReportBody report={current} />
-            </>
-          ) : (
-            <div className="rounded border border-slate-500 p-6">
-              <h3 className="mb-2 text-xl font-bold">
-                {audiences.find((a) => a.id === selectedAudience)?.label}
-              </h3>
-              <p>
-                {generatingSet || busy || processing
-                  ? "Your reports are being written. You can open saved reports while you wait."
-                  : "No report generated yet. Use Generate reports when your event data is ready."}
-              </p>
+              <button
+                className="btn min-h-11"
+                onClick={() => void download()}
+                disabled={downloading}
+              >
+                {downloading ? "Preparing PDF…" : "Download PDF"}
+              </button>
             </div>
-          )}
-        </div>
+            <ReportBody report={current} />
+          </>
+        ) : (
+          <div className="rounded border border-slate-500 p-6">
+            <h3 className="mb-2 text-xl font-bold">
+              {audiences.find((a) => a.id === selectedAudience)?.label}
+            </h3>
+            <p>
+              {generatingSet || busy || processing
+                ? "Your reports are being written. You can open saved reports while you wait."
+                : "No report generated yet. Use Generate reports when your event data is ready."}
+            </p>
+          </div>
+        )}
       </div>
     </section>
+  );
+  return renderLayout ? (
+    renderLayout(navigation, content)
+  ) : (
+    <div className="grid gap-5 md:grid-cols-[220px_minmax(0,1fr)]">
+      <div className="border-b border-slate-500 pb-4 md:border-b-0 md:border-r md:pr-4">
+        {navigation}
+      </div>
+      {content}
+    </div>
   );
 }
 function ReportBody({ report }: { report: SavedReport }) {

@@ -200,7 +200,7 @@ test("report navigation is read-only, generation is explicit, and PDFs contain o
             games: [
               {
                 key: "game-1",
-                text: "Your draws provided a useful starting point. Rehearse the target on both turns.",
+                text: "Game １: Your draws provided a useful starting point. Rehearse the target on both turns.",
                 evidence: ["game-1-overall"],
               },
             ],
@@ -338,6 +338,7 @@ test("report navigation is read-only, generation is explicit, and PDFs contain o
   expect(pdf).not.toContain("Cameron Wright");
   expect(pdf).not.toContain("ungraded");
   expect(pdf).toContain("Opening game");
+  expect(pdf).toContain("Game 1:");
   expect(pdf).toContain("80.0%");
   await download.saveAs("test-results/report-" + info.project.name + ".pdf");
   await page.screenshot({

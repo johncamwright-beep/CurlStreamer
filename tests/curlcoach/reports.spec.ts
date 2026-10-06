@@ -5,6 +5,7 @@ import { expect, test } from "@playwright/test";
 test.skip(!process.env.CURLCOACH_E2E, "Use the Shot Tracker config");
 let js = "";
 let libraryJs = "";
+let workspaceJs = "";
 let css = "";
 test.beforeAll(async () => {
   execFileSync(process.execPath, [
@@ -44,6 +45,20 @@ test.beforeAll(async () => {
     },
   });
   libraryJs = library.outputFiles[0].text;
+  const workspace = await build({
+    bundle: true,
+    format: "iife",
+    jsx: "automatic",
+    platform: "browser",
+    write: false,
+    tsconfig: "tsconfig.json",
+    stdin: {
+      loader: "tsx",
+      resolveDir: process.cwd(),
+      contents: `import React from 'react';import{createRoot}from'react-dom/client';import{EventWorkspace}from './src/components/EventWorkspace';createRoot(document.getElementById('root')).render(<main className="mx-auto max-w-6xl p-5"><h1 className="mb-5 text-3xl font-bold">Shorty Jenkins Classic</h1><EventWorkspace eventId="fixture" reportsEnabled edit={<label>Event name<input defaultValue="Shorty Jenkins Classic"/></label>} schedule={<h2>Scheduled games</h2>}/></main>);`,
+    },
+  });
+  workspaceJs = workspace.outputFiles[0].text;
 });
 test("event library offers generate or view without automatic generation", async ({
   page,
@@ -365,4 +380,83 @@ test("Shot Tracker is available at its product-named address", async ({
       includeHidden: true,
     }),
   ).toBeAttached();
+});
+
+test("event sections preserve drafts and never generate on navigation", async ({
+  page,
+}, testInfo) => {
+  let posts = 0;
+  await page.route("**/api/curlcoach/reports**", (route) => {
+    if (route.request().method() === "POST") posts++;
+    return route.fulfill({
+      json: {
+        configured: true,
+        eligible: true,
+        allowance: {
+          used: 1,
+          limit: 20,
+          reserved: false,
+          owned: true,
+          completed: [],
+        },
+        entries: [],
+      },
+    });
+  });
+  await page.route("**/workspace-fixture", (route) =>
+    route.fulfill({
+      contentType: "text/html",
+      body:
+        '<html><head><meta name="viewport" content="width=device-width, initial-scale=1"><style>' +
+        css +
+        '</style></head><body><div id="root"></div><script>' +
+        workspaceJs +
+        "</script></body></html>",
+    }),
+  );
+  await page.goto("/workspace-fixture");
+  await expect(
+    page.getByRole("button", { name: "Generate reports", exact: true }),
+  ).toBeEnabled();
+  await expect(page.getByLabel("Event name", { exact: true })).toBeHidden();
+  await page.getByRole("button", { name: "Edit event", exact: true }).click();
+  await page
+    .getByLabel("Event name", { exact: true })
+    .fill("Unsaved event draft");
+  await expect(
+    page.getByRole("button", { name: "Coach report", exact: true }),
+  ).toBeHidden();
+  await page
+    .getByRole("button", { name: "Schedule games", exact: true })
+    .click();
+  await expect(
+    page.getByRole("heading", { name: "Scheduled games" }),
+  ).toBeVisible();
+  await expect(page.getByLabel("Event name", { exact: true })).toBeHidden();
+  await page.getByRole("button", { name: "Edit event", exact: true }).click();
+  await expect(page.getByLabel("Event name", { exact: true })).toHaveValue(
+    "Unsaved event draft",
+  );
+  await page
+    .getByRole("button", { name: "Event reports", exact: true })
+    .click();
+  await page
+    .getByRole("button", { name: "Individual reports", exact: true })
+    .click();
+  await expect(
+    page.getByRole("heading", { name: "Individual reports", exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "Scheduled games" }),
+  ).toBeHidden();
+  expect(posts).toBe(0);
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= window.innerWidth,
+    ),
+  ).toBe(true);
+  await page.screenshot({
+    path: "work/event-navigation-" + testInfo.project.name + ".png",
+    fullPage: true,
+  });
 });

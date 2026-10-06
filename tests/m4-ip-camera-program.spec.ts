@@ -1040,6 +1040,7 @@ test("a stalled observation response body expires under the frame deadline and p
     const original = window.fetch.bind(window);
     const state = {
       stalled: false,
+      cameraRole: null as string | null,
       bodyRead: false,
       aborted: false,
       abortAfterMs: 0,
@@ -1053,10 +1054,13 @@ test("a stalled observation response body expires under the frame deadline and p
         String(input) !== "/camera" ||
         !options?.body ||
         JSON.parse(options.body as string).action !== "observe" ||
+        // The phone fixture has a separate five-second observation deadline.
+        JSON.parse(options.body as string).cameraRole !== "camera-away" ||
         state.stalled
       )
         return response;
       state.stalled = true;
+      state.cameraRole = JSON.parse(options.body as string).cameraRole;
       await response.text();
       const bodyStarted = performance.now();
       const body = new ReadableStream<Uint8Array>({
@@ -1091,22 +1095,30 @@ test("a stalled observation response body expires under the frame deadline and p
         () =>
           (
             window as unknown as {
-              __observationBodyStall: { bodyRead: boolean; aborted: boolean };
+              __observationBodyStall: {
+                cameraRole: string | null;
+                bodyRead: boolean;
+                aborted: boolean;
+              };
             }
           ).__observationBodyStall,
       ),
     )
-    .toMatchObject({ bodyRead: true, aborted: true });
-  expect(
-    await page.evaluate(
-      () =>
-        (
-          window as unknown as {
-            __observationBodyStall: { abortAfterMs: number };
-          }
-        ).__observationBodyStall.abortAfterMs,
-    ),
-  ).toBeGreaterThan(1000);
+    .toMatchObject({
+      cameraRole: "camera-away",
+      bodyRead: true,
+      aborted: true,
+    });
+  const abortAfterMs = await page.evaluate(
+    () =>
+      (
+        window as unknown as {
+          __observationBodyStall: { abortAfterMs: number };
+        }
+      ).__observationBodyStall.abortAfterMs,
+  );
+  expect(abortAfterMs).toBeGreaterThan(1000);
+  expect(abortAfterMs).toBeLessThan(3000);
   await expect
     .poll(
       () =>

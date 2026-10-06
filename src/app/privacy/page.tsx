@@ -177,13 +177,14 @@ export default function PrivacyPage() {
         <p>
           Withdrawal removes stored channel details, provider identifiers and
           automatically created YouTube links from CurlStreamer. Your scores,
-          independently entered game information and manually supplied video
-          links remain. Videos remain on YouTube. During a prolonged
-          verification outage, we remove unverified YouTube API information to
-          meet the same retention limits; reconnect when the connection is
-          available. If you revoke Google access during a live broadcast,
-          CurlStreamer may no longer be able to control that broadcast; use
-          YouTube Studio to finish it.
+          independently entered game information and independently supplied
+          video links remain. Links matching videos created by CurlStreamer are
+          removed even if you entered them manually. Videos remain on YouTube.
+          During a prolonged verification outage, we remove unverified YouTube
+          API information to meet the same retention limits; reconnect when the
+          connection is available. If you revoke Google access during a live
+          broadcast, CurlStreamer may no longer be able to control that
+          broadcast; use YouTube Studio to finish it.
         </p>
         <p>
           To request access, correction, account deletion or removal of personal

@@ -36,6 +36,18 @@ const command = z.discriminatedUnion("action", [
       cameraRole: cameraRoleSchema,
     })
     .strict(),
+  z
+    .object({
+      action: z.literal("connect-camera-input"),
+      cameraRole: cameraRoleSchema,
+    })
+    .strict(),
+  z
+    .object({
+      action: z.literal("disconnect-camera-input"),
+      cameraRole: cameraRoleSchema,
+    })
+    .strict(),
   z.object({ action: z.literal("check") }).strict(),
   z
     .object({
@@ -530,7 +542,9 @@ export async function createM4OperatorServer(options: {
       }
       if (
         input.action === "configure-camera-input" ||
-        input.action === "reconnect-camera-input"
+        input.action === "reconnect-camera-input" ||
+        input.action === "connect-camera-input" ||
+        input.action === "disconnect-camera-input"
       ) {
         if (busy || ["starting", "stopping"].includes(program)) {
           reply(409, { error: "Action in progress" });
@@ -548,11 +562,18 @@ export async function createM4OperatorServer(options: {
             reply(409, { error: "IP camera is not active" });
             return;
           }
-          if (programHandle?.cameraStatus?.()[input.cameraRole] === true) {
+          if (
+            input.action === "reconnect-camera-input" &&
+            programHandle?.cameraStatus?.()[input.cameraRole] === true
+          ) {
             reply(409, { error: "Camera is already receiving video" });
             return;
           }
-          await cameraInputs.reconnect(input.cameraRole);
+          if (input.action === "connect-camera-input")
+            await cameraInputs.connect(input.cameraRole);
+          else if (input.action === "disconnect-camera-input")
+            await cameraInputs.disconnect(input.cameraRole);
+          else await cameraInputs.reconnect(input.cameraRole);
         }
         reply(200, snapshot());
         return;

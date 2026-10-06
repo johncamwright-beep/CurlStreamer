@@ -55,6 +55,7 @@ describe("native program audio routing", () => {
       };
       const phone: M4CameraInputSnapshot = {
         kind: "phone",
+        connectionEnabled: false,
         configured: false,
         phase: "idle",
         generation: 0,

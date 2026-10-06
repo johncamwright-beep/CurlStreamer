@@ -7,6 +7,36 @@ internal static class WorkspacePolicyTests
     private static int Main()
     {
         const string origin = "https://studio.example", id = "11111111-1111-4111-8111-111111111111";
+        const string otherId = "22222222-2222-4222-8222-222222222222";
+        foreach (var path in new[] { "/dashboard", "/account", "/score/" + id }) {
+            Assert(WorkspacePolicy.SessionMessage(origin + path, origin + path, origin));
+            Assert(!WorkspacePolicy.SessionMessage("https://attacker.example" + path, origin + path, origin));
+        }
+        Assert(!WorkspacePolicy.SessionMessage(origin + "/score/" + id, origin + "/account", origin));
+        var sessionCommand = new Dictionary<string, object> { { "type", "studio-youtube-hold" }, { "gameId", id }, { "nonce", Guid.NewGuid().ToString("D") } };
+        Assert(WorkspacePolicy.SessionPresentation(sessionCommand, null, id));
+        Assert(WorkspacePolicy.SessionPresentation(sessionCommand, otherId, id));
+        Assert(!WorkspacePolicy.SessionPresentation(sessionCommand, id, otherId));
+        Assert(!WorkspacePolicy.SessionPresentation(sessionCommand, id, null));
+        sessionCommand["type"] = "studio-ending-prepare";
+        Assert(WorkspacePolicy.SessionPresentation(sessionCommand, id, id));
+        Assert(!WorkspacePolicy.SessionPresentation(sessionCommand, null, id));
+        Assert(!WorkspacePolicy.SessionPresentation(sessionCommand, otherId, id));
+        sessionCommand["type"] = "studio-youtube-resume"; sessionCommand["nonce"] = "invalid";
+        Assert(!WorkspacePolicy.SessionPresentation(sessionCommand, id, id));
+        sessionCommand["nonce"] = Guid.NewGuid().ToString("D"); sessionCommand["url"] = "http://attacker.example";
+        Assert(!WorkspacePolicy.SessionPresentation(sessionCommand, id, id));
+        Assert(WorkspacePolicy.KeepUsbSession(id, id, true));
+        Assert(!WorkspacePolicy.KeepUsbSession(id, otherId, true));
+        Assert(!WorkspacePolicy.KeepUsbSession(id, id, false));
+        Assert(!WorkspacePolicy.KeepUsbSession(id, null, false));
+        Assert(WorkspacePolicy.CanStartSession(null, id));
+        Assert(WorkspacePolicy.CanStartSession(id, id));
+        Assert(!WorkspacePolicy.CanStartSession(id, otherId));
+        Assert(WorkspacePolicy.CanConfigureSession(id, null));
+        Assert(WorkspacePolicy.CanConfigureSession(id, id));
+        Assert(!WorkspacePolicy.CanConfigureSession(otherId, id));
+        Assert(!WorkspacePolicy.CanConfigureSession(null, id));
         var zoomRequest = new Dictionary<string, object> { { "action", "zoom-camera" }, { "gameId", id }, { "cameraRole", "camera-home" }, { "generation", 3 }, { "value", 2.5m }, { "nonce", Guid.NewGuid().ToString("D") } };
         string role, nonce; int generation; double zoom;
         Assert(WorkspacePolicy.CameraZoomRequest(zoomRequest, id, id, out role, out generation, out zoom, out nonce));

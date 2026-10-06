@@ -10,6 +10,7 @@ import { invitationRoles, issueInvitation } from "./GameInvitations";
 import "./studio-devices.css";
 import {
   cameraInputNativeAction,
+  cameraInputNativeConnection,
   useStudioCameraInputs,
   type StudioCameraInput,
 } from "./StudioCameraInputs";
@@ -298,6 +299,11 @@ export function DeviceCard({
               : "Ready to connect";
   const ipCamera = cameraInput && cameraInput.kind !== "phone";
   const sourceLabel = cameraInput?.kind === "tapo" ? "Tapo" : "IP camera";
+  const connectionEnabled =
+    cameraInput?.connectionEnabled ??
+    // Older Studios automatically connect configured IP sources and do not
+    // accept the explicit Connect command introduced with connectionEnabled.
+    Boolean(cameraInput?.configured);
   if (!scorer && ipCamera)
     return (
       <section
@@ -315,11 +321,13 @@ export function DeviceCard({
               role="status"
               data-online={Boolean(connectionStatus?.videoReceiving)}
             >
-              {connectionStatus?.videoReceiving
-                ? "Receiving video"
-                : cameraInput.phase === "streaming"
-                  ? `${sourceLabel} connected · Waiting for program video`
-                  : `${sourceLabel} · ${cameraInput.phase}`}
+              {!connectionEnabled
+                ? "Ready to connect"
+                : connectionStatus?.videoReceiving
+                  ? "Receiving video"
+                  : cameraInput.phase === "streaming"
+                    ? `${sourceLabel} connected · Waiting for program video`
+                    : `${sourceLabel} · ${cameraInput.phase}`}
             </p>
           </div>
           {onAudio && (
@@ -427,21 +435,39 @@ export function DeviceCard({
           {onVisibility && (
             <button
               className="studio-device-action secondary studio-device-visibility"
-              aria-pressed={shown}
-              disabled={layoutBusy || !enabled}
-              onClick={() =>
-                void onVisibility().catch(() =>
+              aria-pressed={connectionEnabled && shown}
+              disabled={busy || layoutBusy || !enabled}
+              onClick={async () => {
+                setBusy(true);
+                setError("");
+                try {
+                  if (!connectionEnabled)
+                    await cameraInputNativeConnection(
+                      id,
+                      role,
+                      "connect-camera",
+                    );
+                  if (connectionEnabled || !shown) await onVisibility();
+                } catch (cause) {
                   setError(
-                    "Could not change the broadcast picture. Try again.",
-                  ),
-                )
-              }
+                    !connectionEnabled && cause instanceof Error
+                      ? cause.message
+                      : "Could not change the broadcast picture. Try again.",
+                  );
+                } finally {
+                  setBusy(false);
+                }
+              }}
             >
-              {shown ? "Hide from broadcast" : "Show in broadcast"}
+              {!connectionEnabled
+                ? "Connect"
+                : shown
+                  ? "Hide from broadcast"
+                  : "Show in broadcast"}
             </button>
           )}
         </div>
-        {!connectionStatus?.videoReceiving && (
+        {connectionEnabled && !connectionStatus?.videoReceiving && (
           <div className="studio-device-actions">
             <button
               className="studio-device-action secondary min-h-11"

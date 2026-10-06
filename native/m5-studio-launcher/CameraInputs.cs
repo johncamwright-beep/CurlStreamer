@@ -159,7 +159,7 @@ internal sealed class CameraInputDialog : Form
             host.Text = (string)initial["host"]; username.Text = (string)initial["username"]; password.Text = (string)initial["password"]; port.Text = initial["port"].ToString(); path.Text = savedPath; rotation.SelectedIndex = (int)initial["rotation"] / 90; kind.SelectedIndex = 1;
         } else kind.SelectedIndex = 0;
         Action update = () => { camera.Visible = kind.SelectedIndex == 1; }; kind.SelectedIndexChanged += (sender, e) => update(); update();
-        var save = new Button { Text = "Save and test connection", Dock = DockStyle.Top, MinimumSize = new Size(0, 44) }; panel.Controls.Add(save); panel.Controls.Add(message);
+        var save = new Button { Text = "Save settings", Dock = DockStyle.Top, MinimumSize = new Size(0, 44) }; panel.Controls.Add(save); panel.Controls.Add(message);
         var cancel = new Button { Text = "Cancel", Dock = DockStyle.Top, MinimumSize = new Size(0, 44), DialogResult = DialogResult.Cancel }; panel.Controls.Add(cancel); CancelButton = cancel;
         bool followStatus = false;
         save.Click += async (sender, e) => {

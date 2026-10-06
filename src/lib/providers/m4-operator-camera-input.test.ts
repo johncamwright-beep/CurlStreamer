@@ -22,6 +22,14 @@ const reconnect = (cameraRole = "camera-home") => ({
   action: "reconnect-camera-input",
   cameraRole,
 });
+const connect = (cameraRole = "camera-home") => ({
+  action: "connect-camera-input",
+  cameraRole,
+});
+const disconnect = (cameraRole = "camera-home") => ({
+  action: "disconnect-camera-input",
+  cameraRole,
+});
 const zoom = (generation = 1, value = 2, cameraRole = "camera-home") => ({
   action: "set-camera-zoom",
   cameraRole,
@@ -107,6 +115,56 @@ async function fixture(startGate?: Promise<void>) {
 }
 
 describe("operator camera input commands", () => {
+  it("keeps saved inputs disconnected until an explicit per-role connection and publishes that intent", async () => {
+    const f = await fixture();
+    try {
+      await f.send(configure());
+      expect((await f.send(connect())).status).toBe(409);
+      expect((await f.startProgram()).status).toBe(200);
+      expect((await f.state()).cameraInputs["camera-home"]).toMatchObject({
+        connectionEnabled: false,
+        configured: true,
+        phase: "idle",
+      });
+      const idleRetry = await f.send(reconnect());
+      expect(idleRetry.status).toBe(200);
+      expect(
+        (await idleRetry.json()).cameraInputs["camera-home"].connectionEnabled,
+      ).toBe(false);
+      expect((await f.send(connect("camera-away"))).status).toBe(409);
+      const connected = await f.send(connect());
+      expect(connected.status).toBe(200);
+      expect((await connected.json()).cameraInputs).toMatchObject({
+        "camera-home": { connectionEnabled: true },
+        "camera-away": { connectionEnabled: false },
+      });
+      const enabled = (await f.state()).cameraInputs["camera-home"];
+      expect(
+        (await f.send(configure("camera-home", { ...source, host: "bad" })))
+          .status,
+      ).toBe(400);
+      expect((await f.state()).cameraInputs["camera-home"]).toEqual(enabled);
+      await f.send(configure("camera-home", { ...source, host: "10.0.0.10" }));
+      expect(
+        (await f.state()).cameraInputs["camera-home"].connectionEnabled,
+      ).toBe(true);
+      f.status["camera-home"] = true;
+      const disconnected = await f.send(disconnect());
+      expect(disconnected.status).toBe(200);
+      expect(
+        (await disconnected.json()).cameraInputs["camera-home"],
+      ).toMatchObject({ connectionEnabled: false, phase: "idle" });
+      f.status["camera-home"] = false;
+      await f.send(reconnect());
+      expect(
+        (await f.state()).cameraInputs["camera-home"].connectionEnabled,
+      ).toBe(false);
+      expect((await f.send({ action: "stop-program" })).status).toBe(200);
+      expect((await f.send(connect())).status).toBe(409);
+    } finally {
+      await f.close();
+    }
+  });
   it("permits zoom only for the active generation and preserves independent private state", async () => {
     const f = await fixture();
     try {
@@ -187,10 +245,16 @@ describe("operator camera input commands", () => {
       for (const overrides of deniedHeaders) {
         expect((await f.send(configure(), overrides)).status).toBe(403);
         expect((await f.send(reconnect(), overrides)).status).toBe(403);
+        expect((await f.send(connect(), overrides)).status).toBe(403);
+        expect((await f.send(disconnect(), overrides)).status).toBe(403);
         expect((await f.send(zoom(), overrides)).status).toBe(403);
       }
       for (const command of [
         configure("camera-other"),
+        connect("camera-other"),
+        disconnect("camera-other"),
+        { ...connect(), gameId },
+        { ...disconnect(), enabled: true },
         configure("camera-home", { ...source, host: "camera.local" }),
         configure("camera-home", { ...source, host: "8.8.8.8" }),
         configure("camera-home", { ...source, port: 8554 }),
@@ -309,6 +373,8 @@ describe("operator camera input commands", () => {
       ).toBe(409);
       expect((await f.send(reconnect())).status).toBe(409);
       expect((await f.state()).cameraInputs).toEqual(before);
+      expect((await f.send(connect())).status).toBe(409);
+      expect((await f.send(disconnect())).status).toBe(409);
       expect(
         (await f.send(zoom(before["camera-home"].generation))).status,
       ).toBe(409);

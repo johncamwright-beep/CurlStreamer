@@ -15,6 +15,7 @@ export const studioCameraInputSchema = z
     phase: z.string(),
     errorCode: z.string().nullable().optional(),
     generation: z.number().int().nonnegative(),
+    connectionEnabled: z.boolean().optional(),
     zoom: z.number().min(1).max(4).optional(),
   })
   .strict();
@@ -39,6 +40,73 @@ export function useStudioCameraInputs(id?: string) {
     return () => window.removeEventListener("studio-camera-inputs", receive);
   }, [id]);
   return cameras;
+}
+
+/** Acknowledges connection intent; fresh video is verified independently. */
+export function cameraInputNativeConnection(
+  id: string,
+  cameraRole: "camera-home" | "camera-away",
+  action: "connect-camera" | "disconnect-camera",
+) {
+  const native = (
+    window as Window & {
+      chrome?: { webview?: { postMessage(value: unknown): void } };
+    }
+  ).chrome?.webview;
+  if (!native)
+    return Promise.reject(
+      Error("Open this game in Studio to connect its IP cameras."),
+    );
+  const nonce = crypto.randomUUID();
+  return new Promise<boolean>((resolve, reject) => {
+    const cleanup = () => {
+      clearTimeout(timer);
+      window.removeEventListener("studio-camera-connection-result", receive);
+    };
+    const receive = (event: Event) => {
+      const parsed = z
+        .object({
+          gameId: z.literal(id),
+          cameraRole: z.literal(cameraRole),
+          nonce: z.literal(nonce),
+          ok: z.boolean(),
+          connectionEnabled: z.boolean(),
+          generation: z.number().int().nonnegative(),
+          error: z.string().max(300).nullable().optional(),
+        })
+        .strict()
+        .safeParse((event as CustomEvent).detail);
+      if (!parsed.success) return;
+      cleanup();
+      if (
+        parsed.data.ok &&
+        parsed.data.connectionEnabled === (action === "connect-camera")
+      )
+        resolve(parsed.data.connectionEnabled);
+      else
+        reject(
+          Error(
+            parsed.data.error ||
+              "Studio could not confirm the camera connection. Try again.",
+          ),
+        );
+    };
+    const timer = window.setTimeout(() => {
+      cleanup();
+      reject(
+        Error(
+          "Studio did not confirm the camera connection. Check its status and try again.",
+        ),
+      );
+    }, 12000);
+    window.addEventListener("studio-camera-connection-result", receive);
+    try {
+      native.postMessage({ action, gameId: id, cameraRole, nonce });
+    } catch {
+      cleanup();
+      reject(Error("Windows Studio is unavailable."));
+    }
+  });
 }
 export function cameraInputNativeAction(
   id: string,

@@ -460,3 +460,131 @@ test("event sections preserve drafts and never generate on navigation", async ({
     fullPage: true,
   });
 });
+
+test("report email requires recipient review and explicit send; coach reports have no send control", async ({
+  page,
+}, testInfo) => {
+  const event = (await import("../../src/lib/curlcoach/event")).sampleEvent(
+    "shorty-example",
+  );
+  const input = (await import("../../src/lib/curlcoach/reports")).reportInputs(
+    event,
+    "team",
+  )[0];
+  const f = {
+    text: "Use the recorded miss pattern to choose a focused practice.",
+    evidence: ["miss-Light"],
+  };
+  const saved = {
+    ...input,
+    narrative: {
+      summary: f,
+      strengths: [f],
+      priorities: [f],
+      practice: [f],
+      review: [],
+    },
+  };
+  let sends = 0;
+  await page.route("**/api/curlcoach/reports**", (route) =>
+    route.fulfill({
+      json: {
+        configured: true,
+        eligible: true,
+        reason: null,
+        allowance: {
+          seasonStart: "2026-07-01",
+          used: 1,
+          limit: 20,
+          reserved: true,
+          owned: true,
+          completed: ["team"],
+        },
+        entries: [
+          {
+            audience: "team",
+            status: "ready",
+            stale: false,
+            packet: {
+              audience: "team",
+              eventName: "Synthetic event",
+              policy: "fixture",
+              generatedAt: "2026-10-01",
+              reports: [saved],
+            },
+          },
+        ],
+      },
+    }),
+  );
+  await page.route("**/api/curlcoach/report-email**", async (route) => {
+    if (route.request().method() === "POST") {
+      sends++;
+      expect(route.request().postDataJSON()).toEqual({
+        eventId: "11111111-1111-4111-8111-111111111111",
+        audience: "team",
+        reportKey: "team",
+        planToken: "a".repeat(64),
+        resend: false,
+      });
+      return route.fulfill({
+        json: {
+          results: [
+            { name: "Alex", email: "alex@example.test", status: "accepted" },
+          ],
+        },
+      });
+    }
+    return route.fulfill({
+      json: {
+        planToken: "a".repeat(64),
+        title: "Team report",
+        configured: true,
+        recipients: [
+          { playerId: "alex", name: "Alex", email: "alex@example.test" },
+        ],
+        skipped: ["Sam"],
+      },
+    });
+  });
+  await page.route("**/email-fixture", (route) =>
+    route.fulfill({
+      contentType: "text/html",
+      body: `<html><head><style>${css}</style></head><body><div id="root"></div><script>${js}</script></body></html>`,
+    }),
+  );
+  await page.goto("/email-fixture");
+  await expect(
+    page.getByRole("button", { name: "Email team report", exact: true }),
+  ).toHaveCount(0);
+  await page.getByRole("button", { name: "Team report", exact: true }).click();
+  await expect(
+    page.getByRole("region", { name: "Miss diagnosis" }),
+  ).toBeVisible();
+  await page
+    .getByRole("button", { name: "Email team report", exact: true })
+    .click();
+  await expect(page.getByText("Alex — alex@example.test")).toBeVisible();
+  await expect(
+    page.getByText("No email saved for: Sam.", { exact: false }),
+  ).toBeVisible();
+  expect(sends).toBe(0);
+  await page
+    .getByRole("button", { name: "Send PDF to listed recipients" })
+    .click();
+  await expect(
+    page
+      .getByRole("status")
+      .filter({ hasText: "Accepted by the email provider" }),
+  ).toBeVisible();
+  expect(sends).toBe(1);
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth,
+    ),
+  ).toBe(true);
+  await page.screenshot({
+    path: testInfo.outputPath("report-email-preview.png"),
+    fullPage: true,
+  });
+});

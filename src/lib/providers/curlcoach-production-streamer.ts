@@ -10,7 +10,7 @@ import {
   type CoachAccount,
 } from "@/lib/curlcoach/production-access";
 import { readTeamSettings } from "@/lib/providers/team-settings";
-import { createHash } from "node:crypto";
+import { rosterPlayers } from "./player-contacts";
 import {
   listOpponentSeasons,
   listEvents,
@@ -68,18 +68,7 @@ export async function loadProductionStreamerEvent(
   const [{ settings }, [events, games, seasonResult, opponentSeasons]] =
     await Promise.all([settingsResult, hierarchyResult]);
   // Snapshot the existing team roster. Never substitute the lab's example players.
-  const roster = (["lead", "second", "third", "fourth"] as const)
-    .filter((position) => settings.roster[position].trim())
-    .map((position) => ({
-      id: createHash("sha256")
-        .update(
-          `${account.organizationId}:${position}:${settings.roster[position].trim()}`,
-        )
-        .digest("hex"),
-      name: settings.roster[position].trim(),
-      position: (position[0].toUpperCase() + position.slice(1)) as
-        "Lead" | "Second" | "Third" | "Fourth",
-    }));
+  const roster = rosterPlayers(account.organizationId, settings);
   if (!events.ok || !games.ok || !seasonResult.ok || !opponentSeasons.ok)
     throw new Error("Team event data is unavailable.");
   const seasonProfiles = z

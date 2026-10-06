@@ -1,4 +1,5 @@
 "use client";
+import { PlayerEmails } from "./PlayerEmails";
 import { useEffect, useState } from "react";
 import { teamThemeStyle } from "@/lib/team-page-theme";
 import { optimizeUploadImage } from "@/lib/optimize-upload-image";
@@ -558,6 +559,12 @@ export function TeamSettings({
           </p>
         </div>
       </fieldset>
+      {section === "team" &&
+        ready &&
+        canEdit &&
+        apiUrl === "/api/account/team" && (
+          <PlayerEmails key={JSON.stringify(savedSettings?.roster)} />
+        )}
     </section>
   );
 }

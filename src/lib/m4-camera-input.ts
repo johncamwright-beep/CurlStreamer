@@ -106,6 +106,7 @@ export type M4CameraInputSnapshot = {
   stream: "stream1" | "stream2" | null;
   rotation: 0 | 90 | 180 | 270;
   configured: boolean;
+  connectionEnabled: boolean;
   phase: M4CameraInputPhase;
   errorCode: M4CameraInputError;
   generation: number;
@@ -124,6 +125,7 @@ export const m4CameraInputSnapshotSchema = z
       z.literal(270),
     ]),
     configured: z.boolean(),
+    connectionEnabled: z.boolean(),
     phase: z.enum(["idle", "connecting", "streaming", "retrying", "failed"]),
     errorCode: z
       .enum([

@@ -56,6 +56,7 @@ export type M4IpCameraFrame = {
 type Slot = {
   role: CameraRole;
   config: M4CameraInput;
+  connectionEnabled: boolean;
   generation: number;
   phase: M4CameraInputSnapshot["phase"];
   zoom: number;
@@ -131,6 +132,7 @@ export function createM4IpCameraManager(
       {
         role,
         config: { kind: "phone" },
+        connectionEnabled: false,
         generation: 0,
         zoom: 1,
         phase: "idle",
@@ -209,7 +211,8 @@ export function createM4IpCameraManager(
     code: M4CameraInputError,
     retryable = true,
   ) {
-    if (slot.generation !== generation || !active) return;
+    if (slot.generation !== generation || !active || !slot.connectionEnabled)
+      return;
     slot.errorCode = code;
     diagnostic(
       slot,
@@ -230,6 +233,7 @@ export function createM4IpCameraManager(
       if (
         slot.generation !== generation ||
         !active ||
+        !slot.connectionEnabled ||
         slot.config.kind === "phone"
       )
         return;
@@ -246,6 +250,7 @@ export function createM4IpCameraManager(
   function begin(slot: Slot) {
     if (
       !active ||
+      !slot.connectionEnabled ||
       slot.config.kind === "phone" ||
       slot.child ||
       slot.retirement
@@ -287,6 +292,7 @@ export function createM4IpCameraManager(
     const current = () =>
       !terminal &&
       active &&
+      slot.connectionEnabled &&
       slot.generation === generation &&
       slot.child === child;
     const fail = (code: M4CameraInputError, retryable = true) => {
@@ -415,6 +421,10 @@ export function createM4IpCameraManager(
     const result = m4CameraInputSchema.safeParse(input);
     if (!result.success) throw Error("invalid_camera_input");
     const slot = slotFor(role);
+    slot.connectionEnabled =
+      slot.config.kind === result.data.kind && result.data.kind !== "phone"
+        ? slot.connectionEnabled
+        : false;
     slot.generation++;
     slot.config = result.data;
     if (!preserveZoom) slot.zoom = 1;
@@ -455,6 +465,7 @@ export function createM4IpCameraManager(
       stream: config.kind === "tapo" ? config.stream : null,
       rotation: config.kind !== "phone" ? config.rotation : 0,
       configured: config.kind !== "phone",
+      connectionEnabled: slot.connectionEnabled,
       phase: stale ? "retrying" : slot.phase,
       errorCode: stale ? "stale_frames" : slot.errorCode,
       generation: slot.generation,
@@ -464,6 +475,28 @@ export function createM4IpCameraManager(
   return {
     configure: (role: CameraRole, input: unknown) => configure(role, input),
     snapshot,
+    connect(role: CameraRole) {
+      if (disposed) throw Error("camera_manager_closed");
+      const slot = slotFor(role);
+      if (slot.config.kind === "phone")
+        throw Error("camera_input_not_configured");
+      if (!slot.connectionEnabled) {
+        slot.connectionEnabled = true;
+        return configure(role, slot.config, true);
+      }
+      return snapshot(role);
+    },
+    async disconnect(role: CameraRole) {
+      if (disposed) throw Error("camera_manager_closed");
+      const slot = slotFor(role);
+      slot.connectionEnabled = false;
+      slot.generation++;
+      slot.phase = "idle";
+      slot.errorCode = null;
+      slot.authBlocked = false;
+      if (!(await retire(slot))) throw Error("camera_cleanup_failed");
+      return snapshot(role);
+    },
     setZoom(role: CameraRole, generation: number, value: number) {
       if (disposed) throw Error("camera_manager_closed");
       const slot = slotFor(role);
@@ -514,6 +547,7 @@ export function createM4IpCameraManager(
           const slot = slots[role];
           slot.generation++;
           slot.config = { kind: "phone" };
+          slot.connectionEnabled = false;
           slot.phase = "idle";
           slot.errorCode = null;
           slot.authBlocked = false;

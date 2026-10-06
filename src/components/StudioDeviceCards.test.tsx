@@ -7,7 +7,9 @@ describe("Studio camera source tiles", () => {
   function tile(
     receiving: boolean,
     kind: "tapo" | "rtsp" = "tapo",
-    phase: "connecting" | "streaming" = "connecting",
+    phase: "idle" | "connecting" | "streaming" = "connecting",
+    connectionEnabled?: boolean,
+    shown = true,
   ) {
     return renderToStaticMarkup(
       <DeviceCard
@@ -17,6 +19,8 @@ describe("Studio camera source tiles", () => {
         enabled
         claimed={false}
         onAudio={async () => undefined}
+        onVisibility={async () => undefined}
+        shown={shown}
         connectionStatus={{
           videoReceiving: receiving,
           receiverReady: true,
@@ -30,10 +34,41 @@ describe("Studio camera source tiles", () => {
           configured: true,
           phase,
           generation: 1,
+          connectionEnabled,
         }}
       />,
     );
   }
+  it("shows Connect with no pressed visibility or recovery control while an IP source is OFF", () => {
+    const markup = tile(false, "tapo", "connecting", false);
+    expect(markup).toContain("Ready to connect");
+    expect(markup).toContain(">Connect</button>");
+    expect(markup).not.toContain("Reconnect camera");
+    expect(markup).not.toContain("Hide from broadcast");
+    expect(markup).not.toContain("Show in broadcast");
+    expect(markup).not.toContain('aria-pressed="true"');
+  });
+  it("offers Hide and Show for a connected source independently of media readiness", () => {
+    const shown = tile(false, "tapo", "connecting", true);
+    expect(shown).toContain("Hide from broadcast");
+    expect(shown).toContain('aria-pressed="true"');
+    expect(shown).toContain("Reconnect camera");
+    const hidden = tile(true, "rtsp", "streaming", true, false);
+    expect(hidden).toContain("Show in broadcast");
+    expect(hidden).not.toContain('aria-pressed="true"');
+    expect(hidden).not.toContain("Reconnect camera");
+  });
+  it("keeps legacy configured IP cameras on Hide/Show when older Studio omits connection intent", () => {
+    const shown = tile(false, "tapo", "idle");
+    expect(shown).toContain("Hide from broadcast");
+    expect(shown).toContain('aria-pressed="true"');
+    expect(shown).not.toContain(">Connect</button>");
+    const hidden = tile(false, "tapo", "idle", undefined, false);
+    expect(hidden).toContain("Show in broadcast");
+    expect(hidden).not.toContain(">Connect</button>");
+    expect(hidden).not.toContain('aria-pressed="true"');
+    expect(tile(false, "tapo", "idle", false)).toContain(">Connect</button>");
+  });
   it("does not claim streaming when capture is active but program frames are stale", () => {
     expect(tile(false, "tapo", "streaming")).toContain(
       "Tapo connected · Waiting for program video",

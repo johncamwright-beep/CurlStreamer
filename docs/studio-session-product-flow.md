@@ -1,12 +1,33 @@
 # Studio session flow
 
-Selecting an authorized game in the Windows workspace now prepares the camera
-receiver automatically. The native `--preview-only` mode initializes the OBS
-program and optional stream encoders without opening an MKV file or starting a
-recording output. Explicit Connect cameras remains a retry control. Leaving a game
-for another game switches the owned session; ending the game disconnects it.
-Existing user recordings are preserved. YouTube remains disabled in this pilot;
-receiving cameras and broadcasting are separate operations.
+Opening an authorized game in the Windows workspace prepares its receiver and
+preview. There is no separate Start Game action. The native `--preview-only` mode
+initializes the program without opening an MKV file or starting a recording.
+YouTube starts only when the operator chooses **Broadcast to YouTube**.
+
+Saved IP sources start off in each new Studio session. Use **Connect** on each
+camera tile to begin receiving it. The same button becomes **Hide from broadcast**
+or **Show in broadcast** after connection; hiding keeps the camera connection warm.
+Reconnect is a recovery action for an enabled camera that has lost fresh video.
+Returning to the same running game preserves its connection intent.
+
+Leaving a game during a broadcast asks **Continue broadcast**, **Pause broadcast**,
+or **Stay here**. Continue retains the cameras and USB microphone while visiting
+other pages. Pause waits for Studio to confirm its temporary card before leaving;
+the sender and YouTube watch link remain alive. A status beside End Game shows the
+current broadcast state. Other pages show the running game's title, **Return to
+game**, and Pause/Resume controls. Browser Back and full document navigation use
+the same choice. An approved authentication redirect does not ask a second time.
+
+Opening another game does not replace the existing Studio session. Return to its
+game to manage a live broadcast. If YouTube output is fully inactive, **Switch
+Studio to this game** explicitly releases its preview and microphone before
+preparing the other game; saved scores and watch links remain intact.
+
+Studio must stay open to continue or send the pause card. Fully exiting for a
+restart stops its sender; YouTube may show a connection spinner until Studio
+returns. Closing without ending the game retains the game and watch link. Ending
+the game uses the existing final-card flow and releases the native session.
 
 The monitoring image is 1280x720 at a target of 15 updates per second, rather than
 two 1080p snapshots. Requests run sequentially to avoid cancelling a slow image

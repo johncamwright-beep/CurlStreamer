@@ -1,13 +1,15 @@
 import { test, expect, type Page } from "@playwright/test";
 import { build } from "esbuild";
+import type { M4CameraInputSnapshot } from "../src/lib/m4-camera-input";
 
 test.beforeEach(async ({ page }) => {
-  const phone = {
+  const phone: M4CameraInputSnapshot = {
     kind: "phone",
     host: null,
     stream: null,
     rotation: 0,
     configured: true,
+    connectionEnabled: false,
     phase: "idle",
     errorCode: null,
     generation: 0,

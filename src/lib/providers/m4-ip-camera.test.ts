@@ -79,10 +79,109 @@ describe("local IP camera manager", () => {
   beforeEach(() => vi.useFakeTimers());
   afterEach(() => vi.useRealTimers());
 
+  it("keeps configured sources off through start and reconnect until each role is explicitly connected", async () => {
+    const { manager, children, spawnMock } = harness();
+    manager.configure("camera-home", config);
+    manager.configure("camera-away", { ...config, host: "10.0.0.2" });
+    await manager.start();
+    await settle();
+    manager.reconnect("camera-home");
+    await settle();
+    expect(spawnMock).not.toHaveBeenCalled();
+    expect(manager.snapshot("camera-home")).toMatchObject({
+      configured: true,
+      connectionEnabled: false,
+      phase: "idle",
+      errorCode: null,
+    });
+    manager.connect("camera-home");
+    await settle();
+    expect(children).toHaveLength(1);
+    expect(manager.snapshot("camera-home").connectionEnabled).toBe(true);
+    expect(manager.snapshot("camera-away").connectionEnabled).toBe(false);
+    manager.connect("camera-home");
+    await settle();
+    expect(children).toHaveLength(1);
+    await manager.disconnect("camera-home");
+    manager.reconnect("camera-home");
+    manager.configure("camera-home", { ...config, host: "10.0.0.9" });
+    await settle();
+    expect(children).toHaveLength(1);
+    expect(manager.snapshot("camera-home")).toMatchObject({
+      configured: true,
+      connectionEnabled: false,
+      phase: "idle",
+    });
+    await manager.close();
+  });
+
+  it("preserves explicit intent and valid configuration on rejected edits and failures, and clears it on source-kind changes", async () => {
+    const { manager, children } = harness();
+    manager.configure("camera-home", config);
+    manager.connect("camera-home");
+    await manager.start();
+    const previous = manager.snapshot("camera-home");
+    expect(() =>
+      manager.configure("camera-home", { ...config, host: "bad" }),
+    ).toThrow("invalid_camera_input");
+    expect(manager.snapshot("camera-home")).toEqual(previous);
+    children[0].stdout.write(record("STAT", '{"code":"unavailable"}'));
+    expect(manager.snapshot("camera-home")).toMatchObject({
+      connectionEnabled: true,
+      phase: "retrying",
+    });
+    await manager.disconnect("camera-home");
+    await vi.advanceTimersByTimeAsync(20000);
+    expect(children).toHaveLength(1);
+    manager.connect("camera-home");
+    await settle();
+    manager.configure("camera-home", {
+      kind: "rtsp",
+      host: "10.0.0.3",
+      path: "/live",
+    });
+    await settle();
+    expect(children).toHaveLength(2);
+    expect(manager.snapshot("camera-home")).toMatchObject({
+      kind: "rtsp",
+      connectionEnabled: false,
+      phase: "idle",
+    });
+    await manager.close();
+  });
+
+  it("retains intent for the same stopped program but starts a fresh manager with all sources off", async () => {
+    const { manager, children } = harness();
+    manager.configure("camera-home", config);
+    manager.configure("camera-away", config);
+    manager.connect("camera-home");
+    await manager.start();
+    await manager.stop();
+    expect(manager.snapshot("camera-home").connectionEnabled).toBe(true);
+    await manager.start();
+    expect(children).toHaveLength(2);
+    await manager.disconnect("camera-home");
+    await manager.stop();
+    await manager.start();
+    expect(children).toHaveLength(2);
+    await manager.close();
+    expect(manager.snapshot("camera-home").connectionEnabled).toBe(false);
+    const fresh = harness();
+    fresh.manager.configure("camera-home", config);
+    await fresh.manager.start();
+    expect(fresh.spawnMock).not.toHaveBeenCalled();
+    expect(() => fresh.manager.connect("camera-away")).toThrow(
+      "camera_input_not_configured",
+    );
+    await fresh.manager.close();
+  });
+
   it("zooms independent slots without restarting and rejects invalid or stale targets", async () => {
     const { manager, spawnMock } = harness();
     manager.configure("camera-home", config);
     manager.configure("camera-away", { ...config, host: "10.0.0.2" });
+    manager.connect("camera-away");
+    manager.connect("camera-home");
     await manager.start();
     const generation = manager.snapshot("camera-home").generation;
     const launches = spawnMock.mock.calls.length;
@@ -126,6 +225,7 @@ describe("local IP camera manager", () => {
   it("preserves zoom through decoder recovery and reconnect and resets replacement sources", async () => {
     const { manager, children } = harness();
     manager.configure("camera-home", config);
+    manager.connect("camera-home");
     await manager.start();
     manager.setZoom(
       "camera-home",
@@ -156,6 +256,7 @@ describe("local IP camera manager", () => {
       rotation: 270,
     };
     manager.configure("camera-home", source);
+    manager.connect("camera-home");
     await manager.start();
     expect(JSON.parse(children[0].secretInput)).toEqual({
       version: 2,
@@ -231,6 +332,8 @@ describe("local IP camera manager", () => {
     });
     await settle();
     expect(spawnMock).not.toHaveBeenCalled();
+    manager.connect("camera-away");
+    manager.connect("camera-home");
     await manager.start();
     expect(children).toHaveLength(2);
     expect(spawnMock.mock.calls[0]).toMatchObject([
@@ -288,6 +391,7 @@ describe("local IP camera manager", () => {
   it("uses only current advancing frames, bounds PCM, and clears previous generations atomically", async () => {
     const { manager, children } = harness();
     manager.configure("camera-home", config);
+    manager.connect("camera-home");
     await manager.start();
     const first = children[0];
     const bytes = record("JPEG", jpeg);
@@ -329,6 +433,7 @@ describe("local IP camera manager", () => {
   ])("rejects %s native records using fixed errors", async (kind) => {
     const { manager, children } = harness();
     manager.configure("camera-home", config);
+    manager.connect("camera-home");
     await manager.start();
     const child = children[0];
     if (kind === "unknown")
@@ -360,12 +465,14 @@ describe("local IP camera manager", () => {
   it("does not retry auth failures until configuration changes, even after a new program lifetime", async () => {
     const { manager, children } = harness();
     manager.configure("camera-home", config);
+    manager.connect("camera-home");
     await manager.start();
     children[0].stdout.write(record("STAT", '{"code":"auth_failed"}'));
     await vi.advanceTimersByTimeAsync(60000);
     expect(manager.snapshot("camera-home").errorCode).toBe("auth_failed");
     expect(children).toHaveLength(1);
     await manager.stop();
+    manager.connect("camera-home");
     await manager.start();
     expect(children).toHaveLength(1);
     manager.configure("camera-home", { ...config, password: "new-password" });
@@ -381,6 +488,7 @@ describe("local IP camera manager", () => {
   it("backs off transient failures and resets retry delay only after sustained fresh frames", async () => {
     const { manager, children } = harness();
     manager.configure("camera-home", config);
+    manager.connect("camera-home");
     await manager.start();
     children[0].stdout.write(record("STAT", '{"code":"unavailable"}'));
     await settle();
@@ -413,11 +521,13 @@ describe("local IP camera manager", () => {
       },
     });
     manager.configure("camera-home", config);
+    manager.connect("camera-home");
     await manager.start();
     expect(manager.snapshot("camera-home").errorCode).toBe("runtime_missing");
     await manager.close();
     const { manager: live, children } = harness();
     live.configure("camera-home", config);
+    live.connect("camera-home");
     await live.start();
     const bad = Buffer.alloc(16, 0xff);
     bad.writeUInt16BE(0xffd8, 0);
@@ -430,6 +540,7 @@ describe("local IP camera manager", () => {
   it("bounds startup hangs and refuses to overlap a helper that does not terminate", async () => {
     const { manager, children } = harness(false);
     manager.configure("camera-home", config);
+    manager.connect("camera-home");
     await manager.start();
     await vi.advanceTimersByTimeAsync(12000);
     expect(children[0].kill).toHaveBeenCalledWith("SIGKILL");
@@ -437,6 +548,7 @@ describe("local IP camera manager", () => {
     await vi.advanceTimersByTimeAsync(60000);
     expect(children).toHaveLength(1);
     await expect(manager.stop()).rejects.toThrow("camera_cleanup_failed");
+    manager.connect("camera-home");
     await manager.start();
     expect(children).toHaveLength(1);
     await expect(manager.close()).rejects.toThrow("camera_cleanup_failed");
@@ -450,6 +562,7 @@ describe("local IP camera manager", () => {
       configured: false,
     });
     manager.configure("camera-home", config);
+    manager.connect("camera-home");
     await manager.start();
     expect(manager.snapshot("camera-home")).toMatchObject({
       phase: "failed",

@@ -46,6 +46,7 @@ async function setup(input?: unknown) {
       rotation: 90,
     },
   );
+  manager.connect("camera-home");
   await manager.start();
   const jpeg = await sharp({
     create: { width: 16, height: 24, channels: 3, background: "red" },

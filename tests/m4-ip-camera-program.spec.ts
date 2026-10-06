@@ -21,6 +21,7 @@ const snapshot = (
   generation: number,
 ): M4CameraInputSnapshot => ({
   kind,
+  connectionEnabled: kind !== "phone",
   generation,
   host: kind === "tapo" ? "192.168.1.20" : null,
   stream: kind === "tapo" ? "stream1" : null,

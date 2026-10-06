@@ -27,6 +27,7 @@ import { StudioAudio } from "@/components/StudioAudio";
 import { cameraAudioControlEnabled } from "@/lib/camera-audio";
 import { useStudioCameraInputs } from "@/components/StudioCameraInputs";
 import { WindowsStudioRequired } from "@/components/WindowsStudioRequired";
+import { StudioSessionIndicator } from "@/components/StudioSessionProvider";
 export default function Scorer({
   params,
 }: {
@@ -87,6 +88,9 @@ function ScorerGame({ id }: { id: string }) {
     [id],
   );
   const completed = completion ?? finished;
+  const studioTitle = game
+    ? gameEntryPresentation(game.config, navigationMetadata).title.slice(0, 200)
+    : "";
   useEffect(() => {
     if (
       (!game && !completed) ||
@@ -105,6 +109,13 @@ function ScorerGame({ id }: { id: string }) {
       type: completed ? "studio-game-ended" : "studio-game-ready",
       gameId: id,
     });
+    // Preserve the two-field preparation message accepted by older Studios.
+    if (!completed)
+      shell?.postMessage({
+        type: "studio-session-title",
+        gameId: id,
+        title: studioTitle,
+      });
   }, [
     id,
     Boolean(game),
@@ -114,6 +125,7 @@ function ScorerGame({ id }: { id: string }) {
     accountOperator,
     organizerAccess,
     endingBroadcast,
+    studioTitle,
   ]);
   const canEndGame = canManageCompletion(accountRole, organizerAccess);
   if (completed)
@@ -388,6 +400,7 @@ function ScorerGame({ id }: { id: string }) {
         </div>
         {canEndGame && (
           <div className="scoring-page-actions">
+            {desktop && <StudioSessionIndicator gameId={id} />}
             {!desktop && (
               <Link
                 className="btn-secondary"
@@ -420,6 +433,7 @@ function ScorerGame({ id }: { id: string }) {
             )}
           </div>
         )}
+        {desktop && !canEndGame && <StudioSessionIndicator gameId={id} />}
       </header>
       <div className="scoring-columns">
         <div className="scoring-main">

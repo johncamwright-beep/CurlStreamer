@@ -8,6 +8,36 @@ using System.Collections.Generic;
 
 internal static class WorkspacePolicy
 {
+    internal static bool SessionMessage(string source, string page, string origin)
+    {
+        // Reject stale documents as well as external origins. Account/dashboard
+        // pages can observe and hold the current session, but cannot prepare one.
+        return SameOrigin(source, origin) && SameOrigin(page, origin) && source == page;
+    }
+    internal static bool SessionPresentation(Dictionary<string, object> request, string selectedGame, string runningGame)
+    {
+        object type, game, nonce; Guid parsed;
+        if (request == null || runningGame == null || !request.TryGetValue("type", out type) ||
+            !request.TryGetValue("gameId", out game) || !Object.Equals(game, runningGame) ||
+            !request.TryGetValue("nonce", out nonce) || !(nonce is string) ||
+            !Guid.TryParseExact((string)nonce, "D", out parsed)) return false;
+        if (Object.Equals(type, "studio-youtube-hold") || Object.Equals(type, "studio-youtube-resume")) return request.Count == 3;
+        return selectedGame == runningGame &&
+            ((Object.Equals(type, "studio-ending-show") && request.Count == 5) ||
+             (request.Count == 3 && (Object.Equals(type, "studio-ending-prepare") || Object.Equals(type, "studio-ending-cancel") || Object.Equals(type, "studio-ending-finish"))));
+    }
+    internal static bool KeepUsbSession(string usbGame, string runningGame, bool active)
+    {
+        return active && usbGame != null && usbGame == runningGame;
+    }
+    internal static bool CanStartSession(string runningGame, string requestedGame)
+    {
+        return requestedGame != null && (runningGame == null || runningGame == requestedGame);
+    }
+    internal static bool CanConfigureSession(string selectedGame, string runningGame)
+    {
+        return selectedGame != null && (runningGame == null || selectedGame == runningGame);
+    }
     internal static bool CameraZoomRequest(Dictionary<string, object> request, string selectedGame, string runningGame,
         out string role, out int generation, out double zoom, out string nonce)
     {

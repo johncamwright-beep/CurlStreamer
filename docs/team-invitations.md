@@ -5,7 +5,7 @@ Send invitation creates a seven-day, single-use bearer link and attempts to send
 it through Zoho. The recipient creates their own account with any email, verifies
 that address, and explicitly joins the existing team. Google sign-in also returns
 to the invitation. They do not create a second team or purchase a separate team
-subscription. The current two-login limit and one-team-per-account rule remain.
+subscription. The current three-login limit and one-team-per-account rule remain.
 
 Apply `supabase/migrations/0078_team_invitation_links.sql` before releasing the UI.
 Existing pending invitation links also become email-independent. The contact
@@ -41,3 +41,5 @@ Supabase's separate signup-confirmation email service.
 Validation: unit tests cover TLS, recipient input, provider failures, and missing
 configuration. `scripts/check-team-invitations.mjs` exercises the SQL against an
 isolated PGlite database (pass the installed PGlite module path as argument).
+
+Teams support three account logins (owner plus two teammates). Active and suspended memberships and unexpired pending invitations reserve capacity. Migration 0079 must be applied before deploying the three-login UI. Shot Tracker licence quantities are unchanged. Signup shows a dedicated email confirmation step; unconfirmed sign-in explains the requirement and allows resending a confirmation while preserving the invitation destination.

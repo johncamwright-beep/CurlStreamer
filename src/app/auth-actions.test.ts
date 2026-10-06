@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
   signUp: vi.fn(),
+  resend: vi.fn(),
   signIn: vi.fn(),
   signInWithOAuth: vi.fn(),
   signOut: vi.fn(),
@@ -15,6 +16,7 @@ vi.mock("@/lib/supabase/server", () => ({
   createServerSupabaseClient: async () => ({
     auth: {
       signUp: mocks.signUp,
+      resend: mocks.resend,
       signInWithPassword: mocks.signIn,
       signInWithOAuth: mocks.signInWithOAuth,
       signOut: mocks.signOut,
@@ -26,7 +28,7 @@ vi.mock("next/headers", () => ({ headers: mocks.headers }));
 vi.mock("@/lib/auth/validation", async (original) => ({
   ...(await original<typeof import("@/lib/auth/validation")>()),
 }));
-import { signup } from "./signup/actions";
+import { signup, resendConfirmation } from "./signup/actions";
 import { login } from "./login/actions";
 import { signOut } from "./account/actions";
 import { signInWithGoogle } from "./auth/actions";
@@ -49,16 +51,24 @@ const loginData = () => {
 describe("account actions", () => {
   beforeEach(() => vi.clearAllMocks());
   afterEach(() => vi.unstubAllEnvs());
-  it("returns the same neutral signup response on success and provider failure", async () => {
+  it("returns the same neutral signup response on success and existing account", async () => {
     mocks.signUp
       .mockResolvedValueOnce({ error: null })
-      .mockResolvedValueOnce({ error: { message: "already exists" } });
+      .mockResolvedValueOnce({ error: { code: "user_already_exists" } });
     expect(await signup({}, signupData())).toEqual(
       await signup({}, signupData()),
     );
     expect((await signup({}, signupData())).message).toMatch(
       /check your email/i,
     );
+  });
+  it("does not claim confirmation was sent when signup delivery fails", async () => {
+    mocks.signUp.mockResolvedValueOnce({
+      error: { code: "unexpected_failure" },
+    });
+    const result = await signup({}, signupData());
+    expect(result.confirmationEmail).toBeUndefined();
+    expect(result.message).toMatch(/could not be completed/);
   });
   it("carries a safe signup destination through email confirmation", async () => {
     vi.stubEnv("APP_BASE_URL", "https://curlstreamer.vercel.app");
@@ -97,6 +107,30 @@ describe("account actions", () => {
     });
     expect(await login({}, loginData())).toEqual({
       message: "Invalid email or password.",
+    });
+  });
+  it("explains unconfirmed email without treating it as a wrong password", async () => {
+    mocks.signIn.mockResolvedValue({ error: { code: "email_not_confirmed" } });
+    expect(await login({}, loginData())).toEqual({
+      message: "Confirm your email before signing in.",
+      confirmationEmail: "john@example.com",
+    });
+  });
+  it("resends confirmation with the invitation destination and neutral response", async () => {
+    vi.stubEnv("APP_BASE_URL", "https://curlstreamer.vercel.app");
+    mocks.resend.mockResolvedValue({ error: null });
+    const data = loginData();
+    data.set("next", "/join-team?token=invite-token");
+    expect((await resendConfirmation({}, data)).message).toMatch(
+      /If this account/,
+    );
+    expect(mocks.resend).toHaveBeenCalledWith({
+      type: "signup",
+      email: "john@example.com",
+      options: {
+        emailRedirectTo:
+          "https://curlstreamer.vercel.app/auth/confirm?next=%2Fjoin-team%3Ftoken%3Dinvite-token",
+      },
     });
   });
   it("redirects successful login and sign out", async () => {

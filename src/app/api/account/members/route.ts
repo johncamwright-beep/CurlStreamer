@@ -48,7 +48,7 @@ export async function POST(request: Request) {
           (error as { code?: string }).code === "54000"
             ? "Too many invitations sent recently. Please try again in an hour."
             : (error as { code?: string }).code === "23514"
-              ? "A team can have only two logins, including a pending invitation."
+              ? "A team can have only three logins, including pending invitations."
               : "The member change could not be saved.",
       },
       (error as { code?: string }).code === "54000" ? 429 : 409,

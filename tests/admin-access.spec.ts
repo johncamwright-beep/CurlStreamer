@@ -97,7 +97,7 @@ test("team owners can create, share, and revoke a teammate invitation", async ({
 
   await signIn(page, "/account?section=members");
   const access = page.getByRole("region", { name: "Team access" });
-  await expect(access.getByText("1 of 2 logins in use")).toBeVisible();
+  await expect(access.getByText("1 of 3 logins in use")).toBeVisible();
   await access.getByLabel("Email address").fill("teammate@example.test");
   await access.getByLabel("Access level").selectOption("game_operator");
   await access.getByRole("button", { name: "Send invitation" }).click();
@@ -116,11 +116,11 @@ test("team owners can create, share, and revoke a teammate invitation", async ({
   ).toBeVisible();
   await expect(
     access.getByRole("button", { name: "Send invitation" }),
-  ).toBeDisabled();
+  ).toBeEnabled();
 
   await access.getByRole("button", { name: "Revoke invitation" }).click();
   await expect(access.getByText("Invitation revoked.")).toBeVisible();
-  await expect(access.getByText("1 of 2 logins in use")).toBeVisible();
+  await expect(access.getByText("1 of 3 logins in use")).toBeVisible();
   await expect(
     access.getByRole("button", { name: "Send invitation" }),
   ).toBeEnabled();
@@ -203,7 +203,7 @@ test("platform administrators keep team access read-only until support edits are
   await page.getByRole("button", { name: "Team access", exact: true }).click();
 
   const access = page.getByRole("region", { name: "Team access" });
-  await expect(access.getByText("1 of 2 logins in use")).toBeVisible();
+  await expect(access.getByText("1 of 3 logins in use")).toBeVisible();
   await expect(access.getByLabel("Email address")).toBeDisabled();
   await expect(
     access.getByRole("button", { name: "Send invitation" }),
@@ -275,4 +275,62 @@ test("account logo and privileged menu links persist while navigation refreshes"
   } finally {
     release();
   }
+});
+
+test("two pending invitations reserve both additional logins and can be revoked independently", async ({
+  page,
+}) => {
+  const invitations = [
+    {
+      id: invitationId,
+      email: "first@example.test",
+      role: "team_admin",
+      expiresAt: "2026-12-31T17:00:00Z",
+    },
+    {
+      id: "55555555-5555-4555-8555-555555555555",
+      email: "second@example.test",
+      role: "game_operator",
+      expiresAt: "2026-12-31T17:00:00Z",
+    },
+  ];
+  await page.route("**/api/account/members", async (route) => {
+    if (route.request().method() === "GET")
+      return route.fulfill({
+        json: {
+          canManage: true,
+          members: [
+            {
+              id: organizationId,
+              email: "admin@youtube.test",
+              role: "owner",
+              status: "active",
+            },
+          ],
+          invitations,
+        },
+      });
+    expect(route.request().postDataJSON()).toEqual({
+      action: "revokeInvite",
+      invitationId,
+    });
+    invitations.splice(0, 1);
+    return route.fulfill({ json: { saved: true } });
+  });
+  await signIn(page, "/account?section=members");
+  const access = page.getByRole("region", { name: "Team access" });
+  await expect(access.getByText("3 of 3 logins in use")).toBeVisible();
+  await expect(
+    access.getByRole("button", { name: "Send invitation" }),
+  ).toBeDisabled();
+  await access
+    .getByRole("article")
+    .filter({ hasText: "first@example.test" })
+    .getByRole("button", { name: "Revoke invitation" })
+    .click();
+  await expect(access.getByText("Pending: first@example.test")).toHaveCount(0);
+  await expect(access.getByText("Pending: second@example.test")).toBeVisible();
+  await expect(
+    access.getByRole("button", { name: "Send invitation" }),
+  ).toBeEnabled();
 });

@@ -8,7 +8,7 @@ Administrators can search teams and accounts, suspend/reactivate ordinary accoun
 
 ## Team invitations
 
-A team has two login seats: its owner and one additional teammate. Active and suspended memberships occupy seats; removing the teammate frees the seat. An outstanding invitation reserves the second seat until it is accepted, revoked or expires after seven days. The owner cannot be removed or demoted through these controls.
+A team has three login seats: its owner and two additional teammates. Active and suspended memberships occupy seats; removing the teammate frees the seat. Each outstanding invitation reserves one seat until it is accepted, revoked or expires after seven days. The owner cannot be removed or demoted through these controls.
 
 - **Full access:** team settings, team access and subscription controls, plus game operations.
 - **Game operations:** schedule/edit games, add opponents while scheduling, score, connect cameras, broadcast and end games. No subscription, team-settings, sponsor-library, YouTube-connection or game-deletion administration.
@@ -21,7 +21,7 @@ The recipient signs in or creates an account using the invited email and explici
 
 Apply migration 0051 and commit its enum addition before applying the subsequent migrations. The new role remains unused until an owner creates an invitation. Bootstrap the first platform administrator privately by resolving the explicitly authorized, verified account to its user ID and adding `super_admin`; never put a production email or account ID into a shared migration. Record the grant in `audit_events`.
 
-Use `scripts/check-platform-access.sql` after the migrations for rollback-only checks of role boundaries, recipient matching, invitation seat reservation and the two-login limit. It creates disposable accounts inside a transaction and rolls back all test data. Browser tests use isolated fixtures and do not send real invitations.
+Use `scripts/check-team-invitations.mjs` with a local PGlite module for isolated checks of invitation authorization, email-independent acceptance, seat reservation and the three-login limit. It does not connect to production. Browser tests use isolated fixtures and do not send real invitations.
 
 Authenticated game creation no longer issues or stores organizer bearer tokens. Game access uses the signed-in membership so removing or suspending a teammate takes effect on subsequent authorized requests.
 

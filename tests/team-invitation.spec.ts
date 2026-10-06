@@ -65,3 +65,51 @@ test("invalid links explain how to recover without creating an account", async (
     page.getByRole("link", { name: "Create account to join" }),
   ).toHaveCount(0);
 });
+
+test("signup makes confirmation the next step and preserves the team link", async ({
+  page,
+}, testInfo) => {
+  await page.goto(`/signup?next=${encodeURIComponent(destination)}`);
+  await page.getByLabel("Display name").fill("Test teammate");
+  await page.getByLabel("Email address").fill("unconfirmed@youtube.test");
+  await page
+    .getByLabel("Password", { exact: true })
+    .fill("playwright-password");
+  await page.getByLabel("Confirm password").fill("playwright-password");
+  await page
+    .getByRole("button", { name: "Create account", exact: true })
+    .click();
+  await expect(
+    page.getByRole("heading", { name: "One more step: confirm your email" }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Create account", exact: true }),
+  ).toHaveCount(0);
+  await page.getByRole("button", { name: "Resend confirmation email" }).click();
+  await expect(
+    page.getByText("If this account still needs confirmation", {
+      exact: false,
+    }),
+  ).toBeVisible();
+  await page.screenshot({ path: testInfo.outputPath("confirmation-step.png") });
+  await page
+    .getByRole("link", { name: "I’ve confirmed my email — sign in" })
+    .click();
+  await page.waitForURL((url) => url.pathname === "/login");
+  expect(new URL(page.url()).searchParams.get("next")).toBe(destination);
+});
+test("unconfirmed login offers confirmation recovery", async ({ page }) => {
+  await page.goto(`/login?next=${encodeURIComponent(destination)}`);
+  await page.getByLabel("Email address").fill("unconfirmed@youtube.test");
+  await page
+    .getByLabel("Password", { exact: true })
+    .fill("playwright-password");
+  await page.getByRole("button", { name: "Sign in", exact: true }).click();
+  await expect(
+    page.getByRole("heading", { name: "One more step: confirm your email" }),
+  ).toBeVisible();
+  await expect(page.getByText("Invalid email or password.")).toHaveCount(0);
+  await expect(
+    page.getByRole("button", { name: "Resend confirmation email" }),
+  ).toBeVisible();
+});

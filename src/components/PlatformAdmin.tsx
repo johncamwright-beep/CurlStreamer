@@ -262,7 +262,7 @@ export function PlatformAdmin() {
                             View as / support
                           </button>
                         </div>
-                        <p className="mt-2">{t.members.length} of 2 logins</p>
+                        <p className="mt-2">{t.members.length} of 3 logins</p>
                         {t.members.map((m) => (
                           <p key={m.id} className="break-words text-slate-300">
                             {m.email} · {m.role.replaceAll("_", " ")} ·{" "}

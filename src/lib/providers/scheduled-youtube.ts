@@ -16,6 +16,7 @@ import {
   uploadScheduledThumbnail,
   type ScheduledThumbnail,
 } from "./youtube-thumbnail";
+import { loadScheduledThumbnailMedia } from "./youtube-thumbnail-media";
 
 function providerError(error: unknown) {
   const message = error instanceof Error ? error.message : "";
@@ -40,7 +41,7 @@ export async function provisionScheduledYouTubeBroadcast(
   const db = createAdminSupabaseClient();
   // Do this before claiming provider creation intent. A disconnected channel
   // is retryable and must not fence future creation as an uncertain insert.
-  let credentials;
+  let credentials: Awaited<ReturnType<typeof getScheduledYouTubeCredentials>>;
   let accessToken: string;
   try {
     credentials = await getScheduledYouTubeCredentials(user, values.gameId);
@@ -93,7 +94,10 @@ export async function provisionScheduledYouTubeBroadcast(
   async function thumbnail(videoId: string) {
     if (!values.thumbnail) return {};
     try {
-      await uploadScheduledThumbnail(accessToken, videoId, values.thumbnail);
+      await uploadScheduledThumbnail(accessToken, videoId, {
+        ...values.thumbnail,
+        ...(await loadScheduledThumbnailMedia(credentials.organization_id)),
+      });
       return { thumbnailStatus: "ready" as const };
     } catch {
       // The watch page is already saved. A thumbnail failure must never create
@@ -201,4 +205,31 @@ export async function provisionScheduledYouTubeBroadcast(
     // discovers the game-id marker and cannot create a duplicate event.
     return { status: "pending", watchUrl: null, errorCode: code } as const;
   }
+}
+
+/** Replace artwork on an existing watch page without changing its schedule or creating a broadcast. */
+export async function refreshScheduledYouTubeThumbnail(
+  user: User,
+  gameId: string,
+  videoId: string,
+  info: ScheduledThumbnail,
+) {
+  const credentials = await getScheduledYouTubeCredentials(user, gameId);
+  const accessToken = await refreshYouTubeAccessToken(
+    decryptYouTubeRefreshToken(
+      credentials.encrypted_credentials,
+      credentials.organization_id,
+    ),
+  );
+  await uploadScheduledThumbnail(
+    accessToken,
+    z
+      .string()
+      .regex(/^[A-Za-z0-9_-]{11}$/)
+      .parse(videoId),
+    {
+      ...info,
+      ...(await loadScheduledThumbnailMedia(credentials.organization_id)),
+    },
+  );
 }

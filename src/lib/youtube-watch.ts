@@ -37,3 +37,14 @@ export const youtubeWatchUrlSchema = z
     url.hash = "";
     return url.toString();
   });
+
+/** Select a usable saved link even when an older field is empty or invalid. */
+export function firstValidYoutubeWatchUrl(
+  ...candidates: Array<string | null | undefined>
+): string | null {
+  for (const candidate of candidates) {
+    const parsed = youtubeWatchUrlSchema.safeParse(candidate ?? "");
+    if (parsed.success && parsed.data) return parsed.data;
+  }
+  return null;
+}

@@ -111,6 +111,62 @@ function generated(text: string, evidence = "overall") {
     ],
   });
 }
+it("bounds a six-game player's prose and citations within the response budget", async () => {
+  configure();
+  const games = Array.from({ length: 6 }, (_, i) => ({
+    key: `game-${i + 1}`,
+    title: "PRIVATE GAME TITLE",
+    groups: [],
+  }));
+  const evidence = games.map((g) => ({
+    ...input.evidence[0],
+    id: `${g.key}-overall`,
+  }));
+  const f = {
+    text: "You can practise consistent draw targets.",
+    evidence: ["overall"],
+  };
+  const narrative = {
+    summary: f,
+    strengths: [f],
+    priorities: [f],
+    practice: [f],
+    review: [f],
+    games: games.map((g) => ({
+      ...f,
+      key: g.key,
+      evidence: [`${g.key}-overall`],
+    })),
+  };
+  const fetcher = vi.fn().mockResolvedValue(
+    Response.json({
+      status: "completed",
+      output: [
+        {
+          type: "message",
+          content: [{ type: "output_text", text: JSON.stringify(narrative) }],
+        },
+      ],
+    }),
+  );
+  vi.stubGlobal("fetch", fetcher);
+  await expect(
+    generateShotTrackerNarrative(
+      { ...input, games, evidence: [...input.evidence, ...evidence] },
+      "players",
+      [],
+    ),
+  ).resolves.toEqual(narrative);
+  const body = JSON.parse(fetcher.mock.calls[0][1].body);
+  const schema = JSON.stringify(body.text.format.schema);
+  expect(body.max_output_tokens).toBe(5600);
+  expect(schema).toContain('"maxLength":450');
+  expect(schema).not.toContain('"maxLength":1200');
+  expect(schema).toContain('"maxItems":3');
+  expect(schema).toContain('"minItems":6');
+  expect(schema).toContain('"maxItems":6');
+  expect(body.input).not.toContain("PRIVATE GAME TITLE");
+});
 it("repairs rejected collective prose once without resending rejected content", async () => {
   configure();
   const fetcher = vi

@@ -108,6 +108,8 @@ do $edit$
 declare definition text; anchor text:=E'  update public.games\n  set season_id = p_season_id,';
 begin
   definition:=pg_get_functiondef('public.update_scheduled_team_game(uuid,uuid,uuid,uuid,uuid,timestamptz,text,integer,text,jsonb)'::regprocedure);
+  -- Dashboard-pasted Windows function bodies may retain CRLF line endings.
+  definition:=replace(definition,E'\r\n',E'\n');
   if position(anchor in definition)=0 then raise exception 'Expected locked scheduled game update'; end if;
   definition:=replace(definition,anchor,$guard$
   if coalesce((v_new_config->>'youtubeEnabled')::boolean,false)

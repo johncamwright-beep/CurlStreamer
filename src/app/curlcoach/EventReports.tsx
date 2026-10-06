@@ -1,4 +1,6 @@
 "use client";
+import { ReportEmail } from "./ReportEmail";
+import { MissReport } from "./MissReport";
 import {
   useCallback,
   useEffect,
@@ -300,6 +302,14 @@ export default function EventReports({
                 {downloading ? "Preparing PDF…" : "Download PDF"}
               </button>
             </div>
+            {selectedAudience !== "coach" && (
+              <ReportEmail
+                key={`${eventId}:${selectedAudience}:${current.key}`}
+                eventId={eventId}
+                audience={selectedAudience}
+                reportKey={current.key}
+              />
+            )}
             <ReportBody report={current} />
           </>
         ) : (
@@ -350,14 +360,22 @@ function ReportBody({ report }: { report: SavedReport }) {
           </div>
         ))}
       </div>
+      {report.misses && <MissReport misses={report.misses} />}
       {reportSections(report).map((s) => (
         <section key={s.title}>
           <h4 className="mb-3 text-lg font-bold">{s.title}</h4>
           <div className="space-y-3">
             {s.findings.map((f, i) => (
-              <p className="max-w-prose leading-relaxed" key={i}>
-                {f.text}
-              </p>
+              <div key={i} className="space-y-2">
+                <p className="max-w-prose leading-relaxed">{f.text}</p>
+                {!!f.statistics.length && (
+                  <p className="text-sm text-cyan-300">
+                    {f.statistics
+                      .map((m) => `${m.label}: ${m.value}`)
+                      .join(" · ")}
+                  </p>
+                )}
+              </div>
             ))}
           </div>
         </section>

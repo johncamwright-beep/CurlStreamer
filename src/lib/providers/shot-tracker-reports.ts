@@ -1,4 +1,5 @@
 import "server-only";
+import { reportMisses } from "@/lib/curlcoach/report-misses";
 import { createHash, randomUUID } from "node:crypto";
 import { z } from "zod";
 import {
@@ -49,11 +50,15 @@ export async function loadReportEvent(account: CoachAccount, eventId: string) {
     );
   return event;
 }
-export function reportFingerprint(event: CoachEvent, audience: ReportAudience) {
+export function reportFingerprint(
+  event: CoachEvent,
+  audience: ReportAudience,
+  policy = REPORT_POLICY,
+) {
   return createHash("sha256")
     .update(
       JSON.stringify({
-        policy: REPORT_POLICY,
+        policy,
         model: process.env.SHOT_TRACKER_AI_MODEL ?? "",
         audience,
         event: {
@@ -126,7 +131,19 @@ export async function getEventReports(
           ? "failed"
           : r.status,
       stale: r.fingerprint !== reportFingerprint(event, r.audience),
-      packet: r.status === "ready" ? (r.packet as ReportPacket) : null,
+      packet:
+        r.status === "ready"
+          ? resolveReportPlayerIds(
+              r.packet as ReportPacket,
+              event,
+              r.fingerprint ===
+                reportFingerprint(
+                  event,
+                  r.audience,
+                  (r.packet as ReportPacket)?.policy,
+                ),
+            )
+          : null,
     })),
   };
 }
@@ -265,7 +282,13 @@ export async function generateEventReports(
         names,
         signal,
       );
-      packet.reports.push({ ...input, narrative });
+      packet.reports.push({
+        ...input,
+        narrative,
+        ...(audience === "players"
+          ? { playerId: reportPlayers(event)[packet.reports.length].id }
+          : {}),
+      });
     }
     // Refuse to publish if results, grades, roster, membership or completion changed mid-generation.
     const fresh = await loadReportEvent(account, event.id);
@@ -324,4 +347,36 @@ export async function generateEventReports(
   } finally {
     clearTimeout(deadline);
   }
+}
+
+/** Legacy identity is recoverable only against the identical charted snapshot. Never guess by name alone. */
+export function resolveReportPlayerIds(
+  packet: ReportPacket,
+  event: CoachEvent,
+  sameSnapshot: boolean,
+): ReportPacket {
+  if (!sameSnapshot) return packet;
+  const players = reportPlayers(event);
+  return {
+    ...packet,
+    reports: packet.reports.map((report) => {
+      if (packet.audience !== "players")
+        return { ...report, misses: report.misses ?? reportMisses(event) };
+      const index = Number(report.key.replace(/^player-/, "")) - 1;
+      const player = report.playerId
+        ? players.find((p) => p.id === report.playerId)
+        : players[index];
+      if (
+        !player ||
+        player.name !== report.title ||
+        (!report.playerId && report.key !== `player-${index + 1}`)
+      )
+        return report;
+      return {
+        ...report,
+        playerId: player.id,
+        misses: report.misses ?? reportMisses(event, player.id),
+      };
+    }),
+  };
 }

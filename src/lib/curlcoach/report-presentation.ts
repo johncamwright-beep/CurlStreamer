@@ -28,11 +28,36 @@ export function reportSections(report: SavedReport) {
     { title: "Overall", findings: [report.narrative.summary] },
     { title: "What went well", findings: report.narrative.strengths },
     { title: "Where to improve", findings: report.narrative.priorities },
-    { title: "Next practice", findings: report.narrative.practice },
+    {
+      title: "Next practice",
+      findings: report.misses?.practice.length
+        ? report.misses.practice.map((p) => ({
+            text: `${p.title} (focus: ${p.target}): ${p.setup} Check progress: ${p.measure}`,
+            evidence: [`miss-${p.tag}`],
+          }))
+        : report.narrative.practice,
+    },
   ].map((section) => ({
     ...section,
     findings: section.findings.map((finding) => ({
       ...finding,
+      statistics: finding.evidence
+        .flatMap((id) => {
+          const e = report.evidence.find((e) => e.id === id);
+          const value = e?.value.match(/\d+(?:\.\d+)?%/)?.[0];
+          return e && value
+            ? [
+                {
+                  label: e.label.replace(
+                    /\bPlayer [A-H]\b/g,
+                    (alias) => names.get(alias) ?? alias,
+                  ),
+                  value,
+                },
+              ]
+            : [];
+        })
+        .slice(0, 2),
       text: finding.text.replace(
         /\bPlayer [A-H]\b/g,
         (alias) => names.get(alias) ?? alias,

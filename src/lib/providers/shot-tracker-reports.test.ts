@@ -28,8 +28,43 @@ import {
   generateEventReports,
   listReportEvents,
   reportFingerprint,
+  resolveReportPlayerIds,
 } from "./shot-tracker-reports";
+import {
+  reportInputs,
+  reportPlayers,
+  type ReportPacket,
+} from "@/lib/curlcoach/reports";
 const account = { userId: "coach-one", organizationId: "org" } as CoachAccount;
+it("recovers legacy report identities only from an unchanged source and exact title", () => {
+  const e = sampleEvent("shorty-example");
+  const packet: ReportPacket = {
+    audience: "players",
+    eventName: e.name,
+    generatedAt: "2026-10-06",
+    policy: "legacy",
+    reports: reportInputs(e, "players").map((input) => ({
+      ...input,
+      narrative: {
+        summary: { text: "Summary", evidence: ["overall"] },
+        strengths: [],
+        priorities: [],
+        practice: [],
+        review: [],
+      },
+    })),
+  };
+  expect(resolveReportPlayerIds(packet, e, false)).toBe(packet);
+  const enriched = resolveReportPlayerIds(packet, e, true);
+  expect(enriched.reports.map((r) => r.playerId)).toEqual(
+    reportPlayers(e).map((p) => p.id),
+  );
+  const changed = structuredClone(packet);
+  changed.reports[0].title = "Different person";
+  expect(
+    resolveReportPlayerIds(changed, e, true).reports[0].playerId,
+  ).toBeUndefined();
+});
 function event() {
   const e = sampleEvent("shorty-example");
   e.organizationId = "org";

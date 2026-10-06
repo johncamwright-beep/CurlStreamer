@@ -1,0 +1,166 @@
+import { beforeEach, expect, it, vi } from "vitest";
+const m = vi.hoisted(() => ({
+  load: vi.fn(),
+  reports: vi.fn(),
+  current: vi.fn(),
+  contacts: vi.fn(),
+  rpc: vi.fn(),
+  send: vi.fn(),
+  pdf: vi.fn(),
+}));
+vi.mock("./shot-tracker-reports", () => ({
+  loadReportEvent: m.load,
+  getEventReports: m.reports,
+  ReportError: class extends Error {
+    constructor(
+      message: string,
+      public status: number,
+    ) {
+      super(message);
+    }
+  },
+}));
+vi.mock("./player-contacts", () => ({
+  currentPlayerContacts: m.current,
+  readPlayerContacts: m.contacts,
+}));
+vi.mock("./report-email-transport", () => ({
+  reportMailConfig: () => ({ success: true }),
+  deliverReportEmail: m.send,
+}));
+vi.mock("@/lib/supabase/admin", () => ({
+  createAdminSupabaseClient: () => ({ rpc: m.rpc }),
+}));
+vi.mock("@/lib/curlcoach/report-pdf", () => ({ buildReportPDF: m.pdf }));
+import {
+  prepareReportEmail,
+  sendReportEmail,
+  emailRequest,
+} from "./shot-tracker-report-email";
+import type { CoachAccount } from "@/lib/curlcoach/production-access";
+const account = { userId: "coach", organizationId: "org" } as CoachAccount;
+const selection = {
+  eventId: "11111111-1111-4111-8111-111111111111",
+  audience: "players" as const,
+  reportKey: "player-1",
+};
+let packet: {
+  eventName: string;
+  audience: string;
+  reports: { key: string; title: string; playerId?: string }[];
+};
+beforeEach(() => {
+  vi.clearAllMocks();
+  packet = {
+    eventName: "Event",
+    audience: "players",
+    reports: [
+      { key: "player-1", title: "Pat", playerId: "player-stable" },
+      { key: "player-2", title: "Sam", playerId: "other" },
+    ],
+  };
+  m.load.mockResolvedValue({ id: selection.eventId });
+  m.reports.mockImplementation(async () => ({
+    entries: [{ audience: packet.audience, status: "ready", packet }],
+  }));
+  m.contacts.mockResolvedValue([
+    { player_id: "other", player_name: "Sam", email: "sam@example.com" },
+    {
+      player_id: "player-stable",
+      player_name: "Pat",
+      email: "pat@example.com",
+    },
+  ]);
+  m.current.mockResolvedValue([
+    { id: "a", name: "Pat", email: "pat@example.com" },
+    { id: "b", name: "Sam", email: "sam@example.com" },
+    { id: "c", name: "Alex", email: "" },
+  ]);
+  m.pdf.mockResolvedValue({ output: () => new ArrayBuffer(8) });
+  m.send.mockResolvedValue("accepted");
+  m.rpc.mockImplementation(async (name: string) => ({
+    data: name === "claim_report_email" ? "claimed" : true,
+    error: null,
+  }));
+});
+it("previews without sending and selects by stable identity, not array position", async () => {
+  const plan = await prepareReportEmail(account, selection);
+  expect(plan.preview.recipients.map((p) => p.email)).toEqual([
+    "pat@example.com",
+  ]);
+  expect(m.send).not.toHaveBeenCalled();
+  await sendReportEmail(account, {
+    ...selection,
+    planToken: plan.preview.planToken,
+    resend: false,
+  });
+  expect(m.send).toHaveBeenCalledOnce();
+  expect(m.send.mock.calls[0][0].to).toBe("pat@example.com");
+  expect(m.pdf.mock.calls[0][0]).toEqual(packet.reports[0]);
+});
+it("rejects a contact change after the recipient preview", async () => {
+  const plan = await prepareReportEmail(account, selection);
+  m.contacts.mockResolvedValue([
+    {
+      player_id: "player-stable",
+      player_name: "Pat",
+      email: "different@example.com",
+    },
+  ]);
+  await expect(
+    sendReportEmail(account, {
+      ...selection,
+      planToken: plan.preview.planToken,
+      resend: false,
+    }),
+  ).rejects.toThrow(/changed/);
+  expect(m.send).not.toHaveBeenCalled();
+});
+it("refuses legacy reports with no reliable identity and forbids coach reports or client destinations", async () => {
+  delete packet.reports[0].playerId;
+  await expect(prepareReportEmail(account, selection)).rejects.toThrow(
+    /safely linked/,
+  );
+  expect(
+    emailRequest.safeParse({
+      ...selection,
+      audience: "coach",
+      planToken: "a".repeat(64),
+    }).success,
+  ).toBe(false);
+  expect(
+    emailRequest.safeParse({
+      ...selection,
+      to: "attacker@example.com",
+      planToken: "a".repeat(64),
+    }).success,
+  ).toBe(false);
+});
+it("sends a team report separately to unique roster emails and reports missing addresses", async () => {
+  packet.audience = "team";
+  packet.reports = [{ key: "team", title: "Team report" }];
+  const input = { ...selection, audience: "team" as const, reportKey: "team" };
+  const plan = await prepareReportEmail(account, input);
+  expect(plan.preview.skipped).toEqual(["Alex"]);
+  await sendReportEmail(account, {
+    ...input,
+    planToken: plan.preview.planToken,
+    resend: false,
+  });
+  expect(m.send).toHaveBeenCalledTimes(2);
+  expect(m.send.mock.calls.map((c) => c[0].to)).toEqual([
+    "pat@example.com",
+    "sam@example.com",
+  ]);
+});
+it("does not resend a claimed delivery on repeated clicks", async () => {
+  m.rpc.mockResolvedValue({ data: "accepted", error: null });
+  const plan = await prepareReportEmail(account, selection);
+  const result = await sendReportEmail(account, {
+    ...selection,
+    planToken: plan.preview.planToken,
+    resend: false,
+  });
+  expect(m.send).not.toHaveBeenCalled();
+  expect(result.results[0].status).toBe("accepted");
+});

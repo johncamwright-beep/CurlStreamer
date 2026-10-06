@@ -39,6 +39,15 @@ await db.exec(
     "utf8",
   ),
 );
+await db.exec(
+  readFileSync(
+    new URL(
+      "../supabase/migrations/0079_three_team_logins.sql",
+      import.meta.url,
+    ),
+    "utf8",
+  ),
+);
 const hash = () => createHash("sha256").update(randomUUID()).digest("hex");
 async function account(email, verified = true) {
   const id = randomUUID();
@@ -124,9 +133,28 @@ await db.query(
   "insert into team_memberships(organization_id,user_id,role) values($1,$2,'game_operator')",
   [full.org, await account("occupied@example.com")],
 );
+assert.equal(
+  (await accept(await account("third@example.com"), full.h)).rows[0].org,
+  full.org,
+);
 await assert.rejects(
-  accept(await account("extra@example.com"), full.h),
-  /two logins/,
+  db.query(
+    "insert into team_memberships(organization_id,user_id,role) values($1,$2,'game_operator')",
+    [full.org, await account("fourth@example.com")],
+  ),
+  /three logins/,
+);
+const reserved = await fixture();
+await db.query(
+  "select manage_team_member($1,'invite','secondinvite@example.com','team_admin',null,$2)",
+  [reserved.owner, hash()],
+);
+await assert.rejects(
+  db.query(
+    "select manage_team_member($1,'invite','thirdinvite@example.com','team_admin',null,$2)",
+    [reserved.owner, hash()],
+  ),
+  /three logins/,
 );
 await assert.rejects(accept(parent, hash()), /invitation unavailable/);
 assert.equal(

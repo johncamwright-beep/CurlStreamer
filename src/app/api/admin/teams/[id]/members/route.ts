@@ -49,7 +49,7 @@ export async function POST(request: Request, context: Context) {
     return reply(
       {
         error:
-          "The member change was rejected. Check the two-login limit and invitation details.",
+          "The member change was rejected. Check the three-login limit and invitation details.",
       },
       409,
     );

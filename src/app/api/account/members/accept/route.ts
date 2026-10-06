@@ -44,7 +44,7 @@ export async function POST(request: Request) {
         {
           error:
             error.code === "23514"
-              ? "This account already belongs to a team, or the team has reached its two-login limit."
+              ? "This account already belongs to a team, or the team has reached its three-login limit."
               : "This invitation has expired, was revoked, or has already been used. Ask the team owner for a new link.",
         },
         409,

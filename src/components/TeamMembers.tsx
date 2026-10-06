@@ -14,6 +14,7 @@ type Invitation = {
 type MembersResponse = {
   members: Member[];
   invitation: Invitation | null;
+  invitations?: Invitation[];
   canManage: boolean;
 };
 
@@ -129,19 +130,17 @@ export function TeamMembers({
     }
   }
 
-  const usedSeats = details
-    ? details.members.length + (details.invitation ? 1 : 0)
-    : 0;
-  const canInvite = Boolean(
-    details?.canManage && usedSeats < 2 && !details.invitation,
-  );
+  const invitations =
+    details?.invitations ?? (details?.invitation ? [details.invitation] : []);
+  const usedSeats = details ? details.members.length + invitations.length : 0;
+  const canInvite = Boolean(details?.canManage && usedSeats < 3);
 
   return (
     <section className="grid gap-5" aria-label="Team access">
       <div className="grid gap-2">
         <h2 className="text-xl font-bold">Team access</h2>
         <p className="text-slate-300">
-          Each team has an owner and one additional login. Full access can
+          Each team has an owner and two additional logins. Full access can
           manage team settings and access. Game operations can run games and
           broadcasts.
         </p>
@@ -167,7 +166,7 @@ export function TeamMembers({
       ) : (
         <>
           <p className="text-sm text-slate-400">
-            {usedSeats} of 2 logins in use
+            {usedSeats} of 3 logins in use
           </p>
           <div className="grid gap-3">
             {details.members.map((member) => (
@@ -231,15 +230,17 @@ export function TeamMembers({
               </article>
             ))}
           </div>
-          {details.invitation && (
-            <article className="grid gap-3 rounded-xl border border-amber-500/50 p-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
+          {invitations.map((invitation) => (
+            <article
+              key={invitation.id}
+              className="grid gap-3 rounded-xl border border-amber-500/50 p-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center"
+            >
               <div className="min-w-0">
                 <p className="break-words font-semibold">
-                  Pending: {details.invitation.email}
+                  Pending: {invitation.email}
                 </p>
                 <p className="text-sm text-slate-400">
-                  {roleNames[details.invitation.role]} ·{" "}
-                  {expiry(details.invitation.expiresAt)}
+                  {roleNames[invitation.role]} · {expiry(invitation.expiresAt)}
                 </p>
               </div>
               {details.canManage && (
@@ -250,7 +251,7 @@ export function TeamMembers({
                   onClick={async () => {
                     const result = await request({
                       action: "revokeInvite",
-                      invitationId: details.invitation!.id,
+                      invitationId: invitation.id,
                     });
                     if (result) {
                       setInviteUrl("");
@@ -263,7 +264,7 @@ export function TeamMembers({
                 </button>
               )}
             </article>
-          )}
+          ))}
           {details.canManage && (
             <form
               className="grid gap-3 rounded-xl border border-slate-700 p-4"
@@ -311,9 +312,8 @@ export function TeamMembers({
               </button>
               {!canInvite && (
                 <p className="text-sm text-slate-400">
-                  {details.invitation
-                    ? "Revoke the pending invitation before inviting someone else."
-                    : "Your team’s two logins are already in use."}
+                  Your team’s three logins are in use or reserved by pending
+                  invitations.
                 </p>
               )}
             </form>

@@ -33,6 +33,7 @@ export default defineConfig({
       timeout: 180_000,
       env: {
         ...process.env,
+        APP_BASE_URL: "http://localhost:3000",
         ROLE_TOKEN_SECRET: "curlcast-playwright-only-secret-32-chars",
         NEXT_PUBLIC_SUPABASE_URL: "http://127.0.0.1:3101",
         NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: "playwright-public-placeholder",

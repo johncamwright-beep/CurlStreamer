@@ -173,10 +173,22 @@ const server = createServer(async (request, response) => {
   const dashboard = await dashboardFixtureResponse(request, url);
   if (dashboard !== null)
     return send(response, dashboard.status, dashboard.body);
+  if (url.pathname === "/auth/v1/signup" && request.method === "POST")
+    return send(response, 200, {
+      user: { ...user, email_confirmed_at: null },
+      session: null,
+    });
+  if (url.pathname === "/auth/v1/resend" && request.method === "POST")
+    return send(response, 200, {});
   if (url.pathname === "/auth/v1/token" && request.method === "POST") {
     let raw = "";
     for await (const chunk of request) raw += chunk;
     const input = JSON.parse(raw || "{}");
+    if (input.email === "unconfirmed@youtube.test")
+      return send(response, 400, {
+        error_code: "email_not_confirmed",
+        msg: "Email not confirmed",
+      });
     const signedInUser =
       input.email === "operator@youtube.test"
         ? { ...structuredClone(user), id: operatorId, email: input.email }

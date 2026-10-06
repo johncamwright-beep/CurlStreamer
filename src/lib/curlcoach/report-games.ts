@@ -9,12 +9,18 @@ import {
 } from "./model";
 import type { CoachEvent } from "./event";
 import type { Evidence } from "./reports";
+import type { ReportBasis } from "./report-counts";
 export type ReportGame = {
   key: string;
   title: string;
   groups: {
     title: string;
-    metrics: { id: string; label: string; value: string }[];
+    metrics: {
+      id: string;
+      label: string;
+      value: string;
+      basis?: ReportBasis;
+    }[];
   }[];
 };
 
@@ -31,21 +37,30 @@ export function playerReportGames(event: CoachEvent, playerId: string) {
       label: string,
       value: number | null,
       sample: number,
+      basis?: ReportBasis,
     ) => {
       const id = `${key}-${suffix}`;
       const display = value === null ? "—" : `${value.toFixed(1)}%`;
       evidence.push({
+        ...(basis ? { basis } : {}),
         id,
         label: `Game ${index + 1}: ${label}`,
         value: value === null ? "Not measured" : display,
         sample,
         confidence: sample < 10 ? "small" : sample < 20 ? "tentative" : "event",
       });
-      return { id, label, value: display };
+      return { id, label, value: display, ...(basis ? { basis } : {}) };
     };
     const shooting = (suffix: string, label: string, subset: Shot[]) => {
       const r = report(subset);
-      return metric(suffix, label, r.percent, r.scored);
+      return metric(suffix, label, r.percent, r.scored, {
+        numerator: subset
+          .filter((s) => !s.excluded && s.grade !== null)
+          .reduce((n, s) => n + (s.grade ?? 0), 0),
+        denominator: 5 * r.scored,
+        unit: "points",
+        shots: r.scored,
+      });
     };
     const distribution = (
       field: "execution" | "deficiency",
@@ -61,6 +76,11 @@ export function playerReportGames(event: CoachEvent, playerId: string) {
                 recorded.length
             : null,
           recorded.length,
+          {
+            numerator: recorded.filter((s) => s[field] === value).length,
+            denominator: recorded.length,
+            unit: "shots",
+          },
         ),
       );
     };

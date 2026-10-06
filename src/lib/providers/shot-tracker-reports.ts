@@ -357,11 +357,41 @@ export function resolveReportPlayerIds(
 ): ReportPacket {
   if (!sameSnapshot) return packet;
   const players = reportPlayers(event);
+  const fresh = reportInputs(event, packet.audience);
+  const withCounts = (saved: ReportPacket["reports"][number]) => {
+    const source = fresh.find(
+      (r) => r.key === saved.key && r.title === saved.title,
+    );
+    if (!source) return saved;
+    return {
+      ...saved,
+      evidence: saved.evidence.map((e) => ({
+        ...e,
+        ...(source.evidence.find((s) => s.id === e.id)?.basis
+          ? { basis: source.evidence.find((s) => s.id === e.id)!.basis }
+          : {}),
+      })),
+      games: saved.games?.map((g) => ({
+        ...g,
+        groups: g.groups.map((group) => ({
+          ...group,
+          metrics: group.metrics.map((m) => ({
+            ...m,
+            basis: source.games
+              ?.find((s) => s.key === g.key)
+              ?.groups.flatMap((s) => s.metrics)
+              .find((s) => s.id === m.id)?.basis,
+          })),
+        })),
+      })),
+    };
+  };
   return {
     ...packet,
-    reports: packet.reports.map((report) => {
+    reports: packet.reports.map((saved) => {
+      const report = withCounts(saved);
       if (packet.audience !== "players")
-        return { ...report, misses: report.misses ?? reportMisses(event) };
+        return { ...report, misses: reportMisses(event) };
       const index = Number(report.key.replace(/^player-/, "")) - 1;
       const player = report.playerId
         ? players.find((p) => p.id === report.playerId)
@@ -375,7 +405,7 @@ export function resolveReportPlayerIds(
       return {
         ...report,
         playerId: player.id,
-        misses: report.misses ?? reportMisses(event, player.id),
+        misses: reportMisses(event, player.id),
       };
     }),
   };

@@ -33,6 +33,7 @@ function row(label: string, shots: Shot[]) {
           .join(" / ")
       : "Not tagged",
     topPercent: pct(highest, misses.length),
+    topCount: highest,
     smallSample: classified.length < 10,
   };
 }

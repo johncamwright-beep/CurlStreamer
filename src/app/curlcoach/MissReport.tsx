@@ -1,4 +1,5 @@
 import type { MissAnalysis } from "@/lib/curlcoach/report-misses";
+import { countPercent } from "@/lib/curlcoach/report-counts";
 const percent = (n: number | null) =>
   n === null ? "Not measured" : `${n.toFixed(1)}%`;
 export function MissReport({ misses }: { misses: MissAnalysis }) {
@@ -8,6 +9,9 @@ export function MissReport({ misses }: { misses: MissAnalysis }) {
       <div className="rounded-xl border border-cyan-700 bg-cyan-900/10 p-4">
         <p className="text-sm">Partial, limited or missed outcomes</p>
         <p className="text-3xl font-bold">{percent(misses.rate)}</p>
+        <p>
+          {misses.misses} of {misses.classified} classified shots
+        </p>
         <p className="mt-3 max-w-prose">{misses.focus}</p>
       </div>
       <p className="text-sm text-slate-300">{misses.definition}</p>
@@ -18,14 +22,20 @@ export function MissReport({ misses }: { misses: MissAnalysis }) {
             <div key={c.tag} className="rounded-lg bg-slate-500/10 p-3">
               <p>{c.tag}</p>
               <p className="text-xl font-bold">{percent(c.percent)}</p>
-              <p className="text-sm">of miss outcomes</p>
+              <p className="text-sm">
+                {c.count} of {misses.misses} miss outcomes
+              </p>
             </div>
           ))}
       </div>
       {!!misses.untaggedPercent && (
         <p className="text-sm">
-          {percent(misses.untaggedPercent)} of miss outcomes have no usable
-          category tag.
+          {countPercent(
+            misses.untaggedPercent,
+            misses.misses - misses.tagged,
+            misses.misses,
+          )}{" "}
+          of miss outcomes have no usable category tag.
         </p>
       )}
       <div className="overflow-x-auto">
@@ -49,11 +59,13 @@ export function MissReport({ misses }: { misses: MissAnalysis }) {
                   {r.label}
                   {r.smallSample ? " *" : ""}
                 </td>
-                <td className="p-3">{percent(r.rate)}</td>
+                <td className="p-3">
+                  {countPercent(r.rate, r.misses, r.attempts)}
+                </td>
                 <td className="p-3">
                   {r.topTag}
                   {r.topTag !== "Not tagged"
-                    ? ` (${percent(r.topPercent)})`
+                    ? ` (${r.topCount === undefined ? percent(r.topPercent) : countPercent(r.topPercent, r.topCount, r.misses)})`
                     : ""}
                 </td>
               </tr>
@@ -75,7 +87,9 @@ export function MissReport({ misses }: { misses: MissAnalysis }) {
                 {r.label}
                 {r.smallSample ? " *" : ""}
               </p>
-              <p className="font-bold">{percent(r.rate)}</p>
+              <p className="font-bold">
+                {countPercent(r.rate, r.misses, r.attempts)}
+              </p>
             </div>
           ))}
         </div>
@@ -87,7 +101,9 @@ export function MissReport({ misses }: { misses: MissAnalysis }) {
               {r.label}
               {r.smallSample ? " *" : ""}
             </p>
-            <p className="font-bold">{percent(r.rate)} miss rate</p>
+            <p className="font-bold">
+              {countPercent(r.rate, r.misses, r.attempts)} miss rate
+            </p>
           </div>
         ))}
       </div>

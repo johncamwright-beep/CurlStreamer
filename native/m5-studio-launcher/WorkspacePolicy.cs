@@ -4,9 +4,44 @@ using System.Text.RegularExpressions;
 using System.Text;
 using System.Runtime.InteropServices;
 using Microsoft.Win32.SafeHandles;
+using System.Collections.Generic;
 
 internal static class WorkspacePolicy
 {
+    internal static bool CameraZoomRequest(Dictionary<string, object> request, string selectedGame, string runningGame,
+        out string role, out int generation, out double zoom, out string nonce)
+    {
+        role = nonce = null; generation = 0; zoom = 1;
+        object action, game, cameraRole, sourceGeneration, value, requestNonce; Guid parsedNonce;
+        if (request == null || request.Count != 6 || selectedGame == null || selectedGame != runningGame ||
+            !request.TryGetValue("action", out action) || !Object.Equals(action, "zoom-camera") ||
+            !request.TryGetValue("gameId", out game) || !Object.Equals(game, runningGame) ||
+            !request.TryGetValue("cameraRole", out cameraRole) || !(cameraRole is string) ||
+            ((string)cameraRole != "camera-home" && (string)cameraRole != "camera-away") ||
+            !request.TryGetValue("generation", out sourceGeneration) || !(sourceGeneration is int) || (int)sourceGeneration < 0 ||
+            !request.TryGetValue("value", out value) || !(value is int || value is decimal || value is double) ||
+            !request.TryGetValue("nonce", out requestNonce) || !(requestNonce is string) ||
+            !Guid.TryParseExact((string)requestNonce, "D", out parsedNonce)) return false;
+        var requestedZoom = Convert.ToDouble(value);
+        if (Double.IsNaN(requestedZoom) || Double.IsInfinity(requestedZoom) || requestedZoom < 1 || requestedZoom > 4 ||
+            Math.Abs(requestedZoom * 10 - Math.Round(requestedZoom * 10)) > 0.000001) return false;
+        role = (string)cameraRole; generation = (int)sourceGeneration; zoom = requestedZoom; nonce = (string)requestNonce;
+        return true;
+    }
+    internal static bool CameraZoomSource(object inputs, string role, int generation)
+    {
+        var map = inputs as Dictionary<string, object>; object slot, sourceGeneration, kind;
+        var source = map != null && map.TryGetValue(role, out slot) ? slot as Dictionary<string, object> : null;
+        return source != null && source.TryGetValue("kind", out kind) && (Object.Equals(kind, "tapo") || Object.Equals(kind, "rtsp")) &&
+            source.TryGetValue("generation", out sourceGeneration) && sourceGeneration is int && (int)sourceGeneration == generation;
+    }
+    internal static object MergeCameraZoomInputs(object current, object received, string role, int generation)
+    {
+        if (!CameraZoomSource(current, role, generation) || !CameraZoomSource(received, role, generation)) throw new InvalidDataException();
+        var merged = new Dictionary<string, object>((Dictionary<string, object>)current);
+        merged[role] = ((Dictionary<string, object>)received)[role];
+        return merged;
+    }
     [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
     private static extern SafeFileHandle CreateFile(string name, uint access, uint share, IntPtr security, uint disposition, uint flags, IntPtr template);
     [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]

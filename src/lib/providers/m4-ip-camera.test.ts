@@ -6,7 +6,10 @@ import {
 } from "node:child_process";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createM4IpCameraManager } from "./m4-ip-camera";
-import { m4CameraInputSchema } from "../m4-camera-input";
+import {
+  m4CameraInputSchema,
+  m4CameraInputSnapshotSchema,
+} from "../m4-camera-input";
 
 const config = {
   kind: "tapo",
@@ -75,6 +78,73 @@ const settle = async () => {
 describe("local IP camera manager", () => {
   beforeEach(() => vi.useFakeTimers());
   afterEach(() => vi.useRealTimers());
+
+  it("zooms independent slots without restarting and rejects invalid or stale targets", async () => {
+    const { manager, spawnMock } = harness();
+    manager.configure("camera-home", config);
+    manager.configure("camera-away", { ...config, host: "10.0.0.2" });
+    await manager.start();
+    const generation = manager.snapshot("camera-home").generation;
+    const launches = spawnMock.mock.calls.length;
+    manager.setZoom("camera-home", generation, 2.3);
+    expect(manager.snapshot("camera-home")).toMatchObject({
+      generation,
+      zoom: 2.3,
+    });
+    expect(manager.snapshot("camera-away").zoom).toBe(1);
+    expect(spawnMock).toHaveBeenCalledTimes(launches);
+    for (const value of [0.9, 4.1, 1.05, NaN, Infinity])
+      expect(() => manager.setZoom("camera-home", generation, value)).toThrow(
+        "invalid_camera_zoom",
+      );
+    for (const stale of [generation - 1, generation + 1])
+      expect(() => manager.setZoom("camera-home", stale, 2)).toThrow(
+        "camera_source_changed",
+      );
+    for (const invalid of [-1, 1.5, NaN])
+      expect(() => manager.setZoom("camera-home", invalid, 2)).toThrow(
+        "invalid_camera_zoom",
+      );
+    expect(() =>
+      manager.setZoom("camera-other" as "camera-home", generation, 2),
+    ).toThrow("invalid_camera_role");
+    expect(JSON.stringify(manager.snapshot())).not.toMatch(
+      /private-password|camera-user|username|password|rtsp:/,
+    );
+    manager.configure("camera-away", { kind: "phone" });
+    expect(() =>
+      manager.setZoom(
+        "camera-away",
+        manager.snapshot("camera-away").generation,
+        2,
+      ),
+    ).toThrow("camera_source_changed");
+    expect(manager.snapshot("camera-home").zoom).toBe(2.3);
+    await manager.close();
+  });
+
+  it("preserves zoom through decoder recovery and reconnect and resets replacement sources", async () => {
+    const { manager, children } = harness();
+    manager.configure("camera-home", config);
+    await manager.start();
+    manager.setZoom(
+      "camera-home",
+      manager.snapshot("camera-home").generation,
+      4,
+    );
+    children[0].emit("close", 1);
+    await vi.advanceTimersByTimeAsync(3000);
+    expect(manager.snapshot("camera-home").zoom).toBe(4);
+    manager.reconnect("camera-home");
+    await settle();
+    expect(manager.snapshot("camera-home").zoom).toBe(4);
+    manager.configure("camera-home", { ...config, host: "10.0.0.9" });
+    expect(manager.snapshot("camera-home").zoom).toBe(1);
+    const { zoom: omitted, ...legacy } = manager.snapshot("camera-home");
+    expect(omitted).toBe(1);
+    expect(m4CameraInputSnapshotSchema.parse(legacy).zoom).toBe(1);
+    await manager.close();
+  });
 
   it("sends custom endpoints only through private stdin and keeps RTSP snapshots anonymous", async () => {
     const { manager, children, spawnMock } = harness();

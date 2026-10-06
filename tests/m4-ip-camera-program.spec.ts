@@ -143,6 +143,7 @@ async function install(
     "camera-away": jpeg,
   };
   const counter: Record<Role, number> = { "camera-home": 0, "camera-away": 0 };
+  const frameRequests: { role: Role; generation: number; after: number }[] = [];
   // Count live browser fetches, excluding requests synchronously cancelled by
   // a source change; an intercepted route can finish after its fetch aborts.
   await page.addInitScript(`
@@ -213,6 +214,11 @@ async function install(
       /^\/ip-camera\/(camera-home|camera-away)\/frame$/,
     )?.[1] as Role | undefined;
     if (frameRole) {
+      frameRequests.push({
+        role: frameRole,
+        generation: Number(url.searchParams.get("generation")),
+        after: Number(url.searchParams.get("after")),
+      });
       const source = { ...sources[frameRole] },
         behavior = mode[frameRole];
       try {
@@ -273,6 +279,7 @@ async function install(
     maxActive,
     phones,
     heartbeats,
+    frameRequests,
   };
 }
 
@@ -480,6 +487,70 @@ test("program stacks legacy Tapo and generic RTSP frames with full image edges a
     path: proof,
     contentType: "image/png",
   });
+  expect(fixture.errors).toEqual([]);
+});
+
+test("IP digital zoom changes only the selected picture without restarting its transport", async ({
+  page,
+}, testInfo) => {
+  const fixture = await install(page, ["tapo", "rtsp"]);
+  for (const role of roles) await verifyFrame(page, role);
+  const camera = panel(page, "camera-home").getByRole("img", {
+    name: "IP camera",
+  });
+  await camera.evaluate((canvas) => {
+    canvas.setAttribute("data-zoom-lifetime", "original");
+  });
+  const before = await panel(page, "camera-home").boundingBox();
+  const beforeFrames = fixture.accepted.filter(
+    (observation) => observation.cameraRole === "camera-home",
+  ).length;
+  fixture.sources["camera-home"].zoom = 2;
+  await expect(camera).toHaveCSS("transform", "matrix(2, 0, 0, 2, 0, 0)");
+  await expect(camera).toHaveAttribute("data-zoom-lifetime", "original");
+  expect(await panel(page, "camera-home").boundingBox()).toEqual(before);
+  const { data, info } = await sharp(
+    await panel(page, "camera-home").screenshot(),
+  )
+    .removeAlpha()
+    .raw()
+    .toBuffer({ resolveWithObject: true });
+  for (const fraction of [0.08, 0.5, 0.92]) {
+    const pixel =
+      (Math.floor(info.height / 2) * info.width +
+        Math.floor(info.width * fraction)) *
+      info.channels;
+    // The full frame has blue/green edges; 2x shows the red central region.
+    expect(data[pixel]).toBeGreaterThan(data[pixel + 1] + 70);
+    expect(data[pixel]).toBeGreaterThan(data[pixel + 2] + 70);
+  }
+  await verifyFrame(page, "camera-away");
+  await verifySponsor(page);
+  await expect
+    .poll(
+      () =>
+        fixture.accepted.filter((value) => value.cameraRole === "camera-home")
+          .length,
+    )
+    .toBeGreaterThan(beforeFrames);
+  const proof = testInfo.outputPath("ip-camera-digital-zoom.png");
+  await page.getByTestId("broadcast-canvas").screenshot({ path: proof });
+  await testInfo.attach("ip-camera-digital-zoom", {
+    path: proof,
+    contentType: "image/png",
+  });
+  fixture.sources["camera-home"].zoom = 1;
+  await expect(camera).toHaveCSS("transform", "none");
+  await verifyFrame(page, "camera-home");
+  await expect(camera).toHaveAttribute("data-zoom-lifetime", "original");
+  expect(
+    fixture.frameRequests.filter(
+      (request) => request.role === "camera-home" && request.after === 0,
+    ),
+  ).toHaveLength(1);
+  expect(fixture.sources["camera-home"].generation).toBe(1);
+  expect((await fixture.maxActive())["camera-home"]).toBe(1);
+  expect((await fixture.phones()).starts).toEqual({});
   expect(fixture.errors).toEqual([]);
 });
 

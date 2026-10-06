@@ -11,10 +11,18 @@ import { startM4ProgramHost } from "./m4-program-host";
 import type { StudioDiagnostic } from "./m5-studio-diagnostics";
 import type { ConnectionDiagnostic } from "./connection-diagnostics";
 import { cameraRoleSchema } from "../m2-studio-protocol";
-import { m4CameraInputSchema } from "../m4-camera-input";
+import { m4CameraInputSchema, m4CameraZoomSchema } from "../m4-camera-input";
 import { createM4IpCameraManager } from "./m4-ip-camera";
 
 const command = z.discriminatedUnion("action", [
+  z
+    .object({
+      action: z.literal("set-camera-zoom"),
+      cameraRole: cameraRoleSchema,
+      generation: z.number().int().nonnegative(),
+      value: m4CameraZoomSchema,
+    })
+    .strict(),
   z
     .object({
       action: z.literal("configure-camera-input"),
@@ -502,6 +510,24 @@ export async function createM4OperatorServer(options: {
     }
     try {
       const input = await body(request);
+      if (input.action === "set-camera-zoom") {
+        if (busy || ["starting", "stopping"].includes(program)) {
+          reply(409, { error: "Action in progress" });
+          return;
+        }
+        const current = cameraInputs.snapshot(input.cameraRole);
+        if (
+          program !== "recording" ||
+          current.kind === "phone" ||
+          current.generation !== input.generation
+        ) {
+          reply(409, { error: "IP camera source is not active" });
+          return;
+        }
+        cameraInputs.setZoom(input.cameraRole, input.generation, input.value);
+        reply(200, snapshot());
+        return;
+      }
       if (
         input.action === "configure-camera-input" ||
         input.action === "reconnect-camera-input"

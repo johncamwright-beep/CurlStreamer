@@ -33,6 +33,7 @@ internal sealed class Workspace : Form
     private Dictionary<string, object> lastState;
     private Dictionary<string, Dictionary<string, object>> cameraInputs = new Dictionary<string, Dictionary<string, object>>();
     private bool cameraSettingsOpen;
+    private int cameraZoomRevision;
     private string closeAfterGame;
     private bool endRequestPending, gameEnded;
     private DateTime endingUntil = DateTime.MinValue;
@@ -261,6 +262,7 @@ internal sealed class Workspace : Form
             var raw = args.WebMessageAsJson;
             if (raw.Length > 8192) return;
             var value = json.Deserialize<Dictionary<string, object>>(raw);
+            if (TextValue(value, "action") == "zoom-camera") { await CameraZoomCommand(value); return; }
             var presentationType = TextValue(value, "type");
             if (presentationType == "studio-youtube-hold" || presentationType == "studio-youtube-resume" || presentationType == "studio-ending-prepare" || presentationType == "studio-ending-show" || presentationType == "studio-ending-cancel" || presentationType == "studio-ending-finish") {
                 if (TextValue(value, "gameId") != runningGame || selectedGame != runningGame || busy || closing || !recording) return;
@@ -309,6 +311,33 @@ internal sealed class Workspace : Form
     }
     private bool StateFlag(string key) {
         object value; return lastState != null && lastState.TryGetValue(key, out value) && value is bool && (bool)value;
+    }
+    private async Task CameraZoomCommand(Dictionary<string, object> request) {
+        string role, nonce; int generation; double zoom;
+        if (!WorkspacePolicy.CameraZoomRequest(request, selectedGame, runningGame, out role, out generation, out zoom, out nonce)) return;
+        var gameId = runningGame; var ok = false; var commanded = false; object inputs;
+        try {
+            if (busy || closing || !recording || local == null || lastState == null ||
+                !lastState.TryGetValue("cameraInputs", out inputs) || !WorkspacePolicy.CameraZoomSource(inputs, role, generation))
+                throw new InvalidOperationException();
+            cameraZoomRevision++; commanded = true;
+            var result = await Command(new { action = "set-camera-zoom", cameraRole = role, generation = generation, value = zoom });
+            // An old response cannot restore a source after Settings replaces it.
+            if (selectedGame != gameId || runningGame != gameId || closing ||
+                lastState == null || !lastState.TryGetValue("cameraInputs", out inputs) || !WorkspacePolicy.CameraZoomSource(inputs, role, generation) ||
+                !result.TryGetValue("cameraInputs", out inputs) || !WorkspacePolicy.CameraZoomSource(inputs, role, generation))
+                throw new InvalidOperationException();
+            var update = new Dictionary<string, object>(lastState);
+            update["cameraInputs"] = WorkspacePolicy.MergeCameraZoomInputs(lastState["cameraInputs"], result["cameraInputs"], role, generation);
+            ApplyState(update); ok = true;
+        } catch { /* Return a fixed message; no local camera details or credentials. */ }
+        finally { if (commanded) cameraZoomRevision++; }
+        if (closing || web.CoreWebView2 == null || !WorkspacePolicy.SameOrigin(web.CoreWebView2.Source, origin) ||
+            WorkspacePolicy.Game(web.CoreWebView2.Source, origin) != gameId) return;
+        var reply = new Dictionary<string, object> { { "gameId", gameId }, { "cameraRole", role }, { "generation", generation }, { "nonce", nonce }, { "ok", ok } };
+        if (ok) reply["value"] = zoom;
+        else reply["error"] = "Studio could not change the camera zoom. Wait for the camera to reconnect, then try again.";
+        await web.ExecuteScriptAsync("window.dispatchEvent(new CustomEvent('studio-camera-zoom-result',{detail:" + json.Serialize(reply) + "}));");
     }
     private async Task PresentationCommand(string type, string nonce, Dictionary<string, object> value) {
         var gameId = runningGame; object presentation = null, closeReceipt = null; bool ok = false;
@@ -533,8 +562,9 @@ internal sealed class Workspace : Form
     private async Task Poll() {
         if (polling || closing || local == null || !recording) return;
         var observedChild = child;
+        var observedZoomRevision = cameraZoomRevision;
         polling = true;
-        try { using (var timeout = new System.Threading.CancellationTokenSource(3000)) using (var response = await local.GetAsync(localAddress + "/state", timeout.Token)) { response.EnsureSuccessStatusCode(); if (!closing && child == observedChild) ApplyState(json.Deserialize<Dictionary<string, object>>(await response.Content.ReadAsStringAsync())); } }
+        try { using (var timeout = new System.Threading.CancellationTokenSource(3000)) using (var response = await local.GetAsync(localAddress + "/state", timeout.Token)) { response.EnsureSuccessStatusCode(); var observed = json.Deserialize<Dictionary<string, object>>(await response.Content.ReadAsStringAsync()); if (!closing && child == observedChild && cameraZoomRevision == observedZoomRevision) ApplyState(observed); } }
         catch { if (!busy) status.Text = "Recording status is unavailable. Keep Studio open while checking the recording."; }
         finally { polling = false; }
         if (gameEnded && endingUntil != DateTime.MinValue && endingUntil <= DateTime.UtcNow && !busy && !closing) { endingUntil = DateTime.MinValue; await StopRecording(); }
@@ -572,6 +602,10 @@ internal sealed class Workspace : Form
             if (source.TryGetValue("rotation", out value) && value is int && ((int)value == 0 || (int)value == 90 || (int)value == 180 || (int)value == 270)) safe["rotation"] = value;
             if (source.TryGetValue("configured", out value) && value is bool) safe["configured"] = value;
             if (source.TryGetValue("generation", out value) && value is int && (int)value >= 0) safe["generation"] = value;
+            if (source.TryGetValue("zoom", out value) && (value is int || value is decimal || value is double)) {
+                var zoom = Convert.ToDouble(value);
+                if (!Double.IsNaN(zoom) && !Double.IsInfinity(zoom) && zoom >= 1 && zoom <= 4) safe["zoom"] = zoom;
+            }
             foreach (var phase in new[] { "idle", "connecting", "streaming", "retrying", "failed" }) if (TextValue(source, "phase") == phase) safe["phase"] = phase;
             foreach (var error in new[] { "auth_failed", "runtime_missing", "stale_frames", "unavailable", "invalid_pipe" }) if (TextValue(source, "errorCode") == error) safe["errorCode"] = error;
             output[role] = safe;

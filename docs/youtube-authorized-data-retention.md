@@ -44,3 +44,21 @@ Service-only RPCs claim a ten-minute lease and compare organization, connection 
 6. After restore/backfill, run maintenance immediately and verify generated URLs are removed for revoked grants while user-entered URLs and scores remain. Backups, exports and diagnostic stores need their own documented expiration/deletion procedure; this SQL workflow covers live application storage only. Do not retain API data in new logs or exports.
 
 Remaining deployment prerequisites are applying migrations, setting `CRON_SECRET`, enabling/observing the production schedule and approving public copy that explains these consequences. Google Cloud OAuth publishing/verification and production changes require separate operator authorization. This implementation does not by itself submit or approve an application.
+
+## Backup release gate
+
+On October 6, 2026, the production Supabase dashboard showed physical daily
+backups dated September 29 through October 6. This verifies that older copies
+of application tables exist; it does not establish their physical deletion
+deadline. [Supabase's backup documentation](https://supabase.com/docs/guides/platform/backups)
+describes plan-dependent recovery windows, but a recovery window alone is not
+proof that revoked API data has been deleted from every backup.
+
+Do not treat backup rotation as an exception to the YouTube seven-day withdrawal
+or thirty-day external-revocation requirement. Obtain and document a provider
+deletion procedure covering the affected backup copies, or implement a verified
+storage design that keeps authorized API data out of those backups. Cover manual
+exports and restore procedures as well. Until that procedure is verified, keep
+this change in draft and do not publish the promised retention limits or submit
+verification declarations claiming they are met. Do not delete project backups
+or weaken disaster recovery merely to clear this gate without operator approval.

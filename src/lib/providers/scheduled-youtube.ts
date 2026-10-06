@@ -1,6 +1,8 @@
 import "server-only";
 
 import type { User } from "@supabase/supabase-js";
+import { z } from "zod";
+import type { GameConfig } from "@/lib/types";
 import { createAdminSupabaseClient } from "@/lib/supabase/admin";
 import { getScheduledYouTubeCredentials } from "./scheduled-youtube-credentials";
 import { decryptYouTubeRefreshToken } from "./youtube-credential-vault";
@@ -31,6 +33,7 @@ export async function provisionScheduledYouTubeBroadcast(
     gameId: string;
     title: string;
     scheduledStart: string;
+    visibility: GameConfig["youtubeVisibility"];
     thumbnail?: ScheduledThumbnail;
   },
 ) {
@@ -41,6 +44,8 @@ export async function provisionScheduledYouTubeBroadcast(
   let accessToken: string;
   try {
     credentials = await getScheduledYouTubeCredentials(user, values.gameId);
+    if (values.visibility !== (credentials.youtube_visibility ?? "unlisted"))
+      throw new Error("youtube_manual_configuration_mismatch");
     accessToken = await refreshYouTubeAccessToken(
       decryptYouTubeRefreshToken(
         credentials.encrypted_credentials,
@@ -64,10 +69,26 @@ export async function provisionScheduledYouTubeBroadcast(
       watchUrl: null,
       errorCode: "youtube_schedule_unavailable",
     } as const;
-  const claimed = claim as {
-    action?: "run" | "discover" | "none";
-    watch_url?: string | null;
-  }[];
+  const parsedClaim = z
+    .array(
+      z.object({
+        action: z.enum(["run", "discover", "none"]),
+        watch_url: z.string().url().nullable().optional(),
+        youtube_visibility: z
+          .enum(["private", "unlisted", "public"])
+          .default("unlisted"),
+      }),
+    )
+    .length(1)
+    .safeParse(claim);
+  if (!parsedClaim.success)
+    return {
+      status: "failed",
+      watchUrl: null,
+      errorCode: "youtube_manual_configuration_mismatch",
+    } as const;
+  const claimed = parsedClaim.data;
+  const visibility = claimed[0].youtube_visibility;
   const action = claimed[0]?.action;
   async function thumbnail(videoId: string) {
     if (!values.thumbnail) return {};
@@ -83,7 +104,7 @@ export async function provisionScheduledYouTubeBroadcast(
   if (action === "none") {
     const watchUrl = claimed[0]?.watch_url;
     const videoId = watchUrl ? new URL(watchUrl).searchParams.get("v") : null;
-    if (videoId && values.thumbnail) {
+    if (videoId) {
       try {
         await updateScheduledYouTubeTime(
           accessToken,
@@ -91,6 +112,9 @@ export async function provisionScheduledYouTubeBroadcast(
           values.gameId,
           values.title,
           values.scheduledStart,
+          visibility,
+          fetch,
+          credentials.channel_id,
         );
       } catch {
         return {
@@ -123,7 +147,7 @@ export async function provisionScheduledYouTubeBroadcast(
         accessToken,
         sessionKey: values.gameId,
         title: values.title,
-        visibility: "unlisted",
+        visibility,
         manualLifecycle: true,
         scheduledStartTime: values.scheduledStart,
       },

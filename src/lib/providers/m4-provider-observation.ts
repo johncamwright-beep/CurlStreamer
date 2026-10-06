@@ -55,7 +55,7 @@ const broadcastSchema = listEnvelope.extend({
         snippet: z.object({ channelId: id }),
         status: z.object({
           lifeCycleStatus: broadcastStatus,
-          privacyStatus: z.literal("unlisted"),
+          privacyStatus: z.enum(["private", "unlisted", "public"]),
         }),
         contentDetails: z.object({
           boundStreamId: id,
@@ -94,12 +94,24 @@ function get(path: string, accessToken: string, fetcher: typeof fetch) {
  */
 export async function observeM4YouTubeProvider(
   accessToken: string,
-  expected: { channelId: string; streamId: string; broadcastId: string },
+  expected: {
+    channelId: string;
+    streamId: string;
+    broadcastId: string;
+    visibility?: "private" | "unlisted" | "public";
+  },
   fetcher: typeof fetch = fetch,
 ): Promise<M4ProviderObservation> {
   try {
     const ids = z
-      .object({ channelId: id, streamId: id, broadcastId: id })
+      .object({
+        channelId: id,
+        streamId: id,
+        broadcastId: id,
+        visibility: z
+          .enum(["private", "unlisted", "public"])
+          .default("unlisted"),
+      })
       .parse(expected);
     const owned = ownedChannelSchema.parse(
       await get("/channels?part=id&mine=true", accessToken, fetcher),
@@ -138,6 +150,7 @@ export async function observeM4YouTubeProvider(
       !broadcast ||
       broadcast.id !== ids.broadcastId ||
       broadcast.snippet.channelId !== ids.channelId ||
+      broadcast.status.privacyStatus !== ids.visibility ||
       broadcast.contentDetails.boundStreamId !== ids.streamId
     )
       throw new Error();

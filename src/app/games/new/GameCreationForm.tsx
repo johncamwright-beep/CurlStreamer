@@ -181,6 +181,18 @@ export function GameCreationForm({
   const [visibility, setVisibility] = useState(
     editing?.config.youtubeVisibility ?? "unlisted",
   );
+  const visibilityLabel =
+    visibility === "public"
+      ? "Public"
+      : visibility === "private"
+        ? "Private"
+        : "Unlisted";
+  const visibilityLocked = Boolean(
+    editing &&
+    (editing.scheduledYouTubeWatchUrl ||
+      editing.scheduledYouTubeStatus === "intent" ||
+      editing.scheduledYouTubeStatus === "ready"),
+  );
   const [youtubeEnabled, setYoutubeEnabled] = useState(
     editing?.config.youtubeEnabled ?? false,
   );
@@ -416,7 +428,7 @@ export function GameCreationForm({
           youtubeEnabled,
           sharedYoutubeWatchUrl,
           youtubeTitle,
-          youtubeVisibility: youtubeEnabled ? "unlisted" : visibility,
+          youtubeVisibility: visibility,
         },
       });
       if (!editing) {
@@ -440,7 +452,7 @@ export function GameCreationForm({
       }
       if (editing && body.youtube?.status === "pending") {
         setError(
-          "The game was saved, but YouTube’s time could not be updated. Please save changes again to retry.",
+          "The game was saved, but YouTube’s broadcast details could not be updated. Please save changes again to retry.",
         );
         setBusy(false);
         saving.current = false;
@@ -872,15 +884,18 @@ export function GameCreationForm({
               <strong>Streaming</strong>
               <span>
                 {youtubeEnabled
-                  ? "Yes · reserve an unlisted YouTube watch link"
+                  ? visibilityLocked
+                    ? `Yes · ${visibilityLabel} YouTube watch-page reservation`
+                    : `Yes · reserve ${visibility === "unlisted" ? "an" : "a"} ${visibilityLabel.toLowerCase()} YouTube watch link`
                   : sharedYoutubeWatchUrl
                     ? "Shared YouTube watch link"
                     : "No · no YouTube event will be created"}
               </span>
             </summary>
             <p className="setup-help">
-              Saving with streaming enabled creates a scheduled watch page. It
-              does not start a stream.
+              {visibilityLocked
+                ? "Saving updates the scheduled watch page. It does not start a stream."
+                : "Saving with streaming enabled creates a scheduled watch page. It does not start a stream."}
             </p>
             <div className="setup-grid setup-options-body">
               <fieldset className="md:col-span-2">
@@ -894,7 +909,6 @@ export function GameCreationForm({
                       onChange={() => {
                         setYoutubeEnabled(true);
                         setSharedYoutubeWatchUrl("");
-                        setVisibility("unlisted");
                       }}
                     />{" "}
                     Yes
@@ -936,11 +950,28 @@ export function GameCreationForm({
                     <select
                       name="youtubeVisibility"
                       value={visibility}
-                      disabled
+                      disabled={visibilityLocked}
+                      onChange={(event) =>
+                        setVisibility(event.target.value as typeof visibility)
+                      }
+                      aria-describedby="youtube-visibility-help"
                       className="mt-1 min-h-11 w-full rounded-lg bg-slate-800 p-3"
                     >
                       <option value="unlisted">Unlisted</option>
+                      <option value="public">Public</option>
+                      {editing?.config.youtubeVisibility === "private" && (
+                        <option value="private">Private</option>
+                      )}
                     </select>
+                    <span id="youtube-visibility-help" className="setup-help">
+                      {visibilityLocked
+                        ? "Visibility is fixed once YouTube watch-page reservation begins. Choose Public when scheduling a future game if you want anyone to find and watch it."
+                        : visibility === "public"
+                          ? "Public: anyone can find and watch this game on YouTube. Saving only schedules the watch page; you start the stream manually."
+                          : visibility === "private"
+                            ? "Private: only people invited through YouTube can watch."
+                            : "Unlisted: anyone with the watch link can watch; the game is not listed publicly on YouTube."}
+                    </span>
                   </label>
                   <label className="md:col-span-2">
                     YouTube title
@@ -1033,7 +1064,9 @@ export function GameCreationForm({
               <dt>Streaming</dt>
               <dd>
                 {youtubeEnabled
-                  ? "YouTube watch link will be reserved"
+                  ? visibilityLocked
+                    ? `YouTube watch-page reservation · ${visibilityLabel}`
+                    : `YouTube watch link will be reserved · ${visibilityLabel}`
                   : sharedYoutubeWatchUrl
                     ? "Shared YouTube watch link"
                     : "No YouTube stream"}

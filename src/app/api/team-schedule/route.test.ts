@@ -393,6 +393,121 @@ describe("team schedule timezone boundary", () => {
     );
   });
 
+  it.each(["unlisted", "public", "private"])(
+    "reserves a watch page using the saved %s visibility without starting live",
+    async (visibility) => {
+      mocks.provisionScheduledYouTubeBroadcast.mockResolvedValue({
+        status: "ready",
+        watchUrl: "https://www.youtube.com/watch?v=abcdefghijk",
+      });
+      const response = await POST(
+        request("createGame", "2026-10-20", "18:30", {
+          ...config,
+          youtubeEnabled: true,
+          youtubeVisibility: visibility,
+        }),
+      );
+      expect(response.status).toBe(201);
+      expect(mocks.createScheduledTeamGame).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.anything(),
+        expect.objectContaining({ youtubeVisibility: visibility }),
+        expect.anything(),
+      );
+      expect(mocks.provisionScheduledYouTubeBroadcast).toHaveBeenCalledWith(
+        expect.objectContaining({ id: "44444444-4444-4444-8444-444444444444" }),
+        expect.objectContaining({
+          gameId: expect.any(String),
+          visibility,
+          scheduledStart: "2026-10-20T22:30:00.000Z",
+        }),
+      );
+    },
+  );
+
+  it("preserves Public when an upcoming game is edited", async () => {
+    const hierarchy = await mocks.loadTeamHierarchyData();
+    hierarchy.games[0].config = { ...config, youtubeEnabled: true };
+    hierarchy.games[0].scheduledYouTubeWatchUrl =
+      "https://www.youtube.com/watch?v=abcdefghijk";
+    mocks.provisionScheduledYouTubeBroadcast.mockResolvedValue({
+      status: "ready",
+    });
+    const response = await POST(
+      request("updateGame", "2026-11-01", "01:30", {
+        ...config,
+        youtubeEnabled: true,
+        youtubeVisibility: "public",
+      }),
+    );
+    expect(response.status).toBe(200);
+    expect(mocks.updateScheduledTeamGame).toHaveBeenCalledWith(
+      expect.anything(),
+      gameId,
+      expect.anything(),
+      expect.objectContaining({ youtubeVisibility: "public" }),
+    );
+    expect(mocks.provisionScheduledYouTubeBroadcast).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ gameId, visibility: "public" }),
+    );
+  });
+
+  it("uses saved Public visibility when retrying watch-page preparation", async () => {
+    const hierarchy = await mocks.loadTeamHierarchyData();
+    hierarchy.games[0].config = {
+      ...config,
+      youtubeEnabled: true,
+      youtubeVisibility: "public",
+    };
+    mocks.provisionScheduledYouTubeBroadcast.mockResolvedValue({
+      status: "ready",
+    });
+    const response = await POST(
+      new Request("http://localhost/api/team-schedule", {
+        method: "POST",
+        body: JSON.stringify({ operation: "retryYouTube", gameId }),
+      }),
+    );
+    expect(response.status).toBe(200);
+    expect(mocks.provisionScheduledYouTubeBroadcast).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ gameId, visibility: "public" }),
+    );
+  });
+
+  it("rejects unsupported visibility before a game or provider is created", async () => {
+    const response = await POST(
+      request("createGame", "2026-10-20", "18:30", {
+        ...config,
+        youtubeEnabled: true,
+        youtubeVisibility: "listed",
+      }),
+    );
+    expect(response.status).toBe(400);
+    expect(mocks.createScheduledTeamGame).not.toHaveBeenCalled();
+    expect(mocks.provisionScheduledYouTubeBroadcast).not.toHaveBeenCalled();
+  });
+
+  it("explains a reserved visibility conflict without calling YouTube", async () => {
+    mocks.updateScheduledTeamGame.mockResolvedValue({
+      ok: false,
+      kind: "youtubeVisibilityLocked",
+    });
+    const response = await POST(
+      request("updateGame", "2026-10-20", "18:30", {
+        ...config,
+        youtubeEnabled: true,
+        youtubeVisibility: "public",
+      }),
+    );
+    expect(response.status).toBe(409);
+    expect((await response.json()).error).toContain(
+      "fixed once its watch page is reserved",
+    );
+    expect(mocks.provisionScheduledYouTubeBroadcast).not.toHaveBeenCalled();
+  });
+
   it("rejects combining a shared link with team YouTube provisioning", async () => {
     const response = await POST(
       request("createGame", "2026-10-20", "18:30", {

@@ -59,7 +59,7 @@ const sessionSchema = z.object({
   desiredState: z.enum(["live", "stopped"]),
   status: statusSchema,
   title: z.string().min(2).max(100).optional(),
-  visibility: z.literal("unlisted").optional(),
+  visibility: z.enum(["private", "unlisted", "public"]).default("unlisted"),
   encryptedCredentials: z.string().optional(),
   savedChannelId: z.string().min(1).optional(),
   channelId: z.string().min(1).optional(),
@@ -152,6 +152,7 @@ export async function goLiveM4Session(
     channelId: initial.channelId,
     streamId: initial.youtubeStreamId,
     broadcastId: initial.youtubeBroadcastId,
+    visibility: initial.visibility,
   });
   const current = await read();
   await requireTeamBroadcastAccess(current.organizationId);
@@ -164,6 +165,7 @@ export async function goLiveM4Session(
     "channelId",
     "connectionVersion",
     "encryptedCredentials",
+    "visibility",
   ] as const)
     if (current[key] !== initial[key])
       throw Object.assign(Error("m4_operation_fenced"), { code: "55000" });
@@ -274,9 +276,13 @@ export async function prepareM4Session(
   if (s.action !== "run") return safe(s);
   let creating: "broadcast" | "stream" | undefined;
   try {
-    if (!s.sessionKey || !s.title || s.visibility !== "unlisted")
+    if (!s.sessionKey || !s.title)
       throw Error("youtube_manual_configuration_mismatch");
     const game = await getGame(gameId);
+    const visibility = z
+      .enum(["private", "unlisted", "public"])
+      .parse(game?.config.youtubeVisibility ?? s.visibility);
+    if (visibility !== s.visibility) throw Error("m4_operation_fenced");
     const number = game?.config.eventName.match(
       /\s+[—·-]\s+Game\s+(\d+)$/iu,
     )?.[1];
@@ -303,7 +309,7 @@ export async function prepareM4Session(
         accessToken: token,
         sessionKey,
         title,
-        visibility: "unlisted",
+        visibility,
         manualLifecycle: true,
       },
       fetch,

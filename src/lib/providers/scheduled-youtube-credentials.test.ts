@@ -18,6 +18,7 @@ describe("scheduled game YouTube credentials", () => {
       encrypted_credentials: "encrypted",
       channel_id: "channel",
       connection_version: 1,
+      youtube_visibility: "public",
     };
     rpc.mockResolvedValue({ data: [credentials], error: null });
     await expect(getScheduledYouTubeCredentials(user, game)).resolves.toEqual(
@@ -42,5 +43,22 @@ describe("scheduled game YouTube credentials", () => {
     await expect(getScheduledYouTubeCredentials(user, game)).rejects.toThrow(
       "youtube_reconnect_required",
     );
+  });
+  it("defaults legacy credentials to Unlisted and rejects invalid privacy", async () => {
+    const credentials = {
+      organization_id: "33333333-3333-4333-8333-333333333333",
+      encrypted_credentials: "encrypted",
+      channel_id: "channel",
+      connection_version: 1,
+    };
+    rpc.mockResolvedValue({ data: [credentials], error: null });
+    await expect(
+      getScheduledYouTubeCredentials(user, game),
+    ).resolves.toMatchObject({ youtube_visibility: "unlisted" });
+    rpc.mockResolvedValue({
+      data: [{ ...credentials, youtube_visibility: "invalid" }],
+      error: null,
+    });
+    await expect(getScheduledYouTubeCredentials(user, game)).rejects.toThrow();
   });
 });

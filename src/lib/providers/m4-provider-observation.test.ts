@@ -46,6 +46,29 @@ function providerValues(overrides: Record<string, unknown> = {}) {
 }
 
 describe("M4 provider observation", () => {
+  it("accepts Public only when Public is expected", async () => {
+    const values = () =>
+      providerValues({
+        status: { lifeCycleStatus: "live", privacyStatus: "public" },
+      });
+    await expect(
+      observeM4YouTubeProvider(
+        token,
+        { ...expected, visibility: "public" },
+        fetcher(values()),
+      ),
+    ).resolves.toMatchObject({ broadcastLive: true });
+    await expect(
+      observeM4YouTubeProvider(token, expected, fetcher(values())),
+    ).rejects.toThrow();
+    await expect(
+      observeM4YouTubeProvider(
+        token,
+        { ...expected, visibility: "public" },
+        fetcher(providerValues()),
+      ),
+    ).rejects.toThrow();
+  });
   it("checks ownership first, then reads stream and broadcast concurrently", async () => {
     const values = providerValues();
     const pending: ((response: Response) => void)[] = [];

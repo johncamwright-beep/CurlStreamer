@@ -1,5 +1,5 @@
 import { createServer } from "node:http";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { dashboardFixtureResponse } from "./dashboard-completion-fixtures.mjs";
 
 const userId = "11111111-1111-4111-8111-111111111111";
@@ -149,6 +149,27 @@ const server = createServer(async (request, response) => {
         photo_url: null,
       },
     ]);
+  if (url.pathname === "/rest/v1/team_member_invitations") {
+    const valid =
+      url.searchParams.get("token_hash") ===
+      `eq.${createHash("sha256").update("a".repeat(43)).digest("hex")}`;
+    return send(
+      response,
+      200,
+      valid
+        ? {
+            organization_id: organizationId,
+            role: "team_admin",
+            expires_at: "2099-01-01T00:00:00Z",
+            revoked_at: null,
+            accepted_at: null,
+            accepted_by: null,
+          }
+        : null,
+    );
+  }
+  if (url.pathname === "/rest/v1/organizations")
+    return send(response, 200, { name: "Test Curling Club" });
   const dashboard = await dashboardFixtureResponse(request, url);
   if (dashboard !== null)
     return send(response, dashboard.status, dashboard.body);

@@ -8,6 +8,7 @@ export default defineConfig({
   testMatch: [
     "youtube-settings.spec.ts",
     "admin-access.spec.ts",
+    "team-invitation.spec.ts",
     "dashboard.spec.ts",
     "game-setup.spec.ts",
     "opponent-links.spec.ts",

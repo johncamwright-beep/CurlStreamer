@@ -45,6 +45,7 @@ export function TeamMembers({
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
   const [inviteUrl, setInviteUrl] = useState("");
+  const [emailSent, setEmailSent] = useState(false);
 
   async function load() {
     setError("");
@@ -85,6 +86,7 @@ export function TeamMembers({
         error?: string;
         inviteUrl?: string;
         emailSent?: boolean;
+        emailStatus?: string;
       };
       if (!response.ok)
         throw new Error(result.error || "The change could not be saved.");
@@ -107,10 +109,13 @@ export function TeamMembers({
     if (!result) return;
     setInviteUrl(result.inviteUrl || "");
     setEmail("");
+    setEmailSent(Boolean(result.emailSent));
     setMessage(
       result.emailSent
-        ? "Invitation created and email delivery was requested."
-        : "Invitation created. Share the link below with your teammate.",
+        ? "Invitation sent. Ask your teammate to check their inbox and spam folder."
+        : result.emailStatus === "failed"
+          ? "Invitation created, but email delivery could not be confirmed. You can share the link below."
+          : "Invitation created. Email sending is not connected yet; share the link below.",
     );
     await load();
   }
@@ -265,6 +270,12 @@ export function TeamMembers({
               onSubmit={(event) => void invite(event)}
             >
               <h3 className="font-bold">Invite teammate</h3>
+              <p className="text-sm text-slate-300">
+                Enter their contact email. We’ll email them a private invitation
+                link. They can join using any verified email address. Only one
+                person can use the link, so share it privately. It expires in
+                seven days.
+              </p>
               <label>
                 Email address
                 <input
@@ -296,7 +307,7 @@ export function TeamMembers({
                 </select>
               </label>
               <button className="btn" disabled={!canInvite || busy}>
-                {busy ? "Saving…" : "Create invitation"}
+                {busy ? "Sending…" : "Send invitation"}
               </button>
               {!canInvite && (
                 <p className="text-sm text-slate-400">
@@ -309,6 +320,13 @@ export function TeamMembers({
           )}
           {inviteUrl && (
             <div className="grid gap-2 rounded-xl border border-cyan-700 p-4">
+              <p className="text-sm text-slate-300">
+                {emailSent
+                  ? "The invitation has been emailed. You can also copy the same link below."
+                  : "Copy this link and send it to your teammate."}{" "}
+                They will be guided through creating an account or signing in,
+                then joining your team.
+              </p>
               <label htmlFor="team-invite-link">Invitation link</label>
               <input
                 id="team-invite-link"

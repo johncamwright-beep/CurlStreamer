@@ -31,6 +31,7 @@ export function AuthForm({
     googleAction ?? action,
     {},
   );
+  const joiningTeam = returnTo?.startsWith("/join-team?token=");
   const field = (name: string) => state.errors?.[name]?.[0];
   return (
     <main className="mx-auto min-h-screen max-w-md p-5 md:py-12">
@@ -39,6 +40,13 @@ export function AuthForm({
         <h1 className="text-3xl font-black">
           {mode === "signup" ? "Create account" : "Sign in"}
         </h1>
+        {joiningTeam && (
+          <p className="text-slate-300">
+            {mode === "signup"
+              ? "Create your own login using any email you prefer. After confirming your email, you’ll return to the invitation to join the existing team. You don’t need to create a team."
+              : "Sign in with the account you want to use. You’ll return to your team invitation next."}
+          </p>
+        )}
         {googleUnavailableMessage ? (
           <p role="status" className="text-slate-300">
             {googleUnavailableMessage}
@@ -157,6 +165,13 @@ export function AuthForm({
               className={mode === "login" ? "text-red-300" : "text-slate-200"}
             >
               {state.message}
+              {joiningTeam && mode === "signup" && (
+                <span className="mt-2 block">
+                  Check your spam folder too. After confirming your email,
+                  reopen your invitation link if you aren’t returned there
+                  automatically.
+                </span>
+              )}
             </p>
           )}
           {googleState.message && (

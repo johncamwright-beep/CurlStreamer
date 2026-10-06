@@ -216,6 +216,13 @@ export async function loadProductionStreamerEvent(
         game.game_status !== "deleted" &&
         (!gameId || game.id === gameId),
     );
+  // Fallback labels must be stable when an event is loaded alone or within a season.
+  const eventPositions = new Map<string | null, number>();
+  const fallbackNumbers = rows.map((row) => {
+    const number = (eventPositions.get(row.event_id) ?? 0) + 1;
+    eventPositions.set(row.event_id, number);
+    return number;
+  });
   const event: CoachEvent = {
     id: selected.id,
     name: selected.name,
@@ -306,7 +313,8 @@ export async function loadProductionStreamerEvent(
       return {
         id: row.id,
         eventId: row.event_id ?? "standalone",
-        label: row.game_label || `Game ${row.game_number ?? index + 1}`,
+        label:
+          row.game_label || `Game ${row.game_number ?? fallbackNumbers[index]}`,
         teamName: row.config.homeName,
         opponent: row.config.awayName,
         competitionLevel:

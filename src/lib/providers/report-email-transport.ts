@@ -27,9 +27,27 @@ export async function deliverReportEmail(input: {
   title: string;
   eventName: string;
   pdf: Buffer;
+  subject: string;
+  message: string;
+  senderName: string;
 }) {
   const config = reportMailConfig();
-  if (!config.success || !z.email().safeParse(input.to).success)
+  if (
+    !config.success ||
+    !z.email().safeParse(input.to).success ||
+    !z
+      .string()
+      .min(1)
+      .max(200)
+      .regex(/^[^\r\n\u0000]+$/)
+      .safeParse(input.subject).success ||
+    !z
+      .string()
+      .min(1)
+      .max(106)
+      .regex(/^[^\r\n\u0000]+$/)
+      .safeParse(input.senderName).success
+  )
     return "failed" as const;
   const c = config.data;
   const transport = nodemailer.createTransport({
@@ -48,12 +66,10 @@ export async function deliverReportEmail(input: {
   });
   try {
     const result = await transport.sendMail({
-      from: { name: "CurlStreamer", address: c.from },
+      from: { name: input.senderName, address: c.from },
       to: { name: "", address: input.to },
-      subject: `${input.eventName} - ${input.title}`
-        .replace(/[\r\n]/g, " ")
-        .slice(0, 200),
-      text: `Your team has shared this Shot Tracker report with you.\n\n${input.eventName}\n${input.title}\n\nYour report is attached as a PDF. You do not need a CurlStreamer account to read it. Please keep individual reports private.`,
+      subject: input.subject,
+      text: input.message,
       attachments: [
         {
           filename: "shot-tracker-report.pdf",

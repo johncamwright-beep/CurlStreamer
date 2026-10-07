@@ -11,6 +11,10 @@ import {
   ReportError,
 } from "./shot-tracker-reports";
 import { deliverReportEmail, reportMailConfig } from "./report-email-transport";
+import {
+  reportEmailMessage,
+  coachSenderName,
+} from "@/lib/curlcoach/report-email-message";
 export const emailSelection = z
   .object({
     eventId: z.uuid(),
@@ -19,6 +23,7 @@ export const emailSelection = z
   })
   .strict();
 export const emailRequest = emailSelection
+  .extend(reportEmailMessage.shape)
   .extend({
     planToken: z.string().regex(/^[a-f0-9]{64}$/),
     resend: z.boolean().default(false),
@@ -82,6 +87,17 @@ export async function prepareReportEmail(
       skipped,
       configured: reportMailConfig().success,
       title: report.title,
+      coachName:
+        typeof account.user?.user_metadata?.display_name === "string"
+          ? account.user.user_metadata.display_name
+              .replace(/[\r\n\u0000]/g, " ")
+              .slice(0, 100)
+              .trim()
+          : "",
+      subject: `${packet.eventName} - ${report.title}`
+        .replace(/[\r\n\u0000]/g, " ")
+        .slice(0, 200),
+      coachMessage: `Hi ${input.audience === "team" ? "team" : report.title},\n\nAttached is your ${packet.eventName} ${input.audience === "team" ? "team" : "individual"} report. Please take a look before our next practice.`,
     },
   };
 }
@@ -97,14 +113,23 @@ export async function sendReportEmail(
     );
   if (!plan.preview.configured)
     throw new ReportError("Report email is not configured yet.", 503);
-  if (!plan.preview.recipients.length)
+  if (!plan.preview.recipients.length && !input.cc.length)
     throw new ReportError("Add a player email in Team settings first.", 409);
   const pdf = Buffer.from(
     (await buildReportPDF(plan.report, plan.eventName)).output("arraybuffer"),
   );
   const db = createAdminSupabaseClient();
   const results: { name: string; email: string; status: string }[] = [];
-  for (const recipient of plan.preview.recipients) {
+  // Copy recipients receive the selected report once, without exposing the roster.
+  const recipients = new Map<string, { name: string; email: string }>();
+  for (const recipient of [
+    ...plan.preview.recipients,
+    ...input.cc.map((email) => ({ name: "CC", email })),
+  ]) {
+    const address = recipient.email.toLowerCase();
+    if (!recipients.has(address)) recipients.set(address, recipient);
+  }
+  for (const recipient of recipients.values()) {
     const key = digest({
       eventId: input.eventId,
       audience: input.audience,
@@ -135,6 +160,9 @@ export async function sendReportEmail(
       to: recipient.email,
       title: plan.report.title,
       eventName: plan.eventName,
+      subject: input.subject,
+      message: input.coachMessage,
+      senderName: coachSenderName(input.coachName),
       pdf,
     });
     const saved = await db.rpc("finish_report_email", {

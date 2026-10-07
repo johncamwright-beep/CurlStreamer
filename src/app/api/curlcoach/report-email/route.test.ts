@@ -22,6 +22,10 @@ const input = {
   reportKey: "team",
   planToken: "a".repeat(64),
   resend: false,
+  coachName: "John Wright",
+  subject: "Event report",
+  coachMessage: "Please review before practice.",
+  cc: [],
 };
 beforeEach(() => {
   vi.clearAllMocks();

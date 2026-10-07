@@ -93,6 +93,10 @@ it("previews without sending and selects by stable identity, not array position"
     ...selection,
     planToken: plan.preview.planToken,
     resend: false,
+    coachName: "John Wright",
+    subject: "Event report",
+    coachMessage: "Please review before practice.",
+    cc: [],
   });
   expect(m.send).toHaveBeenCalledOnce();
   expect(m.send.mock.calls[0][0].to).toBe("pat@example.com");
@@ -112,6 +116,10 @@ it("rejects a contact change after the recipient preview", async () => {
       ...selection,
       planToken: plan.preview.planToken,
       resend: false,
+      coachName: "John Wright",
+      subject: "Event report",
+      coachMessage: "Please review before practice.",
+      cc: [],
     }),
   ).rejects.toThrow(/changed/);
   expect(m.send).not.toHaveBeenCalled();
@@ -146,6 +154,10 @@ it("sends a team report separately to unique roster emails and reports missing a
     ...input,
     planToken: plan.preview.planToken,
     resend: false,
+    coachName: "John Wright",
+    subject: "Event report",
+    coachMessage: "Please review before practice.",
+    cc: [],
   });
   expect(m.send).toHaveBeenCalledTimes(2);
   expect(m.send.mock.calls.map((c) => c[0].to)).toEqual([
@@ -160,7 +172,56 @@ it("does not resend a claimed delivery on repeated clicks", async () => {
     ...selection,
     planToken: plan.preview.planToken,
     resend: false,
+    coachName: "John Wright",
+    subject: "Event report",
+    coachMessage: "Please review before practice.",
+    cc: [],
   });
   expect(m.send).not.toHaveBeenCalled();
   expect(result.results[0].status).toBe("accepted");
+});
+it("copies only the selected report once per address, deduplicating roster and CC", async () => {
+  const plan = await prepareReportEmail(account, selection);
+  await sendReportEmail(account, {
+    ...selection,
+    planToken: plan.preview.planToken,
+    resend: false,
+    coachName: "Coach John Wright",
+    subject: "Practice follow-up",
+    coachMessage: "Please review.\n\nJohn",
+    cc: ["parent@example.com", "PARENT@example.com", "pat@example.com"],
+  });
+  expect(m.send.mock.calls.map((c) => c[0].to.toLowerCase())).toEqual([
+    "pat@example.com",
+    "parent@example.com",
+  ]);
+  expect(m.send).toHaveBeenCalledWith(
+    expect.objectContaining({
+      senderName: "Coach John Wright",
+      subject: "Practice follow-up",
+      message: "Please review.\n\nJohn",
+    }),
+  );
+  expect(m.pdf).toHaveBeenCalledOnce();
+  expect(m.pdf.mock.calls[0][0]).toEqual(packet.reports[0]);
+});
+it("validates editable headers, message length and copy recipients", () => {
+  const valid = {
+    ...selection,
+    planToken: "a".repeat(64),
+    coachName: "John Wright",
+    subject: "Review",
+    coachMessage: "Hi team",
+    cc: [],
+  };
+  expect(emailRequest.safeParse(valid).success).toBe(true);
+  for (const extra of [
+    { subject: "Review\r\nBcc: stranger@example.com" },
+    { coachName: "John\nWright" },
+    { coachMessage: " " },
+    { coachMessage: "x".repeat(10001) },
+    { cc: ["invalid"] },
+    { cc: Array(11).fill("parent@example.com") },
+  ])
+    expect(emailRequest.safeParse({ ...valid, ...extra }).success).toBe(false);
 });

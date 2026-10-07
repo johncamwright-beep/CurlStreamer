@@ -31,3 +31,11 @@ The server rebuilds the recipient plan at send time and rejects a stale preview.
 Apply `supabase/migrations/0080_private_player_report_email.sql` before deploying the email controls. Contacts are inaccessible to anonymous/authenticated database clients. Delivery claim/finish functions are service-only and recheck report authorization. `node scripts/check-report-email.mjs <path-to-pglite/dist/index.js>` validates the migration against an isolated PGlite database, including private grants, duplicate prevention and rate limits.
 
 Reuse existing server-only `ZOHO_SMTP_HOST`, `ZOHO_SMTP_PORT`, `ZOHO_SMTP_USER`, `ZOHO_SMTP_PASSWORD` and `INVITATION_FROM_EMAIL`. No new dependency or API key is required. Never log SMTP credentials. Local browser tests mock send requests and cannot contact real recipients.
+
+## Saved family and coach report contacts
+
+Migration `0082_private_report_family_contacts.sql` adds one optional parent address per stable player contact and two optional coach addresses per organization. These fields are private, service-only storage and never become public team settings or account invitations. Only authorized team administrators may edit them through the existing same-origin contacts route. Empty fields remove the saved address.
+
+The team email preview includes current roster players, their parents, and both additional coaches. Individual previews include only the selected player's saved contact and parent plus the two coaches; historical player identity/name checks remain required. Parents may receive a report even when the player's own email is empty. All recipient addresses are deduplicated case-insensitively. Changes to parent/coach contacts invalidate an open preview and require another review before sending. Manual CC remains available for extra one-off copies. Nothing sends automatically on save or generation. Coach-facing reports still have no email button.
+
+Apply 0082 before deploying the contact fields. `scripts/check-report-email.mjs` covers its private grants, RLS and email constraints alongside existing delivery protections.

@@ -25,6 +25,47 @@ await db.exec(
     "utf8",
   ),
 );
+await db.exec(
+  readFileSync(
+    new URL(
+      "../supabase/migrations/0082_private_report_family_contacts.sql",
+      import.meta.url,
+    ),
+    "utf8",
+  ),
+);
+await db.exec(`insert into team_player_contacts(organization_id,player_id,player_name,parent_email) values('${org}','${"d".repeat(64)}','Pat','parent@example.com');
+insert into team_report_coach_contacts(organization_id,coach_email_1,coach_email_2) values('${org}','coach1@example.com','coach2@example.com');`);
+for (const role of ["anon", "authenticated"]) {
+  for (const table of ["team_player_contacts", "team_report_coach_contacts"]) {
+    for (const privilege of ["select", "insert", "update"]) {
+      assert.equal(
+        (
+          await db.query(
+            `select has_table_privilege('${role}','${table}','${privilege}') allowed`,
+          )
+        ).rows[0].allowed,
+        false,
+      );
+    }
+  }
+}
+assert.equal(
+  (
+    await db.query(
+      "select relrowsecurity from pg_class where oid='team_report_coach_contacts'::regclass",
+    )
+  ).rows[0].relrowsecurity,
+  true,
+);
+await assert.rejects(
+  db.exec("update team_report_coach_contacts set coach_email_1='invalid'"),
+  /check constraint/,
+);
+await assert.rejects(
+  db.exec("update team_player_contacts set parent_email='invalid'"),
+  /check constraint/,
+);
 const claim = (key = "a".repeat(64), resend = false, a = actor) =>
   db.query("select claim_report_email($1,$2,$3,$4,$5,$6) status", [
     a,

@@ -28,12 +28,15 @@ export const contactSchema = z
   .object({
     playerId: z.string().regex(/^[a-f0-9]{64}$/),
     email: z.union([z.literal(""), z.string().trim().email().max(254)]),
+    parentEmail: z
+      .union([z.literal(""), z.string().trim().email().max(254)])
+      .optional(),
   })
   .strict();
 export async function readPlayerContacts(organizationId: string) {
   const { data, error } = await createAdminSupabaseClient()
     .from("team_player_contacts")
-    .select("player_id,player_name,email")
+    .select("player_id,player_name,email,parent_email")
     .eq("organization_id", organizationId);
   if (error) throw new Error("Player contacts unavailable");
   return z
@@ -42,6 +45,7 @@ export async function readPlayerContacts(organizationId: string) {
         player_id: z.string(),
         player_name: z.string(),
         email: z.string().email().nullable(),
+        parent_email: z.string().email().nullable(),
       }),
     )
     .parse(data);
@@ -54,6 +58,7 @@ export async function currentPlayerContacts(organizationId: string) {
   return rosterPlayers(organizationId, settings).map((p) => ({
     ...p,
     email: contacts.find((c) => c.player_id === p.id)?.email ?? "",
+    parentEmail: contacts.find((c) => c.player_id === p.id)?.parent_email ?? "",
   }));
 }
 export async function savePlayerContact(
@@ -73,9 +78,50 @@ export async function savePlayerContact(
         player_id: player.id,
         player_name: player.name,
         email: input.email.trim() || null,
+        ...(input.parentEmail !== undefined
+          ? { parent_email: input.parentEmail.trim() || null }
+          : {}),
         updated_at: new Date().toISOString(),
       },
       { onConflict: "organization_id,player_id" },
     );
   if (error) throw new Error("Player email could not be saved.");
+}
+const optionalEmail = z.union([
+  z.literal(""),
+  z.string().trim().email().max(254),
+]);
+export const coachContactsSchema = z
+  .object({
+    kind: z.literal("coaches"),
+    emails: z.tuple([optionalEmail, optionalEmail]),
+  })
+  .strict();
+export async function readCoachContacts(
+  organizationId: string,
+): Promise<[string, string]> {
+  const { data, error } = await createAdminSupabaseClient()
+    .from("team_report_coach_contacts")
+    .select("coach_email_1,coach_email_2")
+    .eq("organization_id", organizationId)
+    .maybeSingle();
+  if (error) throw new Error("Coach report emails unavailable");
+  return [data?.coach_email_1 ?? "", data?.coach_email_2 ?? ""];
+}
+export async function saveCoachContacts(
+  organizationId: string,
+  emails: [string, string],
+) {
+  const { error } = await createAdminSupabaseClient()
+    .from("team_report_coach_contacts")
+    .upsert(
+      {
+        organization_id: organizationId,
+        coach_email_1: emails[0].trim() || null,
+        coach_email_2: emails[1].trim() || null,
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: "organization_id" },
+    );
+  if (error) throw new Error("Coach report emails could not be saved.");
 }

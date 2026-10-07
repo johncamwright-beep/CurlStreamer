@@ -4,7 +4,11 @@ import { z } from "zod";
 import type { CoachAccount } from "@/lib/curlcoach/production-access";
 import { buildReportPDF } from "@/lib/curlcoach/report-pdf";
 import { createAdminSupabaseClient } from "@/lib/supabase/admin";
-import { currentPlayerContacts, readPlayerContacts } from "./player-contacts";
+import {
+  currentPlayerContacts,
+  readPlayerContacts,
+  readCoachContacts,
+} from "./player-contacts";
 import {
   getEventReports,
   loadReportEvent,
@@ -47,17 +51,21 @@ export async function prepareReportEmail(
   let skipped: string[] = [];
   if (input.audience === "team") {
     const roster = await currentPlayerContacts(account.organizationId);
-    skipped = roster.filter((p) => !p.email).map((p) => p.name);
-    recipients = [
-      ...new Map(
-        roster
-          .filter((p) => p.email)
-          .map((p) => [
-            p.email.toLowerCase(),
-            { playerId: p.id, name: p.name, email: p.email },
-          ]),
-      ).values(),
-    ];
+    skipped = roster
+      .filter((p) => !p.email && !p.parentEmail)
+      .map((p) => p.name);
+    recipients = roster.flatMap((p) => [
+      ...(p.email ? [{ playerId: p.id, name: p.name, email: p.email }] : []),
+      ...(p.parentEmail
+        ? [
+            {
+              playerId: `${p.id}:parent`,
+              name: `${p.name} — parent`,
+              email: p.parentEmail,
+            },
+          ]
+        : []),
+    ]);
   } else {
     if (!report.playerId)
       throw new ReportError(
@@ -67,12 +75,37 @@ export async function prepareReportEmail(
     const contact = (await readPlayerContacts(account.organizationId)).find(
       (c) => c.player_id === report.playerId,
     );
-    if (contact?.email && contact.player_name === report.title)
-      recipients = [
-        { playerId: report.playerId, name: report.title, email: contact.email },
-      ];
-    else skipped = [report.title];
+    if (contact && contact.player_name === report.title) {
+      if (contact.email)
+        recipients.push({
+          playerId: report.playerId,
+          name: report.title,
+          email: contact.email,
+        });
+      if (contact.parent_email)
+        recipients.push({
+          playerId: `${report.playerId}:parent`,
+          name: `${report.title} — parent`,
+          email: contact.parent_email,
+        });
+    }
+    if (!recipients.length) skipped = [report.title];
   }
+  const coachEmails = await readCoachContacts(account.organizationId);
+  coachEmails.forEach((email, index) => {
+    if (email)
+      recipients.push({
+        playerId: `coach:${index}`,
+        name: `Additional coach ${index + 1}`,
+        email,
+      });
+  });
+  const unique = new Map<string, (typeof recipients)[number]>();
+  for (const recipient of recipients) {
+    const address = recipient.email.toLowerCase();
+    if (!unique.has(address)) unique.set(address, recipient);
+  }
+  recipients = [...unique.values()];
   const planToken = digest({
     eventId: event.id,
     packet: { ...packet, reports: [report] },

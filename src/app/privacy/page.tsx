@@ -157,8 +157,9 @@ export default function PrivacyPage() {
           and no later than seven calendar days after you revoke consent through
           CurlStreamer. We periodically recheck connected authorizations and
           refresh or remove retained YouTube API information within thirty days.
-          Other records may need to be retained for legal, security or
-          accounting obligations; backups can remain until they rotate out.
+          Other independently supplied records may need to be retained for
+          legal, security or accounting obligations. Those records do not extend
+          the retention limits for authorized Google/YouTube data.
         </p>
         <p>
           A team owner or administrator can withdraw YouTube access in Account

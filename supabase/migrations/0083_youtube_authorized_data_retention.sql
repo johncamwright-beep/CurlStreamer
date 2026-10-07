@@ -5,12 +5,16 @@ begin;
 alter table public.broadcast_settings
   add column youtube_withdrawal_requested_at timestamptz,
   add column youtube_authorization_checked_at timestamptz,
+  add column youtube_initial_verification_pending boolean not null default true,
   add column youtube_maintenance_claim_id uuid,
   add column youtube_maintenance_lease_expires_at timestamptz,
   add column youtube_maintenance_retry_at timestamptz,
   add column youtube_authorization_invalidated_at timestamptz,
   add column youtube_data_redacted_at timestamptz;
-update public.broadcast_settings set youtube_authorization_checked_at=coalesce(tested_at,connected_at,updated_at),
+-- A connection test never verified the historical resource inventory. Queue
+-- every existing grant immediately, using its age as a conservative cleanup
+-- baseline until the first complete verification succeeds.
+update public.broadcast_settings set youtube_authorization_checked_at=coalesce(connected_at,updated_at),
   youtube_withdrawal_requested_at=case when youtube_disconnect_pending then updated_at else null end
   where provider='youtube';
 
@@ -21,6 +25,7 @@ begin
     if tg_op='INSERT' then
       if new.connection_status='connected' and new.encrypted_credentials is not null then
         new.youtube_authorization_checked_at:=clock_timestamp();
+        new.youtube_initial_verification_pending:=true;
       end if;
     else
       if new.youtube_disconnect_pending and not old.youtube_disconnect_pending then
@@ -29,6 +34,7 @@ begin
       if new.connection_status='connected' and new.encrypted_credentials is not null
         and (new.connection_version<>old.connection_version or new.encrypted_credentials is distinct from old.encrypted_credentials) then
         new.youtube_authorization_checked_at:=clock_timestamp();
+        new.youtube_initial_verification_pending:=true;
         new.youtube_withdrawal_requested_at:=null;
         new.youtube_authorization_invalidated_at:=null;
         new.youtube_data_redacted_at:=null;
@@ -218,7 +224,7 @@ begin
   if p_reason='unconfirmed' and (not b.youtube_disconnect_pending or b.youtube_withdrawal_requested_at is null or b.youtube_withdrawal_requested_at>stamp-interval '5 days') then
     raise exception 'youtube withdrawal deadline not due' using errcode='55000'; end if;
 
-  if p_reason='unverified' and (b.youtube_disconnect_pending or b.youtube_authorization_checked_at>stamp-interval '28 days') then raise exception 'youtube verification deadline not due' using errcode='55000'; end if;
+  if p_reason='unverified' and (b.youtube_disconnect_pending or coalesce(b.youtube_authorization_checked_at,b.connected_at,b.updated_at)>stamp-interval '28 days') then raise exception 'youtube verification deadline not due' using errcode='55000'; end if;
 
   update public.game_completion_reviews r set youtube_watch_url=null,youtube_watch_url_source='none'
     from public.games g where r.game_id=g.id and g.organization_id=p_org and r.youtube_watch_url_source='provider';
@@ -277,7 +283,7 @@ declare b public.broadcast_settings;
 begin
   if p_limit not between 1 and 100 then raise exception 'invalid maintenance batch' using errcode='22023'; end if;
   for b in select * from public.broadcast_settings s where s.provider='youtube' and s.encrypted_credentials is not null
-    and (s.youtube_disconnect_pending or s.youtube_authorization_checked_at is null or s.youtube_authorization_checked_at<=clock_timestamp()-interval '24 days')
+    and (s.youtube_disconnect_pending or s.youtube_initial_verification_pending or s.youtube_authorization_checked_at is null or s.youtube_authorization_checked_at<=clock_timestamp()-interval '24 days')
     and (s.youtube_maintenance_lease_expires_at is null or s.youtube_maintenance_lease_expires_at<=clock_timestamp())
     and (s.youtube_maintenance_retry_at is null or s.youtube_maintenance_retry_at<=clock_timestamp())
     order by s.youtube_disconnect_pending desc,s.youtube_withdrawal_requested_at nulls last,s.youtube_authorization_checked_at nulls first
@@ -303,11 +309,11 @@ begin
     perform public.purge_youtube_authorized_data(p_org,p_expected_version,'in_app'); return 'removed';
   elsif p_result='unavailable' and b.youtube_disconnect_pending and b.youtube_withdrawal_requested_at<=clock_timestamp()-interval '5 days' then
     perform public.purge_youtube_authorized_data(p_org,p_expected_version,'unconfirmed'); return 'removed_unconfirmed';
-  elsif p_result='unavailable' and not b.youtube_disconnect_pending and b.youtube_authorization_checked_at<=clock_timestamp()-interval '28 days' then
+  elsif p_result='unavailable' and not b.youtube_disconnect_pending and coalesce(b.youtube_authorization_checked_at,b.connected_at,b.updated_at)<=clock_timestamp()-interval '28 days' then
     perform public.purge_youtube_authorized_data(p_org,p_expected_version,'unverified'); return 'removed_unconfirmed';
   elsif p_result='valid' and not b.youtube_disconnect_pending and p_channel_title is not null and length(p_channel_title) between 1 and 200 then
     update public.audit_events set metadata=metadata-'channel_id' where organization_id=p_org and action='youtube.connected' and metadata->>'channel_id' is distinct from b.channel_id;
-    update public.broadcast_settings set youtube_authorization_checked_at=clock_timestamp(),channel_title=p_channel_title,
+    update public.broadcast_settings set youtube_authorization_checked_at=clock_timestamp(),youtube_initial_verification_pending=false,channel_title=p_channel_title,
       youtube_maintenance_claim_id=null,youtube_maintenance_lease_expires_at=null,youtube_maintenance_retry_at=null where id=b.id;
     return 'verified';
   end if;
@@ -402,4 +408,3 @@ end $legacy$;
 
 notify pgrst,'reload schema';
 commit;
-

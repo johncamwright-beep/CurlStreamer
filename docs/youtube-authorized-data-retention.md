@@ -24,7 +24,7 @@ Game/event records, scores, append-only scoring events, completion results, acco
 
 ## Server workflow and deadlines
 
-The daily worker refreshes grants due 24 days after their last successful verification, checks the owned channel, and checks all retained broadcast and stream identifiers in batches of 50. Missing or differently owned resources have their dependent provider links redacted. Current owned channel identity is refreshed; historical channel audit references from other grants are removed. Only successful grant, channel and complete resource verification advances the verification date.
+The daily worker immediately queues existing and newly connected grants for their first complete verification. A recent connection test does not prove historical resources were refreshed. Until that check succeeds, the connection date (or row date when absent) is the conservative cleanup baseline; new grants can retry transient failures without being removed immediately. Thereafter the worker refreshes grants due 24 days after their last successful complete verification. It checks the owned channel and all retained broadcast and stream identifiers in batches of 50. Missing or differently owned resources have their dependent provider links redacted. Current owned channel identity is refreshed; historical channel audit references from other grants are removed. Only successful grant, channel and complete resource verification clears the initial pending flag and advances the verification date.
 
 An explicit unusable refresh grant causes immediate full cleanup, including if a journal still says live. Transient failures retry. At 28 days without successful verification, all local authorized data is removed rather than retained indefinitely. This conservative deadline gives the daily scheduler margin before 30 days. The error is `authorization_unverified_data_removed`; it does not claim Google revoked access. Reconnect is available after cleanup, subject to existing unfinished-broadcast restrictions.
 
@@ -38,7 +38,7 @@ Service-only RPCs claim a ten-minute lease and compare organization, connection 
 
 1. Review and apply migrations 0082 and 0083 in order through the normal deployment process. Back up/review the provenance backfill before applying 0083. Do not apply these migrations from a verification browser session.
 2. Configure a random server-only `CRON_SECRET` of at least 32 ASCII characters in Vercel's production environment. Use a password manager/secret manager; do not put the value in source, screenshots, tickets, terminal output or client environment variables. Preserve the existing Google client and credential encryption secrets.
-3. Deploy the worker and `vercel.json` together. The Vercel cron calls `GET /api/cron/youtube-authorizations` daily at **08:17 UTC**, with `Authorization: Bearer <CRON_SECRET>`. Confirm the plan supports this schedule and the configured 300-second route duration. Verify one authorized run using secure tooling without printing the header.
+3. Deploy the worker and `vercel.json` together. The Vercel cron schedules `GET /api/cron/youtube-authorizations` daily at **08:17 UTC**, with `Authorization: Bearer <CRON_SECRET>`; actual execution timing depends on the plan. Confirm the plan supports this schedule and the configured 300-second route duration. Verify one authorized run using secure tooling without printing the header.
 4. Monitor the cron execution and aggregate response every day. HTTP 503 means retry, failed execution or an unconfirmed removal and needs operator attention. HTTP 401/503 before the worker runs indicates cron authorization/configuration problems. Responses contain counts only, never organization IDs, credentials or Google errors.
 5. Monitor oldest pending withdrawal and oldest successful-verification timestamps through authorized administration without exporting tokens. A missed scheduler, database outage or unresolved backlog can defeat deadlines; fix these before declaring production readiness. The worker processes at most 20 organizations per run, prioritizing withdrawals and oldest verifications. Each organization supports at most 1,000 retained resource identifiers per pass and a 60-second provider-request budget per organization. Larger inventory rejects verification and retries; resolve it or arrange secure additional processing before the 28-day deadline. Increase capacity only after reviewing quota and runtime constraints.
 6. After restore/backfill, run maintenance immediately and verify generated URLs are removed for revoked grants while user-entered URLs and scores remain. Backups, exports and diagnostic stores need their own documented expiration/deletion procedure; this SQL workflow covers live application storage only. Do not retain API data in new logs or exports.
@@ -54,11 +54,29 @@ deadline. [Supabase's backup documentation](https://supabase.com/docs/guides/pla
 describes plan-dependent recovery windows, but a recovery window alone is not
 proof that revoked API data has been deleted from every backup.
 
-Do not treat backup rotation as an exception to the YouTube seven-day withdrawal
-or thirty-day external-revocation requirement. Obtain and document a provider
-deletion procedure covering the affected backup copies, or implement a verified
-storage design that keeps authorized API data out of those backups. Cover manual
-exports and restore procedures as well. Until that procedure is verified, keep
-this change in draft and do not publish the promised retention limits or submit
-verification declarations claiming they are met. Do not delete project backups
-or weaken disaster recovery merely to clear this gate without operator approval.
+The YouTube policy requires deletion of authorized data within its seven-day
+in-app withdrawal and thirty-day Google-settings withdrawal deadlines. It does
+not specify physical-media overwrite mechanics or document a backup exception.
+Backup compliance therefore remains unverified; the recovery window alone does
+not resolve it. Obtain written provider evidence for deletion/recoverability and,
+where the interpretation remains uncertain, confirmation from YouTube through its
+[API compliance contact form](https://support.google.com/youtube/contact/yt_api_form).
+An independently reviewed storage design may be another option, but a shared
+credential-encryption key or Supabase Vault row deletion does not establish
+selective erasure of older backup copies.
+
+On October 6, 2026, the operator authorized and submitted a Supabase support
+inquiry through the project's support form. The dashboard confirmed receipt;
+the response is pending. Project access was disabled, no application records or
+secrets were attached, and no backup deletion/settings changes were requested.
+The inquiry asks for snapshot/WAL expiration and irrecoverability deadlines,
+longer-lived internal/off-site copies, supported per-consent deletion options,
+and restore/clone safeguards. Retain the written response as release evidence.
+
+Cover manual exports and restore procedures as well. Restore into isolation with
+application/provider access disabled until withdrawal records and maintenance
+have been reconciled; do not let restored grants run merely because database
+recovery succeeded. Until the backup procedure is verified, keep this change in
+draft and do not publish the promised retention limits or submit verification
+declarations claiming they are met. Do not delete project backups or weaken
+disaster recovery merely to clear this gate without operator approval.

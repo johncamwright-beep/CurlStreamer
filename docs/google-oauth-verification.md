@@ -3,6 +3,13 @@
 Status: preparation only. Policies require operator review before publication;
 OAuth is still Testing and no verification submission has been sent.
 
+Current console check: Branding has the CurlStreamer name, homepage and navy
+logo; public policy URL fields remain empty. Verification Center says review is
+not required while the app is Testing. The approved Supabase backup inquiry has
+been submitted and its written response is pending. The initial full-resource
+verification rollout gap is fixed in migration 0083 and rehearsed against a
+disposable database; production migrations and maintenance remain outstanding.
+
 ## Application and contacts
 
 - Operator: CURL STREAMER, a registered Ontario business name and sole proprietorship; public support/privacy/deletion: hello@curlstreamer.app.
@@ -61,6 +68,23 @@ it is not a client secret.
 8. End that demonstration broadcast, then Disconnect in settings and show the
    disconnected state. Explain Google's alternative permissions-page withdrawal.
 9. Upload the screen recording as Unlisted and use that watch URL in the submission.
+
+Use a separate designated test team/channel for steps 6–8. Disconnect redacts
+generated reservation/replay links, so do not demonstrate withdrawal against the
+team's real scheduled games. Obtain the operator's explicit choice of test
+channel before creating its YouTube resources. No real demonstration has been
+recorded yet; a mock, edited consent screen or narrated slide deck is not proof
+of the implemented flow.
+
+Suggested English narration follows the visible actions: identify CurlStreamer
+and its operator/contact; explain that Google identity sign-in and YouTube
+channel authorization are separate; describe why broadcast creation, updates,
+thumbnails and stream lifecycle need the displayed write permission; show that
+reserving an unlisted game does not start it; show start/end in Studio and the
+same watch page; demonstrate Disconnect and explain removal of provider-derived
+data while game scores and YouTube videos remain. Keep the address bar/client ID
+visible during consent and keep secrets, stream keys and unrelated records out
+of the recording.
 
 ## Before publishing or submitting
 

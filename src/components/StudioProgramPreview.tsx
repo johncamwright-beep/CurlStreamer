@@ -1,7 +1,8 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 
-const PREVIEW_INTERVAL_MS = 1000 / 5;
+// Match the native preview's every-other-frame sample of the 30 fps output.
+const PREVIEW_INTERVAL_MS = 1000 / 15;
 const REQUEST_TIMEOUT_MS = 3000;
 const RETRY_DELAY_MS = 1000;
 

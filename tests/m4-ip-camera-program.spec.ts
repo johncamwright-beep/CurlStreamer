@@ -130,6 +130,7 @@ test.beforeAll(async () => {
 async function install(
   page: Page,
   kinds: ["phone" | "tapo" | "rtsp", "phone" | "tapo" | "rtsp"],
+  timing = { frameDelay: 35, observationDelay: 0 },
 ) {
   const sources: Record<Role, M4CameraInputSnapshot> = {
     "camera-home": snapshot(kinds[0], 1),
@@ -148,6 +149,12 @@ async function install(
   // Count live browser fetches, excluding requests synchronously cancelled by
   // a source change; an intercepted route can finish after its fetch aborts.
   await page.addInitScript(`
+    window.__ipPaints=0;
+    const draw=CanvasRenderingContext2D.prototype.drawImage;
+    CanvasRenderingContext2D.prototype.drawImage=function(...args){
+      if(args[0] instanceof ImageBitmap)window.__ipPaints++;
+      return draw.apply(this,args);
+    };
     const original=window.fetch.bind(window);
     const flights=window.__frameFlights={active:{'camera-home':0,'camera-away':0},max:{'camera-home':0,'camera-away':0}};
     window.fetch=(input,options)=>{
@@ -168,6 +175,7 @@ async function install(
   const heartbeats: M4RendererHeartbeat[] = [];
   const observations: Observation[] = [];
   const accepted: Observation[] = [];
+  const observationFlights = { active: 0, max: 0 };
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   await page.route("**/*", async (route) => {
@@ -209,6 +217,21 @@ async function install(
         value.verified
       )
         accepted.push(value);
+      if (value.action === "observe" && value.sourceGeneration !== undefined) {
+        observationFlights.active++;
+        observationFlights.max = Math.max(
+          observationFlights.max,
+          observationFlights.active,
+        );
+        try {
+          await new Promise((resolve) =>
+            setTimeout(resolve, timing.observationDelay),
+          );
+          return await route.fulfill({ json: { ok: true } });
+        } finally {
+          observationFlights.active--;
+        }
+      }
       return route.fulfill({ json: { ok: true } });
     }
     const frameRole = url.pathname.match(
@@ -223,7 +246,7 @@ async function install(
       const source = { ...sources[frameRole] },
         behavior = mode[frameRole];
       try {
-        await new Promise((resolve) => setTimeout(resolve, 35));
+        await new Promise((resolve) => setTimeout(resolve, timing.frameDelay));
         if (behavior === "absent") return await route.fulfill({ status: 204 });
         const currentCounter =
           behavior === "repeated" ? counter[frameRole] : ++counter[frameRole];
@@ -281,11 +304,39 @@ async function install(
     phones,
     heartbeats,
     frameRequests,
+    observationFlights,
   };
 }
 
 const panel = (page: Page, role: Role) =>
   page.getByTestId(`camera-panel-${role}`);
+
+test("IP pictures keep advancing near thirty fps while health replies are slow and remain bounded", async ({
+  page,
+}) => {
+  const fixture = await install(page, ["tapo", "rtsp"], {
+    frameDelay: 8,
+    observationDelay: 400,
+  });
+  for (const role of roles)
+    await expect(
+      panel(page, role).getByRole("img", { name: "IP camera" }),
+    ).toBeVisible();
+  const paints = () =>
+    page.evaluate(
+      () => (window as unknown as { __ipPaints: number }).__ipPaints,
+    );
+  const before = await paints();
+  const reportsBefore = fixture.observations.length;
+  await page.waitForTimeout(2000);
+  // Both pictures actually decode and paint, rather than merely issuing GETs.
+  // The old 50 ms + awaited 400 ms health loop paints fewer than ten here.
+  expect((await paints()) - before).toBeGreaterThanOrEqual(90);
+  for (const role of roles) expect((await fixture.maxActive())[role]).toBe(1);
+  expect(fixture.observationFlights.max).toBeLessThanOrEqual(2);
+  expect(fixture.observations.length - reportsBefore).toBeLessThanOrEqual(6);
+  expect(fixture.errors).toEqual([]);
+});
 
 async function verifySponsor(page: Page) {
   const sponsor = page.getByTestId("sponsor-sidebar");
@@ -1033,7 +1084,7 @@ test("completed camera observations drain their bodies and release attempt signa
   expect((await fixture.maxActive())["camera-away"]).toBe(1);
 });
 
-test("a stalled observation response body expires under the frame deadline and polling recovers", async ({
+test("a stalled IP observation body expires independently while pictures keep advancing", async ({
   page,
 }) => {
   await page.addInitScript(() => {
@@ -1053,6 +1104,8 @@ test("a stalled observation response body expires under the frame deadline and p
         String(input) !== "/camera" ||
         !options?.body ||
         JSON.parse(options.body as string).action !== "observe" ||
+        JSON.parse(options.body as string).cameraRole !== "camera-away" ||
+        JSON.parse(options.body as string).sourceGeneration === undefined ||
         state.stalled
       )
         return response;
@@ -1085,6 +1138,25 @@ test("a stalled observation response body expires under the frame deadline and p
   });
   const fixture = await install(page, ["phone", "tapo"]);
   await verifyFrame(page, "camera-away");
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () =>
+          (
+            window as unknown as {
+              __observationBodyStall: { bodyRead: boolean };
+            }
+          ).__observationBodyStall.bodyRead,
+      ),
+    )
+    .toBe(true);
+  const paints = () =>
+    page.evaluate(
+      () => (window as unknown as { __ipPaints: number }).__ipPaints,
+    );
+  const before = await paints();
+  await page.waitForTimeout(500);
+  expect((await paints()) - before).toBeGreaterThanOrEqual(10);
   await expect
     .poll(() =>
       page.evaluate(

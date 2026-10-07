@@ -37,7 +37,8 @@ Send one bounded UTF-8 JSON line through stdin:
 ```
 
 Keep stdin open during reception. Close it to cancel network I/O; the decoder's
-interrupt callback also imposes a four-second connection/read deadline. An
+interrupt callback imposes a four-second startup deadline and a three-second
+read deadline, with a four-second socket timeout as a backup. An
 incomplete startup line expires after four seconds. The parent remains responsible
 for terminating an unresponsive process after its cleanup deadline and restarting
 failed receivers with bounded backoff. Production callers validate private IPv4
@@ -62,14 +63,21 @@ silently truncated credentials. Legacy version 1 limits remain compatible.
 Stdout consists of an ASCII four-byte tag, unsigned uint32 little-endian payload
 length, then payload. Tags are `JPEG` (JPEG image), `PCMA` (mono 48 kHz signed
 16-bit little-endian PCM), and `STAT` (JSON with an allowlisted `code`: `connecting`,
-`streaming`, `auth_failed`, or `unavailable`). Audio is optional. Library logs are
+`streaming`, `auth_failed`, `unavailable`, `read_timeout`, `connection_closed`,
+`decode_failed`, or `pipe_failed`). These are fixed categories; no library error
+message, URL, path or credential is emitted. Audio is optional. Library logs are
 fully disabled and stderr contains no camera diagnostic strings. Native status
 alone does not establish that a frame appeared in the program: the parent and
 renderer must also verify fresh advancing decoded/presented frames.
 
 Video preserves the entire frame, rotates pixels by 0/90/180/270 degrees, scales
 to at most 1280 pixels wide and 1920 high without changing its aspect ratio, and
-emits at most 20 frames per second. Renderer media uses `object-fit: contain`.
+emits at most 30 frames per second using stream timestamps and a scheduled cadence.
+Rotation zero scales directly into the JPEG encoder's YUV format. A separate
+writer retains one latest JPEG/status and up to 100ms of PCM audio, preserving
+normal decoded audio bursts and discarding oldest audio only at the cap. Stdout backpressure cannot block
+RTSP reads or session keepalives or grow a queue without bound. Renderer media
+uses `object-fit: contain`.
 
 Actual synthetic RTSP validation:
 
@@ -84,3 +92,8 @@ no physical camera and makes no external network requests.
 It also checks version 2 custom paths and queries on a nondefault local port,
 anonymous access, UTF-8/reserved-character Basic authentication and rejection of
 oversized encoded credentials without diagnostics.
+It additionally measures real 30fps capture, enforces a six-second RTSP session
+timeout, verifies repeated keepalives while stdout is blocked, recovers a short
+transport gap on the same helper, and proves a genuine stall exits within five
+seconds with `read_timeout`. An optional final duration argument extends the
+sustained run from the default 20000ms up to 600000ms, for example `180000`.

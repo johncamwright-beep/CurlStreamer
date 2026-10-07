@@ -149,8 +149,8 @@ export function PlayerEmails() {
       >
         <h4 className="font-bold">Additional coach emails</h4>
         <p className="text-sm text-slate-300">
-          These coaches receive a private copy of every team and individual
-          report you email. They appear in the recipient review before sending.
+          These coaches are CC’d on every team and individual report you email.
+          They appear in the recipient review before sending.
         </p>
         {coachEmails.map((email, index) => (
           <label key={index}>

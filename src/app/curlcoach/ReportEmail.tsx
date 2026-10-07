@@ -7,11 +7,17 @@ import {
 type Preview = {
   planToken: string;
   title: string;
+  filename: string;
   configured: boolean;
   coachName: string;
   subject: string;
   coachMessage: string;
-  recipients: { playerId: string; name: string; email: string }[];
+  recipients: {
+    playerId: string;
+    name: string;
+    email: string;
+    kind: "to" | "cc";
+  }[];
   skipped: string[];
 };
 export function ReportEmail({
@@ -157,13 +163,14 @@ export function ReportEmail({
             </h3>
             <h4 className="font-bold">Recipients</h4>
             <p className="text-sm text-slate-300">
-              Your account email is included automatically so you receive a
-              copy.
+              Your account email is included automatically. Everyone on this
+              email can see the To and CC addresses and use Reply all.
             </p>
             <ul>
               {preview.recipients.map((p) => (
                 <li key={p.playerId}>
-                  {p.name} — {p.email}
+                  <strong>{p.kind === "cc" ? "CC" : "To"}:</strong> {p.name} —{" "}
+                  {p.email}
                 </li>
               ))}
             </ul>
@@ -209,9 +216,8 @@ export function ReportEmail({
               />
             </label>
             <p id={`${titleId}-cc`} className="text-sm text-slate-300">
-              Separate addresses with commas. Up to 10 parents or coaches. Each
-              gets one separate copy of this report; player addresses stay
-              private.
+              Separate addresses with commas. Up to 10 extra parents or coaches.
+              These are visible CC recipients on the same email.
             </p>
             <label className="grid gap-1">
               Subject
@@ -237,10 +243,10 @@ export function ReportEmail({
               />
             </label>
             <p className="rounded-lg bg-slate-800 p-3">
-              PDF attachment: {preview.title}
+              PDF attachment: {preview.filename ?? preview.title}
             </p>
             <p className="text-sm text-slate-300">
-              Each recipient receives only this report in a separate email. No
+              One email includes everyone listed above and this report only. No
               account is needed to read the PDF.
             </p>
             {!preview.configured && <p>Email sending is not configured.</p>}

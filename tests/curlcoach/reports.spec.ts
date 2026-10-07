@@ -566,7 +566,7 @@ test("report email requires recipient review and explicit send; coach reports ha
   await page.route("**/email-fixture", (route) =>
     route.fulfill({
       contentType: "text/html",
-      body: `<html><head><style>${css}</style></head><body><div id="root"></div><script>${js}</script></body></html>`,
+      body: `<html><head><meta name="viewport" content="width=device-width, initial-scale=1"><style>${css}</style></head><body><div id="root"></div><script>${js}</script></body></html>`,
     }),
   );
   await page.goto("/email-fixture");

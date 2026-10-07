@@ -535,6 +535,10 @@ test("report email requires recipient review and explicit send; coach reports ha
         reportKey: "team",
         planToken: "a".repeat(64),
         resend: false,
+        coachName: "John Wright",
+        subject: "Practice follow-up",
+        coachMessage: "Please review your misses before Thursday.",
+        cc: ["parent@example.test", "coach@example.test"],
       });
       return route.fulfill({
         json: {
@@ -548,6 +552,9 @@ test("report email requires recipient review and explicit send; coach reports ha
       json: {
         planToken: "a".repeat(64),
         title: "Team report",
+        coachName: "John Wright",
+        subject: "Synthetic event - Team report",
+        coachMessage: "Hi team, your report is attached.",
         configured: true,
         recipients: [
           { playerId: "alex", name: "Alex", email: "alex@example.test" },
@@ -578,9 +585,26 @@ test("report email requires recipient review and explicit send; coach reports ha
     page.getByText("No email saved for: Sam.", { exact: false }),
   ).toBeVisible();
   expect(sends).toBe(0);
+  await page.getByRole("button", { name: "Cancel", exact: true }).click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  expect(sends).toBe(0);
   await page
-    .getByRole("button", { name: "Send PDF to listed recipients" })
+    .getByRole("button", { name: "Email team report", exact: true })
     .click();
+  await expect(
+    page.getByRole("dialog", { name: "Email team report" }),
+  ).toBeVisible();
+  await page.getByLabel("Subject", { exact: true }).fill("Practice follow-up");
+  await page
+    .getByRole("textbox", { name: "Coach’s message", exact: true })
+    .fill("Please review your misses before Thursday.");
+  await page
+    .getByLabel("CC email addresses (optional)")
+    .fill("parent@example.test, coach@example.test");
+  await expect(
+    page.getByText("Sender: Coach John Wright", { exact: true }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "Confirm and send" }).click();
   await expect(
     page
       .getByRole("status")

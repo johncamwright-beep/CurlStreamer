@@ -20,9 +20,11 @@ Saved AI prose is not regenerated. Deterministic miss analysis can be added when
 
 Team administrators can save optional addresses under Team settings. They are in `team_player_contacts`, separate from public roster settings. The existing organization/position/name charting identity is retained. Changing a name or position requires verifying and saving that person's address for the new identity; another person's address is never inherited by roster index.
 
-Only the team report can be sent to the roster. An individual report can go only to the contact bound to that report's player ID and name. Coach reports have no email action. The UI previews recipients and missing addresses; the coach must explicitly send. Team recipients receive separate messages, without CC/BCC. Duplicate addresses are collapsed for the shared team report.
+Only the team report can be sent to the roster. An individual report's primary recipient remains the contact bound to that report's player ID and name. Coach reports have no email action. Clicking an email button opens a modal with recipients, missing addresses, an editable subject and coach's message, and the selected PDF attachment. The sender display name is Coach followed by the entered coach name, initially suggested from the signed-in account. The sending address remains INVITATION_FROM_EMAIL. Only Confirm and send submits delivery; Cancel or Escape sends nothing.
 
-The server rebuilds the recipient plan at send time and rejects a stale preview. It rechecks coach access and uses saved report content, never client-supplied recipients or PDFs. Delivery claims prevent duplicate sends. An explicit resend is available with a cooldown; sends are rate-limited per organization. SMTP acceptance is not a delivery/read receipt. Ambiguous SMTP outcomes are not automatically retried.
+The coach may explicitly enter up to ten CC email addresses for parents or another coach. The UI explains these are separate private copies, not shared CC headers: each address receives the selected report once, even when copying a team report sent to several players. Addresses are deduplicated against primary recipients, case-insensitively. CC addresses are not saved to the player roster.
+
+The server rebuilds the recipient plan at send time and rejects a stale preview. It rechecks coach access and uses saved report content, never client-supplied primary recipients or PDFs; only the validated, explicitly entered copy addresses may be supplied by the client. Delivery claims prevent duplicate sends. An explicit resend is available with a cooldown; sends are rate-limited per organization. SMTP acceptance is not a delivery/read receipt. Ambiguous SMTP outcomes are not automatically retried.
 
 ## Release and validation
 

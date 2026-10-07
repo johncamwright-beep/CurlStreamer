@@ -24,12 +24,21 @@ const input = {
   to: "player@example.com",
   title: "Player report",
   eventName: "Event",
+  subject: "Our event review",
+  message: "Hi team,\n\nPlease review before practice.",
+  senderName: "Coach John Wright",
   pdf: Buffer.from("%PDF-fixture"),
 };
 it("attaches only the supplied PDF to one recipient and never a roster list", async () => {
   expect(await deliverReportEmail(input)).toBe("accepted");
   const mail = m.send.mock.calls[0][0];
   expect(mail.to).toEqual({ name: "", address: input.to });
+  expect(mail.from).toEqual({
+    name: "Coach John Wright",
+    address: "hello@curlstreamer.app",
+  });
+  expect(mail.subject).toBe(input.subject);
+  expect(mail.text).toBe(input.message);
   expect(mail.cc).toBeUndefined();
   expect(mail.bcc).toBeUndefined();
   expect(mail.attachments).toHaveLength(1);

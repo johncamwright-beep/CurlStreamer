@@ -156,8 +156,14 @@ async function install(
       return draw.apply(this,args);
     };
     const original=window.fetch.bind(window);
+    const observationStarts=window.__ipObservationStarts={'camera-home':[],'camera-away':[]};
     const flights=window.__frameFlights={active:{'camera-home':0,'camera-away':0},max:{'camera-home':0,'camera-away':0}};
     window.fetch=(input,options)=>{
+      if(String(input)==='/camera' && options?.body){
+        const report=JSON.parse(options.body);
+        if(report.action==='observe' && report.sourceGeneration!==undefined && observationStarts[report.cameraRole])
+          observationStarts[report.cameraRole].push(performance.now());
+      }
       const role=String(input).match(new RegExp('[/]ip-camera[/](camera-home|camera-away)[/]frame'))?.[1];
       if(!role)return original(input,options);
       flights.active[role]++;flights.max[role]=Math.max(flights.max[role],flights.active[role]);
@@ -322,19 +328,40 @@ test("IP pictures keep advancing near thirty fps while health replies are slow a
     await expect(
       panel(page, role).getByRole("img", { name: "IP camera" }),
     ).toBeVisible();
-  const paints = () =>
-    page.evaluate(
-      () => (window as unknown as { __ipPaints: number }).__ipPaints,
-    );
-  const before = await paints();
-  const reportsBefore = fixture.observations.length;
+  const sample = () =>
+    page.evaluate(() => {
+      const fixture = window as unknown as {
+        __ipPaints: number;
+        __ipObservationStarts: Record<Role, number[]>;
+      };
+      return {
+        at: performance.now(),
+        paints: fixture.__ipPaints,
+        reports: fixture.__ipObservationStarts,
+      };
+    });
+  const before = await sample();
   await page.waitForTimeout(2000);
+  const after = await sample();
   // Both pictures actually decode and paint, rather than merely issuing GETs.
   // The old 50 ms + awaited 400 ms health loop paints fewer than ten here.
-  expect((await paints()) - before).toBeGreaterThanOrEqual(90);
+  expect(after.paints - before.paints).toBeGreaterThanOrEqual(90);
   for (const role of roles) expect((await fixture.maxActive())[role]).toBe(1);
   expect(fixture.observationFlights.max).toBeLessThanOrEqual(2);
-  expect(fixture.observations.length - reportsBefore).toBeLessThanOrEqual(6);
+  for (const role of roles) {
+    const starts = after.reports[role];
+    expect(starts.length).toBeGreaterThanOrEqual(2);
+    for (let index = 1; index < starts.length; index++) {
+      // Compare actual browser fetch starts, allowing only sub-ms clock rounding.
+      expect(
+        Math.round(starts[index] - starts[index - 1]),
+      ).toBeGreaterThanOrEqual(1000);
+    }
+    const inWindow = starts.filter((at) => at >= before.at && at <= after.at);
+    expect(inWindow.length).toBeLessThanOrEqual(
+      Math.floor((after.at - before.at) / 1000) + 1,
+    );
+  }
   expect(fixture.errors).toEqual([]);
 });
 

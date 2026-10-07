@@ -275,6 +275,65 @@ it("includes all parents on team reports and only the selected player's parent o
   ]);
   expect(team.preview.skipped).toEqual([]);
 });
+it.each(["team", "players"] as const)(
+  "automatically delivers a private sender copy for %s reports, without duplicate saved-coach or CC copies",
+  async (audience) => {
+    const sender = {
+      ...account,
+      user: { email: "john@example.com" },
+    } as CoachAccount;
+    packet.audience = audience;
+    const input = { ...selection, audience };
+    m.coaches.mockResolvedValue(["JOHN@example.com", ""]);
+    const plan = await prepareReportEmail(sender, input);
+    expect(plan.preview.recipients).toContainEqual({
+      playerId: "sender:coach",
+      name: "You (coach copy)",
+      email: "john@example.com",
+    });
+    expect(m.send).not.toHaveBeenCalled();
+    await sendReportEmail(sender, {
+      ...input,
+      planToken: plan.preview.planToken,
+      resend: false,
+      coachName: "John",
+      subject: "Review",
+      coachMessage: "Please review",
+      cc: ["John@example.com"],
+    });
+    const copies = m.send.mock.calls.filter(
+      ([mail]) => mail.to.toLowerCase() === "john@example.com",
+    );
+    expect(copies).toHaveLength(1);
+    expect(copies[0][0]).toMatchObject({
+      subject: "Review",
+      message: "Please review",
+    });
+    expect(copies[0][0].pdf).toEqual(m.send.mock.calls[0][0].pdf);
+  },
+);
+it("requires another review if the authenticated sender email changes", async () => {
+  const sender = {
+    ...account,
+    user: { email: "john@example.com" },
+  } as CoachAccount;
+  const plan = await prepareReportEmail(sender, selection);
+  await expect(
+    sendReportEmail(
+      { ...sender, user: { ...sender.user, email: "new@example.com" } },
+      {
+        ...selection,
+        planToken: plan.preview.planToken,
+        resend: false,
+        coachName: "John",
+        subject: "Review",
+        coachMessage: "Please review",
+        cc: [],
+      },
+    ),
+  ).rejects.toThrow(/changed/);
+  expect(m.send).not.toHaveBeenCalled();
+});
 it("rejects parent or coach contact changes after recipient review", async () => {
   const plan = await prepareReportEmail(account, selection);
   m.coaches.mockResolvedValue(["added@example.com", ""]);

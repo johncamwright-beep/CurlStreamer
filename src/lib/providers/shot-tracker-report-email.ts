@@ -91,6 +91,14 @@ export async function prepareReportEmail(
     }
     if (!recipients.length) skipped = [report.title];
   }
+  // Use the authenticated sender, never a client-supplied account address.
+  const senderEmail = z.email().safeParse(account.user?.email);
+  if (senderEmail.success)
+    recipients.push({
+      playerId: `sender:${account.userId}`,
+      name: "You (coach copy)",
+      email: senderEmail.data,
+    });
   const coachEmails = await readCoachContacts(account.organizationId);
   coachEmails.forEach((email, index) => {
     if (email)

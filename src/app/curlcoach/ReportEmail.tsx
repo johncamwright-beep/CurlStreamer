@@ -156,6 +156,10 @@ export function ReportEmail({
               Email {audience === "team" ? "team" : "player"} report
             </h3>
             <h4 className="font-bold">Recipients</h4>
+            <p className="text-sm text-slate-300">
+              Your account email is included automatically so you receive a
+              copy.
+            </p>
             <ul>
               {preview.recipients.map((p) => (
                 <li key={p.playerId}>

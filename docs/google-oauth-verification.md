@@ -5,7 +5,7 @@ OAuth is still Testing and no verification submission has been sent.
 
 ## Application and contacts
 
-- Operator: John Wright; public support/privacy/deletion: hello@curlstreamer.app.
+- Operator: CURL STREAMER, a registered Ontario business name and sole proprietorship; public support/privacy/deletion: hello@curlstreamer.app.
 - Google Cloud project: project-a70a5792-ff44-4341-aae.
 - Homepage: https://www.curlstreamer.app.
 - Intended public policy URLs: https://www.curlstreamer.app/privacy and https://www.curlstreamer.app/terms.

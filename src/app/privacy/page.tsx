@@ -14,7 +14,8 @@ export default function PrivacyPage() {
       <section>
         <h2>Who operates CurlStreamer</h2>
         <p>
-          CurlStreamer is operated by John Wright. For privacy questions,
+          CurlStreamer is provided under the registered Ontario business name
+          CURL STREAMER, a sole proprietorship. For privacy questions,
           corrections, support or deletion requests, email{" "}
           <a href="mailto:hello@curlstreamer.app">hello@curlstreamer.app</a>.
           This policy covers the CurlStreamer website, Windows Studio and

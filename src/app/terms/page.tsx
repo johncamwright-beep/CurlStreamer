@@ -14,8 +14,9 @@ export default function TermsPage() {
       <section>
         <h2>The service</h2>
         <p>
-          CurlStreamer is operated by John Wright. These terms cover its
-          website, Windows Studio and connected team features. Contact{" "}
+          CurlStreamer is provided under the registered Ontario business name
+          CURL STREAMER, a sole proprietorship. These terms cover its website,
+          Windows Studio and connected team features. Contact{" "}
           <a href="mailto:hello@curlstreamer.app">hello@curlstreamer.app</a> for
           help. Use of the service is subject to these terms and our{" "}
           <a href="/privacy">Privacy Policy</a>.

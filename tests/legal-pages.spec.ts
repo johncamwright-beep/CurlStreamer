@@ -13,7 +13,7 @@ test("public policies are reachable without signing in and linked from the homep
     page.getByRole("link", { name: "Google Account permissions", exact: true }),
   ).toHaveAttribute("href", "https://myaccount.google.com/permissions");
   await expect(
-    page.getByText("CurlStreamer is operated by John Wright.", {
+    page.getByText("CURL STREAMER, a sole proprietorship.", {
       exact: false,
     }),
   ).toBeVisible();

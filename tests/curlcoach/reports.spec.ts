@@ -557,7 +557,18 @@ test("report email requires recipient review and explicit send; coach reports ha
         coachMessage: "Hi team, your report is attached.",
         configured: true,
         recipients: [
-          { playerId: "alex", name: "Alex", email: "alex@example.test" },
+          {
+            playerId: "alex",
+            name: "Alex",
+            email: "alex@example.test",
+            kind: "to",
+          },
+          {
+            playerId: "sender:coach",
+            name: "You (coach copy)",
+            email: "john@example.test",
+            kind: "cc",
+          },
         ],
         skipped: ["Sam"],
       },
@@ -580,7 +591,13 @@ test("report email requires recipient review and explicit send; coach reports ha
   await page
     .getByRole("button", { name: "Email team report", exact: true })
     .click();
-  await expect(page.getByText("Alex — alex@example.test")).toBeVisible();
+  await expect(page.getByText("To: Alex — alex@example.test")).toBeVisible();
+  await expect(
+    page.getByText("CC: You (coach copy) — john@example.test"),
+  ).toBeVisible();
+  await expect(
+    page.getByText("can see the To and CC addresses", { exact: false }),
+  ).toBeVisible();
   await expect(
     page.getByText("No email saved for: Sam.", { exact: false }),
   ).toBeVisible();

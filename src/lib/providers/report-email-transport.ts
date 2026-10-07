@@ -21,12 +21,14 @@ export function reportMailConfig() {
     from: process.env.INVITATION_FROM_EMAIL,
   });
 }
-/** A single recipient per message: no shared To/CC list and no remote attachments. */
+/** One composed message with visible To/CC and an in-memory PDF attachment. */
 export async function deliverReportEmail(input: {
-  to: string;
+  to: string[];
+  cc: string[];
   title: string;
   eventName: string;
   pdf: Buffer;
+  filename: string;
   subject: string;
   message: string;
   senderName: string;
@@ -34,7 +36,13 @@ export async function deliverReportEmail(input: {
   const config = reportMailConfig();
   if (
     !config.success ||
-    !z.email().safeParse(input.to).success ||
+    !z
+      .string()
+      .max(184)
+      .regex(/^[^<>:"/\\|?*\u0000-\u001f\u007f]+\.pdf$/)
+      .safeParse(input.filename).success ||
+    !z.array(z.email()).min(1).max(50).safeParse(input.to).success ||
+    !z.array(z.email()).max(50).safeParse(input.cc).success ||
     !z
       .string()
       .min(1)
@@ -67,18 +75,28 @@ export async function deliverReportEmail(input: {
   try {
     const result = await transport.sendMail({
       from: { name: input.senderName, address: c.from },
-      to: { name: "", address: input.to },
+      to: input.to.map((address) => ({ name: "", address })),
+      cc: input.cc.map((address) => ({ name: "", address })),
       subject: input.subject,
       text: input.message,
       attachments: [
         {
-          filename: "shot-tracker-report.pdf",
+          filename: input.filename,
           content: input.pdf,
           contentType: "application/pdf",
         },
       ],
     });
-    return result.accepted.length ? ("accepted" as const) : ("failed" as const);
+    const accepted = new Set(
+      result.accepted.map((address) => address.toLowerCase()),
+    );
+    if (!accepted.size) return "failed" as const;
+    // Partial SMTP acceptance is uncertain: never silently resend to the whole group.
+    return [...input.to, ...input.cc].every((address) =>
+      accepted.has(address.toLowerCase()),
+    )
+      ? ("accepted" as const)
+      : ("unknown" as const);
   } catch {
     // A timeout can occur after SMTP acceptance: do not silently retry.
     return "unknown" as const;

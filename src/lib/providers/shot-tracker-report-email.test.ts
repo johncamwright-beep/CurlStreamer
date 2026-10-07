@@ -102,7 +102,7 @@ it("previews without sending and selects by stable identity, not array position"
     cc: [],
   });
   expect(m.send).toHaveBeenCalledOnce();
-  expect(m.send.mock.calls[0][0].to).toBe("pat@example.com");
+  expect(m.send.mock.calls[0][0].to).toEqual(["pat@example.com"]);
   expect(m.pdf.mock.calls[0][0]).toEqual(packet.reports[0]);
 });
 it("rejects a contact change after the recipient preview", async () => {
@@ -147,7 +147,7 @@ it("refuses legacy reports with no reliable identity and forbids coach reports o
     }).success,
   ).toBe(false);
 });
-it("sends a team report separately to unique roster emails and reports missing addresses", async () => {
+it("sends one team message to unique roster emails and reports missing addresses", async () => {
   packet.audience = "team";
   packet.reports = [{ key: "team", title: "Team report" }];
   const input = { ...selection, audience: "team" as const, reportKey: "team" };
@@ -162,8 +162,8 @@ it("sends a team report separately to unique roster emails and reports missing a
     coachMessage: "Please review before practice.",
     cc: [],
   });
-  expect(m.send).toHaveBeenCalledTimes(2);
-  expect(m.send.mock.calls.map((c) => c[0].to)).toEqual([
+  expect(m.send).toHaveBeenCalledOnce();
+  expect(m.send.mock.calls[0][0].to).toEqual([
     "pat@example.com",
     "sam@example.com",
   ]);
@@ -194,10 +194,11 @@ it("copies only the selected report once per address, deduplicating roster and C
     coachMessage: "Please review.\n\nJohn",
     cc: ["parent@example.com", "PARENT@example.com", "pat@example.com"],
   });
-  expect(m.send.mock.calls.map((c) => c[0].to.toLowerCase())).toEqual([
-    "pat@example.com",
-    "parent@example.com",
-  ]);
+  expect(m.send).toHaveBeenCalledOnce();
+  expect(m.send.mock.calls[0][0]).toMatchObject({
+    to: ["pat@example.com"],
+    cc: ["parent@example.com"],
+  });
   expect(m.send).toHaveBeenCalledWith(
     expect.objectContaining({
       senderName: "Coach John Wright",
@@ -275,6 +276,75 @@ it("includes all parents on team reports and only the selected player's parent o
   ]);
   expect(team.preview.skipped).toEqual([]);
 });
+it.each(["team", "players"] as const)(
+  "automatically CCs the sender for %s reports, without duplicate saved-coach or CC copies",
+  async (audience) => {
+    const sender = {
+      ...account,
+      user: { email: "john@example.com" },
+    } as CoachAccount;
+    packet.audience = audience;
+    const input = { ...selection, audience };
+    m.coaches.mockResolvedValue(["JOHN@example.com", ""]);
+    const plan = await prepareReportEmail(sender, input);
+    expect(plan.preview.recipients).toContainEqual({
+      playerId: "sender:coach",
+      name: "You (coach copy)",
+      email: "john@example.com",
+      kind: "cc",
+    });
+    expect(m.send).not.toHaveBeenCalled();
+    await sendReportEmail(sender, {
+      ...input,
+      planToken: plan.preview.planToken,
+      resend: false,
+      coachName: "John",
+      subject: "Review",
+      coachMessage: "Please review",
+      cc: ["John@example.com"],
+    });
+    expect(m.send).toHaveBeenCalledOnce();
+    expect(m.send.mock.calls[0][0]).toMatchObject({
+      cc: ["john@example.com"],
+      subject: "Review",
+      message: "Please review",
+    });
+  },
+);
+it("requires another review if the authenticated sender email changes", async () => {
+  const sender = {
+    ...account,
+    user: { email: "john@example.com" },
+  } as CoachAccount;
+  const plan = await prepareReportEmail(sender, selection);
+  await expect(
+    sendReportEmail(
+      { ...sender, user: { ...sender.user, email: "new@example.com" } },
+      {
+        ...selection,
+        planToken: plan.preview.planToken,
+        resend: false,
+        coachName: "John",
+        subject: "Review",
+        coachMessage: "Please review",
+        cc: [],
+      },
+    ),
+  ).rejects.toThrow(/changed/);
+  expect(m.send).not.toHaveBeenCalled();
+});
+it("greets individual players by first name and keeps the team greeting", async () => {
+  packet.reports[0].title = "Owen McTavish";
+  const individual = await prepareReportEmail(account, selection);
+  expect(individual.preview.coachMessage).toMatch(/^Hi Owen,/);
+  expect(individual.preview.title).toBe("Owen McTavish");
+  packet.audience = "team";
+  const team = await prepareReportEmail(account, {
+    ...selection,
+    audience: "team",
+  });
+  expect(team.preview.coachMessage).toMatch(/^Hi team,/);
+});
 it("rejects parent or coach contact changes after recipient review", async () => {
   const plan = await prepareReportEmail(account, selection);
   m.coaches.mockResolvedValue(["added@example.com", ""]);
@@ -290,4 +360,91 @@ it("rejects parent or coach contact changes after recipient review", async () =>
     }),
   ).rejects.toThrow(/changed/);
   expect(m.send).not.toHaveBeenCalled();
+});
+it("sends an individual report only to that player with their parent and coaches visibly copied", async () => {
+  m.contacts.mockResolvedValue([
+    {
+      player_id: "player-stable",
+      player_name: "Pat",
+      email: "pat@example.com",
+      parent_email: "parent@example.com",
+    },
+    {
+      player_id: "other",
+      player_name: "Sam",
+      email: "sam@example.com",
+      parent_email: "other-parent@example.com",
+    },
+  ]);
+  m.coaches.mockResolvedValue(["assistant@example.com", ""]);
+  const sender = {
+    ...account,
+    user: { email: "john@example.com" },
+  } as CoachAccount;
+  const plan = await prepareReportEmail(sender, selection);
+  await sendReportEmail(sender, {
+    ...selection,
+    planToken: plan.preview.planToken,
+    resend: false,
+    coachName: "John",
+    subject: "Review",
+    coachMessage: "Hi Pat,",
+    cc: [],
+  });
+  expect(m.send).toHaveBeenCalledOnce();
+  expect(m.send.mock.calls[0][0]).toMatchObject({
+    to: ["pat@example.com"],
+    cc: ["parent@example.com", "john@example.com", "assistant@example.com"],
+    filename: "Event - Pat - Report.pdf",
+  });
+  expect(m.rpc.mock.calls.map(([name]) => name)).toEqual([
+    "claim_report_email",
+    "finish_report_email",
+  ]);
+});
+it("uses the same group delivery claim when CC order and capitalization change", async () => {
+  const plan = await prepareReportEmail(account, selection);
+  const input = {
+    ...selection,
+    planToken: plan.preview.planToken,
+    resend: false,
+    coachName: "John",
+    subject: "Review",
+    coachMessage: "Hi Pat,",
+  };
+  await sendReportEmail(account, {
+    ...input,
+    cc: ["b@example.com", "a@example.com"],
+  });
+  const key = m.rpc.mock.calls[0][1].p_key;
+  m.rpc.mockResolvedValue({ data: "accepted", error: null });
+  await sendReportEmail(account, {
+    ...input,
+    cc: ["A@example.com", "b@example.com", "B@example.com"],
+  });
+  expect(m.rpc.mock.calls[2][1].p_key).toBe(key);
+  expect(m.send).toHaveBeenCalledOnce();
+});
+it("does not send when the group claim fails and marks uncertain transport outcomes for every recipient", async () => {
+  const plan = await prepareReportEmail(account, selection);
+  const input = {
+    ...selection,
+    planToken: plan.preview.planToken,
+    resend: false,
+    coachName: "John",
+    subject: "Review",
+    coachMessage: "Hi Pat,",
+    cc: ["parent@example.com"],
+  };
+  m.rpc.mockResolvedValueOnce({
+    data: null,
+    error: { message: "unavailable" },
+  });
+  await expect(sendReportEmail(account, input)).rejects.toThrow(
+    /No message was sent/,
+  );
+  expect(m.send).not.toHaveBeenCalled();
+  m.send.mockResolvedValue("unknown");
+  const result = await sendReportEmail(account, input);
+  expect(result.results.map((r) => r.status)).toEqual(["unknown", "unknown"]);
 });

@@ -1,4 +1,6 @@
 import type { SavedReport } from "./reports";
+import { reportPDFFilename, reportPDFTitle } from "./report-filename";
+export { reportPDFFilename } from "./report-filename";
 import { reportPercentages, reportSections } from "./report-presentation";
 import { reportLogo } from "./report-logo";
 import { reportFontRegular, reportFontBold } from "./report-fonts";
@@ -123,7 +125,7 @@ export async function buildReportPDF(report: SavedReport, eventName: string) {
   }
   header();
   pdf.setProperties({
-    title: `${report.title} - ${eventName}`,
+    title: reportPDFTitle(report, eventName),
     author: "CurlStreamer | Shot Tracker",
   });
   text(report.title, 24, true);
@@ -319,12 +321,6 @@ export async function buildReportPDF(report: SavedReport, eventName: string) {
     pdf.text(`${p} / ${pdf.getNumberOfPages()}`, 194, 287, { align: "right" });
   }
   return pdf;
-}
-export function reportPDFFilename(report: SavedReport, eventName: string) {
-  return `${eventName}-${report.title}.pdf`.replace(
-    /[<>:"/\\|?*\u0000-\u001f]/g,
-    "-",
-  );
 }
 export async function downloadReportPDF(
   report: SavedReport,

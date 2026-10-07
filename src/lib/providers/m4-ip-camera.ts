@@ -45,7 +45,16 @@ function helperEnvironment(runtimePath: string): NodeJS.ProcessEnv {
 }
 const statusSchema = z
   .object({
-    code: z.enum(["connecting", "auth_failed", "unavailable", "streaming"]),
+    code: z.enum([
+      "connecting",
+      "auth_failed",
+      "unavailable",
+      "streaming",
+      "read_timeout",
+      "connection_closed",
+      "decode_failed",
+      "pipe_failed",
+    ]),
   })
   .strict();
 export type M4IpCameraFrame = {
@@ -210,19 +219,21 @@ export function createM4IpCameraManager(
     generation: number,
     code: M4CameraInputError,
     retryable = true,
+    failureDiagnostic?: ConnectionDiagnosticInput["code"],
   ) {
     if (slot.generation !== generation || !active || !slot.connectionEnabled)
       return;
     slot.errorCode = code;
     diagnostic(
       slot,
-      code === "auth_failed"
-        ? "authority_rejected"
-        : code === "invalid_pipe"
-          ? "verification_failed"
-          : code === "stale_frames"
-            ? "verification_timeout"
-            : "network_unavailable",
+      failureDiagnostic ??
+        (code === "auth_failed"
+          ? "authority_rejected"
+          : code === "invalid_pipe"
+            ? "verification_failed"
+            : code === "stale_frames"
+              ? "verification_timeout"
+              : "network_unavailable"),
     );
     if (retryable) diagnostic(slot, "retry");
     if (code === "auth_failed") slot.authBlocked = true;
@@ -295,23 +306,39 @@ export function createM4IpCameraManager(
       slot.connectionEnabled &&
       slot.generation === generation &&
       slot.child === child;
-    const fail = (code: M4CameraInputError, retryable = true) => {
+    const fail = (
+      code: M4CameraInputError,
+      retryable = true,
+      failureDiagnostic?: ConnectionDiagnosticInput["code"],
+    ) => {
       if (!current()) return;
       terminal = true;
       pending = Buffer.alloc(0);
-      failed(slot, generation, code, retryable);
+      failed(slot, generation, code, retryable, failureDiagnostic);
     };
     child.stderr.on("data", () => {});
     child.stderr.on("error", () => {});
-    child.stdin.on("error", () => fail("unavailable"));
-    child.on("error", () => fail("unavailable"));
+    child.stdin.on("error", () =>
+      fail("unavailable", true, "transport_failed"),
+    );
+    child.on("error", () => fail("unavailable", true, "transport_failed"));
     child.on("close", () =>
-      fail(pending.length ? "invalid_pipe" : "unavailable"),
+      fail(
+        pending.length ? "invalid_pipe" : "unavailable",
+        true,
+        pending.length ? "verification_failed" : "channel_closed",
+      ),
     );
     child.stdout.on("end", () =>
-      fail(pending.length ? "invalid_pipe" : "unavailable"),
+      fail(
+        pending.length ? "invalid_pipe" : "unavailable",
+        true,
+        pending.length ? "verification_failed" : "channel_closed",
+      ),
     );
-    child.stdout.on("error", () => fail("unavailable"));
+    child.stdout.on("error", () =>
+      fail("unavailable", true, "transport_failed"),
+    );
     child.stdout.on("data", (chunk: Buffer) => {
       if (!current()) return;
       if (chunk.length + pending.length > maxJpeg * 2) {
@@ -348,8 +375,6 @@ export function createM4IpCameraManager(
             return;
           }
           const timestamp = now();
-          if (slot.lastFrame !== undefined && timestamp - slot.lastFrame < 50)
-            continue;
           if (slot.lastFrame === undefined)
             diagnostic(slot, slot.failures ? "recovered" : "ready");
           slot.frame = {
@@ -383,6 +408,20 @@ export function createM4IpCameraManager(
           }
           if (status.code === "unavailable") {
             fail("unavailable");
+            return;
+          }
+          const failures = {
+            read_timeout: "timeout",
+            connection_closed: "channel_closed",
+            decode_failed: "capture_failed",
+            pipe_failed: "transport_failed",
+          } as const;
+          if (status.code in failures) {
+            fail(
+              "unavailable",
+              true,
+              failures[status.code as keyof typeof failures],
+            );
             return;
           }
           // STAT streaming is never proof of frames actually advancing.

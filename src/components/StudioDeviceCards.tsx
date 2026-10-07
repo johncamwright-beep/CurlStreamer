@@ -395,9 +395,11 @@ export function DeviceCard({
               ? "Camera Account rejected. Check the local username and password in Settings."
               : cameraInput.errorCode === "runtime_missing"
                 ? "This Studio installation needs its IP camera runtime. Check the installation."
-                : cameraInput.errorCode === "stale_frames"
-                  ? "Camera video stopped. Check Wi-Fi and reconnect."
-                  : "Camera could not connect. Check Wi-Fi, its IP address and RTSP access in Settings."}
+                : cameraInput.phase === "retrying"
+                  ? "Waiting for camera video. Retrying automatically…"
+                  : cameraInput.errorCode === "stale_frames"
+                    ? "Camera video stopped. Reconnect or check its connection."
+                    : "Camera could not connect. Check its network connection, address and RTSP access in Settings."}
           </p>
         )}
         <div className="studio-device-primary-actions">

@@ -4,6 +4,7 @@ const m = vi.hoisted(() => ({
   reports: vi.fn(),
   current: vi.fn(),
   contacts: vi.fn(),
+  coaches: vi.fn(),
   rpc: vi.fn(),
   send: vi.fn(),
   pdf: vi.fn(),
@@ -23,6 +24,7 @@ vi.mock("./shot-tracker-reports", () => ({
 vi.mock("./player-contacts", () => ({
   currentPlayerContacts: m.current,
   readPlayerContacts: m.contacts,
+  readCoachContacts: m.coaches,
 }));
 vi.mock("./report-email-transport", () => ({
   reportMailConfig: () => ({ success: true }),
@@ -51,6 +53,7 @@ let packet: {
 };
 beforeEach(() => {
   vi.clearAllMocks();
+  m.coaches.mockResolvedValue(["", ""]);
   packet = {
     eventName: "Event",
     audience: "players",
@@ -224,4 +227,67 @@ it("validates editable headers, message length and copy recipients", () => {
     { cc: Array(11).fill("parent@example.com") },
   ])
     expect(emailRequest.safeParse({ ...valid, ...extra }).success).toBe(false);
+});
+it("includes all parents on team reports and only the selected player's parent on individual reports, plus both coaches", async () => {
+  m.coaches.mockResolvedValue(["coach1@example.com", "coach2@example.com"]);
+  m.contacts.mockResolvedValue([
+    {
+      player_id: "player-stable",
+      player_name: "Pat",
+      email: null,
+      parent_email: "pat-parent@example.com",
+    },
+    {
+      player_id: "other",
+      player_name: "Sam",
+      email: "sam@example.com",
+      parent_email: "sam-parent@example.com",
+    },
+  ]);
+  const individual = await prepareReportEmail(account, selection);
+  expect(individual.preview.recipients.map((p) => p.email)).toEqual([
+    "pat-parent@example.com",
+    "coach1@example.com",
+    "coach2@example.com",
+  ]);
+  expect(individual.preview.skipped).toEqual([]);
+  packet.audience = "team";
+  packet.reports = [{ key: "team", title: "Team report" }];
+  m.current.mockResolvedValue([
+    {
+      id: "a",
+      name: "Pat",
+      email: "pat@example.com",
+      parentEmail: "parent@example.com",
+    },
+    { id: "b", name: "Sam", email: "", parentEmail: "PARENT@example.com" },
+  ]);
+  const team = await prepareReportEmail(account, {
+    ...selection,
+    audience: "team",
+    reportKey: "team",
+  });
+  expect(team.preview.recipients.map((p) => p.email)).toEqual([
+    "pat@example.com",
+    "parent@example.com",
+    "coach1@example.com",
+    "coach2@example.com",
+  ]);
+  expect(team.preview.skipped).toEqual([]);
+});
+it("rejects parent or coach contact changes after recipient review", async () => {
+  const plan = await prepareReportEmail(account, selection);
+  m.coaches.mockResolvedValue(["added@example.com", ""]);
+  await expect(
+    sendReportEmail(account, {
+      ...selection,
+      planToken: plan.preview.planToken,
+      resend: false,
+      coachName: "John",
+      subject: "Review",
+      coachMessage: "Please review",
+      cc: [],
+    }),
+  ).rejects.toThrow(/changed/);
+  expect(m.send).not.toHaveBeenCalled();
 });

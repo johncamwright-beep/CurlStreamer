@@ -11,7 +11,7 @@ int main(void)
     AVCodecContext *ctx=avcodec_alloc_context3(codec); AVFrame *f=av_frame_alloc(); AVPacket *p=av_packet_alloc();
     if (!codec || !ctx || !f || !p) return 1;
     ctx->width=192; ctx->height=128; ctx->pix_fmt=AV_PIX_FMT_YUV420P;
-    ctx->time_base=(AVRational){1,20}; ctx->framerate=(AVRational){20,1}; ctx->gop_size=20; ctx->max_b_frames=0;
+    ctx->time_base=(AVRational){1,30}; ctx->framerate=(AVRational){30,1}; ctx->gop_size=30; ctx->max_b_frames=0;
     av_opt_set(ctx->priv_data,"preset","ultrafast",0); av_opt_set(ctx->priv_data,"tune","zerolatency",0);
     av_opt_set(ctx->priv_data,"x264-params","repeat-headers=1",0);
     if (avcodec_open2(ctx,codec,NULL)<0) return 1;

@@ -27,7 +27,7 @@ function record(type: string, payload: Buffer | string) {
   header.writeUInt32LE(body.length, 4);
   return Buffer.concat([header, body]);
 }
-function harness(exitOnStop = true) {
+function harness(exitOnStop = true, diagnostic = vi.fn()) {
   const children: (ChildProcessWithoutNullStreams & {
     secretInput: string;
     stdout: PassThrough;
@@ -65,8 +65,9 @@ function harness(exitOnStop = true) {
     runtimePath: "runtime",
     helperAvailable: () => true,
     spawn: spawnMock as unknown as typeof spawn,
+    diagnostic,
   });
-  return { manager, children, spawnMock };
+  return { manager, children, spawnMock, diagnostic };
 }
 const settle = async () => {
   await vi.advanceTimersByTimeAsync(0);
@@ -78,6 +79,55 @@ const settle = async () => {
 describe("local IP camera manager", () => {
   beforeEach(() => vi.useFakeTimers());
   afterEach(() => vi.useRealTimers());
+
+  it("keeps every advancing native frame through 49ms jitter and coalesced pipe delivery", async () => {
+    const { manager, children } = harness();
+    manager.configure("camera-home", config);
+    manager.connect("camera-home");
+    await manager.start();
+    const child = children[0];
+    child.stdout.write(record("JPEG", jpeg));
+    const first = manager.latestFrame("camera-home")!;
+    await vi.advanceTimersByTimeAsync(49);
+    child.stdout.write(record("JPEG", jpeg));
+    expect(manager.latestFrame("camera-home")!.counter).toBe(first.counter + 1);
+    child.stdout.write(
+      Buffer.concat([record("JPEG", jpeg), record("JPEG", jpeg)]),
+    );
+    expect(manager.latestFrame("camera-home")!.counter).toBe(first.counter + 3);
+    expect(manager.snapshot("camera-home").generation).toBe(first.generation);
+    await manager.stop();
+  });
+
+  it.each([
+    ["read_timeout", "timeout"],
+    ["connection_closed", "channel_closed"],
+    ["decode_failed", "capture_failed"],
+    ["pipe_failed", "transport_failed"],
+  ])(
+    "records safe %s evidence and performs one bounded retry",
+    async (code, diagnosticCode) => {
+      const { manager, children, diagnostic } = harness();
+      manager.configure("camera-home", config);
+      manager.connect("camera-home");
+      await manager.start();
+      children[0].stdout.write(record("JPEG", jpeg));
+      children[0].stdout.write(record("STAT", JSON.stringify({ code })));
+      expect(manager.snapshot("camera-home")).toMatchObject({
+        phase: "retrying",
+        errorCode: "unavailable",
+      });
+      expect(diagnostic).toHaveBeenCalledWith({
+        role: "camera-home",
+        layer: "media",
+        code: diagnosticCode,
+      });
+      await settle();
+      await vi.advanceTimersByTimeAsync(500);
+      expect(children).toHaveLength(2);
+      await manager.stop();
+    },
+  );
 
   it("keeps configured sources off through start and reconnect until each role is explicitly connected", async () => {
     const { manager, children, spawnMock } = harness();
@@ -113,6 +163,31 @@ describe("local IP camera manager", () => {
       phase: "idle",
     });
     await manager.close();
+  });
+
+  it("distinguishes a closed helper pipe from a transport error without leaking native text", async () => {
+    const { manager, children, diagnostic } = harness();
+    manager.configure("camera-home", config);
+    manager.connect("camera-home");
+    await manager.start();
+    children[0].stdout.end();
+    await settle();
+    expect(diagnostic).toHaveBeenCalledWith({
+      role: "camera-home",
+      layer: "media",
+      code: "channel_closed",
+    });
+    await vi.advanceTimersByTimeAsync(500);
+    children[1].stdin.emit("error", Error("private-password rtsp://private"));
+    expect(diagnostic).toHaveBeenCalledWith({
+      role: "camera-home",
+      layer: "media",
+      code: "transport_failed",
+    });
+    expect(JSON.stringify(diagnostic.mock.calls)).not.toMatch(
+      /private-password|rtsp:/,
+    );
+    await manager.stop();
   });
 
   it("preserves explicit intent and valid configuration on rejected edits and failures, and clears it on source-kind changes", async () => {

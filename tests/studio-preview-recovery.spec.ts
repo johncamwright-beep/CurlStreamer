@@ -130,7 +130,7 @@ test("an initial stalled picture retries and source changes/unmount retire all o
   ).toHaveCount(0);
 });
 
-test("successful preview polling requests at most five pictures per second", async ({
+test("successful preview polling advances fifteen pictures per second without overlapping image loads", async ({
   page,
 }) => {
   let requests = 0;
@@ -144,13 +144,45 @@ test("successful preview polling requests at most five pictures per second", asy
   await expect(
     page.getByRole("img", { name: "Actual Studio program output" }),
   ).toBeVisible();
-  await page.clock.runFor(199);
+  await page.clock.runFor(65);
   expect(requests).toBe(1);
-  await page.clock.runFor(1);
+  await page.clock.runFor(2);
   await expect.poll(() => requests).toBe(2);
-  for (let index = 0; index < 4; index++) {
-    await page.clock.runFor(200);
+  for (let index = 0; index < 14; index++) {
+    await page.clock.runFor(67);
     await expect.poll(() => requests).toBe(index + 3);
   }
-  expect(requests).toBe(6); // Initial picture plus five refreshes in one second.
+  expect(requests).toBe(16); // Initial picture plus fifteen refreshes in ~1 second.
+});
+
+test("preview cadence includes image load time and never queues pictures behind a slow load", async ({
+  page,
+}) => {
+  const requests: Route[] = [];
+  await page.route("**/__studio-preview/**", (route) => {
+    requests.push(route);
+  });
+  await page.goto("http://preview-fixture.test/", {
+    waitUntil: "domcontentloaded",
+  });
+  await expect.poll(() => requests.length).toBe(1);
+  await page.clock.runFor(40);
+  await fulfill(requests[0]);
+  const visible = page.getByRole("img", {
+    name: "Actual Studio program output",
+  });
+  await expect(visible).toHaveAttribute("src", /frame=0$/);
+  await page.clock.runFor(25);
+  expect(requests).toHaveLength(1);
+  await page.clock.runFor(2);
+  await expect.poll(() => requests.length).toBe(2);
+  // A load that takes longer than the interval is still the only pending work.
+  await page.clock.runFor(500);
+  expect(requests).toHaveLength(2);
+  await expect(visible).toHaveAttribute("src", /frame=0$/);
+  await fulfill(requests[1]);
+  await expect(visible).toHaveAttribute("src", /frame=1$/);
+  await page.clock.runFor(1);
+  await expect.poll(() => requests.length).toBe(3);
+  await page.getByRole("button", { name: "Unmount preview" }).click();
 });

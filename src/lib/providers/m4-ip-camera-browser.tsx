@@ -6,6 +6,9 @@ import { m4RendererInstance } from "./m4-renderer-health-browser";
 import { cameraAspect } from "../program-camera-layout";
 import type { CameraRole } from "../m2-studio-protocol";
 
+const FRAME_INTERVAL_MS = 1000 / 30;
+const OBSERVATION_INTERVAL_MS = 1000;
+
 /** Only the private program renderer can fetch these uncredentialed loopback
  * paths. RTSP addresses and camera passwords never reach browser JavaScript. */
 export function M4IpCameraTransport({
@@ -36,6 +39,42 @@ export function M4IpCameraTransport({
     let publishedAspect: number | undefined;
     let counter = 0;
     let lastFrame = 0;
+    let observation: AbortController | undefined;
+    let lastObservation = -Infinity;
+    const observe = () => {
+      if (
+        observation ||
+        performance.now() - lastObservation < OBSERVATION_INTERVAL_MS
+      )
+        return;
+      lastObservation = performance.now();
+      const attempt = new AbortController();
+      observation = attempt;
+      const timeout = setTimeout(() => attempt.abort(), 2000);
+      // Health reporting must never hold up delivery of the next picture.
+      void fetch("/camera", {
+        method: "POST",
+        credentials: "same-origin",
+        redirect: "error",
+        signal: AbortSignal.any([lifetime.signal, attempt.signal]),
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          action: "observe",
+          rendererInstance: m4RendererInstance(),
+          cameraRole: role,
+          frames: counter,
+          verified: true,
+          sourceGeneration: generation,
+        }),
+      })
+        .then((response) => response.text())
+        .catch(() => undefined)
+        .finally(() => {
+          clearTimeout(timeout);
+          attempt.abort();
+          if (observation === attempt) observation = undefined;
+        });
+    };
     // createImageBitmap cannot be cancelled. Leave room for recovery after one
     // stalled decode, but never accumulate unbounded decoder work on retries.
     let pendingDecodes = 0;
@@ -45,9 +84,11 @@ export function M4IpCameraTransport({
       onChange(role, { sourceIdentity, message: "Reconnecting IP camera…" });
     };
     const poll = async () => {
+      const started = performance.now();
       if (pendingDecodes >= 2) {
         if (displayed && Date.now() - lastFrame >= 5000) clear();
-        if (!lifetime.signal.aborted) timer = setTimeout(() => void poll(), 50);
+        if (!lifetime.signal.aborted)
+          timer = setTimeout(() => void poll(), FRAME_INTERVAL_MS);
         return;
       }
       const attempt = new AbortController();
@@ -104,22 +145,7 @@ export function M4IpCameraTransport({
           publishedAspect = aspect;
         }
         displayed = true;
-        const observation = await fetch("/camera", {
-          method: "POST",
-          credentials: "same-origin",
-          redirect: "error",
-          signal,
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({
-            action: "observe",
-            rendererInstance: m4RendererInstance(),
-            cameraRole: role,
-            frames: counter,
-            verified: true,
-            sourceGeneration: generation,
-          }),
-        });
-        await observation.text();
+        observe();
       } catch {
         /* Retain a fresh picture through a missed local request. */
       } finally {
@@ -128,7 +154,10 @@ export function M4IpCameraTransport({
         bitmap?.close();
         if (!lifetime.signal.aborted) {
           if (displayed && Date.now() - lastFrame >= 5000) clear();
-          timer = setTimeout(() => void poll(), 50);
+          timer = setTimeout(
+            () => void poll(),
+            Math.max(0, FRAME_INTERVAL_MS - (performance.now() - started)),
+          );
         }
       }
     };
@@ -136,6 +165,7 @@ export function M4IpCameraTransport({
     void poll();
     return () => {
       lifetime.abort();
+      observation?.abort();
       clearTimeout(timer);
       canvas.width = 0;
       canvas.height = 0;

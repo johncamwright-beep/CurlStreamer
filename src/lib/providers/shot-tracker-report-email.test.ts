@@ -334,6 +334,18 @@ it("requires another review if the authenticated sender email changes", async ()
   ).rejects.toThrow(/changed/);
   expect(m.send).not.toHaveBeenCalled();
 });
+it("greets individual players by first name and keeps the team greeting", async () => {
+  packet.reports[0].title = "Owen McTavish";
+  const individual = await prepareReportEmail(account, selection);
+  expect(individual.preview.coachMessage).toMatch(/^Hi Owen,/);
+  expect(individual.preview.title).toBe("Owen McTavish");
+  packet.audience = "team";
+  const team = await prepareReportEmail(account, {
+    ...selection,
+    audience: "team",
+  });
+  expect(team.preview.coachMessage).toMatch(/^Hi team,/);
+});
 it("rejects parent or coach contact changes after recipient review", async () => {
   const plan = await prepareReportEmail(account, selection);
   m.coaches.mockResolvedValue(["added@example.com", ""]);

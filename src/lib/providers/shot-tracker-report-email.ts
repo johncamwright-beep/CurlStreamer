@@ -138,7 +138,7 @@ export async function prepareReportEmail(
       subject: `${packet.eventName} - ${report.title}`
         .replace(/[\r\n\u0000]/g, " ")
         .slice(0, 200),
-      coachMessage: `Hi ${input.audience === "team" ? "team" : report.title},\n\nAttached is your ${packet.eventName} ${input.audience === "team" ? "team" : "individual"} report. Please take a look before our next practice.`,
+      coachMessage: `Hi ${input.audience === "team" ? "team" : report.title.trim().split(/\s+/)[0]},\n\nAttached is your ${packet.eventName} ${input.audience === "team" ? "team" : "individual"} report. Please take a look before our next practice.`,
     },
   };
 }

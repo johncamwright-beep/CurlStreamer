@@ -172,9 +172,12 @@ export class M4DesktopClient {
     return this.#state === "active"
       ? Math.max(
           0,
-          Math.floor(
-            // Cover the pipe's 2-second reply bound plus stop scheduling margin.
-            Math.min(this.#lease, this.#absolute) - this.#clock() - 3000,
+          Math.min(
+            30_000,
+            Math.floor(
+              // Cover the pipe's 2-second reply bound plus stop scheduling margin.
+              Math.min(this.#lease, this.#absolute) - this.#clock() - 3000,
+            ),
           ),
         )
       : 0;
@@ -432,7 +435,7 @@ export class M4DesktopClient {
       1_000;
     const lease = Math.min(
       absolute,
-      start + Math.min(30_000, Date.parse(row.leaseExpiresAt) - date) - 1_000,
+      start + Math.min(90_000, Date.parse(row.leaseExpiresAt) - date) - 1_000,
     );
     return { absolute, lease };
   }
@@ -491,6 +494,7 @@ export class M4DesktopClient {
             generation: this.#session.generation,
           },
           this.#bearer,
+          12_000,
         );
         const parsed = actionResponse.safeParse(response.value);
         if (

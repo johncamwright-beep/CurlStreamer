@@ -44,6 +44,23 @@ function deferred<T>() {
 }
 afterEach(() => vi.useRealTimers());
 describe("in-memory M4 desktop capability client", () => {
+  it("accepts an eight-second heartbeat reply instead of discarding it at five seconds", async () => {
+    vi.useFakeTimers();
+    const { client, fetcher, advance } = setup();
+    await client.exchange(code);
+    fetcher.mockImplementationOnce(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 8000));
+      advance(8000);
+      return response({ ...row, desiredAction: "wait" });
+    });
+    const pending = client.heartbeat();
+    await vi.advanceTimersByTimeAsync(8000);
+    expect(await pending).toMatchObject({
+      authorized: true,
+      leaseRenewed: true,
+    });
+    expect(client.remainingLeaseMs()).toBe(18000);
+  });
   it("exposes a verifier-bound challenge and stores no publicly enumerable credentials", async () => {
     const { client, fetcher } = setup();
     expect(client.challenge).toMatch(/^[a-f0-9]{64}$/);

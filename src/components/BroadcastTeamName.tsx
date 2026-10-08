@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useRef } from "react";
+import React, { useEffect, useRef } from "react";
 
 /** Measure the actual typeface and space remaining beside the score/hammer. */
 export function BroadcastTeamName({ name }: { name: string }) {

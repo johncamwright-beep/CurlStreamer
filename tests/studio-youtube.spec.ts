@@ -152,7 +152,46 @@ test("Studio YouTube sends game-scoped commands and expires live status", async 
   ).toHaveAttribute("href", watchUrl);
   await report("fixture-game", false, false, "stopped");
   await expect(page.getByRole("status")).toHaveText("Not live");
-  await expect(start).toBeEnabled();
+  await expect(
+    page.getByRole("button", { name: "Restart Studio to reconnect" }),
+  ).toBeDisabled();
+  await page.evaluate(() =>
+    window.dispatchEvent(
+      new CustomEvent("studio-youtube-status", {
+        detail: {
+          gameId: "fixture-game",
+          available: true,
+          busy: false,
+          streaming: "failed",
+          live: false,
+          receiving: false,
+          message: "",
+          canRecover: true,
+          needsRecovery: true,
+        },
+      }),
+    ),
+  );
+  const recover = page.getByRole("button", {
+    name: "Reconnect broadcast",
+    exact: true,
+  });
+  await expect(recover).toBeEnabled();
+  await expect(
+    page.getByText(/Reconnect restarts the local cameras/),
+  ).toBeVisible();
+  await recover.click();
+  await expect(
+    page.getByRole("button", { name: "Please wait…" }),
+  ).toBeDisabled();
+  expect(
+    await page.evaluate(() =>
+      (window as unknown as { sent: unknown[] }).sent.at(-1),
+    ),
+  ).toEqual({ type: "studio-youtube-start", gameId: "fixture-game" });
+  await expect(
+    page.getByRole("link", { name: "Watch on YouTube" }),
+  ).toHaveAttribute("href", watchUrl);
   // Older launchers still interpret Stop as final completion. Never send a
   // pause command until the native bridge advertises the new capability.
   await page.evaluate(() =>

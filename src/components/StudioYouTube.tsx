@@ -13,6 +13,8 @@ const stateSchema = z.object({
   receiving: z.boolean(),
   message: z.string().max(300),
   canReconnect: z.boolean().optional().default(false),
+  canRecover: z.boolean().optional().default(false),
+  needsRecovery: z.boolean().optional().default(false),
   outputActive: z.boolean().optional().default(false),
   canHoldStream: z.boolean().optional().default(false),
   presentation: z
@@ -276,6 +278,10 @@ export function StudioYouTube({ id }: { id: string }) {
   const active =
     state && ["starting", "armed", "stopping"].includes(state.streaming);
   const held = state?.presentation?.mode === "hold";
+  const needsRecovery =
+    state?.needsRecovery ||
+    state?.streaming === "failed" ||
+    state?.streaming === "stopped";
   const ending = ["preparing-end", "ended"].includes(
     state?.presentation?.mode ?? "",
   );
@@ -335,6 +341,7 @@ export function StudioYouTube({ id }: { id: string }) {
             state.busy ||
             pending ||
             ending ||
+            Boolean(needsRecovery && !state.canRecover) ||
             Boolean(active && !state.canHoldStream && !state.canReconnect)
           }
           onClick={() =>
@@ -359,12 +366,23 @@ export function StudioYouTube({ id }: { id: string }) {
                   : "Disconnect"
                 : state?.streaming === "paused"
                   ? "Reconnect"
-                  : "Broadcast to YouTube"}
+                  : needsRecovery
+                    ? state?.canRecover
+                      ? "Reconnect broadcast"
+                      : "Restart Studio to reconnect"
+                    : "Broadcast to YouTube"}
         </button>
         <a className="btn-secondary" href="/settings/youtube">
           YouTube settings
         </a>
       </div>
+      {needsRecovery && (
+        <p className="mt-2 text-sm">
+          {state?.canRecover
+            ? "Reconnect restarts the local cameras and checks your existing YouTube broadcast. Your game and saved watch link are kept."
+            : "Close and reopen Studio, choosing No when asked to end the game. Update Studio to reconnect here without closing the app."}
+        </p>
+      )}
       {active && !state?.canReconnect && (
         <p className="mt-2 text-sm">
           Update Windows Studio to disconnect and reconnect on the same watch

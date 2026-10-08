@@ -99,15 +99,19 @@ export function ProgramComposition({
   let scheduleLabel = "";
   if (game.broadcastSchedule) {
     try {
-      scheduleLabel = new Intl.DateTimeFormat("en-US", {
-        timeZone: game.broadcastSchedule.timezone,
+      const startDate = new Date(game.broadcastSchedule.scheduledStart);
+      const date = new Intl.DateTimeFormat("en-US", {
+        timeZone: "America/Toronto",
         year: "numeric",
         month: "short",
         day: "numeric",
+      }).format(startDate);
+      const time = new Intl.DateTimeFormat("en-US", {
+        timeZone: "America/Toronto",
         hour: "numeric",
         minute: "2-digit",
-        timeZoneName: "short",
-      }).format(new Date(game.broadcastSchedule.scheduledStart));
+      }).format(startDate);
+      scheduleLabel = `Game start: ${date} · ${time} ET`;
     } catch {
       /* Older or unscheduled games do not invent a date. */
     }

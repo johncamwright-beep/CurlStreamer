@@ -94,8 +94,8 @@ test("switches full widescreen to cropped portrait and back with aligned readabl
   const logo = page.getByRole("img", { name: "Team Benning logo" });
   const s = (await score.boundingBox())!,
     l = (await logo.boundingBox())!;
-  expect(s.y).toBeCloseTo(l.y, 0);
-  expect(s.height).toBeCloseTo(l.height, 0);
+  expect(s.y + s.height / 2).toBeCloseTo(l.y + l.height / 2, 0);
+  expect(l.height).toBeLessThan(s.height * 0.7);
   const away = (await score
     .getByText("Team Test", { exact: true })
     .boundingBox())!;

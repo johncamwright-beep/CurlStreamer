@@ -14,17 +14,17 @@ beforeEach(() => vi.stubGlobal("React", React));
 afterEach(() => vi.unstubAllGlobals());
 
 describe("provider-neutral program composition", () => {
-  it("shows the scheduled date and time in the game timezone", () => {
+  it("labels the scheduled Eastern start time", () => {
     const game = gameFixture();
     game.broadcastSchedule = {
       scheduledStart: "2026-10-20T22:30:00Z",
-      timezone: "America/Toronto",
+      timezone: "America/Vancouver",
     };
     const markup = renderToStaticMarkup(
       <ProgramCanvas game={game} renderCamera={() => null} />,
     );
     expect(markup).toContain("Oct 20, 2026");
-    expect(markup).toContain("6:30 PM EDT");
+    expect(markup).toContain("Game start: Oct 20, 2026 · 6:30 PM ET");
   });
   it("renders direct feeds with the saved score and honest local video status", () => {
     const game = gameFixture();

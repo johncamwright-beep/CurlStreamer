@@ -58,7 +58,7 @@ for (const width of [1920, 960, 390]) {
         name: `${game.config.homeName} logo`,
       });
       await expect(scoreboard).toBeVisible();
-      await expect(date).toContainText("Oct 20, 2026");
+      await expect(date).toHaveText("Game start: Oct 20, 2026 · 6:30 PM ET");
       await expect(logo).toHaveCSS("object-fit", "contain");
       const [scoreBounds, dateBounds, logoBounds, railBounds] =
         await Promise.all([
@@ -78,9 +78,11 @@ for (const width of [1920, 960, 390]) {
       // These relationships protect the visible layout, independently of CSS choices.
       expect(score.x + score.width).toBeLessThan(image.x);
       expect(score.width).toBeLessThan(rail.width * 0.85);
-      expect(Math.abs(score.y - image.y)).toBeLessThan(1);
-      expect(Math.abs(score.height - image.height)).toBeLessThan(1);
-      expect(image.y - rail.y).toBeLessThan(width * 0.01);
+      expect(
+        Math.abs(score.y + score.height / 2 - image.y - image.height / 2),
+      ).toBeLessThan(1);
+      if (containMedia) expect(image.height).toBeLessThan(score.height * 0.7);
+      else expect(Math.abs(score.height - image.height)).toBeLessThan(1);
       expect(schedule.y).toBeGreaterThanOrEqual(score.y + score.height);
       expect(schedule.y - score.y - score.height).toBeLessThan(width * 0.006);
       expect(Math.abs(schedule.x - score.x)).toBeLessThan(1);
@@ -90,6 +92,20 @@ for (const width of [1920, 960, 390]) {
       expect(schedule.y + schedule.height).toBeLessThan(rail.y + rail.height);
       for (const team of [game.config.homeName, game.config.awayName]) {
         const label = scoreboard.getByText(team, { exact: true });
+        await expect(label).toHaveCSS("white-space", "nowrap");
+        await expect
+          .poll(() =>
+            label.evaluate((element) => {
+              const box = element.parentElement!;
+              return (
+                element.getBoundingClientRect().width <=
+                  box.clientWidth + 0.5 &&
+                parseFloat(getComputedStyle(element).fontSize) <
+                  parseFloat(getComputedStyle(box).fontSize)
+              );
+            }),
+          )
+          .toBe(true);
         const bounds = (await label.boundingBox())!;
         expect(bounds.width).toBeGreaterThan(width * 0.07);
         expect(bounds.x).toBeGreaterThan(score.x);

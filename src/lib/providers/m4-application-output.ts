@@ -57,8 +57,12 @@ export class M4ApplicationOutput {
         await this.stop();
         return this.snapshot();
       }
-      if (response.leaseRenewed)
-        await this.native.renew(this.desktop.remainingLeaseMs());
+      // Feed the short native watchdog from the last verified server deadline.
+      // A transport failure cannot extend that deadline; remainingLeaseMs is
+      // capped at 30 seconds and shrinks to zero as the acknowledged grant ends.
+      // This permits temporary network loss while still stopping if the local
+      // controller dies, the grant expires, or the server explicitly revokes it.
+      await this.native.renew(this.desktop.remainingLeaseMs());
       return { ...this.snapshot(), leaseRenewed: response.leaseRenewed };
     } catch {
       await this.stop().catch(() => undefined);

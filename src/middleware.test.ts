@@ -13,6 +13,28 @@ vi.mock("@supabase/ssr", () => ({
 import { middleware } from "./middleware";
 
 describe("middleware configuration boundary", () => {
+  it.each(["", "/exchange", "/target", "/output-intent", "/observe"])(
+    "native desktop %s skips cookie refresh; bearer validation belongs to the route",
+    async (suffix) => {
+      await middleware(
+        new NextRequest(
+          `https://www.curlstreamer.app/api/games/11111111-1111-4111-8111-111111111111/studio-m4/desktop${suffix}`,
+        ),
+      );
+      expect(mocks.getUser).not.toHaveBeenCalled();
+    },
+  );
+  it.each(["desktop-pairing", "desktop/unknown"])(
+    "keeps browser-auth route %s behind refresh",
+    async (suffix) => {
+      await middleware(
+        new NextRequest(
+          `https://www.curlstreamer.app/api/games/11111111-1111-4111-8111-111111111111/studio-m4/${suffix}`,
+        ),
+      );
+      expect(mocks.getUser).toHaveBeenCalledOnce();
+    },
+  );
   it("ships the exact public IndexNow ownership key", () => {
     expect(indexNowKey).toMatch(/^[a-f0-9]{32}$/);
     expect(

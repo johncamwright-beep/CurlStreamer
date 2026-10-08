@@ -62,8 +62,9 @@ export class M4StudioRuntime {
         const result = await this.output.heartbeat();
         // A transport timeout leaves only the previous verified lease. Retry
         // sooner instead of spending another five seconds of that lease idle.
-        // Renewal remains serialized and only a server acknowledgement can
-        // extend native authority. Rejection/expiry still stops the output.
+        // Renewal remains serialized. Only a server acknowledgement can extend
+        // the server deadline; the native watchdog stays inside that deadline.
+        // Rejection/expiry still stops the output.
         renewalDelay =
           "leaseRenewed" in result && result.leaseRenewed === false
             ? 1000

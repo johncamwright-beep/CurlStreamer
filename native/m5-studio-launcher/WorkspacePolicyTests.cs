@@ -6,6 +6,8 @@ internal static class WorkspacePolicyTests
     private static void Assert(bool pass) { if (!pass) throw new Exception("Workspace boundary regression"); }
     private static int Main()
     {
+        foreach (var phase in new[] { "starting", "armed", "paused" }) Assert(WorkspacePolicy.KeepAwake(phase));
+        foreach (var phase in new[] { null, "idle", "stopped", "failed", "stopping" }) Assert(!WorkspacePolicy.KeepAwake(phase));
         var recoverySteps = new List<string>();
         var stoppedSender = new System.Threading.Tasks.TaskCompletionSource<bool>();
         var reconnect = WorkspacePolicy.RecoverYouTube(

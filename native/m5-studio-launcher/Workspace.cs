@@ -5,6 +5,7 @@ using System.Drawing;
 using System.IO;
 using System.Net;
 using System.Net.Http;
+using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Text;
 using System.Threading.Tasks;
@@ -81,7 +82,8 @@ internal sealed class Workspace : Form
         web.Dock = DockStyle.Fill;
         Controls.Add(web); Controls.Add(bottom);
         Shown += async (s, e) => await Initialize();
-        poll.Tick += async (s, e) => await Poll();
+        poll.Tick += async (s, e) => { UpdateSleepPrevention(); await Poll(); };
+        FormClosed += (s, e) => SetThreadExecutionState(0x80000000);
         FormClosing += async (s, e) => {
             if (mayClose) return;
             e.Cancel = true;
@@ -357,6 +359,15 @@ internal sealed class Workspace : Form
         var streaming = TextValue(lastState, "streaming");
         return (value != null && TextValue(value, "state") == "active") || TextValue(lastState, "broadcast") == "live" ||
             (streaming != null && streaming != "idle" && streaming != "stopped" && streaming != "failed");
+    }
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern uint SetThreadExecutionState(uint flags);
+    private void UpdateSleepPrevention() {
+        // Called only on the WinForms UI thread: execution requests belong to
+        // the calling thread. No power-plan or screen-lock settings are changed.
+        // Keep the display awake too, avoiding capture/render suspension on idle.
+        var active = child != null && !child.HasExited && WorkspacePolicy.KeepAwake(TextValue(lastState, "streaming"));
+        SetThreadExecutionState(active ? 0x80000003u : 0x80000000u);
     }
     private bool NavigationNeedsReview() {
         object output; var value = lastState != null && lastState.TryGetValue("localOutput", out output) ? output as Dictionary<string, object> : null;
@@ -653,6 +664,7 @@ internal sealed class Workspace : Form
     private void ApplyState(Dictionary<string, object> state) {
         if (child == null || child.HasExited) return;
         lastState = state;
+        UpdateSleepPrevention();
         var phase = TextValue(state, "program");
         recording = phase == "recording" || phase == "starting" || phase == "stopping";
         if (!WorkspacePolicy.KeepUsbSession(usbGame, runningGame, recording) && usbGame != null) { var ignored = StopUsbAudio(); }

@@ -27,11 +27,15 @@ function response(value: unknown, offset = 0) {
     headers: { date: new Date(epoch + offset).toUTCString() },
   });
 }
-async function fixture() {
+async function fixture(leaseMs = 30000) {
   let now = 0;
-  const fetcher = vi
-    .fn<typeof fetch>()
-    .mockResolvedValueOnce(response({ ...row, bearer: "b".repeat(43) }));
+  const fetcher = vi.fn<typeof fetch>().mockResolvedValueOnce(
+    response({
+      ...row,
+      leaseExpiresAt: new Date(epoch + leaseMs).toISOString(),
+      bearer: "b".repeat(43),
+    }),
+  );
   const client = new M4DesktopClient(game, "https://pilot.example", {
     fetcher,
     clock: () => now,
@@ -47,6 +51,61 @@ async function fixture() {
   };
 }
 describe("once-only application handoff", () => {
+  it.each([true, false])(
+    "survives a 52-second transport outage then %s recovery without extending cached authority",
+    async (recover) => {
+      const { client, fetcher, advance } = await fixture(90000);
+      const longRow = {
+        ...row,
+        leaseExpiresAt: new Date(epoch + 90000).toISOString(),
+      };
+      fetcher.mockResolvedValueOnce(response({ ...longRow, intentId, target }));
+      const native = {
+        arm: vi.fn(),
+        renew: vi.fn(),
+        stop: vi.fn(),
+        snapshot: () => ({ state: "armed" as const, deliveryAttempted: true }),
+      };
+      const app = new M4ApplicationOutput(client, native);
+      await app.start(intentId);
+      expect(native.arm).toHaveBeenCalledWith(target, 30000);
+      for (let attempt = 0; attempt < 4; attempt++) {
+        advance(13000);
+        fetcher.mockRejectedValueOnce(new Error("temporary network loss"));
+        await app.heartbeat();
+        expect(native.renew).toHaveBeenLastCalledWith(30000);
+        expect(native.stop).not.toHaveBeenCalled();
+      }
+      if (recover) {
+        fetcher.mockResolvedValueOnce(
+          response(
+            {
+              ...longRow,
+              leaseExpiresAt: new Date(epoch + 142000).toISOString(),
+              desiredAction: "wait",
+            },
+            52000,
+          ),
+        );
+        await app.heartbeat();
+        advance(20000);
+        expect(client.remainingLeaseMs()).toBe(30000);
+        expect(native.stop).not.toHaveBeenCalled();
+      } else {
+        advance(26000);
+        fetcher.mockRejectedValueOnce(new Error("still offline"));
+        await app.heartbeat();
+        expect(native.renew).toHaveBeenLastCalledWith(8000);
+        advance(12000);
+        fetcher.mockResolvedValueOnce(
+          response({ ...longRow, desiredAction: "stop" }, 90000),
+        );
+        await expect(app.heartbeat()).rejects.toThrow();
+        expect(native.stop).toHaveBeenCalledOnce();
+      }
+      expect(native.arm).toHaveBeenCalledOnce();
+    },
+  );
   it("reads only the matching committed closing grant without renewing lease", async () => {
     const wall = vi.spyOn(Date, "now").mockReturnValue(epoch);
     try {
@@ -189,7 +248,7 @@ describe("once-only application handoff", () => {
       expect(sink).not.toHaveBeenCalled();
     },
   );
-  it("connects successful server handoff to arm and only fresh heartbeat authority to renew", async () => {
+  it("feeds native watchdog only within acknowledged authority, including transport failure", async () => {
     const { client, fetcher, advance } = await fixture();
     fetcher.mockResolvedValueOnce(response({ ...row, intentId, target }));
     const native = {
@@ -215,10 +274,12 @@ describe("once-only application handoff", () => {
     await app.heartbeat();
     expect(native.renew).toHaveBeenCalledWith(26000);
     fetcher.mockRejectedValueOnce(new Error("provider unavailable"));
+    advance(5000);
     await app.heartbeat();
     expect(native.stop).not.toHaveBeenCalled();
-    expect(native.renew).toHaveBeenCalledTimes(1);
-    // Transport loss cannot extend the last native lease. Explicit revocation
+    expect(native.renew).toHaveBeenCalledTimes(2);
+    expect(native.renew).toHaveBeenLastCalledWith(21000);
+    // Transport loss cannot extend the acknowledged deadline. Explicit revocation
     // still stops immediately and never delivers the destination again.
     fetcher.mockResolvedValueOnce(new Response("revoked", { status: 403 }));
     fetcher.mockResolvedValueOnce(

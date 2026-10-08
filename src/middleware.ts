@@ -41,6 +41,14 @@ export async function middleware(request: NextRequest) {
   )
     return NextResponse.next();
   let response = NextResponse.next({ request });
+  // These native-only routes validate their own session-bound bearer. They
+  // deliberately omit cookies; browser Auth refresh must not delay heartbeat.
+  if (
+    /^\/api\/games\/[0-9a-f-]{36}\/studio-m4\/desktop(?:\/(?:exchange|target|output-intent|observe))?$/.test(
+      request.nextUrl.pathname,
+    )
+  )
+    return response;
   const { url, key } = publicSupabaseConfig(
     process.env.NEXT_PUBLIC_SUPABASE_URL,
     process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY,

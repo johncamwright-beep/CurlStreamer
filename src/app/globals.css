@@ -159,7 +159,17 @@ button {
 }
 .broadcast-program-layout[data-camera-layout] .broadcast-camera-panel {
   border: 0;
-  border-radius: 0;
+  border-radius: 1.2cqw;
+  box-shadow: inset 0 0 0 0.12cqw #59dce8;
+}
+.broadcast-camera-panel::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 25;
+  border: 0.12cqw solid #59dce8;
+  border-radius: inherit;
+  pointer-events: none;
 }
 .broadcast-camera-deck {
   position: relative;
@@ -189,6 +199,31 @@ button {
   min-height: 0;
   padding: 1.25cqw;
   padding-top: 0.65cqw;
+  border: 0;
+  background: transparent;
+}
+.broadcast-canvas {
+  background:
+    linear-gradient(145deg, transparent 65%, #123a50 65.2%, transparent 82%),
+    radial-gradient(ellipse at top right, #10445a, #03131e 70%);
+}
+.broadcast-brand-panel {
+  border: 0.12cqw solid #19cfe3;
+  border-radius: 1.2cqw;
+  padding: 0.8cqw 1.1cqw;
+  background: linear-gradient(155deg, #07384b, #03131e 55%, #092c3f);
+}
+.broadcast-information-rail .sponsor-fitted-frame {
+  outline: 0.12cqw solid #19cfe3;
+  outline-offset: -0.12cqw;
+  box-shadow: inset 0 0 0 0.35cqw #07384b;
+}
+.broadcast-information-rail .sponsor-fitted-frame-sidebar {
+  width: 100% !important;
+  height: 100% !important;
+}
+.broadcast-information-rail .sponsor-frame-bounds-sidebar {
+  margin: 1cqw 0;
 }
 .broadcast-rail-heading {
   display: grid;
@@ -197,39 +232,54 @@ button {
   gap: 0.8cqw;
 }
 .broadcast-rail-heading:has(.broadcast-team-logo) {
-  grid-template-columns: minmax(0, 1fr) 12cqw;
+  grid-template-columns: minmax(0, 1fr) 13cqw;
 }
 .broadcast-team-logo {
-  width: 12cqw;
-  height: 12cqw;
+  width: 13cqw;
+  height: 13cqw;
   border-radius: 0.4cqw;
 }
 .broadcast-scoreboard {
   min-width: 0;
-  height: 12cqw;
+  height: 13cqw;
   display: grid;
-  grid-template-rows: 1.5cqw repeat(2, minmax(0, 1fr));
-  padding: 0.75cqw;
-  background: #e4f4f8 !important;
-  color: #102c3c;
-  border: 0.15cqw solid #8bd9e8;
-  border-radius: 0.625cqw;
+  grid-template-rows: 2.6cqw repeat(2, minmax(0, 1fr));
+  padding: 0cqw;
+  overflow: hidden;
+  background: linear-gradient(165deg, #008496, #00434f) !important;
+  color: #fff;
+  border: 0.12cqw solid #19cfe3;
+  border-radius: 1.2cqw;
+}
+.broadcast-scoreboard > div:first-child {
+  padding: 0.3cqw 0.65cqw;
+  background: linear-gradient(160deg, #0b3346, #03131e);
+  border-bottom: 0.1cqw solid #19cfe3;
 }
 .broadcast-scoreboard > div:first-child span {
   line-height: 1;
-  color: #135568;
-  font-size: 1.25cqw;
+  color: #fff;
+  font-size: 1.7cqw;
   letter-spacing: 0.125cqw;
 }
 .broadcast-scoreboard > div:not(:first-child) {
-  margin-top: 0.4cqw;
+  position: relative;
+  margin: 0.2cqw 0.6cqw;
   gap: 0.5cqw;
-  padding-left: 0.833cqw;
-  border-left-width: 0.208cqw;
+  padding-left: 0.55cqw;
+  border-left-width: 0.6cqw;
+}
+.broadcast-scoreboard > div:last-child::before {
+  content: "";
+  position: absolute;
+  top: -0.2cqw;
+  left: -1.2cqw;
+  right: -0.6cqw;
+  border-top: 0.08cqw solid rgb(89 220 232 / 55%);
 }
 .broadcast-scoreboard > div:not(:first-child) > strong {
-  font-size: 1.6cqw;
-  line-height: 1.1;
+  font-size: 2cqw;
+  line-height: 1.05;
   white-space: normal;
   overflow-wrap: anywhere;
   display: -webkit-box;
@@ -240,7 +290,7 @@ button {
   gap: 0.417cqw;
 }
 .broadcast-scoreboard > div:not(:first-child) > span strong {
-  font-size: 2.5cqw;
+  font-size: 3cqw;
   line-height: 1;
 }
 .broadcast-scoreboard svg {

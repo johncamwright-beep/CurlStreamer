@@ -115,7 +115,7 @@ export function ProgramComposition({
   return (
     <div
       data-testid="broadcast-canvas"
-      className={`relative aspect-video w-full overflow-hidden bg-[radial-gradient(circle_at_top,#164e63,#07111f_55%)] ${containMedia ? "[&_video]:!object-contain [&_img]:!object-contain" : ""}`}
+      className={`broadcast-canvas relative aspect-video w-full overflow-hidden ${containMedia ? "[&_video]:!object-contain [&_img]:!object-contain" : ""}`}
       style={{ containerType: "inline-size" }}
     >
       <div
@@ -184,8 +184,8 @@ export function ProgramComposition({
               />
             )}
           <div
-            className="relative mt-auto w-full shrink-0 overflow-hidden"
-            style={{ aspectRatio: "1558 / 340" }}
+            className="broadcast-brand-panel relative mt-auto w-full shrink-0 overflow-hidden"
+            style={{ aspectRatio: "4 / 1" }}
           >
             {/* Exclude only the source asset's transparent margins. */}
             <svg

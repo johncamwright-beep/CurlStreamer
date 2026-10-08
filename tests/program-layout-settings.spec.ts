@@ -31,7 +31,7 @@ test.beforeAll(async () => {
     import React,{useState} from 'react';import{createRoot}from'react-dom/client';
     import{ProgramCanvas}from'./src/components/ProgramCanvas';
     import{CameraZoomControls}from'./src/components/CameraZoomControls';
-    const initial={id:'fixture',config:{homeName:'Team Benning',awayName:'Team Test',homeLogoUrl:'/fixture-logo.svg',homeColor:'#e11d48',awayColor:'#2563eb',initialHammer:'home',scheduledEnds:8},scoreEvents:[],layout:'split',sponsors:[],sponsorMode:{active:false,paused:false},cameraZoom:{},programCameraMode:'stacked'};
+    const initial={id:'fixture',config:{homeName:'Team Benning',awayName:'Team Test',homeLogoUrl:'/fixture-logo.svg',homeColor:'#e11d48',awayColor:'#2563eb',initialHammer:'home',scheduledEnds:8},scoreEvents:[],layout:'split',sponsors:[{id:'preview',name:'Sample sponsor',dataUrl:'/fixture-sponsor.svg',enabled:true,rotation:0}],sponsorMode:{active:true,style:'fullscreen',paused:false,rotationOffset:0,startedAt:null,intervalSeconds:30},cameraZoom:{},programCameraMode:'stacked'};
     function App(){const[game,setGame]=useState(initial);const[reject,setReject]=useState(false);return <main style={{maxWidth:1100,margin:'auto',padding:12}}><ProgramCanvas game={game} cameraAspects={{'camera-home':16/9,'camera-away':16/9}} renderCamera={role=><img className="portrait-camera-video" src="/fixture-camera.svg" alt={role}/>}/><div className="scoring-preview-panel" style={{marginTop:16}}><CameraZoomControls game={game} act={async a=>{if(reject)throw Error('offline');setGame(g=>({...g,programCameraMode:a.mode}));}}/></div><button onClick={()=>setReject(true)}>Reject changes</button></main>};createRoot(document.getElementById('root')).render(<App/>);`,
       },
     })
@@ -64,7 +64,16 @@ test("switches full widescreen to cropped portrait and back with aligned readabl
       body: readFileSync("public/branding/curlstreamer-logo.png"),
     }),
   );
+  await page.route("**/fixture-sponsor.svg", (route) =>
+    route.fulfill({
+      contentType: "image/svg+xml",
+      body: '<svg xmlns="http://www.w3.org/2000/svg" width="800" height="300"><rect width="800" height="300" fill="white"/><text x="400" y="160" text-anchor="middle" font-size="56" fill="#07434b">SAMPLE SPONSOR</text></svg>',
+    }),
+  );
   await page.goto("/layout-fixture");
+  await expect(
+    page.getByTestId("sponsor-sidebar").locator("img"),
+  ).toBeVisible();
   const layout = page.getByRole("combobox", { name: "Camera layout" });
   const first = page.getByTestId("camera-panel-camera-home"),
     second = page.getByTestId("camera-panel-camera-away");
@@ -91,8 +100,12 @@ test("switches full widescreen to cropped portrait and back with aligned readabl
     .getByText("Team Test", { exact: true })
     .boundingBox())!;
   expect(away.y + away.height).toBeLessThanOrEqual(s.y + s.height);
-  await expect(score).toHaveCSS("background-color", "rgb(228, 244, 248)");
+  await expect(score).toHaveCSS("color", "rgb(255, 255, 255)");
+  await expect(score).toHaveCSS("border-top-color", "rgb(25, 207, 227)");
   await expect(logo).toHaveCSS("object-fit", "contain");
+  await page.locator(".broadcast-rail-heading").screenshot({
+    path: info.outputPath("scoreboard.png"),
+  });
   await page.screenshot({
     path: info.outputPath("portrait-settings.png"),
     fullPage: true,

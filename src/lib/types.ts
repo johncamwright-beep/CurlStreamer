@@ -87,6 +87,7 @@ export interface GameState {
   createdAt: number;
   scoreEvents: ScoreEvent[];
   layout: Layout;
+  programCameraMode?: "auto" | "stacked" | "portrait";
   broadcast: "idle" | "live";
   status: "active" | "closed" | "completed";
   audioMuted: boolean;

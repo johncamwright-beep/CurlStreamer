@@ -132,6 +132,7 @@ async function install(
   kinds: ["phone" | "tapo" | "rtsp", "phone" | "tapo" | "rtsp"],
   timing = { frameDelay: 35, observationDelay: 0 },
 ) {
+  let programCameraMode: "auto" | "stacked" | "portrait" = "auto";
   const sources: Record<Role, M4CameraInputSnapshot> = {
     "camera-home": snapshot(kinds[0], 1),
     "camera-away": snapshot(kinds[1], 1),
@@ -209,7 +210,8 @@ async function install(
       heartbeats.push(route.request().postDataJSON() as M4RendererHeartbeat);
       return route.fulfill({ json: { ok: true } });
     }
-    if (url.pathname === "/program") return route.fulfill({ json: { game } });
+    if (url.pathname === "/program")
+      return route.fulfill({ json: { game: { ...game, programCameraMode } } });
     if (url.pathname === "/camera-inputs")
       return route.fulfill({ json: { cameras: sources } });
     if (url.pathname === "/camera") {
@@ -300,6 +302,9 @@ async function install(
         ).__phoneFixture ?? { starts: {}, stops: {} },
     );
   return {
+    setLayout(mode: typeof programCameraMode) {
+      programCameraMode = mode;
+    },
     sources,
     frames,
     mode,
@@ -316,6 +321,38 @@ async function install(
 
 const panel = (page: Page, role: Role) =>
   page.getByTestId(`camera-panel-${role}`);
+
+test("operator layout changes crop and restore live IP frames without replacing sources", async ({
+  page,
+}) => {
+  const fixture = await install(page, ["tapo", "rtsp"]);
+  for (const role of roles) await verifyFrame(page, role);
+  fixture.setLayout("portrait");
+  for (const role of roles) {
+    await expect(panel(page, role).locator("canvas")).toHaveCSS(
+      "object-fit",
+      "cover",
+    );
+  }
+  const first = (await panel(page, roles[0]).boundingBox())!;
+  const second = (await panel(page, roles[1]).boundingBox())!;
+  expect(first.width / first.height).toBeCloseTo(9 / 16, 2);
+  expect(first.x + first.width).toBeCloseTo(second.x, 1);
+  await verifySponsor(page);
+  const before = fixture.frameRequests.length;
+  fixture.setLayout("stacked");
+  for (const role of roles) {
+    await expect(panel(page, role).locator("canvas")).toHaveCSS(
+      "object-fit",
+      "contain",
+    );
+    await verifyFrame(page, role);
+    expect(fixture.sources[role].generation).toBe(1);
+    expect((await fixture.maxActive())[role]).toBe(1);
+  }
+  expect(fixture.frameRequests.length).toBeGreaterThan(before);
+  expect(fixture.errors).toEqual([]);
+});
 
 test("IP pictures keep advancing near thirty fps while health replies are slow and remain bounded", async ({
   page,

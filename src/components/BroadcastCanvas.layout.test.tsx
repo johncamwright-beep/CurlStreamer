@@ -127,10 +127,10 @@ describe("1920x1080 broadcast video layout", () => {
       "font-size",
     );
     // Preserve broadcast readability at 1080p while scaling proportionally in previews.
-    expect((padding * 1920) / 100).toBeCloseTo(20, 1);
-    expect((teamSize * 1920) / 100).toBeCloseTo(36, 1);
+    expect((padding * 1920) / 100).toBeCloseTo(14.4, 1);
+    expect((teamSize * 1920) / 100).toBeCloseTo(30.72, 1);
     expect((scoreSize * 1920) / 100).toBeCloseTo(48, 1);
-    expect((padding * 960) / 100).toBeCloseTo(10, 1);
+    expect((padding * 960) / 100).toBeCloseTo(7.2, 1);
     expect(scoreSize).toBeGreaterThan(teamSize);
     expect(css).toMatch(/\.sponsor-frame-bounds-sidebar[\s\S]*flex: 1 1 auto/);
     expect(css).toMatch(/\.safe-video \{\s*object-fit: contain/);

@@ -21,7 +21,7 @@ export interface ProgramCanvasProps {
   statusLabel?: string;
 }
 
-/** Direct program output always contains complete camera and sponsor frames. */
+/** Full-frame by default; an explicit portrait layout crops cameras only. */
 export function ProgramCanvas(props: ProgramCanvasProps) {
   return <ProgramComposition {...props} containMedia showStatus={false} />;
 }
@@ -43,12 +43,17 @@ export function ProgramComposition({
   );
   const composition = programCameraLayout(
     visibleRoles.map((role) => cameraAspects?.[role] ?? portraitCameraAspect),
+    game.programCameraMode,
   );
+  const arranged =
+    containMedia ||
+    (game.programCameraMode && game.programCameraMode !== "auto");
   const camera = (role: ProgramCameraRole, index: number) => (
     <div
       data-testid={`camera-panel-${role}`}
+      data-crop={game.programCameraMode === "portrait" ? "portrait" : undefined}
       style={
-        containMedia
+        arranged
           ? {
               position: "absolute",
               aspectRatio: "auto",
@@ -115,9 +120,9 @@ export function ProgramComposition({
     >
       <div
         className="broadcast-program-layout absolute inset-[3%]"
-        data-camera-layout={containMedia ? composition.mode : undefined}
+        data-camera-layout={arranged ? composition.mode : undefined}
         style={
-          containMedia
+          arranged
             ? {
                 gridTemplateColumns: composition.deckFraction
                   ? `minmax(0, ${composition.deckFraction}fr) minmax(0, ${1 - composition.deckFraction}fr)`
@@ -130,7 +135,7 @@ export function ProgramComposition({
           data-testid="camera-deck"
           data-camera-count={cameraCount}
           className="broadcast-camera-deck"
-          style={containMedia && !cameraCount ? { display: "none" } : undefined}
+          style={arranged && !cameraCount ? { display: "none" } : undefined}
         >
           {visibleRoles.map((role, index) => (
             <React.Fragment key={role}>{camera(role, index)}</React.Fragment>
@@ -148,28 +153,26 @@ export function ProgramComposition({
           className="broadcast-information-rail flex min-w-0 flex-col rounded-2xl border border-white/10 bg-slate-950/45"
         >
           <div className="broadcast-rail-heading">
-            <div className="min-w-0 flex-1">
-              <Scoreboard game={game} compact broadcast />
-              {scheduleLabel && (
-                <p
-                  data-testid="broadcast-schedule"
-                  className="mt-[.3cqw] text-[1cqw] leading-snug text-slate-300"
-                >
-                  {scheduleLabel}
-                </p>
-              )}
-              {eventTitle && (
-                <h1 className="mt-[.6cqw] text-[1.75cqw] font-black leading-tight">
-                  {eventTitle}
-                </h1>
-              )}
-            </div>
+            <Scoreboard game={game} compact broadcast />
             <TeamLogo
               teamName={game.config.homeName}
               imageUrl={game.config.homeLogoUrl}
               className="broadcast-team-logo"
             />
           </div>
+          {scheduleLabel && (
+            <p
+              data-testid="broadcast-schedule"
+              className="mt-[.3cqw] text-[1cqw] leading-snug text-slate-300"
+            >
+              {scheduleLabel}
+            </p>
+          )}
+          {eventTitle && (
+            <h1 className="mt-[.6cqw] text-[1.75cqw] font-black leading-tight">
+              {eventTitle}
+            </h1>
+          )}
           {m.active &&
             (m.style === "fullscreen" || !cameraCount) &&
             sponsor && (

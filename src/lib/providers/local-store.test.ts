@@ -39,6 +39,24 @@ afterEach(() => {
 });
 
 describe("local-store shared assignment authority", () => {
+  it("persists camera composition per game without changing camera visibility or scores", async () => {
+    const store = await loadFreshStore();
+    const game = store.createGame(config);
+    const other = store.createGame(config);
+    store.updateGame(game.id, { type: "camera-composition", mode: "portrait" });
+    const reloaded = await reloadStore();
+    expect(reloaded.getGame(game.id)).toMatchObject({
+      programCameraMode: "portrait",
+      layout: "split",
+      scoreEvents: [],
+    });
+    expect(reloaded.getGame(other.id)?.programCameraMode).toBeUndefined();
+    reloaded.updateGame(game.id, {
+      type: "camera-composition",
+      mode: "stacked",
+    });
+    expect(reloaded.getGame(game.id)?.programCameraMode).toBe("stacked");
+  });
   it("renews the existing camera without changing its generation and rejects reuse after release", async () => {
     const store = await loadFreshStore();
     const game = store.createGame(config);

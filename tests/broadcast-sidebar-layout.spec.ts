@@ -79,11 +79,14 @@ for (const width of [1920, 960, 390]) {
       expect(score.x + score.width).toBeLessThan(image.x);
       expect(score.width).toBeLessThan(rail.width * 0.85);
       expect(Math.abs(score.y - image.y)).toBeLessThan(1);
+      expect(Math.abs(score.height - image.height)).toBeLessThan(1);
       expect(image.y - rail.y).toBeLessThan(width * 0.01);
       expect(schedule.y).toBeGreaterThanOrEqual(score.y + score.height);
       expect(schedule.y - score.y - score.height).toBeLessThan(width * 0.006);
       expect(Math.abs(schedule.x - score.x)).toBeLessThan(1);
-      expect(schedule.x + schedule.width).toBeLessThanOrEqual(image.x);
+      expect(schedule.x + schedule.width).toBeLessThanOrEqual(
+        rail.x + rail.width,
+      );
       expect(schedule.y + schedule.height).toBeLessThan(rail.y + rail.height);
       for (const team of [game.config.homeName, game.config.awayName]) {
         const label = scoreboard.getByText(team, { exact: true });

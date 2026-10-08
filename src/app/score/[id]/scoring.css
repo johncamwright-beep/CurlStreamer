@@ -958,7 +958,7 @@
   }
   .scoring-preview-panel .camera-zoom-control {
     display: grid;
-    grid-template-columns: 96px minmax(0, 1fr);
+    grid-template-columns: 88px minmax(0, 1fr);
     column-gap: 8px;
     align-items: center;
   }

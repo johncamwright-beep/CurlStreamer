@@ -59,7 +59,7 @@ export class M4ApplicationOutput {
       }
       if (response.leaseRenewed)
         await this.native.renew(this.desktop.remainingLeaseMs());
-      return this.snapshot();
+      return { ...this.snapshot(), leaseRenewed: response.leaseRenewed };
     } catch {
       await this.stop().catch(() => undefined);
       throw fail();

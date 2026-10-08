@@ -20,6 +20,27 @@ function fixture() {
 }
 afterEach(() => vi.useRealTimers());
 describe("Studio output lifetime", () => {
+  it("retries a lost renewal promptly and returns to normal cadence after acknowledgement", async () => {
+    vi.useFakeTimers();
+    const { output, runtime, abort } = fixture();
+    output.heartbeat.mockImplementationOnce(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 5000));
+      return { ...snapshot(), leaseRenewed: false };
+    });
+    const run = runtime.run("intent", abort.signal);
+    await vi.advanceTimersByTimeAsync(10000);
+    expect(output.heartbeat).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(output.heartbeat).toHaveBeenCalledTimes(2);
+    await vi.advanceTimersByTimeAsync(4999);
+    expect(output.heartbeat).toHaveBeenCalledTimes(2);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(output.heartbeat).toHaveBeenCalledTimes(3);
+    abort.abort();
+    await run;
+    expect(output.stop).toHaveBeenCalledTimes(1);
+    expect(vi.getTimerCount()).toBe(0);
+  });
   it("does not renew before startup or overlap a slow renewal", async () => {
     vi.useFakeTimers();
     const { output, runtime, abort } = fixture();

@@ -40,6 +40,7 @@ export class M4StudioRuntime {
       }
       await this.output.start(intentId);
       if (!this.#stopping) started?.();
+      let renewalDelay = 5000;
       while (!this.#stopping) {
         const snapshot = this.output.snapshot();
         if (!snapshot.desktop.authorized || snapshot.native.state !== "armed")
@@ -48,7 +49,7 @@ export class M4StudioRuntime {
           const timer = setTimeout(() => {
             this.#wake = undefined;
             resolve();
-          }, 5000);
+          }, renewalDelay);
           this.#wake = () => {
             clearTimeout(timer);
             this.#wake = undefined;
@@ -59,6 +60,14 @@ export class M4StudioRuntime {
         // Await each renewal before scheduling another; queue delay cannot
         // manufacture authority, and no missed heartbeat is replayed.
         const result = await this.output.heartbeat();
+        // A transport timeout leaves only the previous verified lease. Retry
+        // sooner instead of spending another five seconds of that lease idle.
+        // Renewal remains serialized and only a server acknowledgement can
+        // extend native authority. Rejection/expiry still stops the output.
+        renewalDelay =
+          "leaseRenewed" in result && result.leaseRenewed === false
+            ? 1000
+            : 5000;
         if (
           result.desktop.state === "stopped" &&
           result.native.state === "stopped"

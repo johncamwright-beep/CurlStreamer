@@ -6,6 +6,30 @@ internal static class WorkspacePolicyTests
     private static void Assert(bool pass) { if (!pass) throw new Exception("Workspace boundary regression"); }
     private static int Main()
     {
+        var recoverySteps = new List<string>();
+        var stoppedSender = new System.Threading.Tasks.TaskCompletionSource<bool>();
+        var reconnect = WorkspacePolicy.RecoverYouTube(
+            () => { recoverySteps.Add("disconnect"); return stoppedSender.Task; },
+            () => true,
+            () => { recoverySteps.Add("connect"); return System.Threading.Tasks.Task.FromResult(true); });
+        Assert(recoverySteps.Count == 1 && !reconnect.IsCompleted);
+        stoppedSender.SetResult(true); reconnect.GetAwaiter().GetResult();
+        Assert(String.Join(",", recoverySteps) == "disconnect,connect");
+        var currentGame = true; var reconnected = false; var fenced = false;
+        try {
+            WorkspacePolicy.RecoverYouTube(
+                () => { currentGame = false; return System.Threading.Tasks.Task.FromResult(true); },
+                () => currentGame,
+                () => { reconnected = true; return System.Threading.Tasks.Task.FromResult(true); }).GetAwaiter().GetResult();
+        } catch (InvalidOperationException) { fenced = true; }
+        Assert(fenced && !reconnected);
+        fenced = false;
+        try {
+            WorkspacePolicy.RecoverYouTube(
+                () => { throw new InvalidOperationException(); }, () => true,
+                () => { reconnected = true; return System.Threading.Tasks.Task.FromResult(true); }).GetAwaiter().GetResult();
+        } catch (InvalidOperationException) { fenced = true; }
+        Assert(fenced && !reconnected);
         const string origin = "https://studio.example", id = "11111111-1111-4111-8111-111111111111";
         const string otherId = "22222222-2222-4222-8222-222222222222";
         foreach (var path in new[] { "/dashboard", "/account", "/score/" + id }) {

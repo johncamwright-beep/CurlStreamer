@@ -93,6 +93,16 @@ internal static class WorkspacePolicy
     {
         return pairing == "stopped" || pairing == "failed" || streaming == "stopped" || streaming == "failed";
     }
+    internal static async System.Threading.Tasks.Task RecoverYouTube(
+        Func<System.Threading.Tasks.Task> disconnect, Func<bool> currentGame,
+        Func<System.Threading.Tasks.Task> connect)
+    {
+        if (!currentGame()) throw new InvalidOperationException();
+        // The previous sender must exit before a new once-only session is paired.
+        await disconnect();
+        if (!currentGame()) throw new InvalidOperationException();
+        await connect();
+    }
     internal static bool SameOrigin(string value, string origin)
     {
         Uri url;
@@ -113,6 +123,9 @@ internal static class WorkspacePolicy
     internal static string YouTubeFailure(string code)
     {
         switch (code) {
+            case "youtube_broadcast_terminal":
+            case "stopped":
+                return "YouTube has ended this broadcast and cannot resume its saved link. Open YouTube settings to review it. A new broadcast needs a new game; this game's score and recording are kept.";
             case "studio_recovery_pending":
                 return "The previous Studio connection is still expiring. Wait up to 35 seconds, then reconnect to this game's saved YouTube link.";
             case "youtube_reconnect_required":

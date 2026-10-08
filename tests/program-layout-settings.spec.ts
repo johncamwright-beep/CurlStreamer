@@ -91,8 +91,11 @@ test("switches full widescreen to cropped portrait and back with aligned readabl
     .getByText("Team Test", { exact: true })
     .boundingBox())!;
   expect(away.y + away.height).toBeLessThanOrEqual(s.y + s.height);
-  await expect(score).toHaveCSS("background-color", "rgb(228, 244, 248)");
+  await expect(score).toHaveCSS("background-color", "rgb(89, 220, 232)");
   await expect(logo).toHaveCSS("object-fit", "contain");
+  await page.locator(".broadcast-rail-heading").screenshot({
+    path: info.outputPath("scoreboard.png"),
+  });
   await page.screenshot({
     path: info.outputPath("portrait-settings.png"),
     fullPage: true,

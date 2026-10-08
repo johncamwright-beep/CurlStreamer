@@ -197,39 +197,45 @@ button {
   gap: 0.8cqw;
 }
 .broadcast-rail-heading:has(.broadcast-team-logo) {
-  grid-template-columns: minmax(0, 1fr) 12cqw;
+  grid-template-columns: minmax(0, 1fr) 13cqw;
 }
 .broadcast-team-logo {
-  width: 12cqw;
-  height: 12cqw;
+  width: 13cqw;
+  height: 13cqw;
   border-radius: 0.4cqw;
 }
 .broadcast-scoreboard {
   min-width: 0;
-  height: 12cqw;
+  height: 13cqw;
   display: grid;
-  grid-template-rows: 1.5cqw repeat(2, minmax(0, 1fr));
-  padding: 0.75cqw;
-  background: #e4f4f8 !important;
-  color: #102c3c;
-  border: 0.15cqw solid #8bd9e8;
+  grid-template-rows: 2.6cqw repeat(2, minmax(0, 1fr));
+  padding: 0cqw;
+  overflow: hidden;
+  background: #59dce8 !important;
+  color: #07111f;
+  border: 0.18cqw solid #fff;
   border-radius: 0.625cqw;
+}
+.broadcast-scoreboard > div:first-child {
+  padding: 0.3cqw 0.65cqw;
+  background: #07111f;
+  border-bottom: 0.15cqw solid #fff;
 }
 .broadcast-scoreboard > div:first-child span {
   line-height: 1;
-  color: #135568;
-  font-size: 1.25cqw;
+  color: #fff;
+  font-size: 1.7cqw;
   letter-spacing: 0.125cqw;
 }
 .broadcast-scoreboard > div:not(:first-child) {
-  margin-top: 0.4cqw;
+  margin: 0.2cqw 0.6cqw;
   gap: 0.5cqw;
-  padding-left: 0.833cqw;
-  border-left-width: 0.208cqw;
+  padding-left: 0.55cqw;
+  border-left-width: 0.6cqw;
 }
 .broadcast-scoreboard > div:not(:first-child) > strong {
-  font-size: 1.6cqw;
-  line-height: 1.1;
+  font-size: 2cqw;
+  line-height: 1.05;
   white-space: normal;
   overflow-wrap: anywhere;
   display: -webkit-box;
@@ -240,7 +246,7 @@ button {
   gap: 0.417cqw;
 }
 .broadcast-scoreboard > div:not(:first-child) > span strong {
-  font-size: 2.5cqw;
+  font-size: 3cqw;
   line-height: 1;
 }
 .broadcast-scoreboard svg {

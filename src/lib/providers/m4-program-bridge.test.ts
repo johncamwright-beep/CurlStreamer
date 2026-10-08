@@ -4,6 +4,7 @@ import { M4ProgramClient } from "./m4-program-client";
 import { createM4ProgramBridge } from "./m4-program-bridge";
 import { StudioTransportUnavailable } from "./studio-transport-error";
 import sharp from "sharp";
+import { m4CameraInputSnapshotSchema } from "../m4-camera-input";
 const closers: Array<() => Promise<void>> = [];
 async function documentInstance(page: Response) {
   return (await page.text()).match(
@@ -57,6 +58,20 @@ async function setup() {
   return { client, action, bridge, headers };
 }
 describe("private loopback program API", () => {
+  it("serves valid phone snapshots when no IP camera manager is installed", async () => {
+    const { bridge, headers } = await setup();
+    const response = await fetch(bridge.address + "/camera-inputs", {
+      headers,
+    });
+    expect(response.status).toBe(200);
+    const { cameras } = await response.json();
+    for (const role of ["camera-home", "camera-away"]) {
+      expect(m4CameraInputSnapshotSchema.parse(cameras[role])).toMatchObject({
+        kind: "phone",
+        connectionEnabled: false,
+      });
+    }
+  });
   const organizationId = "22222222-2222-4222-8222-222222222222";
   const logoSource = `https://storage.invalid/storage/v1/object/public/team-public-media/${organizationId}/33333333-3333-4333-8333-333333333333.png`;
   async function logoSetup(source = logoSource, response?: Response) {

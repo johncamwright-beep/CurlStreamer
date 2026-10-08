@@ -11,9 +11,18 @@ export function cameraAspect(width: number, height: number) {
     : undefined;
 }
 
-export function programCameraLayout(aspects: number[]) {
+export function programCameraLayout(
+  aspects: number[],
+  preference: "auto" | "stacked" | "portrait" = "auto",
+) {
   const ratios = aspects.map((value) =>
-    Number.isFinite(value) && value > 0 ? value : portraitCameraAspect,
+    preference === "portrait"
+      ? portraitCameraAspect
+      : preference === "stacked"
+        ? landscapeCameraAspect
+        : Number.isFinite(value) && value > 0
+          ? value
+          : portraitCameraAspect,
   );
   const mode = !ratios.length
     ? "none"

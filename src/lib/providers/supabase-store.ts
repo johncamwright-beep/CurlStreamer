@@ -273,6 +273,8 @@ function applyAction(game: GameState, action: z.infer<typeof actionSchema>) {
       ? applyScoringAction(game, action, now)
       : undefined;
   if (action.type === "layout") game.layout = action.layout;
+  if (action.type === "camera-composition")
+    game.programCameraMode = action.mode;
   if (action.type === "camera-framing") {
     game.cameraFraming ??= {};
     game.cameraFraming[action.role] = action.mode;

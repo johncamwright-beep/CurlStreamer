@@ -176,38 +176,59 @@ button {
 .broadcast-camera-panel {
   height: 100%;
 }
+.broadcast-program-layout[data-camera-layout] .portrait-camera-video {
+  object-fit: contain !important;
+}
+.broadcast-program-layout
+  .broadcast-camera-panel[data-crop="portrait"]
+  .portrait-camera-video {
+  object-fit: cover !important;
+  object-position: center;
+}
 .broadcast-information-rail {
   min-height: 0;
   padding: 1.25cqw;
   padding-top: 0.65cqw;
 }
 .broadcast-rail-heading {
-  display: flex;
-  align-items: flex-start;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: stretch;
   gap: 0.8cqw;
 }
+.broadcast-rail-heading:has(.broadcast-team-logo) {
+  grid-template-columns: minmax(0, 1fr) 12cqw;
+}
 .broadcast-team-logo {
-  width: 5.5cqw;
-  height: 5.5cqw;
+  width: 12cqw;
+  height: 12cqw;
   border-radius: 0.4cqw;
 }
 .broadcast-scoreboard {
   min-width: 0;
-  padding: 1.042cqw;
+  height: 12cqw;
+  display: grid;
+  grid-template-rows: 1.5cqw repeat(2, minmax(0, 1fr));
+  padding: 0.75cqw;
+  background: #e4f4f8 !important;
+  color: #102c3c;
+  border: 0.15cqw solid #8bd9e8;
   border-radius: 0.625cqw;
 }
 .broadcast-scoreboard > div:first-child span {
+  line-height: 1;
+  color: #135568;
   font-size: 1.25cqw;
   letter-spacing: 0.125cqw;
 }
 .broadcast-scoreboard > div:not(:first-child) {
-  margin-top: 0.938cqw;
-  gap: 0.938cqw;
+  margin-top: 0.4cqw;
+  gap: 0.5cqw;
   padding-left: 0.833cqw;
   border-left-width: 0.208cqw;
 }
 .broadcast-scoreboard > div:not(:first-child) > strong {
-  font-size: 1.875cqw;
+  font-size: 1.6cqw;
   line-height: 1.1;
   white-space: normal;
   overflow-wrap: anywhere;
@@ -220,6 +241,7 @@ button {
 }
 .broadcast-scoreboard > div:not(:first-child) > span strong {
   font-size: 2.5cqw;
+  line-height: 1;
 }
 .broadcast-scoreboard svg {
   width: 1.667cqw;
@@ -333,10 +355,30 @@ button {
   margin: 0 0 0.6rem;
   font-size: 0.95rem;
 }
+.camera-layout-control {
+  display: grid;
+  gap: 0.3rem;
+  margin-bottom: 0.6rem;
+  font-size: 0.8rem;
+  grid-column: 1 / -1;
+}
+.camera-layout-control select {
+  min-height: 44px;
+  width: 100%;
+  padding: 0.4rem;
+  border: 1px solid #43586c;
+  border-radius: 0.5rem;
+  background: #172b3c;
+}
+.camera-settings-cameras {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.6rem;
+  grid-column: 1 / -1;
+}
 .camera-zoom-control + .camera-zoom-control {
-  margin-top: 0.8rem;
-  padding-top: 0.8rem;
-  border-top: 1px solid rgb(148 163 184 / 30%);
+  margin: 0;
+  padding: 0;
 }
 .camera-zoom-control h3,
 .camera-zoom-control p {
@@ -390,7 +432,8 @@ button {
     transform: none;
   }
   .camera-zoom-rail h2 {
-    display: none;
+    grid-column: 1 / -1;
+    margin-bottom: 0;
   }
   .camera-zoom-control + .camera-zoom-control {
     margin: 0;

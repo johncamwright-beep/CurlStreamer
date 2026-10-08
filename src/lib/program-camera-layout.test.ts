@@ -6,6 +6,16 @@ import {
 } from "./program-camera-layout";
 
 describe("full-frame program geometry", () => {
+  it("uses operator-selected slots regardless of camera orientation", () => {
+    expect(programCameraLayout([16 / 9, 16 / 9], "portrait")).toEqual(
+      programCameraLayout([9 / 16, 9 / 16]),
+    );
+    expect(programCameraLayout([9 / 16, 9 / 16], "stacked")).toEqual(
+      programCameraLayout([16 / 9, 16 / 9]),
+    );
+    expect(programCameraLayout([], "portrait").mode).toBe("none");
+    expect(programCameraLayout([16 / 9], "portrait").mode).toBe("single");
+  });
   it("accepts only decoded positive dimensions", () => {
     expect(cameraAspect(1920, 1080)).toBe(16 / 9);
     expect(cameraAspect(0, 1080)).toBeUndefined();

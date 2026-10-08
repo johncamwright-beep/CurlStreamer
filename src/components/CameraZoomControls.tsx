@@ -45,29 +45,59 @@ export function CameraZoomControls({
   game,
   act,
 }: {
-  game: Pick<GameState, "cameraZoom"> & Partial<Pick<GameState, "id">>;
+  game: Pick<GameState, "cameraZoom" | "programCameraMode"> &
+    Partial<Pick<GameState, "id">>;
   act: (action: unknown) => Promise<void>;
 }) {
   const cameraInputs = useStudioCameraInputs(game.id);
+  const [changing, setChanging] = useState(false);
+  const [layoutError, setLayoutError] = useState("");
+  async function changeLayout(mode: string) {
+    setChanging(true);
+    setLayoutError("");
+    try {
+      await act({ type: "camera-composition", mode });
+    } catch {
+      setLayoutError("Could not change camera layout. Try again.");
+    } finally {
+      setChanging(false);
+    }
+  }
   return (
     <aside
       data-testid="camera-zoom-rail"
       className="camera-zoom-rail"
-      aria-label="Camera zoom controls"
+      aria-label="Camera Settings"
     >
-      <h2>Camera zoom</h2>
-      {(["camera-home", "camera-away"] as const).map((role) =>
-        cameraInputs[role] && cameraInputs[role].kind !== "phone" ? (
-          <IpCameraZoomControl
-            key={`${game.id}:${role}:${cameraInputs[role].kind}:${cameraInputs[role].generation}`}
-            id={game.id}
-            role={role}
-            source={cameraInputs[role]}
-          />
-        ) : (
-          <CameraZoomControl key={role} game={game} role={role} act={act} />
-        ),
-      )}
+      <h2>Camera Settings</h2>
+      <label className="camera-layout-control">
+        Layout
+        <select
+          aria-label="Camera layout"
+          value={game.programCameraMode ?? "auto"}
+          disabled={changing}
+          onChange={(event) => void changeLayout(event.target.value)}
+        >
+          <option value="auto">Automatic</option>
+          <option value="stacked">Widescreen · stacked</option>
+          <option value="portrait">Portrait · side by side</option>
+        </select>
+      </label>
+      {layoutError && <p role="alert">{layoutError}</p>}
+      <div className="camera-settings-cameras">
+        {(["camera-home", "camera-away"] as const).map((role) =>
+          cameraInputs[role] && cameraInputs[role].kind !== "phone" ? (
+            <IpCameraZoomControl
+              key={`${game.id}:${role}:${cameraInputs[role].kind}:${cameraInputs[role].generation}`}
+              id={game.id}
+              role={role}
+              source={cameraInputs[role]}
+            />
+          ) : (
+            <CameraZoomControl key={role} game={game} role={role} act={act} />
+          ),
+        )}
+      </div>
     </aside>
   );
 }

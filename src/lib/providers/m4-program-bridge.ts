@@ -375,6 +375,7 @@ export async function createM4ProgramBridge(
     if (request.method === "GET" && request.url === "/camera-inputs") {
       const phone = {
         kind: "phone",
+        connectionEnabled: false,
         host: null,
         stream: null,
         rotation: 0,

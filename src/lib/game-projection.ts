@@ -21,6 +21,7 @@ export interface BroadcastGame {
     currentEnd: number;
   };
   layout: GameState["layout"];
+  programCameraMode?: GameState["programCameraMode"];
   broadcast: GameState["broadcast"];
   audioMuted: boolean;
   cameraAudio?: Partial<
@@ -86,6 +87,7 @@ export function broadcastGame(
       currentEnd: score.currentEnd,
     },
     layout: game.layout,
+    programCameraMode: game.programCameraMode ?? "auto",
     broadcast: game.broadcast,
     audioMuted: game.audioMuted,
     cameraAudio: {

@@ -26,7 +26,7 @@
     "jspdf": "^4.2.1",
     "livekit-client": "^2.15.6",
     "livekit-server-sdk": "2.18.0",
-    "next": "^15.5.2",
+    "next": "^15.5.27",
     "nodemailer": "^10.0.15",
     "qrcode": "^1.5.4",
     "react": "^19.1.1",

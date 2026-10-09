@@ -42,6 +42,7 @@ function ScorerGame({ id }: { id: string }) {
   const {
     game,
     completion,
+    lifecycle,
     error,
     act,
     accountOperator,
@@ -88,16 +89,17 @@ function ScorerGame({ id }: { id: string }) {
     [id],
   );
   const completed = completion ?? finished;
+  const terminal =
+    Boolean(completed) || lifecycle === "closed" || lifecycle === "deleted";
   const studioTitle = game
     ? gameEntryPresentation(game.config, navigationMetadata).title.slice(0, 200)
     : "";
   useEffect(() => {
     if (
-      (!game && !completed) ||
+      (!game && !terminal) ||
       endingBroadcast ||
       !desktop ||
-      !m1Pilot ||
-      (!accountOperator && !organizerAccess)
+      (!terminal && (!m1Pilot || (!accountOperator && !organizerAccess)))
     )
       return;
     const shell = (
@@ -106,11 +108,11 @@ function ScorerGame({ id }: { id: string }) {
       }
     ).chrome?.webview;
     shell?.postMessage({
-      type: completed ? "studio-game-ended" : "studio-game-ready",
+      type: terminal ? "studio-game-ended" : "studio-game-ready",
       gameId: id,
     });
     // Preserve the two-field preparation message accepted by older Studios.
-    if (!completed)
+    if (!terminal)
       shell?.postMessage({
         type: "studio-session-title",
         gameId: id,
@@ -120,6 +122,7 @@ function ScorerGame({ id }: { id: string }) {
     id,
     Boolean(game),
     Boolean(completed),
+    terminal,
     desktop,
     m1Pilot,
     accountOperator,

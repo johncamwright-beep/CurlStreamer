@@ -364,7 +364,17 @@ test("desktop game day keeps scoring primary and settings available on demand", 
   await expect(
     page.getByRole("button", { name: "Camera 1 zoom in" }),
   ).toBeHidden();
-  const previewBeforeSettings = await preview.boundingBox();
+  const previewPosition = () =>
+    preview.evaluate((el) => {
+      const rect = el.getBoundingClientRect();
+      return {
+        x: rect.x + scrollX,
+        y: rect.y + scrollY,
+        width: rect.width,
+        height: rect.height,
+      };
+    });
+  const previewBeforeSettings = await previewPosition();
   await cameraControls.click();
   await expect(
     page.getByRole("button", { name: "Camera 1 zoom in" }),
@@ -381,7 +391,7 @@ test("desktop game day keeps scoring primary and settings available on demand", 
   await expect(
     page.getByRole("button", { name: "Camera 1 zoom in" }),
   ).toBeHidden();
-  expect(await preview.boundingBox()).toEqual(previewBeforeSettings);
+  expect(await previewPosition()).toEqual(previewBeforeSettings);
   const previewBox = (await preview.boundingBox())!;
   expect(previewBox.width / previewBox.height).toBeCloseTo(16 / 9, 1);
   if (info.project.name !== "mobile") {

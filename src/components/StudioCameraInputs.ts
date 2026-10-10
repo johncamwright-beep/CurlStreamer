@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { z } from "zod";
+import { m4CameraHealthSchema } from "@/lib/m4-camera-input";
 
 export const studioCameraInputSchema = z
   .object({
@@ -17,6 +18,7 @@ export const studioCameraInputSchema = z
     generation: z.number().int().nonnegative(),
     connectionEnabled: z.boolean().optional(),
     zoom: z.number().min(1).max(4).optional(),
+    health: m4CameraHealthSchema.optional(),
   })
   .strict();
 export type StudioCameraInput = z.infer<typeof studioCameraInputSchema>;

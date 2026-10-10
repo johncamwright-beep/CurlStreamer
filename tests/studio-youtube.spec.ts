@@ -99,6 +99,71 @@ test("Studio YouTube sends game-scoped commands and expires live status", async 
   ).toHaveAttribute("href", watchUrl);
   await report("fixture-game", true);
   await expect(page.getByRole("status")).toHaveText("● LIVE");
+  await page.evaluate(() =>
+    window.dispatchEvent(
+      new CustomEvent("studio-youtube-status", {
+        detail: {
+          gameId: "fixture-game",
+          available: true,
+          busy: false,
+          streaming: "armed",
+          live: true,
+          receiving: true,
+          outputActive: true,
+          concurrentViewers: 27,
+          message: "",
+          canReconnect: true,
+        },
+      }),
+    ),
+  );
+  await expect(
+    page.getByText("27 watching now", { exact: false }),
+  ).toBeVisible();
+  await report("fixture-game", true);
+  await expect(page.getByText("27 last reported")).toBeVisible();
+  await page.evaluate(() =>
+    window.dispatchEvent(
+      new CustomEvent("studio-youtube-status", {
+        detail: {
+          gameId: "fixture-game",
+          available: true,
+          busy: false,
+          streaming: "armed",
+          live: true,
+          receiving: true,
+          outputActive: true,
+          concurrentViewers: 32,
+          message: "",
+          canReconnect: true,
+        },
+      }),
+    ),
+  );
+  await expect(page.getByText("32 watching now")).toBeVisible();
+  await page.evaluate(() =>
+    window.dispatchEvent(
+      new CustomEvent("studio-youtube-status", {
+        detail: {
+          gameId: "fixture-game",
+          available: true,
+          busy: false,
+          streaming: "armed",
+          live: false,
+          receiving: false,
+          outputActive: true,
+          lastLiveAgeMs: 12000,
+          message: "",
+          canReconnect: true,
+        },
+      }),
+    ),
+  );
+  await expect(page.getByRole("status")).toHaveText(
+    "LIVE last confirmed · Rechecking…",
+  );
+  await expect(page.getByText("32 last reported")).toBeVisible();
+  await report("fixture-game", true);
   await expect(
     page.getByRole("button", { name: "Disconnect", exact: true }),
   ).toBeEnabled();

@@ -111,7 +111,19 @@ export type M4CameraInputSnapshot = {
   errorCode: M4CameraInputError;
   generation: number;
   zoom?: number;
+  health?: z.infer<typeof m4CameraHealthSchema>;
 };
+export const m4CameraHealthSchema = z
+  .object({
+    receivedFps: z.number().nonnegative().max(240),
+    lastFrameAgeMs: z.number().nonnegative().nullable(),
+    longestGapMs: z.number().nonnegative(),
+    reconnects: z.number().int().nonnegative(),
+    decodedFrames: z.number().int().nonnegative(),
+    decodeErrors: z.number().int().nonnegative(),
+    processingMs: z.number().nonnegative(),
+  })
+  .strict();
 export const m4CameraZoomSchema = z.number().min(1).max(4).multipleOf(0.1);
 export const m4CameraInputSnapshotSchema = z
   .object({
@@ -138,5 +150,6 @@ export const m4CameraInputSnapshotSchema = z
       .nullable(),
     generation: z.number().int().nonnegative(),
     zoom: m4CameraZoomSchema.default(1),
+    health: m4CameraHealthSchema.optional(),
   })
   .strict();

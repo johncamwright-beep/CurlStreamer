@@ -4,6 +4,7 @@ import Link from "next/link";
 import { use, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useGame, GameUpdateError } from "@/components/GameSync";
 import { ScoringSummary } from "@/components/ScoringSummary";
+import { InGameRockColours } from "@/components/InGameRockColours";
 import { ScoringProgramControls } from "@/components/ScoringProgramControls";
 import "./scoring.css";
 import { GameSetupNavigation } from "@/components/GameSetupNavigation";
@@ -440,7 +441,19 @@ function ScorerGame({ id }: { id: string }) {
       </header>
       <div className="scoring-columns">
         <div className="scoring-main">
-          <ScoringSummary game={game} />
+          <ScoringSummary
+            game={game}
+            actions={
+              <InGameRockColours
+                homeName={game.config.homeName}
+                awayName={game.config.awayName}
+                homeColor={game.config.homeColor}
+                awayColor={game.config.awayColor}
+                disabled={scoringLocked}
+                save={act}
+              />
+            }
+          />
           {!score.hammer ? (
             <section
               className="scoring-card scoring-entry"

@@ -10,6 +10,14 @@ const stateSchema = z.object({
   busy: z.boolean(),
   streaming: z.string(),
   live: z.boolean(),
+  lastLiveAgeMs: z.number().nonnegative().nullable().optional(),
+  concurrentViewers: z
+    .number()
+    .int()
+    .nonnegative()
+    .max(Number.MAX_SAFE_INTEGER)
+    .nullable()
+    .optional(),
   receiving: z.boolean(),
   message: z.string().max(300),
   canReconnect: z.boolean().optional().default(false),
@@ -40,6 +48,7 @@ export function StudioYouTube({ id }: { id: string }) {
   const failures = useRef(0);
   const halted = useRef(false);
   const confirmedLive = useRef(false);
+  const lastViewers = useRef<number | undefined>(undefined);
   const presentationFlight = useRef<object | undefined>(undefined);
   const presentationConfirmedUntil = useRef(0);
   const currentGame = useRef(id);
@@ -162,6 +171,7 @@ export function StudioYouTube({ id }: { id: string }) {
   useEffect(() => {
     let last = 0;
     confirmedLive.current = false;
+    lastViewers.current = undefined;
     presentationFlight.current = undefined;
     presentationConfirmedUntil.current = 0;
     setPending(false);
@@ -171,8 +181,13 @@ export function StudioYouTube({ id }: { id: string }) {
       const parsed = stateSchema.safeParse((event as CustomEvent).detail);
       if (!parsed.success || parsed.data.gameId !== id) return;
       last = Date.now();
-      if (parsed.data.live) confirmedLive.current = true;
-      else if (
+      if (parsed.data.live) {
+        if (parsed.data.concurrentViewers != null)
+          lastViewers.current = parsed.data.concurrentViewers;
+        confirmedLive.current = true;
+        failures.current = 0;
+        setError("");
+      } else if (
         ["idle", "starting", "stopping", "stopped", "failed"].includes(
           parsed.data.streaming,
         )
@@ -285,6 +300,13 @@ export function StudioYouTube({ id }: { id: string }) {
   const ending = ["preparing-end", "ended"].includes(
     state?.presentation?.mode ?? "",
   );
+  const viewerCount = state?.concurrentViewers ?? lastViewers.current;
+  const showViewers =
+    state &&
+    (state.live ||
+      (state.streaming === "armed" &&
+        state.outputActive &&
+        viewerCount != null));
   if (!bridgeAvailable) return <WindowsStudioRequired gameId={id} />;
   return (
     <section
@@ -299,30 +321,50 @@ export function StudioYouTube({ id }: { id: string }) {
           </svg>
           YouTube
         </h2>
-        <strong
-          role="status"
-          className={state?.live ? "text-red-400" : "text-slate-300"}
-        >
-          {!state
-            ? "Status unavailable"
-            : held
-              ? state.live
-                ? "● LIVE · Paused"
-                : "Paused · Sending card"
-              : state.live
-                ? "● LIVE"
-                : state.streaming === "paused"
-                  ? "Disconnected"
-                  : state?.receiving
-                    ? "Receiving video"
-                    : watchingOutput
-                      ? state.outputActive
-                        ? "Sending video · Checking YouTube…"
-                        : "Checking status…"
-                      : active
-                        ? "Connecting…"
-                        : "Not live"}
-        </strong>
+        <div className="flex min-w-0 items-center gap-2">
+          <strong
+            role="status"
+            className={state?.live ? "text-red-400" : "text-slate-300"}
+          >
+            {!state
+              ? "Status unavailable"
+              : held
+                ? state.live
+                  ? "● LIVE · Paused"
+                  : "Paused · Sending card"
+                : state.live
+                  ? "● LIVE"
+                  : state.lastLiveAgeMs != null &&
+                      state.lastLiveAgeMs < 30000 &&
+                      state.outputActive &&
+                      state.streaming === "armed"
+                    ? "LIVE last confirmed · Rechecking…"
+                    : state.streaming === "paused"
+                      ? "Disconnected"
+                      : state?.receiving
+                        ? "Receiving video"
+                        : watchingOutput
+                          ? state.outputActive
+                            ? "Sending video · Checking YouTube…"
+                            : "Checking status…"
+                          : active
+                            ? "Connecting…"
+                            : "Not live"}
+          </strong>
+          {showViewers && (
+            <span
+              className="min-w-0 truncate text-xs text-slate-300"
+              aria-live="polite"
+              title="YouTube live viewer count. Updates about once a minute."
+            >
+              {viewerCount == null
+                ? "Viewers unavailable"
+                : state.live && state.concurrentViewers != null
+                  ? `${viewerCount.toLocaleString()} watching now`
+                  : `${viewerCount.toLocaleString()} last reported`}
+            </span>
+          )}
+        </div>
       </div>
       <div className="studio-youtube-actions flex flex-wrap gap-2">
         <button

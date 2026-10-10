@@ -394,6 +394,19 @@ async function sustainedCapture() {
         assert(length <= 9600 && length % 2 === 0);
         pcm++;
         pcmBytes += length;
+      } else if (type === "DIAG") {
+        assert(length <= 1024);
+        const health = JSON.parse(payload.toString());
+        assert(
+          Number.isSafeInteger(health.decodedFrames) &&
+            health.decodedFrames >= 0,
+        );
+        assert(
+          Number.isSafeInteger(health.decodeErrors) && health.decodeErrors >= 0,
+        );
+        assert(
+          Number.isFinite(health.processingMs) && health.processingMs >= 0,
+        );
       } else {
         assert.equal(type, "STAT");
         statuses.push(JSON.parse(payload.toString()).code);

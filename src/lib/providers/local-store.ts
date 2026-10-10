@@ -325,6 +325,10 @@ export function updateGame(
       action.type === "undo"
     )
       applyScoringAction(game, action, now);
+    if (action.type === "rock-colours") {
+      game.config.homeColor = action.homeColor;
+      game.config.awayColor = action.awayColor;
+    }
     if (action.type === "layout") game.layout = action.layout;
     if (action.type === "camera-composition")
       game.programCameraMode = action.mode;

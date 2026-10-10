@@ -49,6 +49,13 @@ const scoreActionSchema = z
       });
   });
 export const actionSchema = z.discriminatedUnion("type", [
+  z
+    .object({
+      type: z.literal("rock-colours"),
+      homeColor: z.string().regex(/^#[0-9a-fA-F]{6}$/),
+      awayColor: z.string().regex(/^#[0-9a-fA-F]{6}$/),
+    })
+    .strict(),
   scoreActionSchema,
   z.object({
     type: z.literal("hammer"),

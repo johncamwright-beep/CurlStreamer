@@ -73,12 +73,17 @@ describe("M4 desktop output observation", () => {
     expect(mocks.observe.mock.invocationCallOrder[0]).toBeLessThan(
       mocks.rpc.mock.invocationCallOrder[1],
     );
-    expect(mocks.observe).toHaveBeenCalledWith("access-secret", {
-      channelId: "channel",
-      streamId: "stream",
-      broadcastId: "broadcast",
-      visibility: "unlisted",
-    });
+    expect(mocks.observe).toHaveBeenCalledWith(
+      "access-secret",
+      {
+        channelId: "channel",
+        streamId: "stream",
+        broadcastId: "broadcast",
+        visibility: "unlisted",
+      },
+      fetch,
+      true,
+    );
     expect(JSON.stringify(mocks.rpc.mock.calls)).not.toContain(
       credential.bearer,
     );
@@ -110,12 +115,17 @@ describe("M4 desktop output observation", () => {
     await expect(
       observeM4DesktopOutput(game, credential, intentId),
     ).resolves.toEqual({ intentId, sessionId, generation: 1, ...observation });
-    expect(mocks.observe).toHaveBeenCalledWith("access-secret", {
-      channelId: "channel",
-      streamId: "stream",
-      broadcastId: "broadcast",
-      visibility: "public",
-    });
+    expect(mocks.observe).toHaveBeenCalledWith(
+      "access-secret",
+      {
+        channelId: "channel",
+        streamId: "stream",
+        broadcastId: "broadcast",
+        visibility: "public",
+      },
+      fetch,
+      true,
+    );
   });
   it("does not return an observation after revocation during provider work", async () => {
     mocks.rpc

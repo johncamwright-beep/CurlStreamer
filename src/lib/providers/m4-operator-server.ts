@@ -317,6 +317,8 @@ export async function createM4OperatorServer(options: {
         })
         .optional(),
       liveConfirmed: z.boolean().optional(),
+      lastLiveAgeMs: z.number().nonnegative().optional(),
+      concurrentViewers: z.number().int().nonnegative().nullable().optional(),
     })
     .passthrough();
   const snapshot = () => {
@@ -390,6 +392,15 @@ export async function createM4OperatorServer(options: {
       youtubeReception:
         provider?.streamStatus === "active" ? "confirmed" : "unknown",
       broadcast: broadcastLive ? "live" : "unknown",
+      lastLiveAgeMs:
+        streaming === "armed" &&
+        localOutput.state === "active" &&
+        desktop.snapshot().authorized
+          ? observed.lastLiveAgeMs
+          : undefined,
+      concurrentViewers: broadcastLive
+        ? (observed.concurrentViewers ?? null)
+        : null,
       pairingAvailable: options.pairingEnabled === true,
       programAvailable: Boolean(options.program),
       program,

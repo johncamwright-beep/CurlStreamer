@@ -24,6 +24,8 @@ export type M4StreamSnapshot = {
   };
   provider?: M4ProviderObservation;
   liveConfirmed?: boolean;
+  lastLiveAgeMs?: number;
+  concurrentViewers?: number | null;
 };
 
 /** One native connection, one target delivery. Armed is authority acceptance,
@@ -36,6 +38,7 @@ export class M4ProgramStream {
   #stop?: Promise<void>;
   #local?: { value: M4NativeObservation; at: number };
   #provider?: { value: M4ProviderObservation; at: number };
+  #lastLiveAt?: number;
   #localTimer?: ReturnType<typeof setTimeout>;
   #providerTimer?: ReturnType<typeof setTimeout>;
   #failureReported = false;
@@ -79,6 +82,14 @@ export class M4ProgramStream {
         ? this.#provider.value
         : undefined;
     return {
+      ...(this.#state === "armed" &&
+      native.state === "armed" &&
+      this.#lastLiveAt !== undefined
+        ? { lastLiveAgeMs: Math.max(0, performance.now() - this.#lastLiveAt) }
+        : {}),
+      ...(this.native.observe
+        ? { concurrentViewers: provider?.concurrentViewers ?? null }
+        : {}),
       state:
         (this.#authorized() && native.state !== "armed") ||
         (this.#state === "idle" && native.state !== "connected")
@@ -163,6 +174,7 @@ export class M4ProgramStream {
     clearTimeout(this.#localTimer);
     clearTimeout(this.#providerTimer);
     this.#provider = undefined;
+    this.#lastLiveAt = undefined;
   }
   async #observeLocal(signal: AbortSignal) {
     const at = performance.now();
@@ -200,7 +212,6 @@ export class M4ProgramStream {
     intentId: string,
     signal: AbortSignal,
   ) {
-    const at = performance.now();
     const generation = this.#outputGeneration;
     try {
       const value =
@@ -212,8 +223,14 @@ export class M4ProgramStream {
         !signal.aborted &&
         this.#state === "armed" &&
         generation === this.#outputGeneration
-      )
+      ) {
+        const at = performance.now();
         this.#provider = { value, at };
+        this.#lastLiveAt =
+          value.broadcastLive && value.streamStatus === "active"
+            ? at
+            : undefined;
+      }
     } catch {
       if (generation === this.#outputGeneration) this.#provider = undefined;
     }
@@ -295,6 +312,7 @@ export class M4ProgramStream {
         if (value.state === "stopped") {
           this.#state = "paused";
           this.#provider = undefined;
+          this.#lastLiveAt = undefined;
           return;
         }
         if (performance.now() >= until) throw unavailable();
@@ -321,6 +339,7 @@ export class M4ProgramStream {
         throw unavailable();
       this.#local = undefined;
       this.#provider = undefined;
+      this.#lastLiveAt = undefined;
       this.#state = "armed";
     } finally {
       this.#controlFlight = false;

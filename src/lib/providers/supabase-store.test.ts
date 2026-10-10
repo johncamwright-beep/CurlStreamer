@@ -98,6 +98,36 @@ describe("Supabase game creation", () => {
     expect(await getGame(game.id)).toEqual(game);
   });
 
+  it("saves rock colours through the versioned state write without appending a scoring event", async () => {
+    const game = storedGame();
+    mocks.maybeSingle.mockResolvedValue({
+      data: { state: game, version: 2 },
+      error: null,
+    });
+    mocks.rpc.mockResolvedValue({ data: 3, error: null });
+    await updateGame(game.id, {
+      type: "rock-colours",
+      homeColor: "#facc15",
+      awayColor: "#2563eb",
+    });
+    expect(mocks.rpc).toHaveBeenCalledWith(
+      "write_game_state",
+      expect.objectContaining({
+        p_expected_version: 2,
+        p_state: expect.objectContaining({
+          config: expect.objectContaining({
+            homeColor: "#facc15",
+            awayColor: "#2563eb",
+          }),
+          scoreEvents: game.scoreEvents,
+        }),
+      }),
+    );
+    expect(
+      mocks.rpc.mock.calls.some(([name]) => name === "append_score_event"),
+    ).toBe(false);
+  });
+
   it("redacts credentials from logged database errors", async () => {
     process.env.SUPABASE_SECRET_KEY = "server-secret-value";
     mocks.rpc.mockResolvedValue({

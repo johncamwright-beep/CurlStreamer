@@ -54,11 +54,22 @@ const observationResponse = z
       "liveStarting",
     ]),
     broadcastLive: z.boolean(),
+    concurrentViewers: z
+      .number()
+      .int()
+      .nonnegative()
+      .max(Number.MAX_SAFE_INTEGER)
+      .nullable()
+      .optional(),
   })
   .strict();
 export type M4ProviderObservation = Pick<
   z.infer<typeof observationResponse>,
-  "streamStatus" | "healthStatus" | "broadcastStatus" | "broadcastLive"
+  | "streamStatus"
+  | "healthStatus"
+  | "broadcastStatus"
+  | "broadcastLive"
+  | "concurrentViewers"
 >;
 type State =
   | "unpaired"
@@ -309,6 +320,9 @@ export class M4DesktopClient {
           healthStatus: result.healthStatus,
           broadcastStatus: result.broadcastStatus,
           broadcastLive: result.broadcastLive,
+          ...(result.concurrentViewers !== undefined
+            ? { concurrentViewers: result.concurrentViewers }
+            : {}),
         };
       } catch {
         throw fail();

@@ -258,8 +258,17 @@ const server = createServer(async (request, response) => {
         can_manage: true,
       },
     ]);
-  if (url.pathname === "/rest/v1/rpc/disconnect_youtube_connection")
-    return send(response, 200, 5);
+  // This labelled fixture holds no Google grant. Disconnect takes the
+  // idempotent no-credential path without contacting a real Google account.
+  if (url.pathname === "/rest/v1/rpc/begin_youtube_disconnect")
+    return send(response, 200, [
+      {
+        organization_id: organizationId,
+        encrypted_credentials: null,
+        connection_version: 4,
+        disconnect_operation_id: null,
+      },
+    ]);
   return send(response, 404, { message: "Unmocked Supabase test request" });
 });
 

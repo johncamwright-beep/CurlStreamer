@@ -1,7 +1,7 @@
 # Private IP camera receiver
 
 This Windows x64 helper uses the pinned OBS runtime's FFmpeg libraries to decode
-an actual RTSP/TCP camera stream. It is separate from the composed program
+an actual RTSP camera stream. It is separate from the composed program
 recorder. Its JPEG frames enter the existing renderer and therefore appear in
 Studio preview, local output and streaming output.
 
@@ -54,6 +54,12 @@ returned in status snapshots. Legacy version 1 and saved Tapo sources still use
 `stream1` or `stream2`. Both versions have exactly seven fields. Only `127.0.0.1`
 is additionally accepted by the helper for the synthetic fixture; production
 schemas reject loopback.
+
+Saved Tapo sources (version 1) prefer UDP media, accepting packets only from the
+negotiated source. TCP is retried when UDP setup is rejected or startup receives
+no usable video. Both attempts share an eight-second startup budget. Generic
+RTSP sources (version 2) retain TCP. Existing camera credentials and addresses
+are unchanged; transport selection is private to the receiver.
 Version 2 rejects credential user information longer than 127 encoded bytes,
 including the separating colon, before starting network access. RFC3986
 unreserved UTF-8 bytes count as one byte; every other byte counts as three
@@ -74,15 +80,19 @@ Video preserves the entire frame, rotates pixels by 0/90/180/270 degrees, scales
 to at most 1280 pixels wide and 1920 high without changing its aspect ratio, and
 emits at most 30 frames per second using stream timestamps and a scheduled cadence.
 Rotation zero scales directly into the JPEG encoder's YUV format. A separate
-writer retains one latest JPEG/status and up to 100ms of PCM audio, preserving
-normal decoded audio bursts and discarding oldest audio only at the cap. Stdout backpressure cannot block
+writer paces camera video and audio from capture timestamps with a one-second
+buffer, capped at 192 records and 64 MiB per camera. Clock discontinuities rebase
+playback. Media over 200 ms late after consumer backpressure is discarded rather
+than accumulating delay. Status and diagnostics bypass the buffer, and shutdown
+discards pending media. External microphones are outside this camera delay.
+Stdout backpressure cannot block
 RTSP reads or session keepalives or grow a queue without bound. Renderer media
 uses `object-fit: contain`.
 
 The bounded `DIAG` record reports cumulative decoded frames/errors and the last
 JPEG conversion time in milliseconds every two seconds. Studio additionally
 measures received frame rate, inter-frame gaps and reconnects. These are frame
-delivery diagnostics, not RTP packet-loss measurements: RTSP runs over TCP.
+delivery diagnostics, not RTP packet-loss measurements.
 Malformed audio packets flush only the audio decoder instead of restarting video.
 
 Actual synthetic RTSP validation:
@@ -91,7 +101,7 @@ Actual synthetic RTSP validation:
 node native/m4-ip-camera/validate.mjs <build>/Release/m4_ip_camera.exe <setup>/obs-m3-32.2.2/bin/64bit
 ```
 
-The test generates moving H264 using the pinned encoder, serves RTSP/TCP with
+The test generates moving H264 using the pinned encoder, serves RTSP/TCP and UDP with
 PCMU audio, and verifies actual JPEG decoding, PCM resampling, all four rotated
 dimensions, sanitized authentication failure and stdin-EOF cleanup. It requires
 no physical camera and makes no external network requests.

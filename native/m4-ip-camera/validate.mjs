@@ -2,6 +2,7 @@
 import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
 import { createServer } from "node:net";
+import { createSocket } from "node:dgram";
 import { dirname, join, resolve } from "node:path";
 import sharp from "sharp";
 const [helper, runtime] = process.argv
@@ -53,12 +54,20 @@ assert(sps && pps);
 const sdp = `v=0\r\no=- 0 0 IN IP4 127.0.0.1\r\ns=Synthetic fixture\r\nc=IN IP4 127.0.0.1\r\nt=0 0\r\na=control:*\r\nm=video 0 RTP/AVP 96\r\na=rtpmap:96 H264/90000\r\na=fmtp:96 packetization-mode=1;sprop-parameter-sets=${sps.toString("base64")},${pps.toString("base64")}\r\na=control:trackID=0\r\nm=audio 0 RTP/AVP 0\r\na=rtpmap:0 PCMU/8000/1\r\na=control:trackID=1\r\n`;
 let reject = false;
 let sustained = false,
+  burstDelivery = false,
   pauseMedia = false,
   keepalives = 0;
 let expectedAuthorization = null;
 let expectedPath = null,
   seenCustomPath = false;
 const sockets = new Set();
+const udpSender = createSocket("udp4");
+udpSender.on("error", () => {});
+await new Promise((resolve) => udpSender.bind(0, "127.0.0.1", resolve));
+let rejectUdp = false,
+  silenceUdp = false,
+  udpSetups = 0,
+  tcpSetups = 0;
 const server = createServer((socket) => {
   sockets.add(socket);
   let pending = Buffer.alloc(0),
@@ -68,6 +77,14 @@ const server = createServer((socket) => {
     index = 0,
     streamStarted = 0,
     lastCommand = Date.now();
+  let heldPackets = [];
+  const udpPorts = new Map();
+  const send = (encoded) => {
+    const port = udpPorts.get(encoded[1]);
+    if (port) {
+      if (!silenceUdp) udpSender.send(encoded.subarray(4), port, "127.0.0.1");
+    } else socket.write(encoded);
+  };
   const rtp = (channel, payload, type, timestamp, marker, sequence) => {
     const h = Buffer.alloc(16);
     h[0] = 36;
@@ -78,7 +95,16 @@ const server = createServer((socket) => {
     h.writeUInt16BE(sequence & 65535, 6);
     h.writeUInt32BE(timestamp >>> 0, 8);
     h.writeUInt32BE(channel ? 654 : 123, 12);
-    socket.write(Buffer.concat([h, payload]));
+    const encoded = Buffer.concat([h, payload]);
+    // Reproduce the observed 200ms delivery gap without losing RTP
+    // packets or altering their original capture timestamps.
+    if (burstDelivery && (Date.now() - streamStarted) % 3000 < 200) {
+      heldPackets.push(encoded);
+    } else {
+      for (const held of heldPackets) send(held);
+      heldPackets = [];
+      send(encoded);
+    }
   };
   socket.on("data", (data) => {
     pending = Buffer.concat([pending, data]);
@@ -124,8 +150,24 @@ const server = createServer((socket) => {
         body = sdp;
         headers += `Content-Type: application/sdp\r\nContent-Base: rtsp://127.0.0.1:${server.address().port}/stream1/\r\n`;
       }
-      if (method === "SETUP")
-        headers += `Transport: RTP/AVP/TCP;unicast;interleaved=${req.includes("trackID=1") ? "2-3" : "0-1"}\r\n`;
+      if (method === "SETUP") {
+        const ports = req.match(/client_port=(\d+)-(\d+)/i);
+        if (ports) {
+          udpSetups++;
+          if (rejectUdp) {
+            socket.write(
+              `RTSP/1.0 461 Unsupported Transport\r\nCSeq: ${cseq}\r\nContent-Length: 0\r\n\r\n`,
+            );
+            continue;
+          }
+          udpPorts.set(req.includes("trackID=1") ? 2 : 0, Number(ports[1]));
+          const port = udpSender.address().port;
+          headers += `Transport: RTP/AVP;unicast;client_port=${ports[1]}-${ports[2]};server_port=${port}-${port + 1}\r\n`;
+        } else {
+          tcpSetups++;
+          headers += `Transport: RTP/AVP/TCP;unicast;interleaved=${req.includes("trackID=1") ? "2-3" : "0-1"}\r\n`;
+        }
+      }
       socket.write(
         `RTSP/1.0 200 OK\r\nCSeq: ${cseq}\r\n${headers}Content-Length: ${Buffer.byteLength(body)}\r\n\r\n${body}`,
       );
@@ -357,7 +399,7 @@ async function invalidOrSilent(line) {
     `PASS ${line === undefined ? "incomplete startup timeout" : "invalid config rejection"}`,
   );
 }
-async function sustainedCapture() {
+async function sustainedCapture(udp = false) {
   sustained = true;
   reject = false;
   expectedAuthorization = null;
@@ -374,6 +416,8 @@ async function sustainedCapture() {
     pcm = 0,
     pcmBytes = 0,
     lastFrame = 0,
+    measuredGap = 0,
+    measureGaps = false,
     exit;
   const statuses = [];
   child.stderr.on("data", (b) =>
@@ -388,6 +432,8 @@ async function sustainedCapture() {
       if (pending.length < length + 8) break;
       const payload = pending.subarray(8, length + 8);
       if (type === "JPEG") {
+        if (measureGaps && lastFrame)
+          measuredGap = Math.max(measuredGap, Date.now() - lastFrame);
         frames++;
         lastFrame = Date.now();
       } else if (type === "PCMA") {
@@ -422,12 +468,12 @@ async function sustainedCapture() {
   );
   child.stdin.write(
     JSON.stringify({
-      version: 2,
+      version: udp ? 1 : 2,
       host: "127.0.0.1",
       port: server.address().port,
-      username: "",
-      password: "",
-      path: "/stream1",
+      username: udp ? "fixture-user" : "",
+      password: udp ? "fixture-password" : "",
+      ...(udp ? { stream: "stream1" } : { path: "/stream1" }),
       rotation: 0,
     }) + "\n",
   );
@@ -450,6 +496,15 @@ async function sustainedCapture() {
       audioRate >= 45000 && audioRate <= 51000,
       `healthy PCM continuity (${audioRate.toFixed(0)} samples/s)`,
     );
+    burstDelivery = true;
+    measureGaps = true;
+    await sleep(6500);
+    burstDelivery = false;
+    measureGaps = false;
+    assert(
+      measuredGap < 200,
+      `timestamp playout smooths 200ms network bursts (largest gap ${measuredGap}ms)`,
+    );
     const beforeBlocked = keepalives;
     child.stdout.pause();
     await sleep(3800);
@@ -467,6 +522,7 @@ async function sustainedCapture() {
     pauseMedia = true;
     await sleep(1200);
     pauseMedia = false;
+    burstDelivery = false;
     await sleep(1000);
     assert(
       frames > beforeGap && !exit,
@@ -494,7 +550,7 @@ async function sustainedCapture() {
     );
     assert.equal(exit.code, 1);
     console.log(
-      `PASS sustained RTSP ${sustainedMs}ms, ${fps.toFixed(1)}fps, ${keepalives} keepalives, stdout backpressure, transient gap and bounded timeout`,
+      `PASS sustained RTSP ${udp ? "UDP" : "TCP"} ${sustainedMs}ms, ${fps.toFixed(1)}fps, ${keepalives} keepalives, paced 200ms bursts, stdout backpressure, transient gap and bounded timeout`,
     );
   } finally {
     clearTimeout(kill);
@@ -617,9 +673,28 @@ try {
   );
   await invalidOrSilent();
   await sustainedCapture();
+  await sustainedCapture(true);
+  const udpBefore = udpSetups,
+    tcpBefore = tcpSetups;
+  rejectUdp = true;
+  await run(0);
+  rejectUdp = false;
+  assert(
+    udpSetups > udpBefore && tcpSetups > tcpBefore,
+    "Tapo negotiates TCP fallback when UDP setup is rejected",
+  );
+  const silentTcpBefore = tcpSetups;
+  silenceUdp = true;
+  await run(0);
+  silenceUdp = false;
+  assert(
+    tcpSetups > silentTcpBefore,
+    "Tapo retries TCP within startup bound when UDP media never arrives",
+  );
   await terminalCapture();
   await terminalCapture(true);
 } finally {
   for (const socket of sockets) socket.destroy();
   await new Promise((resolve) => server.close(resolve));
+  await new Promise((resolve) => udpSender.close(resolve));
 }

@@ -16,11 +16,20 @@
 static volatile LONG cancelled, timed_out;
 static ULONGLONG deadline;
 static HANDLE output;
-static int rotation;
-/* One latest record per media kind. A slow stdout consumer must not stop RTSP
- * reads (and its session keepalive), or accumulate an unbounded frame queue. */
+static int rotation, prefer_udp;
+/* Immediate status/diagnostics are independent of paced media. A slow stdout
+ * consumer must not stop RTSP reads or accumulate an unbounded frame queue. */
 typedef struct queued_record { unsigned char *data; uint32_t length; } queued_record;
 static queued_record queued[4];
+/* Timestamp-paced media, separate from immediate status/diagnostics. The queue
+ * covers ordinary sub-second RTSP bursts without blocking the network reader. */
+#define PLAYOUT_DELAY_MS 1000
+#define PLAYOUT_CAPACITY 192
+#define PLAYOUT_MAX_BYTES (64u*1024u*1024u)
+typedef struct media_record { queued_record record; ULONGLONG due; int kind; } media_record;
+static media_record media[PLAYOUT_CAPACITY];
+static unsigned media_count;
+static size_t media_bytes;
 static CRITICAL_SECTION queue_lock;
 static HANDLE queue_ready, writer;
 static volatile LONG output_failed, writer_stopping, closing;
@@ -60,11 +69,40 @@ static int write_record(const char type[4], const void *data, uint32_t length)
     for (int i = 0; i < 4; ++i) header[4+i] = (unsigned char)(length >> (8*i));
     return write_all(header, 8) && write_all(data, length);
 }
+/* Caller holds queue_lock. */
+static media_record pop_media(void)
+{
+    media_record first=media[0];
+    --media_count; media_bytes-=first.record.length;
+    memmove(media,media+1,media_count*sizeof(*media));
+    return first;
+}
+static void clear_media(void)
+{
+    EnterCriticalSection(&queue_lock);
+    while (media_count) { media_record old=pop_media(); free(old.record.data); }
+    LeaveCriticalSection(&queue_lock);
+}
+static int timed_record(int kind, const void *data, uint32_t length, ULONGLONG due)
+{
+    if (!length || length>2u*1024u*1024u) return 0;
+    unsigned char *copy=malloc(length); if (!copy) return 0;
+    memcpy(copy,data,length);
+    EnterCriticalSection(&queue_lock);
+    while (media_count && (media_count==PLAYOUT_CAPACITY || media_bytes+length>PLAYOUT_MAX_BYTES)) {
+        media_record old=pop_media(); free(old.record.data);
+    }
+    unsigned at=media_count;
+    while (at && media[at-1].due>due) { media[at]=media[at-1]; --at; }
+    media[at]=(media_record){{copy,length},due,kind}; ++media_count; media_bytes+=length;
+    LeaveCriticalSection(&queue_lock); SetEvent(queue_ready);
+    return !InterlockedCompareExchange(&output_failed,0,0);
+}
 static DWORD WINAPI write_output(void *unused)
 {
     static const char tags[4][5]={"STAT","JPEG","PCMA","DIAG"}; (void)unused;
     for (;;) {
-        WaitForSingleObject(queue_ready, INFINITE);
+        WaitForSingleObject(queue_ready, 5);
         for (int i=0;i<4;++i) {
             EnterCriticalSection(&queue_lock);
             queued_record next=queued[i]; queued[i]=(queued_record){0};
@@ -73,6 +111,18 @@ static DWORD WINAPI write_output(void *unused)
                 int ok=write_record(tags[i],next.data,next.length); free(next.data);
                 if (!ok) return 0;
             }
+        }
+        for (;;) {
+            EnterCriticalSection(&queue_lock);
+            ULONGLONG now=GetTickCount64();
+            if (!media_count || media[0].due>now || InterlockedCompareExchange(&writer_stopping,0,0)) {
+                LeaveCriticalSection(&queue_lock); break;
+            }
+            media_record next=pop_media(); LeaveCriticalSection(&queue_lock);
+            /* A blocked consumer must recover near live, never replay seconds
+             * of stale pictures/audio at maximum speed. */
+            int ok=now-next.due>200 || write_record(tags[next.kind],next.record.data,next.record.length);
+            free(next.record.data); if (!ok) return 0;
         }
         EnterCriticalSection(&queue_lock);
         int pending=queued[0].data || queued[1].data || queued[2].data || queued[3].data;
@@ -148,6 +198,7 @@ static int read_config(char *url, size_t capacity)
     const char *stream=json_string_value(json_object_get(root,"stream"));
     const char *path=json_string_value(json_object_get(root,"path"));
     int legacy=json_is_integer(ver) && json_integer_value(ver)==1;
+    prefer_udp=legacy;
     if (!json_is_integer(ver) || (!legacy && json_integer_value(ver)!=2) || !json_is_integer(port) ||
         json_integer_value(port)<1 || json_integer_value(port)>65535 || !json_is_integer(rot) ||
         !host || !u || !p || (legacy ? (!stream || (strcmp(stream,"stream1") && strcmp(stream,"stream2"))) :
@@ -235,7 +286,7 @@ static int prepare_picture(picture *p, AVFrame *source)
     if (avcodec_open2(p->encoder,p->encoder->codec,NULL)<0) return 0;
     p->source_width=source->width; p->source_height=source->height; p->source_format=source->format; return 1;
 }
-static int jpeg(picture *p, AVFrame *source, int64_t sequence)
+static int jpeg(picture *p, AVFrame *source, int64_t sequence, ULONGLONG due)
 {
     if ((!p->encoder || p->source_width!=source->width || p->source_height!=source->height || p->source_format!=source->format) && !prepare_picture(p,source)) return 0;
     if (av_frame_make_writable(p->yuv)<0) return 0;
@@ -253,7 +304,7 @@ static int jpeg(picture *p, AVFrame *source, int64_t sequence)
     } else sws_scale(p->yuv_scale,(const uint8_t *const *)source->data,source->linesize,0,source->height,p->yuv->data,p->yuv->linesize);
     p->yuv->pts=sequence; p->yuv->quality=p->encoder->global_quality;
     if (avcodec_send_frame(p->encoder,p->yuv)<0 || avcodec_receive_packet(p->encoder,p->packet)<0) return 0;
-    int ok=p->packet->size>0 && p->packet->size<=2*1024*1024 && record("JPEG",p->packet->data,(uint32_t)p->packet->size);
+    int ok=p->packet->size>0 && p->packet->size<=2*1024*1024 && timed_record(1,p->packet->data,(uint32_t)p->packet->size,due);
     av_packet_unref(p->packet); return ok;
 }
 
@@ -261,10 +312,11 @@ int main(int argc, char **argv)
 {
     char url[10000]={0}; AVFormatContext *input=NULL; AVCodecContext *video=NULL,*audio=NULL;
     AVPacket *packet=NULL; AVFrame *decoded=NULL; SwrContext *resampler=NULL; picture pic={0};
-    int result=1, vi=-1, ai=-1, ready=0; int64_t next_frame=AV_NOPTS_VALUE, pts_origin=AV_NOPTS_VALUE;
+    int result=1, vi=-1, ai=-1, ready=0, tcp_fallback=0; int64_t next_frame=AV_NOPTS_VALUE, pts_origin=AV_NOPTS_VALUE;
     ULONGLONG clock_origin=GetTickCount64(); HANDLE watcher=NULL; const char *failure="unavailable";
     uint64_t decoded_frames=0, decode_errors=0;
     ULONGLONG next_diagnostic=0, processing_ms=0;
+    ULONGLONG startup_limit=GetTickCount64()+8000;
     av_log_set_level(AV_LOG_QUIET); output=GetStdHandle(STD_OUTPUT_HANDLE);
     SetConsoleCtrlHandler(console_stop,TRUE);
     if (argc!=2 || !SetDllDirectoryA(argv[1]) || !read_config(url,sizeof(url))) { status("unavailable"); goto done; }
@@ -273,21 +325,34 @@ int main(int argc, char **argv)
     writer=CreateThread(NULL,0,write_output,NULL,0,NULL);
     if (!writer) goto done;
     watcher=CreateThread(NULL,0,watch_input,NULL,0,NULL); if (!watcher) goto done;
-    status("connecting"); avformat_network_init(); input=avformat_alloc_context();
+    status("connecting"); avformat_network_init();
+open_input:
+    InterlockedExchange(&timed_out,0);
+    input=avformat_alloc_context();
     if (!input) goto done;
     input->interrupt_callback=(AVIOInterruptCB){interrupt,NULL};
     AVDictionary *settings=NULL;
     /* The interrupt owns the actual deadline; the socket timeout is a backup.
      * This preserves fixed timeout evidence when FFmpeg collapses I/O errors. */
-    av_dict_set(&settings,"rtsp_transport","tcp",0); av_dict_set(&settings,"timeout","4000000",0);
-    av_dict_set(&settings,"rw_timeout","4000000",0); av_dict_set(&settings,"protocol_whitelist","rtsp,tcp",0);
+    av_dict_set(&settings,"rtsp_transport",prefer_udp && !tcp_fallback?"udp+tcp":"tcp",0); av_dict_set(&settings,"timeout","4000000",0);
+    av_dict_set(&settings,"rw_timeout","4000000",0); av_dict_set(&settings,"protocol_whitelist",prefer_udp?"rtsp,tcp,udp,rtp":"rtsp,tcp",0);
+    if (prefer_udp) av_dict_set(&settings,"rtsp_flags","filter_src",0);
     av_dict_set(&settings,"analyzeduration","1000000",0);
     deadline=GetTickCount64()+4000;
-    int opened=avformat_open_input(&input,url,NULL,&settings); av_dict_free(&settings); SecureZeroMemory(url,sizeof(url));
+    ULONGLONG attempt_limit=prefer_udp && !tcp_fallback?startup_limit-4000:startup_limit;
+    if (deadline>attempt_limit) deadline=attempt_limit;
+    int opened=avformat_open_input(&input,url,NULL,&settings); av_dict_free(&settings);
+    if (opened<0 && prefer_udp && !tcp_fallback && opened!=AVERROR_HTTP_UNAUTHORIZED && opened!=AVERROR_HTTP_FORBIDDEN && GetTickCount64()<startup_limit && !InterlockedCompareExchange(&cancelled,0,0)) {
+        avformat_close_input(&input); tcp_fallback=1; goto open_input;
+    }
     if (opened<0) { status(opened==AVERROR_HTTP_UNAUTHORIZED || opened==AVERROR_HTTP_FORBIDDEN?"auth_failed":
         opened==AVERROR(ETIMEDOUT) || (opened==AVERROR_EXIT && GetTickCount64()>=deadline)?"read_timeout":"unavailable"); goto done; }
     deadline=GetTickCount64()+4000;
+    if (deadline>attempt_limit) deadline=attempt_limit;
     int info=avformat_find_stream_info(input,NULL);
+    if (info<0 && prefer_udp && !tcp_fallback && GetTickCount64()<startup_limit && !InterlockedCompareExchange(&cancelled,0,0)) {
+        avformat_close_input(&input); tcp_fallback=1; goto open_input;
+    }
     if (info<0) { status(info==AVERROR(ETIMEDOUT) || GetTickCount64()>=deadline?"read_timeout":"unavailable"); goto done; }
     vi=av_find_best_stream(input,AVMEDIA_TYPE_VIDEO,-1,-1,NULL,0);
     ai=av_find_best_stream(input,AVMEDIA_TYPE_AUDIO,-1,-1,NULL,0);
@@ -301,6 +366,7 @@ int main(int argc, char **argv)
     }
     packet=av_packet_alloc(); decoded=av_frame_alloc(); if (!packet || !decoded) goto done;
     deadline=GetTickCount64()+3000;
+    if (prefer_udp && !tcp_fallback && deadline>attempt_limit) deadline=attempt_limit;
     while (!InterlockedCompareExchange(&cancelled,0,0)) {
         int read=av_read_frame(input,packet);
         if (InterlockedCompareExchange(&timed_out,0,0)) { failure="read_timeout"; break; }
@@ -313,6 +379,7 @@ int main(int argc, char **argv)
             break;
         }
         deadline=GetTickCount64()+3000;
+        if (!ready && prefer_udp && !tcp_fallback && deadline>attempt_limit) deadline=attempt_limit;
         AVCodecContext *decoder=packet->stream_index==vi?video:packet->stream_index==ai?audio:NULL;
         int sent=decoder?avcodec_send_packet(decoder,packet):0;
         if (decoder && sent<0 && sent!=AVERROR(EAGAIN)) {
@@ -324,24 +391,31 @@ int main(int argc, char **argv)
         }
         int received=AVERROR(EAGAIN);
         if (decoder && sent>=0) while ((received=avcodec_receive_frame(decoder,decoded))>=0) {
+            ULONGLONG now=GetTickCount64();
+            int64_t timestamp=(int64_t)(now-clock_origin);
+            if (decoded->best_effort_timestamp!=AV_NOPTS_VALUE) {
+                int stream_index=decoder==video?vi:ai;
+                int64_t pts=av_rescale_q(decoded->best_effort_timestamp,input->streams[stream_index]->time_base,(AVRational){1,1000});
+                if (pts_origin==AV_NOPTS_VALUE) pts_origin=pts-timestamp;
+                int64_t mapped=pts-pts_origin;
+                /* Rebase after a source clock reset or a long gap; bounded
+                 * latency takes precedence over replaying old media. */
+                if (mapped<timestamp-2000 || mapped>timestamp+2000) {
+                    pts_origin=pts-timestamp; clear_media(); next_frame=AV_NOPTS_VALUE;
+                } else timestamp=mapped;
+            }
+            ULONGLONG due=clock_origin+(ULONGLONG)timestamp+PLAYOUT_DELAY_MS;
             if (decoder==video) {
-                ULONGLONG now=GetTickCount64();
                 ++decoded_frames;
-                int64_t timestamp=(int64_t)(now-clock_origin);
-                if (decoded->best_effort_timestamp!=AV_NOPTS_VALUE) {
-                    int64_t pts=av_rescale_q(decoded->best_effort_timestamp,input->streams[vi]->time_base,(AVRational){1,1000});
-                    if (pts_origin==AV_NOPTS_VALUE) pts_origin=pts-timestamp;
-                    timestamp=pts-pts_origin;
-                }
                 /* Scheduled cadence avoids dropping every second 30fps frame
                  * when integer milliseconds alternate between 33 and 34. PTS
                  * handles burst delivery; fallback uses the monotonic clock. */
                 int64_t tick=timestamp*30;
                 if (next_frame==AV_NOPTS_VALUE || tick+30>=next_frame || tick+30000<next_frame) {
-                    if (!jpeg(&pic,decoded,timestamp)) { failure=InterlockedCompareExchange(&output_failed,0,0)?"pipe_failed":"decode_failed"; goto finished; }
+                    if (!jpeg(&pic,decoded,timestamp,due)) { failure=InterlockedCompareExchange(&output_failed,0,0)?"pipe_failed":"decode_failed"; goto finished; }
                     processing_ms=GetTickCount64()-now;
                     next_frame=next_frame==AV_NOPTS_VALUE || tick>=next_frame+1000 || tick+30000<next_frame?tick+1000:next_frame+1000;
-                    if (!ready) { status("streaming"); ready=1; }
+                    if (!ready) { SecureZeroMemory(url,sizeof(url)); status("streaming"); ready=1; }
                 }
             } else {
                 if (!resampler) {
@@ -354,7 +428,7 @@ int main(int argc, char **argv)
                     if (pcm) { int samples=swr_convert(resampler,&pcm,capacity,(const uint8_t **)decoded->extended_data,decoded->nb_samples);
                         for (int offset=0;offset<samples;offset+=4800) {
                             int count=samples-offset; if (count>4800) count=4800;
-                            if (!record("PCMA",pcm+(size_t)offset*2,(uint32_t)count*2)) break;
+                            if (!timed_record(2,pcm+(size_t)offset*2,(uint32_t)count*2,due+(ULONGLONG)offset*1000/48000)) break;
                         }
                         av_free(pcm); }
                 }
@@ -376,6 +450,12 @@ int main(int argc, char **argv)
         av_packet_unref(packet);
     }
 finished:
+    if (!ready && prefer_udp && !tcp_fallback && GetTickCount64()<startup_limit && !InterlockedCompareExchange(&cancelled,0,0)) {
+        clear_media(); av_packet_free(&packet); av_frame_free(&decoded); free_picture(&pic);
+        swr_free(&resampler); avcodec_free_context(&video); avcodec_free_context(&audio); avformat_close_input(&input);
+        tcp_fallback=1; next_frame=AV_NOPTS_VALUE; pts_origin=AV_NOPTS_VALUE; goto open_input;
+    }
+    clear_media();
     result=InterlockedCompareExchange(&cancelled,0,0)?0:1;
     if (result) status(failure);
 done:
@@ -398,6 +478,7 @@ done:
         CloseHandle(writer); writer=NULL;
     }
     if (queue_ready) {
+        clear_media();
         for (int i=0;i<4;++i) free(queued[i].data);
         CloseHandle(queue_ready); DeleteCriticalSection(&queue_lock);
     }

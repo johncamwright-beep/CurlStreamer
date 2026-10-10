@@ -297,7 +297,7 @@ test("desktop game day keeps scoring primary and settings available on demand", 
   page,
 }, info) => {
   if (info.project.name !== "mobile")
-    await page.setViewportSize({ width: 1280, height: 850 });
+    await page.setViewportSize({ width: 1280, height: 720 });
   await page.addInitScript(() =>
     Object.defineProperty(navigator, "userAgent", {
       value:
@@ -360,6 +360,12 @@ test("desktop game day keeps scoring primary and settings available on demand", 
     preview.getByRole("img", { name: "Actual Studio program output" }),
   ).toBeVisible();
   await expect(page.getByRole("link", { name: /^Broadcast:/ })).toHaveCount(0);
+  const cameraControls = page.getByLabel("Camera controls", { exact: true });
+  await expect(
+    page.getByRole("button", { name: "Camera 1 zoom in" }),
+  ).toBeHidden();
+  const previewBeforeSettings = await preview.boundingBox();
+  await cameraControls.click();
   await expect(
     page.getByRole("button", { name: "Camera 1 zoom in" }),
   ).toBeVisible();
@@ -371,6 +377,11 @@ test("desktop game day keeps scoring primary and settings available on demand", 
       .getByTestId("camera-zoom-rail")
       .evaluate((el) => getComputedStyle(el).position),
   ).toBe("static");
+  await cameraControls.click();
+  await expect(
+    page.getByRole("button", { name: "Camera 1 zoom in" }),
+  ).toBeHidden();
+  expect(await preview.boundingBox()).toEqual(previewBeforeSettings);
   const previewBox = (await preview.boundingBox())!;
   expect(previewBox.width / previewBox.height).toBeCloseTo(16 / 9, 1);
   if (info.project.name !== "mobile") {
@@ -428,6 +439,10 @@ test("desktop game day keeps scoring primary and settings available on demand", 
     expect(sponsors!.height).toBeLessThanOrEqual(166);
     expect(sponsors!.y).toBe(youtube!.y);
     expect(sponsors!.height).toBe(youtube!.height);
+    expect(sponsors!.y + sponsors!.height).toBeLessThanOrEqual(720);
+    expect(
+      (await usb.boundingBox())!.y + (await usb.boundingBox())!.height,
+    ).toBeLessThanOrEqual(720);
   }
   for (const mode of ["live", "hold"] as const) {
     await page.evaluate(

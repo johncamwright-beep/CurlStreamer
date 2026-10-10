@@ -662,6 +662,63 @@ describe("M4 explicit automatic go-live", () => {
     await expect(goLiveM4Session(gameId, credential)).rejects.toThrow();
     expect(mocks.transition).not.toHaveBeenCalled();
   });
+  it("starts the same broadcast after YouTube initially reports inactive ingestion", async () => {
+    state(prepared());
+    mocks.observe
+      .mockResolvedValueOnce({
+        streamStatus: "inactive",
+        broadcastStatus: "ready",
+        broadcastLive: false,
+      })
+      .mockResolvedValueOnce({
+        streamStatus: "active",
+        broadcastStatus: "ready",
+        broadcastLive: false,
+      });
+    await expect(goLiveM4Session(gameId, credential)).resolves.toMatchObject({
+      phase: "waiting-video",
+      watchUrl,
+    });
+    expect(mocks.transition).not.toHaveBeenCalled();
+    await expect(goLiveM4Session(gameId, credential)).resolves.toMatchObject({
+      phase: "starting",
+      watchUrl,
+    });
+    expect(mocks.transition).toHaveBeenCalledExactlyOnceWith(
+      "private-access",
+      "broadcast-id",
+      "live",
+    );
+    expect(mocks.broadcast).not.toHaveBeenCalled();
+    expect(mocks.stream).not.toHaveBeenCalled();
+    expect(mocks.game).not.toHaveBeenCalled();
+  });
+  it("rechecks provider state and retains the watch page when a live transition needs retrying", async () => {
+    state(prepared());
+    mocks.observe.mockResolvedValue({
+      streamStatus: "active",
+      broadcastStatus: "ready",
+      broadcastLive: false,
+    });
+    mocks.transition
+      .mockRejectedValueOnce(new Error("youtube_provider_rejected"))
+      .mockResolvedValueOnce(undefined);
+    await expect(goLiveM4Session(gameId, credential)).rejects.toThrow(
+      "youtube_provider_rejected",
+    );
+    await expect(goLiveM4Session(gameId, credential)).resolves.toMatchObject({
+      phase: "starting",
+      watchUrl,
+    });
+    expect(mocks.observe).toHaveBeenCalledTimes(2);
+    expect(mocks.transition).toHaveBeenCalledTimes(2);
+    expect(
+      mocks.transition.mock.calls.every(
+        ([, id, status]) => id === "broadcast-id" && status === "live",
+      ),
+    ).toBe(true);
+    expect(mocks.broadcast).not.toHaveBeenCalled();
+  });
   it("fences a concurrent stop or replacement during provider verification", async () => {
     mocks.rpc
       .mockResolvedValueOnce({ data: prepared() })

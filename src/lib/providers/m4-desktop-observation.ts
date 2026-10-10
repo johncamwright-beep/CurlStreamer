@@ -99,12 +99,17 @@ export async function observeM4DesktopOutput(
         initial.organization_id,
       ),
     );
-    const observation = await observeM4YouTubeProvider(accessToken, {
-      channelId: initial.youtube_channel_id,
-      streamId: initial.youtube_stream_id,
-      broadcastId: initial.youtube_broadcast_id,
-      visibility: initial.youtube_visibility,
-    });
+    const observation = await observeM4YouTubeProvider(
+      accessToken,
+      {
+        channelId: initial.youtube_channel_id,
+        streamId: initial.youtube_stream_id,
+        broadcastId: initial.youtube_broadcast_id,
+        visibility: initial.youtube_visibility,
+      },
+      fetch,
+      true,
+    );
     const current = await read();
     for (const key of [
       "intent_id",

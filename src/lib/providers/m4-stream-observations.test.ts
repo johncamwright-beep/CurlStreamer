@@ -75,6 +75,7 @@ it("requires fresh independent native and provider evidence and invalidates it o
     liveConfirmed: false,
   });
   expect(stream.snapshot().provider).toBeUndefined();
+  expect(stream.snapshot().lastLiveAgeMs).toBe(11000);
   await stream.stop();
   expect(stream.snapshot()).toMatchObject({
     state: "stopped",
@@ -82,6 +83,7 @@ it("requires fresh independent native and provider evidence and invalidates it o
     liveConfirmed: false,
   });
   expect(stream.snapshot().provider).toBeUndefined();
+  expect(stream.snapshot().lastLiveAgeMs).toBeUndefined();
   expect(vi.getTimerCount()).toBe(0);
   clock += 6000;
   expect(stream.snapshot()).toMatchObject({

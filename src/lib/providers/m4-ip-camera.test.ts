@@ -80,6 +80,34 @@ describe("local IP camera manager", () => {
   beforeEach(() => vi.useFakeTimers());
   afterEach(() => vi.useRealTimers());
 
+  it("reports bounded frame-arrival gaps and native decode health without exposing camera credentials", async () => {
+    const { manager, children } = harness();
+    manager.configure("camera-home", config);
+    manager.connect("camera-home");
+    await manager.start();
+    children[0].stdout.write(record("JPEG", jpeg));
+    await vi.advanceTimersByTimeAsync(500);
+    children[0].stdout.write(record("JPEG", jpeg));
+    children[0].stdout.write(
+      record(
+        "DIAG",
+        JSON.stringify({ decodedFrames: 20, decodeErrors: 2, processingMs: 7 }),
+      ),
+    );
+    const snapshot = manager.snapshot("camera-home");
+    expect(snapshot.health).toMatchObject({
+      receivedFps: 1,
+      longestGapMs: 500,
+      lastFrameAgeMs: 0,
+      decodedFrames: 20,
+      decodeErrors: 2,
+      processingMs: 7,
+      reconnects: 0,
+    });
+    expect(JSON.stringify(snapshot)).not.toContain(config.password);
+    await manager.stop();
+  });
+
   it("keeps every advancing native frame through 49ms jitter and coalesced pipe delivery", async () => {
     const { manager, children } = harness();
     manager.configure("camera-home", config);

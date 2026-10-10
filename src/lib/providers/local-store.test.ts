@@ -18,6 +18,25 @@ const config: GameConfig = {
 
 const temporaryDirectories: string[] = [];
 
+it("persists in-game rock colours without changing the score history or another game", async () => {
+  const store = await loadFreshStore();
+  const game = store.createGame(config);
+  const other = store.createGame(config);
+  const events = structuredClone(game.scoreEvents);
+  store.updateGame(game.id, {
+    type: "rock-colours",
+    homeColor: "#facc15",
+    awayColor: "#2563eb",
+  });
+  const reloaded = await reloadStore();
+  expect(reloaded.getGame(game.id)?.config).toMatchObject({
+    homeColor: "#facc15",
+    awayColor: "#2563eb",
+  });
+  expect(reloaded.getGame(game.id)?.scoreEvents).toEqual(events);
+  expect(reloaded.getGame(other.id)?.config.homeColor).toBe("#000000");
+});
+
 async function loadFreshStore() {
   const directory = mkdtempSync(join(tmpdir(), "curlcast-local-store-"));
   temporaryDirectories.push(directory);

@@ -10,6 +10,14 @@ const stateSchema = z.object({
   busy: z.boolean(),
   streaming: z.string(),
   live: z.boolean(),
+  lastLiveAgeMs: z.number().nonnegative().nullable().optional(),
+  concurrentViewers: z
+    .number()
+    .int()
+    .nonnegative()
+    .max(Number.MAX_SAFE_INTEGER)
+    .nullable()
+    .optional(),
   receiving: z.boolean(),
   message: z.string().max(300),
   canReconnect: z.boolean().optional().default(false),
@@ -171,8 +179,11 @@ export function StudioYouTube({ id }: { id: string }) {
       const parsed = stateSchema.safeParse((event as CustomEvent).detail);
       if (!parsed.success || parsed.data.gameId !== id) return;
       last = Date.now();
-      if (parsed.data.live) confirmedLive.current = true;
-      else if (
+      if (parsed.data.live) {
+        confirmedLive.current = true;
+        failures.current = 0;
+        setError("");
+      } else if (
         ["idle", "starting", "stopping", "stopped", "failed"].includes(
           parsed.data.streaming,
         )
@@ -311,19 +322,32 @@ export function StudioYouTube({ id }: { id: string }) {
                 : "Paused · Sending card"
               : state.live
                 ? "● LIVE"
-                : state.streaming === "paused"
-                  ? "Disconnected"
-                  : state?.receiving
-                    ? "Receiving video"
-                    : watchingOutput
-                      ? state.outputActive
-                        ? "Sending video · Checking YouTube…"
-                        : "Checking status…"
-                      : active
-                        ? "Connecting…"
-                        : "Not live"}
+                : state.lastLiveAgeMs != null &&
+                    state.lastLiveAgeMs < 30000 &&
+                    state.outputActive &&
+                    state.streaming === "armed"
+                  ? "LIVE last confirmed · Rechecking…"
+                  : state.streaming === "paused"
+                    ? "Disconnected"
+                    : state?.receiving
+                      ? "Receiving video"
+                      : watchingOutput
+                        ? state.outputActive
+                          ? "Sending video · Checking YouTube…"
+                          : "Checking status…"
+                        : active
+                          ? "Connecting…"
+                          : "Not live"}
         </strong>
       </div>
+      {state?.live && (
+        <p className="mt-2 text-sm" aria-live="polite">
+          {state.concurrentViewers == null
+            ? "Live viewers unavailable"
+            : `${state.concurrentViewers.toLocaleString()} watching now`}
+          <span className="text-slate-400"> · Updates about once a minute</span>
+        </p>
+      )}
       <div className="studio-youtube-actions flex flex-wrap gap-2">
         <button
           className="btn"

@@ -79,6 +79,14 @@ type Slot = {
   healthySince?: number;
   launchedAt?: number;
   failures: number;
+  arrivals: number[];
+  longestGapMs: number;
+  reconnects: number;
+  nativeHealth?: {
+    decodedFrames: number;
+    decodeErrors: number;
+    processingMs: number;
+  };
   counter: number;
   audio: Buffer;
   authBlocked?: boolean;
@@ -147,6 +155,9 @@ export function createM4IpCameraManager(
         phase: "idle",
         errorCode: null,
         failures: 0,
+        arrivals: [] as number[],
+        longestGapMs: 0,
+        reconnects: 0,
         counter: 0,
         audio: Buffer.alloc(0),
       },
@@ -236,6 +247,7 @@ export function createM4IpCameraManager(
               : "network_unavailable"),
     );
     if (retryable) diagnostic(slot, "retry");
+    if (retryable) slot.reconnects++;
     if (code === "auth_failed") slot.authBlocked = true;
     slot.phase = retryable ? "retrying" : "failed";
     slot.failures++;
@@ -356,7 +368,9 @@ export function createM4IpCameraManager(
               ? maxAudio
               : type === "STAT"
                 ? 128
-                : 0;
+                : type === "DIAG"
+                  ? 1024
+                  : 0;
         if (
           !limit ||
           !length ||
@@ -375,6 +389,15 @@ export function createM4IpCameraManager(
             return;
           }
           const timestamp = now();
+          if (slot.lastFrame !== undefined)
+            slot.longestGapMs = Math.max(
+              slot.longestGapMs,
+              timestamp - slot.lastFrame,
+            );
+          slot.arrivals = [
+            ...slot.arrivals.filter((at) => timestamp - at < 2000),
+            timestamp,
+          ].slice(-480);
           if (slot.lastFrame === undefined)
             diagnostic(slot, slot.failures ? "recovered" : "ready");
           slot.frame = {
@@ -387,6 +410,28 @@ export function createM4IpCameraManager(
           if (timestamp - slot.healthySince >= 10000) slot.failures = 0;
           slot.phase = "streaming";
           slot.errorCode = null;
+        } else if (type === "DIAG") {
+          try {
+            slot.nativeHealth = z
+              .object({
+                decodedFrames: z
+                  .number()
+                  .int()
+                  .nonnegative()
+                  .max(Number.MAX_SAFE_INTEGER),
+                decodeErrors: z
+                  .number()
+                  .int()
+                  .nonnegative()
+                  .max(Number.MAX_SAFE_INTEGER),
+                processingMs: z.number().nonnegative().max(600000),
+              })
+              .strict()
+              .parse(JSON.parse(payload.toString("utf8")));
+          } catch {
+            fail("invalid_pipe");
+            return;
+          }
         } else if (type === "PCMA") {
           if (slot.lastFrame === undefined || now() - slot.lastFrame >= freshMs)
             continue;
@@ -466,6 +511,10 @@ export function createM4IpCameraManager(
         : false;
     slot.generation++;
     slot.config = result.data;
+    slot.arrivals = [];
+    slot.longestGapMs = 0;
+    slot.reconnects = 0;
+    slot.nativeHealth = undefined;
     if (!preserveZoom) slot.zoom = 1;
     slot.failures = 0;
     slot.authBlocked = false;
@@ -509,6 +558,25 @@ export function createM4IpCameraManager(
       errorCode: stale ? "stale_frames" : slot.errorCode,
       generation: slot.generation,
       zoom: slot.zoom,
+      ...(config.kind !== "phone"
+        ? {
+            health: {
+              receivedFps: Math.min(
+                240,
+                slot.arrivals.filter((at) => now() - at < 2000).length / 2,
+              ),
+              lastFrameAgeMs:
+                slot.lastFrame === undefined
+                  ? null
+                  : Math.max(0, now() - slot.lastFrame),
+              longestGapMs: slot.longestGapMs,
+              reconnects: slot.reconnects,
+              decodedFrames: slot.nativeHealth?.decodedFrames ?? 0,
+              decodeErrors: slot.nativeHealth?.decodeErrors ?? 0,
+              processingMs: slot.nativeHealth?.processingMs ?? 0,
+            },
+          }
+        : {}),
     };
   }
   return {

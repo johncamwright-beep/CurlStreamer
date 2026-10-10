@@ -384,6 +384,28 @@ export function DeviceCard({
             </label>
           )}
         </header>
+        {cameraInput.health && connectionEnabled && (
+          <details className="text-sm text-slate-300">
+            <summary className="flex min-h-11 cursor-pointer items-center">
+              Camera health · {cameraInput.health.receivedFps.toFixed(1)} fps
+              received
+            </summary>
+            <p>
+              Last frame:{" "}
+              {cameraInput.health.lastFrameAgeMs == null
+                ? "Waiting"
+                : `${Math.round(cameraInput.health.lastFrameAgeMs)} ms ago`}
+              . Longest gap: {Math.round(cameraInput.health.longestGapMs)} ms.
+              Reconnects: {cameraInput.health.reconnects}.
+            </p>
+            <p>
+              Decoded frames: {cameraInput.health.decodedFrames}. Decode errors:{" "}
+              {cameraInput.health.decodeErrors}. Last frame processing:{" "}
+              {Math.round(cameraInput.health.processingMs)} ms.
+            </p>
+            <p>RTSP over TCP. Packet loss is not measured by these counters.</p>
+          </details>
+        )}
         <p>
           {sourceLabel}
           {cameraInput.host ? ` · ${cameraInput.host}` : ""}

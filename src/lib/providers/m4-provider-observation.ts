@@ -73,6 +73,13 @@ export const m4ProviderObservationSchema = z
     healthStatus: healthStatus.nullable(),
     broadcastStatus,
     broadcastLive: z.boolean(),
+    concurrentViewers: z
+      .number()
+      .int()
+      .nonnegative()
+      .max(Number.MAX_SAFE_INTEGER)
+      .nullable()
+      .optional(),
   })
   .refine(
     (value) => value.broadcastLive === (value.broadcastStatus === "live"),
@@ -88,6 +95,65 @@ function get(path: string, accessToken: string, fetcher: typeof fetch) {
   );
 }
 
+// Viewer counts are optional telemetry. Read only after verifying channel/resource
+// ownership, and cache briefly to avoid adding a Google request to every poll.
+const viewers = new Map<string, { at: number; count: number | null }>();
+async function viewerCount(
+  channelId: string,
+  broadcastId: string,
+  token: string,
+  fetcher: typeof fetch,
+) {
+  const key = channelId + ":" + broadcastId;
+  const cached = viewers.get(key);
+  if (cached && Date.now() - cached.at < 60000) return cached.count;
+  let count: number | null = null;
+  try {
+    const result = z
+      .object({
+        items: z
+          .array(
+            z.object({
+              id,
+              liveStreamingDetails: z
+                .object({
+                  concurrentViewers: z.string().regex(/^\d+$/).optional(),
+                })
+                .optional(),
+            }),
+          )
+          .max(1),
+      })
+      .parse(
+        await get(
+          `/videos?part=liveStreamingDetails&id=${encodeURIComponent(broadcastId)}`,
+          token,
+          (url, init) =>
+            fetcher(url, {
+              ...init,
+              signal: AbortSignal.any([
+                init?.signal ?? AbortSignal.timeout(3000),
+                AbortSignal.timeout(3000),
+              ]),
+            }),
+        ),
+      );
+    const item = result.items[0];
+    const value = item?.liveStreamingDetails?.concurrentViewers;
+    if (
+      item?.id === broadcastId &&
+      value !== undefined &&
+      Number.isSafeInteger(Number(value))
+    )
+      count = Number(value);
+  } catch {
+    /* Optional count failures never invalidate broadcast health. */
+  }
+  if (viewers.size >= 128) viewers.delete(viewers.keys().next().value!);
+  viewers.set(key, { at: Date.now(), count });
+  return count;
+}
+
 /**
  * Read-only YouTube confirmation for a previously delivered desktop intent.
  * It cannot retrieve a CDN target or transition the broadcast lifecycle.
@@ -101,6 +167,7 @@ export async function observeM4YouTubeProvider(
     visibility?: "private" | "unlisted" | "public";
   },
   fetcher: typeof fetch = fetch,
+  includeViewers = false,
 ): Promise<M4ProviderObservation> {
   try {
     const ids = z
@@ -160,6 +227,16 @@ export async function observeM4YouTubeProvider(
       healthStatus: stream.status.healthStatus?.status ?? null,
       broadcastStatus: broadcast.status.lifeCycleStatus,
       broadcastLive: broadcast.status.lifeCycleStatus === "live",
+      ...(includeViewers && broadcast.status.lifeCycleStatus === "live"
+        ? {
+            concurrentViewers: await viewerCount(
+              ids.channelId,
+              ids.broadcastId,
+              accessToken,
+              fetcher,
+            ),
+          }
+        : {}),
     });
   } catch {
     throw new Error("m4_provider_observation_unavailable");

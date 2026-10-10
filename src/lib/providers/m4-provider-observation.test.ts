@@ -46,6 +46,24 @@ function providerValues(overrides: Record<string, unknown> = {}) {
 }
 
 describe("M4 provider observation", () => {
+  it("reads optional live viewers only after ownership checks and caches the count", async () => {
+    const values = providerValues();
+    values.push({
+      items: [
+        { id: "broadcast", liveStreamingDetails: { concurrentViewers: "27" } },
+      ],
+    } as never);
+    const read = fetcher(values);
+    await expect(
+      observeM4YouTubeProvider(token, expected, read, true),
+    ).resolves.toMatchObject({ concurrentViewers: 27 });
+    expect(read).toHaveBeenCalledTimes(4);
+    const cached = fetcher(providerValues());
+    await expect(
+      observeM4YouTubeProvider(token, expected, cached, true),
+    ).resolves.toMatchObject({ concurrentViewers: 27 });
+    expect(cached).toHaveBeenCalledTimes(3);
+  });
   it("accepts Public only when Public is expected", async () => {
     const values = () =>
       providerValues({

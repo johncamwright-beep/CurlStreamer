@@ -79,6 +79,12 @@ normal decoded audio bursts and discarding oldest audio only at the cap. Stdout 
 RTSP reads or session keepalives or grow a queue without bound. Renderer media
 uses `object-fit: contain`.
 
+The bounded `DIAG` record reports cumulative decoded frames/errors and the last
+JPEG conversion time in milliseconds every two seconds. Studio additionally
+measures received frame rate, inter-frame gaps and reconnects. These are frame
+delivery diagnostics, not RTP packet-loss measurements: RTSP runs over TCP.
+Malformed audio packets flush only the audio decoder instead of restarting video.
+
 Actual synthetic RTSP validation:
 
 ```powershell

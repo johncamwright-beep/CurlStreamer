@@ -20,7 +20,7 @@ static int rotation;
 /* One latest record per media kind. A slow stdout consumer must not stop RTSP
  * reads (and its session keepalive), or accumulate an unbounded frame queue. */
 typedef struct queued_record { unsigned char *data; uint32_t length; } queued_record;
-static queued_record queued[3];
+static queued_record queued[4];
 static CRITICAL_SECTION queue_lock;
 static HANDLE queue_ready, writer;
 static volatile LONG output_failed, writer_stopping, closing;
@@ -62,10 +62,10 @@ static int write_record(const char type[4], const void *data, uint32_t length)
 }
 static DWORD WINAPI write_output(void *unused)
 {
-    static const char tags[3][5]={"STAT","JPEG","PCMA"}; (void)unused;
+    static const char tags[4][5]={"STAT","JPEG","PCMA","DIAG"}; (void)unused;
     for (;;) {
         WaitForSingleObject(queue_ready, INFINITE);
-        for (int i=0;i<3;++i) {
+        for (int i=0;i<4;++i) {
             EnterCriticalSection(&queue_lock);
             queued_record next=queued[i]; queued[i]=(queued_record){0};
             LeaveCriticalSection(&queue_lock);
@@ -75,7 +75,7 @@ static DWORD WINAPI write_output(void *unused)
             }
         }
         EnterCriticalSection(&queue_lock);
-        int pending=queued[0].data || queued[1].data || queued[2].data;
+        int pending=queued[0].data || queued[1].data || queued[2].data || queued[3].data;
         int stopped=InterlockedCompareExchange(&writer_stopping,0,0) && !pending;
         LeaveCriticalSection(&queue_lock);
         if (stopped) return 0;
@@ -85,7 +85,7 @@ static DWORD WINAPI write_output(void *unused)
 static int record(const char type[4], const void *data, uint32_t length)
 {
     if (!writer) return write_record(type,data,length);
-    int kind=!memcmp(type,"STAT",4)?0:!memcmp(type,"JPEG",4)?1:2;
+    int kind=!memcmp(type,"STAT",4)?0:!memcmp(type,"JPEG",4)?1:!memcmp(type,"PCMA",4)?2:3;
     unsigned char *copy=malloc(length);
     if (!copy) return 0;
     memcpy(copy,data,length);
@@ -263,6 +263,8 @@ int main(int argc, char **argv)
     AVPacket *packet=NULL; AVFrame *decoded=NULL; SwrContext *resampler=NULL; picture pic={0};
     int result=1, vi=-1, ai=-1, ready=0; int64_t next_frame=AV_NOPTS_VALUE, pts_origin=AV_NOPTS_VALUE;
     ULONGLONG clock_origin=GetTickCount64(); HANDLE watcher=NULL; const char *failure="unavailable";
+    uint64_t decoded_frames=0, decode_errors=0;
+    ULONGLONG next_diagnostic=0, processing_ms=0;
     av_log_set_level(AV_LOG_QUIET); output=GetStdHandle(STD_OUTPUT_HANDLE);
     SetConsoleCtrlHandler(console_stop,TRUE);
     if (argc!=2 || !SetDllDirectoryA(argv[1]) || !read_config(url,sizeof(url))) { status("unavailable"); goto done; }
@@ -313,11 +315,18 @@ int main(int argc, char **argv)
         deadline=GetTickCount64()+3000;
         AVCodecContext *decoder=packet->stream_index==vi?video:packet->stream_index==ai?audio:NULL;
         int sent=decoder?avcodec_send_packet(decoder,packet):0;
-        if (decoder && sent<0 && sent!=AVERROR_INVALIDDATA && sent!=AVERROR(EAGAIN)) { failure="decode_failed"; break; }
+        if (decoder && sent<0 && sent!=AVERROR(EAGAIN)) {
+            ++decode_errors;
+            /* A damaged audio packet must not restart an otherwise healthy
+             * video feed. Flush only that decoder; video has its own watchdog. */
+            if (decoder==audio) { avcodec_flush_buffers(audio); av_packet_unref(packet); continue; }
+            if (sent!=AVERROR_INVALIDDATA) { failure="decode_failed"; break; }
+        }
         int received=AVERROR(EAGAIN);
         if (decoder && sent>=0) while ((received=avcodec_receive_frame(decoder,decoded))>=0) {
             if (decoder==video) {
                 ULONGLONG now=GetTickCount64();
+                ++decoded_frames;
                 int64_t timestamp=(int64_t)(now-clock_origin);
                 if (decoded->best_effort_timestamp!=AV_NOPTS_VALUE) {
                     int64_t pts=av_rescale_q(decoded->best_effort_timestamp,input->streams[vi]->time_base,(AVRational){1,1000});
@@ -330,6 +339,7 @@ int main(int argc, char **argv)
                 int64_t tick=timestamp*30;
                 if (next_frame==AV_NOPTS_VALUE || tick+30>=next_frame || tick+30000<next_frame) {
                     if (!jpeg(&pic,decoded,timestamp)) { failure=InterlockedCompareExchange(&output_failed,0,0)?"pipe_failed":"decode_failed"; goto finished; }
+                    processing_ms=GetTickCount64()-now;
                     next_frame=next_frame==AV_NOPTS_VALUE || tick>=next_frame+1000 || tick+30000<next_frame?tick+1000:next_frame+1000;
                     if (!ready) { status("streaming"); ready=1; }
                 }
@@ -351,7 +361,18 @@ int main(int argc, char **argv)
             }
             av_frame_unref(decoded);
         }
-        if (received<0 && received!=AVERROR(EAGAIN) && received!=AVERROR_EOF && received!=AVERROR_INVALIDDATA) { failure="decode_failed"; break; }
+        if (received==AVERROR_INVALIDDATA) ++decode_errors;
+        if (received<0 && received!=AVERROR(EAGAIN) && received!=AVERROR_EOF && received!=AVERROR_INVALIDDATA) {
+            ++decode_errors;
+            if (decoder==audio) avcodec_flush_buffers(audio);
+            else { failure="decode_failed"; break; }
+        }
+        if (GetTickCount64()>=next_diagnostic) {
+            char stats[256];
+            int size=snprintf(stats,sizeof(stats),"{\"decodedFrames\":%llu,\"decodeErrors\":%llu,\"processingMs\":%llu}",(unsigned long long)decoded_frames,(unsigned long long)decode_errors,(unsigned long long)processing_ms);
+            if (size>0 && size<(int)sizeof(stats)) record("DIAG",stats,(uint32_t)size);
+            next_diagnostic=GetTickCount64()+2000;
+        }
         av_packet_unref(packet);
     }
 finished:
@@ -377,7 +398,7 @@ done:
         CloseHandle(writer); writer=NULL;
     }
     if (queue_ready) {
-        for (int i=0;i<3;++i) free(queued[i].data);
+        for (int i=0;i<4;++i) free(queued[i].data);
         CloseHandle(queue_ready); DeleteCriticalSection(&queue_lock);
     }
     return result;

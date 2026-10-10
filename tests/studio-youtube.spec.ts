@@ -1,5 +1,184 @@
-import { test, expect } from "@playwright/test";
+import { test, expect, type Page } from "@playwright/test";
 import { build } from "esbuild";
+
+async function startupFixture(page: Page) {
+  const bundle = await build({
+    bundle: true,
+    write: false,
+    platform: "browser",
+    format: "iife",
+    jsx: "automatic",
+    tsconfig: "tsconfig.json",
+    stdin: {
+      contents: `import React from 'react';import {createRoot} from 'react-dom/client';import {StudioYouTube} from './src/components/StudioYouTube';window.sent=[];window.chrome={webview:{postMessage(v){window.sent.push(v)}}};const root=createRoot(document.getElementById('root'));window.renderGame=id=>root.render(<StudioYouTube id={id}/>);window.renderGame('fixture-game');`,
+      loader: "tsx",
+      resolveDir: process.cwd(),
+    },
+  });
+  await page.route("**/startup-fixture", (r) =>
+    r.fulfill({
+      contentType: "text/html",
+      body: '<div id="root"></div><script src="/startup-fixture.js"></script>',
+    }),
+  );
+  await page.route("**/startup-fixture.js", (r) =>
+    r.fulfill({
+      contentType: "text/javascript",
+      body: bundle.outputFiles[0].text,
+    }),
+  );
+  return async (overrides: Record<string, unknown> = {}) =>
+    page.evaluate(
+      (detail) =>
+        window.dispatchEvent(
+          new CustomEvent("studio-youtube-status", { detail }),
+        ),
+      {
+        gameId: "fixture-game",
+        available: true,
+        busy: false,
+        streaming: "armed",
+        live: false,
+        receiving: false,
+        outputActive: true,
+        canHoldStream: true,
+        message: "",
+        ...overrides,
+      },
+    );
+}
+
+test("Studio starts now despite delayed reception telemetry and retries without restarting the encoder", async ({
+  page,
+}) => {
+  const report = await startupFixture(page);
+  const requests: unknown[] = [];
+  const watchUrl = "https://www.youtube.com/watch?v=abcdefghijk";
+  await page.route("**/api/games/fixture-game/studio-m4", (r) => {
+    if (r.request().method() !== "POST")
+      return r.fulfill({ json: { watchUrl } });
+    requests.push(r.request().postDataJSON());
+    const status =
+      requests.length === 1
+        ? 409
+        : requests.length === 2
+          ? 503
+          : requests.length === 3
+            ? 403
+            : 200;
+    return r.fulfill({
+      status,
+      json:
+        status === 200
+          ? { phase: "starting", watchUrl }
+          : { error: "Unavailable" },
+    });
+  });
+  await page.clock.install();
+  await page.goto("/startup-fixture");
+  await report({ outputActive: false });
+  expect(requests).toHaveLength(0);
+  await expect(page.getByRole("button", { name: "Go live now" })).toHaveCount(
+    0,
+  );
+  // An active encoder is sufficient to check; the server independently
+  // verifies YouTube reception before it requests a live transition.
+  await report();
+  await expect(page.getByRole("alert")).toContainText("Retrying automatically");
+  await page.clock.fastForward(11000);
+  await report();
+  await expect.poll(() => requests.length).toBe(2);
+  await expect(page.getByRole("button", { name: "Go live now" })).toBeEnabled();
+  await page.getByRole("button", { name: "Go live now" }).click();
+  await expect(page.getByRole("alert")).toContainText("needs attention");
+  await page.clock.fastForward(60000);
+  await report();
+  expect(requests).toHaveLength(3);
+  await page.getByRole("button", { name: "Go live now" }).click();
+  await expect.poll(() => requests.length).toBe(4);
+  await expect(page.getByRole("alert")).toHaveCount(0);
+  await expect(
+    page.getByText("Starting this broadcast now.", { exact: false }),
+  ).toBeVisible();
+  await expect(page.getByRole("status")).not.toHaveText("● LIVE");
+  await report({ live: true, receiving: true });
+  await expect(page.getByRole("status")).toHaveText("● LIVE");
+  await expect(page.getByRole("button", { name: "Go live now" })).toHaveCount(
+    0,
+  );
+  await expect(
+    page.getByRole("link", { name: "Watch on YouTube" }),
+  ).toHaveAttribute("href", watchUrl);
+  expect(requests).toEqual(Array(4).fill({ action: "go-live" }));
+  expect(
+    await page.evaluate(() => (window as unknown as { sent: unknown[] }).sent),
+  ).toEqual([]);
+});
+
+test("Late go-live failures cannot overwrite confirmed live status or a different game", async ({
+  page,
+}) => {
+  const report = await startupFixture(page);
+  let release!: () => void;
+  let requests = 0;
+  await page.route("**/api/games/*/studio-m4", async (r) => {
+    if (r.request().method() !== "POST") return r.fulfill({ json: {} });
+    requests++;
+    await new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    await r
+      .fulfill({ status: 403, json: { error: "Unavailable" } })
+      .catch(() => {});
+  });
+  await page.clock.install();
+  await page.goto("/startup-fixture");
+  await report();
+  await expect.poll(() => requests).toBe(1);
+  await report({ live: true });
+  release();
+  await expect(page.getByRole("button", { name: "Going live…" })).toHaveCount(
+    0,
+  );
+  await expect(page.getByRole("alert")).toHaveCount(0);
+  await report({ streaming: "idle", outputActive: false });
+  await page.clock.fastForward(11000);
+  await report();
+  await expect.poll(() => requests).toBe(2);
+  await page.evaluate(() =>
+    (window as unknown as { renderGame(id: string): void }).renderGame(
+      "next-game",
+    ),
+  );
+  await expect(page.getByRole("status")).toHaveText("Status unavailable");
+  release();
+  await report({ gameId: "next-game" });
+  await expect.poll(() => requests).toBe(3);
+  await expect(page.getByRole("alert")).toHaveCount(0);
+  release();
+  await expect(page.getByRole("alert")).toContainText("needs attention");
+});
+
+for (const phase of ["ended", "removed"]) {
+  test(`Studio cannot retry a ${phase} broadcast`, async ({ page }) => {
+    const report = await startupFixture(page);
+    let requests = 0;
+    await page.route("**/api/games/fixture-game/studio-m4", (r) => {
+      if (r.request().method() === "POST") requests++;
+      return r.fulfill({ json: { phase } });
+    });
+    await page.clock.install();
+    await page.goto("/startup-fixture");
+    await report();
+    await expect(page.getByRole("alert")).toBeVisible();
+    await expect(page.getByRole("button", { name: "Go live now" })).toHaveCount(
+      0,
+    );
+    await page.clock.fastForward(60000);
+    await report();
+    expect(requests).toBe(1);
+  });
+}
 
 test("Studio YouTube sends game-scoped commands and expires live status", async ({
   page,
@@ -88,8 +267,8 @@ test("Studio YouTube sends game-scoped commands and expires live status", async 
   await expect.poll(() => requests.length).toBe(1);
   expect(requests).toEqual([{ action: "go-live" }]);
   await expect(
-    page.getByRole("button", { name: "Go live", exact: true }),
-  ).toHaveCount(0);
+    page.getByRole("button", { name: "Go live now", exact: true }),
+  ).toBeEnabled();
   // YouTube may acknowledge the request before it finishes going live.
   await page.clock.fastForward(11000);
   await report("fixture-game", false, true);

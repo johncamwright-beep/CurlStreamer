@@ -175,6 +175,8 @@ export async function goLiveM4Session(
     observation.streamStatus,
   );
   if (phase !== "go-live") return { ...safe(current), phase };
+  // An explicit start is independent of the advertised scheduled time. Keep
+  // the existing watch page; active ingestion is the prerequisite for live.
   await transitionYouTubeBroadcast(token, initial.youtubeBroadcastId, "live");
   // A successful transition request is not proof that the broadcast is live.
   return { ...safe(current), phase: "starting" };

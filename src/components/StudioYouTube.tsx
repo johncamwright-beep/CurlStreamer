@@ -43,11 +43,12 @@ export function StudioYouTube({ id }: { id: string }) {
   const [copied, setCopied] = useState(false);
   const [copyError, setCopyError] = useState("");
   const [bridgeAvailable, setBridgeAvailable] = useState(false);
-  const flight = useRef(false);
+  const flight = useRef<AbortController | undefined>(undefined);
   const nextCheck = useRef(0);
   const failures = useRef(0);
   const halted = useRef(false);
   const confirmedLive = useRef(false);
+  const [terminal, setTerminal] = useState(false);
   const lastViewers = useRef<number | undefined>(undefined);
   const presentationFlight = useRef<object | undefined>(undefined);
   const presentationConfirmedUntil = useRef(0);
@@ -67,7 +68,10 @@ export function StudioYouTube({ id }: { id: string }) {
   }, []);
   async function goLive() {
     if (!bridgeAvailable || flight.current) return;
-    flight.current = true;
+    const attempt = new AbortController();
+    flight.current = attempt;
+    const isCurrent = () =>
+      currentGame.current === id && flight.current === attempt;
     nextCheck.current = Date.now() + 10000;
     setGoingLive(true);
     setError("");
@@ -76,14 +80,18 @@ export function StudioYouTube({ id }: { id: string }) {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ action: "go-live" }),
-        signal: AbortSignal.timeout(30000),
+        signal: AbortSignal.any([attempt.signal, AbortSignal.timeout(30000)]),
       });
+      if (!isCurrent() || confirmedLive.current) return;
       if (!result.ok) {
-        if ([400, 401, 403, 409].includes(result.status)) halted.current = true;
+        // A session can still be settling after encoder startup. A 409 is
+        // recoverable; authority/input failures require operator attention.
+        if ([400, 401, 402, 403].includes(result.status)) halted.current = true;
         throw Error();
       }
       failures.current = 0;
       const response = await result.json();
+      if (!isCurrent() || confirmedLive.current) return;
       const messages: Record<string, string> = {
         ended:
           "YouTube has completed this broadcast and cannot reopen its watch link. Start a new game for a new broadcast.",
@@ -101,8 +109,10 @@ export function StudioYouTube({ id }: { id: string }) {
       halted.current = ["ended", "removed", "setup-required"].includes(
         response.phase,
       );
+      setTerminal(["ended", "removed"].includes(response.phase));
       setError(messages[response.phase] ?? "");
     } catch {
+      if (!isCurrent() || confirmedLive.current) return;
       setError(
         halted.current
           ? "YouTube needs attention. Check YouTube settings. Your game’s watch link is retained."
@@ -112,22 +122,28 @@ export function StudioYouTube({ id }: { id: string }) {
         Date.now() +
         Math.min(60000, 5000 * 2 ** Math.min(++failures.current, 4));
     } finally {
-      flight.current = false;
-      setGoingLive(false);
+      if (isCurrent()) {
+        flight.current = undefined;
+        setGoingLive(false);
+      }
     }
   }
   useEffect(() => {
     if (
       (autoGoLive || state?.streaming === "armed") &&
-      state?.receiving &&
+      state?.gameId === id &&
+      state.streaming === "armed" &&
+      (state.receiving || state.outputActive) &&
+      state.available &&
       !state.live &&
       !state.busy &&
+      !pending &&
       !halted.current &&
       !confirmedLive.current &&
       Date.now() >= nextCheck.current
     )
       void goLive();
-  }, [autoGoLive, bridgeAvailable, state]);
+  }, [autoGoLive, bridgeAvailable, pending, state]);
   useEffect(() => {
     setWatchUrl("");
     setCopied(false);
@@ -170,6 +186,13 @@ export function StudioYouTube({ id }: { id: string }) {
   }, [id, bridgeAvailable]);
   useEffect(() => {
     let last = 0;
+    halted.current = false;
+    nextCheck.current = 0;
+    failures.current = 0;
+    setAutoGoLive(false);
+    setGoingLive(false);
+    setError("");
+    setTerminal(false);
     confirmedLive.current = false;
     lastViewers.current = undefined;
     presentationFlight.current = undefined;
@@ -213,6 +236,8 @@ export function StudioYouTube({ id }: { id: string }) {
       }
     }, 1000);
     return () => {
+      flight.current?.abort();
+      flight.current = undefined;
       clearInterval(timer);
       window.removeEventListener("studio-youtube-status", receive);
     };
@@ -234,6 +259,10 @@ export function StudioYouTube({ id }: { id: string }) {
     )
       return;
     if (action === "start" || action === "stop") {
+      flight.current?.abort();
+      flight.current = undefined;
+      setGoingLive(false);
+      setTerminal(false);
       setAutoGoLive(action === "start");
       halted.current = action === "stop";
       nextCheck.current = 0;
@@ -414,6 +443,27 @@ export function StudioYouTube({ id }: { id: string }) {
                       : "Restart Studio to reconnect"
                     : "Broadcast to YouTube"}
         </button>
+        {state?.gameId === id &&
+          state.streaming === "armed" &&
+          (state.receiving || state.outputActive) &&
+          !state.live &&
+          !confirmedLive.current &&
+          !terminal && (
+            <button
+              className="btn-secondary min-h-11"
+              disabled={goingLive || state.busy || pending || ending}
+              title="Start this YouTube broadcast now, including before its scheduled time."
+              onClick={() => {
+                halted.current = false;
+                failures.current = 0;
+                nextCheck.current = 0;
+                setAutoGoLive(true);
+                void goLive();
+              }}
+            >
+              {goingLive ? "Going live…" : "Go live now"}
+            </button>
+          )}
         <a className="btn-secondary" href="/settings/youtube">
           YouTube settings
         </a>
@@ -431,10 +481,10 @@ export function StudioYouTube({ id }: { id: string }) {
           link.
         </p>
       )}
-      {state?.receiving && !state.live && (
+      {(state?.receiving || state?.outputActive) && !state.live && (
         <div className="mt-2 flex items-center gap-2 text-sm">
           {!error && (goingLive || autoGoLive || state.streaming === "armed")
-            ? "Going live on YouTube…"
+            ? "Starting this broadcast now. Waiting for YouTube to confirm live…"
             : null}
         </div>
       )}

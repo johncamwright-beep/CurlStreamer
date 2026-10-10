@@ -48,6 +48,7 @@ export function StudioYouTube({ id }: { id: string }) {
   const failures = useRef(0);
   const halted = useRef(false);
   const confirmedLive = useRef(false);
+  const lastViewers = useRef<number | undefined>(undefined);
   const presentationFlight = useRef<object | undefined>(undefined);
   const presentationConfirmedUntil = useRef(0);
   const currentGame = useRef(id);
@@ -170,6 +171,7 @@ export function StudioYouTube({ id }: { id: string }) {
   useEffect(() => {
     let last = 0;
     confirmedLive.current = false;
+    lastViewers.current = undefined;
     presentationFlight.current = undefined;
     presentationConfirmedUntil.current = 0;
     setPending(false);
@@ -180,6 +182,8 @@ export function StudioYouTube({ id }: { id: string }) {
       if (!parsed.success || parsed.data.gameId !== id) return;
       last = Date.now();
       if (parsed.data.live) {
+        if (parsed.data.concurrentViewers != null)
+          lastViewers.current = parsed.data.concurrentViewers;
         confirmedLive.current = true;
         failures.current = 0;
         setError("");
@@ -296,6 +300,13 @@ export function StudioYouTube({ id }: { id: string }) {
   const ending = ["preparing-end", "ended"].includes(
     state?.presentation?.mode ?? "",
   );
+  const viewerCount = state?.concurrentViewers ?? lastViewers.current;
+  const showViewers =
+    state &&
+    (state.live ||
+      (state.streaming === "armed" &&
+        state.outputActive &&
+        viewerCount != null));
   if (!bridgeAvailable) return <WindowsStudioRequired gameId={id} />;
   return (
     <section
@@ -340,15 +351,17 @@ export function StudioYouTube({ id }: { id: string }) {
                             ? "Connecting…"
                             : "Not live"}
           </strong>
-          {state?.live && (
+          {showViewers && (
             <span
               className="min-w-0 truncate text-xs text-slate-300"
               aria-live="polite"
               title="YouTube live viewer count. Updates about once a minute."
             >
-              {state.concurrentViewers == null
+              {viewerCount == null
                 ? "Viewers unavailable"
-                : `${state.concurrentViewers.toLocaleString()} watching now`}
+                : state.live && state.concurrentViewers != null
+                  ? `${viewerCount.toLocaleString()} watching now`
+                  : `${viewerCount.toLocaleString()} last reported`}
             </span>
           )}
         </div>

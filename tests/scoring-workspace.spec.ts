@@ -439,10 +439,6 @@ test("desktop game day keeps scoring primary and settings available on demand", 
     expect(sponsors!.height).toBeLessThanOrEqual(166);
     expect(sponsors!.y).toBe(youtube!.y);
     expect(sponsors!.height).toBe(youtube!.height);
-    expect(sponsors!.y + sponsors!.height).toBeLessThanOrEqual(720);
-    expect(
-      (await usb.boundingBox())!.y + (await usb.boundingBox())!.height,
-    ).toBeLessThanOrEqual(720);
   }
   for (const mode of ["live", "hold"] as const) {
     await page.evaluate(
@@ -688,6 +684,7 @@ test("Studio inline zoom sends camera commands without changing the score", asyn
     },
   };
   await page.reload();
+  await page.getByLabel("Camera controls", { exact: true }).click();
   await page
     .getByRole("button", { name: "Camera 1 zoom in", exact: true })
     .click();

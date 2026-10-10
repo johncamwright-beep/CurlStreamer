@@ -39,6 +39,78 @@ export function ScoringProgramControls({
       setBusy(false);
     }
   }
+  const timing = (
+    <details
+      className={compact ? undefined : "scoring-details"}
+      style={compact ? { position: "relative" } : undefined}
+    >
+      <summary
+        aria-label="Carousel settings"
+        style={
+          compact
+            ? {
+                display: "flex",
+                alignItems: "center",
+                gap: 4,
+                minHeight: 44,
+                cursor: "pointer",
+                listStyle: "none",
+              }
+            : undefined
+        }
+      >
+        {compact ? (
+          <>
+            <h2 id="sponsor-controls-heading">Sponsors</h2>
+            <span aria-hidden="true">⚙</span>
+          </>
+        ) : (
+          "Carousel settings"
+        )}
+      </summary>
+      <div
+        className="scoring-sponsor-settings"
+        style={
+          compact
+            ? {
+                position: "absolute",
+                top: "100%",
+                left: 0,
+                zIndex: 30,
+                width: 190,
+                padding: 12,
+                background: "#101f2c",
+                border: "1px solid #425269",
+                borderRadius: 10,
+              }
+            : undefined
+        }
+      >
+        <label>
+          Seconds per sponsor
+          <select
+            className="min-h-11"
+            disabled={busy}
+            value={game.sponsorMode.intervalSeconds}
+            onChange={(event) =>
+              update({
+                type: "sponsor-mode",
+                active: game.sponsorMode.active,
+                intervalSeconds: Number(event.target.value),
+              })
+            }
+          >
+            {[3, 4, 5, 6, 7, 8, 9, 10, 15, 20, 30, 45, 60].map((seconds) => (
+              <option key={seconds}>{seconds}</option>
+            ))}
+          </select>
+        </label>
+        <p className="scoring-muted">
+          Slower timing keeps each sponsor visible longer.
+        </p>
+      </div>
+    </details>
+  );
   return (
     <>
       {!compact && (
@@ -150,7 +222,7 @@ export function ScoringProgramControls({
         aria-labelledby="sponsor-controls-heading"
       >
         <div className="scoring-section-heading">
-          <h2 id="sponsor-controls-heading">Sponsors</h2>
+          {compact ? timing : <h2 id="sponsor-controls-heading">Sponsors</h2>}
           <button
             className="btn-secondary scoring-sponsor-toggle"
             disabled={busy || (!sponsors.length && !game.sponsorMode.active)}
@@ -194,34 +266,7 @@ export function ScoringProgramControls({
             Add organization sponsors in Sponsor Library to use the carousel.
           </p>
         )}
-        {!compact && (
-          <details className="scoring-details">
-            <summary>Carousel settings</summary>
-            <div className="scoring-sponsor-settings">
-              <label>
-                Seconds per sponsor
-                <select
-                  disabled={busy}
-                  value={game.sponsorMode.intervalSeconds}
-                  onChange={(event) =>
-                    update({
-                      type: "sponsor-mode",
-                      active: false,
-                      intervalSeconds: Number(event.target.value),
-                    })
-                  }
-                >
-                  {[3, 4, 5, 6, 7, 8, 9, 10].map((seconds) => (
-                    <option key={seconds}>{seconds}</option>
-                  ))}
-                </select>
-              </label>
-            </div>
-            <p className="scoring-muted">
-              Changing the timing stops the carousel.
-            </p>
-          </details>
-        )}
+        {!compact && timing}
       </section>
       {error && (
         <p

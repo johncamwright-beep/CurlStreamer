@@ -22,6 +22,8 @@ export interface BroadcastGame {
   };
   layout: GameState["layout"];
   programCameraMode?: GameState["programCameraMode"];
+  programAudioDelayMs?: number;
+  cameraPan?: GameState["cameraPan"];
   broadcast: GameState["broadcast"];
   audioMuted: boolean;
   cameraAudio?: Partial<
@@ -88,6 +90,17 @@ export function broadcastGame(
     },
     layout: game.layout,
     programCameraMode: game.programCameraMode ?? "auto",
+    ...(game.programAudioDelayMs !== undefined
+      ? { programAudioDelayMs: game.programAudioDelayMs }
+      : {}),
+    ...(game.cameraPan
+      ? {
+          cameraPan: {
+            "camera-home": game.cameraPan["camera-home"],
+            "camera-away": game.cameraPan["camera-away"],
+          },
+        }
+      : {}),
     broadcast: game.broadcast,
     audioMuted: game.audioMuted,
     cameraAudio: {

@@ -46,7 +46,7 @@ export function CameraZoomControls({
   act,
 }: {
   game: Pick<GameState, "cameraZoom" | "programCameraMode"> &
-    Partial<Pick<GameState, "id">>;
+    Partial<Pick<GameState, "id" | "cameraPan" | "programAudioDelayMs">>;
   act: (action: unknown) => Promise<void>;
 }) {
   const cameraInputs = useStudioCameraInputs(game.id);
@@ -84,6 +84,49 @@ export function CameraZoomControls({
         </select>
       </label>
       {layoutError && <p role="alert">{layoutError}</p>}
+      <label>
+        External microphone delay
+        <select
+          className="min-h-11"
+          aria-label="External microphone delay"
+          disabled={changing}
+          value={
+            game.programAudioDelayMs ??
+            (Object.values(cameraInputs).some(
+              (source) =>
+                source.kind !== "phone" && source.connectionEnabled !== false,
+            )
+              ? 1000
+              : 0)
+          }
+          onChange={async (event) => {
+            setChanging(true);
+            setLayoutError("");
+            try {
+              await act({
+                type: "program-audio-delay",
+                milliseconds: Number(event.target.value),
+              });
+            } catch {
+              setLayoutError("Could not change audio delay. Try again.");
+            } finally {
+              setChanging(false);
+            }
+          }}
+        >
+          {[0, 250, 500, 750, 1000, 1500, 2000, 2500, 3000, 4000, 5000].map(
+            (value) => (
+              <option key={value} value={value}>
+                {value / 1000} seconds
+              </option>
+            ),
+          )}
+        </select>
+      </label>
+      <p>
+        Delay the external microphone when its sound arrives before the camera
+        picture.
+      </p>
       <div className="camera-settings-cameras">
         {(["camera-home", "camera-away"] as const).map((role) =>
           cameraInputs[role] && cameraInputs[role].kind !== "phone" ? (
@@ -92,6 +135,9 @@ export function CameraZoomControls({
               id={game.id}
               role={role}
               source={cameraInputs[role]}
+              portrait={game.programCameraMode === "portrait"}
+              pan={game.cameraPan?.[role] ?? 0}
+              act={act}
             />
           ) : (
             <CameraZoomControl key={role} game={game} role={role} act={act} />
@@ -106,10 +152,16 @@ function IpCameraZoomControl({
   id,
   role,
   source,
+  portrait,
+  pan,
+  act,
 }: {
   id?: string;
   role: Role;
   source: StudioCameraInput;
+  portrait: boolean;
+  pan: number;
+  act: (action: unknown) => Promise<void>;
 }) {
   const label = role === "camera-home" ? "Camera 1" : "Camera 2";
   const [confirmed, setConfirmed] = useState(source.zoom ?? 1);
@@ -184,6 +236,50 @@ function IpCameraZoomControl({
   return (
     <section className="camera-zoom-control" aria-label={`${label} zoom`}>
       <h3>{label}</h3>
+      {portrait && (
+        <div
+          className="camera-zoom-buttons"
+          role="group"
+          aria-label={`${label} portrait position`}
+        >
+          {([-1, 0, 1] as const).map((direction) => (
+            <button
+              type="button"
+              className="min-h-11"
+              key={direction}
+              disabled={
+                !enabled ||
+                pending ||
+                (direction !== 0 && (direction < 0 ? pan <= -1 : pan >= 1))
+              }
+              aria-label={`${label} ${direction < 0 ? "pan left" : direction > 0 ? "pan right" : "center picture"}`}
+              onClick={async () => {
+                setPending(true);
+                setError("");
+                try {
+                  await act({
+                    type: "camera-pan",
+                    role,
+                    value:
+                      direction === 0
+                        ? 0
+                        : Math.round(
+                            Math.max(-1, Math.min(1, pan + direction * 0.1)) *
+                              10,
+                          ) / 10,
+                  });
+                } catch {
+                  setError("Could not adjust camera position. Try again.");
+                } finally {
+                  if (active.current) setPending(false);
+                }
+              }}
+            >
+              {direction < 0 ? "←" : direction > 0 ? "→" : "Center"}
+            </button>
+          ))}
+        </div>
+      )}
       <p aria-live="polite">
         {confirmed.toFixed(1)}× digital zoom{pending ? " · sending…" : ""}
       </p>

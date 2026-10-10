@@ -97,6 +97,13 @@ const projectedGame = z.object({
   }),
   layout: z.enum(["split", "home", "away", "none"]),
   programCameraMode: z.enum(["auto", "stacked", "portrait"]).optional(),
+  programAudioDelayMs: z.number().int().min(0).max(5000).optional(),
+  cameraPan: z
+    .object({
+      "camera-home": z.number().min(-1).max(1).optional(),
+      "camera-away": z.number().min(-1).max(1).optional(),
+    })
+    .optional(),
   broadcast: z.enum(["idle", "live"]),
   audioMuted: z.boolean(),
   cameraAudio: z
@@ -136,7 +143,7 @@ const projectedGame = z.object({
   sponsorMode: z.object({
     active: z.boolean(),
     style: z.enum(["fullscreen", "overlay"]),
-    intervalSeconds: z.number().int().min(3).max(10),
+    intervalSeconds: z.number().int().min(3).max(60),
     startedAt: z.number().nonnegative().nullable(),
     rotationOffset: z.number().int(),
     paused: z.boolean(),

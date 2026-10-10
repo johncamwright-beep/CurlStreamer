@@ -277,6 +277,12 @@ function applyAction(game: GameState, action: z.infer<typeof actionSchema>) {
     game.config.awayColor = action.awayColor;
   }
   if (action.type === "layout") game.layout = action.layout;
+  if (action.type === "program-audio-delay")
+    game.programAudioDelayMs = action.milliseconds;
+  if (action.type === "camera-pan") {
+    game.cameraPan ??= {};
+    game.cameraPan[action.role] = action.value;
+  }
   if (action.type === "camera-composition")
     game.programCameraMode = action.mode;
   if (action.type === "camera-framing") {
@@ -420,6 +426,7 @@ export async function updateGame(
         action.role !== expectedAuthority.role &&
         !(
           (action.type === "camera-zoom" ||
+            action.type === "camera-pan" ||
             action.type === "camera-audio" ||
             action.type === "camera-reconnect") &&
           expectedAuthority.role === "scorer"

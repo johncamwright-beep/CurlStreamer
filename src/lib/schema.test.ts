@@ -1,6 +1,44 @@
 import { describe, expect, it } from "vitest";
 import { actionSchema, gameSchema, hasSafeSponsorContent } from "./schema";
 
+it("bounds program audio delay, portrait pan and slower sponsor timing", () => {
+  expect(
+    actionSchema.safeParse({ type: "program-audio-delay", milliseconds: 2500 })
+      .success,
+  ).toBe(true);
+  for (const milliseconds of [-1, 5001, 1.5, Infinity])
+    expect(
+      actionSchema.safeParse({ type: "program-audio-delay", milliseconds })
+        .success,
+    ).toBe(false);
+  expect(
+    actionSchema.safeParse({
+      type: "camera-pan",
+      role: "camera-home",
+      value: -0.5,
+    }).success,
+  ).toBe(true);
+  for (const value of [-1.1, 1.1, Infinity])
+    expect(
+      actionSchema.safeParse({ type: "camera-pan", role: "camera-home", value })
+        .success,
+    ).toBe(false);
+  expect(
+    actionSchema.safeParse({
+      type: "sponsor-mode",
+      active: true,
+      intervalSeconds: 60,
+    }).success,
+  ).toBe(true);
+  expect(
+    actionSchema.safeParse({
+      type: "sponsor-mode",
+      active: true,
+      intervalSeconds: 61,
+    }).success,
+  ).toBe(false);
+});
+
 it("round-trips saved games with empty or shared watch links", () => {
   const base = {
     eventName: "Winter event",

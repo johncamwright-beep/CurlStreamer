@@ -17,7 +17,19 @@ export function M4ProgramAudio({
 }) {
   return (
     <>
-      <ProgramUsbAudio />
+      <ProgramUsbAudio
+        delayMs={
+          game.programAudioDelayMs ??
+          (sources &&
+          roles.some(
+            (role) =>
+              sources[role].kind !== "phone" &&
+              sources[role].connectionEnabled !== false,
+          )
+            ? 1000
+            : 0)
+        }
+      />
       {sources &&
         roles
           .filter((role) => sources[role].kind !== "phone")

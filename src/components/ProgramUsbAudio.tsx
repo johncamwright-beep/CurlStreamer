@@ -14,6 +14,7 @@ export function ProgramUsbAudio({
   sourceGeneration,
   enabled = true,
   volume = 1,
+  delayMs = 0,
 }: {
   endpoint?: string;
   generationHeader?: string;
@@ -21,7 +22,20 @@ export function ProgramUsbAudio({
   sourceGeneration?: number;
   enabled?: boolean;
   volume?: number;
+  delayMs?: number;
 } = {}) {
+  const delayRef = useRef<DelayNode | null>(null);
+  const delayValue = useRef(delayMs);
+  useEffect(() => {
+    delayValue.current = delayMs;
+    const delay = delayRef.current;
+    if (delay)
+      delay.delayTime.setTargetAtTime(
+        Math.max(0, Math.min(5000, delayMs)) / 1000,
+        delay.context.currentTime,
+        0.03,
+      );
+  }, [delayMs]);
   const volumeRef = useRef(volume);
   const gainRef = useRef<GainNode | null>(null);
   useEffect(() => {
@@ -34,7 +48,12 @@ export function ProgramUsbAudio({
     const context = output.context;
     const gain = context.createGain();
     gain.gain.value = volumeRef.current;
-    gain.connect(output.input);
+    const delay = context.createDelay(5);
+    delay.delayTime.value =
+      Math.max(0, Math.min(5000, delayValue.current)) / 1000;
+    gain.connect(delay);
+    delay.connect(output.input);
+    delayRef.current = delay;
     gainRef.current = gain;
     const scheduled = new Set<AudioBufferSourceNode>();
     let generation = "",
@@ -196,6 +215,8 @@ export function ProgramUsbAudio({
       .catch(() => report());
     return () => {
       stopped = true;
+      delay.disconnect();
+      if (delayRef.current === delay) delayRef.current = null;
       clearTimeout(timer);
       requestController?.abort();
       reportController?.abort();

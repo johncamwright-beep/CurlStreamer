@@ -11,11 +11,13 @@ vi.mock("@/components/ProgramUsbAudio", () => ({
     endpoint?: string;
     enabled?: boolean;
     volume?: number;
+    delayMs?: number;
   }) => (
     <span
       data-endpoint={props.endpoint ?? "/usb-audio"}
       data-enabled={props.enabled ?? true}
       data-volume={props.volume ?? 1}
+      data-delay={props.delayMs ?? 0}
     />
   ),
 }));
@@ -51,6 +53,7 @@ describe("native program audio routing", () => {
       };
       const projection = {
         ...broadcastGame(game),
+        programAudioDelayMs: 2500,
         nativeCameraAudio: nativeCameraAudioIntent(game),
       };
       const phone: M4CameraInputSnapshot = {
@@ -81,6 +84,9 @@ describe("native program audio routing", () => {
         );
       expect(render()).toContain(
         'data-endpoint="/usb-audio" data-enabled="true"',
+      );
+      expect(render()).toContain(
+        'data-endpoint="/usb-audio" data-enabled="true" data-volume="1" data-delay="2500"',
       );
       expect(render()).toContain(
         'data-endpoint="/ip-camera/camera-home/audio?generation=3&amp;after=0" data-enabled="true" data-volume="0.4"',

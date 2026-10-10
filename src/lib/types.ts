@@ -88,6 +88,8 @@ export interface GameState {
   scoreEvents: ScoreEvent[];
   layout: Layout;
   programCameraMode?: "auto" | "stacked" | "portrait";
+  programAudioDelayMs?: number;
+  cameraPan?: Partial<Record<"camera-home" | "camera-away", number>>;
   broadcast: "idle" | "live";
   status: "active" | "closed" | "completed";
   audioMuted: boolean;

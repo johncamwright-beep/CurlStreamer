@@ -91,10 +91,12 @@ function CameraVideo({
   state,
   onAspect,
   zoom = 1,
+  pan = 0,
 }: {
   state: CameraState;
   onAspect: (aspect: number) => void;
   zoom?: number;
+  pan?: number;
 }) {
   const ref = useRef<HTMLVideoElement>(null);
   const canvasHost = useRef<HTMLDivElement>(null);
@@ -115,9 +117,10 @@ function CameraVideo({
     // Zoom only the IP picture. Its original aspect still determines layout;
     // the scoreboard, sponsors and phone hardware zoom remain independent.
     if (!state.canvas) return;
-    state.canvas.style.transformOrigin = "center";
+    state.canvas.style.transformOrigin = `${50 + Math.max(-1, Math.min(1, pan)) * 50}% 50%`;
+    state.canvas.style.objectPosition = `${50 + Math.max(-1, Math.min(1, pan)) * 50}% 50%`;
     state.canvas.style.transform = zoom === 1 ? "" : `scale(${zoom})`;
-  }, [state.canvas, zoom]);
+  }, [state.canvas, zoom, pan]);
   useEffect(() => {
     const video = ref.current;
     if (!video) return;
@@ -527,6 +530,11 @@ function ProgramRenderer() {
         renderCamera={(role) => (
           <CameraVideo
             state={cameras[role]}
+            pan={
+              game.programCameraMode === "portrait"
+                ? (game.cameraPan?.[role] ?? 0)
+                : 0
+            }
             zoom={
               sources?.[role].kind !== "phone" &&
               cameras[role].sourceIdentity ===

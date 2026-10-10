@@ -194,34 +194,35 @@ export function ScoringProgramControls({
             Add organization sponsors in Sponsor Library to use the carousel.
           </p>
         )}
-        {!compact && (
-          <details className="scoring-details">
-            <summary>Carousel settings</summary>
-            <div className="scoring-sponsor-settings">
-              <label>
-                Seconds per sponsor
-                <select
-                  disabled={busy}
-                  value={game.sponsorMode.intervalSeconds}
-                  onChange={(event) =>
-                    update({
-                      type: "sponsor-mode",
-                      active: false,
-                      intervalSeconds: Number(event.target.value),
-                    })
-                  }
-                >
-                  {[3, 4, 5, 6, 7, 8, 9, 10].map((seconds) => (
+        <details className="scoring-details">
+          <summary>Carousel settings</summary>
+          <div className="scoring-sponsor-settings">
+            <label>
+              Seconds per sponsor
+              <select
+                className="min-h-11"
+                disabled={busy}
+                value={game.sponsorMode.intervalSeconds}
+                onChange={(event) =>
+                  update({
+                    type: "sponsor-mode",
+                    active: game.sponsorMode.active,
+                    intervalSeconds: Number(event.target.value),
+                  })
+                }
+              >
+                {[3, 4, 5, 6, 7, 8, 9, 10, 15, 20, 30, 45, 60].map(
+                  (seconds) => (
                     <option key={seconds}>{seconds}</option>
-                  ))}
-                </select>
-              </label>
-            </div>
-            <p className="scoring-muted">
-              Changing the timing stops the carousel.
-            </p>
-          </details>
-        )}
+                  ),
+                )}
+              </select>
+            </label>
+          </div>
+          <p className="scoring-muted">
+            Slower timing keeps each sponsor visible longer.
+          </p>
+        </details>
       </section>
       {error && (
         <p

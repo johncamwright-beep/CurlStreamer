@@ -18,6 +18,41 @@ const config: GameConfig = {
 
 const temporaryDirectories: string[] = [];
 
+it("persists independent portrait positions and microphone delay without changing scores or another game", async () => {
+  const store = await loadFreshStore();
+  const game = store.createGame(config);
+  const other = store.createGame(config);
+  const events = structuredClone(game.scoreEvents);
+  store.updateGame(game.id, {
+    type: "camera-pan",
+    role: "camera-home",
+    value: -0.4,
+  });
+  store.updateGame(game.id, {
+    type: "camera-pan",
+    role: "camera-away",
+    value: 0.2,
+  });
+  store.updateGame(game.id, {
+    type: "program-audio-delay",
+    milliseconds: 2500,
+  });
+  store.updateGame(game.id, {
+    type: "sponsor-mode",
+    active: true,
+    intervalSeconds: 30,
+  });
+  const reloaded = await reloadStore();
+  expect(reloaded.getGame(game.id)).toMatchObject({
+    cameraPan: { "camera-home": -0.4, "camera-away": 0.2 },
+    programAudioDelayMs: 2500,
+    scoreEvents: events,
+    sponsorMode: { active: true, intervalSeconds: 30 },
+  });
+  expect(reloaded.getGame(other.id)?.cameraPan).toBeUndefined();
+  expect(reloaded.getGame(other.id)?.programAudioDelayMs).toBeUndefined();
+});
+
 it("persists in-game rock colours without changing the score history or another game", async () => {
   const store = await loadFreshStore();
   const game = store.createGame(config);

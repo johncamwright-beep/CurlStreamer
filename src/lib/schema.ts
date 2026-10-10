@@ -73,6 +73,19 @@ export const actionSchema = z.discriminatedUnion("type", [
     layout: z.enum(["split", "home", "away", "none"]),
   }),
   z.object({ type: z.literal("audio"), muted: z.boolean() }),
+  z
+    .object({
+      type: z.literal("program-audio-delay"),
+      milliseconds: z.number().int().min(0).max(5000),
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal("camera-pan"),
+      role: z.enum(["camera-home", "camera-away"]),
+      value: z.number().finite().min(-1).max(1),
+    })
+    .strict(),
   z.object({
     type: z.literal("camera-composition"),
     mode: z.enum(["auto", "stacked", "portrait"]),
@@ -160,7 +173,7 @@ export const actionSchema = z.discriminatedUnion("type", [
     type: z.literal("sponsor-mode"),
     active: z.boolean(),
     style: z.enum(["fullscreen", "overlay"]).optional(),
-    intervalSeconds: z.number().int().min(3).max(10).optional(),
+    intervalSeconds: z.number().int().min(3).max(60).optional(),
   }),
   z.object({
     type: z.literal("sponsor-nav"),

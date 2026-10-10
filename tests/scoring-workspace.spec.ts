@@ -297,7 +297,7 @@ test("desktop game day keeps scoring primary and settings available on demand", 
   page,
 }, info) => {
   if (info.project.name !== "mobile")
-    await page.setViewportSize({ width: 1280, height: 720 });
+    await page.setViewportSize({ width: 1280, height: 850 });
   await page.addInitScript(() =>
     Object.defineProperty(navigator, "userAgent", {
       value:

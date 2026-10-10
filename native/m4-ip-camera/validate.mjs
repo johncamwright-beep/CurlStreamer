@@ -53,6 +53,7 @@ assert(sps && pps);
 const sdp = `v=0\r\no=- 0 0 IN IP4 127.0.0.1\r\ns=Synthetic fixture\r\nc=IN IP4 127.0.0.1\r\nt=0 0\r\na=control:*\r\nm=video 0 RTP/AVP 96\r\na=rtpmap:96 H264/90000\r\na=fmtp:96 packetization-mode=1;sprop-parameter-sets=${sps.toString("base64")},${pps.toString("base64")}\r\na=control:trackID=0\r\nm=audio 0 RTP/AVP 0\r\na=rtpmap:0 PCMU/8000/1\r\na=control:trackID=1\r\n`;
 let reject = false;
 let sustained = false,
+  burstDelivery = false,
   pauseMedia = false,
   keepalives = 0;
 let expectedAuthorization = null;
@@ -68,6 +69,7 @@ const server = createServer((socket) => {
     index = 0,
     streamStarted = 0,
     lastCommand = Date.now();
+  let heldPackets = [];
   const rtp = (channel, payload, type, timestamp, marker, sequence) => {
     const h = Buffer.alloc(16);
     h[0] = 36;
@@ -78,7 +80,16 @@ const server = createServer((socket) => {
     h.writeUInt16BE(sequence & 65535, 6);
     h.writeUInt32BE(timestamp >>> 0, 8);
     h.writeUInt32BE(channel ? 654 : 123, 12);
-    socket.write(Buffer.concat([h, payload]));
+    const encoded = Buffer.concat([h, payload]);
+    // Reproduce the observed half-second delivery gap without losing RTP
+    // packets or altering their original capture timestamps.
+    if (burstDelivery && (Date.now() - streamStarted) % 3000 < 500) {
+      heldPackets.push(encoded);
+    } else {
+      for (const held of heldPackets) socket.write(held);
+      heldPackets = [];
+      socket.write(encoded);
+    }
   };
   socket.on("data", (data) => {
     pending = Buffer.concat([pending, data]);
@@ -374,6 +385,8 @@ async function sustainedCapture() {
     pcm = 0,
     pcmBytes = 0,
     lastFrame = 0,
+    measuredGap = 0,
+    measureGaps = false,
     exit;
   const statuses = [];
   child.stderr.on("data", (b) =>
@@ -388,6 +401,8 @@ async function sustainedCapture() {
       if (pending.length < length + 8) break;
       const payload = pending.subarray(8, length + 8);
       if (type === "JPEG") {
+        if (measureGaps && lastFrame)
+          measuredGap = Math.max(measuredGap, Date.now() - lastFrame);
         frames++;
         lastFrame = Date.now();
       } else if (type === "PCMA") {
@@ -450,6 +465,15 @@ async function sustainedCapture() {
       audioRate >= 45000 && audioRate <= 51000,
       `healthy PCM continuity (${audioRate.toFixed(0)} samples/s)`,
     );
+    burstDelivery = true;
+    measureGaps = true;
+    await sleep(6500);
+    burstDelivery = false;
+    measureGaps = false;
+    assert(
+      measuredGap < 200,
+      `timestamp playout smooths 500ms network bursts (largest gap ${measuredGap}ms)`,
+    );
     const beforeBlocked = keepalives;
     child.stdout.pause();
     await sleep(3800);
@@ -467,6 +491,7 @@ async function sustainedCapture() {
     pauseMedia = true;
     await sleep(1200);
     pauseMedia = false;
+    burstDelivery = false;
     await sleep(1000);
     assert(
       frames > beforeGap && !exit,

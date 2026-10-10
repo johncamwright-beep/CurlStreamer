@@ -54,6 +54,15 @@ returned in status snapshots. Legacy version 1 and saved Tapo sources still use
 `stream1` or `stream2`. Both versions have exactly seven fields. Only `127.0.0.1`
 is additionally accepted by the helper for the synthetic fixture; production
 schemas reject loopback.
+
+Camera video and camera audio use a one-second timestamp-paced input buffer.
+Frames delivered in a short RTSP burst retain their capture cadence instead of
+being collapsed into the newest frame. Status and health diagnostics bypass this
+delay. The buffer is capped at 192 media records and 64 MiB per camera; source
+clock discontinuities rebase playback, and media over 200 ms late is discarded
+after consumer backpressure rather than replayed in a growing backlog. Shutdown
+discards buffered media. External microphones do not pass through this camera
+buffer and may need a matching audio delay for lip sync.
 Version 2 rejects credential user information longer than 127 encoded bytes,
 including the separating colon, before starting network access. RFC3986
 unreserved UTF-8 bytes count as one byte; every other byte counts as three

@@ -1,6 +1,21 @@
 .scoring-workspace {
   padding: 24px 20px 48px;
 }
+.scoring-initial-hammer {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 44px;
+  min-height: 44px;
+  border: 1px solid #4b6278;
+  border-radius: 8px;
+  background: #172a3a;
+  cursor: pointer;
+}
+.scoring-initial-hammer svg {
+  width: 18px;
+  height: 18px;
+}
 .scoring-navigation {
   display: flex;
   align-items: center;

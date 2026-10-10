@@ -68,6 +68,39 @@ async function setup(page: Page, desktop = false) {
   };
 }
 
+test("starting hammer is selected inside the scoreboard without a separate card", async ({
+  page,
+}) => {
+  const { game, actions } = await setup(page);
+  game.config.initialHammer = undefined;
+  game.scoreEvents = [];
+  await page.reload();
+  const scoreboard = page.getByRole("region", {
+    name: "Match score",
+    exact: true,
+  });
+  const hammer = scoreboard.getByRole("button", {
+    name: "Give Team Wright hammer in End 1",
+    exact: true,
+  });
+  await expect(hammer).toBeVisible();
+  await expect(
+    page.getByText("Who has hammer in End 1?", { exact: true }),
+  ).toHaveCount(0);
+  expect((await hammer.boundingBox())!.height).toBeGreaterThanOrEqual(44);
+  await hammer.click();
+  await expect.poll(() => actions.length).toBe(1);
+  expect(actions[0]).toMatchObject({
+    type: "hammer",
+    team: "away",
+    expectedEnd: 1,
+  });
+  await expect(hammer).toHaveCount(0);
+  await expect(
+    page.getByRole("heading", { name: "Record End 1" }),
+  ).toBeVisible();
+});
+
 test("score entry preserves selected team and points in one saved intent", async ({
   page,
 }, info) => {

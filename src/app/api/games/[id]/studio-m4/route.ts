@@ -103,6 +103,24 @@ async function credential(
   return account.ok ? account.value : undefined;
 }
 function failure(error: unknown) {
+  const providerMessages: Record<string, string> = {
+    youtube_reconnect_required:
+      "Reconnect your YouTube account in YouTube settings, then try Go live again.",
+    youtube_scope_missing:
+      "YouTube has not granted permission to start broadcasts. Reconnect your YouTube account and approve the requested permissions.",
+    youtube_quota_exceeded:
+      "YouTube's API limit has been reached. Use YouTube's control room to go live for now.",
+    youtube_live_permission_blocked:
+      "YouTube is blocking live broadcasts on the connected channel. Check the channel in YouTube Studio.",
+    youtube_live_streaming_not_enabled:
+      "Enable live streaming on the connected YouTube channel first.",
+    youtube_provider_rejected:
+      "YouTube rejected the Go live request. Studio will check reception and retry; your saved watch link is retained.",
+  };
+  const message =
+    error instanceof Error ? providerMessages[error.message] : undefined;
+  if (message)
+    return response({ error: message, code: "youtube_start_failed" }, 503);
   const code = (error as { code?: unknown } | null)?.code;
   if (code === "P0409")
     return response(

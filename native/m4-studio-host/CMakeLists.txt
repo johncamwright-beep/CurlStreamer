@@ -1,0 +1,8 @@
+cmake_minimum_required(VERSION 4.2)
+project(m4_studio_host LANGUAGES C)
+find_package(libobs 32.2.2 EXACT CONFIG REQUIRED)
+add_executable(m4_studio_host host.c ../m4-log-guard/m4-log-guard.c)
+target_link_libraries(m4_studio_host PRIVATE OBS::libobs bcrypt advapi32)
+target_compile_definitions(m4_studio_host PRIVATE WIN32_LEAN_AND_MEAN _WIN32_WINNT=0x0A00)
+target_compile_options(m4_studio_host PRIVATE /W4 /WX /guard:cf)
+target_link_options(m4_studio_host PRIVATE /guard:cf)

@@ -25,17 +25,74 @@ describe("game read provider lifecycle boundary", () => {
   });
   afterEach(() => vi.unstubAllEnvs());
 
-  it("reads lifecycle and state through the service-only RPC", async () => {
+  it("reads lifecycle, state, and schedule through the service-only RPC", async () => {
     const game = gameFixture();
     mocks.rpc.mockResolvedValue({
-      data: [{ outcome: "active", state: game }],
+      data: [
+        {
+          outcome: "active",
+          state: game,
+          scheduled_start: "2026-10-20T22:30:00Z",
+          schedule_timezone: "America/Toronto",
+        },
+      ],
       error: null,
     });
-    expect(await readGame(testGameId)).toEqual({ kind: "active", game });
+    expect(await readGame(testGameId)).toEqual({
+      kind: "active",
+      game: {
+        ...game,
+        broadcastSchedule: {
+          scheduledStart: "2026-10-20T22:30:00Z",
+          timezone: "America/Toronto",
+        },
+      },
+    });
     expect(mocks.rpc).toHaveBeenCalledWith("read_game_state", {
       p_game_id: testGameId,
     });
     expect(mocks.getGame).not.toHaveBeenCalled();
+  });
+  it("omits partial or stale schedule metadata without affecting the state read", async () => {
+    const state = {
+      ...gameFixture(),
+      broadcastSchedule: {
+        scheduledStart: "2001-01-01T00:00:00Z",
+        timezone: "Etc/UTC",
+      },
+    };
+    mocks.rpc.mockResolvedValue({
+      data: [
+        {
+          outcome: "active",
+          state,
+          scheduled_start: "2026-10-20T22:30:00Z",
+          schedule_timezone: null,
+        },
+      ],
+      error: null,
+    });
+    expect(await readGame(testGameId)).toEqual({
+      kind: "active",
+      game: gameFixture(),
+    });
+  });
+  it("omits a timezone the renderer cannot format", async () => {
+    mocks.rpc.mockResolvedValue({
+      data: [
+        {
+          outcome: "active",
+          state: gameFixture(),
+          scheduled_start: "2026-10-20T22:30:00Z",
+          schedule_timezone: "not/a-timezone",
+        },
+      ],
+      error: null,
+    });
+    expect(await readGame(testGameId)).toEqual({
+      kind: "active",
+      game: gameFixture(),
+    });
   });
   it.each(["deleted", "closed"] as const)(
     "discards any retained state for %s games",

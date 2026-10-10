@@ -1,0 +1,1002 @@
+import { createM4ProgramPresentation } from "./m4-program-presentation";
+import { createServer } from "node:http";
+import { randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";
+import { z } from "zod";
+import { createM4SponsorAssets } from "./m4-sponsor-assets";
+import { createM4UsbAudioQueue } from "./m4-usb-audio";
+import type { createM4IpCameraManager } from "./m4-ip-camera";
+import type { M4ProgramClient } from "./m4-program-client";
+import { StudioTransportUnavailable } from "./studio-transport-error";
+import {
+  createM4RendererHealth,
+  m4RendererHeartbeatSchema,
+} from "./m4-program-health";
+import {
+  m4CameraDrainIdentitySchema,
+  type M4CameraDrainIdentity,
+} from "./m4-program-realtime";
+import {
+  connectionDiagnosticSchema,
+  type ConnectionDiagnostic,
+} from "./connection-diagnostics";
+import {
+  cameraRoleSchema,
+  signalSchema,
+  signalEnvelopeSchema,
+  studioTicketSchema,
+  type CameraRole,
+} from "../m2-studio-protocol";
+
+const command = z
+  .object({
+    action: z.enum(["check", "signal", "stop"]),
+    cameraRole: cameraRoleSchema,
+    sessionId: z.uuid().optional(),
+    negotiationId: z.uuid().optional(),
+    signal: signalSchema.optional(),
+  })
+  .strict();
+
+/** Private local API and managed renderer bootstrap. The owning Node process
+ * passes only the root loopback URL to its freshly launched recorder. The first
+ * navigation receives a process-lifetime HttpOnly capability. This is not
+ * browser process attestation; it prevents credentials from entering URLs,
+ * page JavaScript and OBS profile data.
+ */
+export async function createM4ProgramBridge(
+  client: Pick<M4ProgramClient, "readGame" | "action" | "close"> & {
+    sponsorOrganizationId?: () => string | undefined;
+  },
+  realtime?: {
+    connect(role: CameraRole): Promise<unknown>;
+    drain(role: CameraRole, identity: M4CameraDrainIdentity): Promise<unknown>;
+    close(): Promise<void>;
+    stopRole?(role: CameraRole): Promise<void>;
+  },
+  rendererAssets?: {
+    directory: string;
+    sponsorStorageOrigin?: string;
+    sponsorCacheDirectory?: string;
+    /** Node-only download injection; never sent to the renderer. */
+    teamLogoFetcher?: typeof fetch;
+    diagnostic?: ConnectionDiagnostic;
+    cameraInputs?: ReturnType<typeof createM4IpCameraManager>;
+    closingAuthority?: () => Promise<number | undefined>;
+  },
+) {
+  const key = randomBytes(32).toString("base64url");
+  const cameraFrames = new Map<
+    CameraRole,
+    { frames: number; advancedAt: number; generation?: number }
+  >();
+  const phoneAudio = new Map<
+    CameraRole,
+    {
+      peak: number;
+      rms: number;
+      receiving: boolean;
+      observedAt: number;
+      generation?: number;
+    }
+  >();
+  const rendererCookie = randomBytes(32).toString("base64url");
+  const usbAudio = createM4UsbAudioQueue();
+  const rendererHealth = createM4RendererHealth();
+  const presentation = createM4ProgramPresentation(rendererHealth.accepts);
+  let validatedClosingDeadline = 0;
+  let usbRenderer = {
+    contextState: "unavailable",
+    scheduledFrames: 0,
+    peak: 0,
+    rms: 0,
+    observedAt: 0,
+  };
+  const expected = Buffer.from(`Bearer ${key}`);
+  const expectedRendererCookie = Buffer.from(`m4_program=${rendererCookie}`);
+  let address = "",
+    closed = false,
+    authorityEnded = false,
+    rendererClaimed = false;
+  const rendererHtml = () => {
+    const instance = randomUUID();
+    rendererHealth.begin(instance);
+    cameraFrames.clear();
+    phoneAudio.clear();
+    usbRenderer = {
+      contextState: "unavailable",
+      scheduledFrames: 0,
+      peak: 0,
+      rms: 0,
+      observedAt: 0,
+    };
+    return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="m4-renderer-instance" content="${instance}"><meta name="m4-presentation" content="${Buffer.from(JSON.stringify(presentation.snapshot())).toString("base64")}"><title>CurlStreamer program</title><link rel="stylesheet" href="/m4-program-renderer.css"></head><body><div id="root"></div><script src="/m4-program-renderer.js" defer></script></body></html>`;
+  };
+  const builtinSponsors = new Map([
+    [
+      "/sponsors/community.svg",
+      '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 400"><rect width="800" height="400" rx="60" fill="#0e7490"/><circle cx="190" cy="200" r="100" fill="#fff"/><circle cx="190" cy="200" r="70" fill="#dc2626"/><circle cx="190" cy="200" r="30" fill="#2563eb"/><text x="330" y="180" fill="white" font-family="sans-serif" font-size="64" font-weight="bold">COMMUNITY</text><text x="330" y="250" fill="white" font-family="sans-serif" font-size="64" font-weight="bold">ICE</text></svg>',
+    ],
+    [
+      "/sponsors/rock.svg",
+      '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 400"><rect width="800" height="400" rx="60" fill="#f8fafc"/><path d="M120 245h220l-35 75H155z" fill="#64748b"/><path d="M180 245c0-120 100-120 100 0" fill="none" stroke="#dc2626" stroke-width="35"/><text x="390" y="190" fill="#0f172a" font-family="sans-serif" font-size="72" font-weight="bold">ROCK</text><text x="390" y="270" fill="#0f172a" font-family="sans-serif" font-size="72" font-weight="bold">SOLID</text></svg>',
+    ],
+  ]);
+  let sponsorAssets: ReturnType<typeof createM4SponsorAssets> | undefined;
+  let teamLogo:
+    { source: string; path: string; mime: string; bytes: Buffer } | undefined;
+  let logoFlight:
+    | {
+        source: string;
+        abort: AbortController;
+      }
+    | undefined;
+  // Artwork never delays critical program polling. A subsequent poll receives
+  // the local path once the background download has completed.
+  const syncTeamLogo = (
+    source: string | undefined,
+    organizationId: string | undefined,
+  ) => {
+    let url: URL | undefined;
+    try {
+      const candidate = new URL(source!),
+        origin = new URL(rendererAssets!.sponsorStorageOrigin!),
+        prefix = `/storage/v1/object/public/team-public-media/${organizationId}/`;
+      if (
+        origin.protocol === "https:" &&
+        origin.origin === rendererAssets?.sponsorStorageOrigin &&
+        z.uuid().safeParse(organizationId).success &&
+        candidate.origin === origin.origin &&
+        !candidate.username &&
+        !candidate.password &&
+        !candidate.search &&
+        !candidate.hash &&
+        candidate.pathname.startsWith(prefix) &&
+        /^[a-f0-9-]{36}\.(?:png|jpe?g|webp)$/.test(
+          candidate.pathname.slice(prefix.length),
+        ) &&
+        z
+          .uuid()
+          .safeParse(candidate.pathname.slice(prefix.length).split(".")[0])
+          .success
+      )
+        url = candidate;
+    } catch {
+      /* Only this program organization's public uploaded artwork is eligible. */
+    }
+    if (!url || teamLogo?.source !== source) {
+      // Public artwork may still be writing to an earlier image response.
+      // Evict the reference without modifying that response's buffer.
+      teamLogo = undefined;
+    }
+    if (!url) {
+      logoFlight?.abort.abort();
+      logoFlight = undefined;
+      return;
+    }
+    if (teamLogo) return teamLogo.path;
+    if (
+      logoFlight &&
+      logoFlight.source === source &&
+      !logoFlight.abort.signal.aborted
+    )
+      return;
+    logoFlight?.abort.abort();
+    const abort = new AbortController();
+    logoFlight = { source: source!, abort };
+    void (async () => {
+      const timer = setTimeout(() => abort.abort(), 5000);
+      let reader: ReadableStreamDefaultReader<Uint8Array> | undefined;
+      let response: Response | undefined;
+      const chunks: Buffer[] = [];
+      const bounded = <T>(operation: Promise<T>) =>
+        new Promise<T>((resolve, reject) => {
+          const failed = () => reject(Error("program_asset_unavailable"));
+          operation
+            .then(resolve, reject)
+            .finally(() => abort.signal.removeEventListener("abort", failed));
+          if (abort.signal.aborted) {
+            failed();
+            return;
+          }
+          abort.signal.addEventListener("abort", failed, { once: true });
+        });
+      try {
+        response = await bounded(
+          (rendererAssets?.teamLogoFetcher ?? fetch)(url, {
+            cache: "no-store",
+            redirect: "error",
+            signal: abort.signal,
+          }),
+        );
+        const mime = response.headers
+          .get("content-type")
+          ?.split(";", 1)[0]
+          .toLowerCase();
+        const max = 1024 * 1024;
+        if (
+          !response.ok ||
+          response.redirected ||
+          !mime ||
+          !["image/png", "image/jpeg", "image/webp"].includes(mime) ||
+          Number(response.headers.get("content-length")) > max ||
+          !response.body
+        )
+          throw Error();
+        reader = response.body.getReader();
+        let size = 0;
+        for (;;) {
+          const part = await bounded(reader.read());
+          if (abort.signal.aborted) throw Error();
+          if (part.done) break;
+          size += part.value.byteLength;
+          if (size > max) throw Error();
+          chunks.push(Buffer.from(part.value));
+        }
+        if (
+          !size ||
+          closed ||
+          abort.signal.aborted ||
+          logoFlight?.abort !== abort
+        )
+          return;
+        const bytes = Buffer.concat(chunks);
+        const valid =
+          mime === "image/png"
+            ? bytes
+                .subarray(0, 8)
+                .equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))
+            : mime === "image/jpeg"
+              ? bytes[0] === 255 && bytes[1] === 216 && bytes[2] === 255
+              : bytes.subarray(0, 4).toString() === "RIFF" &&
+                bytes.subarray(8, 12).toString() === "WEBP";
+        if (!valid) {
+          bytes.fill(0);
+          return;
+        }
+        teamLogo = {
+          source: source!,
+          path: `/team-logo/${randomBytes(16).toString("hex")}`,
+          mime,
+          bytes,
+        };
+        return teamLogo.path;
+      } catch {
+        return undefined;
+      } finally {
+        clearTimeout(timer);
+        abort.abort();
+        void reader?.cancel().catch(() => undefined);
+        if (!reader) void response?.body?.cancel().catch(() => undefined);
+        for (const chunk of chunks) chunk.fill(0);
+        if (logoFlight?.abort === abort) logoFlight = undefined;
+      }
+    })();
+  };
+  const server = createServer(async (request, response) => {
+    response.setHeader("cache-control", "no-store");
+    response.setHeader("x-content-type-options", "nosniff");
+    response.setHeader(
+      "content-security-policy",
+      "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; connect-src 'self'; media-src blob:; frame-ancestors 'none'; base-uri 'none'; form-action 'none'",
+    );
+    const reply = (status: number, value: unknown) => {
+      if (response.destroyed) return;
+      response.writeHead(status, { "content-type": "application/json" });
+      response.end(JSON.stringify(value));
+    };
+    const hostAllowed = request.headers.host === new URL(address).host;
+    const supplied = Buffer.from(request.headers.authorization ?? "");
+    const cookie = Buffer.from(
+      request.headers.cookie
+        ?.split(";")
+        .map((part) => part.trim())
+        .find((part) => part.startsWith("m4_program=")) ?? "",
+    );
+    const ownerAllowed =
+      supplied.length === expected.length &&
+      timingSafeEqual(supplied, expected);
+    const rendererAllowed =
+      cookie.length === expectedRendererCookie.length &&
+      timingSafeEqual(cookie, expectedRendererCookie);
+    const sameContext =
+      request.headers.origin === address ||
+      (request.method === "GET" &&
+        !request.headers.origin &&
+        request.headers["sec-fetch-site"] === "same-origin");
+    const allowed =
+      !closed &&
+      !authorityEnded &&
+      hostAllowed &&
+      sameContext &&
+      (ownerAllowed || rendererAllowed);
+    supplied.fill(0);
+    cookie.fill(0);
+    const documentNavigation =
+      request.headers["sec-fetch-dest"] === "document" &&
+      request.headers["sec-fetch-mode"] === "navigate";
+    // The managed recorder receives only this root URL over its inherited
+    // startup frame. The first local navigation atomically receives an
+    // HttpOnly capability; no secret is placed in the URL, DOM or JavaScript.
+    if (
+      !closed &&
+      !authorityEnded &&
+      (!rendererClaimed
+        ? !ownerAllowed
+        : rendererAllowed && documentNavigation) &&
+      hostAllowed &&
+      request.method === "GET" &&
+      request.url === "/" &&
+      !request.headers.origin
+    ) {
+      if (!rendererClaimed)
+        response.setHeader(
+          "set-cookie",
+          `m4_program=${rendererCookie}; HttpOnly; SameSite=Strict; Path=/`,
+        );
+      rendererClaimed = true;
+      response.writeHead(200, { "content-type": "text/html; charset=utf-8" });
+      response.end(rendererHtml());
+      return;
+    }
+    if (!allowed) {
+      reply(403, { error: "Program request denied" });
+      return;
+    }
+    if (request.method === "GET" && request.url === "/presentation") {
+      if (!rendererAllowed) return reply(403, { error: "Presentation denied" });
+      return reply(200, presentation.snapshot());
+    }
+    if (request.method === "POST" && request.url === "/presentation-painted") {
+      if (!rendererAllowed) return reply(403, { error: "Presentation denied" });
+      let raw = "";
+      try {
+        for await (const chunk of request) {
+          raw += chunk.toString();
+          if (raw.length > 1024) throw new Error();
+        }
+        const ack = z
+          .object({
+            instance: z.uuid(),
+            generation: z.number().int().nonnegative(),
+          })
+          .strict()
+          .parse(JSON.parse(raw));
+        return reply(
+          presentation.acknowledge(ack.instance, ack.generation) ? 200 : 409,
+          {},
+        );
+      } catch {
+        return reply(400, { error: "Invalid presentation acknowledgement" });
+      }
+    }
+    const inputs = rendererAssets?.cameraInputs;
+    if (request.method === "GET" && request.url === "/camera-inputs") {
+      const phone = {
+        kind: "phone",
+        connectionEnabled: false,
+        host: null,
+        stream: null,
+        rotation: 0,
+        configured: true,
+        phase: "idle",
+        errorCode: null,
+        generation: 0,
+      };
+      reply(200, {
+        cameras: inputs?.snapshot() ?? {
+          "camera-home": phone,
+          "camera-away": phone,
+        },
+      });
+      return;
+    }
+    if (request.method === "GET" && request.url?.startsWith("/ip-camera/")) {
+      if (!rendererAllowed || !inputs)
+        return reply(403, { error: "Program request denied" });
+      const url = new URL(request.url, address);
+      const match = url.pathname.match(
+        /^\/ip-camera\/(camera-home|camera-away)\/(frame|audio)$/,
+      );
+      if (!match || url.searchParams.size !== 2)
+        return reply(400, { error: "Invalid camera request" });
+      const role = cameraRoleSchema.parse(match[1]);
+      const generation = Number(url.searchParams.get("generation"));
+      const after = Number(url.searchParams.get("after"));
+      const current = inputs.snapshot(role);
+      if (
+        !Number.isSafeInteger(generation) ||
+        generation < 0 ||
+        !Number.isSafeInteger(after) ||
+        after < 0 ||
+        current.kind === "phone" ||
+        current.generation !== generation
+      )
+        return reply(409, { error: "Camera source changed" });
+      response.setHeader("x-m4-ip-camera-generation", String(generation));
+      if (match[2] === "frame") {
+        const frame = inputs.latestFrame(role);
+        if (
+          !frame ||
+          frame.generation !== generation ||
+          frame.counter <= after
+        ) {
+          response.writeHead(204);
+          response.end();
+          return;
+        }
+        response.setHeader("x-m4-ip-camera-frame", String(frame.counter));
+        response.writeHead(200, {
+          "content-type": "image/jpeg",
+          "content-length": frame.jpeg.length,
+        });
+        response.end(frame.jpeg);
+      } else {
+        const audio = inputs.takeAudio(role);
+        const raw = audio.pcm;
+        if (audio.generation !== generation || !raw.length) {
+          raw.fill(0);
+          response.writeHead(204);
+          response.end();
+          return;
+        }
+        const pcm = Buffer.alloc(raw.length * 2);
+        for (let i = 0; i < raw.length; i += 2)
+          pcm.writeFloatLE(raw.readInt16LE(i) / 32768, i * 2);
+        raw.fill(0);
+        response.writeHead(200, {
+          "content-type": "application/octet-stream",
+          "content-length": pcm.length,
+        });
+        response.end(pcm, () => pcm.fill(0));
+      }
+      return;
+    }
+    if (request.method === "GET" && request.url === "/") {
+      if (!rendererAllowed || !documentNavigation)
+        return reply(403, { error: "Program request denied" });
+      response.writeHead(200, { "content-type": "text/html; charset=utf-8" });
+      response.end(rendererHtml());
+      return;
+    }
+    if (request.method === "GET" && request.url === "/favicon.ico") {
+      response.writeHead(204);
+      response.end();
+      return;
+    }
+    if (
+      request.method === "GET" &&
+      (request.url === "/m4-program-renderer.js" ||
+        request.url === "/m4-program-renderer.css" ||
+        request.url === "/branding/curlstreamer-logo.png" ||
+        request.url === "/branding/team-benning.png")
+    ) {
+      try {
+        const file =
+          request.url === "/branding/curlstreamer-logo.png" ||
+          request.url === "/branding/team-benning.png"
+            ? request.url.slice(1)
+            : request.url.endsWith(".js")
+              ? "m4-program-renderer.js"
+              : "m4-program-renderer.css";
+        const value = await readFile(
+          join(
+            rendererAssets?.directory ?? join(process.cwd(), "public"),
+            file,
+          ),
+        );
+        if (value.length > 1024 * 1024) throw new Error();
+        response.writeHead(200, {
+          "content-type": file.endsWith(".jpg")
+            ? "image/jpeg"
+            : file.endsWith(".png")
+              ? "image/png"
+              : file.endsWith(".js")
+                ? "text/javascript; charset=utf-8"
+                : "text/css; charset=utf-8",
+        });
+        response.end(value);
+      } catch {
+        reply(404, { error: "Program asset unavailable" });
+      }
+      return;
+    }
+    if (request.method === "GET" && builtinSponsors.has(request.url ?? "")) {
+      response.writeHead(200, {
+        "content-type": "image/svg+xml; charset=utf-8",
+      });
+      response.end(builtinSponsors.get(request.url!)!);
+      return;
+    }
+    if (
+      request.method === "GET" &&
+      request.url?.startsWith("/sponsors/upload/")
+    ) {
+      const asset = sponsorAssets?.get(request.url);
+      if (!asset) return reply(404, { error: "Program asset unavailable" });
+      response.writeHead(200, {
+        "content-type": asset.mime,
+        "content-length": asset.bytes.length,
+      });
+      response.end(asset.bytes);
+      return;
+    }
+    if (request.method === "GET" && request.url?.startsWith("/team-logo/")) {
+      if (!teamLogo || request.url !== teamLogo.path)
+        return reply(404, { error: "Program asset unavailable" });
+      response.writeHead(200, {
+        "content-type": teamLogo.mime,
+        "content-length": teamLogo.bytes.length,
+      });
+      response.end(teamLogo.bytes);
+      return;
+    }
+    if (request.method === "GET" && request.url === "/program") {
+      if (presentation.snapshot().mode === "ended") return reply(204, {});
+      try {
+        const game = await client.readGame();
+        if (closed) return reply(409, { error: "Program closed" });
+        const organizationId = client.sponsorOrganizationId?.();
+        const homeLogoUrl = syncTeamLogo(
+          game.config.homeLogoUrl,
+          organizationId,
+        );
+        if (rendererAssets?.sponsorStorageOrigin && organizationId) {
+          sponsorAssets ??= createM4SponsorAssets({
+            storageOrigin: rendererAssets.sponsorStorageOrigin,
+            organizationId,
+            cacheDirectory: rendererAssets.sponsorCacheDirectory,
+          });
+        }
+        const sponsors = sponsorAssets
+          ? await sponsorAssets.sync(game.sponsors)
+          : game.sponsors.filter((sponsor) =>
+              builtinSponsors.has(sponsor.dataUrl),
+            );
+        if (closed) return reply(409, { error: "Program closed" });
+        reply(200, {
+          game: {
+            ...game,
+            config: { ...game.config, homeLogoUrl },
+            sponsors,
+          },
+        });
+      } catch (cause) {
+        if (!(cause instanceof StudioTransportUnavailable)) {
+          if (
+            presentation.snapshot().mode === "preparing-end" &&
+            rendererAssets?.closingAuthority
+          ) {
+            const deadline = await rendererAssets
+              .closingAuthority()
+              .catch(() => undefined);
+            if (
+              deadline &&
+              deadline > Date.now() &&
+              deadline <= Date.now() + 30_000
+            ) {
+              validatedClosingDeadline = deadline;
+              await inputs?.stop().catch(() => undefined);
+              await realtime?.close().catch(() => undefined);
+              usbAudio.reset();
+              cameraFrames.clear();
+              phoneAudio.clear();
+              // The score snapshot arrives separately; this temporary opaque
+              // picture cannot falsely claim a finalized score.
+              if (presentation.snapshot().mode === "preparing-end")
+                void presentation.set("hold").catch(() => undefined);
+            }
+          }
+        }
+        if (
+          !(cause instanceof StudioTransportUnavailable) &&
+          validatedClosingDeadline <= Date.now() &&
+          !presentation.closing()
+        ) {
+          authorityEnded = true;
+          presentation.close();
+          rendererHealth.close();
+          usbAudio.reset();
+          cameraFrames.clear();
+          phoneAudio.clear();
+          await inputs?.stop().catch(() => undefined);
+          await realtime?.close().catch(() => undefined);
+        }
+        reply(cause instanceof StudioTransportUnavailable ? 503 : 409, {
+          error: "Program unavailable",
+        });
+      }
+      return;
+    }
+    if (request.method === "GET" && request.url === "/usb-audio") {
+      // This is intentionally renderer-cookie-only. The owner capability is
+      // for Node-to-bridge control and must never be usable as an audio sink.
+      if (!rendererAllowed)
+        return reply(403, { error: "Program request denied" });
+      const { generation, pcm } = usbAudio.drain();
+      response.setHeader("x-m4-usb-audio-generation", String(generation));
+      if (!pcm.length) {
+        response.writeHead(204);
+        response.end();
+        return;
+      }
+      response.writeHead(200, {
+        "content-type": "application/octet-stream",
+        "content-length": pcm.length,
+      });
+      response.end(pcm, () => pcm.fill(0));
+      return;
+    }
+    if (request.method === "GET" && request.url?.startsWith("/events/")) {
+      const url = new URL(request.url, "http://127.0.0.1");
+      const role = cameraRoleSchema.safeParse(
+        url.pathname.slice("/events/".length),
+      );
+      const values = Object.fromEntries(url.searchParams);
+      const numericScope = z
+        .object({
+          generation: z.string().regex(/^[1-9][0-9]*$/),
+          assignmentGeneration: z.string().regex(/^(0|[1-9][0-9]*)$/),
+        })
+        .safeParse(values);
+      const identity = m4CameraDrainIdentitySchema.safeParse({
+        ...values,
+        generation:
+          values.generation === undefined
+            ? undefined
+            : Number(values.generation),
+        assignmentGeneration:
+          values.assignmentGeneration === undefined
+            ? undefined
+            : Number(values.assignmentGeneration),
+      });
+      if (
+        !realtime ||
+        !role.success ||
+        !identity.success ||
+        !numericScope.success ||
+        [...url.searchParams.keys()].length !== 4
+      ) {
+        reply(403, { error: "Program request denied" });
+        return;
+      }
+      if (inputs && inputs.snapshot(role.data).kind !== "phone") {
+        reply(410, { error: "This slot uses an IP camera" });
+        return;
+      }
+      try {
+        const events = z
+          .array(signalEnvelopeSchema)
+          .max(128)
+          .parse(await realtime.drain(role.data, identity.data));
+        if (closed || events.some((event) => event.cameraRole !== role.data))
+          throw Error();
+        reply(200, { events });
+      } catch (cause) {
+        reply(cause instanceof StudioTransportUnavailable ? 503 : 409, {
+          error: "Camera events unavailable",
+        });
+      }
+      return;
+    }
+    if (
+      request.method !== "POST" ||
+      (request.url !== "/camera" && request.url !== "/renderer-health") ||
+      request.headers["content-type"] !== "application/json"
+    ) {
+      reply(403, { error: "Program request denied" });
+      return;
+    }
+    const chunks: Buffer[] = [];
+    let size = 0;
+    const timer = setTimeout(() => request.destroy(), 5000);
+    try {
+      for await (const chunk of request) {
+        size += chunk.length;
+        if (size > (request.url === "/renderer-health" ? 1024 : 40000))
+          throw Error();
+        chunks.push(chunk);
+      }
+      const parsed = JSON.parse(Buffer.concat(chunks).toString("utf8"));
+      if (request.url === "/renderer-health") {
+        if (!rendererAllowed)
+          return reply(403, { error: "Program request denied" });
+        const heartbeat = m4RendererHeartbeatSchema.safeParse(parsed);
+        if (!heartbeat.success || !rendererHealth.observe(heartbeat.data))
+          return reply(409, { error: "Renderer observation rejected" });
+        reply(200, { ok: true });
+        return;
+      }
+      const diagnostic = z
+        .object({
+          action: z.literal("diagnostic"),
+          event: connectionDiagnosticSchema.omit({
+            at: true,
+            run: true,
+            source: true,
+          }),
+        })
+        .strict()
+        .safeParse(parsed);
+      if (diagnostic.success && rendererAllowed) {
+        try {
+          rendererAssets?.diagnostic?.(diagnostic.data.event);
+        } catch {
+          /* Logging must not interrupt camera recovery. */
+        }
+        reply(200, { ok: true });
+        return;
+      }
+      const observation = z
+        .object({
+          action: z.literal("observe"),
+          rendererInstance: z.uuid(),
+          cameraRole: cameraRoleSchema,
+          frames: z.number().int().nonnegative(),
+          verified: z.boolean(),
+          sourceGeneration: z.number().int().nonnegative().optional(),
+        })
+        .strict()
+        .safeParse(parsed);
+      if (observation.success && rendererAllowed) {
+        if (!rendererHealth.accepts(observation.data.rendererInstance))
+          return reply(409, { error: "Renderer observation rejected" });
+        const { cameraRole, frames, verified, sourceGeneration } =
+          observation.data;
+        const source = inputs?.snapshot(cameraRole);
+        if (source && sourceGeneration !== source.generation)
+          return reply(409, { error: "Camera source changed" });
+        const ipFrame =
+          source && source.kind !== "phone"
+            ? inputs?.latestFrame(cameraRole)
+            : undefined;
+        if (
+          source &&
+          source.kind !== "phone" &&
+          verified &&
+          (!ipFrame || frames > ipFrame.counter)
+        )
+          return reply(409, { error: "Camera frame unavailable" });
+        const previous = cameraFrames.get(cameraRole);
+        cameraFrames.set(cameraRole, {
+          frames,
+          generation: sourceGeneration,
+          advancedAt:
+            verified &&
+            frames > 0 &&
+            (sourceGeneration !== previous?.generation ||
+              frames > (previous?.frames ?? 0))
+              ? Date.now()
+              : verified
+                ? (previous?.advancedAt ?? 0)
+                : 0,
+        });
+        reply(200, { ok: true });
+        return;
+      }
+      const audioObservation = z
+        .object({
+          action: z.literal("audio-observe"),
+          rendererInstance: z.uuid(),
+          cameraRole: cameraRoleSchema,
+          peak: z.number().finite().min(0).max(1),
+          rms: z.number().finite().min(0).max(1),
+          receiving: z.boolean(),
+          sourceGeneration: z.number().int().nonnegative().optional(),
+        })
+        .strict()
+        .safeParse(parsed);
+      if (audioObservation.success && rendererAllowed) {
+        if (!rendererHealth.accepts(audioObservation.data.rendererInstance))
+          return reply(409, { error: "Renderer observation rejected" });
+        const { cameraRole, peak, rms, receiving } = audioObservation.data;
+        if (
+          inputs &&
+          audioObservation.data.sourceGeneration !==
+            inputs.snapshot(cameraRole).generation
+        )
+          return reply(409, { error: "Camera source changed" });
+        phoneAudio.set(cameraRole, {
+          peak,
+          rms,
+          receiving,
+          observedAt: Date.now(),
+          generation: audioObservation.data.sourceGeneration,
+        });
+        reply(200, { ok: true });
+        return;
+      }
+      const usbObservation = z
+        .object({
+          action: z.literal("usb-audio-observe"),
+          rendererInstance: z.uuid(),
+          contextState: z.enum(["running", "suspended", "closed"]),
+          scheduledFrames: z.number().int().nonnegative().max(480000),
+          peak: z.number().finite().min(0).max(1),
+          rms: z.number().finite().min(0).max(1),
+        })
+        .strict()
+        .safeParse(parsed);
+      if (usbObservation.success && rendererAllowed) {
+        if (!rendererHealth.accepts(usbObservation.data.rendererInstance))
+          return reply(409, { error: "Renderer observation rejected" });
+        if (usbRenderer.contextState !== usbObservation.data.contextState) {
+          try {
+            rendererAssets?.diagnostic?.({
+              layer: "audio",
+              code:
+                usbObservation.data.contextState === "running"
+                  ? "ready"
+                  : usbObservation.data.contextState === "suspended"
+                    ? "audio_suspended"
+                    : "stopped",
+            });
+          } catch {
+            /* best effort */
+          }
+        }
+        usbRenderer = { ...usbObservation.data, observedAt: Date.now() };
+        reply(200, { ok: true });
+        return;
+      }
+      const connect = z
+        .object({ action: z.literal("connect"), cameraRole: cameraRoleSchema })
+        .strict()
+        .safeParse(parsed);
+      clearTimeout(timer);
+      if (closed) throw Error();
+      let value: unknown;
+      if (connect.success) {
+        if (
+          inputs &&
+          inputs.snapshot(connect.data.cameraRole).kind !== "phone"
+        ) {
+          reply(410, { error: "This slot uses an IP camera" });
+          return;
+        }
+        if (!realtime) throw Error();
+        const sourceGeneration = inputs?.snapshot(
+          connect.data.cameraRole,
+        ).generation;
+        value = studioTicketSchema
+          .omit({ token: true, topic: true })
+          .parse(await realtime.connect(connect.data.cameraRole));
+        if (
+          inputs &&
+          (inputs.snapshot(connect.data.cameraRole).kind !== "phone" ||
+            inputs.snapshot(connect.data.cameraRole).generation !==
+              sourceGeneration)
+        ) {
+          await realtime.stopRole?.(connect.data.cameraRole);
+          reply(410, { error: "Camera source changed" });
+          return;
+        }
+        if (
+          (value as { cameraRole: CameraRole }).cameraRole !==
+          connect.data.cameraRole
+        )
+          throw Error();
+      } else {
+        const input = command.parse(parsed);
+        if (inputs && inputs.snapshot(input.cameraRole).kind !== "phone") {
+          reply(410, { error: "This slot uses an IP camera" });
+          return;
+        }
+        value = await client.action(input);
+      }
+      if (closed) throw Error();
+      reply(200, value);
+    } catch (cause) {
+      reply(cause instanceof StudioTransportUnavailable ? 503 : 409, {
+        error: "Program unavailable",
+      });
+    } finally {
+      clearTimeout(timer);
+      for (const chunk of chunks) chunk.fill(0);
+    }
+  });
+  server.requestTimeout = 10000;
+  server.headersTimeout = 10000;
+  await new Promise<void>((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(0, "127.0.0.1", resolve);
+  });
+  const bound = server.address();
+  if (!bound || typeof bound === "string")
+    throw Error("m4_program_unavailable");
+  address = `http://127.0.0.1:${bound.port}`;
+  let closing: Promise<void> | undefined;
+  return {
+    address,
+    presentation,
+    async stopPresentationCameras() {
+      await rendererAssets?.cameraInputs?.stop().catch(() => undefined);
+      await realtime?.close().catch(() => undefined);
+    },
+    rendererHealth: rendererHealth.snapshot,
+    cameraStatus: () =>
+      Object.fromEntries(
+        (["camera-home", "camera-away"] as const).map((role) => [
+          role,
+          !closed &&
+            !authorityEnded &&
+            (!rendererAssets?.cameraInputs ||
+              (cameraFrames.get(role)?.generation ===
+                rendererAssets.cameraInputs.snapshot(role).generation &&
+                (rendererAssets.cameraInputs.snapshot(role).kind === "phone" ||
+                  Boolean(rendererAssets.cameraInputs.latestFrame(role))))) &&
+            Date.now() - (cameraFrames.get(role)?.advancedAt ?? 0) < 5000,
+        ]),
+      ),
+    audioStatus: () =>
+      Object.fromEntries(
+        (["camera-home", "camera-away"] as const).map((role) => {
+          const value = phoneAudio.get(role);
+          const fresh =
+            !closed &&
+            !authorityEnded &&
+            (!rendererAssets?.cameraInputs ||
+              value?.generation ===
+                rendererAssets.cameraInputs.snapshot(role).generation) &&
+            value !== undefined &&
+            Date.now() - value.observedAt < 6000;
+          return [
+            role,
+            fresh
+              ? {
+                  peak: value.peak,
+                  rms: value.rms,
+                  receiving: value.receiving,
+                }
+              : { peak: 0, rms: 0, receiving: false },
+          ];
+        }),
+      ),
+    usbAudioStatus: () => {
+      const queue = usbAudio.snapshot();
+      const fresh = !closed && Date.now() - usbRenderer.observedAt < 6000;
+      return {
+        ...queue,
+        renderer: fresh
+          ? {
+              contextState: usbRenderer.contextState,
+              scheduledFrames: usbRenderer.scheduledFrames,
+              peak: usbRenderer.peak,
+              rms: usbRenderer.rms,
+            }
+          : {
+              contextState: "unavailable",
+              scheduledFrames: 0,
+              peak: 0,
+              rms: 0,
+            },
+      };
+    },
+    pushUsbAudio: (pcm: Buffer) => {
+      if (closed) throw new Error("m4_program_unavailable");
+      usbAudio.push(pcm);
+    },
+    stopPhone: (role: CameraRole) =>
+      realtime?.stopRole?.(role) ?? Promise.resolve(),
+    rendererUrl: address + "/",
+    // Owner-only transport capability. Never log or put in a URL/config file.
+    authorization: `Bearer ${key}`,
+    close: () =>
+      (closing ??= (async () => {
+        closed = true;
+        rendererHealth.close();
+        usbAudio.reset();
+        expected.fill(0);
+        expectedRendererCookie.fill(0);
+        client.close();
+        sponsorAssets?.close();
+        logoFlight?.abort.abort();
+        logoFlight = undefined;
+        teamLogo = undefined;
+        server.closeAllConnections();
+        await realtime?.close().catch(() => undefined);
+        await new Promise<void>((resolve) => server.close(() => resolve()));
+      })()),
+  };
+}

@@ -1,30 +1,37 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
   signUp: vi.fn(),
+  resend: vi.fn(),
   signIn: vi.fn(),
+  signInWithOAuth: vi.fn(),
   signOut: vi.fn(),
   redirect: vi.fn(() => {
     throw new Error("NEXT_REDIRECT");
   }),
+  headers: vi.fn(
+    async () => new Headers({ origin: "https://curlstreamer.vercel.app" }),
+  ),
 }));
 vi.mock("@/lib/supabase/server", () => ({
   createServerSupabaseClient: async () => ({
     auth: {
       signUp: mocks.signUp,
+      resend: mocks.resend,
       signInWithPassword: mocks.signIn,
+      signInWithOAuth: mocks.signInWithOAuth,
       signOut: mocks.signOut,
     },
   }),
 }));
 vi.mock("next/navigation", () => ({ redirect: mocks.redirect }));
+vi.mock("next/headers", () => ({ headers: mocks.headers }));
 vi.mock("@/lib/auth/validation", async (original) => ({
   ...(await original<typeof import("@/lib/auth/validation")>()),
-  confirmationUrl: () =>
-    "https://curlstreamer.vercel.app/auth/confirm?next=/account",
 }));
-import { signup } from "./signup/actions";
+import { signup, resendConfirmation } from "./signup/actions";
 import { login } from "./login/actions";
 import { signOut } from "./account/actions";
+import { signInWithGoogle } from "./auth/actions";
 const signupData = () => {
   const data = new FormData();
   Object.entries({
@@ -43,15 +50,55 @@ const loginData = () => {
 };
 describe("account actions", () => {
   beforeEach(() => vi.clearAllMocks());
-  it("returns the same neutral signup response on success and provider failure", async () => {
+  afterEach(() => vi.unstubAllEnvs());
+  it("returns the same neutral signup response on success and existing account", async () => {
     mocks.signUp
       .mockResolvedValueOnce({ error: null })
-      .mockResolvedValueOnce({ error: { message: "already exists" } });
+      .mockResolvedValueOnce({ error: { code: "user_already_exists" } });
     expect(await signup({}, signupData())).toEqual(
       await signup({}, signupData()),
     );
     expect((await signup({}, signupData())).message).toMatch(
       /check your email/i,
+    );
+  });
+  it("does not claim confirmation was sent when signup delivery fails", async () => {
+    mocks.signUp.mockResolvedValueOnce({
+      error: { code: "unexpected_failure" },
+    });
+    const result = await signup({}, signupData());
+    expect(result.confirmationEmail).toBeUndefined();
+    expect(result.message).toMatch(/could not be completed/);
+  });
+  it("carries a safe signup destination through email confirmation", async () => {
+    vi.stubEnv("APP_BASE_URL", "https://curlstreamer.vercel.app");
+    mocks.signUp.mockResolvedValue({ error: null });
+    const data = signupData();
+    data.set("next", "/join-team?token=invite-token");
+    await signup({}, data);
+    expect(mocks.signUp).toHaveBeenCalledWith({
+      email: "john@example.com",
+      password: "long-password",
+      options: {
+        data: { display_name: "John" },
+        emailRedirectTo:
+          "https://curlstreamer.vercel.app/auth/confirm?next=%2Fjoin-team%3Ftoken%3Dinvite-token",
+      },
+    });
+  });
+  it("uses the account destination when signup next is unsafe", async () => {
+    vi.stubEnv("APP_BASE_URL", "https://curlstreamer.vercel.app");
+    mocks.signUp.mockResolvedValue({ error: null });
+    const data = signupData();
+    data.set("next", "https://evil.example/join-team");
+    await signup({}, data);
+    expect(mocks.signUp).toHaveBeenCalledWith(
+      expect.objectContaining({
+        options: expect.objectContaining({
+          emailRedirectTo:
+            "https://curlstreamer.vercel.app/auth/confirm?next=%2Faccount",
+        }),
+      }),
     );
   });
   it("reports generic failed login without exposing provider details", async () => {
@@ -60,6 +107,30 @@ describe("account actions", () => {
     });
     expect(await login({}, loginData())).toEqual({
       message: "Invalid email or password.",
+    });
+  });
+  it("explains unconfirmed email without treating it as a wrong password", async () => {
+    mocks.signIn.mockResolvedValue({ error: { code: "email_not_confirmed" } });
+    expect(await login({}, loginData())).toEqual({
+      message: "Confirm your email before signing in.",
+      confirmationEmail: "john@example.com",
+    });
+  });
+  it("resends confirmation with the invitation destination and neutral response", async () => {
+    vi.stubEnv("APP_BASE_URL", "https://curlstreamer.vercel.app");
+    mocks.resend.mockResolvedValue({ error: null });
+    const data = loginData();
+    data.set("next", "/join-team?token=invite-token");
+    expect((await resendConfirmation({}, data)).message).toMatch(
+      /If this account/,
+    );
+    expect(mocks.resend).toHaveBeenCalledWith({
+      type: "signup",
+      email: "john@example.com",
+      options: {
+        emailRedirectTo:
+          "https://curlstreamer.vercel.app/auth/confirm?next=%2Fjoin-team%3Ftoken%3Dinvite-token",
+      },
     });
   });
   it("redirects successful login and sign out", async () => {
@@ -81,5 +152,68 @@ describe("account actions", () => {
     unsafe.set("next", "//attacker.example/path");
     await expect(login({}, unsafe)).rejects.toThrow("NEXT_REDIRECT");
     expect(mocks.redirect).toHaveBeenLastCalledWith("/dashboard");
+  });
+  it("starts Google OAuth through the canonical onboarding callback", async () => {
+    vi.stubEnv("GOOGLE_AUTH_ENABLED", "true");
+    vi.stubEnv("APP_BASE_URL", "https://curlstreamer.vercel.app");
+    mocks.signInWithOAuth.mockResolvedValue({
+      data: { url: "https://accounts.google.com/oauth" },
+      error: null,
+    });
+    const data = new FormData();
+    data.set("next", "//attacker.example");
+    await expect(signInWithGoogle({}, data)).rejects.toThrow("NEXT_REDIRECT");
+    expect(mocks.signInWithOAuth).toHaveBeenCalledWith({
+      provider: "google",
+      options: {
+        redirectTo:
+          "https://curlstreamer.vercel.app/auth/confirm?next=%2Fonboarding",
+        scopes: "openid email profile",
+      },
+    });
+    expect(mocks.redirect).toHaveBeenLastCalledWith(
+      "https://accounts.google.com/oauth",
+    );
+  });
+  it("does not expose provider failures from Google OAuth", async () => {
+    vi.stubEnv("GOOGLE_AUTH_ENABLED", "true");
+    vi.stubEnv("APP_BASE_URL", "https://curlstreamer.vercel.app");
+    mocks.signInWithOAuth.mockResolvedValue({
+      data: { url: null },
+      error: { message: "provider secret" },
+    });
+    await expect(signInWithGoogle({}, new FormData())).resolves.toEqual({
+      message: "Google sign-in couldn't be started. Please try again.",
+    });
+    expect(mocks.signInWithOAuth).toHaveBeenCalled();
+  });
+  it("does not begin PKCE on a non-canonical browser origin", async () => {
+    vi.stubEnv("GOOGLE_AUTH_ENABLED", "true");
+    vi.stubEnv("APP_BASE_URL", "https://curlstreamer.vercel.app");
+    mocks.headers.mockResolvedValueOnce(
+      new Headers({ origin: "https://preview.curlstreamer.app" }),
+    );
+    await expect(signInWithGoogle({}, new FormData())).rejects.toThrow(
+      "NEXT_REDIRECT",
+    );
+    expect(mocks.redirect).toHaveBeenLastCalledWith(
+      "https://curlstreamer.vercel.app/login?next=%2Fonboarding",
+    );
+    expect(mocks.signInWithOAuth).not.toHaveBeenCalled();
+  });
+  it("does not begin Google OAuth from Windows Studio", async () => {
+    vi.stubEnv("GOOGLE_AUTH_ENABLED", "true");
+    vi.stubEnv("APP_BASE_URL", "https://curlstreamer.vercel.app");
+    mocks.headers.mockResolvedValueOnce(
+      new Headers({
+        origin: "https://curlstreamer.vercel.app",
+        "user-agent": "CurlStreamerStudio/0.3",
+      }),
+    );
+    await expect(signInWithGoogle({}, new FormData())).resolves.toEqual({
+      message:
+        "Google sign-in is available on the website. Use email and password in Windows Studio.",
+    });
+    expect(mocks.signInWithOAuth).not.toHaveBeenCalled();
   });
 });

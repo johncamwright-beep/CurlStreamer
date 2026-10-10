@@ -1,0 +1,7 @@
+# Keep source formatting identical on Windows and Linux.
+* text=auto eol=lf
+
+# Patch context and generated bundles may contain intentional blank-line spaces.
+*.patch -whitespace
+public/m4-program-renderer.js -whitespace linguist-generated=true
+public/m4-program-renderer.css linguist-generated=true

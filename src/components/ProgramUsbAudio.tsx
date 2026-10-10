@@ -1,0 +1,230 @@
+"use client";
+
+import { useEffect, useRef } from "react";
+import type { CameraRole } from "@/lib/m2-studio-protocol";
+import { acquireProgramAudioOutput } from "@/lib/program-audio-output";
+import { usbAudioStart } from "@/lib/usb-audio-timing";
+import { m4RendererInstance } from "@/lib/providers/m4-renderer-health-browser";
+
+/** Receives Studio's local USB mix only inside the private OBS browser source. */
+export function ProgramUsbAudio({
+  endpoint = "/usb-audio",
+  generationHeader = "x-m4-usb-audio-generation",
+  role,
+  sourceGeneration,
+  enabled = true,
+  volume = 1,
+  delayMs = 0,
+}: {
+  endpoint?: string;
+  generationHeader?: string;
+  role?: CameraRole;
+  sourceGeneration?: number;
+  enabled?: boolean;
+  volume?: number;
+  delayMs?: number;
+} = {}) {
+  const delayRef = useRef<DelayNode | null>(null);
+  const delayValue = useRef(delayMs);
+  useEffect(() => {
+    delayValue.current = delayMs;
+    const delay = delayRef.current;
+    if (delay)
+      delay.delayTime.setTargetAtTime(
+        Math.max(0, Math.min(5000, delayMs)) / 1000,
+        delay.context.currentTime,
+        0.03,
+      );
+  }, [delayMs]);
+  const volumeRef = useRef(volume);
+  const gainRef = useRef<GainNode | null>(null);
+  useEffect(() => {
+    volumeRef.current = volume;
+    if (gainRef.current) gainRef.current.gain.value = volume;
+  }, [volume]);
+  useEffect(() => {
+    if (!enabled) return;
+    const output = acquireProgramAudioOutput();
+    const context = output.context;
+    const gain = context.createGain();
+    gain.gain.value = volumeRef.current;
+    const delay = context.createDelay(5);
+    delay.delayTime.value =
+      Math.max(0, Math.min(5000, delayValue.current)) / 1000;
+    gain.connect(delay);
+    delay.connect(output.input);
+    delayRef.current = delay;
+    gainRef.current = gain;
+    const scheduled = new Set<AudioBufferSourceNode>();
+    let generation = "",
+      nextAt = 0,
+      stopped = false,
+      timer: ReturnType<typeof setTimeout> | undefined,
+      requestController: AbortController | undefined;
+    let scheduledFrames = 0,
+      lastPacketAt = 0,
+      latestPeak = 0,
+      latestRms = 0,
+      lastReport = 0;
+    let reportController: AbortController | undefined;
+    const report = () => {
+      if (stopped || reportController || performance.now() - lastReport < 500)
+        return;
+      lastReport = performance.now();
+      const attempt = new AbortController();
+      reportController = attempt;
+      const reportTimeout = setTimeout(() => attempt.abort(), 500);
+      void fetch("/camera", {
+        signal: attempt.signal,
+        method: "POST",
+        credentials: "same-origin",
+        redirect: "error",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(
+          role
+            ? {
+                action: "audio-observe",
+                rendererInstance: m4RendererInstance(),
+                cameraRole: role,
+                sourceGeneration,
+                receiving:
+                  context.state === "running" &&
+                  Date.now() - lastPacketAt < 1000,
+                peak: Math.min(1, latestPeak * volumeRef.current),
+                rms: Math.min(1, latestRms * volumeRef.current),
+              }
+            : {
+                action: "usb-audio-observe",
+                rendererInstance: m4RendererInstance(),
+                contextState:
+                  context.state === "running" ? "running" : "suspended",
+                scheduledFrames: Math.min(
+                  480_000,
+                  Math.max(0, scheduledFrames),
+                ),
+                peak: Math.min(1, latestPeak),
+                rms: Math.min(1, latestRms),
+              },
+        ),
+      })
+        .then((response) => response.text())
+        .catch(() => undefined)
+        .finally(() => {
+          clearTimeout(reportTimeout);
+          attempt.abort();
+          if (reportController === attempt) reportController = undefined;
+        });
+    };
+    const flush = () => {
+      nextAt = 0;
+      for (const source of scheduled) {
+        try {
+          source.stop();
+        } catch {
+          // An already-ended source has nothing left to cancel.
+        }
+      }
+      scheduled.clear();
+      scheduledFrames = 0;
+    };
+    const poll = async () => {
+      const attempt = new AbortController();
+      requestController = attempt;
+      const timeout = setTimeout(() => attempt.abort(), 500);
+      try {
+        const response = await fetch(endpoint, {
+          credentials: "same-origin",
+          cache: "no-store",
+          redirect: "error",
+          signal: attempt.signal,
+        });
+        if (stopped || attempt.signal.aborted) return;
+        if (!response.ok && response.status !== 204) {
+          if ([401, 403, 409, 410].includes(response.status)) flush();
+          throw new Error();
+        }
+        const currentGeneration = response.headers.get(generationHeader) ?? "";
+        if (generation && currentGeneration !== generation) flush();
+        generation = currentGeneration;
+        const raw = await response.arrayBuffer();
+        if (stopped || attempt.signal.aborted) return;
+        if (
+          raw.byteLength &&
+          raw.byteLength % Float32Array.BYTES_PER_ELEMENT === 0
+        ) {
+          const allSamples = new Float32Array(raw);
+          lastPacketAt = Date.now();
+          // Keep ordinary catch-up batches; discard only a substantial backlog.
+          const input = allSamples.subarray(
+            Math.max(0, allSamples.length - 48_000 * 0.25),
+          );
+          let square = 0;
+          latestPeak = 0;
+          for (const sample of input) {
+            latestPeak = Math.max(latestPeak, Math.abs(sample));
+            square += sample * sample;
+          }
+          latestRms = input.length ? Math.sqrt(square / input.length) : 0;
+          const buffer = context.createBuffer(1, input.length, 48_000);
+          buffer.copyToChannel(input, 0);
+          const source = context.createBufferSource();
+          source.buffer = buffer;
+          const packetGain = context.createGain();
+          source.connect(packetGain);
+          packetGain.connect(gain);
+          source.onended = () => {
+            source.disconnect();
+            packetGain.disconnect();
+            if (scheduled.delete(source))
+              scheduledFrames = Math.max(0, scheduledFrames - input.length);
+          };
+          const now = context.currentTime;
+          const timing = usbAudioStart(nextAt, now);
+          if (timing.reset) flush();
+          nextAt = timing.at;
+          if (timing.rebuffer) {
+            packetGain.gain.setValueAtTime(0, nextAt);
+            packetGain.gain.linearRampToValueAtTime(1, nextAt + 0.003);
+          }
+          source.start(nextAt);
+          nextAt += buffer.duration;
+          scheduledFrames += input.length;
+          scheduled.add(source);
+        } else if (Date.now() - lastPacketAt >= 1000) {
+          latestPeak = 0;
+          latestRms = 0;
+        }
+      } catch {
+        latestPeak = 0;
+        latestRms = 0;
+        lastPacketAt = 0;
+        // The program bridge is allowed to disappear while OBS is closing.
+      } finally {
+        clearTimeout(timeout);
+        attempt.abort();
+        if (requestController === attempt) requestController = undefined;
+        report();
+        if (!stopped) timer = setTimeout(() => void poll(), 50);
+      }
+    };
+    void context
+      .resume()
+      .then(() => {
+        if (!stopped) void poll();
+      })
+      .catch(() => report());
+    return () => {
+      stopped = true;
+      delay.disconnect();
+      if (delayRef.current === delay) delayRef.current = null;
+      clearTimeout(timer);
+      requestController?.abort();
+      reportController?.abort();
+      flush();
+      gain.disconnect();
+      gainRef.current = null;
+      output.release();
+    };
+  }, [endpoint, generationHeader, role, sourceGeneration, enabled]);
+  return null;
+}

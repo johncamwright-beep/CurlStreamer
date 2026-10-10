@@ -66,7 +66,11 @@ export function dashboardResponse(url) {
   if (url.pathname.endsWith("/rpc/list_team_hierarchy_games"))
     return [
       game(1, "Team Benning"),
-      game(2, "Team Wright", { event_id: eventId, scheduled_start: at(2) }),
+      game(2, "Team Wright", {
+        event_id: eventId,
+        game_number: 5,
+        scheduled_start: at(2),
+      }),
       game(3, "Team Epping", { scheduled_start: at(-1) }),
       game(4, "Opponent TBD", { scheduled_start: null, opponent_id: null }),
       game(5, "Team Gushue", {

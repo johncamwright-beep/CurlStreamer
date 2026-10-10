@@ -1,12 +1,19 @@
 import { deriveScore } from "./scoring";
+import { cameraAudioEnabled } from "./camera-audio";
 import { hasSafeSponsorContent } from "./schema";
 import type { GameConfig, GameState, Sponsor, Team } from "./types";
 
 export interface BroadcastGame {
   id: string;
+  broadcastSchedule?: GameState["broadcastSchedule"];
   config: Pick<
     GameConfig,
-    "eventName" | "homeName" | "awayName" | "homeColor" | "awayColor"
+    | "eventName"
+    | "homeName"
+    | "awayName"
+    | "homeColor"
+    | "awayColor"
+    | "homeLogoUrl"
   >;
   score: {
     hammer: Team | null;
@@ -14,8 +21,14 @@ export interface BroadcastGame {
     currentEnd: number;
   };
   layout: GameState["layout"];
+  programCameraMode?: GameState["programCameraMode"];
+  programAudioDelayMs?: number;
+  cameraPan?: GameState["cameraPan"];
   broadcast: GameState["broadcast"];
   audioMuted: boolean;
+  cameraAudio?: Partial<
+    Record<"camera-home" | "camera-away", { enabled: boolean; volume?: number }>
+  >;
   cameraFraming: GameState["cameraFraming"];
   sponsors: Sponsor[];
   sponsorMode: Pick<
@@ -34,6 +47,11 @@ export interface JoinGame {
   claimedRoles: Record<keyof GameState["claims"], boolean>;
 }
 
+export type PrivateProgramGame = BroadcastGame & {
+  /** Organizer intent for native sources; absent from public broadcast projection. */
+  nativeCameraAudio?: BroadcastGame["cameraAudio"];
+};
+
 /** Explicit allowlists, including nested fields: never serialize stored objects. */
 export function broadcastGame(
   game: GameState,
@@ -47,7 +65,18 @@ export function broadcastGame(
       );
   return {
     id: game.id,
+    ...(game.broadcastSchedule
+      ? {
+          broadcastSchedule: {
+            scheduledStart: game.broadcastSchedule.scheduledStart,
+            timezone: game.broadcastSchedule.timezone,
+          },
+        }
+      : {}),
     config: {
+      ...(game.config.homeLogoUrl
+        ? { homeLogoUrl: game.config.homeLogoUrl }
+        : {}),
       eventName: game.config.eventName,
       homeName: game.config.homeName,
       awayName: game.config.awayName,
@@ -60,8 +89,30 @@ export function broadcastGame(
       currentEnd: score.currentEnd,
     },
     layout: game.layout,
+    programCameraMode: game.programCameraMode ?? "auto",
+    ...(game.programAudioDelayMs !== undefined
+      ? { programAudioDelayMs: game.programAudioDelayMs }
+      : {}),
+    ...(game.cameraPan
+      ? {
+          cameraPan: {
+            "camera-home": game.cameraPan["camera-home"],
+            "camera-away": game.cameraPan["camera-away"],
+          },
+        }
+      : {}),
     broadcast: game.broadcast,
     audioMuted: game.audioMuted,
+    cameraAudio: {
+      "camera-home": {
+        enabled: cameraAudioEnabled(game, "camera-home"),
+        volume: game.cameraAudio?.["camera-home"]?.volume ?? 1,
+      },
+      "camera-away": {
+        enabled: cameraAudioEnabled(game, "camera-away"),
+        volume: game.cameraAudio?.["camera-away"]?.volume ?? 1,
+      },
+    },
     cameraFraming: {
       "camera-home": game.cameraFraming?.["camera-home"] ?? "contain",
       "camera-away": game.cameraFraming?.["camera-away"] ?? "contain",

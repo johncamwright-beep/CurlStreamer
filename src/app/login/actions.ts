@@ -12,6 +12,11 @@ export async function login(
   if (!parsed.success) return { errors: parsed.error.flatten().fieldErrors };
   const supabase = await createServerSupabaseClient();
   const { error } = await supabase.auth.signInWithPassword(parsed.data);
+  if (error?.code === "email_not_confirmed")
+    return {
+      message: "Confirm your email before signing in.",
+      confirmationEmail: parsed.data.email,
+    };
   if (error) return { message: "Invalid email or password." };
   redirect(
     approvedRedirect(formData.get("next")?.toString() ?? null, "/dashboard"),

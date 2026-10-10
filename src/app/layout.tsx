@@ -1,7 +1,22 @@
 import "./globals.css";
+import { AccountDisplayProvider } from "@/components/AccountDisplayProvider";
+import { StudioSessionProvider } from "@/components/StudioSessionProvider";
 export const metadata = {
-  title: "CurlCast",
+  title: "Curl Streamer",
+  robots: { index: false, follow: false },
   description: "Three-phone curling broadcasts, simply.",
+  other: {
+    "facebook-domain-verification": "olaxpryf8jwf9guaoiwetqcoiq3jty",
+  },
+  icons: {
+    icon: [
+      {
+        url: "/branding/curlstreamer-app-icon.png",
+        type: "image/png",
+        sizes: "1024x1024",
+      },
+    ],
+  },
 };
 export default function RootLayout({
   children,
@@ -10,7 +25,11 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
-      <body>{children}</body>
+      <body>
+        <AccountDisplayProvider>
+          <StudioSessionProvider>{children}</StudioSessionProvider>
+        </AccountDisplayProvider>
+      </body>
     </html>
   );
 }

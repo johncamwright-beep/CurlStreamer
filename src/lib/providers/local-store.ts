@@ -6,7 +6,10 @@ import type { GameConfig, GameState, ParticipantAuthority } from "../types";
 import type { z } from "zod";
 import type { actionSchema } from "../schema";
 import { applyScoringAction } from "../scoring";
-import { GameStateConflictError } from "../game-state-conflict";
+import {
+  GameClosedError,
+  GameStateConflictError,
+} from "../game-state-conflict";
 
 // Development-only persistence lets separate Next.js workers/browser contexts
 // share one mock authority. It is intentionally outside the repository.
@@ -197,6 +200,35 @@ export function claimRole(
     return { game, generation };
   });
 }
+export function prepareCameraReconnect(
+  id: string,
+  role: "camera-home" | "camera-away",
+  invitationId: string,
+  expiresAt: string,
+) {
+  return mutate((games, invitations) => {
+    const game = games.get(id);
+    const deviceId = game?.claims[role];
+    if (
+      !game ||
+      game.status !== "active" ||
+      !deviceId ||
+      expiresAt <= new Date().toISOString()
+    )
+      return {
+        error: "This camera assignment is unavailable. Refresh the game.",
+      };
+    const generation = game.claimGenerations?.[role] ?? 0;
+    invitations.set(invitationId, {
+      gameId: id,
+      role,
+      generation,
+      expiresAt,
+      claimant: deviceId,
+    });
+    return { deviceId, generation };
+  });
+}
 export function releaseRole(
   id: string,
   role: "camera-home" | "camera-away",
@@ -217,6 +249,7 @@ export function releaseRole(
     delete game.claims[role];
     game.connections[role] = false;
     if (game.cameraHealth) delete game.cameraHealth[role];
+    if (game.cameraAudio) delete game.cameraAudio[role];
     for (const [key, invitation] of invitations)
       if (
         invitation.gameId === id &&
@@ -254,12 +287,23 @@ export function updateGame(
   return mutate((games) => {
     const game = games.get(id);
     if (!game) return;
+    if (game.status === "closed") throw new GameClosedError();
     if (game.status === "completed") {
       if (action.type === "close-game") return game;
-      throw new Error("This game is completed");
+      throw new GameClosedError("This game is completed");
     }
     if (expectedAuthority) {
-      if ("role" in action && action.role !== expectedAuthority.role)
+      if (
+        "role" in action &&
+        action.role !== expectedAuthority.role &&
+        !(
+          (action.type === "camera-zoom" ||
+            action.type === "camera-pan" ||
+            action.type === "camera-audio" ||
+            action.type === "camera-reconnect") &&
+          expectedAuthority.role === "scorer"
+        )
+      )
         throw new GameStateConflictError("Participant role changed");
       const currentGeneration =
         game.claimGenerations?.[expectedAuthority.role] ?? 0;
@@ -282,10 +326,87 @@ export function updateGame(
       action.type === "undo"
     )
       applyScoringAction(game, action, now);
+    if (action.type === "rock-colours") {
+      game.config.homeColor = action.homeColor;
+      game.config.awayColor = action.awayColor;
+    }
     if (action.type === "layout") game.layout = action.layout;
+    if (action.type === "program-audio-delay")
+      game.programAudioDelayMs = action.milliseconds;
+    if (action.type === "camera-pan") {
+      game.cameraPan ??= {};
+      game.cameraPan[action.role] = action.value;
+    }
+    if (action.type === "camera-composition")
+      game.programCameraMode = action.mode;
     if (action.type === "camera-framing") {
       game.cameraFraming ??= {};
       game.cameraFraming[action.role] = action.mode;
+    }
+    if (action.type === "camera-zoom") {
+      game.cameraZoom ??= {};
+      const current = game.cameraZoom[action.role];
+      game.cameraZoom[action.role] = {
+        supported: current?.supported ?? false,
+        updatedAt: current?.updatedAt ?? now,
+        ...(current?.min !== undefined ? { min: current.min } : {}),
+        ...(current?.max !== undefined ? { max: current.max } : {}),
+        ...(current?.step !== undefined ? { step: current.step } : {}),
+        ...(current?.value !== undefined ? { value: current.value } : {}),
+        command: {
+          id: action.commandId,
+          value: action.value,
+          requestedAt: now,
+        },
+      };
+    }
+    if (action.type === "camera-reconnect") {
+      game.cameraReconnect ??= {};
+      game.cameraReconnect[action.role] = {
+        id: action.commandId,
+        requestedAt: now,
+      };
+    }
+    if (action.type === "camera-zoom-status") {
+      game.cameraZoom ??= {};
+      const command = game.cameraZoom[action.role]?.command;
+      game.cameraZoom[action.role] = {
+        supported: action.supported,
+        updatedAt: now,
+        ...(action.supported
+          ? {
+              min: action.min!,
+              max: action.max!,
+              step: action.step!,
+              value: action.value!,
+            }
+          : {}),
+        ...(command ? { command } : {}),
+      };
+    }
+    if (action.type === "camera-audio") {
+      game.cameraAudio ??= {};
+      game.cameraAudio[action.role] = {
+        enabled: action.enabled,
+        volume: action.volume ?? game.cameraAudio[action.role]?.volume ?? 1,
+        status: action.enabled
+          ? game.cameraAudio[action.role]?.enabled
+            ? game.cameraAudio[action.role]!.status
+            : "pending"
+          : "off",
+        updatedAt: now,
+        generation: game.claimGenerations?.[action.role] ?? 0,
+      };
+    }
+    if (action.type === "camera-audio-status") {
+      game.cameraAudio ??= {};
+      const current = game.cameraAudio[action.role];
+      if (current)
+        game.cameraAudio[action.role] = {
+          ...current,
+          status: action.status,
+          updatedAt: now,
+        };
     }
     if (action.type === "audio") game.audioMuted = action.muted;
     if (action.type === "broadcast") game.broadcast = action.value;

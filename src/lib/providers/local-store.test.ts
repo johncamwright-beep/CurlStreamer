@@ -18,6 +18,60 @@ const config: GameConfig = {
 
 const temporaryDirectories: string[] = [];
 
+it("persists independent portrait positions and microphone delay without changing scores or another game", async () => {
+  const store = await loadFreshStore();
+  const game = store.createGame(config);
+  const other = store.createGame(config);
+  const events = structuredClone(game.scoreEvents);
+  store.updateGame(game.id, {
+    type: "camera-pan",
+    role: "camera-home",
+    value: -0.4,
+  });
+  store.updateGame(game.id, {
+    type: "camera-pan",
+    role: "camera-away",
+    value: 0.2,
+  });
+  store.updateGame(game.id, {
+    type: "program-audio-delay",
+    milliseconds: 2500,
+  });
+  store.updateGame(game.id, {
+    type: "sponsor-mode",
+    active: true,
+    intervalSeconds: 30,
+  });
+  const reloaded = await reloadStore();
+  expect(reloaded.getGame(game.id)).toMatchObject({
+    cameraPan: { "camera-home": -0.4, "camera-away": 0.2 },
+    programAudioDelayMs: 2500,
+    scoreEvents: events,
+    sponsorMode: { active: true, intervalSeconds: 30 },
+  });
+  expect(reloaded.getGame(other.id)?.cameraPan).toBeUndefined();
+  expect(reloaded.getGame(other.id)?.programAudioDelayMs).toBeUndefined();
+});
+
+it("persists in-game rock colours without changing the score history or another game", async () => {
+  const store = await loadFreshStore();
+  const game = store.createGame(config);
+  const other = store.createGame(config);
+  const events = structuredClone(game.scoreEvents);
+  store.updateGame(game.id, {
+    type: "rock-colours",
+    homeColor: "#facc15",
+    awayColor: "#2563eb",
+  });
+  const reloaded = await reloadStore();
+  expect(reloaded.getGame(game.id)?.config).toMatchObject({
+    homeColor: "#facc15",
+    awayColor: "#2563eb",
+  });
+  expect(reloaded.getGame(game.id)?.scoreEvents).toEqual(events);
+  expect(reloaded.getGame(other.id)?.config.homeColor).toBe("#000000");
+});
+
 async function loadFreshStore() {
   const directory = mkdtempSync(join(tmpdir(), "curlcast-local-store-"));
   temporaryDirectories.push(directory);
@@ -39,6 +93,165 @@ afterEach(() => {
 });
 
 describe("local-store shared assignment authority", () => {
+  it("persists camera composition per game without changing camera visibility or scores", async () => {
+    const store = await loadFreshStore();
+    const game = store.createGame(config);
+    const other = store.createGame(config);
+    store.updateGame(game.id, { type: "camera-composition", mode: "portrait" });
+    const reloaded = await reloadStore();
+    expect(reloaded.getGame(game.id)).toMatchObject({
+      programCameraMode: "portrait",
+      layout: "split",
+      scoreEvents: [],
+    });
+    expect(reloaded.getGame(other.id)?.programCameraMode).toBeUndefined();
+    reloaded.updateGame(game.id, {
+      type: "camera-composition",
+      mode: "stacked",
+    });
+    expect(reloaded.getGame(game.id)?.programCameraMode).toBe("stacked");
+  });
+  it("renews the existing camera without changing its generation and rejects reuse after release", async () => {
+    const store = await loadFreshStore();
+    const game = store.createGame(config);
+    const claimant = "11111111-1111-4111-8111-111111111111";
+    const expiresAt = new Date(Date.now() + 60_000).toISOString();
+    store.prepareRoleInvitation(game.id, "camera-home", "first", expiresAt);
+    store.claimRole(game.id, "camera-home", claimant, {
+      id: "first",
+      expectedGeneration: 1,
+      expiresAt,
+    });
+    expect(
+      store.prepareCameraReconnect(game.id, "camera-home", "renew", expiresAt),
+    ).toEqual({ deviceId: claimant, generation: 1 });
+    expect(
+      store.claimRole(game.id, "camera-home", claimant, {
+        id: "renew",
+        expectedGeneration: 1,
+        expiresAt,
+      }),
+    ).toMatchObject({ generation: 1 });
+    expect(
+      store.claimRole(game.id, "camera-home", "other", {
+        id: "renew",
+        expectedGeneration: 1,
+        expiresAt,
+      }),
+    ).toHaveProperty("error");
+    expect(store.getGame(game.id)?.claimGenerations?.["camera-home"]).toBe(1);
+    store.releaseRole(game.id, "camera-home", claimant, 1);
+    expect(
+      store.claimRole(game.id, "camera-home", claimant, {
+        id: "renew",
+        expectedGeneration: 1,
+        expiresAt,
+      }),
+    ).toHaveProperty("error");
+    expect(
+      store.prepareCameraReconnect(game.id, "camera-away", "absent", expiresAt),
+    ).toHaveProperty("error");
+  });
+  it("persists reconnect intent without changing scores or camera assignment", async () => {
+    const store = await loadFreshStore();
+    const game = store.createGame(config);
+    const commandId = "55555555-5555-4555-8555-555555555555";
+    const claims = { ...game.claims };
+    const scores = structuredClone(game.scoreEvents);
+    const before = Date.now();
+    store.updateGame(game.id, {
+      type: "camera-reconnect",
+      role: "camera-home",
+      commandId,
+    });
+    const reloaded = (await reloadStore()).getGame(game.id)!;
+    expect(reloaded.cameraReconnect?.["camera-home"]).toEqual({
+      id: commandId,
+      requestedAt: expect.any(Number),
+    });
+    expect(
+      reloaded.cameraReconnect!["camera-home"]!.requestedAt,
+    ).toBeGreaterThanOrEqual(before);
+    expect(reloaded.claims).toEqual(claims);
+    expect(reloaded.scoreEvents).toEqual(scores);
+  });
+  it("limits microphone reports to the assigned phone and clears intent on release", async () => {
+    const store = await loadFreshStore();
+    const game = store.createGame(config);
+    const claimant = "55555555-5555-4555-8555-555555555555";
+    const expiresAt = new Date(Date.now() + 60_000).toISOString();
+    expect(
+      store.prepareRoleInvitation(
+        game.id,
+        "camera-home",
+        "audio-invitation",
+        expiresAt,
+      ),
+    ).toEqual({ generation: 1 });
+    expect(
+      store.claimRole(game.id, "camera-home", claimant, {
+        id: "audio-invitation",
+        expectedGeneration: 1,
+        expiresAt,
+      }),
+    ).toMatchObject({ generation: 1 });
+
+    expect(() =>
+      store.updateGame(
+        game.id,
+        { type: "camera-audio-status", role: "camera-away", status: "active" },
+        { role: "camera-home", claim: claimant, generation: 1 },
+      ),
+    ).toThrow("Participant role changed");
+    store.updateGame(game.id, {
+      type: "camera-audio",
+      role: "camera-home",
+      enabled: true,
+    });
+    expect(
+      store.updateGame(
+        game.id,
+        { type: "camera-audio-status", role: "camera-home", status: "active" },
+        { role: "camera-home", claim: claimant, generation: 1 },
+      )?.cameraAudio?.["camera-home"],
+    ).toMatchObject({ enabled: true, status: "active" });
+    store.updateGame(game.id, {
+      type: "camera-audio",
+      role: "camera-home",
+      enabled: true,
+      volume: 0.25,
+    });
+    expect(store.getGame(game.id)?.cameraAudio?.["camera-home"]).toMatchObject({
+      volume: 0.25,
+      status: "active",
+    });
+    store.updateGame(game.id, {
+      type: "camera-audio",
+      role: "camera-home",
+      enabled: false,
+    });
+    store.updateGame(game.id, {
+      type: "camera-audio",
+      role: "camera-home",
+      enabled: true,
+    });
+    expect(store.getGame(game.id)?.cameraAudio?.["camera-home"]).toMatchObject({
+      volume: 0.25,
+      enabled: true,
+    });
+    expect(
+      store.getGame(game.id)?.cameraAudio?.["camera-away"],
+    ).toBeUndefined();
+    expect(
+      store.releaseRole(game.id, "camera-home", claimant, 1),
+    ).toMatchObject({
+      released: true,
+    });
+    expect(
+      store.getGame(game.id)?.cameraAudio?.["camera-home"],
+    ).toBeUndefined();
+  });
+
   it("persists positive-generation invitations across module instances", async () => {
     const firstWorker = await loadFreshStore();
     const game = firstWorker.createGame(config);

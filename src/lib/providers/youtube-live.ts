@@ -4,11 +4,26 @@ import { z } from "zod";
 import { youtubeGoogleRequest } from "./youtube";
 
 const API = "https://www.googleapis.com/youtube/v3";
+const visibilitySchema = z.enum(["private", "unlisted", "public"]);
+export type YouTubeVisibility = z.infer<typeof visibilitySchema>;
 
 const broadcastSchema = z.object({
   id: z.string().min(1),
   snippet: z.object({ description: z.string().optional() }),
-  status: z.object({ lifeCycleStatus: z.string() }).optional(),
+  status: z
+    .object({
+      lifeCycleStatus: z.string(),
+      privacyStatus: z.unknown().optional(),
+    })
+    .optional(),
+  contentDetails: z.unknown().optional(),
+});
+const manualBroadcastSchema = z.object({
+  status: z.object({ privacyStatus: visibilitySchema }),
+  contentDetails: z.object({
+    enableAutoStart: z.literal(false),
+    enableAutoStop: z.literal(false),
+  }),
 });
 const streamSchema = z.object({
   id: z.string().min(1),
@@ -47,6 +62,85 @@ function marker(sessionKey: string) {
   return `CurlCast broadcast session ${sessionKey}`;
 }
 
+export async function updateScheduledYouTubeTime(
+  accessToken: string,
+  broadcastId: string,
+  sessionKey: string,
+  title: string,
+  scheduledStartTime: string,
+  visibility: YouTubeVisibility,
+  fetcher: typeof fetch = fetch,
+  expectedChannelId?: string,
+) {
+  visibilitySchema.parse(visibility);
+  const data = z
+    .object({
+      items: z.array(
+        z.object({
+          id: z.string(),
+          status: z.object({
+            lifeCycleStatus: z.string(),
+            privacyStatus: visibilitySchema,
+          }),
+          snippet: z.object({
+            description: z.string(),
+            channelId: z.string().optional(),
+            scheduledEndTime: z.string().optional(),
+          }),
+          contentDetails: manualBroadcastSchema.shape.contentDetails,
+        }),
+      ),
+    })
+    .parse(
+      await youtubeRequest(
+        `/liveBroadcasts?part=snippet,status,contentDetails&id=${encodeURIComponent(broadcastId)}`,
+        accessToken,
+        {},
+        fetcher,
+      ),
+    );
+  const broadcast = data.items[0];
+  if (
+    data.items.length !== 1 ||
+    !broadcast ||
+    broadcast.id !== broadcastId ||
+    broadcast.snippet.description !== marker(sessionKey) ||
+    (expectedChannelId !== undefined &&
+      broadcast.snippet.channelId !== expectedChannelId)
+  )
+    throw new Error("youtube_broadcast_mismatch");
+  if (!["created", "ready"].includes(broadcast.status.lifeCycleStatus))
+    throw new Error("youtube_broadcast_already_started");
+  if (broadcast.status.privacyStatus !== visibility)
+    throw new Error("youtube_manual_configuration_mismatch");
+  const updated = broadcastSchema.parse(
+    await youtubeRequest(
+      "/liveBroadcasts?part=snippet",
+      accessToken,
+      {
+        method: "PUT",
+        body: JSON.stringify({
+          id: broadcastId,
+          snippet: {
+            title,
+            description: broadcast.snippet.description,
+            scheduledStartTime,
+            ...(broadcast.snippet.scheduledEndTime
+              ? { scheduledEndTime: broadcast.snippet.scheduledEndTime }
+              : {}),
+          },
+        }),
+      },
+      fetcher,
+    ),
+  );
+  if (
+    updated.id !== broadcastId ||
+    updated.snippet.description !== marker(sessionKey)
+  )
+    throw new Error("youtube_manual_configuration_mismatch");
+}
+
 async function pagedItems<T>(
   path: string,
   accessToken: string,
@@ -75,11 +169,12 @@ export async function findYouTubeBroadcast(
   accessToken: string,
   sessionKey: string,
   fetcher: typeof fetch = fetch,
+  manualLifecycle = false,
 ) {
   const description = marker(sessionKey);
   return (
     await pagedItems(
-      "/liveBroadcasts?part=id,snippet,status&broadcastStatus=all&maxResults=50",
+      `/liveBroadcasts?part=id,snippet,status${manualLifecycle ? ",contentDetails" : ""}&broadcastStatus=all&maxResults=50`,
       accessToken,
       broadcastSchema,
       fetcher,
@@ -114,22 +209,28 @@ export async function findOrCreateYouTubeBroadcast(
     accessToken: string;
     sessionKey: string;
     title: string;
-    visibility: "private" | "unlisted" | "public";
+    visibility: YouTubeVisibility;
+    manualLifecycle?: boolean;
+    scheduledStartTime?: string;
   },
   fetcher: typeof fetch = fetch,
   allowCreate = true,
+  onBeforeInsert?: () => void,
 ): Promise<YouTubeBroadcast> {
+  visibilitySchema.parse(values.visibility);
   const description = marker(values.sessionKey);
   const existing = await findYouTubeBroadcast(
     values.accessToken,
     values.sessionKey,
     fetcher,
+    values.manualLifecycle,
   );
   if (!existing && !allowCreate)
     throw new Error("broadcast_operation_uncertain");
-  const value =
-    existing ??
-    broadcastSchema.parse(
+  let value = existing;
+  if (!value) {
+    onBeforeInsert?.();
+    value = broadcastSchema.parse(
       await youtubeRequest(
         "/liveBroadcasts?part=id,snippet,status,contentDetails",
         values.accessToken,
@@ -139,12 +240,14 @@ export async function findOrCreateYouTubeBroadcast(
             snippet: {
               title: values.title,
               description,
-              scheduledStartTime: new Date(Date.now() + 10_000).toISOString(),
+              scheduledStartTime:
+                values.scheduledStartTime ??
+                new Date(Date.now() + 10_000).toISOString(),
             },
             status: { privacyStatus: values.visibility },
             contentDetails: {
-              enableAutoStart: true,
-              enableAutoStop: true,
+              enableAutoStart: !values.manualLifecycle,
+              enableAutoStop: !values.manualLifecycle,
               monitorStream: { enableMonitorStream: false },
               recordFromStart: true,
             },
@@ -153,6 +256,12 @@ export async function findOrCreateYouTubeBroadcast(
         fetcher,
       ),
     );
+  }
+  if (
+    value.status?.privacyStatus !== values.visibility ||
+    (values.manualLifecycle && !manualBroadcastSchema.safeParse(value).success)
+  )
+    throw new Error("youtube_manual_configuration_mismatch");
   return {
     id: value.id,
     watchUrl: `https://www.youtube.com/watch?v=${value.id}`,

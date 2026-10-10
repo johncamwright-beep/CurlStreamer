@@ -187,4 +187,9 @@ export function authorizationError(
   return { error: "Game access is required", status: 401 };
 }
 
-export const operatorRoles = ["owner", "team_admin", "scorer"] as const;
+export const operatorRoles = [
+  "owner",
+  "team_admin",
+  "game_operator",
+  "scorer",
+] as const;

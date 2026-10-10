@@ -1,37 +1,111 @@
 import { expect, test, type Page } from "@playwright/test";
 import { gameFixture, testGameId } from "../src/test/game-fixture";
+import { applyScoringAction } from "../src/lib/scoring";
 
-async function setup(page: Page) {
+async function setup(page: Page, desktop = false) {
+  await page.route(
+    `**/api/games/${testGameId}/camera-reconnect-invitation`,
+    (route) =>
+      route.fulfill({
+        json: {
+          url: new URL(
+            `/studio-m2/${testGameId}/camera/${route.request().postDataJSON().role}#token=fixture-renewal`,
+            route.request().url(),
+          ).href,
+          expiresAt: new Date(Date.now() + 600_000).toISOString(),
+        },
+      }),
+  );
   const game = gameFixture();
   game.cameraHealth!["camera-home"]!.updatedAt = Date.now();
   game.config.homeName = "Northern Ontario Curling Club";
   game.config.awayName = "Team Wright";
   const actions: Record<string, unknown>[] = [];
+  let legacyBroadcastRequests = 0;
   await page.route(`**/api/games/${testGameId}`, async (route) => {
-    if (route.request().method() === "PATCH")
-      actions.push(route.request().postDataJSON());
+    if (route.request().method() === "PATCH") {
+      const action = route.request().postDataJSON();
+      actions.push(action);
+      if (["score", "hammer", "undo"].includes(action.type))
+        applyScoringAction(game, action);
+      if (action.type === "layout") game.layout = action.layout;
+      if (action.type === "sponsor-mode") {
+        game.sponsorMode.active = action.active;
+        if (action.style) game.sponsorMode.style = action.style;
+      }
+    }
     await route.fulfill({
       json: game,
       headers: {
         "x-curlcast-operator": "true",
         "x-curlcast-account-role": "owner",
+        "x-curlcast-m1-pilot": "true",
       },
     });
   });
-  await page.route(`**/api/games/${testGameId}/broadcast`, (route) =>
-    route.fulfill({ json: { status: "idle", desiredState: "stopped" } }),
+  await page.route(`**/api/games/${testGameId}/broadcast`, (route) => {
+    legacyBroadcastRequests += 1;
+    return route.fulfill({ json: { status: "idle", desiredState: "stopped" } });
+  });
+  await page.route(`**/api/games/${testGameId}/studio-m4`, (route) =>
+    route.fulfill({
+      json: {
+        status: "prepared",
+        watchUrl: "https://www.youtube.com/watch?v=abcdefghijk",
+      },
+    }),
   );
   await page.goto(`/score/${testGameId}`);
   await expect(
-    page.getByRole("heading", { name: "Scoring", exact: true }),
+    desktop
+      ? page.getByRole("heading", { level: 1, name: /Northern Ontario/ })
+      : page.getByRole("heading", { name: "Scoring", exact: true }),
   ).toBeVisible();
-  return { game, actions };
+  return {
+    game,
+    actions,
+    legacyBroadcastRequests: () => legacyBroadcastRequests,
+  };
 }
+
+test("starting hammer is selected inside the scoreboard without a separate card", async ({
+  page,
+}) => {
+  const { game, actions } = await setup(page);
+  game.config.initialHammer = undefined;
+  game.scoreEvents = [];
+  await page.reload();
+  const scoreboard = page.getByRole("region", {
+    name: "Match score",
+    exact: true,
+  });
+  const hammer = scoreboard.getByRole("button", {
+    name: "Give Team Wright hammer in End 1",
+    exact: true,
+  });
+  await expect(hammer).toBeVisible();
+  await expect(
+    page.getByText("Who has hammer in End 1?", { exact: true }),
+  ).toHaveCount(0);
+  expect((await hammer.boundingBox())!.height).toBeGreaterThanOrEqual(44);
+  await hammer.click();
+  await expect.poll(() => actions.length).toBe(1);
+  expect(actions[0]).toMatchObject({
+    type: "hammer",
+    team: "away",
+    expectedEnd: 1,
+  });
+  await expect(hammer).toHaveCount(0);
+  await expect(
+    page.getByRole("heading", { name: "Record End 1" }),
+  ).toBeVisible();
+});
 
 test("score entry preserves selected team and points in one saved intent", async ({
   page,
 }, info) => {
-  const { actions } = await setup(page);
+  const { actions, game } = await setup(page);
+  const originalEvents = structuredClone(game.scoreEvents);
   await expect(page.getByRole("region", { name: "Match score" })).toContainText(
     "Northern Ontario Curling Club",
   );
@@ -60,6 +134,25 @@ test("score entry preserves selected team and points in one saved intent", async
     expectedEnd: 2,
     blank: false,
   });
+  expect(game.scoreEvents.slice(0, -1)).toEqual(originalEvents);
+  expect(game.scoreEvents.at(-1)).toMatchObject({
+    id: actions[0].intentId,
+    type: "end",
+    expectedLastEventId: originalEvents.at(-1)?.id,
+    score: { end: 2, team: "away", points: 3, blank: false },
+  });
+  await expect(
+    page.getByRole("heading", { name: "Record End 3" }),
+  ).toBeVisible();
+  await expect(page.getByRole("region", { name: "Match score" })).toContainText(
+    "End 3",
+  );
+  await expect(
+    page.getByRole("region", { name: "Match score" }).locator("strong"),
+  ).toHaveText(["2", "3"]);
+  await expect(
+    page.getByRole("button", { name: "Save 3 points" }),
+  ).toBeEnabled();
   await page.screenshot({
     path: info.outputPath(`scoring-workspace-${info.project.name}.png`),
     fullPage: true,
@@ -79,12 +172,18 @@ test("camera and demo audio status stay separate from YouTube status", async ({
     "Sponsor overlay is keeping demo audio muted.",
   );
   await expect(
-    page.getByRole("region", { name: "YouTube broadcast" }),
-  ).toContainText("Not started");
+    page.getByRole("heading", { name: "Requires Windows Studio" }),
+  ).toBeVisible();
   await page.route(`**/api/games/${testGameId}`, (route) =>
     route.request().method() === "PATCH"
       ? route.fulfill({ status: 503, json: { error: "temporary_failure" } })
-      : route.fulfill({ json: gameFixture() }),
+      : route.fulfill({
+          json: gameFixture(),
+          headers: {
+            "x-curlcast-account-role": "owner",
+            "x-curlcast-operator": "true",
+          },
+        }),
   );
   await cameras.getByRole("button", { name: "Camera 2", exact: true }).click();
   await expect(
@@ -156,23 +255,65 @@ test("an unavailable scoring page retains navigation and recovery", async ({
   );
 });
 
-test("an unreadable broadcast response leaves scoring usable", async ({
+test("browser scoring keeps stream start in Windows Studio", async ({
   page,
 }) => {
-  await setup(page);
-  await page.route(`**/api/games/${testGameId}/broadcast`, (route) =>
-    route.fulfill({ status: 200, body: "not json", contentType: "text/plain" }),
-  );
-  await page.reload();
+  const { legacyBroadcastRequests } = await setup(page);
   await expect(
-    page.getByRole("region", { name: "YouTube broadcast" }),
-  ).toContainText("Status unavailable");
+    page.getByRole("heading", { name: "Requires Windows Studio" }),
+  ).toBeVisible();
   await expect(
-    page.getByRole("button", { name: "Retry status" }),
-  ).toBeEnabled();
+    page.getByRole("link", { name: "Download Studio", exact: true }),
+  ).toHaveAttribute("href", "/download");
+  await expect(
+    page.getByRole("button", { name: "Start broadcast" }),
+  ).toHaveCount(0);
+  expect(legacyBroadcastRequests()).toBe(0);
   await expect(
     page.getByRole("button", { name: "Save 1 point" }),
   ).toBeEnabled();
+});
+
+test("scoring preserves its last loaded controls during a transient outage and clears them on revocation", async ({
+  page,
+}) => {
+  await setup(page);
+  await page
+    .getByRole("group", { name: "Points scored" })
+    .getByRole("button", { name: "3 points", exact: true })
+    .click();
+  await page.route(`**/api/games/${testGameId}`, (route) =>
+    route.fulfill({ status: 503, json: { error: "Unavailable" } }),
+  );
+  await expect(
+    page
+      .getByRole("status")
+      .filter({ hasText: "Showing the last loaded score" }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Save 3 points" }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "Scoring unavailable" }),
+  ).toHaveCount(0);
+  await page.route(`**/api/games/${testGameId}`, (route) =>
+    route.fulfill({
+      json: gameFixture(),
+      headers: { "x-curlcast-account-role": "owner" },
+    }),
+  );
+  await expect(page.getByText(/Showing the last loaded score/)).toHaveCount(0, {
+    timeout: 15000,
+  });
+  await page.route(`**/api/games/${testGameId}`, (route) =>
+    route.fulfill({ status: 403, json: { error: "Access revoked" } }),
+  );
+  await expect(
+    page.getByRole("heading", { name: "Scoring unavailable" }),
+  ).toBeVisible();
+  await expect(page.getByRole("button", { name: "Save 3 points" })).toHaveCount(
+    0,
+  );
 });
 
 test("an active carousel can be stopped after its sponsors are removed", async ({
@@ -181,6 +322,426 @@ test("an active carousel can be stopped after its sponsors are removed", async (
   const { game, actions } = await setup(page);
   game.sponsors = [];
   await page.reload();
-  await page.getByRole("button", { name: "Stop carousel" }).click();
+  await page.getByRole("button", { name: "Stop sponsors" }).click();
   expect(actions).toEqual([{ type: "sponsor-mode", active: false }]);
+});
+
+test("desktop game day keeps scoring primary and settings available on demand", async ({
+  page,
+}, info) => {
+  if (info.project.name !== "mobile")
+    await page.setViewportSize({ width: 1280, height: 850 });
+  await page.addInitScript(() =>
+    Object.defineProperty(navigator, "userAgent", {
+      value:
+        "CurlStreamerStudio/0.3 StudioNativeAudio/1 StudioProgramPreview/1",
+    }),
+  );
+  await page.addInitScript(() => {
+    Object.defineProperty(window, "chrome", {
+      configurable: true,
+      value: { webview: { postMessage() {} } },
+    });
+  });
+  await page.route("**/__studio-preview/**", (route) =>
+    route.fulfill({
+      contentType: "image/svg+xml",
+      body: '<svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080"><rect width="1920" height="1080" fill="#163343"/><text x="600" y="540" fill="white" font-size="64">Test program frame</text></svg>',
+    }),
+  );
+  const { game, actions } = await setup(page, true);
+  await page.evaluate((gameId) => {
+    window.dispatchEvent(
+      new CustomEvent("studio-youtube-status", {
+        detail: {
+          gameId,
+          available: true,
+          busy: false,
+          streaming: "armed",
+          live: true,
+          receiving: true,
+          message: "",
+          canReconnect: true,
+          outputActive: true,
+        },
+      }),
+    );
+  }, testGameId);
+  await expect(
+    page.getByRole("link", { name: "Watch on YouTube" }),
+  ).toBeVisible();
+  const sponsorControls = page.getByRole("region", {
+    name: "Sponsors",
+    exact: true,
+  });
+  const overlayButton = (await sponsorControls
+    .getByRole("button", { name: "Overlay", exact: true })
+    .boundingBox())!;
+  const panelButton = (await sponsorControls
+    .getByRole("button", { name: "Side panel", exact: true })
+    .boundingBox())!;
+  expect(Math.abs(overlayButton.width - panelButton.width)).toBeLessThanOrEqual(
+    1,
+  );
+  expect(overlayButton.height).toBeGreaterThanOrEqual(44);
+  expect(panelButton.height).toBeGreaterThanOrEqual(44);
+  const preview = page.getByRole("region", {
+    name: "Studio program preview",
+    exact: true,
+  });
+  await expect(
+    preview.getByRole("img", { name: "Actual Studio program output" }),
+  ).toBeVisible();
+  await expect(page.getByRole("link", { name: /^Broadcast:/ })).toHaveCount(0);
+  const cameraControls = page.getByLabel("Camera controls", { exact: true });
+  await expect(
+    page.getByRole("button", { name: "Camera 1 zoom in" }),
+  ).toBeHidden();
+  const previewPosition = () =>
+    preview.evaluate((el) => {
+      const rect = el.getBoundingClientRect();
+      return {
+        x: rect.x + scrollX,
+        y: rect.y + scrollY,
+        width: rect.width,
+        height: rect.height,
+      };
+    });
+  const previewBeforeSettings = await previewPosition();
+  await cameraControls.click();
+  await expect(
+    page.getByRole("button", { name: "Camera 1 zoom in" }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Camera 2 zoom in" }),
+  ).toBeVisible();
+  expect(
+    await page
+      .getByTestId("camera-zoom-rail")
+      .evaluate((el) => getComputedStyle(el).position),
+  ).toBe("static");
+  await cameraControls.click();
+  await expect(
+    page.getByRole("button", { name: "Camera 1 zoom in" }),
+  ).toBeHidden();
+  expect(await previewPosition()).toEqual(previewBeforeSettings);
+  const previewBox = (await preview.boundingBox())!;
+  expect(previewBox.width / previewBox.height).toBeCloseTo(16 / 9, 1);
+  if (info.project.name !== "mobile") {
+    const scoreBox = (await page
+      .getByRole("region", { name: "Match score" })
+      .boundingBox())!;
+    expect(previewBox.x).toBeGreaterThan(scoreBox.x + scoreBox.width);
+    expect(previewBox.y).toBeLessThan(scoreBox.y + 60);
+  }
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth,
+    ),
+  ).toBe(true);
+
+  await expect(
+    page.getByRole("region", { name: "USB microphones", exact: true }),
+  ).toBeVisible();
+  await page.evaluate((gameId) => {
+    window.dispatchEvent(
+      new CustomEvent("studio-usb-status", {
+        detail: {
+          gameId,
+          devices: [],
+          running: true,
+          error: null,
+          channels: [0.1, 0.3, 0.05, 0.2].map((peak) => ({
+            peak,
+            rms: peak / 2,
+            muted: false,
+            level: 1,
+          })),
+        },
+      }),
+    );
+  }, testGameId);
+  const usb = page.getByRole("region", {
+    name: "USB microphones",
+    exact: true,
+  });
+  await expect(usb.getByRole("meter")).toHaveCount(4);
+  await expect(usb.getByRole("button", { name: "Disconnect" })).toBeVisible();
+  const youtubeControls = page.getByRole("region", {
+    name: "YouTube broadcast",
+    exact: true,
+  });
+  if (info.project.name !== "mobile") {
+    expect((await usb.boundingBox())!.height).toBeLessThan(190);
+    const youtube = await page
+      .getByRole("region", { name: "YouTube broadcast", exact: true })
+      .boundingBox();
+    const sponsors = await page
+      .getByRole("region", { name: "Sponsors", exact: true })
+      .boundingBox();
+    expect(sponsors!.height).toBeLessThanOrEqual(166);
+    expect(sponsors!.y).toBe(youtube!.y);
+    expect(sponsors!.height).toBe(youtube!.height);
+  }
+  for (const mode of ["live", "hold"] as const) {
+    await page.evaluate(
+      ({ gameId, mode }) => {
+        window.dispatchEvent(
+          new CustomEvent("studio-youtube-status", {
+            detail: {
+              gameId,
+              available: true,
+              busy: false,
+              streaming: "armed",
+              live: true,
+              receiving: true,
+              message: "",
+              canReconnect: true,
+              canHoldStream: true,
+              outputActive: true,
+              presentation: { mode },
+            },
+          }),
+        );
+      },
+      { gameId: testGameId, mode },
+    );
+    const broadcastButton = youtubeControls.getByRole("button", {
+      name: mode === "hold" ? "Resume broadcast" : "Pause broadcast",
+      exact: true,
+    });
+    await expect(broadcastButton).toBeEnabled();
+    expect(
+      (await broadcastButton.boundingBox())!.height,
+    ).toBeGreaterThanOrEqual(44);
+    if (info.project.name !== "mobile") {
+      const youtube = (await youtubeControls.boundingBox())!;
+      const sponsors = (await sponsorControls.boundingBox())!;
+      expect(sponsors.height).toBeLessThanOrEqual(166);
+      expect(sponsors.y).toBe(youtube.y);
+      expect(sponsors.height).toBe(youtube.height);
+    }
+  }
+  await expect(
+    page.getByRole("button", { name: "Save 1 point", exact: true }),
+  ).toBeEnabled();
+  await expect(
+    page.getByRole("button", { name: "Open navigation menu" }),
+  ).toBeVisible();
+  await expect(page.getByText("Connect phones", { exact: true })).toHaveCount(
+    0,
+  );
+  await expect(
+    page.getByRole("region", { name: "Camera 1", exact: true }),
+  ).toBeVisible();
+  await expect(page.getByText(/First, use Start recording/)).toHaveCount(0);
+  await expect(
+    page.getByRole("region", { name: "YouTube broadcast" }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("region", { name: "Cameras", exact: true }),
+  ).toHaveCount(0);
+  await expect(
+    page.getByRole("button", { name: "Stop sponsors", exact: true }),
+  ).toBeVisible();
+  await expect(
+    page
+      .getByRole("region", { name: "Camera 1", exact: true })
+      .getByRole("button", { name: "Hide from broadcast", exact: true }),
+  ).toBeVisible();
+  expect(actions).toEqual([]);
+  await expect(
+    page.getByRole("button", { name: "Stop sponsors", exact: true }),
+  ).toBeVisible();
+  await page.screenshot({
+    path: info.outputPath("desktop-game-day.png"),
+    fullPage: true,
+  });
+  if (info.project.name !== "mobile") {
+    const end = await page
+      .getByRole("button", { name: "End Game", exact: true })
+      .boundingBox();
+    expect(end!.y + end!.height).toBeLessThanOrEqual(
+      page.viewportSize()!.height,
+    );
+    const first = page.getByRole("region", { name: "Camera 1", exact: true });
+    const second = page.getByRole("region", { name: "Camera 2", exact: true });
+    const scorer = page.getByRole("region", {
+      name: "Remote scorer",
+      exact: true,
+    });
+    const before = await first.boundingBox();
+    expect((await second.boundingBox())!.y).toBe(before!.y);
+    expect((await scorer.boundingBox())!.y).toBe(before!.y);
+    expect(before!.y + before!.height).toBeLessThanOrEqual(
+      page.viewportSize()!.height,
+    );
+    await first.getByRole("button", { name: "Show reconnect QR" }).click();
+    const qr = first.getByRole("img", { name: "Camera 1 reconnect QR code" });
+    await expect(qr).toBeVisible();
+    expect((await qr.boundingBox())!.x).toBeGreaterThan(
+      before!.x + before!.width,
+    );
+    expect(await first.boundingBox()).toEqual(before);
+    await first.getByRole("button", { name: "Hide QR code" }).click();
+  }
+  await page.getByRole("button", { name: "Save 1 point", exact: true }).click();
+  await expect.poll(() => actions.length).toBe(1);
+  expect(actions[0]).toMatchObject({ type: "score", points: 1 });
+  await page
+    .getByRole("button", { name: "Stop sponsors", exact: true })
+    .click();
+  expect(actions[1]).toEqual({ type: "sponsor-mode", active: false });
+  const sponsors = page.getByRole("region", { name: "Sponsors", exact: true });
+  await expect(
+    sponsors.getByRole("button", { name: /^(Previous|Pause|Resume|Next)$/ }),
+  ).toHaveCount(0);
+  await sponsors
+    .getByRole("button", { name: "Side panel", exact: true })
+    .click();
+  expect(actions[2]).toEqual({
+    type: "sponsor-mode",
+    active: false,
+    style: "fullscreen",
+  });
+  await page.reload();
+  await expect(
+    sponsors.getByRole("button", { name: "Side panel", exact: true }),
+  ).toHaveAttribute("aria-pressed", "true");
+  await sponsors.getByRole("button", { name: "Overlay", exact: true }).click();
+  expect(actions[3]).toEqual({
+    type: "sponsor-mode",
+    active: false,
+    style: "overlay",
+  });
+  const camera1 = page.getByRole("region", { name: "Camera 1", exact: true });
+  const camera2 = page.getByRole("region", { name: "Camera 2", exact: true });
+  await camera1
+    .getByRole("button", { name: "Hide from broadcast", exact: true })
+    .click();
+  await expect(
+    camera1.getByRole("button", { name: "Show in broadcast", exact: true }),
+  ).toBeVisible();
+  await camera2
+    .getByRole("button", { name: "Hide from broadcast", exact: true })
+    .click();
+  await expect(
+    camera2.getByRole("button", { name: "Show in broadcast", exact: true }),
+  ).toBeVisible();
+  await camera1
+    .getByRole("button", { name: "Show in broadcast", exact: true })
+    .click();
+  await camera2
+    .getByRole("button", { name: "Show in broadcast", exact: true })
+    .click();
+  expect(actions.slice(4)).toEqual(
+    ["away", "none", "home", "split"].map((layout) => ({
+      type: "layout",
+      layout,
+    })),
+  );
+  expect(game.claims).toEqual(gameFixture().claims);
+});
+
+test("Studio preview keeps its last picture through failed frame requests", async ({
+  page,
+}) => {
+  await page.addInitScript(() =>
+    Object.defineProperty(navigator, "userAgent", {
+      value: "CurlStreamerStudio/0.3 StudioProgramPreview/1",
+    }),
+  );
+  let unavailable = false;
+  const frame =
+    '<svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080"><rect width="1920" height="1080" fill="#163343"/></svg>';
+  await page.route("**/__studio-preview/**", (route) =>
+    unavailable
+      ? route.fulfill({ status: 503, body: "Unavailable" })
+      : route.fulfill({ contentType: "image/svg+xml", body: frame }),
+  );
+  await setup(page, true);
+  const preview = page.getByRole("region", {
+    name: "Studio program preview",
+    exact: true,
+  });
+  await expect(
+    preview.getByRole("img", { name: "Actual Studio program output" }),
+  ).toBeVisible();
+  unavailable = true;
+  await expect(preview.getByText("Preview reconnecting…")).toBeVisible({
+    timeout: 10000,
+  });
+  await expect(
+    preview.getByRole("img", { name: "Actual Studio program output" }),
+  ).toBeVisible();
+  await expect(preview.getByText("Waiting for Studio’s picture")).toHaveCount(
+    0,
+  );
+  unavailable = false;
+  await expect(preview.getByText("Preview reconnecting…")).toHaveCount(0);
+});
+
+test("remote scorer only sees scoreboard controls", async ({ page }) => {
+  const game = gameFixture();
+  await page.route("**/api/games/" + testGameId, (route) =>
+    route.fulfill({
+      json: game,
+      headers: {
+        "x-curlcast-operator": "false",
+        "x-curlcast-account-role": "scorer",
+      },
+    }),
+  );
+  await page.goto("/score/" + testGameId);
+  await expect(
+    page.getByRole("button", { name: "Save 1 point", exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("complementary", { name: "Broadcast and program controls" }),
+  ).toHaveCount(0);
+  await expect(
+    page.getByText("Broadcast controls ↓", { exact: true }),
+  ).toHaveCount(0);
+  await expect(
+    page.getByRole("button", { name: "End Game", exact: true }),
+  ).toHaveCount(0);
+});
+
+test("Studio inline zoom sends camera commands without changing the score", async ({
+  page,
+}) => {
+  await page.addInitScript(() =>
+    Object.defineProperty(navigator, "userAgent", {
+      value: "CurlStreamerStudio/0.3",
+    }),
+  );
+  const { game, actions } = await setup(page, true);
+  game.cameraZoom = {
+    "camera-home": {
+      supported: true,
+      min: 1,
+      max: 4,
+      step: 0.1,
+      value: 1,
+      updatedAt: Date.now(),
+    },
+  };
+  await page.reload();
+  await page.getByLabel("Camera controls", { exact: true }).click();
+  await page
+    .getByRole("button", { name: "Camera 1 zoom in", exact: true })
+    .click();
+  await expect.poll(() => actions.length).toBe(1);
+  expect(actions[0]).toMatchObject({
+    type: "camera-zoom",
+    role: "camera-home",
+    value: 1.1,
+  });
+  expect(actions[0].commandId).toEqual(expect.any(String));
+  await expect(
+    page.getByRole("button", { name: "Save 1 point", exact: true }),
+  ).toBeEnabled();
+  await expect(
+    page.getByRole("button", { name: "Camera 2 zoom in", exact: true }),
+  ).toBeDisabled();
 });

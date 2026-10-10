@@ -6,7 +6,7 @@ import type { GameConfig, GameState } from "@/lib/types";
 
 export type ActiveTeam = {
   organizationId: string;
-  role: "owner" | "team_admin" | "scorer" | "viewer";
+  role: "owner" | "team_admin" | "game_operator" | "scorer" | "viewer";
 };
 
 export type TeamGameSummary = {
@@ -37,22 +37,41 @@ export async function loadActiveTeam(
   | { kind: "inactive" | "no-team" | "multiple-teams" | "unavailable" }
 > {
   const db = createAdminSupabaseClient();
-  const { data: profile, error: profileError } = await db
-    .from("user_profiles")
-    .select("status")
-    .eq("user_id", user.id)
-    .maybeSingle();
+  // Both reads are scoped to the verified user and remain fresh per request.
+  // Settle both before deciding so membership failures cannot shadow an
+  // inactive/unavailable profile or leave an unhandled rejection behind.
+  const [profileResult, membershipResult] = await Promise.allSettled([
+    Promise.resolve().then(() =>
+      db
+        .from("user_profiles")
+        .select("status")
+        .eq("user_id", user.id)
+        .maybeSingle(),
+    ),
+    Promise.resolve().then(() =>
+      db
+        .from("team_memberships")
+        .select("organization_id,role")
+        .eq("user_id", user.id)
+        .eq("status", "active")
+        .limit(2),
+    ),
+  ]);
+  if (profileResult.status === "rejected") {
+    safeDiagnostic("profile", profileResult.reason);
+    return { kind: "unavailable" };
+  }
+  const { data: profile, error: profileError } = profileResult.value;
   if (profileError) {
     safeDiagnostic("profile", profileError);
     return { kind: "unavailable" };
   }
   if (!profile || profile.status !== "active") return { kind: "inactive" };
-  const { data, error } = await db
-    .from("team_memberships")
-    .select("organization_id,role")
-    .eq("user_id", user.id)
-    .eq("status", "active")
-    .limit(2);
+  if (membershipResult.status === "rejected") {
+    safeDiagnostic("membership", membershipResult.reason);
+    return { kind: "unavailable" };
+  }
+  const { data, error } = membershipResult.value;
   if (error) {
     safeDiagnostic("membership", error);
     return { kind: "unavailable" };

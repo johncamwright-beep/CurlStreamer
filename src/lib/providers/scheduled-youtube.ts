@@ -1,0 +1,235 @@
+import "server-only";
+
+import type { User } from "@supabase/supabase-js";
+import { z } from "zod";
+import type { GameConfig } from "@/lib/types";
+import { createAdminSupabaseClient } from "@/lib/supabase/admin";
+import { getScheduledYouTubeCredentials } from "./scheduled-youtube-credentials";
+import { decryptYouTubeRefreshToken } from "./youtube-credential-vault";
+import { refreshYouTubeAccessToken } from "./youtube";
+import {
+  findOrCreateYouTubeBroadcast,
+  updateScheduledYouTubeTime,
+  type YouTubeBroadcast,
+} from "./youtube-live";
+import {
+  uploadScheduledThumbnail,
+  type ScheduledThumbnail,
+} from "./youtube-thumbnail";
+import { loadScheduledThumbnailMedia } from "./youtube-thumbnail-media";
+
+function providerError(error: unknown) {
+  const message = error instanceof Error ? error.message : "";
+  return message.startsWith("youtube_") ||
+    message === "broadcast_operation_uncertain" ||
+    message === "broadcast_discovery_incomplete"
+    ? message
+    : "youtube_provider_unavailable";
+}
+
+/** Reserve a game watch page after its database transaction commits. */
+export async function provisionScheduledYouTubeBroadcast(
+  user: User,
+  values: {
+    gameId: string;
+    title: string;
+    scheduledStart: string;
+    visibility: GameConfig["youtubeVisibility"];
+    thumbnail?: ScheduledThumbnail;
+  },
+) {
+  const db = createAdminSupabaseClient();
+  // Do this before claiming provider creation intent. A disconnected channel
+  // is retryable and must not fence future creation as an uncertain insert.
+  let credentials: Awaited<ReturnType<typeof getScheduledYouTubeCredentials>>;
+  let accessToken: string;
+  try {
+    credentials = await getScheduledYouTubeCredentials(user, values.gameId);
+    if (values.visibility !== (credentials.youtube_visibility ?? "unlisted"))
+      throw new Error("youtube_manual_configuration_mismatch");
+    accessToken = await refreshYouTubeAccessToken(
+      decryptYouTubeRefreshToken(
+        credentials.encrypted_credentials,
+        credentials.organization_id,
+      ),
+    );
+  } catch (error) {
+    return {
+      status: "pending",
+      watchUrl: null,
+      errorCode: providerError(error),
+    } as const;
+  }
+  const { data: claim, error: claimError } = await db.rpc(
+    "claim_scheduled_youtube_broadcast",
+    { p_user_id: user.id, p_game_id: values.gameId },
+  );
+  if (claimError)
+    return {
+      status: "failed",
+      watchUrl: null,
+      errorCode: "youtube_schedule_unavailable",
+    } as const;
+  const parsedClaim = z
+    .array(
+      z.object({
+        action: z.enum(["run", "discover", "none"]),
+        watch_url: z.string().url().nullable().optional(),
+        youtube_visibility: z
+          .enum(["private", "unlisted", "public"])
+          .default("unlisted"),
+      }),
+    )
+    .length(1)
+    .safeParse(claim);
+  if (!parsedClaim.success)
+    return {
+      status: "failed",
+      watchUrl: null,
+      errorCode: "youtube_manual_configuration_mismatch",
+    } as const;
+  const claimed = parsedClaim.data;
+  const visibility = claimed[0].youtube_visibility;
+  const action = claimed[0]?.action;
+  async function thumbnail(videoId: string) {
+    if (!values.thumbnail) return {};
+    try {
+      await uploadScheduledThumbnail(accessToken, videoId, {
+        ...values.thumbnail,
+        ...(await loadScheduledThumbnailMedia(credentials.organization_id)),
+      });
+      return { thumbnailStatus: "ready" as const };
+    } catch {
+      // The watch page is already saved. A thumbnail failure must never create
+      // another broadcast or prevent the game from being scheduled.
+      return { thumbnailStatus: "pending" as const };
+    }
+  }
+  if (action === "none") {
+    const watchUrl = claimed[0]?.watch_url;
+    const videoId = watchUrl ? new URL(watchUrl).searchParams.get("v") : null;
+    if (videoId) {
+      try {
+        await updateScheduledYouTubeTime(
+          accessToken,
+          videoId,
+          values.gameId,
+          values.title,
+          values.scheduledStart,
+          visibility,
+          fetch,
+          credentials.channel_id,
+        );
+      } catch {
+        return {
+          status: "pending",
+          watchUrl: watchUrl ?? null,
+          errorCode: "youtube_schedule_update_pending",
+        } as const;
+      }
+    }
+    return {
+      status: "ready",
+      watchUrl: claimed[0]?.watch_url ?? null,
+      ...(videoId ? await thumbnail(videoId) : {}),
+    } as const;
+  }
+  if (action !== "run" && action !== "discover")
+    return {
+      status: "failed",
+      watchUrl: null,
+      errorCode: "youtube_schedule_unavailable",
+    } as const;
+  let insertAttempted = false;
+  let broadcast: YouTubeBroadcast;
+  try {
+    const signal = AbortSignal.timeout(8_000);
+    const scheduledFetch: typeof fetch = (input, init) =>
+      fetch(input, { ...init, signal });
+    broadcast = await findOrCreateYouTubeBroadcast(
+      {
+        accessToken,
+        sessionKey: values.gameId,
+        title: values.title,
+        visibility,
+        manualLifecycle: true,
+        scheduledStartTime: values.scheduledStart,
+      },
+      scheduledFetch,
+      action === "run",
+      () => {
+        insertAttempted = true;
+      },
+    );
+  } catch (error) {
+    const code = providerError(error);
+    if (action === "run" && !insertAttempted) {
+      // No insert was attempted by this request. Reopen the game for a retry;
+      // discovery still runs before a new page can be created.
+      await db
+        .from("games")
+        .update({
+          youtube_scheduled_status: "pending",
+          youtube_scheduled_error_code: code,
+          youtube_scheduled_updated_at: new Date().toISOString(),
+        })
+        .eq("id", values.gameId)
+        .eq("organization_id", credentials.organization_id)
+        .eq("youtube_scheduled_status", "intent")
+        .is("youtube_scheduled_broadcast_id", null)
+        .is("youtube_scheduled_watch_url", null);
+    }
+    return { status: "pending", watchUrl: null, errorCode: code } as const;
+  }
+  try {
+    const { data, error } = await db.rpc("record_scheduled_youtube_broadcast", {
+      p_user_id: user.id,
+      p_game_id: values.gameId,
+      p_broadcast_id: broadcast.id,
+      p_watch_url: broadcast.watchUrl,
+      p_error_code: null,
+      p_channel_id: credentials.channel_id,
+      p_connection_version: credentials.connection_version,
+    });
+    if (error) throw new Error("youtube_schedule_persistence_failed");
+    const row = (data as { status?: string; watch_url?: string | null }[])[0];
+    return {
+      status: row?.status === "ready" ? "ready" : "failed",
+      watchUrl: row?.watch_url ?? null,
+      ...(row?.status === "ready" ? await thumbnail(broadcast.id) : {}),
+    } as const;
+  } catch (error) {
+    const code = providerError(error);
+    // Once the claim exists, even a local persistence error can follow a
+    // successful provider insert. Preserve intent so the next request only
+    // discovers the game-id marker and cannot create a duplicate event.
+    return { status: "pending", watchUrl: null, errorCode: code } as const;
+  }
+}
+
+/** Replace artwork on an existing watch page without changing its schedule or creating a broadcast. */
+export async function refreshScheduledYouTubeThumbnail(
+  user: User,
+  gameId: string,
+  videoId: string,
+  info: ScheduledThumbnail,
+) {
+  const credentials = await getScheduledYouTubeCredentials(user, gameId);
+  const accessToken = await refreshYouTubeAccessToken(
+    decryptYouTubeRefreshToken(
+      credentials.encrypted_credentials,
+      credentials.organization_id,
+    ),
+  );
+  await uploadScheduledThumbnail(
+    accessToken,
+    z
+      .string()
+      .regex(/^[A-Za-z0-9_-]{11}$/)
+      .parse(videoId),
+    {
+      ...info,
+      ...(await loadScheduledThumbnailMedia(credentials.organization_id)),
+    },
+  );
+}

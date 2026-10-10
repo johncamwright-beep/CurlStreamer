@@ -49,5 +49,5 @@ describe("account authentication validation", () => {
         NODE_ENV: "production",
         APP_BASE_URL: "https://curlstreamer.vercel.app",
       } as NodeJS.ProcessEnv),
-    ).toBe("https://curlstreamer.vercel.app/auth/confirm?next=/account"));
+    ).toBe("https://curlstreamer.vercel.app/auth/confirm?next=%2Faccount"));
 });

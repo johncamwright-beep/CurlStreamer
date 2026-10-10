@@ -1,0 +1,292 @@
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { emptyState, type State } from "@/lib/curlcoach/model";
+import type { CoachEvent } from "@/lib/curlcoach/event";
+
+const ids = {
+  organization: "00000000-0000-4000-8000-000000000001",
+  actor: "00000000-0000-4000-8000-000000000002",
+  event: "00000000-0000-4000-8000-000000000003",
+  game: "00000000-0000-4000-8000-000000000004",
+  otherGame: "00000000-0000-4000-8000-000000000005",
+};
+const mocks = vi.hoisted(() => ({
+  account: vi.fn(),
+  productionSource: vi.fn(),
+  load: vi.fn(),
+  loadMany: vi.fn(),
+  save: vi.fn(),
+  lineup: vi.fn(),
+  transition: vi.fn(),
+  localRead: vi.fn(),
+  localWrite: vi.fn(),
+  localSource: vi.fn(),
+}));
+
+vi.mock("@/lib/curlcoach/access", () => ({
+  labEnabled: () => false,
+  sameOrigin: (request: Request) =>
+    request.headers.get("origin") === "http://localhost",
+  authorized: vi.fn(),
+  sessionCookie: "curlcoach-lab-session",
+}));
+vi.mock("@/lib/curlcoach/production-access", () => ({
+  requireCoachAccount: mocks.account,
+}));
+vi.mock("@/lib/providers/curlcoach-production-streamer", () => ({
+  loadProductionStreamerEvent: mocks.productionSource,
+}));
+vi.mock("@/lib/providers/curlcoach-store", () => ({
+  loadCoachState: mocks.load,
+  loadCoachStates: mocks.loadMany,
+  saveCoachState: mocks.save,
+  saveCoachLineup: mocks.lineup,
+  transitionCoachState: mocks.transition,
+}));
+vi.mock("@/lib/providers/curlcoach-local", () => ({
+  readCoachState: mocks.localRead,
+  writeCoachEvent: mocks.localWrite,
+}));
+vi.mock("@/lib/providers/curlcoach-streamer", () => ({
+  loadStreamerEvent: mocks.localSource,
+}));
+
+import { GET, POST } from "./route";
+
+function state(): State {
+  return {
+    ...emptyState(),
+    organizationId: ids.organization,
+    gameId: ids.game,
+    roster: [{ id: "player-1", name: "Taylor", position: "Lead" }],
+  };
+}
+function workspace(): {
+  event: CoachEvent;
+  catalog: { id: string; name: string }[];
+  actor: string;
+} {
+  return {
+    actor: ids.actor,
+    catalog: [{ id: ids.event, name: "Club night" }],
+    event: {
+      id: ids.event,
+      name: "Club night",
+      source: "streamer",
+      organizationId: ids.organization,
+      games: [
+        {
+          id: ids.game,
+          eventId: ids.event,
+          label: "Game 1",
+          opponent: "Visitors",
+          teamName: "Home",
+          scheduledEnds: 8,
+          status: "active",
+          side: "home",
+          initialHammer: "home",
+          scoreboardAvailable: true,
+          ends: [],
+          roster: state().roster,
+          state: state(),
+        },
+      ],
+    },
+  };
+}
+function request(body: unknown, origin = "http://localhost") {
+  return new Request("http://localhost/api/curlcoach/workspace", {
+    method: "POST",
+    headers: { "content-type": "application/json", origin },
+    body: JSON.stringify(body),
+  });
+}
+function lifecycle(action: "finish" | "reopen", gameId = ids.game) {
+  return {
+    source: "streamer",
+    eventId: ids.event,
+    gameId,
+    action,
+    requestId: crypto.randomUUID(),
+    expectedRevision: 0,
+  };
+}
+
+beforeEach(() => {
+  vi.clearAllMocks();
+  vi.stubEnv("CURLCOACH_ENABLED", "true");
+  mocks.account.mockResolvedValue({
+    userId: ids.actor,
+    organizationId: ids.organization,
+    user: { id: ids.actor },
+  });
+  mocks.productionSource.mockResolvedValue(workspace());
+  mocks.load.mockResolvedValue(state());
+  mocks.loadMany.mockResolvedValue([state()]);
+  mocks.save.mockResolvedValue(state());
+  mocks.transition.mockResolvedValue({
+    ...state(),
+    revision: 1,
+    status: "closed",
+  });
+});
+afterEach(() => vi.unstubAllEnvs());
+
+it("denies an unentitled account before listing games or reading private state", async () => {
+  mocks.account.mockResolvedValue(null);
+
+  const response = await GET(
+    new Request(
+      `http://localhost/api/curlcoach/workspace?source=streamer&eventId=${ids.event}`,
+    ),
+  );
+
+  expect(response.status).toBe(403);
+  expect(mocks.productionSource).not.toHaveBeenCalled();
+  expect(mocks.load).not.toHaveBeenCalled();
+  expect(mocks.localRead).not.toHaveBeenCalled();
+});
+
+it("loads each production game from durable private storage, never the local lab", async () => {
+  const response = await GET(
+    new Request(
+      `http://localhost/api/curlcoach/workspace?source=streamer&eventId=${ids.event}`,
+    ),
+  );
+
+  expect(response.status).toBe(200);
+  expect(mocks.loadMany).toHaveBeenCalledWith(ids.organization, ids.actor, [
+    expect.objectContaining({ gameId: ids.game }),
+  ]);
+  expect(mocks.localRead).not.toHaveBeenCalled();
+  expect(mocks.localSource).not.toHaveBeenCalled();
+  expect((await response.json()).event.source).toBe("streamer");
+  expect(mocks.productionSource).toHaveBeenCalledWith(
+    ids.event,
+    undefined,
+    undefined,
+    expect.objectContaining({
+      userId: ids.actor,
+      organizationId: ids.organization,
+      user: expect.objectContaining({ id: ids.actor }),
+    }),
+  );
+});
+
+it("keeps production sample data unavailable", async () => {
+  const response = await GET(
+    new Request("http://localhost/api/curlcoach/workspace?source=sample"),
+  );
+
+  expect(response.status).toBe(503);
+  expect(mocks.productionSource).not.toHaveBeenCalled();
+  expect(mocks.localRead).not.toHaveBeenCalled();
+});
+
+it("finishes only the actor's private coaching session for the selected game", async () => {
+  const payload = lifecycle("finish");
+  const response = await POST(request(payload));
+
+  expect(response.status).toBe(200);
+  expect(mocks.transition).toHaveBeenCalledWith(
+    {
+      organizationId: ids.organization,
+      gameId: ids.game,
+      actorUserId: ids.actor,
+    },
+    expect.objectContaining({ gameId: ids.game }),
+    "finish",
+    payload.requestId,
+    0,
+  );
+  expect(mocks.save).not.toHaveBeenCalled();
+});
+
+it("explicitly reopens only the actor private charting session", async () => {
+  mocks.transition.mockResolvedValue({
+    ...state(),
+    revision: 1,
+    status: "open",
+  });
+  const payload = lifecycle("reopen");
+  const response = await POST(request(payload));
+
+  expect(response.status).toBe(200);
+  expect(mocks.transition).toHaveBeenCalled();
+});
+
+it.each(["completed", "closed", "deleted"])(
+  "blocks mutations when the shared game is %s even if private coaching is open",
+  async (status) => {
+    const value = workspace();
+    value.event.games[0].status = status;
+    mocks.productionSource.mockResolvedValue(value);
+    const response = await POST(request(lifecycle("finish")));
+    expect(response.status).toBe(409);
+    expect(mocks.transition).not.toHaveBeenCalled();
+    expect(mocks.save).not.toHaveBeenCalled();
+  },
+);
+
+it("rejects a cross-event game before loading or mutating its private state", async () => {
+  const response = await POST(request(lifecycle("finish", ids.otherGame)));
+
+  expect(response.status).toBe(403);
+  expect(mocks.load).not.toHaveBeenCalled();
+  expect(mocks.transition).not.toHaveBeenCalled();
+});
+
+it("rejects cross-origin mutations before loading the production event", async () => {
+  const response = await POST(
+    request(lifecycle("finish"), "https://evil.example"),
+  );
+
+  expect(response.status).toBe(403);
+  expect(mocks.productionSource).not.toHaveBeenCalled();
+  expect(mocks.load).not.toHaveBeenCalled();
+  expect(mocks.transition).not.toHaveBeenCalled();
+});
+
+it("saves an actor-scoped eight-rock lineup and rejects malformed or unauthorized requests", async () => {
+  mocks.lineup.mockResolvedValue({
+    ...state(),
+    lineup: Array(8).fill("player-1"),
+    revision: 1,
+  });
+  const body = {
+    source: "streamer",
+    eventId: ids.event,
+    gameId: ids.game,
+    action: "set-lineup",
+    requestId: "00000000-0000-4000-8000-000000000006",
+    expectedRevision: 0,
+    lineup: Array(8).fill("player-1"),
+  };
+  const send = (value: object) =>
+    POST(
+      new Request("http://localhost/api/curlcoach/workspace", {
+        method: "POST",
+        headers: {
+          origin: "http://localhost",
+          "content-type": "application/json",
+        },
+        body: JSON.stringify(value),
+      }),
+    );
+  expect((await send(body)).status).toBe(200);
+  expect(mocks.lineup).toHaveBeenCalledWith(
+    {
+      organizationId: ids.organization,
+      gameId: ids.game,
+      actorUserId: ids.actor,
+    },
+    state(),
+    {
+      action: "set-lineup",
+      requestId: body.requestId,
+      expectedRevision: 0,
+      lineup: body.lineup,
+    },
+  );
+  expect((await send({ ...body, lineup: ["player-1"] })).status).toBe(400);
+  expect((await send({ ...body, gameId: ids.otherGame })).status).toBe(403);
+});

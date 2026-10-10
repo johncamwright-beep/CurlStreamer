@@ -441,14 +441,18 @@ function ScorerGame({ id }: { id: string }) {
       </header>
       <div className="scoring-columns">
         <div className="scoring-main">
-          <ScoringSummary game={game} />
-          <InGameRockColours
-            homeName={game.config.homeName}
-            awayName={game.config.awayName}
-            homeColor={game.config.homeColor}
-            awayColor={game.config.awayColor}
-            disabled={scoringLocked}
-            save={act}
+          <ScoringSummary
+            game={game}
+            actions={
+              <InGameRockColours
+                homeName={game.config.homeName}
+                awayName={game.config.awayName}
+                homeColor={game.config.homeColor}
+                awayColor={game.config.awayColor}
+                disabled={scoringLocked}
+                save={act}
+              />
+            }
           />
           {!score.hammer ? (
             <section

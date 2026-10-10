@@ -25,7 +25,7 @@ export function InGameRockColours({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   return (
-    <div>
+    <div className="relative">
       <button
         className="btn-secondary"
         disabled={disabled || busy}
@@ -39,7 +39,8 @@ export function InGameRockColours({
       </button>
       {open && (
         <form
-          className="mt-3 rounded-xl border border-slate-600 bg-slate-900 p-4"
+          className="absolute right-0 top-full z-40 mt-3 max-h-[70vh] overflow-auto rounded-xl border border-slate-600 bg-slate-900 p-4"
+          style={{ width: "min(420px, calc(100vw - 40px))" }}
           onSubmit={async (event) => {
             event.preventDefault();
             if (busy || disabled) return;

@@ -1,8 +1,15 @@
 import { deriveScore } from "@/lib/scoring";
 import type { GameState } from "@/lib/types";
 import { HammerIcon } from "./HammerIcon";
+import type { ReactNode } from "react";
 
-export function ScoringSummary({ game }: { game: GameState }) {
+export function ScoringSummary({
+  game,
+  actions,
+}: {
+  game: GameState;
+  actions?: ReactNode;
+}) {
   const score = deriveScore(game);
   const endCount = Math.max(game.config.scheduledEnds, score.currentEnd);
   return (
@@ -12,7 +19,10 @@ export function ScoringSummary({ game }: { game: GameState }) {
     >
       <div className="scoring-section-heading">
         <h2 id="match-score-heading">Match score</h2>
-        <span className="scoring-badge">End {score.currentEnd}</span>
+        <div className="flex items-center gap-2">
+          <span className="scoring-badge">End {score.currentEnd}</span>
+          {actions}
+        </div>
       </div>
       {(["home", "away"] as const).map((side) => (
         <div className="scoring-team-row" key={side}>

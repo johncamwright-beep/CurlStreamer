@@ -43,6 +43,39 @@ beforeEach(() => {
 });
 afterEach(() => vi.unstubAllEnvs());
 describe("M4 private preparation and cleanup API", () => {
+  it("starts with game-scoped organizer authority when the account session is absent", async () => {
+    mocks.verified.mockResolvedValue({ ok: false });
+    mocks.token.mockResolvedValue({ gameId: id, purpose: "organizer" });
+    mocks.goLive.mockResolvedValue({
+      desiredState: "live",
+      status: "prepared",
+      phase: "starting",
+    });
+    const result = await POST(
+      request(
+        { action: "go-live" },
+        {
+          authorization: "Bearer organizer-fixture",
+          origin: "https://pilot.example",
+        },
+      ),
+      context,
+    );
+    expect(result.status).toBe(200);
+    expect(mocks.goLive).toHaveBeenCalledWith(id, {
+      kind: "organizer",
+      token: "organizer-fixture",
+    });
+  });
+  it("reports a safe actionable YouTube failure without provider response details", async () => {
+    mocks.goLive.mockRejectedValue(Error("youtube_scope_missing"));
+    const result = await POST(request({ action: "go-live" }), context);
+    expect(result.status).toBe(503);
+    expect(await result.json()).toEqual({
+      code: "youtube_start_failed",
+      error: expect.stringContaining("permission to start broadcasts"),
+    });
+  });
   it("requires account and same-origin authority for explicit go-live", async () => {
     mocks.goLive.mockResolvedValue({
       desiredState: "live",

@@ -443,6 +443,7 @@ function ScorerGame({ id }: { id: string }) {
         <div className="scoring-main">
           <ScoringSummary
             game={game}
+            initialHammer={{ disabled: scoringLocked, select: saveHammer }}
             actions={
               <InGameRockColours
                 homeName={game.config.homeName}
@@ -454,39 +455,7 @@ function ScorerGame({ id }: { id: string }) {
               />
             }
           />
-          {!score.hammer ? (
-            <section
-              className="scoring-card scoring-entry"
-              aria-labelledby="initial-hammer-heading"
-            >
-              <div className="scoring-section-heading">
-                <h2 id="initial-hammer-heading" className="text-xl font-bold">
-                  Who has hammer in End 1?
-                </h2>
-                {scoringStatusBadge}
-              </div>
-              <div className="mt-4 grid grid-cols-2 gap-3">
-                {(["home", "away"] as const).map((side) => (
-                  <button
-                    key={side}
-                    disabled={scoringLocked}
-                    className="min-h-14 rounded-lg border-2 px-4 py-3 text-lg font-bold disabled:opacity-50"
-                    style={{
-                      borderColor:
-                        side === "home"
-                          ? game.config.homeColor
-                          : game.config.awayColor,
-                    }}
-                    onClick={() => saveHammer(side)}
-                  >
-                    {side === "home"
-                      ? game.config.homeName
-                      : game.config.awayName}
-                  </button>
-                ))}
-              </div>
-            </section>
-          ) : (
+          {score.hammer && (
             <section
               className="scoring-card scoring-entry"
               aria-labelledby="record-end-heading"

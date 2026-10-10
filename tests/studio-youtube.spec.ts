@@ -48,6 +48,39 @@ async function startupFixture(page: Page) {
     );
 }
 
+test("Studio authorizes Go live with the current game's organizer token without an account cookie", async ({
+  page,
+}) => {
+  const report = await startupFixture(page);
+  await page.addInitScript(() => {
+    const claims = btoa(
+      JSON.stringify({
+        purpose: "organizer",
+        gameId: "fixture-game",
+        exp: Date.now() / 1000 + 600,
+      }),
+    );
+    localStorage.setItem(
+      "curlcast-organizer-access-fixture-game",
+      `fixture.${claims}.signature`,
+    );
+  });
+  const headers: Array<string | undefined> = [];
+  await page.route("**/api/games/fixture-game/studio-m4", (r) => {
+    headers.push(r.request().headers().authorization);
+    return r.fulfill({
+      json: r.request().method() === "POST" ? { phase: "starting" } : {},
+    });
+  });
+  await page.goto("/startup-fixture");
+  await report();
+  await expect.poll(() => headers.length).toBeGreaterThanOrEqual(2);
+  expect(headers.every((value) => value?.startsWith("Bearer fixture."))).toBe(
+    true,
+  );
+  await expect(page.getByRole("alert")).toHaveCount(0);
+});
+
 test("Studio starts now despite delayed reception telemetry and retries without restarting the encoder", async ({
   page,
 }) => {

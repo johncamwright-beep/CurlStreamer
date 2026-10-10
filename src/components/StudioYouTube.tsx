@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { z } from "zod";
 import { requestStudioPresentation } from "@/lib/studio-presentation-client";
 import { WindowsStudioRequired } from "./WindowsStudioRequired";
+import { organizerAccessToken } from "@/lib/access-session";
 
 const stateSchema = z.object({
   gameId: z.string(),
@@ -75,15 +76,31 @@ export function StudioYouTube({ id }: { id: string }) {
     nextCheck.current = Date.now() + 10000;
     setGoingLive(true);
     setError("");
+    let failureMessage = "";
     try {
       const result = await fetch(`/api/games/${id}/studio-m4`, {
         method: "POST",
-        headers: { "content-type": "application/json" },
+        headers: {
+          "content-type": "application/json",
+          ...(organizerAccessToken(localStorage, id)
+            ? {
+                authorization: `Bearer ${organizerAccessToken(localStorage, id)}`,
+              }
+            : {}),
+        },
         body: JSON.stringify({ action: "go-live" }),
         signal: AbortSignal.any([attempt.signal, AbortSignal.timeout(30000)]),
       });
       if (!isCurrent() || confirmedLive.current) return;
       if (!result.ok) {
+        const failure = z
+          .object({
+            error: z.string().min(1).max(300),
+            code: z.literal("youtube_start_failed"),
+          })
+          .safeParse(await result.json().catch(() => null));
+        if (failure.success && result.status === 503)
+          failureMessage = failure.data.error;
         // A session can still be settling after encoder startup. A 409 is
         // recoverable; authority/input failures require operator attention.
         if ([400, 401, 402, 403].includes(result.status)) halted.current = true;
@@ -114,9 +131,10 @@ export function StudioYouTube({ id }: { id: string }) {
     } catch {
       if (!isCurrent() || confirmedLive.current) return;
       setError(
-        halted.current
-          ? "YouTube needs attention. Check YouTube settings. Your game’s watch link is retained."
-          : "YouTube status is temporarily unavailable. Retrying automatically…",
+        failureMessage ||
+          (halted.current
+            ? "YouTube needs attention. Check YouTube settings. Your game’s watch link is retained."
+            : "YouTube status is temporarily unavailable. Retrying automatically…"),
       );
       nextCheck.current =
         Date.now() +
@@ -157,6 +175,11 @@ export function StudioYouTube({ id }: { id: string }) {
       try {
         const response = await fetch(`/api/games/${id}/studio-m4`, {
           cache: "no-store",
+          headers: organizerAccessToken(localStorage, id)
+            ? {
+                authorization: `Bearer ${organizerAccessToken(localStorage, id)}`,
+              }
+            : {},
           signal: controller.signal,
         });
         if (!response.ok) return;

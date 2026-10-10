@@ -303,17 +303,46 @@ export function StudioYouTube({ id }: { id: string }) {
       aria-label="YouTube broadcast"
     >
       <div className="scoring-section-heading">
-        <div>
-          <h2 className="flex items-center gap-2">
-            <svg width="32" height="24" viewBox="0 0 32 24" aria-hidden="true">
-              <rect x="1" y="2" width="30" height="20" rx="6" fill="#ff0033" />
-              <path d="m13 7 9 5-9 5z" fill="white" />
-            </svg>
-            YouTube
-          </h2>
+        <h2 className="flex items-center gap-2">
+          <svg width="32" height="24" viewBox="0 0 32 24" aria-hidden="true">
+            <rect x="1" y="2" width="30" height="20" rx="6" fill="#ff0033" />
+            <path d="m13 7 9 5-9 5z" fill="white" />
+          </svg>
+          YouTube
+        </h2>
+        <div className="flex min-w-0 items-center gap-2">
+          <strong
+            role="status"
+            className={state?.live ? "text-red-400" : "text-slate-300"}
+          >
+            {!state
+              ? "Status unavailable"
+              : held
+                ? state.live
+                  ? "● LIVE · Paused"
+                  : "Paused · Sending card"
+                : state.live
+                  ? "● LIVE"
+                  : state.lastLiveAgeMs != null &&
+                      state.lastLiveAgeMs < 30000 &&
+                      state.outputActive &&
+                      state.streaming === "armed"
+                    ? "LIVE last confirmed · Rechecking…"
+                    : state.streaming === "paused"
+                      ? "Disconnected"
+                      : state?.receiving
+                        ? "Receiving video"
+                        : watchingOutput
+                          ? state.outputActive
+                            ? "Sending video · Checking YouTube…"
+                            : "Checking status…"
+                          : active
+                            ? "Connecting…"
+                            : "Not live"}
+          </strong>
           {state?.live && (
             <span
-              className="block whitespace-nowrap text-xs text-slate-300"
+              className="min-w-0 truncate text-xs text-slate-300"
               aria-live="polite"
               title="YouTube live viewer count. Updates about once a minute."
             >
@@ -323,35 +352,6 @@ export function StudioYouTube({ id }: { id: string }) {
             </span>
           )}
         </div>
-        <strong
-          role="status"
-          className={state?.live ? "text-red-400" : "text-slate-300"}
-        >
-          {!state
-            ? "Status unavailable"
-            : held
-              ? state.live
-                ? "● LIVE · Paused"
-                : "Paused · Sending card"
-              : state.live
-                ? "● LIVE"
-                : state.lastLiveAgeMs != null &&
-                    state.lastLiveAgeMs < 30000 &&
-                    state.outputActive &&
-                    state.streaming === "armed"
-                  ? "LIVE last confirmed · Rechecking…"
-                  : state.streaming === "paused"
-                    ? "Disconnected"
-                    : state?.receiving
-                      ? "Receiving video"
-                      : watchingOutput
-                        ? state.outputActive
-                          ? "Sending video · Checking YouTube…"
-                          : "Checking status…"
-                        : active
-                          ? "Connecting…"
-                          : "Not live"}
-        </strong>
       </div>
       <div className="studio-youtube-actions flex flex-wrap gap-2">
         <button

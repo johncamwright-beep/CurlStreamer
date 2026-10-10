@@ -831,18 +831,18 @@
   font-size: 12px;
 }
 .scoring-desktop .studio-youtube .scoring-section-heading {
-  flex-wrap: nowrap;
-  row-gap: 0;
+  display: block;
 }
 .scoring-desktop .studio-youtube .scoring-section-heading h2 {
   flex-shrink: 0;
 }
-.scoring-desktop .studio-youtube .scoring-section-heading > strong {
+.scoring-desktop .studio-youtube .scoring-section-heading strong {
   min-width: 0;
-  margin-left: auto;
-  overflow-wrap: anywhere;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   font-size: 12px;
-  text-align: right;
+  line-height: 16px;
 }
 .studio-device-actions {
   display: grid;

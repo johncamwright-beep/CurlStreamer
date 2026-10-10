@@ -340,14 +340,6 @@ export function StudioYouTube({ id }: { id: string }) {
                           : "Not live"}
         </strong>
       </div>
-      {state?.live && (
-        <p className="mt-2 text-sm" aria-live="polite">
-          {state.concurrentViewers == null
-            ? "Live viewers unavailable"
-            : `${state.concurrentViewers.toLocaleString()} watching now`}
-          <span className="text-slate-400"> · Updates about once a minute</span>
-        </p>
-      )}
       <div className="studio-youtube-actions flex flex-wrap gap-2">
         <button
           className="btn"
@@ -441,6 +433,17 @@ export function StudioYouTube({ id }: { id: string }) {
           >
             Watch on YouTube
           </a>
+          {state?.live && (
+            <span
+              className="shrink-0 whitespace-nowrap text-xs text-slate-300"
+              aria-live="polite"
+              title="YouTube live viewer count. Updates about once a minute."
+            >
+              {state.concurrentViewers == null
+                ? "Viewers unavailable"
+                : `${state.concurrentViewers.toLocaleString()} watching now`}
+            </span>
+          )}
           <button
             className="btn-secondary"
             onClick={async () => {

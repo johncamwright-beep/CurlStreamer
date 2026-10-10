@@ -133,10 +133,20 @@ export async function goLiveM4Session(
   credential: CompletionCredential,
 ) {
   if (!m4Configuration()) throw Error("m4_provider_unavailable");
-  const read = async () =>
-    sessionSchema.parse(
+  const read = async () => {
+    const session = sessionSchema.parse(
       await rpc("get_m4_broadcast_session", await actor(gameId, credential)),
     );
+    // The read RPC intentionally omits game config (unlike preparation).
+    // Resolve visibility from the saved game instead of defaulting Public
+    // broadcasts to Unlisted. Read it again for the pre-transition fence.
+    const game = await getGame(gameId);
+    if (!game) throw Object.assign(Error("m4_not_ready"), { code: "55000" });
+    return sessionSchema.parse({
+      ...session,
+      visibility: game.config.youtubeVisibility ?? "unlisted",
+    });
+  };
   const initial = await read();
   await requireTeamBroadcastAccess(initial.organizationId);
   if (

@@ -911,6 +911,30 @@
   gap: 10px;
   min-width: 0;
 }
+.scoring-camera-adjustments > summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  cursor: pointer;
+  list-style: none;
+  font-weight: 600;
+}
+.scoring-camera-adjustments > summary::-webkit-details-marker {
+  display: none;
+}
+.scoring-camera-adjustments > summary > span {
+  width: 24px;
+  text-align: center;
+  font-size: 24px;
+}
+.scoring-camera-adjustments .camera-controls-collapse,
+.scoring-camera-adjustments[open] .camera-controls-expand {
+  display: none;
+}
+.scoring-camera-adjustments[open] .camera-controls-collapse {
+  display: inline;
+}
 .scoring-preview-panel > section {
   border-radius: 12px;
   border: 1px solid #2a3b50;

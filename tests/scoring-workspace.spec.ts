@@ -360,6 +360,22 @@ test("desktop game day keeps scoring primary and settings available on demand", 
     preview.getByRole("img", { name: "Actual Studio program output" }),
   ).toBeVisible();
   await expect(page.getByRole("link", { name: /^Broadcast:/ })).toHaveCount(0);
+  const cameraControls = page.getByLabel("Camera controls", { exact: true });
+  await expect(
+    page.getByRole("button", { name: "Camera 1 zoom in" }),
+  ).toBeHidden();
+  const previewPosition = () =>
+    preview.evaluate((el) => {
+      const rect = el.getBoundingClientRect();
+      return {
+        x: rect.x + scrollX,
+        y: rect.y + scrollY,
+        width: rect.width,
+        height: rect.height,
+      };
+    });
+  const previewBeforeSettings = await previewPosition();
+  await cameraControls.click();
   await expect(
     page.getByRole("button", { name: "Camera 1 zoom in" }),
   ).toBeVisible();
@@ -371,6 +387,11 @@ test("desktop game day keeps scoring primary and settings available on demand", 
       .getByTestId("camera-zoom-rail")
       .evaluate((el) => getComputedStyle(el).position),
   ).toBe("static");
+  await cameraControls.click();
+  await expect(
+    page.getByRole("button", { name: "Camera 1 zoom in" }),
+  ).toBeHidden();
+  expect(await previewPosition()).toEqual(previewBeforeSettings);
   const previewBox = (await preview.boundingBox())!;
   expect(previewBox.width / previewBox.height).toBeCloseTo(16 / 9, 1);
   if (info.project.name !== "mobile") {
@@ -673,6 +694,7 @@ test("Studio inline zoom sends camera commands without changing the score", asyn
     },
   };
   await page.reload();
+  await page.getByLabel("Camera controls", { exact: true }).click();
   await page
     .getByRole("button", { name: "Camera 1 zoom in", exact: true })
     .click();

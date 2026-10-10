@@ -723,7 +723,21 @@ function ScorerGame({ id }: { id: string }) {
               >
                 <h2 className="scoring-eyebrow">Program preview</h2>
                 <StudioProgramPreview key={id} gameId={id} embedded />
-                <CameraZoomControls game={game} act={act} />
+                <details className="scoring-camera-adjustments">
+                  <summary aria-label="Camera controls">
+                    <span className="camera-controls-expand" aria-hidden="true">
+                      +
+                    </span>
+                    <span
+                      className="camera-controls-collapse"
+                      aria-hidden="true"
+                    >
+                      −
+                    </span>
+                    Camera controls
+                  </summary>
+                  <CameraZoomControls game={game} act={act} />
+                </details>
               </section>
             ) : (
               <>

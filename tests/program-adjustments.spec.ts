@@ -77,7 +77,7 @@ test("portrait pan, external mic delay and slower sponsors save independent sett
     .getByRole("combobox", { name: "Camera layout" })
     .selectOption("stacked");
   await expect(left).toHaveCount(0);
-  await page.getByText("Carousel settings", { exact: true }).click();
+  await page.getByLabel("Carousel settings", { exact: true }).click();
   await page.getByLabel("Seconds per sponsor").selectOption("30");
   await expect(page.getByLabel("Seconds per sponsor")).toHaveValue("30");
 });

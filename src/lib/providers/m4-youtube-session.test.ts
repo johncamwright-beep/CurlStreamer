@@ -589,6 +589,9 @@ describe("M4 provider orchestration", () => {
 });
 
 describe("M4 explicit automatic go-live", () => {
+  beforeEach(() => {
+    mocks.game.mockResolvedValue({ config: { youtubeVisibility: "unlisted" } });
+  });
   const prepared = () =>
     session({
       status: "prepared",
@@ -597,7 +600,9 @@ describe("M4 explicit automatic go-live", () => {
       watchUrl,
     });
   it("observes Public against saved session visibility", async () => {
-    state({ ...prepared(), visibility: "public" });
+    // Production get_m4_broadcast_session omits visibility; preparation does not.
+    state({ ...prepared(), visibility: undefined });
+    mocks.game.mockResolvedValue({ config: { youtubeVisibility: "public" } });
     mocks.observe.mockResolvedValue({
       streamStatus: "active",
       broadcastStatus: "ready",
@@ -613,6 +618,9 @@ describe("M4 explicit automatic go-live", () => {
     mocks.rpc
       .mockResolvedValueOnce({ data: prepared() })
       .mockResolvedValueOnce({ data: { ...prepared(), visibility: "public" } });
+    mocks.game
+      .mockResolvedValueOnce({ config: { youtubeVisibility: "unlisted" } })
+      .mockResolvedValueOnce({ config: { youtubeVisibility: "public" } });
     mocks.observe.mockResolvedValue({
       streamStatus: "active",
       broadcastStatus: "ready",
@@ -691,7 +699,7 @@ describe("M4 explicit automatic go-live", () => {
     );
     expect(mocks.broadcast).not.toHaveBeenCalled();
     expect(mocks.stream).not.toHaveBeenCalled();
-    expect(mocks.game).not.toHaveBeenCalled();
+    expect(mocks.game).toHaveBeenCalledTimes(4);
   });
   it("rechecks provider state and retains the watch page when a live transition needs retrying", async () => {
     state(prepared());

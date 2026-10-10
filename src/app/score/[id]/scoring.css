@@ -831,7 +831,7 @@
   font-size: 12px;
 }
 .scoring-desktop .studio-youtube .scoring-section-heading {
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   row-gap: 0;
 }
 .scoring-desktop .studio-youtube .scoring-section-heading h2 {

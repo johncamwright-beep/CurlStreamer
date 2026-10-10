@@ -303,13 +303,26 @@ export function StudioYouTube({ id }: { id: string }) {
       aria-label="YouTube broadcast"
     >
       <div className="scoring-section-heading">
-        <h2 className="flex items-center gap-2">
-          <svg width="32" height="24" viewBox="0 0 32 24" aria-hidden="true">
-            <rect x="1" y="2" width="30" height="20" rx="6" fill="#ff0033" />
-            <path d="m13 7 9 5-9 5z" fill="white" />
-          </svg>
-          YouTube
-        </h2>
+        <div>
+          <h2 className="flex items-center gap-2">
+            <svg width="32" height="24" viewBox="0 0 32 24" aria-hidden="true">
+              <rect x="1" y="2" width="30" height="20" rx="6" fill="#ff0033" />
+              <path d="m13 7 9 5-9 5z" fill="white" />
+            </svg>
+            YouTube
+          </h2>
+          {state?.live && (
+            <span
+              className="block whitespace-nowrap text-xs text-slate-300"
+              aria-live="polite"
+              title="YouTube live viewer count. Updates about once a minute."
+            >
+              {state.concurrentViewers == null
+                ? "Viewers unavailable"
+                : `${state.concurrentViewers.toLocaleString()} watching now`}
+            </span>
+          )}
+        </div>
         <strong
           role="status"
           className={state?.live ? "text-red-400" : "text-slate-300"}
@@ -433,17 +446,6 @@ export function StudioYouTube({ id }: { id: string }) {
           >
             Watch on YouTube
           </a>
-          {state?.live && (
-            <span
-              className="shrink-0 whitespace-nowrap text-xs text-slate-300"
-              aria-live="polite"
-              title="YouTube live viewer count. Updates about once a minute."
-            >
-              {state.concurrentViewers == null
-                ? "Viewers unavailable"
-                : `${state.concurrentViewers.toLocaleString()} watching now`}
-            </span>
-          )}
           <button
             className="btn-secondary"
             onClick={async () => {

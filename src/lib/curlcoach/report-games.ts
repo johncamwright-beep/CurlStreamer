@@ -10,6 +10,7 @@ import {
 import type { CoachEvent } from "./event";
 import type { Evidence } from "./reports";
 import type { ReportBasis } from "./report-counts";
+import { technicalSummary, technicalEvidence } from "./technical";
 export type ReportGame = {
   key: string;
   title: string;
@@ -84,6 +85,16 @@ export function playerReportGames(event: CoachEvent, playerId: string) {
         ),
       );
     };
+    const observations = technicalEvidence(
+      technicalSummary(shots),
+      `${key}-technical`,
+    );
+    evidence.push(
+      ...observations.map((e) => ({
+        ...e,
+        label: `Game ${index + 1}: ${e.label}`,
+      })),
+    );
     return {
       key,
       title: g.label || `Game ${index + 1}`,
@@ -120,6 +131,24 @@ export function playerReportGames(event: CoachEvent, playerId: string) {
           title: "Results and miss patterns · share of recorded labels",
           metrics: distribution("deficiency", deficiencies),
         },
+        ...(observations.length
+          ? [
+              {
+                title: "Delivery observations",
+                metrics: observations
+                  .filter(
+                    (e) =>
+                      !e.id.endsWith("-share") || (e.basis?.numerator ?? 0) > 0,
+                  )
+                  .map((e) => ({
+                    id: e.id,
+                    label: e.label,
+                    value: e.value === "Not measured" ? "—" : e.value,
+                    basis: e.basis,
+                  })),
+              },
+            ]
+          : []),
       ],
     };
   });

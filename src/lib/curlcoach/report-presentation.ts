@@ -32,12 +32,14 @@ export function reportSections(report: SavedReport) {
     { title: "Where to improve", findings: report.narrative.priorities },
     {
       title: "Next practice",
-      findings: report.misses?.practice.length
-        ? report.misses.practice.map((p) => ({
-            text: `${p.title} (focus: ${p.target}): ${p.setup} Check progress: ${p.measure}`,
-            evidence: [`miss-${p.tag}`],
-          }))
-        : report.narrative.practice,
+      findings:
+        report.misses?.practice.length &&
+        !report.technical?.some((g) => g.recorded > 0)
+          ? report.misses.practice.map((p) => ({
+              text: `${p.title} (focus: ${p.target}): ${p.setup} Check progress: ${p.measure}`,
+              evidence: [`miss-${p.tag}`],
+            }))
+          : report.narrative.practice,
     },
   ].map((section) => ({
     ...section,

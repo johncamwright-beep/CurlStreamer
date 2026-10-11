@@ -42,6 +42,22 @@ export const deficiencies = [
   "Management",
 ] as const;
 export const reviews = ["Team", "Player", "Strategy", "Highlight"] as const;
+export const lines = ["On broom", "Wide", "Tight"] as const;
+export const releases = [
+  "Set",
+  "Soft",
+  "Neutral",
+  "Dump",
+  "Pop",
+  "Over press",
+  "Pull back",
+] as const;
+export const technicals = [
+  "Understep",
+  "Overstep",
+  "Fishtail",
+  "Misaligned",
+] as const;
 export const exclusions = ["Pick", "Burnt rock", "Throw-through"] as const;
 export const shotSchema = z
   .object({
@@ -54,6 +70,10 @@ export const shotSchema = z
     execution: z.enum(executions).nullable(),
     grade: z.number().int().min(0).max(5).nullable(),
     deficiency: z.enum(deficiencies).nullable(),
+    // Optional for historical events; absent and null both mean not recorded.
+    line: z.enum(lines).nullable().optional(),
+    release: z.enum(releases).nullable().optional(),
+    technical: z.enum(technicals).nullable().optional(),
     review: z.enum(reviews).nullable(),
     excluded: z.enum(exclusions).nullable(),
     note: z.string().trim().max(1000),

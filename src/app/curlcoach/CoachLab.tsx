@@ -7,6 +7,9 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   currentShots,
   deficiencies,
+  lines,
+  releases,
+  technicals,
   exclusions,
   executions,
   report,
@@ -431,7 +434,16 @@ export default function CoachLab({
     }
   }
   function choose(
-    field: "position" | "type" | "turn" | "execution" | "deficiency" | "review",
+    field:
+      | "position"
+      | "type"
+      | "turn"
+      | "execution"
+      | "deficiency"
+      | "line"
+      | "release"
+      | "technical"
+      | "review",
     label: string,
     options: readonly string[],
   ) {
@@ -715,6 +727,9 @@ export default function CoachLab({
                       </select>
                     </label>
                     {choose("deficiency", "Deficiency", deficiencies)}
+                    {choose("line", "Line", lines)}
+                    {choose("release", "Release", releases)}
+                    {choose("technical", "Technical", technicals)}
                     {choose("review", "Review category", reviews)}
                     <label>
                       Excluded attempt

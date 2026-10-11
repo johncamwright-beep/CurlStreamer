@@ -40,13 +40,54 @@ test("scoped local lab charts, corrects and audits a synthetic shot", async ({
     .getByRole("combobox", { name: "Shot type", exact: true })
     .selectOption("Draw");
   await page.getByLabel("Numeric grade").selectOption("5");
+  for (const field of ["Line", "Release", "Technical"]) {
+    await expect(
+      page.getByRole("combobox", { name: field, exact: true }),
+    ).toHaveValue("");
+  }
+  await page
+    .getByRole("combobox", { name: "Line", exact: true })
+    .selectOption("Wide");
+  await page
+    .getByRole("combobox", { name: "Release", exact: true })
+    .selectOption("Soft");
+  await page
+    .getByRole("combobox", { name: "Technical", exact: true })
+    .selectOption("Understep");
   await page.getByRole("button", { name: "Save attempt", exact: true }).click();
   await expect(page.locator(".coach-scoring [role=status]")).toHaveText(
     "Attempt saved. Report updated.",
   );
   const attempt = page.locator(".coach-attempt").filter({ hasText: "End 20" });
   await expect(attempt).toContainText("5/5");
+  await page.getByRole("button", { name: "Shot Tracker menu" }).click();
+  await page
+    .getByRole("link", { name: "Technical Review", exact: true })
+    .click();
+  await expect(
+    page.getByRole("heading", { name: "Technical Review", exact: true }),
+  ).toBeVisible();
+  await expect(
+    page
+      .getByRole("region", { name: "Line", exact: true })
+      .getByRole("row", { name: /Wide/ }),
+  ).toContainText("100.0%");
+  await page.screenshot({
+    path: `test-results/technical-review-${testInfo.project.name}.png`,
+    fullPage: true,
+  });
+  await page.getByRole("button", { name: "Shot Tracker menu" }).click();
+  await page.getByRole("link", { name: "Charting", exact: true }).click();
   await attempt.getByRole("button", { name: "Correct", exact: true }).click();
+  await expect(
+    page.getByRole("combobox", { name: "Line", exact: true }),
+  ).toHaveValue("Wide");
+  await expect(
+    page.getByRole("combobox", { name: "Release", exact: true }),
+  ).toHaveValue("Soft");
+  await expect(
+    page.getByRole("combobox", { name: "Technical", exact: true }),
+  ).toHaveValue("Understep");
   await page.getByRole("button", { name: "Go to current shot" }).click();
   await expect(
     page.getByRole("combobox", { name: "Stone", exact: true }),
@@ -147,6 +188,11 @@ test("scoped local lab charts, corrects and audits a synthetic shot", async ({
     page.getByRole("combobox", { name: "Stone", exact: true }),
   ).toHaveValue("2");
   await expect(page.getByLabel("Numeric grade")).toHaveValue("");
+  for (const field of ["Line", "Release", "Technical"]) {
+    await expect(
+      page.getByRole("combobox", { name: field, exact: true }),
+    ).toHaveValue("");
+  }
   await expect(page.getByLabel("Flag shot for review")).toHaveValue("no");
   await expect(
     page.getByRole("region", { name: "Game review summary" }),

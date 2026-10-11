@@ -255,6 +255,28 @@ export async function buildReportPDF(report: SavedReport, eventName: string) {
       );
     }
   }
+  if (report.technical?.some((g) => g.recorded > 0)) {
+    heading("Technical review");
+    text(
+      "Each share uses observations recorded for that field. Miss rates use classified execution outcomes with that observation. Missing labels are not successful deliveries.",
+      8,
+      false,
+      muted,
+    );
+    table(
+      ["Observation", "Share of recorded", "Miss rate"],
+      report.technical.flatMap((group) =>
+        group.rows
+          .filter((r) => r.count > 0)
+          .map((r) => [
+            `${group.title}: ${r.label}`,
+            countPercent(r.percent, r.count, group.recorded),
+            countPercent(r.missPercent, r.misses, r.classified),
+          ]),
+      ),
+      [54, 62, 62],
+    );
+  }
   for (const section of sections.slice(1)) {
     heading(section.title);
     section.findings.forEach((f, i) => {

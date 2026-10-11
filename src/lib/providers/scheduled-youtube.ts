@@ -38,6 +38,13 @@ export async function provisionScheduledYouTubeBroadcast(
     thumbnail?: ScheduledThumbnail;
   },
 ) {
+  // The watch-page countdown leads the game by 30 minutes. Derive it from
+  // the game instant on every create/update/retry; never shift game metadata
+  // or thumbnail times, and never subtract from an existing YouTube time.
+  const youtubeStart = new Date(
+    Date.parse(z.iso.datetime({ offset: true }).parse(values.scheduledStart)) -
+      30 * 60_000,
+  ).toISOString();
   const db = createAdminSupabaseClient();
   // Do this before claiming provider creation intent. A disconnected channel
   // is retryable and must not fence future creation as an uncertain insert.
@@ -115,7 +122,7 @@ export async function provisionScheduledYouTubeBroadcast(
           videoId,
           values.gameId,
           values.title,
-          values.scheduledStart,
+          youtubeStart,
           visibility,
           fetch,
           credentials.channel_id,
@@ -153,7 +160,7 @@ export async function provisionScheduledYouTubeBroadcast(
         title: values.title,
         visibility,
         manualLifecycle: true,
-        scheduledStartTime: values.scheduledStart,
+        scheduledStartTime: youtubeStart,
       },
       scheduledFetch,
       action === "run",

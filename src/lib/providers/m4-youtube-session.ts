@@ -262,7 +262,11 @@ async function failed(
   if (errorCode !== "m4_operation_fenced") {
     try {
       return safe(
-        await record(s, "failed", { ...values, errorCode, uncertain: true }),
+        await record(s, "failed", {
+          ...values,
+          errorCode,
+          uncertain: values.uncertain ?? true,
+        }),
       );
     } catch {
       /* A newer owner or terminal transition controls the durable state. */
@@ -311,12 +315,6 @@ export async function prepareM4Session(
     }
     const token = await accessToken(s);
     const allowBroadcast = (s.youtubeBroadcastCreateState ?? "none") === "none";
-    creating = "broadcast";
-    s = await record(s, "preparing", {
-      providerStep: "m4-broadcast-intent",
-      uncertain: true,
-      ...(allowBroadcast ? { youtubeBroadcastCreateState: "intent" } : {}),
-    });
     const broadcast = await findOrCreateYouTubeBroadcast(
       {
         accessToken: token,
@@ -327,6 +325,16 @@ export async function prepareM4Session(
       },
       fetch,
       allowBroadcast,
+      async () => {
+        // Discovery is read-only. Persist and fence the intent only when an
+        // insert is actually permitted, immediately before sending it.
+        s = await record(s, "preparing", {
+          providerStep: "m4-broadcast-intent",
+          uncertain: true,
+          youtubeBroadcastCreateState: "intent",
+        });
+        creating = "broadcast";
+      },
     );
     s = await record(s, "preparing", {
       youtubeBroadcastId: broadcast.id,
@@ -338,16 +346,18 @@ export async function prepareM4Session(
     if (!["created", "ready"].includes(broadcast.lifeCycleStatus ?? ""))
       throw Error("youtube_broadcast_terminal");
     const allowStream = (s.youtubeStreamCreateState ?? "none") === "none";
-    creating = "stream";
-    s = await record(s, "preparing", {
-      providerStep: "m4-stream-intent",
-      uncertain: true,
-      ...(allowStream ? { youtubeStreamCreateState: "intent" } : {}),
-    });
     const stream = await findOrCreateYouTubeStream(
       { accessToken: token, sessionKey, title },
       fetch,
       allowStream,
+      async () => {
+        s = await record(s, "preparing", {
+          providerStep: "m4-stream-intent",
+          uncertain: true,
+          youtubeStreamCreateState: "intent",
+        });
+        creating = "stream";
+      },
     );
     s = await record(s, "preparing", {
       youtubeStreamId: stream.id,
@@ -362,6 +372,7 @@ export async function prepareM4Session(
   } catch (error) {
     return failed(s, error, gameId, credential, {
       providerStep: "m4-prepare-uncertain",
+      uncertain: creating !== undefined,
       ...(creating === "broadcast"
         ? { youtubeBroadcastCreateState: "uncertain" }
         : {}),

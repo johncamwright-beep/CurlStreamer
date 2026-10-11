@@ -137,6 +137,12 @@ internal static class WorkspacePolicyTests
         foreach (var value in new[] { "https://attacker.example/api/settings/youtube/oauth/start", origin + "/api/settings/youtube/oauth/start?redirect=evil", origin + "/api/settings/youtube/oauth/start#secret", origin + "/api/settings/youtube/oauth/callback", "https://user@studio.example/api/settings/youtube/oauth/start" })
             Assert(!WorkspacePolicy.YouTubeAccountConnection(value, origin));
         Assert(WorkspacePolicy.YouTubeFailure("youtube_reconnect_required").Contains("regular browser"));
+        Assert(WorkspacePolicy.YouTubeFailure("youtube_quota_exceeded").Contains("API limit"));
+        Assert(WorkspacePolicy.YouTubeFailure("youtube_scope_missing").Contains("approve"));
+        Assert(WorkspacePolicy.YouTubeFailure("youtube_live_permission_blocked").Contains("blocking"));
+        Assert(WorkspacePolicy.YouTubeFailure("youtube_live_streaming_not_enabled").Contains("Enable live streaming"));
+        Assert(WorkspacePolicy.YouTubeFailure("youtube_provider_unavailable").Contains("could not be reached"));
+        Assert(WorkspacePolicy.YouTubeFailure("youtube_provider_rejected").Contains("rejected"));
         Assert(!WorkspacePolicy.YouTubeFailure("secret-token").Contains("secret-token"));
         Assert(WorkspacePolicy.RestartYouTube("stopped", "stopped"));
         Assert(WorkspacePolicy.ExternalYouTube("https://www.youtube.com/watch?v=abcdefgh_-1"));

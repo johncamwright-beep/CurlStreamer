@@ -150,6 +150,19 @@ internal static class WorkspacePolicy
                 return "The previous Studio connection is still expiring. Wait up to 35 seconds, then reconnect to this game's saved YouTube link.";
             case "youtube_reconnect_required":
                 return "Reconnect your existing YouTube channel in Account & Settings > YouTube Settings using your regular browser, then try again.";
+            case "youtube_scope_missing":
+                return "Google has not granted permission to manage broadcasts. Reconnect your saved channel in your regular browser and approve the requested YouTube permissions.";
+            case "youtube_quota_exceeded":
+                return "YouTube's API limit has been reached. Your saved channel and game are kept. Wait for API access to become available before retrying; reconnecting the channel will not restore quota.";
+            case "youtube_live_permission_blocked":
+                return "YouTube is blocking live broadcasts on this channel. Check its live streaming permissions in YouTube Studio.";
+            case "youtube_live_streaming_not_enabled":
+                return "Enable live streaming on the connected YouTube channel in YouTube Studio before broadcasting.";
+            case "youtube_provider_unavailable":
+            case "m4_provider_unavailable":
+                return "YouTube could not be reached. Wait briefly before retrying this broadcast. Your saved channel and game are kept.";
+            case "youtube_provider_rejected":
+                return "Google rejected the broadcast request. Test the saved channel in Account & Settings > YouTube Settings for details.";
             case "subscription_required":
                 return "Broadcast access is required. Open Account & Settings > Trial & subscription.";
             case "broadcast_operation_uncertain":

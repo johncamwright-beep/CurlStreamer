@@ -69,13 +69,26 @@ it("requires fresh independent native and provider evidence and invalidates it o
     state: "armed",
     liveConfirmed: true,
   });
-  clock = 11000; // No new sample: a stale success must become unknown.
+  // Native evidence expires after six seconds, independently of the slower
+  // provider cadence. Reading the snapshot must not refresh either sample.
+  clock = 11000;
+  expect(stream.snapshot()).toMatchObject({
+    localOutput: { state: "unknown" },
+    liveConfirmed: false,
+  });
+  expect(stream.snapshot().provider).toMatchObject({
+    streamStatus: "active",
+    broadcastStatus: "live",
+    broadcastLive: true,
+  });
+  expect(stream.snapshot().lastLiveAgeMs).toBe(11000);
+  clock = 45000;
   expect(stream.snapshot()).toMatchObject({
     localOutput: { state: "unknown" },
     liveConfirmed: false,
   });
   expect(stream.snapshot().provider).toBeUndefined();
-  expect(stream.snapshot().lastLiveAgeMs).toBe(11000);
+  expect(stream.snapshot().lastLiveAgeMs).toBe(45000);
   await stream.stop();
   expect(stream.snapshot()).toMatchObject({
     state: "stopped",

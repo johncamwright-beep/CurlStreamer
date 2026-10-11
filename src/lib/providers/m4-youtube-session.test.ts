@@ -32,7 +32,8 @@ vi.mock("@/lib/game-completion", () => ({
 vi.mock("./youtube-credential-vault", () => ({
   decryptYouTubeRefreshToken: mocks.decrypt,
 }));
-vi.mock("./youtube", () => ({
+vi.mock("./youtube", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./youtube")>()),
   refreshYouTubeAccessToken: mocks.refresh,
   youtubeConfigurationStatus: mocks.configuration,
   loadOwnedYouTubeChannel: mocks.channel,
@@ -141,15 +142,21 @@ beforeEach(() => {
     title: "Original",
   });
   mocks.verifyRetirement.mockResolvedValue(undefined);
-  mocks.broadcast.mockResolvedValue({
-    id: "broadcast-id",
-    watchUrl,
-    lifeCycleStatus: "ready",
-  });
-  mocks.stream.mockResolvedValue({
-    id: "stream-id",
-    rtmpUrl: "rtmp://ingest/private-stream-key",
-  });
+  mocks.broadcast.mockImplementation(
+    async (_values, _fetcher, allowCreate, onBeforeInsert) => {
+      if (allowCreate) await onBeforeInsert?.();
+      return { id: "broadcast-id", watchUrl, lifeCycleStatus: "ready" };
+    },
+  );
+  mocks.stream.mockImplementation(
+    async (_values, _fetcher, allowCreate, onBeforeInsert) => {
+      if (allowCreate) await onBeforeInsert?.();
+      return {
+        id: "stream-id",
+        rtmpUrl: "rtmp://ingest/private-stream-key",
+      };
+    },
+  );
 });
 afterEach(() => {
   vi.unstubAllEnvs();
@@ -166,6 +173,7 @@ describe("M4 provider orchestration", () => {
       expect.objectContaining({ visibility: "public", manualLifecycle: true }),
       expect.any(Function),
       true,
+      expect.any(Function),
     );
   });
   it("fences a saved visibility change before provider preparation", async () => {
@@ -222,8 +230,14 @@ describe("M4 provider orchestration", () => {
       }),
       fetch,
       true,
+      expect.any(Function),
     );
-    expect(mocks.stream).toHaveBeenCalledWith(expect.any(Object), fetch, true);
+    expect(mocks.stream).toHaveBeenCalledWith(
+      expect.any(Object),
+      fetch,
+      true,
+      expect.any(Function),
+    );
     expect(mocks.bind).toHaveBeenCalledWith(
       "private-access",
       "broadcast-id",
@@ -275,32 +289,41 @@ describe("M4 provider orchestration", () => {
       expect.any(Object),
       fetch,
       false,
+      expect.any(Function),
     );
-    expect(mocks.stream).toHaveBeenCalledWith(expect.any(Object), fetch, false);
+    expect(mocks.stream).toHaveBeenCalledWith(
+      expect.any(Object),
+      fetch,
+      false,
+      expect.any(Function),
+    );
   });
-  it.each(["m4-broadcast-intent", "m4-broadcast-ready", "m4-stream-ready"])(
-    "stops after losing its fence at %s",
-    async (step) => {
-      state(session(), (p) => p.p_provider_step === step);
-      const result = await prepareM4Session(gameId, credential);
-      expect(result).toMatchObject({
-        status: "stopping",
-        desiredState: "stopped",
-      });
-      expect(mocks.bind).not.toHaveBeenCalled();
-      if (step === "m4-broadcast-intent")
-        expect(mocks.broadcast).not.toHaveBeenCalled();
-      if (step !== "m4-stream-ready")
-        expect(mocks.stream).not.toHaveBeenCalled();
-      expect(
-        mocks.rpc.mock.calls.some(([, p]) => p.p_status === "prepared"),
-      ).toBe(false);
-    },
-  );
+  it.each([
+    "m4-broadcast-intent",
+    "m4-broadcast-ready",
+    "m4-stream-intent",
+    "m4-stream-ready",
+  ])("stops after losing its fence at %s", async (step) => {
+    state(session(), (p) => p.p_provider_step === step);
+    const result = await prepareM4Session(gameId, credential);
+    expect(result).toMatchObject({
+      status: "stopping",
+      desiredState: "stopped",
+    });
+    expect(mocks.bind).not.toHaveBeenCalled();
+    if (step.startsWith("m4-broadcast"))
+      expect(mocks.stream).not.toHaveBeenCalled();
+    expect(
+      mocks.rpc.mock.calls.some(([, p]) => p.p_status === "prepared"),
+    ).toBe(false);
+  });
   it("redacts arbitrary provider exceptions and journals uncertain resource creation", async () => {
     const current = state(session());
-    mocks.broadcast.mockRejectedValue(
-      new Error("Bearer private-access rt...private-stream-key"),
+    mocks.broadcast.mockImplementation(
+      async (_values, _fetcher, _allowCreate, onBeforeInsert) => {
+        await onBeforeInsert();
+        throw new Error("Bearer private-access rt...private-stream-key");
+      },
     );
     const result = await prepareM4Session(gameId, credential);
     expect(result).toMatchObject({
@@ -610,6 +633,184 @@ describe("M4 provider orchestration", () => {
     );
     expect(mocks.rpc).not.toHaveBeenCalled();
   });
+});
+
+describe("M4 preparation discovery and insert boundaries", () => {
+  const broadcast = {
+    id: "abcdefghijk",
+    snippet: {
+      description:
+        "CurlCast broadcast session 33333333-3333-4333-8333-333333333333",
+    },
+    status: { lifeCycleStatus: "ready", privacyStatus: "unlisted" },
+    contentDetails: { enableAutoStart: false, enableAutoStop: false },
+  };
+  const stream = {
+    id: "stream-id",
+    snippet: { description: broadcast.snippet.description },
+    cdn: {
+      ingestionInfo: {
+        ingestionAddress: "rtmp://ingest",
+        streamName: "private-stream-key",
+      },
+    },
+  };
+  const json = (value: unknown, status = 200) =>
+    new Response(JSON.stringify(value), {
+      status,
+      headers: { "content-type": "application/json" },
+    });
+  const quotaFailure = () =>
+    json({ error: { errors: [{ reason: "quotaExceeded" }] } }, 403);
+  beforeEach(async () => {
+    const provider =
+      await vi.importActual<typeof import("./youtube-live")>("./youtube-live");
+    mocks.broadcast.mockImplementation(provider.findOrCreateYouTubeBroadcast);
+    mocks.stream.mockImplementation(provider.findOrCreateYouTubeStream);
+    mocks.bind.mockImplementation(provider.bindYouTubeBroadcast);
+  });
+
+  it("retries broadcast discovery failure without inventing an unresolved insert", async () => {
+    const current = state(session());
+    vi.mocked(fetch).mockResolvedValueOnce(quotaFailure());
+    expect(await prepareM4Session(gameId, credential)).toMatchObject({
+      status: "failed",
+      lastErrorCode: "youtube_quota_exceeded",
+    });
+    expect(current().youtubeBroadcastCreateState).toBe("none");
+    expect(current().youtubeStreamCreateState).toBe("none");
+    expect(mocks.rpc).toHaveBeenLastCalledWith(
+      "record_m4_broadcast_operation",
+      expect.objectContaining({ p_uncertain: false }),
+    );
+
+    vi.mocked(fetch)
+      .mockResolvedValueOnce(json({ items: [] }))
+      .mockResolvedValueOnce(json(broadcast))
+      .mockResolvedValueOnce(json({ items: [] }))
+      .mockResolvedValueOnce(json(stream))
+      .mockResolvedValueOnce(json({}));
+    expect(await prepareM4Session(gameId, credential)).toMatchObject({
+      status: "prepared",
+      watchUrl,
+    });
+    expect(
+      vi.mocked(fetch).mock.calls.filter(([, init]) => init?.method === "POST"),
+    ).toHaveLength(3);
+  });
+
+  it("retries stream discovery while preserving the existing broadcast and watch page", async () => {
+    const current = state(
+      session({
+        youtubeBroadcastId: broadcast.id,
+        watchUrl,
+        youtubeBroadcastCreateState: "ready",
+      }),
+    );
+    vi.mocked(fetch)
+      .mockResolvedValueOnce(json({ items: [broadcast] }))
+      .mockResolvedValueOnce(quotaFailure());
+    expect(await prepareM4Session(gameId, credential)).toMatchObject({
+      status: "failed",
+      lastErrorCode: "youtube_quota_exceeded",
+      watchUrl,
+    });
+    expect(current().youtubeBroadcastId).toBe(broadcast.id);
+    expect(current().youtubeBroadcastCreateState).toBe("ready");
+    expect(current().youtubeStreamCreateState).toBe("none");
+
+    vi.mocked(fetch)
+      .mockResolvedValueOnce(json({ items: [broadcast] }))
+      .mockResolvedValueOnce(json({ items: [] }))
+      .mockResolvedValueOnce(json(stream))
+      .mockResolvedValueOnce(json({}));
+    expect(await prepareM4Session(gameId, credential)).toMatchObject({
+      status: "prepared",
+      watchUrl,
+    });
+    const insertUrls = vi
+      .mocked(fetch)
+      .mock.calls.filter(([, init]) => init?.method === "POST")
+      .map(([url]) => String(url));
+    expect(insertUrls).toHaveLength(2);
+    expect(insertUrls.some((url) => url.includes("liveBroadcasts?"))).toBe(
+      false,
+    );
+  });
+
+  it.each(["broadcast", "stream"] as const)(
+    "keeps an uncertain %s POST fenced against duplicate creation on retry",
+    async (resource) => {
+      const isStream = resource === "stream";
+      const current = state(
+        session(
+          isStream
+            ? {
+                youtubeBroadcastId: broadcast.id,
+                watchUrl,
+                youtubeBroadcastCreateState: "ready",
+              }
+            : {},
+        ),
+      );
+      if (isStream)
+        vi.mocked(fetch).mockResolvedValueOnce(json({ items: [broadcast] }));
+      vi.mocked(fetch)
+        .mockResolvedValueOnce(json({ items: [] }))
+        .mockRejectedValueOnce(new Error("response lost"));
+      expect(await prepareM4Session(gameId, credential)).toMatchObject({
+        status: "failed",
+        lastErrorCode: "youtube_provider_unavailable",
+      });
+      const creationKey = isStream
+        ? "youtubeStreamCreateState"
+        : "youtubeBroadcastCreateState";
+      expect(current()[creationKey]).toBe("uncertain");
+
+      if (isStream)
+        vi.mocked(fetch).mockResolvedValueOnce(json({ items: [broadcast] }));
+      vi.mocked(fetch).mockResolvedValueOnce(json({ items: [] }));
+      expect(await prepareM4Session(gameId, credential)).toMatchObject({
+        status: "failed",
+        lastErrorCode: "broadcast_operation_uncertain",
+      });
+      expect(current()[creationKey]).toBe("uncertain");
+      expect(
+        vi
+          .mocked(fetch)
+          .mock.calls.filter(([, init]) => init?.method === "POST"),
+      ).toHaveLength(1);
+    },
+  );
+
+  it.each(["broadcast", "stream"] as const)(
+    "does not send a %s insert after its durable intent loses the fence",
+    async (resource) => {
+      const isStream = resource === "stream";
+      state(
+        session(
+          isStream
+            ? {
+                youtubeBroadcastId: broadcast.id,
+                watchUrl,
+                youtubeBroadcastCreateState: "ready",
+              }
+            : {},
+        ),
+        (p) => p.p_provider_step === `m4-${resource}-intent`,
+      );
+      if (isStream)
+        vi.mocked(fetch).mockResolvedValueOnce(json({ items: [broadcast] }));
+      vi.mocked(fetch).mockResolvedValueOnce(json({ items: [] }));
+      expect(await prepareM4Session(gameId, credential)).toMatchObject({
+        status: "stopping",
+        desiredState: "stopped",
+      });
+      expect(
+        vi.mocked(fetch).mock.calls.some(([, init]) => init?.method === "POST"),
+      ).toBe(false);
+    },
+  );
 });
 
 describe("M4 explicit automatic go-live", () => {

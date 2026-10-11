@@ -215,7 +215,7 @@ export async function findOrCreateYouTubeBroadcast(
   },
   fetcher: typeof fetch = fetch,
   allowCreate = true,
-  onBeforeInsert?: () => void,
+  onBeforeInsert?: () => void | Promise<void>,
 ): Promise<YouTubeBroadcast> {
   visibilitySchema.parse(values.visibility);
   const description = marker(values.sessionKey);
@@ -229,7 +229,7 @@ export async function findOrCreateYouTubeBroadcast(
     throw new Error("broadcast_operation_uncertain");
   let value = existing;
   if (!value) {
-    onBeforeInsert?.();
+    await onBeforeInsert?.();
     value = broadcastSchema.parse(
       await youtubeRequest(
         "/liveBroadcasts?part=id,snippet,status,contentDetails",
@@ -273,6 +273,7 @@ export async function findOrCreateYouTubeStream(
   values: { accessToken: string; sessionKey: string; title: string },
   fetcher: typeof fetch = fetch,
   allowCreate = true,
+  onBeforeInsert?: () => void | Promise<void>,
 ) {
   const description = marker(values.sessionKey);
   const existing = await findYouTubeStream(
@@ -282,9 +283,10 @@ export async function findOrCreateYouTubeStream(
   );
   if (!existing && !allowCreate)
     throw new Error("broadcast_operation_uncertain");
-  const value =
-    existing ??
-    streamSchema.parse(
+  let value = existing;
+  if (!value) {
+    await onBeforeInsert?.();
+    value = streamSchema.parse(
       await youtubeRequest(
         "/liveStreams?part=id,snippet,cdn,status",
         values.accessToken,
@@ -302,6 +304,7 @@ export async function findOrCreateYouTubeStream(
         fetcher,
       ),
     );
+  }
   return {
     id: value.id,
     rtmpUrl: `${value.cdn.ingestionInfo.ingestionAddress}/${value.cdn.ingestionInfo.streamName}`,

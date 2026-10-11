@@ -4,8 +4,18 @@ using System.Collections.Generic;
 internal static class WorkspacePolicyTests
 {
     private static void Assert(bool pass) { if (!pass) throw new Exception("Workspace boundary regression"); }
-    private static int Main()
+    private static int Main(string[] args)
     {
+        if (args.Length == 1 && args[0] == "--force-close-child") { System.Threading.Thread.Sleep(60000); return 0; }
+        var ownExe = System.Reflection.Assembly.GetExecutingAssembly().Location;
+        var childInfo = new System.Diagnostics.ProcessStartInfo(ownExe, "--force-close-child") { UseShellExecute = false, CreateNoWindow = true };
+        using (var owned = System.Diagnostics.Process.Start(childInfo))
+        using (var unrelated = System.Diagnostics.Process.Start(childInfo)) {
+            try {
+                Assert(WorkspacePolicy.ForceStopController(owned).GetAwaiter().GetResult());
+                Assert(owned.HasExited && !unrelated.HasExited);
+            } finally { if (!unrelated.HasExited) { unrelated.Kill(); unrelated.WaitForExit(5000); } }
+        }
         foreach (var phase in new[] { "starting", "armed", "paused" }) Assert(WorkspacePolicy.KeepAwake(phase));
         foreach (var phase in new[] { null, "idle", "stopped", "failed", "stopping" }) Assert(!WorkspacePolicy.KeepAwake(phase));
         var recoverySteps = new List<string>();
@@ -34,6 +44,14 @@ internal static class WorkspacePolicyTests
         Assert(fenced && !reconnected);
         const string origin = "https://studio.example", id = "11111111-1111-4111-8111-111111111111";
         const string otherId = "22222222-2222-4222-8222-222222222222";
+        var forceClose = new Dictionary<string, object> { { "type", "studio-force-close" }, { "gameId", id } };
+        Assert(WorkspacePolicy.ForceCloseRequest(forceClose, id, null));
+        Assert(WorkspacePolicy.ForceCloseRequest(forceClose, id, id));
+        Assert(!WorkspacePolicy.ForceCloseRequest(forceClose, id, otherId));
+        Assert(!WorkspacePolicy.ForceCloseRequest(forceClose, otherId, id));
+        Assert(!WorkspacePolicy.ForceCloseRequest(forceClose, null, null));
+        forceClose["pid"] = 1;
+        Assert(!WorkspacePolicy.ForceCloseRequest(forceClose, id, id));
         foreach (var path in new[] { "/dashboard", "/account", "/score/" + id }) {
             Assert(WorkspacePolicy.SessionMessage(origin + path, origin + path, origin));
             Assert(!WorkspacePolicy.SessionMessage("https://attacker.example" + path, origin + path, origin));

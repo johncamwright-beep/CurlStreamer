@@ -6,6 +6,8 @@ import type {
   SafeGameCompletion,
 } from "@/lib/game-completion";
 import { organizerAccessToken } from "@/lib/access-session";
+import { z } from "zod";
+import { studioSessionBridge } from "@/lib/studio-session";
 
 function completionToken(gameId: string) {
   return (
@@ -37,6 +39,23 @@ export function CompletedGameSummary({
   );
   const [cleanupError, setCleanupError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [canForceClose, setCanForceClose] = useState(false);
+  useEffect(() => {
+    const receive = (event: Event) => {
+      const result = z
+        .object({ gameId: z.uuid(), canForceClose: z.boolean() })
+        .strict()
+        .safeParse((event as CustomEvent).detail);
+      setCanForceClose(
+        result.success &&
+          result.data.gameId === gameId &&
+          result.data.canForceClose,
+      );
+    };
+    window.addEventListener("studio-recovery-status", receive);
+    studioSessionBridge()?.postMessage({ type: "studio-session-observe" });
+    return () => window.removeEventListener("studio-recovery-status", receive);
+  }, [gameId]);
   const cleanupStatus = cleanup?.status;
   const loadCleanup = useCallback(async () => {
     try {
@@ -44,6 +63,7 @@ export function CompletedGameSummary({
       const response = await fetch(`/api/games/${gameId}/completion`, {
         headers: token ? { authorization: `Bearer ${token}` } : {},
         cache: "no-store",
+        signal: AbortSignal.timeout(10000),
       });
       const value = await response.json().catch(() => null);
       if (!response.ok)
@@ -72,6 +92,7 @@ export function CompletedGameSummary({
           ...(token ? { authorization: `Bearer ${token}` } : {}),
         },
         body: JSON.stringify({ action: "retry-cleanup" }),
+        signal: AbortSignal.timeout(30000),
       });
       const value = await response.json().catch(() => null);
       if (!response.ok)
@@ -181,6 +202,28 @@ export function CompletedGameSummary({
           )}
         </div>
       )}
+      {cleanupControls &&
+        canForceClose &&
+        (cleanupStatus !== "complete" || cleanupError) && (
+          <div className="mt-4">
+            <p className="text-sm text-slate-300">
+              The final score is saved. You can close Studio while YouTube
+              shutdown remains unconfirmed.
+            </p>
+            <button
+              className="btn-secondary mt-3"
+              title="Emergency exit (Ctrl+Shift+Q). Stops local video and audio; YouTube shutdown may still need retrying."
+              onClick={() =>
+                studioSessionBridge()?.postMessage({
+                  type: "studio-force-close",
+                  gameId,
+                })
+              }
+            >
+              Force close Studio
+            </button>
+          </div>
+        )}
       <Link className="btn-secondary mt-5 inline-flex" href="/dashboard">
         Back to Games
       </Link>

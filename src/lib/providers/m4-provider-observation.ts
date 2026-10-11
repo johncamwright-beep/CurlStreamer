@@ -2,6 +2,7 @@ import "server-only";
 
 import { z } from "zod";
 import { youtubeGoogleRequest } from "./youtube";
+import { m4YouTubeFailureCode } from "./m4-youtube-failure";
 
 // Google reference: https://developers.google.com/youtube/v3/live/docs/liveStreams/list
 // Google reference: https://developers.google.com/youtube/v3/live/docs/liveBroadcasts/list
@@ -199,11 +200,8 @@ export async function observeM4YouTubeProvider(
         fetcher,
       ),
     ]);
-    if (
-      resources[0].status !== "fulfilled" ||
-      resources[1].status !== "fulfilled"
-    )
-      throw new Error();
+    if (resources[0].status === "rejected") throw resources[0].reason;
+    if (resources[1].status === "rejected") throw resources[1].reason;
     const stream = streamSchema.parse(resources[0].value).items[0];
     if (
       !stream ||
@@ -238,7 +236,13 @@ export async function observeM4YouTubeProvider(
           }
         : {}),
     });
-  } catch {
-    throw new Error("m4_provider_observation_unavailable");
+  } catch (error) {
+    const reason = m4YouTubeFailureCode.safeParse(
+      error instanceof Error ? error.message : undefined,
+    );
+    throw Object.assign(
+      new Error("m4_provider_observation_unavailable"),
+      reason.success ? { reason: reason.data } : {},
+    );
   }
 }

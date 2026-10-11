@@ -38,7 +38,7 @@ test("portrait pan, external mic delay and slower sponsors save independent sett
   const delay = page.getByRole("combobox", {
     name: "External microphone delay",
   });
-  await expect(delay).toHaveValue("1000");
+  await expect(delay).toHaveValue("0");
   await delay.selectOption("2500");
   await expect(delay).toHaveValue("2500");
   const left = page.getByRole("button", {

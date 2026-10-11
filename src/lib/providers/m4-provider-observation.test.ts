@@ -46,6 +46,35 @@ function providerValues(overrides: Record<string, unknown> = {}) {
 }
 
 describe("M4 provider observation", () => {
+  it.each([0, 1, 2])(
+    "preserves a safe quota category from request %s without provider details",
+    async (failed) => {
+      const values = providerValues();
+      let index = 0;
+      const read = vi.fn(async () =>
+        index++ === failed
+          ? new Response(
+              JSON.stringify({
+                error: {
+                  errors: [
+                    { reason: "quotaExceeded", message: "secret-canary" },
+                  ],
+                },
+              }),
+              { status: 403 },
+            )
+          : response(values[index - 1]),
+      );
+      const error = await observeM4YouTubeProvider(token, expected, read).catch(
+        (error) => error,
+      );
+      expect(error).toMatchObject({
+        message: "m4_provider_observation_unavailable",
+        reason: "youtube_quota_exceeded",
+      });
+      expect(JSON.stringify(error)).not.toContain("secret-canary");
+    },
+  );
   it("reads optional live viewers only after ownership checks and caches the count", async () => {
     const values = providerValues();
     values.push({

@@ -48,6 +48,46 @@ async function startupFixture(page: Page) {
     );
 }
 
+for (const restored of [false, true])
+  test(`YouTube status loss does not show startup or restart a previously live broadcast (${restored ? "restored" : "observed"})`, async ({
+    page,
+  }) => {
+    const report = await startupFixture(page);
+    let starts = 0;
+    await page.route("**/api/games/fixture-game/studio-m4", (route) => {
+      if (route.request().method() === "POST") starts++;
+      return route.fulfill({ json: {} });
+    });
+    await page.clock.install();
+    await page.goto("/startup-fixture");
+    await expect(page.getByRole("status")).toHaveText("Status unavailable");
+    if (!restored) {
+      await report({ live: true, receiving: true });
+      await expect(page.getByRole("status")).toHaveText("● LIVE");
+    }
+    await report({ lastLiveAgeMs: 45000 });
+    await expect(
+      page.getByText("YouTube status is temporarily unavailable. Rechecking", {
+        exact: false,
+      }),
+    ).toBeVisible();
+    await expect(
+      page.getByText("Starting this broadcast now.", { exact: false }),
+    ).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Go live now" })).toHaveCount(
+      0,
+    );
+    await page.clock.fastForward(11000);
+    await report({ lastLiveAgeMs: 56000 });
+    expect(starts).toBe(0);
+    await report({ streaming: "starting", outputActive: false });
+    await report();
+    await expect.poll(() => starts).toBe(1);
+    await expect(
+      page.getByText("Starting this broadcast now.", { exact: false }),
+    ).toBeVisible();
+  });
+
 test("Studio authorizes Go live with the current game's organizer token without an account cookie", async ({
   page,
 }) => {

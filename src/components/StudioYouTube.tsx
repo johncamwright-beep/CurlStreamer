@@ -227,7 +227,12 @@ export function StudioYouTube({ id }: { id: string }) {
       const parsed = stateSchema.safeParse((event as CustomEvent).detail);
       if (!parsed.success || parsed.data.gameId !== id) return;
       last = Date.now();
-      if (parsed.data.live) {
+      if (
+        parsed.data.live ||
+        (parsed.data.streaming === "armed" &&
+          parsed.data.outputActive &&
+          parsed.data.lastLiveAgeMs != null)
+      ) {
         if (parsed.data.concurrentViewers != null)
           lastViewers.current = parsed.data.concurrentViewers;
         confirmedLive.current = true;
@@ -506,9 +511,12 @@ export function StudioYouTube({ id }: { id: string }) {
       )}
       {(state?.receiving || state?.outputActive) && !state.live && (
         <div className="mt-2 flex items-center gap-2 text-sm">
-          {!error && (goingLive || autoGoLive || state.streaming === "armed")
-            ? "Starting this broadcast now. Waiting for YouTube to confirm live…"
-            : null}
+          {!error &&
+            (confirmedLive.current
+              ? "YouTube status is temporarily unavailable. Rechecking while video delivery continues…"
+              : goingLive || autoGoLive || state.streaming === "armed"
+                ? "Starting this broadcast now. Waiting for YouTube to confirm live…"
+                : null)}
         </div>
       )}
       {error && !state?.live && (

@@ -39,6 +39,20 @@ beforeEach(() => {
   mocks.deliver.mockResolvedValue(result);
 });
 describe("restricted sensitive desktop target response", () => {
+  it("reports safe target failure stage and quota category without provider details", async () => {
+    mocks.deliver.mockRejectedValue(
+      Object.assign(new Error("private-key"), {
+        reason: "youtube_quota_exceeded",
+        stage: "target_lookup",
+      }),
+    );
+    const response = await POST(request(), context);
+    expect(response.status).toBe(503);
+    expect(response.headers.get("x-curlstreamer-stage")).toBe("target_lookup");
+    expect(await response.json()).toMatchObject({
+      code: "youtube_quota_exceeded",
+    });
+  });
   it("projects only target and deadline envelope, never caches or sets cookies", async () => {
     mocks.deliver.mockResolvedValue({
       ...result,

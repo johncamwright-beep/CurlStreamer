@@ -2,6 +2,7 @@ import "server-only";
 
 import { createHash } from "node:crypto";
 import { z } from "zod";
+import { m4YouTubeFailureCode } from "./m4-youtube-failure";
 import { createAdminSupabaseClient } from "@/lib/supabase/admin";
 import {
   m4DesktopEnabled,
@@ -154,9 +155,14 @@ export async function observeM4DesktopOutput(
     });
   } catch (error) {
     const code = (error as { code?: unknown } | null)?.code;
+    const reason = m4YouTubeFailureCode.safeParse(
+      (error as { reason?: unknown } | null)?.reason ??
+        (error instanceof Error ? error.message : undefined),
+    );
     throw Object.assign(
       new Error("m4_desktop_observation_unavailable"),
       code === "42501" || code === "55000" ? { code } : {},
+      reason.success ? { reason: reason.data } : {},
     );
   }
 }

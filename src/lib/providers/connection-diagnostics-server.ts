@@ -1,6 +1,7 @@
 import "server-only";
 import { randomUUID } from "node:crypto";
 import { connectionDiagnosticSchema } from "./connection-diagnostics";
+import { m4YouTubeFailureCode } from "./m4-youtube-failure";
 
 /** Correlates a phone/Studio request with hosting logs without recording input. */
 export async function traceStudioRequest(
@@ -28,6 +29,7 @@ export async function traceStudioRequest(
         .catch(() => null);
       if (
         [
+          ...m4YouTubeFailureCode.options,
           "studio_stale",
           "peer_stale",
           "camera_released",

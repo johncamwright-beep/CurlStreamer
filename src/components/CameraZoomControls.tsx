@@ -90,15 +90,7 @@ export function CameraZoomControls({
           className="min-h-11"
           aria-label="External microphone delay"
           disabled={changing}
-          value={
-            game.programAudioDelayMs ??
-            (Object.values(cameraInputs).some(
-              (source) =>
-                source.kind !== "phone" && source.connectionEnabled !== false,
-            )
-              ? 1000
-              : 0)
-          }
+          value={game.programAudioDelayMs ?? 0}
           onChange={async (event) => {
             setChanging(true);
             setLayoutError("");
@@ -124,8 +116,8 @@ export function CameraZoomControls({
         </select>
       </label>
       <p>
-        Delay the external microphone when its sound arrives before the camera
-        picture.
+        Adds delay to the external microphone on YouTube, not receiver
+        headphones. Leave at zero if sound already arrives after the picture.
       </p>
       <div className="camera-settings-cameras">
         {(["camera-home", "camera-away"] as const).map((role) =>

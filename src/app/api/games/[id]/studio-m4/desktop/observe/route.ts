@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { m4YouTubeFailureCode } from "@/lib/providers/m4-youtube-failure";
 import { traceStudioRequest } from "@/lib/providers/connection-diagnostics-server";
 import {
   m4DesktopObservationEnabled,
@@ -59,6 +60,18 @@ async function post(request: Request, context: Context) {
       return unavailable();
     return reply(result);
   } catch (error) {
+    const detail = z
+      .object({ reason: m4YouTubeFailureCode, code: z.string().optional() })
+      .safeParse(error);
+    if (detail.success && !detail.data.code)
+      return reply(
+        {
+          code: detail.data.reason,
+          error:
+            "YouTube status is unavailable. This status check does not stop video delivery.",
+        },
+        503,
+      );
     return failure(error);
   }
 }

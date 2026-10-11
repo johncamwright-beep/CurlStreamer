@@ -1,6 +1,11 @@
 import { z } from "zod";
 import { traceStudioRequest } from "@/lib/providers/connection-diagnostics-server";
 import {
+  m4YouTubeFailureCode,
+  m4TargetFailureStage,
+  m4YouTubeFailureMessages,
+} from "@/lib/providers/m4-youtube-failure";
+import {
   deliverM4Target,
   m4TargetHandoffEnabled,
   m4TargetResultSchema,
@@ -60,6 +65,36 @@ async function post(request: Request, context: Context) {
       return unavailable();
     return reply(result);
   } catch (error) {
+    const detail = z
+      .object({
+        reason: m4YouTubeFailureCode,
+        stage: m4TargetFailureStage,
+        code: z.string().optional(),
+      })
+      .safeParse(error);
+    if (detail.success) {
+      const status =
+        detail.data.code === "42501"
+          ? 403
+          : ["55000", "P0409"].includes(detail.data.code ?? "")
+            ? 409
+            : detail.data.code === "P0402"
+              ? 402
+              : 503;
+      // Preserve existing authority/billing messages before provider diagnostics.
+      const response =
+        status === 503
+          ? reply(
+              {
+                code: detail.data.reason,
+                error: m4YouTubeFailureMessages[detail.data.reason],
+              },
+              status,
+            )
+          : failure(error);
+      response.headers.set("x-curlstreamer-stage", detail.data.stage);
+      return response;
+    }
     return failure(error);
   }
 }

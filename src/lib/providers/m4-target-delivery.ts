@@ -10,6 +10,10 @@ import {
 import { decryptYouTubeRefreshToken } from "./youtube-credential-vault";
 import { refreshYouTubeAccessToken } from "./youtube";
 import { getYouTubeIngestTarget } from "./youtube-ingest";
+import {
+  m4YouTubeFailureCode,
+  m4TargetFailureStage,
+} from "./m4-youtube-failure";
 
 const id = z.uuid();
 const generation = z.number().int().positive().max(Number.MAX_SAFE_INTEGER);
@@ -61,6 +65,7 @@ export async function deliverM4Target(
   credential: M4DesktopCredential,
   intentId: string,
 ) {
+  let stage: z.infer<typeof m4TargetFailureStage> = "target_configuration";
   try {
     if (!m4TargetHandoffEnabled()) throw new Error();
     id.parse(gameId);
@@ -89,19 +94,23 @@ export async function deliverM4Target(
       return value;
     }
     // Consuming commits sticky quarantine before decrypting provider credentials.
+    stage = "target_consume";
     const consumed = await read("consume_m4_output_delivery");
     await requireTeamBroadcastAccess(consumed.organization_id);
-    const token = await refreshYouTubeAccessToken(
-      decryptYouTubeRefreshToken(
-        consumed.encrypted_credentials,
-        consumed.organization_id,
-      ),
+    stage = "target_decrypt";
+    const refreshToken = decryptYouTubeRefreshToken(
+      consumed.encrypted_credentials,
+      consumed.organization_id,
     );
+    stage = "target_oauth";
+    const token = await refreshYouTubeAccessToken(refreshToken);
+    stage = "target_lookup";
     const target = await getYouTubeIngestTarget(
       token,
       consumed.youtube_stream_id,
     );
     // Slow network work may outlive stop, account removal, channel replacement or lease.
+    stage = "target_recheck";
     const current = await read("assert_m4_output_delivery");
     await requireTeamBroadcastAccess(current.organization_id);
     for (const key of [
@@ -120,6 +129,7 @@ export async function deliverM4Target(
       if (current[key] !== consumed[key]) throw new Error();
     }
     if (!m4TargetHandoffEnabled()) throw new Error();
+    stage = "target_validate";
     return m4TargetResultSchema.parse({
       intentId,
       sessionId: current.session_id,
@@ -130,9 +140,18 @@ export async function deliverM4Target(
     });
   } catch (error) {
     const code = (error as { code?: unknown } | null)?.code;
+    const reason = m4YouTubeFailureCode.safeParse(
+      error instanceof Error ? error.message : undefined,
+    );
     throw Object.assign(
       new Error("m4_target_delivery_unavailable"),
-      code === "42501" || code === "55000" || code === "P0402" ? { code } : {},
+      { reason: reason.success ? reason.data : "m4_target_unavailable", stage },
+      code === "42501" ||
+        code === "55000" ||
+        code === "P0402" ||
+        code === "P0409"
+        ? { code }
+        : {},
     );
   }
 }

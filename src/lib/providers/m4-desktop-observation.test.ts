@@ -58,6 +58,29 @@ afterEach(() => {
   vi.useRealTimers();
 });
 describe("M4 desktop output observation", () => {
+  it("preserves only allowlisted provider categories through the desktop boundary", async () => {
+    mocks.observe.mockRejectedValue(
+      Object.assign(new Error("secret-canary"), {
+        reason: "youtube_quota_exceeded",
+      }),
+    );
+    await expect(
+      observeM4DesktopOutput(game, credential, intentId),
+    ).rejects.toMatchObject({
+      message: "m4_desktop_observation_unavailable",
+      reason: "youtube_quota_exceeded",
+    });
+    mocks.observe.mockRejectedValue(
+      Object.assign(new Error("secret-canary"), { reason: "secret-canary" }),
+    );
+    const error = await observeM4DesktopOutput(
+      game,
+      credential,
+      intentId,
+    ).catch((error) => error);
+    expect(error.reason).toBeUndefined();
+    expect(error.message).not.toContain("secret-canary");
+  });
   it("asserts a previously delivered binding before and after memory-only OAuth/provider reads", async () => {
     await expect(
       observeM4DesktopOutput(game, credential, intentId),

@@ -8,6 +8,7 @@ import {
 import { readAccessToken } from "@/lib/tokens";
 import { studioOrigin } from "@/lib/studio-origin";
 import { youtubeWatchUrlSchema } from "@/lib/youtube-watch";
+import { m4YouTubeFailureCode } from "@/lib/providers/m4-youtube-failure";
 import {
   readM4Session,
   prepareM4Session,
@@ -46,7 +47,7 @@ const safeSessionSchema = z.object({
   ]),
   lastErrorCode: z
     .enum([
-      "youtube_reconnect_required",
+      ...m4YouTubeFailureCode.options,
       "broadcast_operation_uncertain",
       "broadcast_discovery_incomplete",
       "youtube_manual_configuration_mismatch",
@@ -115,12 +116,14 @@ function failure(error: unknown) {
     youtube_live_streaming_not_enabled:
       "Enable live streaming on the connected YouTube channel first.",
     youtube_provider_rejected:
-      "YouTube rejected the Go live request. Studio will check reception and retry; your saved watch link is retained.",
+      "YouTube rejected the broadcast request. Check the connected channel in YouTube settings.",
+    youtube_provider_unavailable:
+      "YouTube could not be reached. Wait briefly, then retry your saved broadcast.",
   };
   const message =
     error instanceof Error ? providerMessages[error.message] : undefined;
   if (message)
-    return response({ error: message, code: "youtube_start_failed" }, 503);
+    return response({ error: message, code: (error as Error).message }, 503);
   const code = (error as { code?: unknown } | null)?.code;
   if (code === "P0409")
     return response(

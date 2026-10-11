@@ -18,6 +18,7 @@ import {
 } from "./youtube";
 import { verifyM4ProviderRetirement } from "./m4-provider-retirement";
 import { observeM4YouTubeProvider } from "./m4-provider-observation";
+import { m4YouTubeFailureCode } from "./m4-youtube-failure";
 import {
   bindYouTubeBroadcast,
   deleteYouTubeStream,
@@ -30,7 +31,7 @@ import {
 } from "./youtube-live";
 
 export const m4ErrorCodeSchema = z.enum([
-  "youtube_reconnect_required",
+  ...m4YouTubeFailureCode.options,
   "broadcast_operation_uncertain",
   "broadcast_discovery_incomplete",
   "youtube_manual_configuration_mismatch",

@@ -13,6 +13,96 @@ import { decryptYouTubeRefreshToken } from "@/lib/providers/youtube-credential-v
 
 export const dynamic = "force-dynamic";
 
+function testFailure(error: unknown) {
+  const code = error instanceof Error ? error.message : "";
+  switch (code) {
+    case "youtube_reconnect_required":
+      return {
+        code,
+        error:
+          "Google authorization expired or was revoked. Reconnect this channel in your regular browser, then test again.",
+        reconnect: true,
+      };
+    case "youtube_scope_missing":
+      return {
+        code,
+        error:
+          "Google has not granted the required YouTube permissions. Reconnect this channel in your regular browser and approve the requested permissions.",
+        reconnect: true,
+      };
+    case "youtube_channel_selection_required":
+      return {
+        code,
+        error:
+          "Google did not return one authorized YouTube channel. Reconnect in your regular browser and choose the account that owns the team's channel.",
+        reconnect: true,
+      };
+    case "youtube_credentials_unavailable":
+      return {
+        code,
+        error:
+          "CurlStreamer could not read the saved YouTube authorization. Reconnect this channel in your regular browser. If this continues, contact CurlStreamer support.",
+        reconnect: true,
+      };
+    case "youtube_quota_exceeded":
+      return {
+        code,
+        error:
+          "YouTube's API limit has been reached. Wait for API access to become available before testing or starting a broadcast. Your saved channel has been kept.",
+        reconnect: false,
+      };
+    case "youtube_live_permission_blocked":
+      return {
+        code,
+        error:
+          "YouTube is blocking live broadcasts on this channel. Check the channel's live streaming permissions in YouTube Studio.",
+        reconnect: false,
+      };
+    case "youtube_live_streaming_not_enabled":
+      return {
+        code,
+        error:
+          "Live streaming is not enabled on this YouTube channel. Enable it in YouTube Studio before starting a broadcast.",
+        reconnect: false,
+      };
+    case "youtube_configuration_unavailable":
+      return {
+        code,
+        error:
+          "CurlStreamer's YouTube integration is not configured correctly. Contact CurlStreamer support; reconnecting your channel will not fix this server configuration issue.",
+        reconnect: false,
+      };
+    case "youtube_provider_unavailable":
+      return {
+        code,
+        error:
+          "CurlStreamer could not reach Google's YouTube service. Try the connection test again shortly. Your saved channel has been kept.",
+        reconnect: false,
+      };
+    case "youtube_provider_rejected":
+      return {
+        code,
+        error:
+          "Google rejected the YouTube channel check. Check the channel's permissions in YouTube Studio, or contact CurlStreamer support to check its Google API configuration.",
+        reconnect: false,
+      };
+    case "youtube_test_finish_failed":
+      return {
+        code,
+        error:
+          "The YouTube channel check could not be saved. Refresh YouTube Settings and test again.",
+        reconnect: false,
+      };
+    default:
+      return {
+        code: "youtube_test_unavailable",
+        error:
+          "The YouTube connection test could not be completed. Try again shortly, or contact CurlStreamer support if this continues.",
+        reconnect: false,
+      };
+  }
+}
+
 export async function POST(request: Request) {
   if (!isSameOrigin(request))
     return NextResponse.json(
@@ -48,6 +138,7 @@ export async function POST(request: Request) {
         {
           error:
             "The authorized YouTube channel no longer matches the saved channel",
+          code: "channel_mismatch",
         },
         { status: 409 },
       );
@@ -64,30 +155,20 @@ export async function POST(request: Request) {
       message: "Connection verified. No broadcast was created or published.",
     });
   } catch (error) {
+    const failure = testFailure(error);
     if (credentials) {
-      const reconnect =
-        error instanceof Error &&
-        [
-          "youtube_provider_rejected",
-          "youtube_reconnect_required",
-          "youtube_credentials_unavailable",
-          "youtube_channel_selection_required",
-        ].includes(error.message);
       await finishYouTubeConnectionTest(
         user,
         credentials.organization_id,
         credentials.connection_version,
         false,
-        reconnect ? "reconnect_required" : "test_unavailable",
+        failure.reconnect ? "reconnect_required" : "test_unavailable",
       ).catch(() => undefined);
     }
     return NextResponse.json(
       {
-        error:
-          error instanceof Error &&
-          error.message === "youtube_reconnect_required"
-            ? "Google authorization expired or was revoked. Reconnect this channel in your regular browser, then test again."
-            : "YouTube connection test failed",
+        error: failure.error,
+        code: failure.code,
       },
       { status: 409 },
     );

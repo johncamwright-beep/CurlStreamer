@@ -4,6 +4,7 @@ import { z } from "zod";
 import { requestStudioPresentation } from "@/lib/studio-presentation-client";
 import { WindowsStudioRequired } from "./WindowsStudioRequired";
 import { organizerAccessToken } from "@/lib/access-session";
+import { studioLastLiveLabel } from "@/lib/studio-session";
 
 const stateSchema = z.object({
   gameId: z.string(),
@@ -364,6 +365,12 @@ export function StudioYouTube({ id }: { id: string }) {
       (state.streaming === "armed" &&
         state.outputActive &&
         viewerCount != null));
+  const lastLiveLabel =
+    state?.streaming === "armed" &&
+    state.outputActive &&
+    state.lastLiveAgeMs != null
+      ? studioLastLiveLabel(state.lastLiveAgeMs)
+      : undefined;
   if (!bridgeAvailable) return <WindowsStudioRequired gameId={id} />;
   return (
     <section
@@ -382,6 +389,11 @@ export function StudioYouTube({ id }: { id: string }) {
           <strong
             role="status"
             className={state?.live ? "text-red-400" : "text-slate-300"}
+            title={
+              !state?.live && lastLiveLabel
+                ? `${lastLiveLabel}. Studio is still sending video; a fresh YouTube confirmation is unavailable.`
+                : undefined
+            }
           >
             {!state
               ? "Status unavailable"
@@ -391,19 +403,14 @@ export function StudioYouTube({ id }: { id: string }) {
                   : "Paused · Sending card"
                 : state.live
                   ? "● LIVE"
-                  : state.lastLiveAgeMs != null &&
-                      state.lastLiveAgeMs < 30000 &&
-                      state.outputActive &&
-                      state.streaming === "armed"
-                    ? "LIVE last confirmed · Rechecking…"
-                    : state.streaming === "paused"
-                      ? "Disconnected"
+                  : state.streaming === "paused"
+                    ? "Disconnected"
+                    : watchingOutput && state.outputActive
+                      ? "Sending video"
                       : state?.receiving
                         ? "Receiving video"
                         : watchingOutput
-                          ? state.outputActive
-                            ? "Sending video · Checking YouTube…"
-                            : "Checking status…"
+                          ? "Checking status…"
                           : active
                             ? "Connecting…"
                             : "Not live"}
@@ -512,11 +519,15 @@ export function StudioYouTube({ id }: { id: string }) {
       {(state?.receiving || state?.outputActive) && !state.live && (
         <div className="mt-2 flex items-center gap-2 text-sm">
           {!error &&
-            (confirmedLive.current
-              ? "YouTube status is temporarily unavailable. Rechecking while video delivery continues…"
-              : goingLive || autoGoLive || state.streaming === "armed"
-                ? "Starting this broadcast now. Waiting for YouTube to confirm live…"
-                : null)}
+            (lastLiveLabel
+              ? `${lastLiveLabel}. YouTube’s status update is delayed.`
+              : confirmedLive.current
+                ? state.outputActive
+                  ? "Studio is still sending video. YouTube has not confirmed the broadcast is live."
+                  : "YouTube has not confirmed the broadcast is live."
+                : goingLive || autoGoLive || state.streaming === "armed"
+                  ? "Starting this broadcast now. Waiting for YouTube to confirm live…"
+                  : null)}
         </div>
       )}
       {error && !state?.live && (

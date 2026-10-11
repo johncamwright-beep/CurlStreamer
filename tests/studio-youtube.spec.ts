@@ -66,10 +66,14 @@ for (const restored of [false, true])
       await expect(page.getByRole("status")).toHaveText("● LIVE");
     }
     await report({ lastLiveAgeMs: 45000 });
+    await expect(page.getByRole("status")).toHaveText("Sending video");
     await expect(
-      page.getByText("YouTube status is temporarily unavailable. Rechecking", {
-        exact: false,
-      }),
+      page.getByText(
+        "Last confirmed live 45s ago. YouTube’s status update is delayed.",
+        {
+          exact: false,
+        },
+      ),
     ).toBeVisible();
     await expect(
       page.getByText("Starting this broadcast now.", { exact: false }),
@@ -79,6 +83,10 @@ for (const restored of [false, true])
     );
     await page.clock.fastForward(11000);
     await report({ lastLiveAgeMs: 56000 });
+    await expect(page.getByRole("status")).toHaveText("Sending video");
+    await expect(
+      page.getByText("Last confirmed live 56s ago.", { exact: false }),
+    ).toBeVisible();
     expect(starts).toBe(0);
     await report({ streaming: "starting", outputActive: false });
     await report();
@@ -87,6 +95,62 @@ for (const restored of [false, true])
       page.getByText("Starting this broadcast now.", { exact: false }),
     ).toBeVisible();
   });
+
+test("Studio distinguishes delayed YouTube checks from stopped output and missing native status", async ({
+  page,
+}) => {
+  const report = await startupFixture(page);
+  let starts = 0;
+  await page.route("**/api/games/fixture-game/studio-m4", (route) => {
+    if (route.request().method() === "POST") starts++;
+    return route.fulfill({ json: {} });
+  });
+  await page.clock.install();
+  await page.goto("/startup-fixture");
+  await expect(page.getByRole("status")).toHaveText("Status unavailable");
+  await report({ live: true, receiving: true, concurrentViewers: 27 });
+  await expect(page.getByText("27 watching now")).toBeVisible();
+  await report({ lastLiveAgeMs: 185000 });
+  await expect(page.getByRole("status")).toHaveText("Sending video");
+  await expect(
+    page.getByText("Last confirmed live 3m ago.", { exact: false }),
+  ).toBeVisible();
+  await expect(page.getByRole("status")).toHaveAttribute(
+    "title",
+    /Last confirmed live 3m ago.*fresh YouTube confirmation is unavailable/,
+  );
+  await expect(page.getByText("27 last reported")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Go live now" })).toHaveCount(
+    0,
+  );
+  expect(starts).toBe(0);
+
+  // A fresh explicit non-live result removes historical live evidence even
+  // when the sender remains active. It must not restart an existing stream.
+  await report({ lastLiveAgeMs: null, receiving: true });
+  await expect(page.getByRole("status")).toHaveText("Sending video");
+  await expect(page.getByRole("status")).not.toHaveAttribute("title");
+  await expect(page.getByText("27 last reported")).toBeVisible();
+  await expect(
+    page.getByText("YouTube has not confirmed the broadcast is live.", {
+      exact: false,
+    }),
+  ).toBeVisible();
+  expect(starts).toBe(0);
+
+  await report({ lastLiveAgeMs: 190000, outputActive: false });
+  await expect(page.getByRole("status")).toHaveText("Checking status…");
+  await expect(page.getByText("27 last reported")).toHaveCount(0);
+  await expect(page.getByText(/Studio is still sending video/)).toHaveCount(0);
+  await report({ lastLiveAgeMs: 191000 });
+  await page.clock.fastForward(7000);
+  await expect(page.getByRole("status")).toHaveText("Status unavailable");
+  await expect(page.getByText("27 last reported")).toHaveCount(0);
+  await expect(
+    page.getByRole("button", { name: "Broadcast to YouTube" }),
+  ).toBeDisabled();
+  expect(starts).toBe(0);
+});
 
 test("Studio authorizes Go live with the current game's organizer token without an account cookie", async ({
   page,
@@ -411,9 +475,7 @@ test("Studio YouTube sends game-scoped commands and expires live status", async 
       }),
     ),
   );
-  await expect(page.getByRole("status")).toHaveText(
-    "LIVE last confirmed · Rechecking…",
-  );
+  await expect(page.getByRole("status")).toHaveText("Sending video");
   await expect(page.getByText("32 last reported")).toBeVisible();
   await report("fixture-game", true);
   await expect(

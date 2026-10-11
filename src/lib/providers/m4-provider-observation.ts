@@ -96,6 +96,70 @@ function get(path: string, accessToken: string, fetcher: typeof fetch) {
   );
 }
 
+const ownershipScopeSchema = z.object({
+  organizationId: z.uuid(),
+  connectionVersion: z
+    .number()
+    .int()
+    .nonnegative()
+    .max(Number.MAX_SAFE_INTEGER),
+  credentialDigest: z.string().regex(/^[a-f0-9]{64}$/),
+});
+export type M4OwnershipVerificationScope = z.infer<typeof ownershipScopeSchema>;
+const ownershipVerificationTtlMs = 5 * 60_000;
+const ownershipVerificationLimit = 128;
+const verifiedOwners = new Map<
+  string,
+  { verifiedAt?: number; flight?: Promise<void> }
+>();
+
+async function verifyOwnedChannel(
+  accessToken: string,
+  channelId: string,
+  fetcher: typeof fetch,
+  scope?: M4OwnershipVerificationScope,
+) {
+  const verify = async () => {
+    const owned = ownedChannelSchema.parse(
+      await get("/channels?part=id&mine=true", accessToken, fetcher),
+    );
+    if (owned.items[0].id !== channelId) throw new Error();
+  };
+  // Only the server's immutable connection binding may opt into this cache.
+  // It stores no token or authority; every observation still checks its own
+  // resources and desktop authority before returning provider evidence.
+  if (!scope) return verify();
+  const parsed = ownershipScopeSchema.parse(scope);
+  const key = JSON.stringify([
+    parsed.organizationId,
+    parsed.connectionVersion,
+    parsed.credentialDigest,
+    channelId,
+  ]);
+  const cached = verifiedOwners.get(key);
+  const age =
+    cached?.verifiedAt === undefined ? -1 : Date.now() - cached.verifiedAt;
+  if (age >= 0 && age < ownershipVerificationTtlMs) return;
+  if (cached?.flight) return cached.flight;
+  const entry: { verifiedAt?: number; flight?: Promise<void> } = {};
+  verifiedOwners.delete(key);
+  if (verifiedOwners.size >= ownershipVerificationLimit)
+    verifiedOwners.delete(verifiedOwners.keys().next().value!);
+  verifiedOwners.set(key, entry);
+  entry.flight = verify()
+    .then(() => {
+      entry.verifiedAt = Date.now();
+    })
+    .catch((error) => {
+      if (verifiedOwners.get(key) === entry) verifiedOwners.delete(key);
+      throw error;
+    })
+    .finally(() => {
+      entry.flight = undefined;
+    });
+  return entry.flight;
+}
+
 // Viewer counts are optional telemetry. Read only after verifying channel/resource
 // ownership, and cache briefly to avoid adding a Google request to every poll.
 const viewers = new Map<string, { at: number; count: number | null }>();
@@ -169,6 +233,7 @@ export async function observeM4YouTubeProvider(
   },
   fetcher: typeof fetch = fetch,
   includeViewers = false,
+  ownershipScope?: M4OwnershipVerificationScope,
 ): Promise<M4ProviderObservation> {
   try {
     const ids = z
@@ -181,10 +246,12 @@ export async function observeM4YouTubeProvider(
           .default("unlisted"),
       })
       .parse(expected);
-    const owned = ownedChannelSchema.parse(
-      await get("/channels?part=id&mine=true", accessToken, fetcher),
+    await verifyOwnedChannel(
+      accessToken,
+      ids.channelId,
+      fetcher,
+      ownershipScope,
     );
-    if (owned.items[0].id !== ids.channelId) throw new Error();
 
     // The owned-channel check stays first. These resource reads are independent
     // and read-only; avoid adding both network latencies to each status poll.

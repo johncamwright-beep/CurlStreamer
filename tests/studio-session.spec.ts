@@ -211,6 +211,71 @@ test("continue leaves the game while its live Studio status remains available", 
   await expect(dialog(page)).toHaveCount(0);
 });
 
+test("active sender remains identifiable when YouTube confirmation is delayed", async ({
+  page,
+}) => {
+  await setup(page, { ...liveSession, live: false });
+  await (await destination(page)).click();
+  await dialog(page)
+    .getByRole("button", { name: "Continue broadcast" })
+    .click();
+  await expect(page).toHaveURL(/\/download$/);
+  const banner = page.getByRole("complementary", {
+    name: "Active Studio game",
+  });
+  // Installed launchers have no last-live age on the global session payload.
+  // Active local output alone must not be labelled live or disconnected.
+  await expect(banner.getByRole("status")).toHaveText(
+    "Sending video · Awaiting YouTube",
+  );
+  await expect(banner.getByRole("status")).toHaveAttribute(
+    "data-live",
+    "false",
+  );
+  await expect(
+    banner.getByRole("button", { name: "Pause broadcast" }),
+  ).toBeEnabled();
+  await expect(
+    banner.getByRole("link", { name: "Return to game" }),
+  ).toHaveAttribute("href", `/score/${testGameId}`);
+
+  // An optional future native payload may report actual historical age.
+  await status(page, { lastLiveAgeMs: 185000 });
+  await expect(banner.getByRole("status")).toHaveText(
+    "Sending video · Last confirmed live 3m ago",
+  );
+  await expect(banner.getByRole("status")).toHaveAttribute(
+    "title",
+    "Sending video · Last confirmed live 3m ago",
+  );
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth,
+    ),
+  ).toBe(true);
+  await expect(banner.getByRole("status")).toHaveAttribute(
+    "data-live",
+    "false",
+  );
+  await status(page, { lastLiveAgeMs: null });
+  await expect(banner.getByRole("status")).toHaveText(
+    "Sending video · Awaiting YouTube",
+  );
+  expect(await messages(page, "studio-youtube-start")).toEqual([]);
+  expect(await messages(page, "studio-youtube-stop")).toEqual([]);
+  expect(await messages(page, "studio-youtube-hold")).toEqual([]);
+
+  await status(page, {
+    lastLiveAgeMs: 200000,
+    outputActive: false,
+    streaming: "failed",
+  });
+  await expect(banner.getByRole("status")).toHaveText("Broadcast disconnected");
+  await expect(
+    banner.getByRole("button", { name: "Pause broadcast" }),
+  ).toHaveCount(0);
+});
+
 test("pause waits for the matching game and nonce and a confirmed hold before leaving", async ({
   page,
 }) => {

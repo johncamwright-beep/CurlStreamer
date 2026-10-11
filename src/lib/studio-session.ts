@@ -10,10 +10,24 @@ export const studioSessionSchema = z
     streaming: z.string().max(40),
     outputActive: z.boolean(),
     live: z.boolean(),
+    lastLiveAgeMs: z.number().nonnegative().nullable().optional(),
     canHoldStream: z.boolean(),
   })
   .strict();
 export type StudioSession = z.infer<typeof studioSessionSchema>;
+
+export function studioLastLiveLabel(ageMs: number) {
+  const seconds = Math.floor(ageMs / 1000);
+  const age =
+    seconds < 1
+      ? "just now"
+      : seconds < 60
+        ? `${seconds}s ago`
+        : seconds < 3600
+          ? `${Math.floor(seconds / 60)}m ago`
+          : `${Math.floor(seconds / 3600)}h ago`;
+  return `Last confirmed live ${age}`;
+}
 
 export function sessionGamePath(path: string, gameId: string) {
   return ["score", "games", "broadcast", "studio-m2", "studio-m4"].some(
@@ -32,7 +46,10 @@ export function studioSessionLabel(session: StudioSession) {
   if (session.live && session.outputActive) return "Broadcast live";
   if (["starting", "stopping"].includes(session.streaming))
     return "Broadcast connecting";
-  if (session.outputActive) return "Broadcast sending · Checking YouTube";
+  if (session.outputActive && session.streaming === "armed")
+    return session.lastLiveAgeMs != null
+      ? `Sending video · ${studioLastLiveLabel(session.lastLiveAgeMs)}`
+      : "Sending video · Awaiting YouTube";
   if (["failed", "paused"].includes(session.streaming))
     return "Broadcast disconnected";
   return "Broadcast not started";

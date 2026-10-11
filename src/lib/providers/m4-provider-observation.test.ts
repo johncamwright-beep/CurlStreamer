@@ -1,4 +1,5 @@
-import { describe, expect, it, vi } from "vitest";
+import { createHash } from "node:crypto";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { observeM4YouTubeProvider } from "./m4-provider-observation";
 
 const token = "access-token";
@@ -7,6 +8,14 @@ const expected = {
   streamId: "stream",
   broadcastId: "broadcast",
 };
+function ownershipScope(name: string) {
+  return {
+    organizationId: "11111111-1111-4111-8111-111111111111",
+    connectionVersion: 1,
+    credentialDigest: createHash("sha256").update(name).digest("hex"),
+  };
+}
+afterEach(() => vi.useRealTimers());
 function response(value: unknown) {
   return new Response(JSON.stringify(value), { status: 200 });
 }
@@ -46,6 +55,171 @@ function providerValues(overrides: Record<string, unknown> = {}) {
 }
 
 describe("M4 provider observation", () => {
+  it("reuses only verified channel identity for five minutes without renewing its age on a hit", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-10-10T12:00:00Z"));
+    const scope = ownershipScope("ttl");
+    const first = fetcher(providerValues());
+    await observeM4YouTubeProvider(token, expected, first, false, scope);
+    expect(first).toHaveBeenCalledTimes(3);
+
+    vi.advanceTimersByTime(299999);
+    const cached = fetcher(providerValues().slice(1));
+    await observeM4YouTubeProvider(token, expected, cached, false, scope);
+    expect(cached).toHaveBeenCalledTimes(2);
+    expect(String(cached.mock.calls[0][0])).toContain("/liveStreams?");
+
+    vi.advanceTimersByTime(1);
+    const expired = fetcher(providerValues());
+    await observeM4YouTubeProvider(token, expected, expired, false, scope);
+    expect(expired).toHaveBeenCalledTimes(3);
+    expect(String(expired.mock.calls[0][0])).toContain("/channels?");
+  });
+  it.each([
+    [
+      "organization",
+      { organizationId: "22222222-2222-4222-8222-222222222222" },
+    ],
+    ["connection version", { connectionVersion: 2 }],
+    ["credentials", { credentialDigest: "b".repeat(64) }],
+  ])(
+    "isolates verified identity after a change to %s",
+    async (name, change) => {
+      const scope = ownershipScope("scope-" + name);
+      await observeM4YouTubeProvider(
+        token,
+        expected,
+        fetcher(providerValues()),
+        false,
+        scope,
+      );
+      const changed = fetcher(providerValues());
+      await observeM4YouTubeProvider(token, expected, changed, false, {
+        ...scope,
+        ...change,
+      });
+      expect(changed).toHaveBeenCalledTimes(3);
+      expect(String(changed.mock.calls[0][0])).toContain("/channels?");
+    },
+  );
+  it("isolates verified identity by expected channel", async () => {
+    const scope = ownershipScope("channel");
+    await observeM4YouTubeProvider(
+      token,
+      expected,
+      fetcher(providerValues()),
+      false,
+      scope,
+    );
+    const changed = fetcher([{ items: [{ id: "channel" }] }]);
+    await expect(
+      observeM4YouTubeProvider(
+        token,
+        { ...expected, channelId: "other" },
+        changed,
+        false,
+        scope,
+      ),
+    ).rejects.toThrow();
+    expect(changed).toHaveBeenCalledTimes(1);
+  });
+  it("coalesces concurrent identity checks while independently verifying both resource pairs", async () => {
+    const scope = ownershipScope("coalesced");
+    let finish!: (value: Response) => void;
+    const read = vi.fn<typeof fetch>().mockImplementation(async (url) => {
+      const path = String(url);
+      if (path.includes("/channels?"))
+        return new Promise<Response>((resolve) => {
+          finish = resolve;
+        });
+      return response(providerValues()[path.includes("/liveStreams?") ? 1 : 2]);
+    });
+    const first = observeM4YouTubeProvider(token, expected, read, false, scope);
+    const second = observeM4YouTubeProvider(
+      token,
+      expected,
+      read,
+      false,
+      scope,
+    );
+    expect(read).toHaveBeenCalledTimes(1);
+    finish(response(providerValues()[0]));
+    await expect(Promise.all([first, second])).resolves.toHaveLength(2);
+    expect(read).toHaveBeenCalledTimes(5);
+  });
+  it("does not cache an unavailable or wrong channel response", async () => {
+    for (const failure of [
+      new Response(null, { status: 503 }),
+      response({ items: [{ id: "other" }] }),
+    ]) {
+      const scope = ownershipScope("failed-" + failure.status);
+      const failed = vi.fn<typeof fetch>().mockResolvedValue(failure);
+      await expect(
+        observeM4YouTubeProvider(token, expected, failed, false, scope),
+      ).rejects.toThrow();
+      const retry = fetcher(providerValues());
+      await expect(
+        observeM4YouTubeProvider(token, expected, retry, false, scope),
+      ).resolves.toMatchObject({ broadcastLive: true });
+      expect(retry).toHaveBeenCalledTimes(3);
+    }
+  });
+  it("still rejects changed resource ownership and binding on a channel cache hit", async () => {
+    const scope = ownershipScope("resources");
+    await observeM4YouTubeProvider(
+      token,
+      expected,
+      fetcher(providerValues()),
+      false,
+      scope,
+    );
+    const mismatch = providerValues({
+      contentDetails: {
+        boundStreamId: "other",
+        enableAutoStart: false,
+        enableAutoStop: false,
+      },
+    });
+    const changed = fetcher(mismatch.slice(1));
+    await expect(
+      observeM4YouTubeProvider(token, expected, changed, false, scope),
+    ).rejects.toThrow();
+    expect(changed).toHaveBeenCalledTimes(2);
+    const wrongOwner = providerValues().slice(1);
+    (
+      wrongOwner[0] as { items: { snippet: { channelId: string } }[] }
+    ).items[0].snippet.channelId = "other";
+    await expect(
+      observeM4YouTubeProvider(
+        token,
+        expected,
+        fetcher(wrongOwner),
+        false,
+        scope,
+      ),
+    ).rejects.toThrow();
+  });
+  it("bounds retained identity entries", async () => {
+    const firstScope = ownershipScope("bounded-first");
+    await observeM4YouTubeProvider(
+      token,
+      expected,
+      fetcher(providerValues()),
+      false,
+      firstScope,
+    );
+    for (let index = 0; index < 128; index++)
+      await observeM4YouTubeProvider(
+        token,
+        expected,
+        fetcher(providerValues()),
+        false,
+        ownershipScope("bounded-" + index),
+      );
+    const evicted = fetcher(providerValues());
+    await observeM4YouTubeProvider(token, expected, evicted, false, firstScope);
+    expect(evicted).toHaveBeenCalledTimes(3);
+  });
   it.each([0, 1, 2])(
     "preserves a safe quota category from request %s without provider details",
     async (failed) => {

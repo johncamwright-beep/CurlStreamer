@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
   rpc: vi.fn(),
@@ -11,7 +12,10 @@ vi.mock("@/lib/supabase/admin", () => ({
 vi.mock("./youtube-credential-vault", () => ({
   decryptYouTubeRefreshToken: mocks.decrypt,
 }));
-vi.mock("./youtube", () => ({ refreshYouTubeAccessToken: mocks.refresh }));
+vi.mock("./youtube", async (original) => ({
+  ...(await original<typeof import("./youtube")>()),
+  refreshYouTubeAccessToken: mocks.refresh,
+}));
 vi.mock("./m4-provider-observation", async (original) => ({
   ...(await original<typeof import("./m4-provider-observation")>()),
   observeM4YouTubeProvider: mocks.observe,
@@ -55,9 +59,180 @@ beforeEach(() => {
 });
 afterEach(() => {
   vi.unstubAllEnvs();
+  vi.unstubAllGlobals();
   vi.useRealTimers();
 });
+function abortableResponse(
+  init: RequestInit | undefined,
+  value: unknown,
+  delay?: number,
+) {
+  return new Promise<Response>((resolve, reject) => {
+    const signal = init?.signal;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const abort = () => {
+      clearTimeout(timer);
+      signal?.removeEventListener("abort", abort);
+      reject(signal?.reason);
+    };
+    signal?.addEventListener("abort", abort, { once: true });
+    if (signal?.aborted) return abort();
+    if (delay !== undefined)
+      timer = setTimeout(() => {
+        signal?.removeEventListener("abort", abort);
+        resolve(new Response(JSON.stringify(value), { status: 200 }));
+      }, delay);
+  });
+}
+const googleResources = {
+  stream: {
+    items: [
+      {
+        id: "stream",
+        snippet: { channelId: "channel" },
+        status: { streamStatus: "active" },
+      },
+    ],
+  },
+  broadcast: {
+    items: [
+      {
+        id: "broadcast",
+        snippet: { channelId: "channel" },
+        status: { lifeCycleStatus: "live", privacyStatus: "unlisted" },
+        contentDetails: {
+          boundStreamId: "stream",
+          enableAutoStart: false,
+          enableAutoStop: false,
+        },
+      },
+    ],
+  },
+};
 describe("M4 desktop output observation", () => {
+  it("returns valid health before the desktop deadline when optional viewer retrieval stalls", async () => {
+    const provider = await vi.importActual<
+      typeof import("./m4-provider-observation")
+    >("./m4-provider-observation");
+    const budgetRow = {
+      ...row,
+      encrypted_credentials: "optional-budget-ciphertext",
+    };
+    mocks.rpc.mockResolvedValue({ data: [budgetRow], error: null });
+    mocks.observe.mockImplementation(provider.observeM4YouTubeProvider);
+    mocks.refresh.mockImplementation(
+      async (_secret, googleFetch: typeof fetch) => {
+        await googleFetch("https://oauth2.googleapis.com/token");
+        return "access-secret";
+      },
+    );
+    const requests = vi.fn<typeof fetch>().mockImplementation((url, init) => {
+      const path = String(url);
+      if (path.includes("oauth2")) return abortableResponse(init, {}, 2000);
+      if (path.includes("/channels?"))
+        return abortableResponse(init, { items: [{ id: "channel" }] }, 0);
+      if (path.includes("/liveStreams?"))
+        return abortableResponse(init, googleResources.stream, 6000);
+      if (path.includes("/liveBroadcasts?"))
+        return abortableResponse(init, googleResources.broadcast, 6000);
+      return abortableResponse(init, {});
+    });
+    vi.stubGlobal("fetch", requests);
+    const began = Date.now();
+    const result = observeM4DesktopOutput(game, credential, intentId);
+    const settled = vi.fn();
+    void result.then(settled, settled);
+    await vi.advanceTimersByTimeAsync(8500);
+    expect(
+      requests.mock.calls.some(([url]) => String(url).includes("/videos?")),
+    ).toBe(true);
+    expect(settled).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(500);
+    await expect(result).resolves.toMatchObject({
+      broadcastLive: true,
+      streamStatus: "active",
+      concurrentViewers: null,
+    });
+    expect(Date.now() - began).toBeLessThan(12000);
+    expect(mocks.rpc.mock.calls.map(([name]) => name)).toEqual([
+      "assert_m4_output_delivery",
+      "assert_m4_output_delivery",
+      "record_m4_live_evidence",
+    ]);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+  it("fails closed on stalled mandatory Google reads and sends no further reads after the shared budget", async () => {
+    const provider = await vi.importActual<
+      typeof import("./m4-provider-observation")
+    >("./m4-provider-observation");
+    mocks.rpc.mockResolvedValue({
+      data: [{ ...row, encrypted_credentials: "mandatory-budget-ciphertext" }],
+      error: null,
+    });
+    mocks.observe.mockImplementation(provider.observeM4YouTubeProvider);
+    mocks.refresh.mockImplementation(
+      async (_secret, googleFetch: typeof fetch) => {
+        await googleFetch("https://oauth2.googleapis.com/token");
+        return "access-secret";
+      },
+    );
+    const requests = vi.fn<typeof fetch>().mockImplementation((url, init) => {
+      const path = String(url);
+      if (path.includes("oauth2")) return abortableResponse(init, {}, 2000);
+      if (path.includes("/channels?"))
+        return abortableResponse(init, { items: [{ id: "channel" }] }, 0);
+      return abortableResponse(init, {});
+    });
+    vi.stubGlobal("fetch", requests);
+    const result = observeM4DesktopOutput(game, credential, intentId).catch(
+      (error) => error,
+    );
+    await vi.advanceTimersByTimeAsync(9000);
+    expect(await result).toMatchObject({
+      message: "m4_desktop_observation_unavailable",
+    });
+    expect(requests).toHaveBeenCalledTimes(4);
+    expect(requests.mock.calls.every(([, init]) => init?.signal?.aborted)).toBe(
+      true,
+    );
+    expect(mocks.rpc).toHaveBeenCalledTimes(1);
+    const scopedFetch = mocks.refresh.mock.calls[0][1] as typeof fetch;
+    expect(() =>
+      scopedFetch("https://www.googleapis.com/youtube/v3/videos"),
+    ).toThrow();
+    expect(requests).toHaveBeenCalledTimes(4);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+  it.each([false, true])(
+    "preserves caller cancellation and clears the shared timer after provider failure=%s",
+    async (failure) => {
+      const requests = vi
+        .fn<typeof fetch>()
+        .mockResolvedValue(new Response("{}"));
+      vi.stubGlobal("fetch", requests);
+      mocks.observe.mockImplementation(
+        async (_token, _expected, googleFetch: typeof fetch) => {
+          const caller = new AbortController();
+          const read = googleFetch(
+            "https://www.googleapis.com/youtube/v3/liveStreams",
+            { signal: caller.signal },
+          );
+          caller.abort();
+          await read;
+          expect(requests.mock.calls[0][1]?.signal?.aborted).toBe(true);
+          if (failure) throw new Error("provider-canary");
+          return observation;
+        },
+      );
+      const result = observeM4DesktopOutput(game, credential, intentId);
+      if (failure)
+        await expect(result).rejects.toThrow(
+          "m4_desktop_observation_unavailable",
+        );
+      else await expect(result).resolves.toMatchObject({ broadcastLive: true });
+      expect(vi.getTimerCount()).toBe(0);
+    },
+  );
   it("preserves only allowlisted provider categories through the desktop boundary", async () => {
     mocks.observe.mockRejectedValue(
       Object.assign(new Error("secret-canary"), {
@@ -104,8 +279,15 @@ describe("M4 desktop output observation", () => {
         broadcastId: "broadcast",
         visibility: "unlisted",
       },
-      fetch,
+      expect.any(Function),
       true,
+      {
+        organizationId: row.organization_id,
+        connectionVersion: row.youtube_connection_version,
+        credentialDigest: createHash("sha256")
+          .update(row.encrypted_credentials)
+          .digest("hex"),
+      },
     );
     expect(JSON.stringify(mocks.rpc.mock.calls)).not.toContain(
       credential.bearer,
@@ -115,6 +297,7 @@ describe("M4 desktop output observation", () => {
     { organization_id: sessionId },
     { youtube_channel_id: "other" },
     { youtube_connection_version: 4 },
+    { encrypted_credentials: "replacement-ciphertext" },
     { broadcast_generation: 3 },
     { youtube_visibility: "public" },
     { expires_at: "2026-09-08T14:01:00Z" },
@@ -146,8 +329,15 @@ describe("M4 desktop output observation", () => {
         broadcastId: "broadcast",
         visibility: "public",
       },
-      fetch,
+      expect.any(Function),
       true,
+      {
+        organizationId: row.organization_id,
+        connectionVersion: row.youtube_connection_version,
+        credentialDigest: createHash("sha256")
+          .update(row.encrypted_credentials)
+          .digest("hex"),
+      },
     );
   });
   it("does not return an observation after revocation during provider work", async () => {

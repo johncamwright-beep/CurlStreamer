@@ -5,6 +5,7 @@ import {
   shouldGuardStudioNavigation,
   studioNavigationRequestSchema,
   studioSessionLabel,
+  studioLastLiveLabel,
   studioSessionSchema,
   stopStudioSession,
   type StudioSession,
@@ -40,6 +41,9 @@ describe("Studio session status and navigation boundaries", () => {
       { ...session, presentation: "recording" },
       { ...session, title: "x".repeat(201) },
       { ...session, streaming: "x".repeat(41) },
+      { ...session, lastLiveAgeMs: -1 },
+      { ...session, lastLiveAgeMs: "1000" },
+      { ...session, lastLiveAgeMs: Infinity },
       { ...session, privilegedToken: "unexpected" },
     ])
       expect(studioSessionSchema.safeParse(bad).success).toBe(false);
@@ -70,9 +74,23 @@ describe("Studio session status and navigation boundaries", () => {
       { outputActive: false, live: false, streaming: "stopping" },
       "Broadcast connecting",
     ],
-    [{ live: false }, "Broadcast sending · Checking YouTube"],
+    [{ live: false }, "Sending video · Awaiting YouTube"],
+    [
+      { live: false, lastLiveAgeMs: 185000 },
+      "Sending video · Last confirmed live 3m ago",
+    ],
+    [{ live: false, lastLiveAgeMs: null }, "Sending video · Awaiting YouTube"],
     [
       { outputActive: false, live: false, streaming: "failed" },
+      "Broadcast disconnected",
+    ],
+    [
+      {
+        outputActive: false,
+        live: false,
+        streaming: "failed",
+        lastLiveAgeMs: 185000,
+      },
       "Broadcast disconnected",
     ],
     [
@@ -98,6 +116,21 @@ describe("Studio session status and navigation boundaries", () => {
       expect(studioSessionLabel({ ...session, ...update })).toBe(label);
     },
   );
+
+  it.each([
+    [0, "just now"],
+    [999, "just now"],
+    [1000, "1s ago"],
+    [59999, "59s ago"],
+    [60000, "1m ago"],
+    [185000, "3m ago"],
+    [3599999, "59m ago"],
+    [3600000, "1h ago"],
+  ])("labels the actual last live age %i as %s", (ageMs, age) => {
+    expect(studioLastLiveLabel(ageMs as number)).toBe(
+      `Last confirmed live ${age}`,
+    );
+  });
 
   it("recognizes exact game routes and children without accepting sibling game prefixes", () => {
     for (const section of [

@@ -445,6 +445,7 @@ export function StudioSessionIndicator({
   )
     return null;
   const held = session.presentation === "hold";
+  const label = studioSessionLabel(session);
   async function presentation() {
     if (pending || !session?.gameId) return;
     setPending(true);
@@ -471,10 +472,11 @@ export function StudioSessionIndicator({
       <span
         role="status"
         aria-live="polite"
-        className="studio-session-badge"
+        className="studio-session-badge min-w-0 max-w-full"
         data-live={session.live && session.outputActive && !held}
+        title={label}
       >
-        {studioSessionLabel(session)}
+        <span className="block max-w-72 truncate">{label}</span>
       </span>
       {returnLink && (
         <Link href={`/score/${session.gameId}`} className="btn-secondary">

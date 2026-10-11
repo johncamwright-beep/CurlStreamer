@@ -11,6 +11,7 @@ import {
 import {
   observeM4YouTubeProvider,
   m4ProviderObservationSchema,
+  type M4ProviderObservation,
 } from "./m4-provider-observation";
 import { decryptYouTubeRefreshToken } from "./youtube-credential-vault";
 import { refreshYouTubeAccessToken } from "./youtube";
@@ -94,23 +95,49 @@ export async function observeM4DesktopOutput(
       return value;
     }
     const initial = await read();
-    const accessToken = await refreshYouTubeAccessToken(
-      decryptYouTubeRefreshToken(
-        initial.encrypted_credentials,
-        initial.organization_id,
-      ),
-    );
-    const observation = await observeM4YouTubeProvider(
-      accessToken,
-      {
-        channelId: initial.youtube_channel_id,
-        streamId: initial.youtube_stream_id,
-        broadcastId: initial.youtube_broadcast_id,
-        visibility: initial.youtube_visibility,
-      },
-      fetch,
-      true,
-    );
+    // Google reads share a budget below the desktop's 12-second request bound.
+    // Optional viewers may time out without throwing away valid health, while
+    // mandatory OAuth/ownership/resource reads still fail closed.
+    const googleController = new AbortController();
+    const googleTimer = setTimeout(() => googleController.abort(), 9000);
+    const googleFetch: typeof fetch = (url, init) => {
+      const signal = AbortSignal.any([
+        googleController.signal,
+        ...(init?.signal ? [init.signal] : []),
+      ]);
+      signal.throwIfAborted();
+      return fetch(url, { ...init, signal });
+    };
+    let observation: M4ProviderObservation;
+    try {
+      const accessToken = await refreshYouTubeAccessToken(
+        decryptYouTubeRefreshToken(
+          initial.encrypted_credentials,
+          initial.organization_id,
+        ),
+        googleFetch,
+      );
+      observation = await observeM4YouTubeProvider(
+        accessToken,
+        {
+          channelId: initial.youtube_channel_id,
+          streamId: initial.youtube_stream_id,
+          broadcastId: initial.youtube_broadcast_id,
+          visibility: initial.youtube_visibility,
+        },
+        googleFetch,
+        true,
+        {
+          organizationId: initial.organization_id,
+          connectionVersion: initial.youtube_connection_version,
+          credentialDigest: createHash("sha256")
+            .update(initial.encrypted_credentials)
+            .digest("hex"),
+        },
+      );
+    } finally {
+      clearTimeout(googleTimer);
+    }
     const current = await read();
     for (const key of [
       "intent_id",

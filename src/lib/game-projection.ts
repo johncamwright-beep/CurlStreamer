@@ -22,7 +22,7 @@ export interface BroadcastGame {
   };
   layout: GameState["layout"];
   programCameraMode?: GameState["programCameraMode"];
-  programAudioDelayMs?: number;
+  programAudioDelayMs?: GameState["programAudioDelayMs"];
   cameraPan?: GameState["cameraPan"];
   broadcast: GameState["broadcast"];
   audioMuted: boolean;

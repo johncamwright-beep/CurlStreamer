@@ -2,11 +2,12 @@ import { describe, expect, it } from "vitest";
 import { actionSchema, gameSchema, hasSafeSponsorContent } from "./schema";
 
 it("bounds program audio delay, portrait pan and slower sponsor timing", () => {
-  expect(
-    actionSchema.safeParse({ type: "program-audio-delay", milliseconds: 2500 })
-      .success,
-  ).toBe(true);
-  for (const milliseconds of [-1, 5001, 1.5, Infinity])
+  for (const milliseconds of [-5000, -2500, -1, 0, 2500, 5000])
+    expect(
+      actionSchema.safeParse({ type: "program-audio-delay", milliseconds })
+        .success,
+    ).toBe(true);
+  for (const milliseconds of [-5001, 5001, -1.5, 1.5, Infinity, NaN])
     expect(
       actionSchema.safeParse({ type: "program-audio-delay", milliseconds })
         .success,

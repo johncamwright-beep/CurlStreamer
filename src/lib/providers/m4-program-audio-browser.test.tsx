@@ -26,11 +26,13 @@ vi.mock("@/components/ProgramPhoneAudio", () => ({
     role: string;
     enabled: boolean;
     stream?: MediaStream;
+    delayMs?: number;
   }) => (
     <span
       data-phone={props.role}
       data-enabled={props.enabled}
       data-stream={Boolean(props.stream)}
+      data-delay={props.delayMs ?? 0}
     />
   ),
 }));
@@ -114,6 +116,46 @@ describe("native program audio routing", () => {
       expect(render()).not.toContain("/ip-camera/");
       expect(render()).toContain(
         'data-phone="camera-home" data-enabled="false" data-stream="true"',
+      );
+    },
+  );
+  it.each([-5000, -2000, -250, 0, 250, 2000, 5000])(
+    "corrects %s milliseconds without shifting camera sound away from its picture",
+    (adjustment) => {
+      const game = gameFixture();
+      const source: M4CameraInputSnapshot = {
+        kind: "tapo",
+        connectionEnabled: true,
+        configured: true,
+        phase: "streaming",
+        generation: 3,
+        errorCode: null,
+        host: null,
+        stream: null,
+        rotation: 0,
+      };
+      const markup = renderToStaticMarkup(
+        <M4ProgramAudio
+          game={{ ...broadcastGame(game), programAudioDelayMs: adjustment }}
+          sources={{
+            "camera-home": source,
+            "camera-away": { ...source, kind: "phone" },
+          }}
+          phoneStreams={{}}
+        />,
+      );
+      expect(markup).toContain(
+        `data-endpoint="/usb-audio" data-enabled="true" data-volume="1" data-delay="${Math.max(0, adjustment)}"`,
+      );
+      expect(markup).toMatch(
+        new RegExp(
+          `data-endpoint="/ip-camera/camera-home/audio\\?generation=3&amp;after=0"[^>]*data-delay="${Math.max(0, -adjustment)}"`,
+        ),
+      );
+      expect(markup).toMatch(
+        new RegExp(
+          `data-phone="camera-away"[^>]*data-delay="${Math.max(0, -adjustment)}"`,
+        ),
       );
     },
   );

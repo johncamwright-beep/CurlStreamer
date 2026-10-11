@@ -32,7 +32,7 @@ internal sealed class Workspace : Form
     private TaskCompletionSource<string> ready;
     private TaskCompletionSource<bool> exited;
     private TaskCompletionSource<Dictionary<string, object>> handoff;
-    private bool busy, polling, closing, mayClose, recording, controllerReady, startupFailed;
+    private bool busy, polling, closing, mayClose, recording, controllerReady, startupFailed, forceClosing;
     private Dictionary<string, object> lastState;
     private Dictionary<string, Dictionary<string, object>> cameraInputs = new Dictionary<string, Dictionary<string, object>>();
     private bool cameraSettingsOpen;
@@ -87,7 +87,7 @@ internal sealed class Workspace : Form
         FormClosing += async (s, e) => {
             if (mayClose) return;
             e.Cancel = true;
-            if (busy || closing) { status.Text = "Wait for the current recording action to finish before closing."; return; }
+            if (busy || closing) { await ConfirmForceClose(); return; }
             var game = runningGame ?? selectedGame ?? lastGame;
             if (game != null && !gameEnded) {
                 var choice = MessageBox.Show(this,
@@ -102,6 +102,7 @@ internal sealed class Workspace : Form
         UpdateButtons();
     }
     protected override bool ProcessCmdKey(ref Message message, Keys keyData) {
+        if (keyData == (Keys.Control | Keys.Shift | Keys.Q)) { var recovery = ConfirmForceClose(); return true; }
         if (keyData == (Keys.Control | Keys.R)) { ReloadWorkspace(); return true; }
         return base.ProcessCmdKey(ref message, keyData);
     }
@@ -155,10 +156,33 @@ internal sealed class Workspace : Form
             await CloseController();
             mayClose = true; poll.Stop(); usbTimer.Stop(); web.Dispose(); Close();
         } catch {
+            if (forceClosing || mayClose) return;
             closing = false;
-            status.Text = "Studio has not stopped safely yet. It remains open; wait and try closing again.";
+            status.Text = "Shutdown was not confirmed. Press Ctrl+Shift+Q to force close Studio, or try closing again.";
             UpdateButtons();
         }
+    }
+    private async Task ConfirmForceClose() {
+        if (forceClosing || mayClose) return;
+        if (MessageBox.Show(this, "Force close Studio now?\n\nThis interrupts local cameras, microphone and video delivery. Your saved game and score are kept. An unfinished recording may need recovery. YouTube shutdown may remain unconfirmed; check YouTube Studio if necessary.",
+            "Force close Studio", MessageBoxButtons.YesNo, MessageBoxIcon.Warning, MessageBoxDefaultButton.Button2) != DialogResult.Yes) return;
+        forceClosing = closing = true; poll.Stop(); usbTimer.Stop();
+        ForgetGame();
+        try {
+            Directory.CreateDirectory(LifecycleDirectory);
+            File.WriteAllText(Path.Combine(LifecycleDirectory, "recording-warning.json"), json.Serialize(new { timestampUtc = DateTime.UtcNow.ToString("o"), message = "Studio was force closed. Check any unfinished recording and YouTube shutdown before reusing this broadcast." }));
+        } catch { }
+        // Only the controller Process created by this workspace is terminated.
+        // Native children monitor their parent; their independent authority
+        // watchdog remains in force. No server cleanup receipt is fabricated.
+        var owned = child;
+        await WorkspacePolicy.ForceStopController(owned);
+        try { if (local != null) local.CancelPendingRequests(); } catch { }
+        usbGame = null;
+        try { await Task.WhenAny(Task.Run(() => usbAudio.Stop()), Task.Delay(5000)); } catch { }
+        mayClose = true;
+        try { web.Dispose(); } catch { }
+        Close();
     }
     private void UpdateButtons() {
         bottom.Visible = !recording && (selectedGame != null || origin == null);
@@ -275,6 +299,7 @@ internal sealed class Workspace : Form
             var raw = args.WebMessageAsJson;
             if (raw.Length > 8192) return;
             var value = json.Deserialize<Dictionary<string, object>>(raw);
+            if (WorkspacePolicy.ForceCloseRequest(value, selectedGame, runningGame) && WorkspacePolicy.Game(args.Source, origin) == selectedGame) { await ConfirmForceClose(); return; }
             if (value.Count == 1 && TextValue(value, "type") == "studio-session-observe") { PublishSessionStatus(); return; }
             if (TextValue(value, "type") == "studio-navigation-resolve") { await ResolveNavigation(value); return; }
             if (value.Count == 3 && TextValue(value, "type") == "studio-session-stop" &&
@@ -698,6 +723,7 @@ internal sealed class Workspace : Form
     }
     private void PublishSessionStatus() {
         if (web.CoreWebView2 == null || !WorkspacePolicy.SameOrigin(web.CoreWebView2.Source, origin)) return;
+        web.CoreWebView2.ExecuteScriptAsync("window.dispatchEvent(new CustomEvent('studio-recovery-status',{detail:" + json.Serialize(new { gameId = selectedGame, canForceClose = true }) + "}));");
         var active = recording && runningGame != null && child != null && !child.HasExited;
         object presentationValue, outputValue;
         var presentation = lastState != null && lastState.TryGetValue("presentation", out presentationValue) ? presentationValue as Dictionary<string, object> : null;

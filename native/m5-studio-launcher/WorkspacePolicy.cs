@@ -8,6 +8,22 @@ using System.Collections.Generic;
 
 internal static class WorkspacePolicy
 {
+    internal static async System.Threading.Tasks.Task<bool> ForceStopController(System.Diagnostics.Process owned)
+    {
+        if (owned == null) return true;
+        try {
+            if (!owned.HasExited) owned.Kill();
+            return await System.Threading.Tasks.Task.Run(() => owned.WaitForExit(5000));
+        } catch { return false; }
+    }
+    internal static bool ForceCloseRequest(Dictionary<string, object> request, string selectedGame, string runningGame)
+    {
+        object type, game;
+        return request != null && request.Count == 2 && selectedGame != null &&
+            (runningGame == null || runningGame == selectedGame) &&
+            request.TryGetValue("type", out type) && Object.Equals(type, "studio-force-close") &&
+            request.TryGetValue("gameId", out game) && Object.Equals(game, selectedGame);
+    }
     internal static bool KeepAwake(string streaming)
     {
         return streaming == "starting" || streaming == "armed" || streaming == "paused";

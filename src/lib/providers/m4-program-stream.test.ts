@@ -90,10 +90,212 @@ describe("independent managed program stream", () => {
     });
     await vi.advanceTimersByTimeAsync(20000);
     expect(observe).toHaveBeenCalledTimes(3);
-    await vi.advanceTimersByTimeAsync(5000);
+    await vi.advanceTimersByTimeAsync(29999);
+    expect(observe).toHaveBeenCalledTimes(3);
+    await vi.advanceTimersByTimeAsync(1);
     expect(observe).toHaveBeenCalledTimes(4);
     expect(f.native.stop).not.toHaveBeenCalled();
     await stream.stop();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+  it("polls every five seconds until live is verified, then every thirty seconds while renewing authority", async () => {
+    vi.useFakeTimers({
+      toFake: ["setTimeout", "clearTimeout", "Date", "performance"],
+    });
+    const f = fixture();
+    const observe = vi.spyOn(f.desktop, "observeOutput").mockResolvedValue({
+      streamStatus: "active",
+      healthStatus: "good",
+      broadcastStatus: "ready",
+      broadcastLive: false,
+    });
+    const native = {
+      ...f.native,
+      observe: vi.fn(async () => ({
+        state: "active" as const,
+        authority: 1,
+        failure: "none" as const,
+        bytes: 1234,
+      })),
+    };
+    const stream = new M4ProgramStream(native);
+    await stream.start(f.desktop, "intent");
+    await vi.advanceTimersByTimeAsync(0);
+    expect(observe).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(4999);
+    expect(observe).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(observe).toHaveBeenCalledTimes(2);
+    expect(stream.snapshot().liveConfirmed).toBe(false);
+
+    observe.mockResolvedValue({
+      streamStatus: "active",
+      healthStatus: "good",
+      broadcastStatus: "live",
+      broadcastLive: true,
+      concurrentViewers: 12,
+    });
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(observe).toHaveBeenCalledTimes(3);
+    expect(stream.snapshot()).toMatchObject({
+      liveConfirmed: true,
+      lastLiveAgeMs: 0,
+      concurrentViewers: 12,
+    });
+    await vi.advanceTimersByTimeAsync(29999);
+    expect(observe).toHaveBeenCalledTimes(3);
+    expect(stream.snapshot()).toMatchObject({
+      state: "armed",
+      liveConfirmed: true,
+      lastLiveAgeMs: 29999,
+      concurrentViewers: 12,
+    });
+    expect(stream.snapshot().lastLiveAgeMs).toBe(29999);
+    expect(f.heartbeat.mock.calls.length).toBeGreaterThanOrEqual(7);
+    expect(native.renew.mock.calls.length).toBeGreaterThanOrEqual(7);
+    expect(f.native.stop).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1);
+    expect(observe).toHaveBeenCalledTimes(4);
+    expect(stream.snapshot().lastLiveAgeMs).toBe(0);
+    await stream.stop();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+  it("keeps failure backoff after verified live and returns to thirty-second polling only after real recovery", async () => {
+    vi.useFakeTimers({
+      toFake: ["setTimeout", "clearTimeout", "Date", "performance"],
+    });
+    const f = fixture();
+    const live = {
+      streamStatus: "active" as const,
+      healthStatus: "good" as const,
+      broadcastStatus: "live" as const,
+      broadcastLive: true,
+    };
+    const observe = vi
+      .spyOn(f.desktop, "observeOutput")
+      .mockResolvedValueOnce(live)
+      .mockRejectedValue(new Error("unavailable"));
+    const native = {
+      ...f.native,
+      observe: vi.fn(async () => ({
+        state: "active" as const,
+        authority: 1,
+        failure: "none" as const,
+        bytes: 1234,
+      })),
+    };
+    const stream = new M4ProgramStream(native);
+    await stream.start(f.desktop, "intent");
+    await vi.advanceTimersByTimeAsync(30000);
+    expect(observe).toHaveBeenCalledTimes(2);
+    expect(stream.snapshot()).toMatchObject({
+      state: "armed",
+      liveConfirmed: false,
+      lastLiveAgeMs: 30000,
+    });
+    expect(stream.snapshot().provider).toBeUndefined();
+    let attempts = 2;
+    for (const backoff of [10000, 20000, 40000, 60000]) {
+      await vi.advanceTimersByTimeAsync(backoff - 1);
+      expect(observe).toHaveBeenCalledTimes(attempts);
+      if (backoff === 60000) observe.mockResolvedValue(live);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(observe).toHaveBeenCalledTimes(++attempts);
+    }
+    expect(stream.snapshot()).toMatchObject({
+      state: "armed",
+      liveConfirmed: true,
+      lastLiveAgeMs: 0,
+    });
+    await vi.advanceTimersByTimeAsync(29999);
+    expect(observe).toHaveBeenCalledTimes(attempts);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(observe).toHaveBeenCalledTimes(attempts + 1);
+    expect(f.native.stop).not.toHaveBeenCalled();
+    expect(f.heartbeat.mock.calls.length).toBeGreaterThanOrEqual(30);
+    await stream.stop();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+  it("does not slow startup from provider live alone when native video is not active", async () => {
+    vi.useFakeTimers();
+    const f = fixture();
+    const observe = vi.spyOn(f.desktop, "observeOutput").mockResolvedValue({
+      streamStatus: "active",
+      healthStatus: "good",
+      broadcastStatus: "live",
+      broadcastLive: true,
+    });
+    const native = {
+      ...f.native,
+      observe: vi.fn(async () => ({
+        state: "stopped" as const,
+        authority: 1,
+        failure: "none" as const,
+        bytes: 0,
+      })),
+    };
+    const stream = new M4ProgramStream(native);
+    await stream.start(f.desktop, "intent");
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(observe).toHaveBeenCalledTimes(2);
+    expect(stream.snapshot().liveConfirmed).toBe(false);
+    expect(f.heartbeat).toHaveBeenCalledOnce();
+    await stream.stop();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+  it("expires old provider evidence during a stalled read without inventing a new confirmation time", async () => {
+    vi.useFakeTimers({
+      toFake: ["setTimeout", "clearTimeout", "Date", "performance"],
+    });
+    const f = fixture();
+    const live = {
+      streamStatus: "active" as const,
+      healthStatus: "good" as const,
+      broadcastStatus: "live" as const,
+      broadcastLive: true,
+    };
+    let finish!: (value: typeof live) => void;
+    const observe = vi
+      .spyOn(f.desktop, "observeOutput")
+      .mockResolvedValueOnce(live)
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            finish = resolve;
+          }),
+      );
+    const native = {
+      ...f.native,
+      observe: vi.fn(async () => ({
+        state: "active" as const,
+        authority: 1,
+        failure: "none" as const,
+        bytes: 1234,
+      })),
+    };
+    const stream = new M4ProgramStream(native);
+    await stream.start(f.desktop, "intent");
+    await vi.advanceTimersByTimeAsync(44999);
+    expect(observe).toHaveBeenCalledTimes(2);
+    expect(stream.snapshot()).toMatchObject({
+      liveConfirmed: true,
+      lastLiveAgeMs: 44999,
+    });
+    await vi.advanceTimersByTimeAsync(1);
+    expect(stream.snapshot()).toMatchObject({
+      state: "armed",
+      liveConfirmed: false,
+      lastLiveAgeMs: 45000,
+    });
+    expect(stream.snapshot().provider).toBeUndefined();
+    await stream.stop();
+    finish(live);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(stream.snapshot()).toMatchObject({
+      state: "stopped",
+      liveConfirmed: false,
+    });
+    expect(stream.snapshot().lastLiveAgeMs).toBeUndefined();
     expect(vi.getTimerCount()).toBe(0);
   });
   it("pauses and resumes one delivered target while renewing authority, with Stop terminal", async () => {

@@ -16,6 +16,12 @@ type Native = Pick<
 type State =
   "idle" | "starting" | "armed" | "paused" | "stopping" | "stopped" | "failed";
 const unavailable = () => new Error("m4_program_stream_unavailable");
+const startupProviderPollMs = 5000;
+const liveProviderPollMs = 30000;
+// The last provider response keeps its real age while the next 30-second poll
+// completes (the desktop observation has a 12-second request bound). This is
+// telemetry freshness only; native/desktop authority is checked independently.
+const liveProviderFreshMs = liveProviderPollMs + 15000;
 export type M4StreamSnapshot = {
   state: State;
   localOutput?: {
@@ -42,6 +48,7 @@ export class M4ProgramStream {
   #localTimer?: ReturnType<typeof setTimeout>;
   #providerTimer?: ReturnType<typeof setTimeout>;
   #providerFailures = 0;
+  #liveVerified = false;
   #failureReported = false;
   #controlFlight = false;
   #outputGeneration = 0;
@@ -79,7 +86,8 @@ export class M4ProgramStream {
     const provider =
       this.#state === "armed" &&
       this.#provider &&
-      performance.now() - this.#provider.at < 10000
+      performance.now() - this.#provider.at <
+        (this.#liveVerified ? liveProviderFreshMs : 10000)
         ? this.#provider.value
         : undefined;
     return {
@@ -177,6 +185,7 @@ export class M4ProgramStream {
     this.#provider = undefined;
     this.#lastLiveAt = undefined;
     this.#providerFailures = 0;
+    this.#liveVerified = false;
   }
   async #observeLocal(signal: AbortSignal) {
     const at = performance.now();
@@ -233,6 +242,7 @@ export class M4ProgramStream {
           value.broadcastLive && value.streamStatus === "active"
             ? at
             : undefined;
+        if (this.snapshot().liveConfirmed) this.#liveVerified = true;
       }
     } catch {
       if (generation === this.#outputGeneration) {
@@ -245,7 +255,11 @@ export class M4ProgramStream {
         () => {
           void this.#observeProvider(desktop, intentId, signal);
         },
-        Math.min(60000, 5000 * 2 ** this.#providerFailures),
+        this.#providerFailures > 0
+          ? Math.min(60000, startupProviderPollMs * 2 ** this.#providerFailures)
+          : this.#liveVerified
+            ? liveProviderPollMs
+            : startupProviderPollMs,
       );
   }
   async #finalObservation() {

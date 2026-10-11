@@ -215,6 +215,60 @@ describe("YouTube Live provider", () => {
     ).rejects.toThrow("youtube_provider_unavailable");
     expect(beforeInsert).toHaveBeenCalledOnce();
   });
+  it.each(["broadcast", "stream"] as const)(
+    "waits for the durable %s insertion fence before sending a POST",
+    async (resource) => {
+      let persist!: () => void;
+      let entered!: () => void;
+      const persistence = new Promise<void>((resolve) => (persist = resolve));
+      const callbackEntered = new Promise<void>(
+        (resolve) => (entered = resolve),
+      );
+      const beforeInsert = vi.fn(async () => {
+        entered();
+        await persistence;
+      });
+      const fetcher = vi
+        .fn<typeof fetch>()
+        .mockResolvedValueOnce(json({ items: [] }))
+        .mockResolvedValueOnce(
+          json(
+            resource === "broadcast"
+              ? manualBroadcast
+              : {
+                  id: "stream-id",
+                  snippet: { description: "marker" },
+                  cdn: {
+                    ingestionInfo: {
+                      ingestionAddress: "rtmp://ingest",
+                      streamName: "private-key",
+                    },
+                  },
+                },
+          ),
+        );
+      const preparation =
+        resource === "broadcast"
+          ? findOrCreateYouTubeBroadcast(
+              manualValues,
+              fetcher,
+              true,
+              beforeInsert,
+            )
+          : findOrCreateYouTubeStream(
+              manualValues,
+              fetcher,
+              true,
+              beforeInsert,
+            );
+      await callbackEntered;
+      expect(fetcher).toHaveBeenCalledTimes(1);
+      persist();
+      await preparation;
+      expect(fetcher).toHaveBeenCalledTimes(2);
+      expect(fetcher.mock.calls[1][1]?.method).toBe("POST");
+    },
+  );
   it("uses the scheduled game instant for a reserved watch page", async () => {
     const fetcher = vi
       .fn<typeof fetch>()

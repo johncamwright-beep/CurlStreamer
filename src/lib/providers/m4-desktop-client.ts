@@ -1,6 +1,35 @@
 // Native Node entry points only; node:crypto intentionally prevents browser use.
 import { createHash, randomBytes } from "node:crypto";
 import { z } from "zod";
+import {
+  m4YouTubeFailureCode,
+  m4TargetFailureStage,
+  m4YouTubeFailureMessages,
+} from "./m4-youtube-failure";
+
+async function readFailureCode(response: Response) {
+  const reader = response.body?.getReader();
+  if (!reader) return undefined;
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  try {
+    for (;;) {
+      const next = await reader.read();
+      if (next.done) break;
+      size += next.value.length;
+      if (size > 2048) return undefined;
+      chunks.push(next.value);
+    }
+    const value = JSON.parse(new TextDecoder().decode(Buffer.concat(chunks)));
+    const code = m4YouTubeFailureCode.safeParse(value?.code);
+    return code.success ? code.data : undefined;
+  } catch {
+    return undefined;
+  } finally {
+    await reader.cancel().catch(() => undefined);
+    for (const chunk of chunks) chunk.fill(0);
+  }
+}
 import { programClosingGrantSchema } from "../program-presentation";
 import type {
   ConnectionDiagnostic,
@@ -104,6 +133,13 @@ export class M4DesktopClient {
   #clock: () => number;
   #diagnostic?: ConnectionDiagnostic;
   #failedRequests = new Set<string>();
+  #lastFailure?: z.infer<typeof m4YouTubeFailureCode>;
+
+  failureMessage() {
+    return this.#lastFailure
+      ? m4YouTubeFailureMessages[this.#lastFailure]
+      : undefined;
+  }
 
   constructor(
     gameId: string,
@@ -356,6 +392,8 @@ export class M4DesktopClient {
     const controller = new AbortController();
     let status: number | undefined;
     let trace: string | undefined;
+    let providerFailure: z.infer<typeof m4YouTubeFailureCode> | undefined;
+    let stage: z.infer<typeof m4TargetFailureStage> | undefined;
     const actions: Record<string, ConnectionDiagnosticInput["action"]> = {
       "/exchange": "exchange",
       "/output-intent": "output_intent",
@@ -371,6 +409,7 @@ export class M4DesktopClient {
           action,
           status,
           trace,
+          stage,
           durationMs: Math.min(
             600_000,
             Math.max(0, Math.round(this.#clock() - start)),
@@ -403,6 +442,15 @@ export class M4DesktopClient {
             const correlation = response.headers.get("x-curlstreamer-trace");
             if (correlation && z.uuid().safeParse(correlation).success)
               trace = correlation;
+            const parsedStage = m4TargetFailureStage.safeParse(
+              response.headers.get("x-curlstreamer-stage"),
+            );
+            if (parsedStage.success) stage = parsedStage.data;
+            if (!response.ok) {
+              providerFailure = await readFailureCode(response);
+              if (providerFailure && path === "/target")
+                this.#lastFailure = providerFailure;
+            }
             if ([408, 429, 500, 502, 503, 504].includes(response.status)) {
               await response.body?.cancel().catch(() => undefined);
               throw new TransportUnavailable();
@@ -427,11 +475,12 @@ export class M4DesktopClient {
     } catch (cause) {
       this.#failedRequests.add(path);
       log(
-        cause instanceof TransportUnavailable
-          ? controller.signal.aborted
-            ? "timeout"
-            : "network_unavailable"
-          : "authority_rejected",
+        providerFailure ??
+          (cause instanceof TransportUnavailable
+            ? controller.signal.aborted
+              ? "timeout"
+              : "network_unavailable"
+            : "authority_rejected"),
       );
       if (cause instanceof TransportUnavailable)
         throw new TransportUnavailable();

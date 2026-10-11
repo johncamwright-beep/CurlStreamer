@@ -921,6 +921,7 @@ export async function createM4OperatorServer(options: {
           ) {
             streaming = "failed";
             streamingMessage =
+              desktop.failureMessage() ??
               "Local output could not be changed. Recording continues.";
           } else if (
             input.action === "start-program" ||

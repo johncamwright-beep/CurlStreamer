@@ -79,6 +79,39 @@ const settle = async () => {
 describe("local IP camera manager", () => {
   beforeEach(() => vi.useFakeTimers());
   afterEach(() => vi.useRealTimers());
+  it("recovers an established Tapo decoder failure over TCP without changing its saved source or other camera", async () => {
+    const { manager, children, diagnostic } = harness();
+    manager.configure("camera-home", config);
+    manager.connect("camera-home");
+    await manager.start();
+    expect(JSON.parse(children[0].secretInput).version).toBe(1);
+    children[0].stdout.write(record("JPEG", jpeg));
+    children[0].stdout.write(
+      record("STAT", JSON.stringify({ code: "decode_failed" })),
+    );
+    await settle();
+    await vi.advanceTimersByTimeAsync(500);
+    const retry = JSON.parse(children[1].secretInput);
+    expect(retry).toMatchObject({
+      version: 2,
+      path: `/${config.stream}`,
+      host: config.host,
+      username: config.username,
+      password: config.password,
+    });
+    expect(retry).not.toHaveProperty("stream");
+    expect(manager.snapshot("camera-home").kind).toBe("tapo");
+    expect(manager.snapshot("camera-away").phase).toBe("idle");
+    expect(diagnostic).toHaveBeenCalledWith({
+      role: "camera-home",
+      layer: "media",
+      code: "tcp_fallback",
+    });
+    expect(JSON.stringify(diagnostic.mock.calls)).not.toContain(
+      config.password,
+    );
+    await manager.stop();
+  });
 
   it("reports bounded frame-arrival gaps and native decode health without exposing camera credentials", async () => {
     const { manager, children } = harness();

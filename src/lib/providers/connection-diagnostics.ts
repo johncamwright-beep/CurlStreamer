@@ -1,6 +1,10 @@
 // A fixed vocabulary, not an error-message logger. Never add URLs, credentials,
 // SDP/ICE, device identifiers, raw stats, provider bodies or arbitrary strings.
 import { z } from "zod";
+import {
+  m4YouTubeFailureCode,
+  m4TargetFailureStage,
+} from "./m4-youtube-failure";
 
 export const connectionDiagnosticSchema = z
   .object({
@@ -23,6 +27,7 @@ export const connectionDiagnosticSchema = z
       "program",
     ]),
     code: z.enum([
+      ...m4YouTubeFailureCode.options,
       "started",
       "ready",
       "stopped",
@@ -68,10 +73,12 @@ export const connectionDiagnosticSchema = z
       "refresh_requested",
       "refresh_failed",
       "recovery_exhausted",
+      "tcp_fallback",
     ]),
     role: z.enum(["camera-home", "camera-away"]).optional(),
     stage: z
       .enum([
+        ...m4TargetFailureStage.options,
         "configuration",
         "database",
         "ticket",

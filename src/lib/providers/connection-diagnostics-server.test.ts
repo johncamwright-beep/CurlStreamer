@@ -2,6 +2,31 @@ import { afterEach, expect, it, vi } from "vitest";
 vi.mock("server-only", () => ({}));
 import { traceStudioRequest } from "./connection-diagnostics-server";
 afterEach(() => vi.restoreAllMocks());
+it("logs allowlisted provider category and target stage without raw error bodies", async () => {
+  const logger = vi.spyOn(console, "info").mockImplementation(() => undefined);
+  await traceStudioRequest(
+    async () =>
+      new Response(
+        JSON.stringify({
+          code: "youtube_quota_exceeded",
+          error: "private-key",
+        }),
+        {
+          status: 503,
+          headers: { "x-curlstreamer-stage": "target_oauth" },
+        },
+      ),
+    "youtube",
+  );
+  expect(logger).toHaveBeenCalledWith(
+    "CurlStreamer connection",
+    expect.objectContaining({
+      code: "youtube_quota_exceeded",
+      stage: "target_oauth",
+    }),
+  );
+  expect(JSON.stringify(logger.mock.calls)).not.toContain("private-key");
+});
 it("correlates a rejected camera request without logging the response or credentials", async () => {
   const logger = vi.spyOn(console, "info").mockImplementation(() => undefined);
   const response = await traceStudioRequest(

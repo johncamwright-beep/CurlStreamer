@@ -88,6 +88,18 @@ describe("native program audio routing", () => {
       expect(render()).toContain(
         'data-endpoint="/usb-audio" data-enabled="true" data-volume="1" data-delay="2500"',
       );
+      for (const milliseconds of [undefined, 0]) {
+        const markup = renderToStaticMarkup(
+          <M4ProgramAudio
+            game={{ ...projection, programAudioDelayMs: milliseconds }}
+            sources={sources}
+            phoneStreams={{}}
+          />,
+        );
+        expect(markup).toContain(
+          'data-endpoint="/usb-audio" data-enabled="true" data-volume="1" data-delay="0"',
+        );
+      }
       expect(render()).toContain(
         'data-endpoint="/ip-camera/camera-home/audio?generation=3&amp;after=0" data-enabled="true" data-volume="0.4"',
       );

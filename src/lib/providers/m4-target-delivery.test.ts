@@ -56,6 +56,32 @@ afterEach(() => {
   vi.useRealTimers();
 });
 describe("once-only M4 credential delivery", () => {
+  it("retains a safe OAuth failure category and stage without retaining secrets", async () => {
+    mocks.refresh.mockRejectedValue(new Error("youtube_quota_exceeded"));
+    await expect(
+      deliverM4Target(game, credential, intentId),
+    ).rejects.toMatchObject({
+      reason: "youtube_quota_exceeded",
+      stage: "target_oauth",
+    });
+    expect(mocks.target).not.toHaveBeenCalled();
+    expect(mocks.rpc).toHaveBeenCalledTimes(1);
+  });
+  it("replaces arbitrary credential errors with a fixed category", async () => {
+    mocks.decrypt.mockImplementation(() => {
+      throw new Error("private-refresh-token");
+    });
+    try {
+      await deliverM4Target(game, credential, intentId);
+      throw new Error("expected failure");
+    } catch (error) {
+      expect(error).toMatchObject({
+        reason: "m4_target_unavailable",
+        stage: "target_decrypt",
+      });
+      expect(JSON.stringify(error)).not.toContain("private-refresh-token");
+    }
+  });
   it("rejects a target key exceeding the native admission limit", async () => {
     mocks.target.mockResolvedValue({ ...target, streamKey: "x".repeat(256) });
     await expect(deliverM4Target(game, credential, intentId)).rejects.toThrow(

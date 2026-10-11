@@ -90,6 +90,7 @@ type Slot = {
   counter: number;
   audio: Buffer;
   authBlocked?: boolean;
+  forceTcp?: boolean;
 };
 
 /** Checks the full JPEG envelope and SOF dimensions before retaining a frame. */
@@ -248,6 +249,24 @@ export function createM4IpCameraManager(
     );
     if (retryable) diagnostic(slot, "retry");
     if (retryable) slot.reconnects++;
+    if (
+      retryable &&
+      slot.config.kind === "tapo" &&
+      !slot.forceTcp &&
+      slot.lastFrame !== undefined &&
+      [
+        "timeout",
+        "channel_closed",
+        "capture_failed",
+        "verification_timeout",
+      ].includes(
+        failureDiagnostic ??
+          (code === "stale_frames" ? "verification_timeout" : ""),
+      )
+    ) {
+      slot.forceTcp = true;
+      diagnostic(slot, "tcp_fallback");
+    }
     if (code === "auth_failed") slot.authBlocked = true;
     slot.phase = retryable ? "retrying" : "failed";
     slot.failures++;
@@ -476,16 +495,22 @@ export function createM4IpCameraManager(
       pending = Buffer.from(pending);
     });
     const { host, port, username, password, rotation } = slot.config;
+    const tapoUdp = slot.config.kind === "tapo" && !slot.forceTcp;
     child.stdin.write(
       JSON.stringify({
-        version: slot.config.kind === "tapo" ? 1 : 2,
+        version: tapoUdp ? 1 : 2,
         host,
         port,
         username,
         password,
-        ...(slot.config.kind === "tapo"
+        ...(tapoUdp && slot.config.kind === "tapo"
           ? { stream: slot.config.stream }
-          : { path: slot.config.path }),
+          : {
+              path:
+                slot.config.kind === "tapo"
+                  ? `/${slot.config.stream}`
+                  : slot.config.path,
+            }),
         rotation,
       }) + "\n",
     );
@@ -516,6 +541,7 @@ export function createM4IpCameraManager(
     slot.reconnects = 0;
     slot.nativeHealth = undefined;
     if (!preserveZoom) slot.zoom = 1;
+    if (!preserveZoom) slot.forceTcp = false;
     slot.failures = 0;
     slot.authBlocked = false;
     slot.phase = "idle";

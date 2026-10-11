@@ -58,6 +58,7 @@ async function fixture(
   }
   const desktop = {
     challenge: "challenge",
+    failureMessage: vi.fn(() => undefined),
     exchange: vi.fn(async () => undefined),
     stop: vi.fn(async () => undefined),
     heartbeat: vi.fn(async () => ({ authorized: true })),

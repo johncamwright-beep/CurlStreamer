@@ -44,6 +44,37 @@ function deferred<T>() {
 }
 afterEach(() => vi.useRealTimers());
 describe("in-memory M4 desktop capability client", () => {
+  it("retains a safe target failure for the operator without replaying its once-only handoff", async () => {
+    const { client, fetcher } = setup();
+    await client.exchange(code);
+    const intentId = "33333333-3333-4333-8333-333333333333";
+    fetcher.mockResolvedValueOnce(
+      response({
+        intentId,
+        sessionId,
+        generation: 1,
+        phase: "reserved",
+        deliveryRecorded: false,
+      }),
+    );
+    fetcher.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          code: "youtube_quota_exceeded",
+          error: "private-key",
+        }),
+        { status: 503 },
+      ),
+    );
+    const receive = vi.fn();
+    await expect(client.handoffOutput(intentId, receive)).rejects.toThrow();
+    expect(client.failureMessage()).toContain("API limit");
+    expect(client.failureMessage()).not.toContain("private-key");
+    await expect(client.handoffOutput(intentId, receive)).rejects.toThrow();
+    expect(fetcher).toHaveBeenCalledTimes(3);
+    expect(receive).not.toHaveBeenCalled();
+    expect(client.snapshot().authorized).toBe(false);
+  });
   it("accepts an eight-second heartbeat reply instead of discarding it at five seconds", async () => {
     vi.useFakeTimers();
     const { client, fetcher, advance } = setup();

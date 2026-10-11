@@ -58,6 +58,44 @@ function fixture() {
 }
 afterEach(() => vi.useRealTimers());
 describe("independent managed program stream", () => {
+  it("backs off failed provider reads while renewing output authority and resets after recovery", async () => {
+    vi.useFakeTimers();
+    const f = fixture();
+    const observe = vi
+      .spyOn(f.desktop, "observeOutput")
+      .mockRejectedValue(new Error("unavailable"));
+    const native = {
+      ...f.native,
+      observe: vi.fn(async () => ({
+        state: "active" as const,
+        authority: 1,
+        failure: "none" as const,
+        bytes: 1234,
+      })),
+    };
+    const stream = new M4ProgramStream(native);
+    await stream.start(f.desktop, "intent");
+    await vi.advanceTimersByTimeAsync(0);
+    expect(observe).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(9999);
+    expect(observe).toHaveBeenCalledTimes(1);
+    expect(f.heartbeat).toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1);
+    expect(observe).toHaveBeenCalledTimes(2);
+    observe.mockResolvedValue({
+      streamStatus: "active",
+      healthStatus: "good",
+      broadcastStatus: "live",
+      broadcastLive: true,
+    });
+    await vi.advanceTimersByTimeAsync(20000);
+    expect(observe).toHaveBeenCalledTimes(3);
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(observe).toHaveBeenCalledTimes(4);
+    expect(f.native.stop).not.toHaveBeenCalled();
+    await stream.stop();
+    expect(vi.getTimerCount()).toBe(0);
+  });
   it("pauses and resumes one delivered target while renewing authority, with Stop terminal", async () => {
     vi.useFakeTimers();
     const f = fixture();

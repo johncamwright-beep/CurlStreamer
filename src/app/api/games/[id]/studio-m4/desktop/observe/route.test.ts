@@ -106,4 +106,25 @@ describe("restricted desktop provider observation", () => {
     expect(response.status).toBe(status);
     expect(await response.text()).not.toContain("secret-refresh");
   });
+  it("returns an allowlisted status failure but preserves authority rejection precedence", async () => {
+    mocks.observe.mockRejectedValue(
+      Object.assign(new Error("secret-canary"), {
+        reason: "youtube_quota_exceeded",
+      }),
+    );
+    const response = await POST(request(), context);
+    expect(response.status).toBe(503);
+    expect(await response.json()).toMatchObject({
+      code: "youtube_quota_exceeded",
+    });
+    mocks.observe.mockRejectedValue(
+      Object.assign(new Error("secret-canary"), {
+        reason: "youtube_quota_exceeded",
+        code: "42501",
+      }),
+    );
+    const denied = await POST(request(), context);
+    expect(denied.status).toBe(403);
+    expect(await denied.text()).not.toContain("secret-canary");
+  });
 });

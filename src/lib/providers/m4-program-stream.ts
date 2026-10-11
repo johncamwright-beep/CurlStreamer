@@ -41,6 +41,7 @@ export class M4ProgramStream {
   #lastLiveAt?: number;
   #localTimer?: ReturnType<typeof setTimeout>;
   #providerTimer?: ReturnType<typeof setTimeout>;
+  #providerFailures = 0;
   #failureReported = false;
   #controlFlight = false;
   #outputGeneration = 0;
@@ -175,6 +176,7 @@ export class M4ProgramStream {
     clearTimeout(this.#providerTimer);
     this.#provider = undefined;
     this.#lastLiveAt = undefined;
+    this.#providerFailures = 0;
   }
   async #observeLocal(signal: AbortSignal) {
     const at = performance.now();
@@ -226,18 +228,25 @@ export class M4ProgramStream {
       ) {
         const at = performance.now();
         this.#provider = { value, at };
+        this.#providerFailures = 0;
         this.#lastLiveAt =
           value.broadcastLive && value.streamStatus === "active"
             ? at
             : undefined;
       }
     } catch {
-      if (generation === this.#outputGeneration) this.#provider = undefined;
+      if (generation === this.#outputGeneration) {
+        this.#provider = undefined;
+        this.#providerFailures = Math.min(4, this.#providerFailures + 1);
+      }
     }
     if (!signal.aborted && this.#authorized())
-      this.#providerTimer = setTimeout(() => {
-        void this.#observeProvider(desktop, intentId, signal);
-      }, 5000);
+      this.#providerTimer = setTimeout(
+        () => {
+          void this.#observeProvider(desktop, intentId, signal);
+        },
+        Math.min(60000, 5000 * 2 ** this.#providerFailures),
+      );
   }
   async #finalObservation() {
     if (!this.native.observe) return;

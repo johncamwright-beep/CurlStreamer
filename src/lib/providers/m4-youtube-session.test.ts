@@ -328,6 +328,30 @@ describe("M4 provider orchestration", () => {
       lastErrorCode: "m4_provider_unavailable",
     });
   });
+  it.each([
+    "youtube_quota_exceeded",
+    "youtube_scope_missing",
+    "youtube_live_permission_blocked",
+    "youtube_live_streaming_not_enabled",
+    "youtube_provider_unavailable",
+    "youtube_provider_rejected",
+  ])(
+    "preserves safe preparation failure %s without exposing credentials",
+    async (failure) => {
+      state(session());
+      mocks.refresh.mockRejectedValue(new Error(failure));
+      const result = await prepareM4Session(gameId, credential);
+      expect(result).toMatchObject({
+        status: "failed",
+        lastErrorCode: failure,
+      });
+      expect(mocks.broadcast).not.toHaveBeenCalled();
+      expect(JSON.stringify(result)).not.toContain("private-");
+      expect(await readM4Session(gameId, credential)).toMatchObject({
+        lastErrorCode: failure,
+      });
+    },
+  );
   it("does not bind or create a stream for a terminal discovered broadcast", async () => {
     state(session());
     mocks.broadcast.mockResolvedValue({

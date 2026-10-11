@@ -72,7 +72,7 @@ describe("M4 private preparation and cleanup API", () => {
     const result = await POST(request({ action: "go-live" }), context);
     expect(result.status).toBe(503);
     expect(await result.json()).toEqual({
-      code: "youtube_start_failed",
+      code: "youtube_scope_missing",
       error: expect.stringContaining("permission to start broadcasts"),
     });
   });
@@ -262,6 +262,37 @@ describe("M4 private preparation and cleanup API", () => {
             : 503,
       );
       expect(await result.text()).not.toContain("secret");
+    },
+  );
+  it.each([
+    "youtube_quota_exceeded",
+    "youtube_scope_missing",
+    "youtube_live_permission_blocked",
+    "youtube_live_streaming_not_enabled",
+    "youtube_provider_unavailable",
+    "youtube_provider_rejected",
+  ])(
+    "preserves allowlisted failure %s in both stored and thrown results",
+    async (code) => {
+      mocks.prepare.mockResolvedValue({
+        desiredState: "live",
+        status: "failed",
+        lastErrorCode: code,
+        streamKey: "private-canary",
+      });
+      const stored = await POST(request({ action: "prepare" }), context);
+      expect(await stored.json()).toEqual({
+        desiredState: "live",
+        status: "failed",
+        lastErrorCode: code,
+      });
+      mocks.prepare.mockRejectedValue(new Error(code));
+      const thrown = await POST(request({ action: "prepare" }), context);
+      expect(thrown.status).toBe(503);
+      expect(await thrown.json()).toMatchObject({
+        code,
+        error: expect.any(String),
+      });
     },
   );
 });

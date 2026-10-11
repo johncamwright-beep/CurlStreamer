@@ -85,10 +85,10 @@ export function CameraZoomControls({
       </label>
       {layoutError && <p role="alert">{layoutError}</p>}
       <label>
-        External microphone delay
+        Microphone sync adjustment
         <select
           className="min-h-11"
-          aria-label="External microphone delay"
+          aria-label="Microphone sync adjustment"
           disabled={changing}
           value={game.programAudioDelayMs ?? 0}
           onChange={async (event) => {
@@ -100,24 +100,26 @@ export function CameraZoomControls({
                 milliseconds: Number(event.target.value),
               });
             } catch {
-              setLayoutError("Could not change audio delay. Try again.");
+              setLayoutError("Could not change microphone sync. Try again.");
             } finally {
               setChanging(false);
             }
           }}
         >
-          {[0, 250, 500, 750, 1000, 1500, 2000, 2500, 3000, 4000, 5000].map(
-            (value) => (
-              <option key={value} value={value}>
-                {value / 1000} seconds
-              </option>
-            ),
-          )}
+          {[
+            -5000, -4000, -3000, -2500, -2000, -1500, -1000, -750, -500, -250,
+            0, 250, 500, 750, 1000, 1500, 2000, 2500, 3000, 4000, 5000,
+          ].map((value) => (
+            <option key={value} value={value}>
+              {value > 0 ? "+" : ""}
+              {value / 1000} seconds
+            </option>
+          ))}
         </select>
       </label>
       <p>
-        Adds delay to the external microphone on YouTube, not receiver
-        headphones. Leave at zero if sound already arrives after the picture.
+        Audio ahead: choose positive. Audio behind: choose negative. Adjusts
+        YouTube sync; receiver headphones are unchanged.
       </p>
       <div className="camera-settings-cameras">
         {(["camera-home", "camera-away"] as const).map((role) =>

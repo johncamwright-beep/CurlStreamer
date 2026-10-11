@@ -11,6 +11,8 @@ import type { PrivateProgramGame } from "@/lib/game-projection";
 import type { DirectMetrics } from "./direct-peer";
 import { connectM4ProgramCamera } from "./m4-program-camera";
 import { M4ProgramAudio } from "./m4-program-audio-browser";
+import { ProgramDelayedVideo } from "@/components/ProgramDelayedVideo";
+import { programSyncDelays } from "../program-sync";
 import {
   StudioTransportUnavailable,
   isTemporaryStudioStatus,
@@ -45,7 +47,6 @@ import {
 } from "./m4-renderer-health-browser";
 
 import {
-  cameraAspect,
   landscapeCameraAspect,
   portraitCameraAspect,
   retainedCameraAspect,
@@ -92,13 +93,14 @@ function CameraVideo({
   onAspect,
   zoom = 1,
   pan = 0,
+  delayMs = 0,
 }: {
   state: CameraState;
   onAspect: (aspect: number) => void;
   zoom?: number;
   pan?: number;
+  delayMs?: number;
 }) {
-  const ref = useRef<HTMLVideoElement>(null);
   const canvasHost = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const canvas = state.canvas;
@@ -121,15 +123,6 @@ function CameraVideo({
     state.canvas.style.objectPosition = `${50 + Math.max(-1, Math.min(1, pan)) * 50}% 50%`;
     state.canvas.style.transform = zoom === 1 ? "" : `scale(${zoom})`;
   }, [state.canvas, zoom, pan]);
-  useEffect(() => {
-    const video = ref.current;
-    if (!video) return;
-    video.srcObject = state.stream ?? null;
-    if (state.stream) void video.play().catch(() => undefined);
-    return () => {
-      video.srcObject = null;
-    };
-  }, [state.stream]);
   return (
     <>
       {state.canvas ? (
@@ -138,27 +131,10 @@ function CameraVideo({
           style={{ position: "absolute", inset: 0, overflow: "hidden" }}
         />
       ) : (
-        <video
-          className="portrait-camera-video"
-          ref={ref}
-          onResize={(event) => {
-            const aspect = cameraAspect(
-              event.currentTarget.videoWidth,
-              event.currentTarget.videoHeight,
-            );
-            if (aspect) onAspect(aspect);
-          }}
-          onLoadedMetadata={(event) => {
-            const aspect = cameraAspect(
-              event.currentTarget.videoWidth,
-              event.currentTarget.videoHeight,
-            );
-            if (aspect) onAspect(aspect);
-          }}
-          autoPlay
-          playsInline
-          muted
-          aria-label="Direct camera"
+        <ProgramDelayedVideo
+          stream={state.stream}
+          delayMs={delayMs}
+          onAspect={onAspect}
         />
       )}
       {!state.stream && !state.canvas && (
@@ -484,6 +460,7 @@ function ProgramRenderer() {
   const verified = roles.filter(
     (role) => cameras[role].metrics?.direct || cameras[role].canvas,
   ).length;
+  const sync = programSyncDelays(game.programAudioDelayMs);
   return (
     <>
       <ProgramPresentation />
@@ -505,6 +482,7 @@ function ProgramRenderer() {
               sourceIdentity={
                 sources[role].kind + ":" + sources[role].generation
               }
+              delayMs={sync.cameraDelayMs}
               onChange={onCameraChange}
             />
           ) : (
@@ -530,6 +508,7 @@ function ProgramRenderer() {
         renderCamera={(role) => (
           <CameraVideo
             state={cameras[role]}
+            delayMs={sync.cameraDelayMs}
             pan={
               game.programCameraMode === "portrait"
                 ? (game.cameraPan?.[role] ?? 0)

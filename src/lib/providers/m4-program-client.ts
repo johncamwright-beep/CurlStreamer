@@ -97,7 +97,7 @@ const projectedGame = z.object({
   }),
   layout: z.enum(["split", "home", "away", "none"]),
   programCameraMode: z.enum(["auto", "stacked", "portrait"]).optional(),
-  programAudioDelayMs: z.number().int().min(0).max(5000).optional(),
+  programAudioDelayMs: z.number().int().min(-5000).max(5000).optional(),
   cameraPan: z
     .object({
       "camera-home": z.number().min(-1).max(1).optional(),

@@ -12,13 +12,27 @@ export function ProgramPhoneAudio({
   enabled,
   volume = 1,
   sourceGeneration,
+  delayMs = 0,
 }: {
   role: ProgramCameraRole;
   stream?: MediaStream;
   enabled: boolean;
   volume?: number;
   sourceGeneration?: number;
+  delayMs?: number;
 }) {
+  const delayRef = useRef<DelayNode | null>(null);
+  const delayValue = useRef(delayMs);
+  delayValue.current = delayMs;
+  useEffect(() => {
+    const delay = delayRef.current;
+    if (delay)
+      delay.delayTime.setTargetAtTime(
+        Math.max(0, Math.min(5000, delayMs)) / 1000,
+        delay.context.currentTime,
+        0.03,
+      );
+  }, [delayMs]);
   const gainRef = useRef<GainNode | null>(null);
   const volumeRef = useRef(volume);
   volumeRef.current = volume;
@@ -36,6 +50,10 @@ export function ProgramPhoneAudio({
     const analyser = context.createAnalyser();
     analyser.fftSize = 2048;
     const gain = context.createGain();
+    const delay = context.createDelay(5);
+    delay.delayTime.value =
+      Math.max(0, Math.min(5000, delayValue.current)) / 1000;
+    delayRef.current = delay;
     // Phone sources join the renderer's one shared output graph. That graph
     // owns speech protection and the final combined limiter with USB audio.
     gain.gain.value = volumeRef.current;
@@ -44,7 +62,8 @@ export function ProgramPhoneAudio({
     gain.channelCountMode = "explicit";
     source.connect(analyser);
     analyser.connect(gain);
-    gain.connect(output.input);
+    gain.connect(delay);
+    delay.connect(output.input);
     const samples = new Float32Array(analyser.fftSize);
     let pending = false;
     const report = async () => {
@@ -105,6 +124,8 @@ export function ProgramPhoneAudio({
       source.disconnect();
       analyser.disconnect();
       gain.disconnect();
+      delay.disconnect();
+      delayRef.current = null;
       gainRef.current = null;
       output.release();
     };

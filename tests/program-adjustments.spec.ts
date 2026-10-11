@@ -1,7 +1,7 @@
 import { test, expect } from "@playwright/test";
 import { build } from "esbuild";
 
-test("portrait pan, external mic delay and slower sponsors save independent settings", async ({
+test("portrait pan, signed microphone sync and slower sponsors save independent settings", async ({
   page,
 }) => {
   const bundle = await build({
@@ -36,11 +36,15 @@ test("portrait pan, external mic delay and slower sponsors save independent sett
   ).toBeVisible();
   await page.evaluate(() => (window as any).sources());
   const delay = page.getByRole("combobox", {
-    name: "External microphone delay",
+    name: "Microphone sync adjustment",
   });
   await expect(delay).toHaveValue("0");
   await delay.selectOption("2500");
   await expect(delay).toHaveValue("2500");
+  await expect(delay.locator('option[value="-5000"]')).toHaveText("-5 seconds");
+  await expect(delay.locator('option[value="5000"]')).toHaveText("+5 seconds");
+  await delay.selectOption("-2500");
+  await expect(delay).toHaveValue("-2500");
   const left = page.getByRole("button", {
     name: "Camera 1 pan left",
     exact: true,
@@ -57,6 +61,10 @@ test("portrait pan, external mic delay and slower sponsors save independent sett
   expect(actions).toContainEqual({
     type: "program-audio-delay",
     milliseconds: 2500,
+  });
+  expect(actions).toContainEqual({
+    type: "program-audio-delay",
+    milliseconds: -2500,
   });
   expect(actions).toContainEqual({
     type: "camera-pan",
@@ -77,6 +85,7 @@ test("portrait pan, external mic delay and slower sponsors save independent sett
     .getByRole("combobox", { name: "Camera layout" })
     .selectOption("stacked");
   await expect(left).toHaveCount(0);
+  await expect(delay).toHaveValue("-2500");
   await page.getByLabel("Carousel settings", { exact: true }).click();
   await page.getByLabel("Seconds per sponsor").selectOption("30");
   await expect(page.getByLabel("Seconds per sponsor")).toHaveValue("30");

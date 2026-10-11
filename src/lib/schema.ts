@@ -76,7 +76,7 @@ export const actionSchema = z.discriminatedUnion("type", [
   z
     .object({
       type: z.literal("program-audio-delay"),
-      milliseconds: z.number().int().min(0).max(5000),
+      milliseconds: z.number().int().min(-5000).max(5000),
     })
     .strict(),
   z

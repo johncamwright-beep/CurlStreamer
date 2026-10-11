@@ -51,6 +51,42 @@ const projected = {
   },
 };
 describe("Node program authority", () => {
+  it.each([-5000, -2500, 0, 5000])(
+    "retains signed microphone sync adjustment %s for its authorized game",
+    async (programAudioDelayMs) => {
+      const fetcher = vi
+        .fn<typeof fetch>()
+        .mockResolvedValueOnce(exchange())
+        .mockResolvedValueOnce(
+          new Response(
+            JSON.stringify({ game: { ...projected, programAudioDelayMs } }),
+          ),
+        );
+      const client = new M4ProgramClient(game, origin, fetcher);
+      await client.exchange("a".repeat(43));
+      expect((await client.readGame()).programAudioDelayMs).toBe(
+        programAudioDelayMs,
+      );
+      client.close();
+    },
+  );
+  it.each([-5001, 5001, -0.5, 0.5])(
+    "rejects invalid microphone sync adjustment %s in a game projection",
+    async (programAudioDelayMs) => {
+      const fetcher = vi
+        .fn<typeof fetch>()
+        .mockResolvedValueOnce(exchange())
+        .mockResolvedValueOnce(
+          new Response(
+            JSON.stringify({ game: { ...projected, programAudioDelayMs } }),
+          ),
+        );
+      const client = new M4ProgramClient(game, origin, fetcher);
+      await client.exchange("a".repeat(43));
+      await expect(client.readGame()).rejects.toThrow("m4_program_unavailable");
+      expect(client.active).toBe(false);
+    },
+  );
   it("retains public uploaded team artwork through the strict projection", async () => {
     const homeLogoUrl =
       "https://storage.invalid/storage/v1/object/public/team-public-media/22222222-2222-4222-8222-222222222222/33333333-3333-4333-8333-333333333333.webp";
@@ -248,7 +284,7 @@ describe("Node program authority", () => {
   });
 
   it.each([
-    { ...projected, id: session },
+    { ...projected, id: session, programAudioDelayMs: -2500 },
     { ...projected, score: { ...projected.score, currentEnd: "3" } },
     {
       ...projected,

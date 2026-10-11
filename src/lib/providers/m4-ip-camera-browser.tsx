@@ -4,6 +4,7 @@ import { useEffect } from "react";
 import { decodeM4CameraBitmap } from "./m4-camera-image-browser";
 import { m4RendererInstance } from "./m4-renderer-health-browser";
 import { cameraAspect } from "../program-camera-layout";
+import { createProgramVideoPlayout } from "./program-video-playout-browser";
 import type { CameraRole } from "../m2-studio-protocol";
 
 const FRAME_INTERVAL_MS = 1000 / 30;
@@ -16,10 +17,12 @@ export function M4IpCameraTransport({
   generation,
   sourceIdentity,
   onChange,
+  delayMs = 0,
 }: {
   role: CameraRole;
   generation: number;
   sourceIdentity: string;
+  delayMs?: number;
   onChange(
     role: CameraRole,
     state: {
@@ -34,6 +37,7 @@ export function M4IpCameraTransport({
     const lifetime = new AbortController();
     let timer: ReturnType<typeof setTimeout> | undefined;
     const canvas = document.createElement("canvas");
+    canvas.style.objectFit = "contain";
     const context = canvas.getContext("2d");
     let displayed = false;
     let publishedAspect: number | undefined;
@@ -41,6 +45,34 @@ export function M4IpCameraTransport({
     let lastFrame = 0;
     let observation: AbortController | undefined;
     let lastObservation = -Infinity;
+    const publish = (width: number, height: number) => {
+      const aspect = cameraAspect(width, height);
+      if (!displayed || aspect !== publishedAspect) {
+        onChange(role, {
+          sourceIdentity,
+          canvas,
+          aspect,
+          message: "Receiving IP video",
+        });
+        publishedAspect = aspect;
+      }
+      displayed = true;
+    };
+    const playout =
+      delayMs > 0
+        ? createProgramVideoPlayout({
+            canvas,
+            delayMs,
+            onFrame: publish,
+            onStale: () => {
+              displayed = false;
+              onChange(role, {
+                sourceIdentity,
+                message: "Reconnecting IP camera…",
+              });
+            },
+          })
+        : undefined;
     const observe = () => {
       if (
         observation ||
@@ -63,7 +95,7 @@ export function M4IpCameraTransport({
           rendererInstance: m4RendererInstance(),
           cameraRole: role,
           frames: counter,
-          verified: true,
+          verified: playout ? playout.isFresh() : displayed,
           sourceGeneration: generation,
         }),
       })
@@ -79,14 +111,16 @@ export function M4IpCameraTransport({
     // stalled decode, but never accumulate unbounded decoder work on retries.
     let pendingDecodes = 0;
     const clear = () => {
+      playout?.clear();
       context?.clearRect(0, 0, canvas.width, canvas.height);
       displayed = false;
+      lastFrame = 0;
       onChange(role, { sourceIdentity, message: "Reconnecting IP camera…" });
     };
     const poll = async () => {
       const started = performance.now();
       if (pendingDecodes >= 2) {
-        if (displayed && Date.now() - lastFrame >= 5000) clear();
+        if (lastFrame > 0 && Date.now() - lastFrame >= 5000) clear();
         if (!lifetime.signal.aborted)
           timer = setTimeout(() => void poll(), FRAME_INTERVAL_MS);
         return;
@@ -119,6 +153,16 @@ export function M4IpCameraTransport({
         if (!Number.isSafeInteger(frame) || frame <= counter) throw Error();
         const blob = await response.blob();
         if (blob.size > 2 * 1024 * 1024 || !blob.size) throw Error();
+        if (lifetime.signal.aborted || attempt.signal.aborted) return;
+        if (playout) {
+          // Polling and observations follow received frames while presentation
+          // runs independently. No decoder or bitmap waits inside this queue.
+          counter = frame;
+          lastFrame = Date.now();
+          playout.enqueue(blob);
+          observe();
+          return;
+        }
         bitmap = await decodeM4CameraBitmap(blob, signal, (input) => {
           pendingDecodes++;
           return Promise.resolve()
@@ -127,24 +171,14 @@ export function M4IpCameraTransport({
         });
         if (lifetime.signal.aborted || attempt.signal.aborted || !context)
           return;
-        const aspect = cameraAspect(bitmap.width, bitmap.height);
         if (canvas.width !== bitmap.width) canvas.width = bitmap.width;
         if (canvas.height !== bitmap.height) canvas.height = bitmap.height;
         context.drawImage(bitmap, 0, 0);
+        publish(bitmap.width, bitmap.height);
         bitmap.close();
         bitmap = undefined;
         counter = frame;
         lastFrame = Date.now();
-        if (!displayed || aspect !== publishedAspect) {
-          onChange(role, {
-            sourceIdentity,
-            canvas,
-            aspect,
-            message: "Receiving IP video",
-          });
-          publishedAspect = aspect;
-        }
-        displayed = true;
         observe();
       } catch {
         /* Retain a fresh picture through a missed local request. */
@@ -153,7 +187,7 @@ export function M4IpCameraTransport({
         attempt.abort();
         bitmap?.close();
         if (!lifetime.signal.aborted) {
-          if (displayed && Date.now() - lastFrame >= 5000) clear();
+          if (lastFrame > 0 && Date.now() - lastFrame >= 5000) clear();
           timer = setTimeout(
             () => void poll(),
             Math.max(0, FRAME_INTERVAL_MS - (performance.now() - started)),
@@ -165,12 +199,13 @@ export function M4IpCameraTransport({
     void poll();
     return () => {
       lifetime.abort();
+      playout?.stop();
       observation?.abort();
       clearTimeout(timer);
       canvas.width = 0;
       canvas.height = 0;
       canvas.remove();
     };
-  }, [role, generation, sourceIdentity, onChange]);
+  }, [role, generation, sourceIdentity, onChange, delayMs]);
   return null;
 }

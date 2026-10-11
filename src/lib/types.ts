@@ -88,6 +88,7 @@ export interface GameState {
   scoreEvents: ScoreEvent[];
   layout: Layout;
   programCameraMode?: "auto" | "stacked" | "portrait";
+  /** Signed mic sync: positive delays USB audio; negative holds camera media. */
   programAudioDelayMs?: number;
   cameraPan?: Partial<Record<"camera-home" | "camera-away", number>>;
   broadcast: "idle" | "live";

@@ -1,119 +1,59 @@
 import { beforeEach, expect, it, vi } from "vitest";
-const m = vi.hoisted(() => ({
-  from: vi.fn(),
-  decrypt: vi.fn(),
-  refresh: vi.fn(),
-  request: vi.fn(),
-}));
+const m = vi.hoisted(() => ({ rpc: vi.fn() }));
 vi.mock("@/lib/supabase/admin", () => ({
-  createAdminSupabaseClient: () => ({ from: m.from }),
-}));
-vi.mock("./youtube-credential-vault", () => ({
-  decryptYouTubeRefreshToken: m.decrypt,
-}));
-vi.mock("./youtube", () => ({
-  refreshYouTubeAccessToken: m.refresh,
-  youtubeGoogleRequest: m.request,
+  createAdminSupabaseClient: () => ({ rpc: m.rpc }),
 }));
 import { loadCoachBroadcastReviews } from "./curlcoach-video";
 const gid = "00000000-0000-4000-8000-000000000002";
-let filters: unknown[][];
-beforeEach(() => {
-  vi.clearAllMocks();
-  filters = [];
-  m.from.mockImplementation((table) => {
-    const q = {
-      select: vi.fn(() => q),
-      eq: vi.fn((...args) => {
-        filters.push(args);
-        return q;
-      }),
-      in: vi.fn(async () => ({
-        data: [{ game_id: gid, youtube_broadcast_id: "abcdefghijk" }],
-        error: null,
-      })),
-      single: vi.fn(async () => ({
-        data: { encrypted_credentials: "envelope" },
-        error: null,
-      })),
-    };
-    return q;
-  });
-  m.decrypt.mockReturnValue("private-refresh-token");
-  m.refresh.mockResolvedValue("private-access-token");
-  m.request.mockResolvedValue({
-    items: [
+beforeEach(() => vi.clearAllMocks());
+it("uses the actor-scoped metadata RPC without reading private tables or credentials", async () => {
+  m.rpc.mockResolvedValue({
+    data: [
       {
-        id: "abcdefghijk",
-        liveStreamingDetails: {
-          actualStartTime: "2026-09-19T12:00:00Z",
-          actualEndTime: "2026-09-19T14:00:00Z",
-        },
+        game_id: gid,
+        youtube_broadcast_id: "abcdefghijk",
+        started_at: "2026-10-10T12:00:00Z",
+        stopped_at: "2026-10-10T14:00:00Z",
       },
     ],
+    error: null,
   });
-});
-it("retains an approximate saved-session link during YouTube failure and ignores malformed neighbors", async () => {
-  m.from.mockImplementation(() => {
-    const q = {
-      select: () => q,
-      eq: () => q,
-      in: async () => ({
-        data: [
-          {
-            game_id: gid,
-            youtube_broadcast_id: "abcdefghijk",
-            started_at: "2026-10-10T12:00:00Z",
-          },
-          { game_id: gid, youtube_broadcast_id: "invalid" },
-        ],
-        error: null,
-      }),
-      single: async () => ({ data: null, error: { code: "unavailable" } }),
-    };
-    return q;
-  });
-  expect((await loadCoachBroadcastReviews("offline-team", [gid]))[gid]).toEqual(
-    {
+  expect(await loadCoachBroadcastReviews("team", [gid], "coach")).toEqual({
+    [gid]: {
       url: "https://www.youtube.com/watch?v=abcdefghijk",
       startedAt: "2026-10-10T12:00:00Z",
+      endedAt: "2026-10-10T14:00:00Z",
       estimated: true,
     },
-  );
-});
-it("scopes every database read, returns timing only, caches reads and separates tenants", async () => {
-  const result = await loadCoachBroadcastReviews("team-a", [gid]);
-  expect(filters.filter((f) => f[0] === "organization_id")).toEqual([
-    ["organization_id", "team-a"],
-    ["organization_id", "team-a"],
-  ]);
-  expect(result[gid]).toEqual({
-    url: "https://www.youtube.com/watch?v=abcdefghijk",
-    startedAt: "2026-09-19T12:00:00Z",
-    estimated: true,
-    endedAt: "2026-09-19T14:00:00Z",
   });
-  expect(JSON.stringify(result)).not.toContain("token");
-  await loadCoachBroadcastReviews("team-a", [gid]);
-  expect(m.refresh).toHaveBeenCalledTimes(1);
-  await loadCoachBroadcastReviews("team-b", [gid]);
-  expect(m.refresh).toHaveBeenCalledTimes(2);
+  expect(m.rpc).toHaveBeenCalledWith("read_shot_tracker_recordings", {
+    p_actor: "coach",
+    p_org: "team",
+    p_games: [gid],
+  });
 });
-it("does not fabricate timestamps for scheduled videos and isolates provider outages", async () => {
-  m.request.mockResolvedValue({
-    items: [
+it("retains known recording links without inventing timing and ignores invalid or unrequested neighbors", async () => {
+  m.rpc.mockResolvedValue({
+    data: [
+      { game_id: gid, youtube_broadcast_id: "abcdefghijk" },
+      { game_id: gid, youtube_broadcast_id: "invalid" },
       {
-        id: "abcdefghijk",
-        liveStreamingDetails: { scheduledStartTime: "2026-09-19T12:00:00Z" },
+        game_id: "00000000-0000-4000-8000-000000000003",
+        youtube_broadcast_id: "abcdefghijk",
       },
     ],
+    error: null,
   });
-  expect(await loadCoachBroadcastReviews("team-c", [gid])).toEqual({
+  expect(await loadCoachBroadcastReviews("team", [gid], "coach")).toEqual({
     [gid]: { url: "https://www.youtube.com/watch?v=abcdefghijk" },
   });
-  m.refresh.mockRejectedValue(new Error("private error"));
-  expect(await loadCoachBroadcastReviews("team-d", [gid])).toEqual({
-    [gid]: { url: "https://www.youtube.com/watch?v=abcdefghijk" },
-  });
-  expect(await loadCoachBroadcastReviews("team-d", [])).toEqual({});
+});
+it("keeps authorization failures private and skips empty selections", async () => {
+  m.rpc.mockResolvedValue({ data: null, error: { code: "42501" } });
+  expect(await loadCoachBroadcastReviews("other-team", [gid], "coach")).toEqual(
+    {},
+  );
+  m.rpc.mockClear();
+  expect(await loadCoachBroadcastReviews("team", [], "coach")).toEqual({});
+  expect(m.rpc).not.toHaveBeenCalled();
 });

@@ -1,15 +1,22 @@
-/** Lift quiet speech and reduce shouting before the final peak protection. */
+/** Remove low rumble and balance speech before the final peak protection. */
 export function createProgramUsbMix(context: BaseAudioContext) {
   const input = context.createGain();
-  input.gain.value = 4; // 12 dB speech lift, independent of the number of microphones.
+  const lowCut = context.createBiquadFilter();
+  lowCut.type = "highpass";
+  lowCut.frequency.value = 80;
+  // Web Audio expresses high-pass Q in dB; this is a non-resonant Butterworth.
+  lowCut.Q.value = 20 * Math.log10(Math.SQRT1_2);
   const speech = context.createDynamicsCompressor();
-  speech.threshold.value = -22;
+  speech.threshold.value = -28;
   speech.knee.value = 12;
-  speech.ratio.value = 6;
+  speech.ratio.value = 4;
   speech.attack.value = 0.005;
-  speech.release.value = 0.35;
+  speech.release.value = 0.25;
+  // Lift quiet speech after compression, so loud inputs do not get the full lift.
+  const makeup = context.createGain();
+  makeup.gain.value = 2;
   const compressor = context.createDynamicsCompressor();
-  compressor.threshold.value = -3;
+  compressor.threshold.value = -6;
   compressor.knee.value = 0;
   compressor.ratio.value = 20;
   compressor.attack.value = 0.003;
@@ -23,20 +30,24 @@ export function createProgramUsbMix(context: BaseAudioContext) {
     const magnitude = Math.abs(x);
     curve[i] =
       Math.sign(x) *
-      (magnitude <= 0.9
+      (magnitude <= 0.8
         ? magnitude
-        : 0.9 + 0.08 * Math.tanh((magnitude - 0.9) / 0.08));
+        : 0.8 + 0.08 * Math.tanh((magnitude - 0.8) / 0.08));
   }
   safety.curve = curve;
-  input.connect(speech);
-  speech.connect(compressor);
+  input.connect(lowCut);
+  lowCut.connect(speech);
+  speech.connect(makeup);
+  makeup.connect(compressor);
   compressor.connect(safety);
   safety.connect(context.destination);
   return {
     input,
     disconnect() {
       input.disconnect();
+      lowCut.disconnect();
       speech.disconnect();
+      makeup.disconnect();
       compressor.disconnect();
       safety.disconnect();
     },

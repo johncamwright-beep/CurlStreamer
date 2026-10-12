@@ -844,6 +844,10 @@ internal sealed class Workspace : Form
                 var gain = Convert.ToDouble(level);
                 if (Double.IsNaN(gain) || Double.IsInfinity(gain) || gain < 0 || gain > 1) throw new InvalidDataException();
                 usbAudio.SetChannel((int)channel, (bool)muted, (float)gain);
+            } else if (type == "studio-usb-processing" && value.Count == 4 && usbGame == selectedGame) {
+                object frequency;
+                if (!value.TryGetValue("humFrequency", out frequency) || !(frequency is int)) throw new InvalidDataException();
+                usbAudio.SetProcessing(TextValue(value, "noiseReduction"), (int)frequency);
             }
         } catch { usbError = "USB audio could not start or update. Check the receiver connection and selected input."; }
         finally { usbBusy = false; PublishUsbStatus(); }

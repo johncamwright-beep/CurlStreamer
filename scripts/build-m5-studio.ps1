@@ -5,6 +5,7 @@ param(
   [string]$Release = "0.5.0-pilot.1",
   [string]$IpCameraHelper,
   [string]$StudioRecorder,
+  [string]$NoiseReductionDll,
   [switch]$PresentationControl,
   [string]$BaselineStudio,
   [string]$BaselineManifestSha256
@@ -19,6 +20,11 @@ if ($StudioRecorder -and -not (Test-Path -LiteralPath $StudioRecorder -PathType 
 if ($PresentationControl -and -not $StudioRecorder) { throw "Presentation support requires an explicitly rebuilt recorder." }
 $destinationPath = [IO.Path]::GetFullPath($Destination)
 if (Test-Path -LiteralPath $destinationPath) { throw "Use a new staging directory; existing installs are never overwritten." }
+if (-not $NoiseReductionDll) {
+  $noiseBuild = Join-Path $repository ("build/rnnoise-" + [Guid]::NewGuid().ToString('N'))
+  $NoiseReductionDll = & (Join-Path $PSScriptRoot 'build-studio-rnnoise.ps1') -SetupRoot $SetupRoot -Destination $noiseBuild | Select-Object -Last 1
+}
+if (-not (Test-Path -LiteralPath $NoiseReductionDll -PathType Leaf)) { throw 'Build the local microphone noise reducer before packaging Studio.' }
 if ($Release -notmatch '^\d+\.\d+\.\d+(-[a-z0-9.]+)?$') { throw "Invalid release version." }
 $settings = Get-Content -LiteralPath $Configuration -Raw | ConvertFrom-Json
 if ($settings.version -ne 1 -or $settings.realtimeKey -notmatch '^sb_publishable_[A-Za-z0-9_-]+$') { throw "Provide public Studio configuration, never a server key." }
@@ -90,6 +96,7 @@ try {
     Copy-Item -LiteralPath (Join-Path $SetupRoot $entry.Value) -Destination (Join-Path $destinationPath $entry.Key)
   }
   Copy-Item -LiteralPath $IpCameraHelper -Destination (Join-Path $destinationPath 'native/m4_ip_camera.exe')
+  Copy-Item -LiteralPath $NoiseReductionDll -Destination (Join-Path $destinationPath 'native/curlstreamer_rnnoise.dll')
   foreach ($directory in @("bin", "data", "obs-plugins")) {
     if ($BaselineStudio) { continue }
     Copy-Item -LiteralPath (Join-Path $SetupRoot "obs-m3-32.2.2/$directory") -Destination (Join-Path $destinationPath "obs") -Recurse
@@ -108,12 +115,12 @@ try {
   $source = (Get-Content -LiteralPath native/m5-studio-launcher/Studio.cs -Raw).Replace("@NODE_SHA256@", $nodeHash).Replace("@CONTROLLER_SHA256@", $controllerHash).Replace("@CONFIGURATION_SHA256@", $configurationHash)
   $sourcePath = Join-Path $destinationPath "Studio.build.cs"
   [IO.File]::WriteAllText($sourcePath, $source)
-  & $compiler /nologo /target:winexe "/win32icon:$repository/public/branding/curlstreamer.ico" /platform:x64 /optimize+ /define:WORKSPACE /reference:System.Windows.Forms.dll /reference:System.Drawing.dll /reference:System.Net.Http.dll /reference:System.Web.Extensions.dll /reference:System.Security.dll "/reference:$destinationPath/Microsoft.Web.WebView2.Core.dll" "/reference:$destinationPath/Microsoft.Web.WebView2.WinForms.dll" "/out:$destinationPath/CurlStreamer Studio.exe" $sourcePath (Join-Path $repository 'native/m5-studio-launcher/Workspace.cs') (Join-Path $repository 'native/m5-studio-launcher/WorkspacePolicy.cs') (Join-Path $repository 'native/m5-studio-launcher/UsbAudio.cs') (Join-Path $repository 'native/m5-studio-launcher/CameraInputs.cs')
+  & $compiler /nologo /target:winexe "/win32icon:$repository/public/branding/curlstreamer.ico" /platform:x64 /optimize+ /define:WORKSPACE /reference:System.Windows.Forms.dll /reference:System.Drawing.dll /reference:System.Net.Http.dll /reference:System.Web.Extensions.dll /reference:System.Security.dll "/reference:$destinationPath/Microsoft.Web.WebView2.Core.dll" "/reference:$destinationPath/Microsoft.Web.WebView2.WinForms.dll" "/out:$destinationPath/CurlStreamer Studio.exe" $sourcePath (Join-Path $repository 'native/m5-studio-launcher/Workspace.cs') (Join-Path $repository 'native/m5-studio-launcher/WorkspacePolicy.cs') (Join-Path $repository 'native/m5-studio-launcher/UsbAudio.cs') (Join-Path $repository 'native/m5-studio-launcher/UsbAudioProcessing.cs') (Join-Path $repository 'native/m5-studio-launcher/CameraInputs.cs')
   if ($LASTEXITCODE -ne 0) { throw "Launcher compilation failed." }
   Remove-Item -LiteralPath $sourcePath
   if ($BaselineStudio) {
     $baselineNotices = Get-Content -LiteralPath (Join-Path $BaselineStudio 'THIRD_PARTY_NOTICES.json') -Raw | ConvertFrom-Json
-    $provenance = [ordered]@{ version = 1; release = $baseline.release; manifestSha256 = $BaselineManifestSha256.ToLowerInvariant(); retainedNative = @($baseline.files | Where-Object { $_.path.StartsWith('native/') -and $_.path -ne 'native/m4_ip_camera.exe' -and (-not $StudioRecorder -or $_.path -ne 'native/m4_studio_recorder.exe') }); sourcePointers = @($baselineNotices.sourcePointers | Where-Object { $_.component.StartsWith('CurlStreamer Studio') }) }
+    $provenance = [ordered]@{ version = 1; release = $baseline.release; manifestSha256 = $BaselineManifestSha256.ToLowerInvariant(); retainedNative = @($baseline.files | Where-Object { $_.path.StartsWith('native/') -and $_.path -ne 'native/m4_ip_camera.exe' -and $_.path -ne 'native/curlstreamer_rnnoise.dll' -and (-not $StudioRecorder -or $_.path -ne 'native/m4_studio_recorder.exe') }); sourcePointers = @($baselineNotices.sourcePointers | Where-Object { $_.component.StartsWith('CurlStreamer Studio') }) }
     # A prior preview can itself retain native binaries from an older release.
     # Keep that complete attribution chain rather than relabelling its sources.
     if ($baselineNotices.retainedNativeBaseline) { $provenance.retainedNativeBaseline = $baselineNotices.retainedNativeBaseline }

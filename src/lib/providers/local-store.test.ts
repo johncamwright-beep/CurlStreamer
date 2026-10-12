@@ -104,7 +104,7 @@ describe("local-store shared assignment authority", () => {
       layout: "split",
       scoreEvents: [],
     });
-    expect(reloaded.getGame(other.id)?.programCameraMode).toBeUndefined();
+    expect(reloaded.getGame(other.id)?.programCameraMode).toBe("portrait");
     reloaded.updateGame(game.id, {
       type: "camera-composition",
       mode: "stacked",

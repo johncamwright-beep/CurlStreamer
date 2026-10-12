@@ -139,9 +139,7 @@ export function PublicTeamGames({
             value={eventView ? "auto" : selectedMode}
             onChange={(e) => setMode(e.target.value)}
           >
-            {activeEvent && (
-              <option value="auto">Current event</option>
-            )}
+            {activeEvent && <option value="auto">Current event</option>}
             <option value="recent">Recent · Last 14 days</option>
             {upcoming && <option value="upcoming">Upcoming</option>}
             {results && <option value="results">Results</option>}

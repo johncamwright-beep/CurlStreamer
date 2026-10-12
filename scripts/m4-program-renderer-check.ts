@@ -123,7 +123,9 @@ try {
   // actual retry requests and both video elements instead of hidden copy.
   const cameraDeadline = Date.now() + 10000;
   while (connected.length < 2 && Date.now() < cameraDeadline) await delay(50);
-  if ((await page.getByLabel("Direct camera", { exact: true }).count()) !== 2)
+  if (
+    (await page.locator('[aria-label="Direct camera"]:visible').count()) !== 2
+  )
     throw new Error("renderer did not create both contained camera elements");
   if (errors.length)
     throw new Error(`renderer page errors: ${errors.join("; ")}`);

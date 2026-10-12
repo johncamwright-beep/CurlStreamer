@@ -5,6 +5,7 @@ import type { GameState } from "@/lib/types";
 import { clampZoom } from "@/lib/providers/livekit-client";
 import { useGame } from "@/components/GameSync";
 import { previewSubscribeAccessToken } from "@/lib/access-session";
+import { DEFAULT_PROGRAM_AUDIO_DELAY_MS } from "@/lib/program-sync";
 import {
   cameraInputNativeZoom,
   useStudioCameraInputs,
@@ -90,7 +91,7 @@ export function CameraZoomControls({
           className="min-h-11"
           aria-label="Microphone sync adjustment"
           disabled={changing}
-          value={game.programAudioDelayMs ?? 0}
+          value={game.programAudioDelayMs ?? DEFAULT_PROGRAM_AUDIO_DELAY_MS}
           onChange={async (event) => {
             setChanging(true);
             setLayoutError("");
@@ -118,8 +119,8 @@ export function CameraZoomControls({
         </select>
       </label>
       <p>
-        Audio ahead: choose positive. Audio behind: choose negative. Adjusts
-        YouTube sync; receiver headphones are unchanged.
+        Audio ahead +<br />
+        Audio behind −
       </p>
       <div className="camera-settings-cameras">
         {(["camera-home", "camera-away"] as const).map((role) =>

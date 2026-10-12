@@ -91,6 +91,7 @@ export function initialGameState(id: string, config: GameConfig): GameState {
     createdAt: Date.now(),
     scoreEvents: [],
     layout: "split",
+    programCameraMode: "portrait",
     broadcast: "idle",
     status: "active",
     audioMuted: false,

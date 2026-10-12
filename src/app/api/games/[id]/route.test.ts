@@ -354,6 +354,7 @@ describe("GET /api/games/[id] over HTTP", () => {
       score: { hammer: "away", totals: { home: 2, away: 0 }, currentEnd: 2 },
       layout: "split",
       programCameraMode: "auto",
+      programAudioDelayMs: -1500,
       broadcast: "live",
       audioMuted: false,
       cameraFraming: { "camera-home": "contain", "camera-away": "contain" },

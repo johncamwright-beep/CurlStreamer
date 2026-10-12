@@ -39,6 +39,12 @@ import {
   type TrackerResume,
 } from "@/lib/curlcoach/resume-storage";
 import CoachLab, { turnLabel } from "./CoachLab";
+import {
+  EnhancedReview,
+  MetricsOptions,
+  MetricsProvider,
+  useMetrics,
+} from "./EnhancedMetrics";
 
 import AnalysisPanels from "./AnalysisPanels";
 import TechnicalReview from "./TechnicalReview";
@@ -60,6 +66,8 @@ const pages = [
   "Game analysis",
   "Flagged shots",
   "Event reports",
+  "Enhanced review",
+  "Options",
 ] as const;
 type Page = (typeof pages)[number];
 const slug = (page: string) => page.toLowerCase().replaceAll(" ", "-");
@@ -258,7 +266,16 @@ function Scoreboard({
     </>
   );
 }
-export default function EventWorkspace({
+export default function EventWorkspace(
+  props: Parameters<typeof WorkspaceContent>[0],
+) {
+  return (
+    <MetricsProvider key={JSON.stringify(props.accountScope ?? "lab")}>
+      <WorkspaceContent {...props} />
+    </MetricsProvider>
+  );
+}
+function WorkspaceContent({
   unlocked,
   mode = "lab",
   initialEventId,
@@ -269,6 +286,8 @@ export default function EventWorkspace({
   initialEventId?: string;
   accountScope?: ResumeScope;
 }) {
+  const metrics = useMetrics();
+  const reloadMetrics = metrics.reload;
   const [menuOpen, setMenuOpen] = useState(false);
   const [shotFilters, setShotFilters] = useState(defaultShotFilters);
   const drafts = useRef(new Map<string, TrackerResume>());
@@ -309,6 +328,9 @@ export default function EventWorkspace({
     [error, setError] = useState(""),
     [busy, setBusy] = useState(false);
   const [selectionReady, setSelectionReady] = useState(false);
+  useEffect(() => {
+    if (open) void reloadMetrics();
+  }, [open, reloadMetrics]);
   const chooseScheduledOnOpen = useRef(mode === "streamer");
   const [scheduleNow, setScheduleNow] = useState(() => Date.now());
   useEffect(() => {
@@ -379,7 +401,12 @@ export default function EventWorkspace({
   // Component-local only: never persist private coaching data across accounts.
   const savedStates = useRef(new Map<string, State>());
   const refreshSequence = useRef(0);
-  const statistics = view !== "Charting" && view !== "Event reports";
+  const statistics = ![
+    "Charting",
+    "Event reports",
+    "Options",
+    "Enhanced review",
+  ].includes(view);
   const selectedSeason = seasonId || data?.event.seasonId || "unassigned";
   const selectedEvent = statsEventId || data?.event.id || "all";
   const seasonReady = statsData?.event.seasonId === selectedSeason;
@@ -665,16 +692,22 @@ export default function EventWorkspace({
             SHOT <span>TRACKER</span>
           </a>
           <nav aria-label="Shot Tracker pages">
-            {pages.map((page) => (
-              <a
-                href={`#${slug(page)}`}
-                onClick={() => setMenuOpen(false)}
-                aria-current={view === page ? "page" : undefined}
-                key={page}
-              >
-                {page}
-              </a>
-            ))}
+            {pages
+              .filter(
+                (page) =>
+                  page !== "Enhanced review" ||
+                  metrics.preferences.mode === "enhanced",
+              )
+              .map((page) => (
+                <a
+                  href={`#${slug(page)}`}
+                  onClick={() => setMenuOpen(false)}
+                  aria-current={view === page ? "page" : undefined}
+                  key={page}
+                >
+                  {page}
+                </a>
+              ))}
           </nav>
           <div className="event-sidebar-footer">
             {mode === "streamer" ? (
@@ -970,6 +1003,8 @@ export default function EventWorkspace({
             </label>
             <button disabled={busy}>Unlock lab</button>
           </form>
+        ) : view === "Options" ? (
+          <MetricsOptions />
         ) : !event || (eventId && event.id !== eventId) ? (
           <section className="event-card">
             <h2>{error ? "Event data is unavailable" : "Loading event…"}</h2>
@@ -987,6 +1022,9 @@ export default function EventWorkspace({
         ) : (
           <>
             {event.source === "sample" && <p>SYNTHETIC EXAMPLE</p>}
+            {view === "Enhanced review" && (
+              <EnhancedReview key={event.id} event={event} />
+            )}
             {view === "Event reports" &&
               (mode === "streamer" ? (
                 <EventReportLibrary />

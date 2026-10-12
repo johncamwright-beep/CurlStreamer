@@ -199,10 +199,17 @@ test("scoped local lab charts, corrects and audits a synthetic shot", async ({
   ).toContainText("Review the line call");
   await expect(
     page.getByRole("region", { name: "Game review summary" }),
-  ).toContainText("Go back 45 seconds");
-  await expect(
-    page.getByRole("region", { name: "Game review summary" }),
-  ).toContainText("Flag captured");
+  ).toContainText("No recording is linked to this game yet.");
+  const recordedWorkspace = await (
+    await page.request.get(
+      "/api/curlcoach/workspace?source=sample&eventId=practice",
+    )
+  ).json();
+  const flagged = recordedWorkspace.event.games[0].state.events.findLast(
+    (event: { shot?: { note?: string } }) =>
+      event.shot?.note === "Review the line call",
+  );
+  expect(flagged.shot.videoReview.lookBackSeconds).toBe(45);
   await page
     .getByRole("combobox", { name: "Shot type", exact: true })
     .selectOption("Draw");

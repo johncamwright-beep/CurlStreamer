@@ -27,6 +27,24 @@ import { resolvedLineup, rockNumber } from "@/lib/curlcoach/lineup";
 import LineupDialog from "./LineupDialog";
 import ReviewSummary from "./ReviewSummary";
 import type { ReviewCorrection } from "@/lib/curlcoach/flagged-shots";
+import {
+  readEnhancedDraft,
+  writeEnhancedDraft,
+  type EnhancedDraft,
+} from "@/lib/curlcoach/enhanced-drafts";
+import {
+  emptySupplement,
+  captureError,
+  suggestStandard,
+  supplementSchema,
+  type Supplement,
+} from "@/lib/curlcoach/enhanced-catalog";
+import {
+  EnhancedFields,
+  GameContext,
+  useEnhancedGame,
+  useMetrics,
+} from "./EnhancedMetrics";
 
 export function turnLabel(value: string) {
   const [turn, target, direction] = value.split(" ");
@@ -121,6 +139,65 @@ export default function CoachLab({
   const [editing, setEditing] = useState<string | null>(
     resume?.editing ?? null,
   );
+  const metrics = useMetrics();
+  const enhancedMode =
+    metrics.ready && metrics.preferences.mode === "enhanced" && !!context;
+  const enhancedData = useEnhancedGame(
+    context?.gameId,
+    context?.eventId,
+    enhancedMode,
+  );
+  const enhancedRecord = enhancedData.documents.find(
+    (d) => d.kind === "supplement" && d.shotId === editing,
+  );
+  const enhancedKey = `shot-enhanced-draft:${metrics.scopeKey}:${context?.gameId}:${editing ?? `${draft.end}:${draft.position}:${draft.stone}`}`;
+  const [enhancedDraft, setEnhancedDraft] = useState<{
+    key: string;
+    value: Supplement;
+    revision: number;
+  } | null>(null);
+  const enhancedFallback = (): EnhancedDraft => {
+    const contextRecord = enhancedData.documents.find(
+      (d) => d.kind === "context",
+    );
+    const value = enhancedRecord
+      ? (enhancedRecord.value as Supplement)
+      : {
+          ...emptySupplement(),
+          definitionRevision: metrics.revision,
+          contextRevision: contextRecord?.revision ?? 0,
+          contextSnapshot:
+            (contextRecord?.value as Supplement["contextSnapshot"]) ?? {},
+        };
+    const fallback = { value, revision: enhancedRecord?.revision ?? 0 };
+    if (typeof window === "undefined") return fallback;
+    try {
+      return readEnhancedDraft(sessionStorage, enhancedKey, fallback);
+    } catch {
+      return fallback;
+    }
+  };
+  const enhancedEntry =
+    enhancedDraft?.key === enhancedKey ? enhancedDraft : enhancedFallback();
+  const enhanced = enhancedEntry.value;
+  function changeEnhanced(value: Supplement) {
+    const next = { value, revision: enhancedEntry.revision };
+    setEnhancedDraft({ key: enhancedKey, ...next });
+    try {
+      writeEnhancedDraft(sessionStorage, enhancedKey, next);
+    } catch {
+      /* In-memory draft remains. */
+    }
+    if (value.values.detail !== enhanced.values.detail)
+      setDraft(
+        suggestStandard(String(value.values.detail ?? ""), draft, !!editing),
+      );
+  }
+  const pendingShot = useRef<{
+    signature: string;
+    requestId: string;
+    shotId: string;
+  } | null>(null);
   const currentDraft = useRef(resume?.current ?? draft);
   const deliberateDraftChange = useRef(false);
   const lastReset = useRef(resumeResetKey);
@@ -230,10 +307,39 @@ export default function CoachLab({
     if (!state || closed || !started) return;
     setBusy(true);
     try {
+      const includeEnhanced = enhancedMode && shot !== null && shot === draft;
+      if (includeEnhanced && !enhancedData.ready)
+        throw new Error(
+          "Wait for Enhanced observations to load, or reload the event.",
+        );
+      const supplement = includeEnhanced
+        ? supplementSchema.parse({
+            ...enhanced,
+            values: {
+              ...enhanced.values,
+              source:
+                enhanced.values.source ??
+                (editing ? "coach_retrospective_review" : "live_entry"),
+            },
+          })
+        : undefined;
+      const signature = JSON.stringify({
+        shot,
+        editing: editing ?? (shot === draft ? "new" : id),
+        revision: state.revision ?? state.events.length,
+        supplement,
+        enhancedRevision: enhancedEntry.revision,
+      });
+      if (pendingShot.current?.signature !== signature)
+        pendingShot.current = {
+          signature,
+          requestId: crypto.randomUUID(),
+          shotId: id,
+        };
       const command = {
-        requestId: crypto.randomUUID(),
+        requestId: pendingShot.current.requestId,
         expectedRevision: state.revision ?? state.events.length,
-        shotId: id,
+        shotId: pendingShot.current.shotId,
         shot,
       };
       const response = await fetch(
@@ -248,6 +354,14 @@ export default function CoachLab({
                   eventId: context.eventId,
                   gameId: context.gameId,
                   command,
+                  ...(supplement
+                    ? {
+                        enhanced: {
+                          expectedRevision: enhancedEntry.revision,
+                          supplement,
+                        },
+                      }
+                    : {}),
                 }
               : command,
           ),
@@ -255,6 +369,16 @@ export default function CoachLab({
       );
       const data = await response.json();
       if (!response.ok) throw new Error(data.error);
+      pendingShot.current = null;
+      if (includeEnhanced) {
+        try {
+          sessionStorage.removeItem(enhancedKey);
+        } catch {
+          /* Optional storage. */
+        }
+        setEnhancedDraft(null);
+        await enhancedData.reload();
+      }
       setState(data);
       context?.onSaved(data);
       setEditing(null);
@@ -319,9 +443,7 @@ export default function CoachLab({
       }
     } catch (error) {
       setMessage(
-        error instanceof Error
-          ? error.message
-          : "Save not confirmed. Reload before retrying.",
+        captureError(error, "Save not confirmed. Reload before retrying."),
       );
     } finally {
       setBusy(false);
@@ -712,7 +834,21 @@ export default function CoachLab({
                       </select>
                     </label>
                     {choose("type", "Shot type", shotTypes)}
+                    {enhancedMode && (
+                      <EnhancedFields
+                        section="detail"
+                        value={enhanced}
+                        onChange={changeEnhanced}
+                      />
+                    )}
                     {choose("turn", "Turn / target", turns)}
+                    {enhancedMode && (
+                      <EnhancedFields
+                        section="call"
+                        value={enhanced}
+                        onChange={changeEnhanced}
+                      />
+                    )}
                     {choose("execution", "Execution", executions)}
                     <label>
                       Numeric grade
@@ -735,6 +871,13 @@ export default function CoachLab({
                         ))}
                       </select>
                     </label>
+                    {enhancedMode && (
+                      <EnhancedFields
+                        section="miss"
+                        value={enhanced}
+                        onChange={changeEnhanced}
+                      />
+                    )}
                     {choose("deficiency", "Deficiency", deficiencies)}
                     {choose("line", "Line", lines)}
                     {choose("release", "Release", releases)}
@@ -760,6 +903,53 @@ export default function CoachLab({
                       </select>
                     </label>
                   </div>
+                  {enhancedMode && (
+                    <div className="enhanced">
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          try {
+                            sessionStorage.removeItem(enhancedKey);
+                          } catch {
+                            /* Optional storage. */
+                          }
+                          setEnhancedDraft(null);
+                          await enhancedData.reload();
+                        }}
+                      >
+                        Discard Enhanced draft and reload
+                      </button>
+                      {enhancedData.error && (
+                        <p role="alert">{enhancedData.error}</p>
+                      )}
+                      {!!enhancedRecord?.conflicts?.length && (
+                        <p role="alert">
+                          Enhanced observations need review:{" "}
+                          {enhancedRecord.conflicts.join(", ")}
+                        </p>
+                      )}
+                      <details>
+                        <summary>Detailed Enhanced review · optional</summary>
+                        <EnhancedFields
+                          value={enhanced}
+                          onChange={changeEnhanced}
+                          shots={shots}
+                          source={draft}
+                          paths={metrics.preferences.definitions.namedPaths
+                            .split("\n")
+                            .filter(Boolean)}
+                        />
+                      </details>
+                      {enhancedData.ready && context && (
+                        <GameContext
+                          gameId={context.gameId}
+                          eventId={context.eventId}
+                          documents={enhancedData.documents}
+                          onSaved={enhancedData.reload}
+                        />
+                      )}
+                    </div>
+                  )}
                   <details>
                     <summary>Turn / target guide</summary>
                     <p>

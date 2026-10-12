@@ -1036,3 +1036,102 @@
   min-height: 44px;
   justify-self: start;
 }
+.enhanced {
+  margin-block: 16px;
+}
+.enhanced-fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr));
+  gap: 12px;
+}
+.enhanced label,
+.enhanced-fields > label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-block: 8px;
+}
+.enhanced input,
+.enhanced select,
+.enhanced textarea,
+.enhanced button,
+.enhanced summary,
+.enhanced-fields select,
+.enhanced-fields input,
+.enhanced-fields button {
+  min-height: 44px;
+  border-radius: 8px;
+  padding: 10px;
+}
+.enhanced input,
+.enhanced select,
+.enhanced textarea,
+.enhanced-fields input,
+.enhanced-fields select {
+  background: #0c1a29;
+  color: #f8fafc;
+  border: 1px solid #52677a;
+  max-width: 100%;
+}
+.enhanced button,
+.enhanced-fields button {
+  background: #a5f3fc;
+  color: #082f49;
+  font-weight: 600;
+}
+.enhanced-multiple {
+  grid-column: 1 / -1;
+  border: 1px solid #52677a;
+  padding: 12px;
+  border-radius: 10px;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 8px;
+}
+.enhanced-multiple label,
+.coach-lab .enhanced-multiple label {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+}
+.enhanced-multiple input,
+.coach-lab .enhanced-multiple input {
+  width: 20px;
+  min-height: 20px;
+  height: 20px;
+}
+.enhanced article {
+  padding-block: 12px;
+  border-bottom: 1px solid #334155;
+}
+.enhanced details {
+  margin-block: 12px;
+}
+.enhanced summary {
+  cursor: pointer;
+}
+.coach-fields > .enhanced-fields {
+  grid-column: 1 / -1;
+}
+.enhanced-multiple {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 210px), 1fr));
+}
+.enhanced-fields > label {
+  min-width: 0;
+}
+.enhanced-fields > div,
+.enhanced-fields > details {
+  min-width: 0;
+}
+.enhanced-miss-picker {
+  grid-column: 1 / -1;
+}
+.enhanced-miss-picker > summary {
+  min-height: 44px;
+  padding: 12px;
+  border: 1px solid #52677a;
+  border-radius: 8px;
+  cursor: pointer;
+}

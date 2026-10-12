@@ -5,15 +5,15 @@ import { decryptYouTubeRefreshToken } from "./youtube-credential-vault";
 import { refreshYouTubeAccessToken, youtubeGoogleRequest } from "./youtube";
 import type { BroadcastReview } from "@/lib/curlcoach/review";
 
-const sessionsSchema = z.array(
-  z.object({
-    game_id: z.uuid(),
-    youtube_broadcast_id: z
-      .string()
-      .regex(/^[a-zA-Z0-9_-]{11}$/)
-      .nullable(),
-  }),
-);
+const sessionSchema = z.object({
+  game_id: z.uuid(),
+  youtube_broadcast_id: z
+    .string()
+    .regex(/^[a-zA-Z0-9_-]{11}$/)
+    .nullable(),
+  started_at: z.string().nullable().optional(),
+  stopped_at: z.string().nullable().optional(),
+});
 const videosSchema = z.object({
   items: z.array(
     z.object({
@@ -40,14 +40,33 @@ export async function loadCoachBroadcastReviews(
     const db = createAdminSupabaseClient();
     const rows = await db
       .from("broadcast_sessions")
-      .select("game_id,youtube_broadcast_id")
+      .select("game_id,youtube_broadcast_id,started_at,stopped_at")
       .eq("organization_id", organizationId)
       .eq("provider", "youtube")
       .in("game_id", gameIds);
     if (rows.error) return result;
-    const sessions = sessionsSchema
-      .parse(rows.data)
-      .filter((s) => s.youtube_broadcast_id);
+    const sessions = (Array.isArray(rows.data) ? rows.data : []).flatMap(
+      (row) => {
+        const parsed = sessionSchema.safeParse(row);
+        return parsed.success && parsed.data.youtube_broadcast_id
+          ? [parsed.data]
+          : [];
+      },
+    );
+    // Keep recordings available through provider outages. A session start is
+    // only an estimate of the recording origin, never a calibrated mapping.
+    for (const session of sessions) {
+      const cached = cache.get(
+        organizationId + ":" + session.youtube_broadcast_id,
+      )?.value;
+      result[session.game_id] = cached ?? {
+        url: "https://www.youtube.com/watch?v=" + session.youtube_broadcast_id,
+        ...(session.started_at
+          ? { startedAt: session.started_at, estimated: true }
+          : {}),
+        ...(session.stopped_at ? { endedAt: session.stopped_at } : {}),
+      };
+    }
     const ids = [...new Set(sessions.map((s) => s.youtube_broadcast_id!))];
     const missing = ids.filter(
       (id) => (cache.get(organizationId + ":" + id)?.until ?? 0) <= Date.now(),
@@ -95,6 +114,8 @@ export async function loadCoachBroadcastReviews(
             ? {
                 url: "https://www.youtube.com/watch?v=" + id,
                 startedAt: timing.actualStartTime,
+                // Wall-clock arithmetic does not measure camera/encoder delay.
+                estimated: true,
                 ...(timing.actualEndTime
                   ? { endedAt: timing.actualEndTime }
                   : {}),
@@ -102,7 +123,7 @@ export async function loadCoachBroadcastReviews(
             : undefined;
           if (cache.size >= 500) cache.delete(cache.keys().next().value!);
           cache.set(organizationId + ":" + id, {
-            until: Date.now() + 60_000,
+            until: Date.now() + (timing?.actualEndTime ? 86_400_000 : 60_000),
             value,
           });
         }

@@ -1,4 +1,7 @@
 vi.mock("./curlcoach-video", () => ({ loadCoachBroadcastReviews: m.videos }));
+vi.mock("./shot-review-corrections", () => ({
+  loadReviewCorrections: async () => ({}),
+}));
 import { beforeEach, expect, it, vi } from "vitest";
 const m = vi.hoisted(() => ({
   account: vi.fn(),

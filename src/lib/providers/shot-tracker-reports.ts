@@ -1,4 +1,5 @@
 import "server-only";
+import { withReportFlags } from "@/lib/curlcoach/flagged-shots";
 import { reportMisses } from "@/lib/curlcoach/report-misses";
 import { createHash, randomUUID } from "node:crypto";
 import { z } from "zod";
@@ -133,15 +134,18 @@ export async function getEventReports(
       stale: r.fingerprint !== reportFingerprint(event, r.audience),
       packet:
         r.status === "ready"
-          ? resolveReportPlayerIds(
-              r.packet as ReportPacket,
+          ? withReportFlags(
+              resolveReportPlayerIds(
+                r.packet as ReportPacket,
+                event,
+                r.fingerprint ===
+                  reportFingerprint(
+                    event,
+                    r.audience,
+                    (r.packet as ReportPacket)?.policy,
+                  ),
+              ),
               event,
-              r.fingerprint ===
-                reportFingerprint(
-                  event,
-                  r.audience,
-                  (r.packet as ReportPacket)?.policy,
-                ),
             )
           : null,
     })),
@@ -245,7 +249,7 @@ export async function generateEventReports(
     event.id,
     args,
   )) as { status: string; packet?: ReportPacket };
-  if (claim.status === "ready") return claim.packet!;
+  if (claim.status === "ready") return withReportFlags(claim.packet!, event);
   if (claim.status !== "claimed")
     throw new ReportError(
       claim.status === "locked"
@@ -313,7 +317,7 @@ export async function generateEventReports(
       }))
     )
       throw new Error("Report lease expired");
-    return packet;
+    return withReportFlags(packet, fresh);
   } catch (error) {
     abort.abort();
     const reasons = [

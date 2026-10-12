@@ -42,6 +42,7 @@ import CoachLab, { turnLabel } from "./CoachLab";
 
 import AnalysisPanels from "./AnalysisPanels";
 import TechnicalReview from "./TechnicalReview";
+import FlaggedShots from "./FlaggedShots";
 import { technicalSummary } from "@/lib/curlcoach/technical";
 import Table from "./AnalysisTable";
 import {
@@ -57,6 +58,7 @@ const pages = [
   "Miss analysis",
   "Technical Review",
   "Game analysis",
+  "Flagged shots",
   "Event reports",
 ] as const;
 type Page = (typeof pages)[number];
@@ -387,6 +389,43 @@ export default function EventWorkspace({
   // while the rest of the season loads for the All events selector.
   const analysisData = seasonReady ? statsData : eventReady ? data : null;
   const statsReady = !!analysisData;
+  const flagDefaultApplied = useRef(false);
+  useEffect(() => {
+    if (view !== "Flagged shots") {
+      flagDefaultApplied.current = false;
+      return;
+    }
+    if (flagDefaultApplied.current) return;
+    const today = new Intl.DateTimeFormat("en-CA", {
+      timeZone: "America/Toronto",
+    }).format(new Date());
+    const recentEvent = data?.catalog
+      .filter((e) => e.startDate && e.startDate <= today)
+      .sort((a, b) => b.startDate!.localeCompare(a.startDate!))[0];
+    if (recentEvent) {
+      flagDefaultApplied.current = true;
+      setSeasonId(recentEvent.seasonId ?? "unassigned");
+      setStatsEventId(recentEvent.id);
+      setAnalysisGame("all");
+      return;
+    }
+    if (!seasonReady || !statsData) return;
+    flagDefaultApplied.current = true;
+    const recent = statsData.event.games
+      .filter(
+        (g) =>
+          g.eventId !== "standalone" &&
+          g.scheduledStart &&
+          Date.parse(g.scheduledStart) <= Date.now(),
+      )
+      .sort((a, b) =>
+        (b.scheduledStart ?? "").localeCompare(a.scheduledStart ?? ""),
+      )[0];
+    if (recent) {
+      setStatsEventId(recent.eventId);
+      setAnalysisGame("all");
+    }
+  }, [view, seasonReady, statsData, data]);
   const hasData = !!data;
   useEffect(() => {
     if (!open || !statistics || !hasData || seasonReady) return;
@@ -1015,6 +1054,7 @@ export default function EventWorkspace({
                     roster: game.roster ?? game.state.roster,
                     initialState: game.state,
                     broadcastReview: game.broadcastReview,
+                    reviewCorrections: game.reviewCorrections,
                     onSaved: saved,
                   }}
                 />
@@ -1030,7 +1070,15 @@ export default function EventWorkspace({
             ) : (
               statistics && (
                 <>
-                  {view === "Technical Review" ? (
+                  {view === "Flagged shots" ? (
+                    <FlaggedShots
+                      shots={selected}
+                      games={analysisGames}
+                      players={analysisPlayers}
+                      canSave={mode === "streamer"}
+                      onSaved={() => refresh()}
+                    />
+                  ) : view === "Technical Review" ? (
                     <TechnicalReview groups={technicalSummary(selected)} />
                   ) : (
                     <AnalysisPanels

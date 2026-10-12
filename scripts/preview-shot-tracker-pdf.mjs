@@ -14,7 +14,10 @@ import { buildReportPDF } from "./src/lib/curlcoach/report-pdf";
 const event = sampleEvent("shorty-example");
 const input = reportInputs(event, "players")[0];
 const finding = text => ({ text, evidence: ["overall"] });
-const report = { ...input, title: "Sample player report", narrative: {
+const report = { ...input, title: "Sample player report", flags: [
+  {gameId:"sample-game",shotId:"sample-shot",game:"Game 1 vs Sample opponents",end:2,stone:1,type:"Draw",note:"Coach's note: watch the release and compare the initial line with the broom. This is a synthetic preview.",url:"https://www.youtube.com/watch?v=abcdefghijk&t=132s",estimated:false},
+  {gameId:"sample-game",shotId:"sample-shot-2",game:"Game 1 vs Sample opponents",end:5,stone:2,type:"Hit & Roll",note:"Review communication before sweeping.",url:"https://www.youtube.com/watch?v=abcdefghijk&t=3732s",estimated:true}
+], narrative: {
 summary: finding("Your execution was more reliable on straightforward shots than on the precision shots. Use the miss breakdown below to choose a focused practice priority. These are synthetic demonstration results, not a real athlete's performance."),
 strengths: [finding("Build on the shots that repeatedly reached the intended outcome. Keep a short set of those shots in each practice while spending more time on the patterns that cost execution.")],
 priorities: [finding("Check the shot-type miss rates alongside the direction tags. A high share of a tag does not establish its technical cause. Separate the intended weight, initial line and final result during review.")],

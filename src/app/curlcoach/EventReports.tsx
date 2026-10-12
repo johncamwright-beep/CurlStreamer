@@ -456,6 +456,29 @@ function ReportBody({ report }: { report: SavedReport }) {
           ))}
         </section>
       )}
+      {!!report.flags?.length && (
+        <section aria-label="Your flagged shots" className="event-card">
+          <h4 className="mb-3 text-lg font-bold">Your flagged shots</h4>
+          {report.flags.map((flag) => (
+            <article
+              className="coach-review-item"
+              key={`${flag.gameId}:${flag.shotId}`}
+            >
+              <h5>
+                {flag.game} · End {flag.end} · Stone {flag.stone} · {flag.type}
+              </h5>
+              <p>{flag.note || "No coach’s note added."}</p>
+              {flag.url ? (
+                <a href={flag.url} target="_blank" rel="noopener noreferrer">
+                  Review video{flag.estimated ? " (approximate timing)" : ""} ↗
+                </a>
+              ) : (
+                <p>Recording unavailable.</p>
+              )}
+            </article>
+          ))}
+        </section>
+      )}
       <section aria-label="Report legend">
         <h4 className="mb-3 text-lg font-bold">Report legend</h4>
         <dl className="space-y-3">

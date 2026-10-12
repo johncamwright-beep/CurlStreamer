@@ -1,5 +1,10 @@
 import type { EventLevel } from "@/lib/team-hierarchy";
-import { withBroadcastReview, type BroadcastReview } from "./review";
+import type { ReviewCorrection } from "./flagged-shots";
+import {
+  withBroadcastReview,
+  withRecordedReviewTime,
+  type BroadcastReview,
+} from "./review";
 import {
   currentShots,
   emptyState,
@@ -38,6 +43,7 @@ export type CoachGame = {
   }[];
   scoreboardAvailable: boolean;
   broadcastReview?: BroadcastReview;
+  reviewCorrections?: ReviewCorrection[];
   roster?: RosterEntry[];
   state: State;
 };
@@ -51,14 +57,27 @@ export type CoachEvent = {
 };
 export type Workspace = {
   event: CoachEvent;
-  catalog: { id: string; name: string; seasonId?: string }[];
+  catalog: {
+    id: string;
+    name: string;
+    seasonId?: string;
+    startDate?: string;
+  }[];
   seasons?: { id: string; name: string }[];
   refreshedAt: string;
 };
 export function gameShots(game: CoachGame) {
-  return currentShots(game.state.events).map((shot) =>
-    withBroadcastReview(shot, game.broadcastReview),
-  );
+  return currentShots(game.state.events).map((shot) => {
+    const correction = game.reviewCorrections?.find(
+      (c) => c.shotId === shot.id,
+    );
+    if (correction)
+      return { ...shot, videoReview: correction.video, note: correction.note };
+    return withBroadcastReview(
+      withRecordedReviewTime(shot, game.state.events),
+      game.broadcastReview,
+    );
+  });
 }
 export function eventShots(event: CoachEvent) {
   return event.games.flatMap((game) =>

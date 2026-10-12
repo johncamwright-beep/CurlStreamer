@@ -1018,3 +1018,21 @@
   height: 22px;
   min-height: 22px;
 }
+.coach-review-edit {
+  display: grid;
+  gap: 12px;
+  margin-top: 12px;
+}
+.coach-review-edit label {
+  display: grid;
+  gap: 6px;
+}
+.coach-review-edit input,
+.coach-review-edit textarea {
+  min-height: 44px;
+  width: 100%;
+}
+.coach-review-edit button {
+  min-height: 44px;
+  justify-self: start;
+}

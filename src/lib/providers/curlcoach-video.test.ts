@@ -53,6 +53,34 @@ beforeEach(() => {
     ],
   });
 });
+it("retains an approximate saved-session link during YouTube failure and ignores malformed neighbors", async () => {
+  m.from.mockImplementation(() => {
+    const q = {
+      select: () => q,
+      eq: () => q,
+      in: async () => ({
+        data: [
+          {
+            game_id: gid,
+            youtube_broadcast_id: "abcdefghijk",
+            started_at: "2026-10-10T12:00:00Z",
+          },
+          { game_id: gid, youtube_broadcast_id: "invalid" },
+        ],
+        error: null,
+      }),
+      single: async () => ({ data: null, error: { code: "unavailable" } }),
+    };
+    return q;
+  });
+  expect((await loadCoachBroadcastReviews("offline-team", [gid]))[gid]).toEqual(
+    {
+      url: "https://www.youtube.com/watch?v=abcdefghijk",
+      startedAt: "2026-10-10T12:00:00Z",
+      estimated: true,
+    },
+  );
+});
 it("scopes every database read, returns timing only, caches reads and separates tenants", async () => {
   const result = await loadCoachBroadcastReviews("team-a", [gid]);
   expect(filters.filter((f) => f[0] === "organization_id")).toEqual([
@@ -62,6 +90,7 @@ it("scopes every database read, returns timing only, caches reads and separates 
   expect(result[gid]).toEqual({
     url: "https://www.youtube.com/watch?v=abcdefghijk",
     startedAt: "2026-09-19T12:00:00Z",
+    estimated: true,
     endedAt: "2026-09-19T14:00:00Z",
   });
   expect(JSON.stringify(result)).not.toContain("token");
@@ -79,8 +108,12 @@ it("does not fabricate timestamps for scheduled videos and isolates provider out
       },
     ],
   });
-  expect(await loadCoachBroadcastReviews("team-c", [gid])).toEqual({});
+  expect(await loadCoachBroadcastReviews("team-c", [gid])).toEqual({
+    [gid]: { url: "https://www.youtube.com/watch?v=abcdefghijk" },
+  });
   m.refresh.mockRejectedValue(new Error("private error"));
-  expect(await loadCoachBroadcastReviews("team-d", [gid])).toEqual({});
+  expect(await loadCoachBroadcastReviews("team-d", [gid])).toEqual({
+    [gid]: { url: "https://www.youtube.com/watch?v=abcdefghijk" },
+  });
   expect(await loadCoachBroadcastReviews("team-d", [])).toEqual({});
 });

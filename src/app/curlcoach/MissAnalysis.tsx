@@ -4,7 +4,7 @@ import { createPortal } from "react-dom";
 import { deficiencies, shotTypes, type Shot } from "@/lib/curlcoach/model";
 import { family, type CoachGame } from "@/lib/curlcoach/event";
 import { isMiss } from "@/lib/curlcoach/misses";
-import { reviewLink, reviewStart, videoTime } from "@/lib/curlcoach/review";
+import ReviewVideo from "./ReviewVideo";
 export default function MissAnalysis({
   shots,
   games,
@@ -99,7 +99,6 @@ export default function MissAnalysis({
         <h3>Shot review</h3>
         {visible.map((s) => {
           const game = games.find((g) => g.id === s.gameId);
-          const link = reviewLink(s.videoReview);
           return (
             <article className="coach-review-item" key={s.gameId + ":" + s.id}>
               <h4>
@@ -123,17 +122,8 @@ export default function MissAnalysis({
                     : ""}
                 </p>
               )}
-              {link ? (
-                <a href={link} target="_blank" rel="noopener noreferrer">
-                  Review video from {videoTime(reviewStart(s.videoReview)!)} ↗
-                </a>
-              ) : (
-                (s.flagged ?? !!s.review) && (
-                  <p>
-                    Go back {s.videoReview?.lookBackSeconds ?? 30} seconds ·
-                    video link not available for this flag
-                  </p>
-                )
+              {(s.flagged ?? !!s.review) && (
+                <ReviewVideo video={s.videoReview} />
               )}
             </article>
           );

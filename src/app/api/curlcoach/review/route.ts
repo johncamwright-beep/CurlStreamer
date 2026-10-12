@@ -42,9 +42,11 @@ export async function POST(request: Request) {
     const shot = currentShots(state.events).find((s) => s.id === input.shotId);
     if (!shot || !(shot.flagged ?? !!shot.review))
       return new NextResponse(null, { status: 404, headers });
-    const broadcasts = await loadCoachBroadcastReviews(account.organizationId, [
-      input.gameId,
-    ]);
+    const broadcasts = await loadCoachBroadcastReviews(
+      account.organizationId,
+      [input.gameId],
+      account.userId,
+    );
     const url = shot.videoReview?.url || broadcasts[input.gameId]?.url;
     const id = url ? youtubeId(new URL(url)) : null;
     if (!id)

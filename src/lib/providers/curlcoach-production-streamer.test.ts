@@ -247,7 +247,7 @@ it("loads timing only for authorized selected games", async () => {
     },
   });
   const result = await loadProductionStreamerEvent(eid);
-  expect(m.videos).toHaveBeenCalledWith("org", [gid]);
+  expect(m.videos).toHaveBeenCalledWith("org", [gid], "coach");
   expect(result.event.games[0].broadcastReview?.startedAt).toBe(
     "2026-09-19T12:00:00Z",
   );

@@ -228,6 +228,7 @@ export async function loadProductionStreamerEvent(
     : loadCoachBroadcastReviews(
         account.organizationId,
         rows.map((row) => row.id),
+        account.userId,
       );
   const reviewCorrections = await loadReviewCorrections(
     account,

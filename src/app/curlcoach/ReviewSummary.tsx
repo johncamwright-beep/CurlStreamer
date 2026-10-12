@@ -1,5 +1,5 @@
 import { roster, type Shot } from "@/lib/curlcoach/model";
-import { reviewLink, reviewStart, videoTime } from "@/lib/curlcoach/review";
+import ReviewVideo from "./ReviewVideo";
 
 export default function ReviewSummary({
   shots,
@@ -27,7 +27,6 @@ export default function ReviewSummary({
         <p>Flag shots while scoring to build your game review list.</p>
       )}
       {flagged.map((shot) => {
-        const link = reviewLink(shot.videoReview);
         return (
           <article key={shot.id} className="coach-review-item">
             <h3>
@@ -40,19 +39,7 @@ export default function ReviewSummary({
               {shot.review ? ` · ${shot.review}` : ""}
             </p>
             <p>{shot.note || "No notes added."}</p>
-            {link ? (
-              <a href={link} target="_blank" rel="noopener noreferrer">
-                Review video from {videoTime(reviewStart(shot.videoReview)!)} ↗
-              </a>
-            ) : (
-              <p>
-                Video link not available for this flag.{" "}
-                {shot.flaggedAt
-                  ? `Flag captured ${new Date(shot.flaggedAt).toLocaleString()}.`
-                  : "This older flag has no captured real-time timestamp."}{" "}
-                Go back {shot.videoReview?.lookBackSeconds ?? 30} seconds.
-              </p>
-            )}
+            <ReviewVideo video={shot.videoReview} />
           </article>
         );
       })}

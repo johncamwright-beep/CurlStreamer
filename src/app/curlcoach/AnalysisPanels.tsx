@@ -9,7 +9,7 @@ import {
 } from "@/lib/curlcoach/model";
 import { family, type CoachGame } from "@/lib/curlcoach/event";
 import { missBreakdown, type AnalysisShot } from "@/lib/curlcoach/analysis";
-import { reviewLink } from "@/lib/curlcoach/review";
+import ReviewVideo from "./ReviewVideo";
 import Table from "./AnalysisTable";
 
 const pct = (value: number | null) =>
@@ -417,7 +417,6 @@ export default function AnalysisPanels({
         </div>
         {!visible.length && <p>No shots match this review selection.</p>}
         {visible.map((s) => {
-          const link = reviewLink(s.videoReview);
           return (
             <details className="coach-review-item" key={s.gameId + ":" + s.id}>
               <summary>
@@ -432,14 +431,8 @@ export default function AnalysisPanels({
                 {s.excluded ? ` · Excluded: ${s.excluded}` : ""}
               </p>
               <p>{s.note || "No note added."}</p>
-              {link ? (
-                <a href={link} target="_blank" rel="noopener noreferrer">
-                  Review video ↗
-                </a>
-              ) : (
-                (s.flagged || s.review) && (
-                  <p>Flagged for review · Video link not available.</p>
-                )
+              {(s.flagged ?? !!s.review) && (
+                <ReviewVideo video={s.videoReview} />
               )}
             </details>
           );

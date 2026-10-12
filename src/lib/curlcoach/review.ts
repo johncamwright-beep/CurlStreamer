@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { ShotEvent } from "./model";
 
 export function supportedVideo(value: string) {
   try {
@@ -41,6 +42,7 @@ export const videoReviewSchema = z
     positionSeconds: z.number().int().min(0).max(604800).nullable(),
     lookBackSeconds: z.number().int().min(0).max(3600),
     delaySeconds: z.number().int().min(0).max(3600).optional(),
+    estimated: z.boolean().optional(),
   })
   .strict();
 export type VideoReview = z.infer<typeof videoReviewSchema>;
@@ -74,15 +76,61 @@ export function reviewStart(video?: VideoReview) {
 
 export type BroadcastReview = {
   url: string;
-  startedAt: string;
+  startedAt?: string;
   endedAt?: string;
+  estimated?: boolean;
 };
+/** Older category-only flags did not capture flaggedAt. Use their first review
+ * save as an explicitly approximate display timestamp; never mutate the audit. */
+export function withRecordedReviewTime<
+  T extends {
+    id: string;
+    flagged?: boolean;
+    review?: string | null;
+    flaggedAt?: string;
+    videoReview?: VideoReview;
+  },
+>(shot: T, events: ShotEvent[]): T {
+  if (shot.flaggedAt || !(shot.flagged ?? !!shot.review)) return shot;
+  const saved = events.find(
+    (event) =>
+      event.shotId === shot.id &&
+      event.shot &&
+      (event.shot.flagged ?? !!event.shot.review),
+  );
+  if (!saved) return shot;
+  return {
+    ...shot,
+    flaggedAt: saved.at,
+    videoReview: {
+      url: "",
+      positionSeconds: null,
+      lookBackSeconds: 30,
+      ...shot.videoReview,
+      estimated: true,
+    },
+  };
+}
 /** Derived display metadata only: never rewrite the coach's append-only events. */
 export function withBroadcastReview<
   T extends { flaggedAt?: string; videoReview?: VideoReview },
 >(shot: T, broadcast?: BroadcastReview): T {
-  if (reviewLink(shot.videoReview) || !broadcast || !shot.flaggedAt)
+  if (
+    reviewLink(shot.videoReview) ||
+    !broadcast ||
+    !supportedVideo(broadcast.url)
+  )
     return shot;
+  const recording = {
+    ...shot,
+    videoReview: {
+      ...shot.videoReview,
+      url: broadcast.url,
+      positionSeconds: null,
+      lookBackSeconds: shot.videoReview?.lookBackSeconds ?? 30,
+    },
+  };
+  if (!shot.flaggedAt || !broadcast.startedAt) return recording;
   const at = Date.parse(shot.flaggedAt),
     start = Date.parse(broadcast.startedAt);
   const end = broadcast.endedAt ? Date.parse(broadcast.endedAt) : Infinity;
@@ -94,9 +142,9 @@ export function withBroadcastReview<
     at < start ||
     at > end
   )
-    return shot;
+    return recording;
   const positionSeconds = Math.floor((at - start) / 1000);
-  if (positionSeconds > 604800) return shot;
+  if (positionSeconds > 604800) return recording;
   return {
     ...shot,
     videoReview: {
@@ -104,6 +152,9 @@ export function withBroadcastReview<
       positionSeconds,
       lookBackSeconds: shot.videoReview?.lookBackSeconds ?? 30,
       delaySeconds: shot.videoReview?.delaySeconds ?? 0,
+      ...(broadcast.estimated || shot.videoReview?.estimated
+        ? { estimated: true }
+        : {}),
     },
   };
 }

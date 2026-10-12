@@ -1,6 +1,7 @@
 import { opponentSeasonSchema } from "@/lib/opponent-seasons";
 import { readGameCompletionSummary } from "@/lib/game-completion";
 import { loadCoachBroadcastReviews } from "./curlcoach-video";
+import { loadReviewCorrections } from "./shot-review-corrections";
 import { isCurrentGame, preferredGame } from "@/lib/current-game";
 import "server-only";
 import { z } from "zod";
@@ -83,11 +84,13 @@ export async function loadProductionStreamerEvent(
         id: z.string().uuid(),
         name: z.string(),
         season_id: z.string().uuid().nullable().optional(),
+        start_date: z.string().nullable().optional(),
       }),
     )
     .parse(events.value)
-    .map(({ season_id, ...event }) => ({
+    .map(({ season_id, start_date, ...event }) => ({
       ...event,
+      ...(start_date ? { startDate: start_date } : {}),
       seasonId: season_id ?? "unassigned",
     }));
   if (
@@ -226,6 +229,10 @@ export async function loadProductionStreamerEvent(
         account.organizationId,
         rows.map((row) => row.id),
       );
+  const reviewCorrections = await loadReviewCorrections(
+    account,
+    rows.map((row) => row.id),
+  );
   event.games = await mapWithConcurrency(
     rows,
     MAX_CONCURRENT_SCORE_READS,
@@ -321,6 +328,7 @@ export async function loadProductionStreamerEvent(
         initialHammer: row.config.initialHammer ?? null,
         scoreboardAvailable: available,
         broadcastReview: (await broadcastReviews)[row.id],
+        reviewCorrections: reviewCorrections[row.id],
         ends: scoreboard(row.config as GameConfig, scoreEvents, "home"),
         state: {
           ...emptyState(),

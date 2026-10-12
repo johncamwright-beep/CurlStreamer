@@ -318,6 +318,27 @@ export async function buildReportPDF(report: SavedReport, eventName: string) {
       );
     }
   }
+  if (report.flags?.length) {
+    heading("Your flagged shots");
+    for (const flag of report.flags) {
+      ensure(32);
+      text(`${flag.game} | End ${flag.end} | Stone ${flag.stone}`, 10, true);
+      text(flag.type, 9, false, muted);
+      text(flag.note || "No coach's note added.");
+      if (flag.url) {
+        ensure(8);
+        pdf.setFontSize(10);
+        pdf.setTextColor("#087D90");
+        pdf.textWithLink(
+          `Review video${flag.estimated ? " (approximate timing)" : ""}`,
+          margin,
+          y,
+          { url: flag.url },
+        );
+        y += 8;
+      } else text("Recording unavailable.", 9, false, muted);
+    }
+  }
   heading("Report legend");
   table(
     ["Code / measure", "Meaning"],

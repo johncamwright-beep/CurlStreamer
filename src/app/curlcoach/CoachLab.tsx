@@ -1,6 +1,7 @@
 "use client";
 import {
   withBroadcastReview,
+  withRecordedReviewTime,
   type BroadcastReview,
 } from "@/lib/curlcoach/review";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -25,6 +26,7 @@ import { nextTurn } from "@/lib/curlcoach/next-turn";
 import { resolvedLineup, rockNumber } from "@/lib/curlcoach/lineup";
 import LineupDialog from "./LineupDialog";
 import ReviewSummary from "./ReviewSummary";
+import type { ReviewCorrection } from "@/lib/curlcoach/flagged-shots";
 
 export function turnLabel(value: string) {
   const [turn, target, direction] = value.split(" ");
@@ -94,6 +96,7 @@ export default function CoachLab({
     roster?: State["roster"];
     initialState: State;
     broadcastReview?: BroadcastReview;
+    reviewCorrections?: ReviewCorrection[];
     onSaved: (state: State) => void;
   };
 }) {
@@ -456,6 +459,12 @@ export default function CoachLab({
             setDraft({
               ...draft,
               [field]: e.target.value || null,
+              ...(field === "review" && e.target.value
+                ? {
+                    flagged: true,
+                    flaggedAt: draft.flaggedAt ?? new Date().toISOString(),
+                  }
+                : {}),
               ...(field === "position"
                 ? {
                     playerId:
@@ -988,9 +997,21 @@ export default function CoachLab({
             ))}
           </section>
           <ReviewSummary
-            shots={shots.map((shot) =>
-              withBroadcastReview(shot, context?.broadcastReview),
-            )}
+            shots={shots.map((shot) => {
+              const correction = context?.reviewCorrections?.find(
+                (c) => c.shotId === shot.id,
+              );
+              if (correction)
+                return {
+                  ...shot,
+                  note: correction.note,
+                  videoReview: correction.video,
+                };
+              return withBroadcastReview(
+                withRecordedReviewTime(shot, state?.events ?? []),
+                context?.broadcastReview,
+              );
+            })}
             players={players}
           />
           <section className="coach-panel" hidden={!!context && !history}>

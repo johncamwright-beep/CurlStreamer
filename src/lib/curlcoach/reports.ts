@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { ReportFlag } from "./flagged-shots";
 import { reportMisses, type MissAnalysis } from "./report-misses";
 import { currentShots, report, shotTypes, type Shot } from "./model";
 import type { CoachEvent } from "./event";
@@ -54,6 +55,7 @@ export type ReportInput = {
   technical?: TechnicalSummary;
 };
 export type SavedReport = ReportInput & {
+  flags?: ReportFlag[];
   narrative: Narrative;
   playerId?: string;
 };

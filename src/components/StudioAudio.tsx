@@ -1,9 +1,11 @@
 "use client";
 import { useEffect, useState } from "react";
+import { StudioOverlay } from "./StudioOverlay";
 import { StudioUsbAudio } from "./StudioUsbAudio";
 import { StudioNativeUsbAudio } from "./StudioNativeUsbAudio";
 
 export function StudioAudio({ id }: { id: string }) {
+  const [setupOpen, setSetupOpen] = useState(false);
   const [nativeUsb, setNativeUsb] = useState(false);
   useEffect(() => {
     setNativeUsb(navigator.userAgent.includes("StudioNativeAudio/1"));
@@ -13,13 +15,24 @@ export function StudioAudio({ id }: { id: string }) {
       {nativeUsb ? (
         <StudioNativeUsbAudio key={id} gameId={id} />
       ) : (
-        <details>
-          <summary className="flex min-h-11 cursor-pointer items-center justify-between gap-2">
+        <>
+          <header className="flex min-h-11 items-center justify-between gap-2">
             <h2 className="font-bold">Audio</h2>
-            <span className="text-sm">USB setup</span>
-          </summary>
-          <StudioUsbAudio />
-        </details>
+            <button
+              className="btn-secondary"
+              onClick={() => setSetupOpen(true)}
+            >
+              USB setup
+            </button>
+          </header>
+          <StudioOverlay
+            title="USB setup"
+            open={setupOpen}
+            onClose={() => setSetupOpen(false)}
+          >
+            <StudioUsbAudio />
+          </StudioOverlay>
+        </>
       )}
     </section>
   );

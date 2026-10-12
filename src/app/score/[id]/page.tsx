@@ -1,4 +1,6 @@
 "use client";
+import { StudioOverlay } from "@/components/StudioOverlay";
+import { StudioPreviewStatus } from "@/components/StudioPreviewStatus";
 import { TeamLogo } from "@/components/TeamLogo";
 import Link from "next/link";
 import { use, useEffect, useLayoutEffect, useRef, useState } from "react";
@@ -29,6 +31,11 @@ import { cameraAudioControlEnabled } from "@/lib/camera-audio";
 import { useStudioCameraInputs } from "@/components/StudioCameraInputs";
 import { WindowsStudioRequired } from "@/components/WindowsStudioRequired";
 import { StudioSessionIndicator } from "@/components/StudioSessionProvider";
+import {
+  StudioStatusProvider,
+  StudioStatusArea,
+  StudioStatusMessage,
+} from "@/components/StudioStatusArea";
 export default function Scorer({
   params,
 }: {
@@ -60,8 +67,14 @@ function ScorerGame({ id }: { id: string }) {
   }, []);
   const [team, setTeam] = useState<Team>("home");
   const scoringFlight = useRef(false);
+  const [cameraSettingsOpen, setCameraSettingsOpen] = useState(false);
+  const [sponsorsOpen, setSponsorsOpen] = useState(false);
   const [scoringBusy, setScoringBusy] = useState(false);
   const [scoringError, setScoringError] = useState("");
+  const [errorOpen, setErrorOpen] = useState(false);
+  useEffect(() => {
+    if (scoringError) setErrorOpen(true);
+  }, [scoringError]);
   const [scoringNotice, setScoringNotice] = useState("");
   const [failedAction, setFailedAction] = useState<ScoringAction>();
   const failedIntent = useRef<ScoringAction | undefined>(undefined);
@@ -328,426 +341,467 @@ function ScorerGame({ id }: { id: string }) {
       ? "Retrying scoring change…"
       : "Saving scoring change…"
     : scoringNotice;
-  const scoringStatusBadge = scoringStatus ? (
-    <span
-      role="status"
-      aria-label="Scoring update"
-      aria-live="polite"
-      aria-atomic="true"
-      className={`scoring-status-badge${scoringBusy ? "" : " scoring-status-badge-success"}`}
-      title={scoringStatus}
+  const scoringStatusBadge =
+    desktop && scoringError ? (
+      <button className="btn-secondary" onClick={() => setErrorOpen(true)}>
+        Review scoring error
+      </button>
+    ) : scoringStatus ? (
+      <span
+        role="status"
+        aria-label="Scoring update"
+        aria-live="polite"
+        aria-atomic="true"
+        className={`scoring-status-badge${scoringBusy ? "" : " scoring-status-badge-success"}`}
+        title={scoringStatus}
+      >
+        {scoringStatus}
+      </span>
+    ) : (
+      <span className="scoring-eyebrow">Score entry</span>
+    );
+  const scoringErrorPanel = (
+    <div
+      role="alert"
+      aria-label="Scoring error"
+      className="scoring-feedback scoring-feedback-error"
     >
-      {scoringStatus}
-    </span>
-  ) : (
-    <span className="scoring-eyebrow">Score entry</span>
+      <p>{scoringError}</p>
+      <p className="mt-2 text-sm">
+        {staleIntent
+          ? "The score changed. Review the current score before entering a new change."
+          : "Retry will safely repeat this same scoring change."}
+      </p>
+      <div className="mt-3 flex gap-2">
+        {!staleIntent && (
+          <button
+            disabled={scoringBusy}
+            className="btn-secondary"
+            onClick={() => failedAction && runScoringAction(failedAction)}
+          >
+            {scoringBusy ? "Retrying…" : "Retry same change"}
+          </button>
+        )}
+        <button
+          disabled={scoringBusy || !staleIntent}
+          className="btn-secondary"
+          onClick={() => {
+            failedIntent.current = undefined;
+            setFailedAction(undefined);
+            setScoringError("");
+          }}
+        >
+          Review current score
+        </button>
+      </div>
+    </div>
   );
   return (
-    <main
-      className={
-        "scoring-workspace mx-auto max-w-6xl" +
-        (desktop ? " scoring-desktop" : "") +
-        (!canEndGame ? " scoring-remote" : "")
-      }
-    >
-      {error && (
-        <div className="scoring-card mb-3" role="status">
-          {error} Showing the last loaded score.
-        </div>
-      )}
-      <header className="scoring-page-heading">
-        <div className="scoring-navigation">
-          <AppNavigation
-            signedIn={accountRole ? true : undefined}
-            gameContext={{
-              id,
-              title: gameEntryPresentation(game.config, navigationMetadata)
-                .title,
-              scheduledLabel: gameEntryPresentation(
-                game.config,
-                navigationMetadata,
-              ).scheduledLabel,
-              capabilities: gameCapabilities(
-                accountRole ||
-                  (hasOrganizerAccess(localStorage, id)
-                    ? "organizer"
-                    : "scorer"),
-                game.config.awayName === "Opponent TBD",
-              ),
-            }}
-          />
-          {!desktop && (
-            <GameSetupNavigation id={id} accountOperator={accountOperator} />
-          )}
-        </div>
-        <div className="scoring-title-block">
-          <p className="scoring-eyebrow">
-            {desktop ? "Selected game" : "Match control"}
-          </p>
-          <h1>
-            {desktop
-              ? `${game.config.homeName} vs ${game.config.awayName} — ${game.config.eventName || "Single Game"}`
-              : "Scoring"}
-            <TeamLogo
-              teamName={game.config.homeName}
-              imageUrl={game.config.homeLogoUrl}
-              className="ml-3 inline-block h-10 w-10 align-middle"
+    <StudioStatusProvider key={id} enabled={desktop}>
+      <main
+        className={
+          "scoring-workspace mx-auto max-w-6xl" +
+          (desktop ? " scoring-desktop" : "") +
+          (!canEndGame ? " scoring-remote" : "")
+        }
+      >
+        <StudioStatusMessage
+          role="status"
+          message={error ? `${error} Showing the last loaded score.` : null}
+        />
+        <header className="scoring-page-heading">
+          <div className="scoring-navigation">
+            <AppNavigation
+              signedIn={accountRole ? true : undefined}
+              gameContext={{
+                id,
+                title: gameEntryPresentation(game.config, navigationMetadata)
+                  .title,
+                scheduledLabel: gameEntryPresentation(
+                  game.config,
+                  navigationMetadata,
+                ).scheduledLabel,
+                capabilities: gameCapabilities(
+                  accountRole ||
+                    (hasOrganizerAccess(localStorage, id)
+                      ? "organizer"
+                      : "scorer"),
+                  game.config.awayName === "Opponent TBD",
+                ),
+              }}
             />
-          </h1>
-          {!desktop && <p className="scoring-match-title">{title}</p>}
-          <p className="text-sm text-slate-300" aria-label="Game schedule">
-            {
-              gameEntryPresentation(game.config, navigationMetadata)
-                .scheduledLabel
-            }
-          </p>
-        </div>
-        {canEndGame && (
-          <div className="scoring-page-actions">
-            {desktop && <StudioSessionIndicator gameId={id} />}
             {!desktop && (
-              <Link
-                className="btn-secondary"
-                href={`/broadcast/${id}`}
-                aria-label={`Broadcast: ${title}`}
-              >
-                Show broadcast
-              </Link>
-            )}
-            {desktop && canEndGame && (
-              <div className="scoring-header-finish">
-                <EndGameControl
-                  gameId={id}
-                  homeName={game.config.homeName}
-                  awayName={game.config.awayName}
-                  sharedYoutubeWatchUrl={game.config.sharedYoutubeWatchUrl}
-                  enabled
-                  disabled={scoringLocked}
-                  onCompleted={(value, cleanup) => {
-                    setFinished(value);
-                    setFinishedCleanup(cleanup);
-                  }}
-                />
-              </div>
-            )}
-            {!desktop && (
-              <a className="btn-secondary" href="#program-controls">
-                Broadcast controls ↓
-              </a>
+              <GameSetupNavigation id={id} accountOperator={accountOperator} />
             )}
           </div>
-        )}
-        {desktop && !canEndGame && <StudioSessionIndicator gameId={id} />}
-      </header>
-      <div className="scoring-columns">
-        <div className="scoring-main">
-          <ScoringSummary
-            game={game}
-            initialHammer={{ disabled: scoringLocked, select: saveHammer }}
-            actions={
-              <InGameRockColours
-                homeName={game.config.homeName}
-                awayName={game.config.awayName}
-                homeColor={game.config.homeColor}
-                awayColor={game.config.awayColor}
-                disabled={scoringLocked}
-                save={act}
+          <div className="scoring-title-block">
+            <p className="scoring-eyebrow">
+              {desktop ? "Selected game" : "Match control"}
+            </p>
+            <h1>
+              {desktop
+                ? `${game.config.homeName} vs ${game.config.awayName} — ${game.config.eventName || "Single Game"}`
+                : "Scoring"}
+              <TeamLogo
+                teamName={game.config.homeName}
+                imageUrl={game.config.homeLogoUrl}
+                className="ml-3 inline-block h-10 w-10 align-middle"
               />
-            }
-          />
-          {score.hammer && (
-            <section
-              className="scoring-card scoring-entry"
-              aria-labelledby="record-end-heading"
-            >
-              <div className="scoring-section-heading">
-                <h2 id="record-end-heading">Record End {score.currentEnd}</h2>
-                {scoringStatusBadge}
-              </div>
-              <p className="scoring-field-label">Which team scored?</p>
-              <div
-                className="scoring-team-picker"
-                role="group"
-                aria-label="Scoring team"
-              >
-                <button
-                  disabled={scoringLocked}
-                  onClick={() => setTeam("home")}
-                  aria-pressed={team === "home"}
-                  className="scoring-team-choice"
-                >
-                  {game.config.homeName}
-                </button>
-                <button
-                  disabled={scoringLocked}
-                  onClick={() => setTeam("away")}
-                  aria-pressed={team === "away"}
-                  className="scoring-team-choice"
-                >
-                  {game.config.awayName}
-                </button>
-              </div>
-              <p className="scoring-field-label">Points scored</p>
-              <div
-                className="scoring-points"
-                role="group"
-                aria-label="Points scored"
-              >
-                {[1, 2, 3, 4, 5, 6, 7, 8].map((value) => (
-                  <button
-                    key={value}
-                    disabled={scoringLocked}
-                    aria-pressed={points === value}
-                    aria-label={`${value} point${value === 1 ? "" : "s"}`}
-                    onClick={() => setPoints(value)}
-                  >
-                    {value}
-                  </button>
-                ))}
-              </div>
-              <p className="scoring-save-preview">
-                {game.config[`${team}Name`]} · {points} point
-                {points === 1 ? "" : "s"}
-              </p>
-              <div className="scoring-action-row mt-3 grid grid-cols-2 gap-2">
-                <button
-                  disabled={scoringLocked}
-                  className="btn"
-                  onClick={() =>
-                    runScoringAction({
-                      type: "score",
-                      intentId: newIntent(),
-                      expectedEnd: score.currentEnd,
-                      expectedLastEventId,
-                      team,
-                      points,
-                      blank: false,
-                    })
-                  }
-                >
-                  Save {points} point{points > 1 ? "s" : ""}
-                </button>
-                <button
-                  disabled={scoringLocked}
-                  className="btn-secondary"
-                  onClick={() =>
-                    runScoringAction({
-                      type: "score",
-                      intentId: newIntent(),
-                      expectedEnd: score.currentEnd,
-                      expectedLastEventId,
-                      team: null,
-                      points: 0,
-                      blank: true,
-                    })
-                  }
-                >
-                  Blank end
-                </button>
-                <button
-                  disabled={scoringLocked || !undoTarget}
-                  className="btn-secondary"
-                  onClick={() =>
-                    undoTarget &&
-                    runScoringAction({
-                      type: "undo",
-                      intentId: newIntent(),
-                      expectedLastEventId,
-                      expectedTargetId: undoTarget.id,
-                    })
-                  }
-                >
-                  Undo last scoring change
-                </button>
-                <button
-                  disabled={scoringLocked}
-                  className="btn-secondary"
-                  aria-expanded={correctingHammer}
-                  onClick={() => setCorrectingHammer(!correctingHammer)}
-                >
-                  Correct Hammer
-                </button>
-              </div>
-              <p className="mt-3 text-sm text-slate-300">
-                {undoTarget?.type === "end"
-                  ? `Undo will reverse End ${undoTarget.score.end} while keeping its history.`
-                  : undoTarget?.type === "hammer"
-                    ? "Undo will reverse the latest hammer selection while keeping its history."
-                    : "There is no scoring change to undo."}
-              </p>
-              {correctingHammer && (
+            </h1>
+            {!desktop && <p className="scoring-match-title">{title}</p>}
+            <p className="text-sm text-slate-300" aria-label="Game schedule">
+              {
+                gameEntryPresentation(game.config, navigationMetadata)
+                  .scheduledLabel
+              }
+            </p>
+          </div>
+          {canEndGame && (
+            <div className="scoring-page-actions">
+              {desktop && <StudioStatusArea />}
+              {desktop && (
                 <div
-                  className="mt-4 rounded-lg border border-slate-600 p-3"
-                  role="group"
-                  aria-labelledby="correct-hammer-heading"
+                  id="studio-broadcast-actions"
+                  className="studio-header-broadcast"
+                />
+              )}
+              {!desktop && (
+                <Link
+                  className="btn-secondary"
+                  href={`/broadcast/${id}`}
+                  aria-label={`Broadcast: ${title}`}
                 >
-                  <h3 id="correct-hammer-heading" className="font-bold">
-                    Confirm which team has hammer
-                  </h3>
-                  <p className="mt-1 text-sm text-slate-300">
-                    This correction does not change the score or end.
-                  </p>
-                  <div className="scoring-action-row mt-3 grid grid-cols-2 gap-2">
-                    {(["home", "away"] as const).map((side) => (
-                      <button
-                        key={side}
-                        disabled={scoringLocked}
-                        className="btn-secondary"
-                        onClick={() => saveHammer(side)}
-                      >
-                        Confirm{" "}
-                        {side === "home"
-                          ? game.config.homeName
-                          : game.config.awayName}
-                      </button>
-                    ))}
-                  </div>
+                  Show broadcast
+                </Link>
+              )}
+              {desktop && canEndGame && (
+                <div className="scoring-header-finish">
+                  <EndGameControl
+                    gameId={id}
+                    homeName={game.config.homeName}
+                    awayName={game.config.awayName}
+                    sharedYoutubeWatchUrl={game.config.sharedYoutubeWatchUrl}
+                    enabled
+                    disabled={scoringLocked}
+                    onCompleted={(value, cleanup) => {
+                      setFinished(value);
+                      setFinishedCleanup(cleanup);
+                    }}
+                  />
                 </div>
               )}
-            </section>
-          )}
-          {scoringError && (
-            <div
-              role="alert"
-              aria-label="Scoring error"
-              className="scoring-feedback scoring-feedback-error"
-            >
-              <p>{scoringError}</p>
-              <p className="mt-2 text-sm">
-                {staleIntent
-                  ? "The score changed. Review the current score before entering a new change."
-                  : "Retry will safely repeat this same scoring change."}
-              </p>
-              <div className="mt-3 flex gap-2">
-                {!staleIntent && (
-                  <button
-                    disabled={scoringBusy}
-                    className="btn-secondary"
-                    onClick={() =>
-                      failedAction && runScoringAction(failedAction)
-                    }
-                  >
-                    {scoringBusy ? "Retrying…" : "Retry same change"}
-                  </button>
-                )}
-                <button
-                  disabled={scoringBusy || !staleIntent}
-                  className="btn-secondary"
-                  onClick={() => {
-                    failedIntent.current = undefined;
-                    setFailedAction(undefined);
-                    setScoringError("");
-                  }}
-                >
-                  Review current score
-                </button>
-              </div>
-            </div>
-          )}
-
-          {desktop && (
-            <div className="scoring-device-dock">
-              {canEndGame && m1Pilot && (
-                <section id="devices" aria-label="Connected devices">
-                  <StudioDeviceCards
-                    id={id}
-                    claims={game.claims}
-                    cameraAudio={cameraAudio}
-                    layout={game.layout}
-                    onLayout={async (layout) => {
-                      await act({ type: "layout", layout });
-                    }}
-                    onAudio={async (role, enabled, volume) => {
-                      await act({
-                        type: "camera-audio",
-                        role,
-                        enabled,
-                        volume,
-                      });
-                    }}
-                    onChanged={refresh}
-                    enabled
-                  />
-                </section>
+              {!desktop && (
+                <a className="btn-secondary" href="#program-controls">
+                  Broadcast controls ↓
+                </a>
               )}
             </div>
           )}
-          {desktop && canEndGame && (
-            <>
-              <StudioAudio id={id} />
-            </>
-          )}
-        </div>
-        {canEndGame && (
-          <aside
-            id="program-controls"
-            tabIndex={-1}
-            className="scoring-sidebar"
-            aria-label="Broadcast and program controls"
-          >
-            {desktop ? (
-              <section
-                className="scoring-preview-panel"
-                aria-label="Stream preview and camera settings"
-              >
-                <h2 className="scoring-eyebrow">Program preview</h2>
-                <StudioProgramPreview key={id} gameId={id} embedded />
-                <details className="scoring-camera-adjustments">
-                  <summary aria-label="Camera controls">
-                    <span className="camera-controls-expand" aria-hidden="true">
-                      +
-                    </span>
-                    <span
-                      className="camera-controls-collapse"
-                      aria-hidden="true"
-                    >
-                      −
-                    </span>
-                    Camera controls
-                  </summary>
-                  <CameraZoomControls game={game} act={act} />
-                </details>
-              </section>
-            ) : (
-              <>
-                <WindowsStudioRequired gameId={id} />
-                <ScoringProgramControls game={game} act={act} />
-              </>
-            )}
-            {desktop && (
-              <div className="scoring-control-tiles">
-                <ScoringProgramControls game={game} act={act} compact />
-                <StudioYouTube id={id} />
-              </div>
-            )}
-            {!desktop && canEndGame && (
-              <div className="scoring-card scoring-finish">
-                {!desktop && (
-                  <>
-                    <h2 className="font-bold">Finish the game</h2>
-                    <p className="mb-3 mt-2 text-sm text-slate-300">
-                      Review and confirm the saved final score before ending the
-                      game.
-                    </p>
-                  </>
-                )}
-                <EndGameControl
-                  gameId={id}
+          {desktop && !canEndGame && <StudioSessionIndicator gameId={id} />}
+        </header>
+        <div className="scoring-columns">
+          <div className="scoring-main">
+            <ScoringSummary
+              expanded={desktop}
+              game={game}
+              initialHammer={{ disabled: scoringLocked, select: saveHammer }}
+              actions={
+                <InGameRockColours
                   homeName={game.config.homeName}
                   awayName={game.config.awayName}
-                  sharedYoutubeWatchUrl={game.config.sharedYoutubeWatchUrl}
-                  enabled
+                  homeColor={game.config.homeColor}
+                  awayColor={game.config.awayColor}
                   disabled={scoringLocked}
-                  onCompleted={(value, cleanup) => {
-                    setFinished(value);
-                    setFinishedCleanup(cleanup);
-                  }}
+                  save={act}
                 />
+              }
+            />
+            {score.hammer && (
+              <section
+                className="scoring-card scoring-entry"
+                aria-labelledby="record-end-heading"
+              >
+                <div className="scoring-section-heading">
+                  <h2 id="record-end-heading">Record End {score.currentEnd}</h2>
+                  {scoringStatusBadge}
+                </div>
+                <p className="scoring-field-label">Which team scored?</p>
+                <div
+                  className="scoring-team-picker"
+                  role="group"
+                  aria-label="Scoring team"
+                >
+                  <button
+                    disabled={scoringLocked}
+                    onClick={() => setTeam("home")}
+                    aria-pressed={team === "home"}
+                    className="scoring-team-choice"
+                  >
+                    {game.config.homeName}
+                  </button>
+                  <button
+                    disabled={scoringLocked}
+                    onClick={() => setTeam("away")}
+                    aria-pressed={team === "away"}
+                    className="scoring-team-choice"
+                  >
+                    {game.config.awayName}
+                  </button>
+                </div>
+                <p className="scoring-field-label">Points scored</p>
+                <div
+                  className="scoring-points"
+                  role="group"
+                  aria-label="Points scored"
+                >
+                  {[1, 2, 3, 4, 5, 6, 7, 8].map((value) => (
+                    <button
+                      key={value}
+                      disabled={scoringLocked}
+                      aria-pressed={points === value}
+                      aria-label={`${value} point${value === 1 ? "" : "s"}`}
+                      onClick={() => setPoints(value)}
+                    >
+                      {value}
+                    </button>
+                  ))}
+                </div>
+                <p className="scoring-save-preview">
+                  {game.config[`${team}Name`]} · {points} point
+                  {points === 1 ? "" : "s"}
+                </p>
+                <div className="scoring-action-row mt-3 grid grid-cols-2 gap-2">
+                  <button
+                    disabled={scoringLocked}
+                    className="btn"
+                    onClick={() =>
+                      runScoringAction({
+                        type: "score",
+                        intentId: newIntent(),
+                        expectedEnd: score.currentEnd,
+                        expectedLastEventId,
+                        team,
+                        points,
+                        blank: false,
+                      })
+                    }
+                  >
+                    Save {points} point{points > 1 ? "s" : ""}
+                  </button>
+                  <button
+                    disabled={scoringLocked}
+                    className="btn-secondary"
+                    onClick={() =>
+                      runScoringAction({
+                        type: "score",
+                        intentId: newIntent(),
+                        expectedEnd: score.currentEnd,
+                        expectedLastEventId,
+                        team: null,
+                        points: 0,
+                        blank: true,
+                      })
+                    }
+                  >
+                    Blank end
+                  </button>
+                  <button
+                    disabled={scoringLocked || !undoTarget}
+                    className="btn-secondary"
+                    onClick={() =>
+                      undoTarget &&
+                      runScoringAction({
+                        type: "undo",
+                        intentId: newIntent(),
+                        expectedLastEventId,
+                        expectedTargetId: undoTarget.id,
+                      })
+                    }
+                  >
+                    Undo last scoring change
+                  </button>
+                  <button
+                    disabled={scoringLocked}
+                    className="btn-secondary"
+                    aria-expanded={correctingHammer}
+                    onClick={() => setCorrectingHammer(!correctingHammer)}
+                  >
+                    Correct Hammer
+                  </button>
+                </div>
+                <p className="mt-3 text-sm text-slate-300">
+                  {undoTarget?.type === "end"
+                    ? `Undo will reverse End ${undoTarget.score.end} while keeping its history.`
+                    : undoTarget?.type === "hammer"
+                      ? "Undo will reverse the latest hammer selection while keeping its history."
+                      : "There is no scoring change to undo."}
+                </p>
+                <StudioOverlay
+                  title="Correct Hammer"
+                  open={correctingHammer}
+                  onClose={() => setCorrectingHammer(false)}
+                >
+                  <div role="group" aria-labelledby="correct-hammer-heading">
+                    <h3 id="correct-hammer-heading" className="font-bold">
+                      Confirm which team has hammer
+                    </h3>
+                    <p className="mt-1 text-sm text-slate-300">
+                      This correction does not change the score or end.
+                    </p>
+                    <div className="scoring-action-row mt-3 grid grid-cols-2 gap-2">
+                      {(["home", "away"] as const).map((side) => (
+                        <button
+                          key={side}
+                          disabled={scoringLocked}
+                          className="btn-secondary"
+                          onClick={() => saveHammer(side)}
+                        >
+                          Confirm{" "}
+                          {side === "home"
+                            ? game.config.homeName
+                            : game.config.awayName}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </StudioOverlay>
+              </section>
+            )}
+            {scoringError && (
+              <StudioStatusMessage message={`Scoring: ${scoringError}`} />
+            )}
+            {scoringError &&
+              (desktop ? (
+                <StudioOverlay
+                  title="Scoring needs attention"
+                  open={errorOpen}
+                  onClose={() => setErrorOpen(false)}
+                >
+                  {scoringErrorPanel}
+                </StudioOverlay>
+              ) : (
+                scoringErrorPanel
+              ))}
+
+            {desktop && (
+              <div className="scoring-device-dock">
+                {canEndGame && m1Pilot && (
+                  <section id="devices" aria-label="Connected devices">
+                    <StudioDeviceCards
+                      id={id}
+                      claims={game.claims}
+                      cameraAudio={cameraAudio}
+                      layout={game.layout}
+                      onLayout={async (layout) => {
+                        await act({ type: "layout", layout });
+                      }}
+                      onAudio={async (role, enabled, volume) => {
+                        await act({
+                          type: "camera-audio",
+                          role,
+                          enabled,
+                          volume,
+                        });
+                      }}
+                      onChanged={refresh}
+                      enabled
+                    />
+                  </section>
+                )}
               </div>
             )}
-          </aside>
-        )}
-      </div>
-    </main>
+            {desktop && canEndGame && (
+              <div className="scoring-audio-dock">
+                <StudioAudio id={id} />
+              </div>
+            )}
+          </div>
+          {canEndGame && (
+            <aside
+              id="program-controls"
+              tabIndex={-1}
+              className="scoring-sidebar"
+              aria-label="Broadcast and program controls"
+            >
+              {desktop ? (
+                <section
+                  className="scoring-preview-panel"
+                  aria-label="Stream preview and camera settings"
+                >
+                  <h2 className="scoring-eyebrow">Program preview</h2>
+                  <StudioProgramPreview key={id} gameId={id} embedded />
+                  <StudioPreviewStatus gameId={id} />
+                  <button
+                    className="btn-secondary min-h-11"
+                    onClick={() => setCameraSettingsOpen(true)}
+                  >
+                    Camera Settings
+                  </button>
+                  <StudioOverlay
+                    title="Camera Settings"
+                    open={cameraSettingsOpen}
+                    onClose={() => setCameraSettingsOpen(false)}
+                  >
+                    <CameraZoomControls game={game} act={act} />
+                  </StudioOverlay>
+                </section>
+              ) : (
+                <>
+                  <WindowsStudioRequired gameId={id} />
+                  <ScoringProgramControls game={game} act={act} />
+                </>
+              )}
+              {desktop && (
+                <div className="scoring-control-tiles">
+                  <h2 className="scoring-eyebrow">Quick actions</h2>
+                  <button
+                    className="btn-secondary studio-sponsors-launch"
+                    onClick={() => setSponsorsOpen(true)}
+                  >
+                    Sponsors
+                  </button>
+                  <StudioOverlay
+                    title="Sponsors"
+                    open={sponsorsOpen}
+                    onClose={() => setSponsorsOpen(false)}
+                  >
+                    <ScoringProgramControls game={game} act={act} compact />
+                  </StudioOverlay>
+                  <StudioYouTube
+                    id={id}
+                    controlsTarget="studio-broadcast-actions"
+                  />
+                </div>
+              )}
+              {!desktop && canEndGame && (
+                <div className="scoring-card scoring-finish">
+                  {!desktop && (
+                    <>
+                      <h2 className="font-bold">Finish the game</h2>
+                      <p className="mb-3 mt-2 text-sm text-slate-300">
+                        Review and confirm the saved final score before ending
+                        the game.
+                      </p>
+                    </>
+                  )}
+                  <EndGameControl
+                    gameId={id}
+                    homeName={game.config.homeName}
+                    awayName={game.config.awayName}
+                    sharedYoutubeWatchUrl={game.config.sharedYoutubeWatchUrl}
+                    enabled
+                    disabled={scoringLocked}
+                    onCompleted={(value, cleanup) => {
+                      setFinished(value);
+                      setFinishedCleanup(cleanup);
+                    }}
+                  />
+                </div>
+              )}
+            </aside>
+          )}
+        </div>
+      </main>
+    </StudioStatusProvider>
   );
 }

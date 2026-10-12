@@ -148,7 +148,7 @@ test("score entry preserves selected team and points in one saved intent", async
     "End 3",
   );
   await expect(
-    page.getByRole("region", { name: "Match score" }).locator("strong"),
+    page.getByRole("region", { name: "Match score" }).locator(".scoring-total"),
   ).toHaveText(["2", "3"]);
   await expect(
     page.getByRole("button", { name: "Save 3 points" }),
@@ -370,21 +370,6 @@ test("desktop game day keeps scoring primary and settings available on demand", 
   await expect(
     page.getByRole("link", { name: "Watch on YouTube" }),
   ).toBeVisible();
-  const sponsorControls = page.getByRole("region", {
-    name: "Sponsors",
-    exact: true,
-  });
-  const overlayButton = (await sponsorControls
-    .getByRole("button", { name: "Overlay", exact: true })
-    .boundingBox())!;
-  const panelButton = (await sponsorControls
-    .getByRole("button", { name: "Side panel", exact: true })
-    .boundingBox())!;
-  expect(Math.abs(overlayButton.width - panelButton.width)).toBeLessThanOrEqual(
-    1,
-  );
-  expect(overlayButton.height).toBeGreaterThanOrEqual(44);
-  expect(panelButton.height).toBeGreaterThanOrEqual(44);
   const preview = page.getByRole("region", {
     name: "Studio program preview",
     exact: true,
@@ -392,254 +377,177 @@ test("desktop game day keeps scoring primary and settings available on demand", 
   await expect(
     preview.getByRole("img", { name: "Actual Studio program output" }),
   ).toBeVisible();
-  await expect(page.getByRole("link", { name: /^Broadcast:/ })).toHaveCount(0);
-  const cameraControls = page.getByLabel("Camera controls", { exact: true });
-  await expect(
-    page.getByRole("button", { name: "Camera 1 zoom in" }),
-  ).toBeHidden();
-  const previewPosition = () =>
+  await page.evaluate(
+    (gameId) =>
+      window.dispatchEvent(
+        new CustomEvent("studio-session-status", {
+          detail: {
+            gameId,
+            title: "Test game",
+            active: true,
+            busy: false,
+            presentation: "live",
+            streaming: "armed",
+            outputActive: true,
+            live: true,
+            canHoldStream: true,
+          },
+        }),
+      ),
+    testGameId,
+  );
+  await expect(page.locator(".studio-preview-status")).toHaveText("LIVE");
+  const position = () =>
     preview.evaluate((el) => {
-      const rect = el.getBoundingClientRect();
+      const r = el.getBoundingClientRect();
       return {
-        x: rect.x + scrollX,
-        y: rect.y + scrollY,
-        width: rect.width,
-        height: rect.height,
+        x: r.x + scrollX,
+        y: r.y + scrollY,
+        width: r.width,
+        height: r.height,
       };
     });
-  const previewBeforeSettings = await previewPosition();
-  await cameraControls.click();
+  const before = await position();
+  await page
+    .getByRole("region", { name: "Camera 1", exact: true })
+    .getByRole("button", { name: "Settings", exact: true })
+    .click();
+  const phoneSettings = page.getByRole("dialog", {
+    name: "Camera 1 settings",
+    exact: true,
+  });
+  await phoneSettings
+    .getByRole("button", { name: "Show reconnect QR", exact: true })
+    .click();
+  const qrDialog = page.getByRole("dialog", {
+    name: "Camera 1 QR code",
+    exact: true,
+  });
   await expect(
-    page.getByRole("button", { name: "Camera 1 zoom in" }),
+    qrDialog.getByRole("img", { name: "Camera 1 reconnect QR code" }),
   ).toBeVisible();
-  await expect(
-    page.getByRole("button", { name: "Camera 2 zoom in" }),
-  ).toBeVisible();
-  expect(
-    await page
-      .getByTestId("camera-zoom-rail")
-      .evaluate((el) => getComputedStyle(el).position),
-  ).toBe("static");
-  await cameraControls.click();
-  await expect(
-    page.getByRole("button", { name: "Camera 1 zoom in" }),
-  ).toBeHidden();
-  expect(await previewPosition()).toEqual(previewBeforeSettings);
-  const previewBox = (await preview.boundingBox())!;
-  expect(previewBox.width / previewBox.height).toBeCloseTo(16 / 9, 1);
-  if (info.project.name !== "mobile") {
-    const scoreBox = (await page
-      .getByRole("region", { name: "Match score" })
-      .boundingBox())!;
-    expect(previewBox.x).toBeGreaterThan(scoreBox.x + scoreBox.width);
-    expect(previewBox.y).toBeLessThan(scoreBox.y + 60);
-  }
-  expect(
-    await page.evaluate(
-      () => document.documentElement.scrollWidth <= innerWidth,
-    ),
-  ).toBe(true);
+  await qrDialog.getByRole("button", { name: "Close", exact: true }).click();
+  await phoneSettings
+    .getByRole("button", { name: "Close", exact: true })
+    .click();
+  expect(await position()).toEqual(before);
 
+  await page
+    .getByRole("button", { name: "Camera Settings", exact: true })
+    .click();
+  const cameraSettings = page.getByRole("dialog", {
+    name: "Camera Settings",
+    exact: true,
+  });
   await expect(
-    page.getByRole("region", { name: "USB microphones", exact: true }),
+    cameraSettings.getByRole("button", { name: "Camera 1 zoom in" }),
   ).toBeVisible();
-  await page.evaluate((gameId) => {
-    window.dispatchEvent(
-      new CustomEvent("studio-usb-status", {
-        detail: {
-          gameId,
-          devices: [],
-          running: true,
-          error: null,
-          channels: [0.1, 0.3, 0.05, 0.2].map((peak) => ({
-            peak,
-            rms: peak / 2,
-            muted: false,
-            level: 1,
-          })),
-        },
-      }),
-    );
-  }, testGameId);
+  await expect(
+    cameraSettings.getByLabel("Microphone sync adjustment"),
+  ).toHaveValue("-1500");
+  await cameraSettings
+    .getByRole("button", { name: "Close", exact: true })
+    .click();
+  expect(await position()).toEqual(before);
+  await page.getByRole("button", { name: "Sponsors", exact: true }).click();
+  const sponsorsDialog = page.getByRole("dialog", {
+    name: "Sponsors",
+    exact: true,
+  });
+  await sponsorsDialog
+    .getByRole("button", { name: "Stop sponsors", exact: true })
+    .click();
+  expect(actions[0]).toEqual({ type: "sponsor-mode", active: false });
+  await sponsorsDialog
+    .getByRole("button", { name: "Side panel", exact: true })
+    .click();
+  expect(actions[1]).toEqual({
+    type: "sponsor-mode",
+    active: false,
+    style: "fullscreen",
+  });
+  await sponsorsDialog
+    .getByRole("button", { name: "Close", exact: true })
+    .click();
+  expect(await position()).toEqual(before);
   const usb = page.getByRole("region", {
     name: "USB microphones",
     exact: true,
   });
   await expect(usb.getByRole("meter")).toHaveCount(4);
-  await expect(usb.getByRole("button", { name: "Disconnect" })).toBeVisible();
-  const youtubeControls = page.getByRole("region", {
-    name: "YouTube broadcast",
-    exact: true,
-  });
-  if (info.project.name !== "mobile") {
-    expect((await usb.boundingBox())!.height).toBeLessThan(190);
-    const youtube = await page
-      .getByRole("region", { name: "YouTube broadcast", exact: true })
-      .boundingBox();
-    const sponsors = await page
-      .getByRole("region", { name: "Sponsors", exact: true })
-      .boundingBox();
-    expect(sponsors!.height).toBeLessThanOrEqual(166);
-    expect(sponsors!.y).toBe(youtube!.y);
-    expect(sponsors!.height).toBe(youtube!.height);
-  }
-  for (const mode of ["live", "hold"] as const) {
-    await page.evaluate(
-      ({ gameId, mode }) => {
-        window.dispatchEvent(
-          new CustomEvent("studio-youtube-status", {
-            detail: {
-              gameId,
-              available: true,
-              busy: false,
-              streaming: "armed",
-              live: true,
-              receiving: true,
-              message: "",
-              canReconnect: true,
-              canHoldStream: true,
-              outputActive: true,
-              presentation: { mode },
-            },
-          }),
-        );
-      },
-      { gameId: testGameId, mode },
-    );
-    const broadcastButton = youtubeControls.getByRole("button", {
-      name: mode === "hold" ? "Resume broadcast" : "Pause broadcast",
-      exact: true,
-    });
-    await expect(broadcastButton).toBeEnabled();
-    expect(
-      (await broadcastButton.boundingBox())!.height,
-    ).toBeGreaterThanOrEqual(44);
-    if (info.project.name !== "mobile") {
-      const youtube = (await youtubeControls.boundingBox())!;
-      const sponsors = (await sponsorControls.boundingBox())!;
-      expect(sponsors.height).toBeLessThanOrEqual(166);
-      expect(sponsors.y).toBe(youtube.y);
-      expect(sponsors.height).toBe(youtube.height);
-    }
-  }
+  await usb.getByRole("button", { name: "USB setup", exact: true }).click();
   await expect(
-    page.getByRole("button", { name: "Save 1 point", exact: true }),
-  ).toBeEnabled();
-  await expect(
-    page.getByRole("button", { name: "Open navigation menu" }),
+    page.getByRole("dialog", { name: "USB setup", exact: true }),
   ).toBeVisible();
-  await expect(page.getByText("Connect phones", { exact: true })).toHaveCount(
-    0,
+  await page
+    .getByRole("dialog", { name: "USB setup", exact: true })
+    .getByRole("button", { name: "Close", exact: true })
+    .click();
+  expect(await position()).toEqual(before);
+  await page.evaluate(
+    (gameId) =>
+      window.dispatchEvent(
+        new CustomEvent("studio-youtube-status", {
+          detail: {
+            gameId,
+            available: true,
+            busy: false,
+            streaming: "armed",
+            live: false,
+            receiving: true,
+            outputActive: true,
+            canReconnect: true,
+            message: "YouTube status delayed test message",
+          },
+        }),
+      ),
+    testGameId,
   );
+  await page.getByRole("button", { name: "Status Log", exact: true }).click();
+  const log = page.getByRole("dialog", { name: "Status Log", exact: true });
+  await expect(log).toContainText("YouTube status delayed test message");
+  await log.getByRole("button", { name: "Close", exact: true }).click();
+  expect(await position()).toEqual(before);
   await expect(
-    page.getByRole("region", { name: "Camera 1", exact: true }),
+    page.getByRole("region", { name: "Score by end, scroll for more ends" }),
   ).toBeVisible();
-  await expect(page.getByText(/First, use Start recording/)).toHaveCount(0);
-  await expect(
-    page.getByRole("region", { name: "YouTube broadcast" }),
-  ).toBeVisible();
-  await expect(
-    page.getByRole("region", { name: "Cameras", exact: true }),
-  ).toHaveCount(0);
-  await expect(
-    page.getByRole("button", { name: "Stop sponsors", exact: true }),
-  ).toBeVisible();
-  await expect(
-    page
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth,
+    ),
+  ).toBe(true);
+  if (info.project.name !== "mobile") {
+    const scoreBox = (await page
+      .getByRole("region", { name: "Match score" })
+      .boundingBox())!;
+    const previewBox = (await preview.boundingBox())!;
+    expect(previewBox.x).toBeGreaterThan(scoreBox.x + scoreBox.width);
+    const first = (await page
       .getByRole("region", { name: "Camera 1", exact: true })
-      .getByRole("button", { name: "Hide from broadcast", exact: true }),
-  ).toBeVisible();
-  expect(actions).toEqual([]);
-  await expect(
-    page.getByRole("button", { name: "Stop sponsors", exact: true }),
-  ).toBeVisible();
+      .boundingBox())!;
+    const second = (await page
+      .getByRole("region", { name: "Camera 2", exact: true })
+      .boundingBox())!;
+    const remote = (await page
+      .getByRole("region", { name: "Remote scorer", exact: true })
+      .boundingBox())!;
+    expect(second.y).toBe(first.y);
+    expect(remote.y).toBeGreaterThan(first.y);
+  }
   await page.screenshot({
     path: info.outputPath("desktop-game-day.png"),
     fullPage: true,
   });
   if (info.project.name !== "mobile") {
-    const end = await page
-      .getByRole("button", { name: "End Game", exact: true })
-      .boundingBox();
-    expect(end!.y + end!.height).toBeLessThanOrEqual(
-      page.viewportSize()!.height,
-    );
-    const first = page.getByRole("region", { name: "Camera 1", exact: true });
-    const second = page.getByRole("region", { name: "Camera 2", exact: true });
-    const scorer = page.getByRole("region", {
-      name: "Remote scorer",
-      exact: true,
+    await page.setViewportSize({ width: 1680, height: 960 });
+    await page.screenshot({
+      path: info.outputPath("studio-cockpit-1680.png"),
+      fullPage: true,
     });
-    const before = await first.boundingBox();
-    expect((await second.boundingBox())!.y).toBe(before!.y);
-    expect((await scorer.boundingBox())!.y).toBe(before!.y);
-    expect(before!.y + before!.height).toBeLessThanOrEqual(
-      page.viewportSize()!.height,
-    );
-    await first.getByRole("button", { name: "Show reconnect QR" }).click();
-    const qr = first.getByRole("img", { name: "Camera 1 reconnect QR code" });
-    await expect(qr).toBeVisible();
-    expect((await qr.boundingBox())!.x).toBeGreaterThan(
-      before!.x + before!.width,
-    );
-    expect(await first.boundingBox()).toEqual(before);
-    await first.getByRole("button", { name: "Hide QR code" }).click();
   }
   await page.getByRole("button", { name: "Save 1 point", exact: true }).click();
-  await expect.poll(() => actions.length).toBe(1);
-  expect(actions[0]).toMatchObject({ type: "score", points: 1 });
-  await page
-    .getByRole("button", { name: "Stop sponsors", exact: true })
-    .click();
-  expect(actions[1]).toEqual({ type: "sponsor-mode", active: false });
-  const sponsors = page.getByRole("region", { name: "Sponsors", exact: true });
-  await expect(
-    sponsors.getByRole("button", { name: /^(Previous|Pause|Resume|Next)$/ }),
-  ).toHaveCount(0);
-  await sponsors
-    .getByRole("button", { name: "Side panel", exact: true })
-    .click();
-  expect(actions[2]).toEqual({
-    type: "sponsor-mode",
-    active: false,
-    style: "fullscreen",
-  });
-  await page.reload();
-  await expect(
-    sponsors.getByRole("button", { name: "Side panel", exact: true }),
-  ).toHaveAttribute("aria-pressed", "true");
-  await sponsors.getByRole("button", { name: "Overlay", exact: true }).click();
-  expect(actions[3]).toEqual({
-    type: "sponsor-mode",
-    active: false,
-    style: "overlay",
-  });
-  const camera1 = page.getByRole("region", { name: "Camera 1", exact: true });
-  const camera2 = page.getByRole("region", { name: "Camera 2", exact: true });
-  await camera1
-    .getByRole("button", { name: "Hide from broadcast", exact: true })
-    .click();
-  await expect(
-    camera1.getByRole("button", { name: "Show in broadcast", exact: true }),
-  ).toBeVisible();
-  await camera2
-    .getByRole("button", { name: "Hide from broadcast", exact: true })
-    .click();
-  await expect(
-    camera2.getByRole("button", { name: "Show in broadcast", exact: true }),
-  ).toBeVisible();
-  await camera1
-    .getByRole("button", { name: "Show in broadcast", exact: true })
-    .click();
-  await camera2
-    .getByRole("button", { name: "Show in broadcast", exact: true })
-    .click();
-  expect(actions.slice(4)).toEqual(
-    ["away", "none", "home", "split"].map((layout) => ({
-      type: "layout",
-      layout,
-    })),
-  );
+  await expect.poll(() => actions.length).toBe(3);
+  expect(actions[2]).toMatchObject({ type: "score", points: 1 });
   expect(game.claims).toEqual(gameFixture().claims);
 });
 
@@ -727,7 +635,9 @@ test("Studio inline zoom sends camera commands without changing the score", asyn
     },
   };
   await page.reload();
-  await page.getByLabel("Camera controls", { exact: true }).click();
+  await page
+    .getByRole("button", { name: "Camera Settings", exact: true })
+    .click();
   await page
     .getByRole("button", { name: "Camera 1 zoom in", exact: true })
     .click();

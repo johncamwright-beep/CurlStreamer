@@ -8,6 +8,8 @@ import type { Role, GameState, Layout } from "@/lib/types";
 import { cameraIsShown, toggleCameraLayout } from "@/lib/camera-layout";
 import { invitationRoles, issueInvitation } from "./GameInvitations";
 import "./studio-devices.css";
+import { StudioOverlay } from "./StudioOverlay";
+import { StudioStatusMessage } from "./StudioStatusArea";
 import {
   cameraInputNativeAction,
   cameraInputNativeConnection,
@@ -56,6 +58,8 @@ export function DeviceCard({
 }) {
   const [volumeDraft, setVolumeDraft] = useState(Math.round(micVolume * 100));
   useEffect(() => setVolumeDraft(Math.round(micVolume * 100)), [micVolume]);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [healthOpen, setHealthOpen] = useState(false);
   const [confirmRelease, setConfirmRelease] = useState(false);
   const [largeQr, setLargeQr] = useState(false);
   const [qrOpen, setQrOpen] = useState(false);
@@ -316,19 +320,27 @@ export function DeviceCard({
           </span>
           <div>
             <h2>{label}</h2>
-            <p
-              className="studio-device-state"
-              role="status"
-              data-online={Boolean(connectionStatus?.videoReceiving)}
+            <button
+              type="button"
+              className="studio-camera-health-trigger"
+              disabled={!cameraInput.health}
+              onClick={() => setHealthOpen(true)}
+              aria-label={`${label} connection details`}
             >
-              {!connectionEnabled
-                ? "Ready to connect"
-                : connectionStatus?.videoReceiving
-                  ? "Receiving video"
-                  : cameraInput.phase === "streaming"
-                    ? `${sourceLabel} connected · Waiting for program video`
-                    : `${sourceLabel} · ${cameraInput.phase}`}
-            </p>
+              <span
+                className="studio-device-state"
+                role="status"
+                data-online={Boolean(connectionStatus?.videoReceiving)}
+              >
+                {!connectionEnabled
+                  ? "Ready to connect"
+                  : connectionStatus?.videoReceiving
+                    ? "Receiving video"
+                    : cameraInput.phase === "streaming"
+                      ? `${sourceLabel} connected · Waiting for program video`
+                      : `${sourceLabel} · ${cameraInput.phase}`}
+              </span>
+            </button>
           </div>
           {onAudio && (
             <label className="studio-device-mic-volume">
@@ -385,11 +397,11 @@ export function DeviceCard({
           )}
         </header>
         {cameraInput.health && connectionEnabled && (
-          <details className="text-sm text-slate-300">
-            <summary className="flex min-h-11 cursor-pointer items-center">
-              Camera health · {cameraInput.health.receivedFps.toFixed(1)} fps
-              received
-            </summary>
+          <StudioOverlay
+            title={`${label} health`}
+            open={healthOpen}
+            onClose={() => setHealthOpen(false)}
+          >
             <p>
               Last frame:{" "}
               {cameraInput.health.lastFrameAgeMs == null
@@ -404,30 +416,34 @@ export function DeviceCard({
               {Math.round(cameraInput.health.processingMs)} ms.
             </p>
             <p>RTSP over TCP. Packet loss is not measured by these counters.</p>
-          </details>
+          </StudioOverlay>
         )}
         <p>
           {sourceLabel}
           {cameraInput.host ? ` · ${cameraInput.host}` : ""}
           {cameraInput.stream ? ` · ${cameraInput.stream}` : ""}
         </p>
-        {cameraInput.errorCode && (
-          <p role="alert">
-            {cameraInput.errorCode === "auth_failed"
-              ? "Camera Account rejected. Check the local username and password in Settings."
-              : cameraInput.errorCode === "runtime_missing"
-                ? "This Studio installation needs its IP camera runtime. Check the installation."
-                : cameraInput.phase === "retrying"
-                  ? "Waiting for camera video. Retrying automatically…"
-                  : cameraInput.errorCode === "stale_frames"
-                    ? "Camera video stopped. Reconnect or check its connection."
-                    : "Camera could not connect. Check its network connection, address and RTSP access in Settings."}
-          </p>
-        )}
+        <StudioStatusMessage
+          message={
+            cameraInput.errorCode
+              ? `${label}: ${
+                  cameraInput.errorCode === "auth_failed"
+                    ? "Camera Account rejected. Check the local username and password in Settings."
+                    : cameraInput.errorCode === "runtime_missing"
+                      ? "This Studio installation needs its IP camera runtime. Check the installation."
+                      : cameraInput.phase === "retrying"
+                        ? "Waiting for camera video. Retrying automatically…"
+                        : cameraInput.errorCode === "stale_frames"
+                          ? "Camera video stopped. Reconnect or check its connection."
+                          : "Camera could not connect. Check its network connection, address and RTSP access in Settings."
+                }`
+              : null
+          }
+        />
         <div className="studio-device-primary-actions">
           {onAudio && (
             <button
-              className="studio-device-action secondary min-h-11"
+              className="studio-device-action secondary min-h-11 studio-device-mic-toggle"
               aria-pressed={micEnabled === true}
               disabled={busy || !enabled}
               onClick={async () => {
@@ -459,12 +475,20 @@ export function DeviceCard({
           {onVisibility && (
             <button
               className="studio-device-action secondary studio-device-visibility"
-              aria-pressed={connectionEnabled && shown}
+              aria-pressed={
+                connectionEnabled && connectionStatus?.videoReceiving
+                  ? shown
+                  : undefined
+              }
               disabled={busy || layoutBusy || !enabled}
               onClick={async () => {
                 setBusy(true);
                 setError("");
                 try {
+                  if (connectionEnabled && !connectionStatus?.videoReceiving) {
+                    cameraInputNativeAction(id, role, "reconnect-camera");
+                    return;
+                  }
                   if (!connectionEnabled)
                     await cameraInputNativeConnection(
                       id,
@@ -485,26 +509,18 @@ export function DeviceCard({
             >
               {!connectionEnabled
                 ? "Connect"
-                : shown
-                  ? "Hide from broadcast"
-                  : "Show in broadcast"}
+                : !connectionStatus?.videoReceiving
+                  ? "Reconnect"
+                  : shown
+                    ? "Hide from broadcast"
+                    : "Show in broadcast"}
             </button>
           )}
         </div>
-        {connectionEnabled && !connectionStatus?.videoReceiving && (
-          <div className="studio-device-actions">
-            <button
-              className="studio-device-action secondary min-h-11"
-              disabled={!enabled}
-              onClick={() =>
-                cameraInputNativeAction(id, role, "reconnect-camera")
-              }
-            >
-              Reconnect camera
-            </button>
-          </div>
-        )}
-        {error && <p role="alert">{error}</p>}
+        <StudioStatusMessage
+          role="alert"
+          message={error ? `${label}: ${error}` : null}
+        />
       </section>
     );
   return (
@@ -589,7 +605,7 @@ export function DeviceCard({
         <div className="studio-device-primary-actions">
           {onAudio && claimed && (
             <button
-              className="studio-device-action secondary"
+              className="studio-device-action secondary studio-device-mic-toggle"
               aria-pressed={micEnabled === true}
               disabled={busy || !enabled}
               onClick={async () => {
@@ -619,12 +635,24 @@ export function DeviceCard({
             </button>
           )}
 
+          {onVisibility && (
+            <button
+              className="studio-device-action secondary"
+              onClick={() => setSettingsOpen(true)}
+            >
+              Settings
+            </button>
+          )}
           {!scorer && onVisibility && (
             <button
               className="studio-device-action secondary studio-device-visibility"
-              aria-pressed={shown}
+              aria-pressed={claimed && !online ? undefined : shown}
               disabled={busy || layoutBusy || !enabled}
               onClick={async () => {
+                if (claimed && !online) {
+                  await reconnectCamera();
+                  return;
+                }
                 setError("");
                 try {
                   await onVisibility();
@@ -635,187 +663,253 @@ export function DeviceCard({
                 }
               }}
             >
-              {shown ? "Hide from broadcast" : "Show in broadcast"}
+              {claimed && !online
+                ? "Reconnect"
+                : shown
+                  ? "Hide from broadcast"
+                  : "Show in broadcast"}
             </button>
           )}
         </div>
       )}
-      <div className="studio-device-actions">
-        {!scorer && claimed && (
-          <button
-            className="studio-device-action secondary"
-            disabled={busy || !enabled || Boolean(online)}
-            title={
-              online
-                ? "Camera is receiving video. Reconnect is available if video stops."
-                : undefined
-            }
-            style={online ? { cursor: "not-allowed" } : undefined}
-            onClick={() => void reconnectCamera()}
-          >
-            Reconnect camera
-          </button>
-        )}
-        {recoveryMessage && <p role="status">{recoveryMessage}</p>}
-        {claimed ? (
-          <>
-            {scorer && (
-              <p>
-                {scorer
-                  ? "Open scoring on the assigned phone or tablet to continue."
-                  : "Reopen the camera page on the original phone and keep it in the foreground."}
-              </p>
-            )}
-            {!online && (
-              <p className="studio-device-help">
-                {scorer
-                  ? "Assignment does not confirm a live connection."
-                  : connectionStatus
-                    ? connectionStatus.phoneOnline
-                      ? "The phone has checked in. Video has not been confirmed on this screen."
-                      : connectionStatus.receiverReady
-                        ? "Studio is ready. Reconnect this phone or release it to use another."
-                        : "Open this game in Studio to connect cameras."
-                    : "Connection status unavailable · assignment retained"}
-              </p>
-            )}
-            {reconnect && !online && qrOpen && (
-              <div className="studio-device-qr" data-large={largeQr}>
-                <button
-                  className="studio-qr-size"
-                  onClick={() => setLargeQr(!largeQr)}
-                  aria-label={largeQr ? "Shrink QR code" : "Enlarge QR code"}
-                >
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src={reconnect.image}
-                    alt={label + " reconnect QR code"}
-                    width={240}
-                    height={240}
-                  />
-                </button>
+      <DeviceOptions
+        overlay={!scorer && Boolean(onVisibility)}
+        title={`${label} settings`}
+        open={settingsOpen}
+        onClose={() => setSettingsOpen(false)}
+      >
+        <div className="studio-device-actions">
+          {!scorer && claimed && !onVisibility && (
+            <button
+              className="studio-device-action secondary"
+              disabled={busy || !enabled || Boolean(online)}
+              title={
+                online
+                  ? "Camera is receiving video. Reconnect is available if video stops."
+                  : undefined
+              }
+              style={online ? { cursor: "not-allowed" } : undefined}
+              onClick={() => void reconnectCamera()}
+            >
+              Reconnect camera
+            </button>
+          )}
+          <StudioStatusMessage
+            message={recoveryMessage ? `${label}: ${recoveryMessage}` : null}
+          />
+          {claimed ? (
+            <>
+              {scorer && (
                 <p>
-                  Use the original device and browser. Camera codes renew its
-                  access for this assignment and expire in 10 minutes.
+                  {scorer
+                    ? "Open scoring on the assigned phone or tablet to continue."
+                    : "Reopen the camera page on the original phone and keep it in the foreground."}
                 </p>
-                <a href={reconnect.url}>Open reconnect page</a>
-              </div>
-            )}
-            {error && <p role="alert">{error}</p>}
-            {!online && (
-              <button
-                className="studio-device-action studio-device-connect"
-                aria-label={
-                  busy
+              )}
+              {!online && (
+                <p className="studio-device-help">
+                  {scorer
+                    ? "Assignment does not confirm a live connection."
+                    : connectionStatus
+                      ? connectionStatus.phoneOnline
+                        ? "The phone has checked in. Video has not been confirmed on this screen."
+                        : connectionStatus.receiverReady
+                          ? "Studio is ready. Reconnect this phone or release it to use another."
+                          : "Open this game in Studio to connect cameras."
+                      : "Connection status unavailable · assignment retained"}
+                </p>
+              )}
+              {reconnect && !online && qrOpen && (
+                <StudioOverlay
+                  title={`${label} QR code`}
+                  open
+                  onClose={() => setQrOpen(false)}
+                >
+                  <div className="studio-device-qr" data-large={largeQr}>
+                    <button
+                      className="studio-qr-size"
+                      onClick={() => setLargeQr(!largeQr)}
+                      aria-label={
+                        largeQr ? "Shrink QR code" : "Enlarge QR code"
+                      }
+                    >
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={reconnect.image}
+                        alt={label + " reconnect QR code"}
+                        width={240}
+                        height={240}
+                      />
+                    </button>
+                    <p>
+                      Use the original device and browser. Camera codes renew
+                      its access for this assignment and expire in 10 minutes.
+                    </p>
+                    <a href={reconnect.url}>Open reconnect page</a>
+                  </div>
+                </StudioOverlay>
+              )}
+              <StudioStatusMessage
+                role="alert"
+                message={error ? `${label}: ${error}` : null}
+              />
+              {!online && (
+                <button
+                  className="studio-device-action studio-device-connect"
+                  aria-label={
+                    busy
+                      ? "Preparing…"
+                      : reconnect && qrOpen
+                        ? "Hide QR code"
+                        : "Show reconnect QR"
+                  }
+                  disabled={busy || !enabled}
+                  onClick={() => void showReconnect()}
+                >
+                  {busy
                     ? "Preparing…"
                     : reconnect && qrOpen
                       ? "Hide QR code"
-                      : "Show reconnect QR"
-                }
+                      : "Reconnect QR"}
+                </button>
+              )}
+              {!scorer &&
+                onChanged &&
+                (confirmRelease ? (
+                  <StudioOverlay
+                    title="Release camera"
+                    open
+                    onClose={() => setConfirmRelease(false)}
+                  >
+                    <div className="studio-device-release-confirm">
+                      <p>
+                        Release this camera? Its saved access will stop working.
+                      </p>
+                      <button
+                        className="studio-device-action"
+                        disabled={busy}
+                        onClick={() => void releaseCamera()}
+                      >
+                        Confirm release
+                      </button>
+                      <button
+                        className="studio-device-action secondary"
+                        disabled={busy}
+                        onClick={() => setConfirmRelease(false)}
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </StudioOverlay>
+                ) : (
+                  <button
+                    className="studio-device-action secondary studio-device-release"
+                    disabled={busy}
+                    onClick={() => setConfirmRelease(true)}
+                  >
+                    Release camera
+                  </button>
+                ))}
+            </>
+          ) : (
+            <>
+              {scorer && (
+                <p>
+                  {scorer
+                    ? "Score from a phone or tablet. Changes appear in this game."
+                    : "Use your phone’s camera to scan the code, then allow camera access."}
+                </p>
+              )}
+              {active && qrOpen && (
+                <StudioOverlay
+                  title={`${label} QR code`}
+                  open
+                  onClose={() => setQrOpen(false)}
+                >
+                  <div className="studio-device-qr" data-large={largeQr}>
+                    <button
+                      className="studio-qr-size"
+                      onClick={() => setLargeQr(!largeQr)}
+                      aria-label={
+                        largeQr ? "Shrink QR code" : "Enlarge QR code"
+                      }
+                    >
+                      {/* Generated in memory; never stored in a profile or sent to an image service. */}
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={invitation.image}
+                        alt={label + " join QR code"}
+                        width={240}
+                        height={240}
+                      />
+                    </button>
+                    <p>Scan to connect · Tap code to enlarge</p>
+                    <p>
+                      Expires in{" "}
+                      {Math.max(
+                        1,
+                        Math.ceil((invitation.expires - now) / 60000),
+                      )}{" "}
+                      min
+                    </p>
+                    <details>
+                      <summary>Open without scanning</summary>
+                      <a href={invitation.url}>
+                        Open {label.toLowerCase()} invitation
+                      </a>
+                    </details>
+                  </div>
+                </StudioOverlay>
+              )}
+              {invitation && !active && (
+                <p role="status">QR code expired. Create a new one below.</p>
+              )}
+              <StudioStatusMessage
+                role="alert"
+                message={error ? `${label}: ${error}` : null}
+              />
+              <button
+                className="studio-device-action studio-device-connect"
                 disabled={busy || !enabled}
-                onClick={() => void showReconnect()}
+                onClick={() => void showQr()}
               >
                 {busy
-                  ? "Preparing…"
-                  : reconnect && qrOpen
-                    ? "Hide QR code"
-                    : "Reconnect QR"}
+                  ? "Creating QR code…"
+                  : active
+                    ? qrOpen
+                      ? "Hide QR code"
+                      : "Show QR code"
+                    : error
+                      ? "Try again"
+                      : "Show QR code"}
               </button>
-            )}
-            {!scorer &&
-              onChanged &&
-              (confirmRelease ? (
-                <div className="studio-device-release-confirm">
-                  <p>
-                    Release this camera? Its saved access will stop working.
-                  </p>
-                  <button
-                    className="studio-device-action"
-                    disabled={busy}
-                    onClick={() => void releaseCamera()}
-                  >
-                    Confirm release
-                  </button>
-                  <button
-                    className="studio-device-action secondary"
-                    disabled={busy}
-                    onClick={() => setConfirmRelease(false)}
-                  >
-                    Cancel
-                  </button>
-                </div>
-              ) : (
-                <button
-                  className="studio-device-action secondary studio-device-release"
-                  disabled={busy}
-                  onClick={() => setConfirmRelease(true)}
-                >
-                  Release camera
-                </button>
-              ))}
-          </>
-        ) : (
-          <>
-            {scorer && (
-              <p>
-                {scorer
-                  ? "Score from a phone or tablet. Changes appear in this game."
-                  : "Use your phone’s camera to scan the code, then allow camera access."}
-              </p>
-            )}
-            {active && qrOpen && (
-              <div className="studio-device-qr" data-large={largeQr}>
-                <button
-                  className="studio-qr-size"
-                  onClick={() => setLargeQr(!largeQr)}
-                  aria-label={largeQr ? "Shrink QR code" : "Enlarge QR code"}
-                >
-                  {/* Generated in memory; never stored in a profile or sent to an image service. */}
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src={invitation.image}
-                    alt={label + " join QR code"}
-                    width={240}
-                    height={240}
-                  />
-                </button>
-                <p>Scan to connect · Tap code to enlarge</p>
-                <p>
-                  Expires in{" "}
-                  {Math.max(1, Math.ceil((invitation.expires - now) / 60000))}{" "}
-                  min
-                </p>
-                <details>
-                  <summary>Open without scanning</summary>
-                  <a href={invitation.url}>
-                    Open {label.toLowerCase()} invitation
-                  </a>
-                </details>
-              </div>
-            )}
-            {invitation && !active && (
-              <p role="status">QR code expired. Create a new one below.</p>
-            )}
-            {error && <p role="alert">{error}</p>}
-            <button
-              className="studio-device-action studio-device-connect"
-              disabled={busy || !enabled}
-              onClick={() => void showQr()}
-            >
-              {busy
-                ? "Creating QR code…"
-                : active
-                  ? qrOpen
-                    ? "Hide QR code"
-                    : "Show QR code"
-                  : error
-                    ? "Try again"
-                    : "Show QR code"}
-            </button>
-          </>
-        )}
-      </div>
+            </>
+          )}
+        </div>
+      </DeviceOptions>
     </section>
+  );
+}
+
+function DeviceOptions({
+  overlay,
+  title,
+  open,
+  onClose,
+  children,
+}: {
+  overlay: boolean;
+  title: string;
+  open: boolean;
+  onClose(): void;
+  children: React.ReactNode;
+}) {
+  return overlay ? (
+    <StudioOverlay title={title} open={open} onClose={onClose}>
+      {children}
+    </StudioOverlay>
+  ) : (
+    <>{children}</>
   );
 }
 

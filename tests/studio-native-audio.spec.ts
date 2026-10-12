@@ -77,7 +77,7 @@ test("native USB capture is opt-in with compact independent dBFS meters", async 
       }),
     ),
   );
-  await expect(page.getByRole("meter")).toHaveCount(0);
+  await expect(page.getByRole("meter")).toHaveCount(4);
   await page.evaluate(() =>
     window.dispatchEvent(
       new CustomEvent("studio-usb-status", {
@@ -96,6 +96,7 @@ test("native USB capture is opt-in with compact independent dBFS meters", async 
       }),
     ),
   );
+  await page.getByRole("button", { name: "Close", exact: true }).click();
   await expect(page.getByRole("meter")).toHaveCount(4);
   await expect(page.getByRole("combobox")).toHaveCount(0);
   await expect(
@@ -158,7 +159,7 @@ test("native USB capture is opt-in with compact independent dBFS meters", async 
     () => (window as any).messages.length,
   );
   await page.getByRole("button", { name: "USB setup" }).click();
-  await expect(page.getByRole("meter")).toHaveCount(0);
+  await expect(page.getByRole("meter")).toHaveCount(4);
   await expect(page.getByRole("button", { name: "Disconnect" })).toBeVisible();
   expect(await page.evaluate(() => (window as any).messages.length)).toBe(
     messagesBeforeCollapse,

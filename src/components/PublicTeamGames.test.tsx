@@ -1,6 +1,7 @@
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { expect, it } from "vitest";
+import type { PublicEvent } from "@/lib/public-active-event";
 import {
   filterPublicGames,
   PublicTeamGames,
@@ -8,6 +9,14 @@ import {
   type PublicGame,
 } from "./PublicTeamGames";
 const now = Date.parse("2026-10-22T15:00:00Z");
+const activeEvent: PublicEvent = {
+  id: "Orion",
+  name: "Orion",
+  start_date: "2026-10-22",
+  end_date: "2026-10-25",
+  timezone: "America/Toronto",
+  result: null,
+};
 
 const game = (
   id: string,
@@ -199,4 +208,84 @@ it("uses the completed date only when a valid scheduled played date is absent", 
   );
   expect(html).toContain('dateTime="2026-10-21T12:00:00Z"');
   expect(html).toContain("2026-10-21 · Start time not recorded");
+});
+
+it("defaults to the active event with completed scores and future games together", () => {
+  const html = renderToStaticMarkup(
+    <PublicTeamGames
+      now={now}
+      upcoming
+      results
+      eventDetails={[activeEvent]}
+      games={[
+        {
+          ...game(
+            "done",
+            "Orion",
+            "2026-10-22T12:00:00Z",
+            "2026-10-22T14:00:00Z",
+          ),
+          result: { home: 10, away: 3 },
+        },
+        game("next", "Orion", "2026-10-23T12:00:00Z"),
+        game("unrelated", "Other", "2026-10-22T12:00:00Z"),
+      ]}
+    />,
+  );
+  expect(html).toContain('<option value="auto" selected="">Current event');
+  expect(html).toContain('id="game-done"');
+  expect(html).toContain('id="game-next"');
+  expect(html).not.toContain('id="game-unrelated"');
+  expect(html).toContain('aria-label="Event scores"');
+  expect(html).toContain('aria-label="Event schedule"');
+});
+it("keeps an active event visible between draws and honours hidden results", () => {
+  const games = [
+    game("next", "Orion", "2026-10-23T12:00:00Z"),
+    game("done", "Orion", "2026-10-22T12:00:00Z", "2026-10-22T14:00:00Z"),
+  ];
+  const html = renderToStaticMarkup(
+    <PublicTeamGames
+      now={now}
+      upcoming
+      results={false}
+      eventDetails={[activeEvent]}
+      games={games}
+    />,
+  );
+  expect(html).toContain('id="game-next"');
+  expect(html).not.toContain('id="game-done"');
+  expect(html).not.toContain('aria-label="Event scores"');
+  const between = renderToStaticMarkup(
+    <PublicTeamGames
+      now={now}
+      upcoming
+      results
+      eventDetails={[activeEvent]}
+      games={[games[1]]}
+    />,
+  );
+  expect(between).toContain("Current event");
+  expect(between).toContain("No further games scheduled yet.");
+});
+it("returns to Recent after the event ends and never spotlights an unpublished event", () => {
+  for (const event of [
+    { ...activeEvent, result: "1st" },
+    { ...activeEvent, end_date: "2026-10-21" },
+    { ...activeEvent, id: "hidden" },
+  ]) {
+    const html = renderToStaticMarkup(
+      <PublicTeamGames
+        now={now}
+        upcoming
+        results
+        eventDetails={[event]}
+        games={[
+          game("done", "Orion", "2026-10-22T12:00:00Z", "2026-10-22T14:00:00Z"),
+        ]}
+      />,
+    );
+    expect(html).not.toContain("Current event");
+    expect(html).toContain('<option value="recent" selected="">');
+  }
 });

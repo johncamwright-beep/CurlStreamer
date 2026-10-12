@@ -108,6 +108,7 @@ test("device QR requests are explicit, role-specific and cleared when claimed", 
     ),
   );
   expect(roles).toEqual([]);
+  await camera1.getByRole("button", { name: "Close", exact: true }).click();
   await camera2.getByRole("button", { name: "Show QR code" }).click();
   await expect(
     camera2.getByRole("img", { name: "Camera 2 join QR code" }),
@@ -118,11 +119,12 @@ test("device QR requests are explicit, role-specific and cleared when claimed", 
   await camera2.getByRole("button", { name: "Enlarge QR code" }).click();
   expect((await joinCode.boundingBox())?.width).toBeGreaterThan(176);
   await camera2.getByRole("button", { name: "Shrink QR code" }).click();
-  await camera2.getByRole("button", { name: "Hide QR code" }).click();
+  await camera2.getByRole("button", { name: "Close", exact: true }).click();
   await expect(joinCode).toHaveCount(0);
   await camera2.getByRole("button", { name: "Show QR code" }).click();
   await expect(joinCode).toBeVisible();
   expect(roles).toEqual(["camera-away"]);
+  await camera2.getByRole("button", { name: "Close", exact: true }).click();
   await scorer.getByRole("button", { name: "Show QR code" }).click();
   await expect(
     scorer.getByRole("img", { name: "Remote scorer join QR code" }),

@@ -3,6 +3,14 @@ import { gameFixture } from "@/test/game-fixture";
 import { broadcastGame } from "./game-projection";
 
 describe("broadcast game projection", () => {
+  it("sends the default sync adjustment to installed renderers and preserves a saved zero", () => {
+    const game = gameFixture();
+    expect(broadcastGame(game).programAudioDelayMs).toBe(-1500);
+    game.programAudioDelayMs = 0;
+    expect(broadcastGame(game).programAudioDelayMs).toBe(0);
+    game.programAudioDelayMs = 750;
+    expect(broadcastGame(game).programAudioDelayMs).toBe(750);
+  });
   it("does not expose native intent or enable an unclaimed phone microphone", () => {
     const game = gameFixture();
     game.claims = {};

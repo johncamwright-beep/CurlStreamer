@@ -64,6 +64,86 @@ describe("scheduled YouTube provisioning", () => {
       watchUrl: "https://www.youtube.com/watch?v=abcdefghijk",
     });
   });
+  it.each([
+    ["2026-10-11T13:00:00-04:00", "2026-10-11T16:30:00.000Z"],
+    ["2026-12-11T13:00:00-05:00", "2026-12-11T17:30:00.000Z"],
+    ["2026-10-11T00:15:00Z", "2026-10-10T23:45:00.000Z"],
+    ["2026-11-01T01:15:00-05:00", "2026-11-01T05:45:00.000Z"],
+  ])(
+    "sets the countdown 30 minutes before %s without changing game artwork",
+    async (scheduledStart, expected) => {
+      mocks.rpc
+        .mockResolvedValueOnce({ data: [{ action: "run" }], error: null })
+        .mockResolvedValueOnce({
+          data: [
+            {
+              status: "ready",
+              watch_url: "https://www.youtube.com/watch?v=abcdefghijk",
+            },
+          ],
+          error: null,
+        });
+      const thumbnail = {
+        homeName: "Team Benning",
+        awayName: "Opponent",
+        eventName: "Final",
+        scheduledStart,
+        timezone: "America/Toronto",
+      };
+      await provisionScheduledYouTubeBroadcast({ id: "user" } as never, {
+        gameId: "game",
+        title: "Final",
+        visibility: "unlisted",
+        scheduledStart,
+        thumbnail,
+      });
+      expect(mocks.broadcast).toHaveBeenCalledWith(
+        expect.objectContaining({
+          scheduledStartTime: expected,
+          manualLifecycle: true,
+        }),
+        expect.any(Function),
+        true,
+        expect.any(Function),
+      );
+      expect(mocks.thumbnail).toHaveBeenCalledWith(
+        "access",
+        "broadcast",
+        thumbnail,
+      );
+    },
+  );
+
+  it("reschedules the same watch page from the new game time without accumulating the lead", async () => {
+    mocks.rpc.mockResolvedValue({
+      data: [
+        {
+          action: "none",
+          watch_url: "https://www.youtube.com/watch?v=abcdefghijk",
+        },
+      ],
+      error: null,
+    });
+    for (const scheduledStart of [
+      "2026-10-11T13:00:00-04:00",
+      "2026-10-11T14:00:00-04:00",
+      "2026-10-11T14:00:00-04:00",
+    ]) {
+      await provisionScheduledYouTubeBroadcast({ id: "user" } as never, {
+        gameId: "game",
+        title: "Final",
+        visibility: "unlisted",
+        scheduledStart,
+      });
+    }
+    expect(mocks.update.mock.calls.map((call) => call[4])).toEqual([
+      "2026-10-11T16:30:00.000Z",
+      "2026-10-11T17:30:00.000Z",
+      "2026-10-11T17:30:00.000Z",
+    ]);
+    expect(mocks.broadcast).not.toHaveBeenCalled();
+  });
+
   it("creates Public using canonical saved privacy", async () => {
     mocks.credentials.mockResolvedValue({
       encrypted_credentials: "encrypted",
@@ -212,7 +292,7 @@ describe("scheduled YouTube provisioning", () => {
       "abcdefghijk",
       "game",
       "Final",
-      values.scheduledStart,
+      "2026-11-01T06:00:00.000Z",
       "public",
       fetch,
       "channel",
@@ -254,7 +334,7 @@ describe("scheduled YouTube provisioning", () => {
     expect(mocks.credentials).toHaveBeenCalledWith(user, values.gameId);
     expect(mocks.broadcast.mock.calls[0][0]).toMatchObject({
       sessionKey: values.gameId,
-      scheduledStartTime: values.scheduledStart,
+      scheduledStartTime: "2026-11-01T06:00:00.000Z",
     });
   });
 

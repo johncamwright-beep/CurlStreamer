@@ -1,4 +1,6 @@
 "use client";
+import { createPortal } from "react-dom";
+import { StudioStatusMessage } from "./StudioStatusArea";
 import { useEffect, useRef, useState } from "react";
 import { z } from "zod";
 import { requestStudioPresentation } from "@/lib/studio-presentation-client";
@@ -34,7 +36,19 @@ const stateSchema = z.object({
     })
     .optional(),
 });
-export function StudioYouTube({ id }: { id: string }) {
+export function StudioYouTube({
+  id,
+  controlsTarget,
+}: {
+  id: string;
+  controlsTarget?: string;
+}) {
+  const [controlsHost, setControlsHost] = useState<HTMLElement | null>(null);
+  useEffect(() => {
+    setControlsHost(
+      controlsTarget ? document.getElementById(controlsTarget) : null,
+    );
+  }, [controlsTarget]);
   const [state, setState] = useState<z.infer<typeof stateSchema>>();
   const [pending, setPending] = useState(false);
   const [autoGoLive, setAutoGoLive] = useState(false);
@@ -371,10 +385,82 @@ export function StudioYouTube({ id }: { id: string }) {
     state.lastLiveAgeMs != null
       ? studioLastLiveLabel(state.lastLiveAgeMs)
       : undefined;
+  const broadcastControls = (
+    <div className="studio-youtube-actions flex flex-wrap gap-2">
+      <button
+        className="btn"
+        title={
+          held
+            ? "Return from the temporary pause card to live video on the same watch link."
+            : active && state?.canHoldStream
+              ? "Show a temporary pause card while keeping the stream connected."
+              : active && state?.canReconnect
+                ? "Disconnect video temporarily. Update Windows Studio to show a pause card while keeping the stream connected."
+                : undefined
+        }
+        disabled={
+          !state?.available ||
+          state.busy ||
+          pending ||
+          ending ||
+          Boolean(needsRecovery && !state.canRecover) ||
+          Boolean(active && !state.canHoldStream && !state.canReconnect)
+        }
+        onClick={() =>
+          send(
+            held
+              ? "resume"
+              : active
+                ? state?.canHoldStream
+                  ? "hold"
+                  : "stop"
+                : "start",
+          )
+        }
+      >
+        {pending || state?.busy
+          ? "Please wait…"
+          : held
+            ? "Resume broadcast"
+            : active
+              ? state?.canHoldStream
+                ? "Pause broadcast"
+                : "Disconnect"
+              : state?.streaming === "paused"
+                ? "Reconnect"
+                : needsRecovery
+                  ? state?.canRecover
+                    ? "Reconnect broadcast"
+                    : "Restart Studio to reconnect"
+                  : "Broadcast to YouTube"}
+      </button>
+      {state?.gameId === id &&
+        state.streaming === "armed" &&
+        (state.receiving || state.outputActive) &&
+        !state.live &&
+        !confirmedLive.current &&
+        !terminal && (
+          <button
+            className="btn-secondary min-h-11"
+            disabled={goingLive || state.busy || pending || ending}
+            title="Start this YouTube broadcast now, including before its scheduled time."
+            onClick={() => {
+              halted.current = false;
+              failures.current = 0;
+              nextCheck.current = 0;
+              setAutoGoLive(true);
+              void goLive();
+            }}
+          >
+            {goingLive ? "Going live…" : "Go live now"}
+          </button>
+        )}
+    </div>
+  );
   if (!bridgeAvailable) return <WindowsStudioRequired gameId={id} />;
   return (
     <section
-      className="scoring-card studio-youtube"
+      className={`scoring-card studio-youtube${controlsTarget ? " studio-youtube-quick" : ""}`}
       aria-label="YouTube broadcast"
     >
       <div className="scoring-section-heading">
@@ -430,96 +516,32 @@ export function StudioYouTube({ id }: { id: string }) {
           )}
         </div>
       </div>
-      <div className="studio-youtube-actions flex flex-wrap gap-2">
-        <button
-          className="btn"
-          title={
-            held
-              ? "Return from the temporary pause card to live video on the same watch link."
-              : active && state?.canHoldStream
-                ? "Show a temporary pause card while keeping the stream connected."
-                : active && state?.canReconnect
-                  ? "Disconnect video temporarily. Update Windows Studio to show a pause card while keeping the stream connected."
-                  : undefined
-          }
-          disabled={
-            !state?.available ||
-            state.busy ||
-            pending ||
-            ending ||
-            Boolean(needsRecovery && !state.canRecover) ||
-            Boolean(active && !state.canHoldStream && !state.canReconnect)
-          }
-          onClick={() =>
-            send(
-              held
-                ? "resume"
-                : active
-                  ? state?.canHoldStream
-                    ? "hold"
-                    : "stop"
-                  : "start",
-            )
-          }
-        >
-          {pending || state?.busy
-            ? "Please wait…"
-            : held
-              ? "Resume broadcast"
-              : active
-                ? state?.canHoldStream
-                  ? "Pause broadcast"
-                  : "Disconnect"
-                : state?.streaming === "paused"
-                  ? "Reconnect"
-                  : needsRecovery
-                    ? state?.canRecover
-                      ? "Reconnect broadcast"
-                      : "Restart Studio to reconnect"
-                    : "Broadcast to YouTube"}
-        </button>
-        {state?.gameId === id &&
-          state.streaming === "armed" &&
-          (state.receiving || state.outputActive) &&
-          !state.live &&
-          !confirmedLive.current &&
-          !terminal && (
-            <button
-              className="btn-secondary min-h-11"
-              disabled={goingLive || state.busy || pending || ending}
-              title="Start this YouTube broadcast now, including before its scheduled time."
-              onClick={() => {
-                halted.current = false;
-                failures.current = 0;
-                nextCheck.current = 0;
-                setAutoGoLive(true);
-                void goLive();
-              }}
-            >
-              {goingLive ? "Going live…" : "Go live now"}
-            </button>
-          )}
-        <a className="btn-secondary" href="/settings/youtube">
-          YouTube settings
-        </a>
-      </div>
-      {needsRecovery && (
-        <p className="mt-2 text-sm">
-          {state?.canRecover
-            ? "Reconnect restarts the local cameras and checks your existing YouTube broadcast. Your game and saved watch link are kept."
-            : "Close and reopen Studio, choosing No when asked to end the game. Update Studio to reconnect here without closing the app."}
-        </p>
-      )}
-      {active && !state?.canReconnect && (
-        <p className="mt-2 text-sm">
-          Update Windows Studio to disconnect and reconnect on the same watch
-          link.
-        </p>
-      )}
-      {(state?.receiving || state?.outputActive) && !state.live && (
-        <div className="mt-2 flex items-center gap-2 text-sm">
-          {!error &&
-            (lastLiveLabel
+      {controlsHost
+        ? createPortal(broadcastControls, controlsHost)
+        : broadcastControls}
+      <a className="btn-secondary" href="/settings/youtube">
+        YouTube settings
+      </a>
+      <StudioStatusMessage
+        message={
+          needsRecovery
+            ? state?.canRecover
+              ? "Reconnect restarts the local cameras and checks your existing YouTube broadcast. Your game and watch link are kept."
+              : "YouTube: Close and reopen Studio, choosing No when asked to end the game. Update Studio to reconnect here."
+            : null
+        }
+      />
+      <StudioStatusMessage
+        message={
+          active && !state?.canReconnect
+            ? "Update Windows Studio to reconnect on the same watch link."
+            : null
+        }
+      />
+      <StudioStatusMessage
+        message={
+          (state?.receiving || state?.outputActive) && !state.live && !error
+            ? lastLiveLabel
               ? `${lastLiveLabel}. YouTube’s status update is delayed.`
               : confirmedLive.current
                 ? state.outputActive
@@ -527,19 +549,20 @@ export function StudioYouTube({ id }: { id: string }) {
                   : "YouTube has not confirmed the broadcast is live."
                 : goingLive || autoGoLive || state.streaming === "armed"
                   ? "Starting this broadcast now. Waiting for YouTube to confirm live…"
-                  : null)}
-        </div>
-      )}
-      {error && !state?.live && (
-        <p role="alert" className="mt-2 text-sm text-amber-200">
-          {error}
-        </p>
-      )}
-      {presentationError && (
-        <p role="alert" className="mt-2 text-sm text-amber-200">
-          {presentationError}
-        </p>
-      )}
+                  : null
+            : null
+        }
+      />
+      <StudioStatusMessage
+        role="alert"
+        source="YouTube"
+        message={error && !state?.live ? error : null}
+      />
+      <StudioStatusMessage
+        role="alert"
+        source="YouTube"
+        message={presentationError || null}
+      />
       {watchUrl && (
         <div className="studio-youtube-watch mt-2 flex items-center gap-2 text-sm">
           <a
@@ -570,12 +593,18 @@ export function StudioYouTube({ id }: { id: string }) {
           </button>
         </div>
       )}
-      {copyError && <p role="alert">{copyError}</p>}
-      {(!state?.available || state?.message) && (
-        <p className="mt-2 text-sm text-slate-300">
-          {state?.message || "Preparing Studio’s YouTube connection…"}
-        </p>
-      )}
+      <StudioStatusMessage
+        role="alert"
+        source="YouTube"
+        message={copyError || null}
+      />
+      <StudioStatusMessage
+        message={
+          !state?.available || state?.message
+            ? state?.message || "Preparing Studio’s YouTube connection…"
+            : null
+        }
+      />
     </section>
   );
 }

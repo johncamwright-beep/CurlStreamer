@@ -2,6 +2,7 @@
 import { ReportEmail } from "./ReportEmail";
 import { MissReport } from "./MissReport";
 import { reportLegend } from "@/lib/curlcoach/report-legend";
+import TechnicalReview from "./TechnicalReview";
 import { basisText, evidenceBasis } from "@/lib/curlcoach/report-counts";
 import {
   useCallback,
@@ -364,6 +365,9 @@ function ReportBody({ report }: { report: SavedReport }) {
         ))}
       </div>
       {report.misses && <MissReport misses={report.misses} />}
+      {report.technical?.some((g) => g.recorded > 0) && (
+        <TechnicalReview groups={report.technical} compact />
+      )}
       {reportSections(report).map((s) => (
         <section key={s.title}>
           <h4 className="mb-3 text-lg font-bold">{s.title}</h4>

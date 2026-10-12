@@ -41,6 +41,8 @@ import {
 import CoachLab, { turnLabel } from "./CoachLab";
 
 import AnalysisPanels from "./AnalysisPanels";
+import TechnicalReview from "./TechnicalReview";
+import { technicalSummary } from "@/lib/curlcoach/technical";
 import Table from "./AnalysisTable";
 import {
   defaultShotFilters,
@@ -53,6 +55,7 @@ const pages = [
   "Charting",
   "Shot performance",
   "Miss analysis",
+  "Technical Review",
   "Game analysis",
   "Event reports",
 ] as const;
@@ -1027,23 +1030,37 @@ export default function EventWorkspace({
             ) : (
               statistics && (
                 <>
-                  <AnalysisPanels
-                    key={view}
-                    mode={
-                      view === "Miss analysis"
-                        ? "misses"
-                        : view === "Game analysis"
-                          ? "game"
-                          : "performance"
-                    }
-                    shots={selected}
-                    games={analysisGames}
-                    players={analysisPlayers}
-                    catalog={analysisData?.catalog ?? []}
-                    seasonShots={filterAnalysisShots(
-                      eventShots({
-                        ...event,
-                        games: seasonReady
+                  {view === "Technical Review" ? (
+                    <TechnicalReview groups={technicalSummary(selected)} />
+                  ) : (
+                    <AnalysisPanels
+                      key={view}
+                      mode={
+                        view === "Miss analysis"
+                          ? "misses"
+                          : view === "Game analysis"
+                            ? "game"
+                            : "performance"
+                      }
+                      shots={selected}
+                      games={analysisGames}
+                      players={analysisPlayers}
+                      catalog={analysisData?.catalog ?? []}
+                      seasonShots={filterAnalysisShots(
+                        eventShots({
+                          ...event,
+                          games: seasonReady
+                            ? (statsData?.event.games.filter(
+                                (g) =>
+                                  competitionLevel === "all" ||
+                                  (g.competitionLevel ?? "unrecorded") ===
+                                    competitionLevel,
+                              ) ?? [])
+                            : [],
+                        }).filter(
+                          (s) => player === "all" || s.playerId === player,
+                        ),
+                        seasonReady
                           ? (statsData?.event.games.filter(
                               (g) =>
                                 competitionLevel === "all" ||
@@ -1051,22 +1068,12 @@ export default function EventWorkspace({
                                   competitionLevel,
                             ) ?? [])
                           : [],
-                      }).filter(
-                        (s) => player === "all" || s.playerId === player,
-                      ),
-                      seasonReady
-                        ? (statsData?.event.games.filter(
-                            (g) =>
-                              competitionLevel === "all" ||
-                              (g.competitionLevel ?? "unrecorded") ===
-                                competitionLevel,
-                          ) ?? [])
-                        : [],
-                      shotFilters,
-                    )}
-                    seasonReady={seasonReady}
-                    byEvent={selectedEvent === "all"}
-                  />
+                        shotFilters,
+                      )}
+                      seasonReady={seasonReady}
+                      byEvent={selectedEvent === "all"}
+                    />
+                  )}
                   {view === "Game analysis" && (
                     <>
                       <p className="score-stat-caption">

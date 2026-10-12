@@ -1017,3 +1017,433 @@
 .scoring-desktop .scoring-device-dock {
   margin-top: 8px;
 }
+
+.studio-status-dialog {
+  width: min(680px, calc(100vw - 32px));
+  max-height: 80vh;
+  margin: auto;
+  padding: 20px;
+  color: #edf3f8;
+  background: #0c1928;
+  border: 1px solid #66dfc6;
+  border-radius: 14px;
+}
+.studio-status-dialog::backdrop {
+  background: #0009;
+}
+.studio-status-dialog > header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+}
+.studio-status-dialog h2 {
+  font-size: 20px;
+  font-weight: 700;
+}
+.studio-status-entries {
+  max-height: 60vh;
+  overflow-y: auto;
+  overflow-wrap: anywhere;
+}
+.studio-status-entries p {
+  padding: 12px 0;
+  border-bottom: 1px solid #304456;
+}
+.studio-status-entries time {
+  color: #66dfc6;
+  font-size: 12px;
+  margin-right: 8px;
+}
+.studio-device-camera-header .studio-device-state {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Game-day cockpit: fixed sections, with expanded tools in modal overlays. */
+.scoring-desktop .scoring-preview-panel {
+  position: relative;
+  border: 1px solid #294456;
+  border-radius: 14px;
+  padding: 14px;
+  background: #091925;
+}
+.studio-preview-status {
+  position: absolute;
+  top: 52px;
+  left: 24px;
+  padding: 4px 8px;
+  border-radius: 5px;
+  background: #142d3a;
+  color: white;
+  font-size: 12px;
+  font-weight: 800;
+  pointer-events: none;
+  z-index: 2;
+}
+.studio-preview-status[data-live="true"] {
+  background: #e71942;
+}
+.studio-overlay-content {
+  padding-top: 16px;
+}
+.studio-overlay-content .camera-zoom-rail {
+  position: static;
+  transform: none;
+  width: 100%;
+  max-height: none;
+}
+.scoring-desktop .scoring-summary {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+.scoring-desktop .scoring-summary > .scoring-section-heading,
+.scoring-desktop .scoring-summary > .scoring-history-details {
+  grid-column: 1 / -1;
+}
+.scoring-desktop .scoring-summary .scoring-team-row {
+  position: relative;
+  min-height: 144px;
+  border: 1px solid #294456;
+  border-radius: 10px;
+  padding: 16px;
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr);
+  gap: 8px;
+  text-align: center;
+}
+.scoring-desktop .scoring-team-row .scoring-rock {
+  position: absolute;
+  left: 0;
+  top: 0;
+  height: 100%;
+  width: 7px;
+  border: none;
+  border-radius: 10px 0 0 10px;
+}
+.scoring-desktop .scoring-team-row .scoring-team-name {
+  grid-column: 1 / -1;
+  font-size: 17px;
+}
+.scoring-desktop .scoring-team-row .scoring-total {
+  grid-column: 2;
+  font-size: 56px;
+  line-height: 1;
+}
+.scoring-desktop .scoring-history-details {
+  margin: 0;
+}
+.scoring-desktop .scoring-history-details > summary {
+  display: none;
+}
+.scoring-desktop .scoring-history td,
+.scoring-desktop .scoring-history th {
+  padding: 8px 6px;
+}
+.scoring-desktop .scoring-entry > .scoring-field-label,
+.scoring-desktop .scoring-entry > .scoring-save-preview,
+.scoring-desktop .scoring-entry > p.mt-3 {
+  display: none;
+}
+.scoring-desktop .scoring-entry {
+  align-items: center;
+}
+.scoring-desktop .scoring-control-tiles {
+  padding: 16px;
+  border: 1px solid #294456;
+  border-radius: 14px;
+  background: #091925;
+}
+.scoring-control-tiles > .scoring-eyebrow {
+  grid-column: 1 / -1;
+}
+.scoring-desktop .scoring-device-dock {
+  margin-top: 0;
+}
+.scoring-desktop
+  .studio-device.studio-camera-device
+  > .studio-device-camera-header {
+  grid-template-columns: auto minmax(0, 1fr);
+}
+.scoring-desktop .studio-device-mic-volume {
+  grid-column: 1 / -1;
+  width: 100%;
+}
+.scoring-desktop .studio-camera-device {
+  min-height: 198px;
+}
+.scoring-desktop .studio-device-primary-actions {
+  flex-wrap: nowrap;
+}
+.scoring-desktop .studio-device-primary-actions > button {
+  min-height: 48px !important;
+}
+.scoring-desktop .studio-device-camera-header .studio-device-state {
+  max-width: 100%;
+}
+.scoring-desktop .studio-usb-channels {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+.scoring-desktop .studio-usb-channels > div {
+  min-height: 130px;
+  padding: 12px;
+  border: 1px solid #294456;
+}
+@media (min-width: 1200px) {
+  .scoring-desktop:not(.scoring-remote) {
+    max-width: 1800px;
+    padding: 20px;
+  }
+  .scoring-desktop:not(.scoring-remote) .scoring-columns {
+    grid-template-columns: minmax(0, 1.65fr) minmax(0, 1fr) minmax(0, 1.05fr);
+    gap: 16px;
+  }
+  .scoring-desktop .scoring-main,
+  .scoring-desktop .scoring-sidebar {
+    display: contents;
+  }
+  .scoring-desktop .scoring-summary {
+    grid-column: 1;
+    grid-row: 1;
+    align-self: stretch;
+  }
+  .scoring-desktop .scoring-device-dock {
+    grid-column: 2;
+    grid-row: 1;
+  }
+  .scoring-desktop .scoring-preview-panel {
+    grid-column: 3;
+    grid-row: 1;
+    align-self: stretch;
+  }
+  .scoring-desktop .scoring-entry {
+    grid-column: 1 / -1;
+    grid-row: 2;
+    display: grid;
+    grid-template-columns: auto minmax(180px, 1fr) minmax(280px, 1.25fr) minmax(
+        380px,
+        1.5fr
+      );
+    gap: 12px;
+    padding: 14px !important;
+  }
+  .scoring-desktop .scoring-entry > .scoring-section-heading {
+    display: grid;
+    margin: 0;
+    gap: 4px;
+  }
+  .scoring-desktop .scoring-entry > .scoring-section-heading h2 {
+    font-size: 15px;
+    white-space: nowrap;
+  }
+  .scoring-desktop .scoring-entry > .scoring-action-row {
+    display: flex;
+    gap: 6px;
+    margin: 0;
+  }
+  .scoring-desktop .scoring-entry > .scoring-action-row button {
+    flex: 1;
+    min-width: 0;
+    font-size: 12px;
+  }
+  .scoring-desktop .scoring-points {
+    gap: 5px;
+  }
+  .scoring-desktop .scoring-points button {
+    min-width: 0;
+    padding: 6px;
+  }
+  .scoring-desktop .scoring-team-picker {
+    margin: 0;
+  }
+  .scoring-desktop .scoring-team-choice {
+    padding: 8px;
+    font-size: 12px;
+    min-height: 48px;
+  }
+  .scoring-desktop .scoring-audio-dock {
+    grid-column: 1 / 3;
+    grid-row: 3;
+  }
+  .scoring-desktop .scoring-control-tiles {
+    grid-column: 3;
+    grid-row: 3;
+    align-self: stretch;
+  }
+}
+@media (max-width: 600px) {
+  .scoring-desktop .studio-usb-channels {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.scoring-desktop .scoring-device-dock .studio-device-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.scoring-desktop .scoring-device-dock .studio-device:last-child {
+  grid-column: 1 / -1;
+}
+.scoring-device-dock .studio-settings-dialog .studio-device-qr {
+  position: static;
+  width: 100%;
+  max-width: 320px;
+  margin: auto;
+}
+.scoring-desktop .scoring-control-tiles > .scoring-eyebrow {
+  display: block;
+}
+.studio-settings-dialog {
+  max-height: 85vh;
+  overflow-y: auto;
+}
+.studio-header-broadcast .studio-youtube-actions {
+  display: flex;
+  gap: 8px;
+}
+.studio-header-broadcast button {
+  min-height: 48px;
+  max-width: 180px;
+}
+@media (max-width: 600px) {
+  .scoring-desktop .scoring-device-dock .studio-device-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.studio-camera-health-trigger {
+  display: block;
+  width: 100%;
+  min-height: 44px;
+  text-align: left;
+  font-size: 12px;
+}
+.studio-camera-health-trigger .studio-device-state {
+  display: block;
+}
+
+.scoring-desktop
+  .studio-device.studio-camera-device
+  > .studio-device-primary-actions {
+  flex-wrap: nowrap;
+}
+.scoring-desktop
+  .studio-device.studio-camera-device
+  > .studio-device-primary-actions
+  > button.studio-device-action {
+  flex: 1 1 0;
+  min-width: 44px;
+  margin: 0;
+  padding: 6px;
+}
+.scoring-desktop .scoring-preview-panel {
+  align-content: start;
+}
+.scoring-desktop .scoring-preview-panel > button {
+  height: 48px;
+}
+.scoring-desktop .scoring-team-row .scoring-total {
+  align-self: end;
+}
+.scoring-desktop .scoring-team-row .scoring-team-name {
+  align-self: start;
+}
+.scoring-desktop .scoring-history-team {
+  max-width: 140px;
+}
+@media (min-width: 1200px) {
+  .scoring-desktop .scoring-entry {
+    grid-template-columns:
+      116px minmax(200px, 1fr) minmax(300px, 1.25fr)
+      minmax(380px, 1.5fr);
+  }
+  .scoring-desktop .scoring-summary {
+    min-height: 340px;
+  }
+  .scoring-desktop .scoring-summary .scoring-section-heading {
+    align-self: start;
+  }
+}
+
+/* Compact camera buttons and equal quick-action tiles at narrow laptop widths. */
+.scoring-desktop
+  .studio-device.studio-camera-device
+  > .studio-device-primary-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+}
+.scoring-desktop
+  .studio-device.studio-camera-device
+  > .studio-device-primary-actions
+  > .studio-device-mic-toggle {
+  grid-column: 1 / -1;
+}
+.scoring-desktop .studio-device-primary-actions > button {
+  overflow-wrap: anywhere;
+}
+.scoring-desktop .scoring-team-row .scoring-total {
+  grid-column: 1 / -1;
+  justify-self: center;
+}
+.scoring-desktop .scoring-team-row > svg {
+  position: absolute;
+  left: 20px;
+  bottom: 24px;
+}
+.scoring-desktop .studio-youtube-quick,
+.scoring-desktop .studio-youtube-quick .studio-youtube-watch {
+  display: contents;
+}
+.scoring-desktop .studio-youtube-quick > .scoring-section-heading {
+  display: none;
+}
+.scoring-desktop .scoring-control-tiles {
+  align-content: start;
+}
+.scoring-desktop .scoring-control-tiles > .studio-sponsors-launch,
+.scoring-desktop .studio-youtube-quick > a,
+.scoring-desktop .studio-youtube-quick .studio-youtube-watch > :is(a, button) {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  width: 100%;
+  height: 72px;
+  min-height: 44px;
+  padding: 12px;
+  border: 1px solid #3b586d;
+  border-radius: 12px;
+  background: #142a3b;
+  font-size: 13px;
+  line-height: 1.3;
+  white-space: normal;
+  text-decoration: none;
+}
+
+.scoring-desktop .studio-camera-device {
+  min-height: 232px;
+}
+.scoring-desktop .studio-device-primary-actions > button {
+  height: 48px;
+}
+.scoring-desktop .studio-device-grid {
+  align-items: stretch;
+}
+.scoring-desktop .studio-header-broadcast .studio-youtube-actions {
+  display: grid;
+  grid-template-columns: 160px 104px;
+  gap: 8px;
+  min-height: 48px;
+}
+.scoring-desktop .studio-header-broadcast .studio-youtube-actions > button {
+  height: 48px;
+}
+@media (max-width: 600px) {
+  .scoring-desktop .studio-header-broadcast .studio-youtube-actions {
+    grid-template-columns: 140px 96px;
+  }
+}

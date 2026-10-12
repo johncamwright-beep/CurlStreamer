@@ -1,3 +1,4 @@
+import { DEFAULT_PROGRAM_AUDIO_DELAY_MS } from "./program-sync";
 import { deriveScore } from "./scoring";
 import { cameraAudioEnabled } from "./camera-audio";
 import { hasSafeSponsorContent } from "./schema";
@@ -90,9 +91,10 @@ export function broadcastGame(
     },
     layout: game.layout,
     programCameraMode: game.programCameraMode ?? "auto",
-    ...(game.programAudioDelayMs !== undefined
-      ? { programAudioDelayMs: game.programAudioDelayMs }
-      : {}),
+    // Send an explicit default so installed Studio renderers use the same
+    // adjustment displayed by the operator controls.
+    programAudioDelayMs:
+      game.programAudioDelayMs ?? DEFAULT_PROGRAM_AUDIO_DELAY_MS,
     ...(game.cameraPan
       ? {
           cameraPan: {

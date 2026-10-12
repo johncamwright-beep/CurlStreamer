@@ -1,7 +1,10 @@
 import React, { type ReactElement, type ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { DeviceCard } from "./StudioDeviceCards";
-import { cameraInputNativeConnection } from "./StudioCameraInputs";
+import {
+  cameraInputNativeAction,
+  cameraInputNativeConnection,
+} from "./StudioCameraInputs";
 
 // Exercise the returned button handlers in Node; DOM layout is covered by E2E.
 vi.mock("react", async (importOriginal) => ({
@@ -13,12 +16,14 @@ vi.mock("react", async (importOriginal) => ({
 vi.mock("./StudioCameraInputs", async (importOriginal) => ({
   ...(await importOriginal<typeof import("./StudioCameraInputs")>()),
   cameraInputNativeConnection: vi.fn(),
+  cameraInputNativeAction: vi.fn(),
 }));
 
 function primary(
   connectionEnabled: boolean,
   shown: boolean,
   onVisibility = vi.fn(async () => {}),
+  videoReceiving = connectionEnabled,
 ) {
   const tree = DeviceCard({
     id: "game-1",
@@ -34,6 +39,11 @@ function primary(
       connectionEnabled,
     },
     shown,
+    connectionStatus: {
+      receiverReady: true,
+      phoneOnline: false,
+      videoReceiving,
+    },
     onVisibility,
   });
   type ButtonProps = {
@@ -99,6 +109,23 @@ describe("IP source connection and picture actions", () => {
     const f = primary(false, false);
     await f.click();
     expect(f.onVisibility).not.toHaveBeenCalled();
+  });
+
+  it("reconnects a disconnected source without changing its saved picture visibility", async () => {
+    const f = primary(
+      true,
+      true,
+      vi.fn(async () => {}),
+      false,
+    );
+    await f.click();
+    expect(cameraInputNativeAction).toHaveBeenCalledWith(
+      "game-1",
+      "camera-home",
+      "reconnect-camera",
+    );
+    expect(f.onVisibility).not.toHaveBeenCalled();
+    expect(cameraInputNativeConnection).not.toHaveBeenCalled();
   });
 
   it.each([true, false])(

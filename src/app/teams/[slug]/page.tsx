@@ -16,6 +16,7 @@ import {
 import { EventPhotoCarousel } from "@/components/EventPhotoCarousel";
 import { teamThemeStyle } from "@/lib/team-page-theme";
 import { NewsContent } from "@/components/NewsContent";
+import { publicEventSchema } from "@/lib/public-active-event";
 export const dynamic = "force-dynamic";
 export async function generateMetadata({
   params,
@@ -67,6 +68,27 @@ export default async function PublicTeamPage({
         : Promise.resolve({ data: [] }),
     ]);
   const games = gamesResult.data;
+  // Only expose event metadata for games already allowed by public-page settings.
+  const visibleEventIds = [
+    ...new Set<string>(
+      (games ?? [])
+        .map((game: { event_id?: string | null }) => game.event_id)
+        .filter((id: string | null | undefined): id is string => Boolean(id)),
+    ),
+  ];
+  const eventRows = visibleEventIds.length
+    ? await db
+        .from("events")
+        .select("id,name,start_date,end_date,timezone,result")
+        .eq("organization_id", profile.organization_id)
+        .in("id", visibleEventIds)
+        .is("deleted_at", null)
+        .is("archived_at", null)
+    : { data: [] };
+  const publicEvents = (eventRows.data ?? []).flatMap((row) => {
+    const parsed = publicEventSchema.safeParse(row);
+    return parsed.success ? [parsed.data] : [];
+  });
   const news = newsResult.data;
   const accomplishments = accomplishmentsResult.data;
   return (
@@ -120,6 +142,7 @@ export default async function PublicTeamPage({
             <div className="public-team-content min-w-0">
               <PublicTeamGames
                 games={games ?? []}
+                eventDetails={publicEvents}
                 teamName={s.name}
                 upcoming={s.upcoming}
                 results={s.results}

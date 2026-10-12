@@ -131,6 +131,7 @@ async function install(
   page: Page,
   kinds: ["phone" | "tapo" | "rtsp", "phone" | "tapo" | "rtsp"],
   timing = { frameDelay: 35, observationDelay: 0 },
+  programAudioDelayMs?: number,
 ) {
   let programCameraMode: "auto" | "stacked" | "portrait" = "auto";
   const sources: Record<Role, M4CameraInputSnapshot> = {
@@ -211,7 +212,9 @@ async function install(
       return route.fulfill({ json: { ok: true } });
     }
     if (url.pathname === "/program")
-      return route.fulfill({ json: { game: { ...game, programCameraMode } } });
+      return route.fulfill({
+        json: { game: { ...game, programCameraMode, programAudioDelayMs } },
+      });
     if (url.pathname === "/camera-inputs")
       return route.fulfill({ json: { cameras: sources } });
     if (url.pathname === "/camera") {
@@ -485,9 +488,15 @@ test("program composes mixed phone and Tapo frames while replacing only the sele
     )
     .toBeGreaterThan(0);
   expect((await fixture.phones()).starts["camera-away"]).toBeUndefined();
-  const phone = panel(page, "camera-home").getByLabel("Direct camera");
+  const phone = panel(page, "camera-home").locator(
+    '[aria-label="Direct camera"]:visible',
+  );
   await expect
-    .poll(() => phone.evaluate((video: HTMLVideoElement) => video.videoWidth))
+    .poll(() =>
+      phone.evaluate((media: HTMLVideoElement | HTMLCanvasElement) =>
+        media instanceof HTMLVideoElement ? media.videoWidth : media.width,
+      ),
+    )
     .toBe(90);
   const programBounds = (await page
     .getByTestId("broadcast-canvas")
@@ -541,8 +550,10 @@ test("portrait program feeds touch and use the complete canvas height", async ({
     await expect
       .poll(() =>
         panel(page, role)
-          .getByLabel("Direct camera")
-          .evaluate((video: HTMLVideoElement) => video.videoWidth),
+          .locator('[aria-label="Direct camera"]:visible')
+          .evaluate((media: HTMLVideoElement | HTMLCanvasElement) =>
+            media instanceof HTMLVideoElement ? media.videoWidth : media.width,
+          ),
       )
       .toBe(90);
   const program = (await page.getByTestId("broadcast-canvas").boundingBox())!;
@@ -1055,7 +1066,7 @@ test("two stalled bitmap decodes cap retained work and late release resumes poll
       });
     }) as typeof window.createImageBitmap;
   });
-  const fixture = await install(page, ["phone", "tapo"]);
+  const fixture = await install(page, ["phone", "tapo"], undefined, 0);
   await expect
     .poll(() =>
       page.evaluate(

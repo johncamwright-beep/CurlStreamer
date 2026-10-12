@@ -45,10 +45,15 @@ const server = createServer(async (request, response) => {
   if (request.method === "OPTIONS") return send(response, 204, {});
   if (
     url.pathname === "/rest/v1/team_public_profiles" &&
-    url.searchParams.get("slug") === "eq.public-preview"
+    ["eq.public-preview", "eq.public-active-preview"].includes(
+      url.searchParams.get("slug"),
+    )
   )
     return send(response, 200, {
-      organization_id: organizationId,
+      organization_id:
+        url.searchParams.get("slug") === "eq.public-active-preview"
+          ? "23232323-2323-4232-8232-232323232323"
+          : organizationId,
       logo_url: "/branding/curlstreamer-icon.png",
       settings: {
         name: "Test Curling Club",
@@ -115,6 +120,25 @@ const server = createServer(async (request, response) => {
             : null,
       })),
     );
+  if (url.pathname === "/rest/v1/events")
+    if (url.searchParams.get("select")?.includes("start_date")) {
+      if (
+        url.searchParams.get("organization_id") !==
+        "eq.23232323-2323-4232-8232-232323232323"
+      )
+        return send(response, 200, []);
+      const today = new Date().toISOString().slice(0, 10);
+      return send(response, 200, [
+        {
+          id: "shorty-id",
+          name: "Shorty Jenkin",
+          start_date: today,
+          end_date: today,
+          timezone: "UTC",
+          result: null,
+        },
+      ]);
+    }
   if (url.pathname === "/rest/v1/events")
     return send(response, 200, [
       { id: "event", name: "Orion", end_date: "2026-09-10", result: "1st" },

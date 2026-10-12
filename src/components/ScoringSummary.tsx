@@ -7,9 +7,11 @@ export function ScoringSummary({
   game,
   actions,
   initialHammer,
+  expanded = false,
 }: {
   game: GameState;
   actions?: ReactNode;
+  expanded?: boolean;
   initialHammer?: { disabled: boolean; select(side: "home" | "away"): void };
 }) {
   const score = deriveScore(game);
@@ -63,8 +65,12 @@ export function ScoringSummary({
           </strong>
         </div>
       ))}
-      <details className="scoring-history-details">
-        <summary>End-by-end score</summary>
+      <details className="scoring-history-details" open={expanded || undefined}>
+        <summary
+          onClick={expanded ? (event) => event.preventDefault() : undefined}
+        >
+          End-by-end score
+        </summary>
         <div
           className="scoring-history"
           role="region"
@@ -81,6 +87,7 @@ export function ScoringSummary({
                     {i + 1}
                   </th>
                 ))}
+                <th scope="col">Total</th>
               </tr>
             </thead>
             <tbody>
@@ -99,6 +106,9 @@ export function ScoringSummary({
                       </td>
                     );
                   })}
+                  <td>
+                    <strong>{score.totals[side]}</strong>
+                  </td>
                 </tr>
               ))}
             </tbody>

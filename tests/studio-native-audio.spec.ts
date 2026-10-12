@@ -39,6 +39,12 @@ test("native USB capture is opt-in with compact independent dBFS meters", async 
   });
   await page.goto("/native-audio");
   expect(await page.evaluate(() => (window as any).messages)).toEqual([]);
+  await expect(page.getByRole("meter")).toHaveCount(4);
+  await expect(page.getByRole("slider").first()).toBeDisabled();
+  await expect(page.getByRole("button", { name: "USB setup" })).toHaveAttribute(
+    "aria-expanded",
+    "false",
+  );
   await page.getByRole("button", { name: "USB setup" }).click();
   await page.getByRole("button", { name: "Find microphones" }).click();
   expect(await page.evaluate(() => (window as any).messages)).toEqual([
@@ -77,7 +83,11 @@ test("native USB capture is opt-in with compact independent dBFS meters", async 
       }),
     ),
   );
-  await expect(page.getByRole("meter")).toHaveCount(0);
+  await expect(page.getByRole("meter")).toHaveCount(4);
+  await expect(page.getByRole("meter").first()).toHaveAttribute(
+    "aria-valuetext",
+    "Disconnected; disconnected",
+  );
   await page.evaluate(() =>
     window.dispatchEvent(
       new CustomEvent("studio-usb-status", {
@@ -96,6 +106,7 @@ test("native USB capture is opt-in with compact independent dBFS meters", async 
       }),
     ),
   );
+  await page.getByRole("button", { name: "Close", exact: true }).click();
   await expect(page.getByRole("meter")).toHaveCount(4);
   await expect(page.getByRole("combobox")).toHaveCount(0);
   await expect(
@@ -165,7 +176,8 @@ test("native USB capture is opt-in with compact independent dBFS meters", async 
   await expect(
     page.getByRole("meter", { name: "Mic 2 receiver input" }),
   ).toHaveAttribute("aria-valuetext", "-1.9 dBFS; full scale reached");
-  await expect(page.getByText("Stream muted", { exact: true })).toHaveCount(2);
+  await expect(page.getByText("Stream muted", { exact: true })).toHaveCount(4);
+  await page.getByRole("button", { name: "USB setup" }).click();
   // Cleanup is opt-in to native support; older snapshots keep the meters usable.
   await expect(
     page.getByRole("combobox", { name: "Noise reduction" }),
@@ -250,6 +262,7 @@ test("native USB capture is opt-in with compact independent dBFS meters", async 
     noiseReduction: "off",
     humFrequency: 50,
   });
+  await page.getByRole("button", { name: "Close", exact: true }).click();
   await page.getByRole("button", { name: "Unmute all", exact: true }).click();
   expect(await page.evaluate(() => (window as any).messages.at(-1))).toEqual({
     type: "studio-usb-mute-all",
@@ -260,10 +273,10 @@ test("native USB capture is opt-in with compact independent dBFS meters", async 
     () => (window as any).messages.length,
   );
   await page.getByRole("button", { name: "USB setup" }).click();
-  await expect(page.getByRole("meter")).toHaveCount(0);
-  await expect(page.getByRole("combobox", { name: "Hum filter" })).toHaveCount(
-    0,
-  );
+  await expect(page.getByRole("meter")).toHaveCount(4);
+  await expect(
+    page.getByRole("combobox", { name: "Hum filter" }),
+  ).toBeVisible();
   await expect(page.getByRole("button", { name: "Disconnect" })).toBeVisible();
   expect(await page.evaluate(() => (window as any).messages.length)).toBe(
     messagesBeforeCollapse,

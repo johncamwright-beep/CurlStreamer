@@ -2,6 +2,7 @@ import { build } from "esbuild";
 import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { expect, test } from "@playwright/test";
+import { technicalSummary } from "../../src/lib/curlcoach/technical";
 test.skip(!process.env.CURLCOACH_E2E, "Use the Shot Tracker config");
 let js = "";
 let libraryJs = "";
@@ -168,6 +169,25 @@ test("report navigation is read-only, generation is explicit, and PDFs contain o
     title,
     ...(key.startsWith("p")
       ? {
+          technical: technicalSummary([
+            {
+              playerId: "fixture",
+              position: "Lead",
+              end: 1,
+              stone: 1,
+              type: "Draw",
+              turn: null,
+              grade: 4,
+              execution: "Partial",
+              deficiency: "Undercurl",
+              line: "Wide",
+              release: "Soft",
+              technical: "Understep",
+              review: null,
+              excluded: null,
+              note: "",
+            },
+          ]),
           games: [
             {
               key: "game-1",

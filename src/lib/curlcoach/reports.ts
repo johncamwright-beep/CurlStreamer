@@ -5,8 +5,13 @@ import type { CoachEvent } from "./event";
 import { teamScoreStatistics } from "./score-statistics";
 import { playerReportGames, type ReportGame } from "./report-games";
 import type { ReportBasis } from "./report-counts";
+import {
+  technicalSummary,
+  technicalEvidence,
+  type TechnicalSummary,
+} from "./technical";
 
-export const REPORT_POLICY = "shot-tracker-event-v5";
+export const REPORT_POLICY = "shot-tracker-event-v6";
 export const audienceSchema = z.enum(["coach", "team", "players"]);
 export type ReportAudience = z.infer<typeof audienceSchema>;
 export const reportRequestSchema = z
@@ -46,6 +51,7 @@ export type ReportInput = {
   limitations: string[];
   games?: ReportGame[];
   misses?: MissAnalysis;
+  technical?: TechnicalSummary;
 };
 export type SavedReport = ReportInput & {
   narrative: Narrative;
@@ -344,13 +350,22 @@ export function reportInputs(
     }
     if (playerId) {
       const detail = playerReportGames(event, playerId);
+      const technical = technicalSummary(shots);
+      limitations.push(
+        "Line, release and technical labels are optional coach observations, not proven causes of misses. Missing labels do not mean correct technique. Each field uses its own recorded denominator; excluded attempts are omitted.",
+      );
       return {
         key,
         title,
-        evidence: [...evidence, ...detail.evidence],
+        evidence: [
+          ...evidence,
+          ...technicalEvidence(technical),
+          ...detail.evidence,
+        ],
         limitations,
         games: detail.games,
         misses,
+        technical,
       };
     }
     return { key, title, evidence, limitations, misses };
@@ -361,7 +376,7 @@ export function audienceInstructions(audience: ReportAudience) {
   if (audience === "team")
     return "AUDIENCE: the team members together. Speak to the group as we/our team. Discuss collective execution, scoring patterns, communication and shared practice only. Never mention, identify, compare, blame or praise an individual, even indirectly by position, throwing order, stone number, captain, skip, front end or back end. No player names, aliases, player-specific advice or positional assignments. Individual analysis belongs in separate reports. In the output, avoid these words entirely (including generic or negated uses): player, athlete, individual, skip, captain, vice, lead, second, third, fourth, front end, back end, throwing order, someone, somebody, weakest, strongest. Do not describe any single team member. Say our team or we for all shared practice suggestions.";
   if (audience === "players")
-    return "AUDIENCE: one athlete. Address the athlete as you. Only their supplied shooting evidence is available. Team results provide context and cannot establish the athlete caused a win or loss. Do not discuss teammates or invent their performance.";
+    return "AUDIENCE: one athlete. Address the athlete as you. Only their supplied shooting and coaching observations are available. Where line, release or technical observations are recorded, discuss the clearest supported pattern and connect a practical rehearsal or video-review check to it. These are observed labels, not inferred mechanical diagnoses or proof of causation. Use accompanying miss rates only for the same category and distinguish them from observation shares. Never treat Not recorded as On broom, Neutral, correct technique or absence of faults. Do not call release labels inherently good or bad without intended-release context. If no technical evidence is supplied, do not invent it. Team results provide context and cannot establish the athlete caused a win or loss. Do not discuss teammates or invent their performance.";
   return "AUDIENCE: the coach privately. Use team evidence and anonymised Player aliases for individual follow-up. Keep tactical interpretation tentative; distinguish priorities for team practice from individual review.";
 }
 export function validateNarrative(

@@ -106,6 +106,7 @@ export function createGame(config: GameConfig) {
     createdAt: Date.now(),
     scoreEvents: [],
     layout: "split",
+    programCameraMode: "portrait",
     broadcast: "idle",
     status: "active",
     audioMuted: false,

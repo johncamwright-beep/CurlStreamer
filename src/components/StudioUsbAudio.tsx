@@ -1,4 +1,5 @@
 "use client";
+import { StudioStatusMessage } from "./StudioStatusArea";
 
 import React from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -229,11 +230,11 @@ export function StudioUsbAudio({
           Stop input check
         </button>
       </div>
-      {error && (
-        <p role="alert" className="text-sm text-red-300">
-          {error}
-        </p>
-      )}
+      <StudioStatusMessage
+        role="alert"
+        source="Audio"
+        message={error || null}
+      />
       <ChannelStatus
         channelCount={inputState.actualChannelCount}
         meters={inputState.meters}

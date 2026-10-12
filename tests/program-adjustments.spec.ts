@@ -38,7 +38,7 @@ test("portrait pan, signed microphone sync and slower sponsors save independent 
   const delay = page.getByRole("combobox", {
     name: "Microphone sync adjustment",
   });
-  await expect(delay).toHaveValue("0");
+  await expect(delay).toHaveValue("-1500");
   await delay.selectOption("2500");
   await expect(delay).toHaveValue("2500");
   await expect(delay.locator('option[value="-5000"]')).toHaveText("-5 seconds");

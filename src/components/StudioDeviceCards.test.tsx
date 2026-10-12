@@ -43,27 +43,26 @@ describe("Studio camera source tiles", () => {
     const markup = tile(false, "tapo", "connecting", false);
     expect(markup).toContain("Ready to connect");
     expect(markup).toContain(">Connect</button>");
-    expect(markup).not.toContain("Reconnect camera");
+    expect(markup).not.toContain(">Reconnect</button>");
     expect(markup).not.toContain("Hide from broadcast");
     expect(markup).not.toContain("Show in broadcast");
     expect(markup).not.toContain('aria-pressed="true"');
   });
-  it("offers Hide and Show for a connected source independently of media readiness", () => {
-    const shown = tile(false, "tapo", "connecting", true);
+  it("replaces visibility with one recovery action until media is ready", () => {
+    const shown = tile(true, "tapo", "streaming", true);
     expect(shown).toContain("Hide from broadcast");
     expect(shown).toContain('aria-pressed="true"');
-    expect(shown).toContain("Reconnect camera");
+    expect(shown).not.toContain(">Reconnect</button>");
     const hidden = tile(true, "rtsp", "streaming", true, false);
     expect(hidden).toContain("Show in broadcast");
     expect(hidden).not.toContain('aria-pressed="true"');
-    expect(hidden).not.toContain("Reconnect camera");
+    expect(hidden).not.toContain(">Reconnect</button>");
   });
-  it("keeps legacy configured IP cameras on Hide/Show when older Studio omits connection intent", () => {
+  it("offers recovery for legacy IP cameras without program video", () => {
     const shown = tile(false, "tapo", "idle");
-    expect(shown).toContain("Hide from broadcast");
-    expect(shown).toContain('aria-pressed="true"');
+    expect(shown).toContain(">Reconnect</button>");
     expect(shown).not.toContain(">Connect</button>");
-    const hidden = tile(false, "tapo", "idle", undefined, false);
+    const hidden = tile(true, "tapo", "streaming", undefined, false);
     expect(hidden).toContain("Show in broadcast");
     expect(hidden).not.toContain(">Connect</button>");
     expect(hidden).not.toContain('aria-pressed="true"');
@@ -78,9 +77,9 @@ describe("Studio camera source tiles", () => {
   });
   it("shows native settings and recovery only when video is unavailable", () => {
     expect(tile(false)).toContain("Settings");
-    expect(tile(false)).toContain("Reconnect camera");
+    expect(tile(false)).toContain(">Reconnect</button>");
     expect(tile(true)).toContain("Receiving video");
-    expect(tile(true)).not.toContain("Reconnect camera");
+    expect(tile(true)).not.toContain(">Reconnect</button>");
   });
   it("omits phone invitations and retains the Tapo microphone without a phone claim", () => {
     const markup = tile(false);
@@ -92,10 +91,10 @@ describe("Studio camera source tiles", () => {
   it("keeps generic IP recovery and audio controls separate from phone pairing", () => {
     const markup = tile(false, "rtsp");
     expect(markup).toContain("IP camera");
-    expect(markup).toContain("Reconnect camera");
+    expect(markup).toContain(">Reconnect</button>");
     expect(markup).toContain("Turn mic on");
     expect(markup).not.toContain("QR");
     expect(markup).not.toContain("Tapo");
-    expect(tile(true, "rtsp")).not.toContain("Reconnect camera");
+    expect(tile(true, "rtsp")).not.toContain(">Reconnect</button>");
   });
 });

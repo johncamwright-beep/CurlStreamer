@@ -3,9 +3,16 @@ test.skip(!process.env.CURLCOACH_E2E, "Use the Shot Tracker config");
 test("flagged-shot menu retains filters and exposes review links and editable times", async ({
   page,
 }) => {
+  let latestEvent = "";
   await page.route("**/api/curlcoach/workspace?**", async (route) => {
     const response = await route.fetch();
     const data = await response.json();
+    data.catalog?.forEach(
+      (event: { id: string; startDate?: string }, index: number) => {
+        event.startDate = `${2020 + index}-01-01`;
+        latestEvent = event.id;
+      },
+    );
     for (const game of data.event?.games ?? []) {
       const entry = game.state.events.find((e: { shot?: unknown }) => e.shot);
       if (entry)
@@ -33,6 +40,9 @@ test("flagged-shot menu retains filters and exposes review links and editable ti
   await expect(
     page.getByRole("heading", { name: "Flagged shots", exact: true }),
   ).toBeVisible();
+  await expect(
+    page.getByRole("combobox", { name: "Event", exact: true }),
+  ).toHaveValue(latestEvent);
   await page
     .getByRole("combobox", { name: "Event", exact: true })
     .selectOption("all");

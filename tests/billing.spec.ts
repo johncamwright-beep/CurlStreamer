@@ -34,7 +34,7 @@ async function useBillingFixture(page: Page, fixture: BillingFixture) {
       expect(["checkout", "portal"]).toContain(body.action);
       return route.fulfill({
         json: {
-          url: `http://localhost:3000/account?section=subscription&billing=${body.action === "checkout" ? "returned" : "cancelled"}`,
+          url: `${new URL(route.request().url()).origin}/account?section=subscription&billing=${body.action === "checkout" ? "returned" : "cancelled"}`,
         },
       });
     }

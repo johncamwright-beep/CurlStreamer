@@ -112,6 +112,112 @@ test("speech level recovers after shouting without clipping or turning silence i
   expect(result.silence).toBe(0);
 });
 
+test("speech processing reduces rumble and peak pressure without adding onset latency", async ({
+  page,
+}) => {
+  const results = await page.evaluate(async () => {
+    // Keep the previous graph as a signal-level reference, including the browser's
+    // compressor makeup gain and lookahead, rather than estimating a static curve.
+    const previousMix = (context: OfflineAudioContext) => {
+      const input = context.createGain();
+      input.gain.value = 4;
+      const speech = context.createDynamicsCompressor();
+      speech.threshold.value = -22;
+      speech.knee.value = 12;
+      speech.ratio.value = 6;
+      speech.attack.value = 0.005;
+      speech.release.value = 0.35;
+      const peak = context.createDynamicsCompressor();
+      peak.threshold.value = -3;
+      peak.knee.value = 0;
+      peak.ratio.value = 20;
+      peak.attack.value = 0.003;
+      peak.release.value = 0.15;
+      const safety = context.createWaveShaper();
+      safety.curve = Float32Array.from({ length: 4097 }, (_, i) => {
+        const x = (i / 4096) * 2 - 1;
+        const magnitude = Math.abs(x);
+        return (
+          Math.sign(x) *
+          (magnitude <= 0.9
+            ? magnitude
+            : 0.9 + 0.08 * Math.tanh((magnitude - 0.9) / 0.08))
+        );
+      });
+      input
+        .connect(speech)
+        .connect(peak)
+        .connect(safety)
+        .connect(context.destination);
+      return { input };
+    };
+    const render = async (
+      previous: boolean,
+      amplitude: number,
+      frequency: number,
+    ) => {
+      const context = new OfflineAudioContext(1, 48000, 48000);
+      const mix = previous
+        ? previousMix(context)
+        : (window as any).mix(context);
+      const source = context.createBufferSource();
+      source.buffer = context.createBuffer(1, 48000, 48000);
+      const input = source.buffer.getChannelData(0);
+      // frequency=0 is a small isolated impulse for measuring graph latency.
+      for (let i = 4800; i < input.length; i++)
+        input[i] = frequency
+          ? amplitude * Math.sin((2 * Math.PI * frequency * (i - 4800)) / 48000)
+          : i === 4800
+            ? amplitude
+            : 0;
+      source.connect(mix.input);
+      source.start();
+      const output = (await context.startRendering()).getChannelData(0);
+      let square = 0;
+      let peak = 0;
+      let onset = -1;
+      for (let i = 0; i < output.length; i++) {
+        if (onset < 0 && Math.abs(output[i]) > 1e-7) onset = i;
+        peak = Math.max(peak, Math.abs(output[i]));
+        if (i >= 24000) square += output[i] ** 2;
+      }
+      return { rms: Math.sqrt(square / 24000), peak, onset };
+    };
+    const results = [];
+    for (const [amplitude, frequency] of [
+      [0.02, 440],
+      [0.1, 440],
+      [1, 440],
+      [4, 440],
+      [0.002, 20],
+      [0.002, 50],
+      [0.002, 160],
+      [0.002, 1000],
+      [0.001, 0],
+    ])
+      results.push({
+        amplitude,
+        frequency,
+        before: await render(true, amplitude, frequency),
+        after: await render(false, amplitude, frequency),
+      });
+    return results;
+  });
+  // Quiet speech stays lifted, while ordinary speech and shouts stay ordered.
+  expect(results[0].after.rms).toBeGreaterThan(0.04);
+  expect(results[1].after.rms).toBeGreaterThan(results[0].after.rms);
+  expect(results[2].after.rms).toBeGreaterThan(results[1].after.rms);
+  expect(results[2].after.rms / results[0].after.rms).toBeLessThan(6);
+  expect(results[3].after.peak).toBeLessThan(0.89);
+  expect(results[3].after.peak).toBeLessThan(results[3].before.peak);
+  // Low-frequency mechanical/electrical rumble is reduced; speech-band signal remains.
+  expect(results[4].after.rms / results[4].before.rms).toBeLessThan(0.1);
+  expect(results[5].after.rms / results[5].before.rms).toBeLessThan(0.3);
+  expect(results[6].after.rms / results[7].after.rms).toBeGreaterThan(0.9);
+  // A native low-cut introduces no block buffering or extra compressor lookahead.
+  expect(results[8].after.onset).toBe(results[8].before.onset);
+});
+
 test("USB packet jitter renders a continuous waveform without gaps or repeated samples", async ({
   page,
 }) => {

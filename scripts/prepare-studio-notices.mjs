@@ -289,6 +289,27 @@ const inventory = {
   scope:
     "CurlStreamer Studio desktop distribution only; excludes hosted service, data, recordings, and credentials.",
   sourcePointers: [
+    ...(await stat(join(studio, "native", "curlstreamer_rnnoise.dll")).then(
+      async () => {
+        await copyFile(
+          join(obsSource, "plugins", "obs-filters", "rnnoise", "COPYING"),
+          join(licenses, "rnnoise", "COPYING"),
+        );
+        return [
+          {
+            component: "RNNoise per-microphone noise reduction",
+            license: "BSD-3-Clause",
+            sourceReleaseUrl:
+              "https://github.com/obsproject/obs-studio/tree/32.2.2/plugins/obs-filters/rnnoise",
+            notices: ["licenses/rnnoise/COPYING"],
+          },
+        ];
+      },
+      (error) => {
+        if (error.code === "ENOENT") return [];
+        throw error;
+      },
+    )),
     {
       component: "Chromium Embedded Framework / Chromium browser payload",
       cefVersion: "127.145.7+g2b7d20b+chromium-127.0.6533.120",

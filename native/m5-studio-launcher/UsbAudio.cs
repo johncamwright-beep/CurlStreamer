@@ -1,6 +1,8 @@
 // WASAPI input helper.  It intentionally opens an endpoint only after Start is called.
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
+using System.IO;
 using System.Runtime.InteropServices;
 using System.Threading;
 
@@ -16,6 +18,15 @@ internal sealed class UsbAudioChannelSnapshot
     public float rms;
     public bool muted;
     public float level;
+    public bool clipped;
+}
+
+internal sealed class UsbAudioProcessingSnapshot
+{
+    public string noiseReduction;
+    public int humFrequency;
+    public bool available;
+    public string error;
 }
 
 internal sealed class UsbAudioSnapshot
@@ -25,6 +36,7 @@ internal sealed class UsbAudioSnapshot
     public int sampleRate;
     public UsbAudioChannelSnapshot[] channels;
     public string error;
+    public UsbAudioProcessingSnapshot processing;
 }
 
 // The callback is made on a background MTA thread.  It receives interleaved-free mono
@@ -45,6 +57,11 @@ internal sealed class UsbAudio : IDisposable
     private int sampleRate, channelCount;
     private float[] peaks, rms, levels;
     private bool[] muted;
+    private long[] clippedUntil;
+    private long meterLastPacketAt;
+    private UsbAudioProcessing processor;
+    private string noiseReduction = "gentle";
+    private int humFrequency;
 
     internal event Action<Exception> DeviceLost;
 
@@ -92,7 +109,7 @@ internal sealed class UsbAudio : IDisposable
             ThrowIfDisposed();
             if (onMono == null) throw new InvalidOperationException("A mono audio callback is required.");
             if (worker != null) throw new InvalidOperationException("USB audio capture is already started.");
-            error = null; sampleRate = 0; channelCount = 0; peaks = rms = levels = null; muted = null;
+            error = null; sampleRate = 0; channelCount = 0; peaks = rms = levels = null; muted = null; clippedUntil = null; meterLastPacketAt = 0;
             cancel = new ManualResetEvent(false); ready = new ManualResetEvent(false);
             started = ready;
             worker = new Thread(() => CaptureThread(deviceId)) { IsBackground = true, Name = "CurlStreamer WASAPI capture" };
@@ -127,11 +144,32 @@ internal sealed class UsbAudio : IDisposable
     internal UsbAudioSnapshot Snapshot()
     {
         lock (gate) {
+            var now = Stopwatch.GetTimestamp();
+            bool fresh = running && now - meterLastPacketAt < Stopwatch.Frequency / 2;
             var channels = new UsbAudioChannelSnapshot[channelCount];
             for (int i = 0; i < channelCount; i++) channels[i] = new UsbAudioChannelSnapshot {
-                peak = running ? Clamp(peaks[i], 0f, 1f) : 0f, rms = running ? Clamp(rms[i], 0f, 1f) : 0f, muted = muted[i], level = levels[i]
+                peak = fresh ? Clamp(peaks[i], 0f, 1f) : 0f, rms = fresh ? Clamp(rms[i], 0f, 1f) : 0f, muted = muted[i], level = levels[i],
+                clipped = running && clippedUntil != null && now < clippedUntil[i]
             };
-            return new UsbAudioSnapshot { allMuted = allMuted, running = running, sampleRate = sampleRate, channels = channels, error = error };
+            // Publish the maximum since the last status, rather than whichever
+            // tiny WASAPI packet happened to arrive immediately before the poll.
+            if (peaks != null) Array.Clear(peaks, 0, peaks.Length);
+            return new UsbAudioSnapshot { allMuted = allMuted, running = running, sampleRate = sampleRate, channels = channels, error = error,
+                processing = new UsbAudioProcessingSnapshot { noiseReduction = processor != null && processor.NoiseReductionAvailable ? noiseReduction : "off", humFrequency = humFrequency,
+                    available = processor != null && processor.NoiseReductionAvailable, error = processor == null ? null : processor.Error } };
+        }
+    }
+
+    internal void SetProcessing(string mode, int frequency)
+    {
+        if (mode != "off" && mode != "gentle" && mode != "strong") throw new ArgumentOutOfRangeException("mode");
+        if (frequency != 0 && frequency != 50 && frequency != 60) throw new ArgumentOutOfRangeException("frequency");
+        lock (gate) {
+            ThrowIfDisposed();
+            if (processor == null || !running) throw new InvalidOperationException("USB audio capture is not running.");
+            if (mode != "off" && !processor.NoiseReductionAvailable) throw new InvalidOperationException("Noise reduction is unavailable.");
+            processor.Configure(mode, frequency);
+            noiseReduction = mode; humFrequency = frequency;
         }
     }
 
@@ -152,6 +190,7 @@ internal sealed class UsbAudio : IDisposable
     {
         IMMDeviceEnumerator enumerator = null; IMMDevice device = null; IAudioClient client = null; IAudioCaptureClient capture = null;
         IntPtr format = IntPtr.Zero, evt = IntPtr.Zero;
+        UsbAudioProcessing captureProcessor = null;
         int initialized = Native.CoInitializeEx(IntPtr.Zero, 0); // MTA
         bool uninitialize = initialized >= 0;
         try {
@@ -167,6 +206,8 @@ internal sealed class UsbAudio : IDisposable
             var wave = WaveFormat.Read(format);
             if (!wave.IsSupported) throw new NotSupportedException("The selected endpoint mix format is not PCM or IEEE float 16, 24, or 32-bit audio.");
             if (wave.sampleRate != 48000) throw new NotSupportedException("The selected endpoint must use a 48 kHz shared-mode mix format.");
+            captureProcessor = new UsbAudioProcessing(wave.channels, Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "native", "curlstreamer_rnnoise.dll"));
+            captureProcessor.Configure(captureProcessor.NoiseReductionAvailable ? noiseReduction : "off", humFrequency);
             evt = Native.CreateEvent(IntPtr.Zero, false, false, null);
             if (evt == IntPtr.Zero) throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error());
             client.Initialize(SharedMode, StreamEventCallback, 0, 0, format, IntPtr.Zero);
@@ -174,7 +215,8 @@ internal sealed class UsbAudio : IDisposable
             var iidCapture = typeof(IAudioCaptureClient).GUID; client.GetService(ref iidCapture, out capture);
             lock (gate) {
                 audioEvent = evt; sampleRate = wave.sampleRate; channelCount = wave.channels;
-                peaks = new float[channelCount]; rms = new float[channelCount]; levels = new float[channelCount]; muted = new bool[channelCount];
+                peaks = new float[channelCount]; rms = new float[channelCount]; levels = new float[channelCount]; muted = new bool[channelCount]; clippedUntil = new long[channelCount];
+                processor = captureProcessor;
                 for (int i = 0; i < channelCount; i++) levels[i] = 1f;
                 running = true;
             }
@@ -193,7 +235,8 @@ internal sealed class UsbAudio : IDisposable
             try { var lost = DeviceLost; if (lost != null) lost(ex); } catch { }
             lock (gate) { if (ready != null) ready.Set(); }
         } finally {
-            lock (gate) { running = false; audioEvent = IntPtr.Zero; }
+            lock (gate) { running = false; audioEvent = IntPtr.Zero; processor = null; }
+            if (captureProcessor != null) captureProcessor.Dispose();
             ReleaseCom(capture); ReleaseCom(client); ReleaseCom(device); ReleaseCom(enumerator);
             if (format != IntPtr.Zero) Marshal.FreeCoTaskMem(format);
             if (evt != IntPtr.Zero) Native.CloseHandle(evt);
@@ -218,20 +261,31 @@ internal sealed class UsbAudio : IDisposable
     {
         if (frames <= 0) return;
         var output = new float[frames]; var packetPeak = new float[wave.channels]; var squares = new double[wave.channels];
+        var rawFrame = new float[wave.channels]; var processedFrame = new float[wave.channels];
         bool[] localMuted; float[] localLevels; bool masterMuted;
         lock (gate) { localMuted = (bool[])muted.Clone(); localLevels = (float[])levels.Clone(); masterMuted = allMuted; }
         for (int frame = 0; frame < frames; frame++) {
             double mixed = 0;
             for (int ch = 0; ch < wave.channels; ch++) {
                 float value = silent ? 0f : DecodeSample(data, frame * wave.blockAlign + ch * wave.bytesPerSample, wave.format, wave.bytesPerSample);
-                float absolute = Math.Abs(value); if (absolute > packetPeak[ch]) packetPeak[ch] = absolute; squares[ch] += value * value;
-                if (!localMuted[ch]) mixed += value * localLevels[ch];
+                rawFrame[ch] = value;
+                float absolute = Math.Abs(value); if (absolute > packetPeak[ch]) packetPeak[ch] = absolute; squares[ch] += (double)value * value;
             }
+            if (processor != null) processor.ProcessFrame(rawFrame, processedFrame);
+            else Array.Copy(rawFrame, processedFrame, rawFrame.Length);
+            for (int ch = 0; ch < wave.channels; ch++) if (!localMuted[ch]) mixed += processedFrame[ch] * localLevels[ch];
             // Preserve each microphone's level. The renderer limits the floating
             // point sum; neither silent nor muted channels attenuate other mics.
             output[frame] = masterMuted ? 0f : MixMono((float)mixed, wave.channels);
         }
-        lock (gate) for (int ch = 0; ch < wave.channels; ch++) { peaks[ch] = packetPeak[ch]; rms[ch] = (float)Math.Sqrt(squares[ch] / frames); }
+        lock (gate) {
+            meterLastPacketAt = Stopwatch.GetTimestamp();
+            for (int ch = 0; ch < wave.channels; ch++) {
+                peaks[ch] = Math.Max(peaks[ch], packetPeak[ch]); rms[ch] = (float)Math.Sqrt(squares[ch] / frames);
+                float fullScale = wave.format == UsbAudioSampleFormat.Pcm ? 1f - (float)Math.Pow(2, 1 - 8 * wave.bytesPerSample) : 1f;
+                if (packetPeak[ch] >= fullScale && clippedUntil != null) clippedUntil[ch] = meterLastPacketAt + 3 * Stopwatch.Frequency;
+            }
+        }
         try { onMono(output, wave.sampleRate); } catch (Exception ex) { lock (gate) error = "USB audio callback failed: " + SafeMessage(ex); }
     }
 
@@ -262,7 +316,9 @@ internal sealed class UsbAudio : IDisposable
     private void ThrowIfDisposed() { if (disposed) throw new ObjectDisposedException("UsbAudio"); }
     private static string SafeMessage(Exception ex) { return String.IsNullOrEmpty(ex.Message) ? ex.GetType().Name : ex.Message; }
     private static float Clamp(float value, float min, float max) { return value < min ? min : value > max ? max : value; }
-    private static float Normalize(float value) { return Single.IsNaN(value) || Single.IsInfinity(value) ? 0f : Clamp(value, -1f, 1f); }
+    // WASAPI float input can exceed full scale. Preserve it until processing and
+    // final peak protection instead of hard-clipping every microphone here.
+    private static float Normalize(float value) { return Single.IsNaN(value) || Single.IsInfinity(value) ? 0f : value; }
 }
 
 internal enum UsbAudioSampleFormat { Pcm, Float32 }

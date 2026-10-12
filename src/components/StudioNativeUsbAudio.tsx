@@ -207,7 +207,12 @@ export function StudioNativeUsbAudio({ gameId }: { gameId: string }) {
                   <select
                     className="min-h-11 rounded bg-slate-900 p-2 text-sm"
                     value={processing.noiseReduction}
-                    disabled={pending || stale || !processing.available}
+                    disabled={
+                      pending ||
+                      stale ||
+                      !state?.running ||
+                      !processing.available
+                    }
                     onChange={(event) =>
                       send("studio-usb-processing", {
                         noiseReduction: event.target.value,
@@ -225,7 +230,7 @@ export function StudioNativeUsbAudio({ gameId }: { gameId: string }) {
                   <select
                     className="min-h-11 rounded bg-slate-900 p-2 text-sm"
                     value={processing.humFrequency}
-                    disabled={pending || stale}
+                    disabled={pending || stale || !state?.running}
                     onChange={(event) =>
                       send("studio-usb-processing", {
                         noiseReduction: processing.noiseReduction,

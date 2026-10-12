@@ -286,4 +286,26 @@ test("native USB capture is opt-in with compact independent dBFS meters", async 
     type: "studio-usb-stop",
     gameId: "game",
   });
+  await page.evaluate(() =>
+    window.dispatchEvent(
+      new CustomEvent("studio-usb-status", {
+        detail: {
+          gameId: "game",
+          devices: [],
+          running: false,
+          allMuted: false,
+          error: null,
+          channels: [],
+          processing: {
+            noiseReduction: "off",
+            humFrequency: 0,
+            available: false,
+            error: null,
+          },
+        },
+      }),
+    ),
+  );
+  await expect(noise).toBeDisabled();
+  await expect(hum).toBeDisabled();
 });

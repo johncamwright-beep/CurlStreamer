@@ -1,4 +1,7 @@
-param([Parameter(Mandatory = $true)][string]$NoiseReductionDll)
+param(
+  [Parameter(Mandatory = $true)][string]$NoiseReductionDll,
+  [string]$SpeechFixture
+)
 $ErrorActionPreference = 'Stop'
 $repository = [IO.Path]::GetFullPath((Split-Path -Parent $PSScriptRoot))
 $dll = (Resolve-Path -LiteralPath $NoiseReductionDll).Path
@@ -14,6 +17,7 @@ if ($LASTEXITCODE -ne 0) { throw 'Native capture integration tests failed.' }
 $processingTests = Join-Path $testRoot 'UsbAudioProcessingTests.exe'
 & $compiler /nologo /target:exe /platform:x64 /optimize+ "/out:$processingTests" (Join-Path $source 'UsbAudioProcessing.cs') (Join-Path $source 'UsbAudioProcessingTests.cs')
 if ($LASTEXITCODE -ne 0) { throw 'Native processing tests failed to compile.' }
-& $processingTests $dll
+if ($SpeechFixture) { & $processingTests $dll (Resolve-Path -LiteralPath $SpeechFixture).Path }
+else { & $processingTests $dll }
 if ($LASTEXITCODE -ne 0) { throw 'Native processing tests failed.' }
 Write-Output 'Native microphone checks passed without opening a capture endpoint.'

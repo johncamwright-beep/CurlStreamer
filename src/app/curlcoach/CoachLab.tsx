@@ -45,6 +45,7 @@ import {
   type Supplement,
 } from "@/lib/curlcoach/enhanced-catalog";
 import { ShotPicker } from "./EntryControls";
+import EntryOverlay from "./EntryOverlay";
 import { AssessmentCoverage } from "./AssessmentCoverage";
 import {
   EnhancedFields,
@@ -675,13 +676,11 @@ export default function CoachLab({
     </>
   );
   function entryGroup(title: string, children: ReactNode) {
-    return enhancedMode ? (
-      <details className="coach-entry-section" open>
-        <summary>{title}</summary>
+    return (
+      <section className="coach-entry-section" aria-label={title}>
+        <h3>{title}</h3>
         <div className="coach-entry-grid">{children}</div>
-      </details>
-    ) : (
-      <>{children}</>
+      </section>
     );
   }
   return (
@@ -767,12 +766,13 @@ export default function CoachLab({
       ) : (
         <>
           <div className="coach-columns">
-            <section ref={entry} className="coach-panel">
+            <section ref={entry} className="coach-panel tracker-entry-panel">
               <h2>{editing ? "Correct attempt" : "Chart an attempt"}</h2>
               <p>
                 End {draft.end} · Rock {rockNumber(draft)} of 8
               </p>
               <form
+                className="tracker-entry-form"
                 onChangeCapture={() => {
                   deliberateDraftChange.current = true;
                 }}
@@ -786,136 +786,150 @@ export default function CoachLab({
                 }}
               >
                 <fieldset disabled={busy || !state || closed || !rosterReady}>
-                  <div className="coach-fields">
-                    <label>
-                      Player
-                      <select
-                        value={draft.playerId}
-                        onChange={(e) =>
-                          setDraft({
-                            ...draft,
-                            playerId: e.target.value as Shot["playerId"],
-                          })
-                        }
-                      >
-                        {players.map((p) => (
-                          <option value={p.id} key={p.id}>
-                            {p.name}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                    {choose("position", "Throwing position", [
-                      "Lead",
-                      "Second",
-                      "Third",
-                      "Fourth",
-                    ])}
-                    <label>
-                      End
-                      <input
-                        type="number"
-                        min="1"
-                        max="20"
-                        value={draft.end}
-                        required
-                        onChange={(e) =>
-                          setDraft({ ...draft, end: Number(e.target.value) })
-                        }
-                      />
-                    </label>
-                    <label>
-                      Stone
-                      <select
-                        value={draft.stone}
-                        onChange={(e) =>
-                          setDraft({
-                            ...draft,
-                            stone: Number(e.target.value),
-                            playerId:
-                              lineup[
-                                rockNumber({
-                                  position: draft.position,
-                                  stone: Number(e.target.value),
-                                }) - 1
-                              ] ?? draft.playerId,
-                          })
-                        }
-                      >
-                        <option value="1">1</option>
-                        <option value="2">2</option>
-                      </select>
-                    </label>
-                    {entryGroup(
-                      "Shot selection",
-                      <>
-                        {enhancedMode ? (
-                          <ShotPicker
-                            shot={draft}
-                            value={enhanced}
-                            editing={!!editing}
-                            onChange={(shot, value) => {
-                              changeEnhanced(value);
-                              setDraft(shot);
-                            }}
-                          />
-                        ) : (
-                          choose("type", "Shot type", shotTypes)
-                        )}
-                        {enhancedMode && (
-                          <EnhancedFields
-                            section="otherDetail"
-                            value={enhanced}
-                            onChange={changeEnhanced}
-                          />
-                        )}
-                        {choose("turn", "Turn / target", turns)}
-                        {enhancedMode && (
-                          <EnhancedFields
-                            section="call"
-                            value={enhanced}
-                            onChange={changeEnhanced}
-                          />
-                        )}
-                      </>,
-                    )}
-                    {entryGroup(
-                      "Execution",
-                      <>
-                        {choose("execution", "Execution", executions)}
+                  <div className="tracker-entry-layout">
+                    <div className="tracker-quick-entry">
+                      <div className="tracker-quick-heading">
+                        <div>
+                          <h3>Quick entry</h3>
+                          <p>Record the call and what happened.</p>
+                        </div>
+                        <a href="#options">
+                          {enhancedMode
+                            ? "Enhanced metrics"
+                            : "Standard metrics"}{" "}
+                          ↗
+                        </a>
+                      </div>
+                      <div className="coach-fields">
                         <label>
-                          Numeric grade
+                          Player
                           <select
-                            value={draft.grade ?? ""}
-                            disabled={!!draft.excluded}
+                            value={draft.playerId}
                             onChange={(e) =>
                               setDraft({
                                 ...draft,
-                                grade:
-                                  e.target.value === ""
-                                    ? null
-                                    : Number(e.target.value),
+                                playerId: e.target.value as Shot["playerId"],
                               })
                             }
                           >
-                            <option value="">Not graded</option>
-                            {[0, 1, 2, 3, 4, 5].map((n) => (
-                              <option key={n}>{n}</option>
+                            {players.map((p) => (
+                              <option value={p.id} key={p.id}>
+                                {p.name}
+                              </option>
                             ))}
                           </select>
                         </label>
-                        {enhancedMode && (
-                          <EnhancedFields
-                            section="result"
-                            value={enhanced}
-                            onChange={changeEnhanced}
+                        {choose("position", "Throwing position", [
+                          "Lead",
+                          "Second",
+                          "Third",
+                          "Fourth",
+                        ])}
+                        <label>
+                          End
+                          <input
+                            type="number"
+                            min="1"
+                            max="20"
+                            value={draft.end}
+                            required
+                            onChange={(e) =>
+                              setDraft({
+                                ...draft,
+                                end: Number(e.target.value),
+                              })
+                            }
                           />
+                        </label>
+                        <label>
+                          Stone
+                          <select
+                            value={draft.stone}
+                            onChange={(e) =>
+                              setDraft({
+                                ...draft,
+                                stone: Number(e.target.value),
+                                playerId:
+                                  lineup[
+                                    rockNumber({
+                                      position: draft.position,
+                                      stone: Number(e.target.value),
+                                    }) - 1
+                                  ] ?? draft.playerId,
+                              })
+                            }
+                          >
+                            <option value="1">1</option>
+                            <option value="2">2</option>
+                          </select>
+                        </label>
+                        {entryGroup(
+                          "Shot selection",
+                          <>
+                            {enhancedMode ? (
+                              <ShotPicker
+                                shot={draft}
+                                value={enhanced}
+                                editing={!!editing}
+                                onChange={(shot, value) => {
+                                  changeEnhanced(value);
+                                  setDraft(shot);
+                                }}
+                              />
+                            ) : (
+                              choose("type", "Shot type", shotTypes)
+                            )}
+                            {enhancedMode && (
+                              <EnhancedFields
+                                section="otherDetail"
+                                value={enhanced}
+                                onChange={changeEnhanced}
+                              />
+                            )}
+                            {choose("turn", "Turn / target", turns)}
+                            {enhancedMode && (
+                              <EnhancedFields
+                                section="call"
+                                value={enhanced}
+                                onChange={changeEnhanced}
+                              />
+                            )}
+                          </>,
                         )}
-                      </>,
-                    )}
-                    {entryGroup(
-                      "Observed misses",
-                      <>
+                        {entryGroup(
+                          "Execution",
+                          <>
+                            {choose("execution", "Execution", executions)}
+                            <label>
+                              Numeric grade
+                              <select
+                                value={draft.grade ?? ""}
+                                disabled={!!draft.excluded}
+                                onChange={(e) =>
+                                  setDraft({
+                                    ...draft,
+                                    grade:
+                                      e.target.value === ""
+                                        ? null
+                                        : Number(e.target.value),
+                                  })
+                                }
+                              >
+                                <option value="">Not graded</option>
+                                {[0, 1, 2, 3, 4, 5].map((n) => (
+                                  <option key={n}>{n}</option>
+                                ))}
+                              </select>
+                            </label>
+                            {enhancedMode && (
+                              <EnhancedFields
+                                section="result"
+                                value={enhanced}
+                                onChange={changeEnhanced}
+                              />
+                            )}
+                          </>,
+                        )}
                         {enhancedMode && (
                           <EnhancedFields
                             section="miss"
@@ -923,177 +937,239 @@ export default function CoachLab({
                             onChange={changeEnhanced}
                           />
                         )}
-                        {choose("deficiency", "Deficiency", deficiencies)}
-                        {choose("line", "Line", lines)}
-                        {choose("release", "Release", releases)}
-                        {choose("technical", "Technical", technicals)}
-                      </>,
-                    )}
-                    {choose("review", "Review category", reviews)}
-                    <label>
-                      Excluded attempt
-                      <select
-                        value={draft.excluded ?? ""}
-                        onChange={(e) =>
-                          setDraft({
-                            ...draft,
-                            excluded: (e.target.value ||
-                              null) as Shot["excluded"],
-                            grade: e.target.value ? null : draft.grade,
-                          })
-                        }
-                      >
-                        <option value="">Include in scoring</option>
-                        {exclusions.map((v) => (
-                          <option key={v}>{v}</option>
-                        ))}
-                      </select>
-                    </label>
-                  </div>
-                  {enhancedMode && (
-                    <div className="enhanced">
-                      <button
-                        type="button"
-                        onClick={async () => {
-                          try {
-                            sessionStorage.removeItem(enhancedKey);
-                          } catch {
-                            /* Optional storage. */
-                          }
-                          setEnhancedDraft(null);
-                          await enhancedData.reload();
-                        }}
-                      >
-                        Discard Enhanced draft and reload
-                      </button>
-                      {enhancedData.error && (
-                        <p role="alert">{enhancedData.error}</p>
-                      )}
-                      {!!enhancedRecord?.conflicts?.length && (
-                        <p role="alert">
-                          Enhanced observations need review:{" "}
-                          {enhancedRecord.conflicts.join(", ")}
-                        </p>
-                      )}
-                      <details>
-                        <summary>Detailed Enhanced review · optional</summary>
-                        <EnhancedFields
-                          value={enhanced}
-                          onChange={changeEnhanced}
-                          shots={shots}
-                          source={draft}
-                          paths={metrics.preferences.definitions.namedPaths
-                            .split("\n")
-                            .filter(Boolean)}
-                        />
-                      </details>
-                      {enhancedData.ready && context && (
-                        <GameContext
-                          gameId={context.gameId}
-                          eventId={context.eventId}
-                          documents={enhancedData.documents}
-                          onSaved={enhancedData.reload}
-                        />
-                      )}
+                        <EntryOverlay
+                          title="Observed miss details"
+                          description="Deficiency, line, release and technical observations."
+                        >
+                          <div className="coach-entry-grid">
+                            {choose("deficiency", "Deficiency", deficiencies)}
+                            {choose("line", "Line", lines)}
+                            {choose("release", "Release", releases)}
+                            {choose("technical", "Technical", technicals)}
+                          </div>
+                        </EntryOverlay>
+                      </div>
                     </div>
-                  )}
-                  <details>
-                    <summary>Turn / target guide</summary>
-                    <p>
-                      CW / CCW: clockwise / counterclockwise. C / S: broom
-                      inside / outside the four-foot lines. IO: travel away from
-                      centre; other codes mean towards centre.
-                    </p>
-                  </details>
-                  <label>
-                    Flag shot for review
-                    <select
-                      value={(draft.flagged ?? !!draft.review) ? "yes" : "no"}
-                      onChange={(e) =>
-                        setDraft({
-                          ...draft,
-                          flagged: e.target.value === "yes",
-                          flaggedAt:
-                            e.target.value === "yes"
-                              ? new Date().toISOString()
-                              : draft.flaggedAt,
-                        })
-                      }
-                    >
-                      <option value="no">No</option>
-                      <option value="yes">Yes</option>
-                    </select>
-                  </label>
-                  {(draft.flagged ?? !!draft.review) && (
-                    <div className="coach-video-fields">
-                      <div
-                        className="coach-time-presets"
-                        role="group"
-                        aria-label="Go back presets"
+                    <aside className="tracker-entry-aside">
+                      <section
+                        className="tracker-context-card"
+                        aria-label="Current shot context"
                       >
-                        {[30, 45, 60, 90, 120, 180, 240].map((seconds) => (
-                          <button
-                            key={seconds}
-                            type="button"
-                            aria-pressed={
-                              (draft.videoReview?.lookBackSeconds ?? 30) ===
-                              seconds
+                        <h3>Game context</h3>
+                        <p>{context?.label ?? "Local practice game"}</p>
+                        <dl>
+                          <div>
+                            <dt>Player</dt>
+                            <dd>
+                              {
+                                players.find((p) => p.id === draft.playerId)
+                                  ?.name
+                              }
+                            </dd>
+                          </div>
+                          <div>
+                            <dt>Position</dt>
+                            <dd>{draft.position}</dd>
+                          </div>
+                          <div>
+                            <dt>End / rock</dt>
+                            <dd>
+                              {draft.end} / {rockNumber(draft)} of 8
+                            </dd>
+                          </div>
+                        </dl>
+                      </section>
+                      <EntryOverlay
+                        title="Notes & review"
+                        description={
+                          draft.note
+                            ? "Coaching note added · edit notes and flags."
+                            : (draft.flagged ?? !!draft.review)
+                              ? "Flagged for review · edit notes and flags."
+                              : "Add a coaching note, flag or review category."
+                        }
+                        className="tracker-notes"
+                      >
+                        <div className="coach-entry-grid">
+                          {choose("review", "Review category", reviews)}
+                          <label>
+                            Excluded attempt
+                            <select
+                              value={draft.excluded ?? ""}
+                              onChange={(e) =>
+                                setDraft({
+                                  ...draft,
+                                  excluded: (e.target.value ||
+                                    null) as Shot["excluded"],
+                                  grade: e.target.value ? null : draft.grade,
+                                })
+                              }
+                            >
+                              <option value="">Include in scoring</option>
+                              {exclusions.map((v) => (
+                                <option key={v}>{v}</option>
+                              ))}
+                            </select>
+                          </label>
+                        </div>
+                        <label>
+                          Flag shot for review
+                          <select
+                            value={
+                              (draft.flagged ?? !!draft.review) ? "yes" : "no"
                             }
-                            onClick={() =>
+                            onChange={(e) =>
                               setDraft({
                                 ...draft,
-                                videoReview: {
-                                  url: "",
-                                  positionSeconds: null,
-                                  ...draft.videoReview,
-                                  lookBackSeconds: seconds,
-                                },
+                                flagged: e.target.value === "yes",
+                                flaggedAt:
+                                  e.target.value === "yes"
+                                    ? new Date().toISOString()
+                                    : draft.flaggedAt,
                               })
                             }
                           >
-                            {seconds < 120 ? `${seconds}s` : `${seconds / 60}m`}
-                          </button>
-                        ))}
-                      </div>
-                      <label>
-                        Go back (seconds)
-                        <input
-                          type="number"
-                          min="0"
-                          max="3600"
-                          step="1"
-                          value={draft.videoReview?.lookBackSeconds ?? 30}
-                          onChange={(e) =>
-                            setDraft({
-                              ...draft,
-                              videoReview: {
-                                url: "",
-                                positionSeconds: null,
-                                ...draft.videoReview,
-                                lookBackSeconds: Number(e.target.value),
-                              },
-                            })
-                          }
-                        />
-                      </label>
-                      <p>
-                        Flag time saved automatically. Review links use the
-                        game’s CurlStreamer broadcast when video timing is
-                        available. Refresh the event after the broadcast starts.
-                      </p>
-                    </div>
-                  )}
-                  <label>
-                    Private coaching note
-                    <textarea
-                      rows={4}
-                      maxLength={1000}
-                      value={draft.note}
-                      onChange={(e) =>
-                        setDraft({ ...draft, note: e.target.value })
-                      }
-                    />
-                  </label>
+                            <option value="no">No</option>
+                            <option value="yes">Yes</option>
+                          </select>
+                        </label>
+                        {(draft.flagged ?? !!draft.review) && (
+                          <div className="coach-video-fields">
+                            <div
+                              className="coach-time-presets"
+                              role="group"
+                              aria-label="Go back presets"
+                            >
+                              {[30, 45, 60, 90, 120, 180, 240].map(
+                                (seconds) => (
+                                  <button
+                                    key={seconds}
+                                    type="button"
+                                    aria-pressed={
+                                      (draft.videoReview?.lookBackSeconds ??
+                                        30) === seconds
+                                    }
+                                    onClick={() =>
+                                      setDraft({
+                                        ...draft,
+                                        videoReview: {
+                                          url: "",
+                                          positionSeconds: null,
+                                          ...draft.videoReview,
+                                          lookBackSeconds: seconds,
+                                        },
+                                      })
+                                    }
+                                  >
+                                    {seconds < 120
+                                      ? `${seconds}s`
+                                      : `${seconds / 60}m`}
+                                  </button>
+                                ),
+                              )}
+                            </div>
+                            <label>
+                              Go back (seconds)
+                              <input
+                                type="number"
+                                min="0"
+                                max="3600"
+                                step="1"
+                                value={draft.videoReview?.lookBackSeconds ?? 30}
+                                onChange={(e) =>
+                                  setDraft({
+                                    ...draft,
+                                    videoReview: {
+                                      url: "",
+                                      positionSeconds: null,
+                                      ...draft.videoReview,
+                                      lookBackSeconds: Number(e.target.value),
+                                    },
+                                  })
+                                }
+                              />
+                            </label>
+                            <p>
+                              Flag time saved automatically. Review links use
+                              the game’s CurlStreamer broadcast when video
+                              timing is available. Refresh the event after the
+                              broadcast starts.
+                            </p>
+                          </div>
+                        )}
+                        <label>
+                          Private coaching note
+                          <textarea
+                            rows={4}
+                            maxLength={1000}
+                            value={draft.note}
+                            onChange={(e) =>
+                              setDraft({ ...draft, note: e.target.value })
+                            }
+                          />
+                        </label>
+                      </EntryOverlay>
+                      {enhancedMode && (
+                        <div className="enhanced">
+                          {enhancedData.error && (
+                            <p role="alert">{enhancedData.error}</p>
+                          )}
+                          {!!enhancedRecord?.conflicts?.length && (
+                            <p role="alert">
+                              Enhanced observations need review:{" "}
+                              {enhancedRecord.conflicts.join(", ")}
+                            </p>
+                          )}
+                          <EntryOverlay
+                            title="Detailed Enhanced review · optional"
+                            description="Historical observations, context and assessment basis."
+                          >
+                            <EnhancedFields
+                              value={enhanced}
+                              onChange={changeEnhanced}
+                              shots={shots}
+                              source={draft}
+                              paths={metrics.preferences.definitions.namedPaths
+                                .split("\n")
+                                .filter(Boolean)}
+                            />
+                            {enhancedData.ready && context && (
+                              <GameContext
+                                gameId={context.gameId}
+                                eventId={context.eventId}
+                                documents={enhancedData.documents}
+                                onSaved={enhancedData.reload}
+                              />
+                            )}
+                            <button
+                              type="button"
+                              onClick={async () => {
+                                try {
+                                  sessionStorage.removeItem(enhancedKey);
+                                } catch {
+                                  /* Optional storage. */
+                                }
+                                setEnhancedDraft(null);
+                                await enhancedData.reload();
+                              }}
+                            >
+                              Discard Enhanced draft and reload
+                            </button>
+                          </EntryOverlay>
+                        </div>
+                      )}
+                      <EntryOverlay
+                        title="Turn / target guide"
+                        description="Understand CW, CCW, C, S and IO."
+                      >
+                        <p>
+                          CW / CCW: clockwise / counterclockwise. C / S: broom
+                          inside / outside the four-foot lines. IO: travel away
+                          from centre; other codes mean towards centre.
+                        </p>
+                      </EntryOverlay>
+                    </aside>
+                  </div>
                   <div className="coach-entry-actions">
                     <button type="submit" value="save">
                       {busy

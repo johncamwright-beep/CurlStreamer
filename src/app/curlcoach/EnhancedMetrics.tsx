@@ -21,7 +21,6 @@ import {
   groups,
   label,
   preferencesSchema,
-  selectMisses,
   setupCatalogue,
   supplementSchema,
   type EnhancedRecord,
@@ -32,6 +31,11 @@ import {
 } from "@/lib/curlcoach/enhanced-catalog";
 
 import { MissPicker } from "./EntryControls";
+import { AssessmentCoverage } from "./AssessmentCoverage";
+import {
+  changeObservation,
+  resultRelevant,
+} from "@/lib/curlcoach/result-entry";
 
 import type { EnhancedDocument } from "@/lib/providers/shot-tracker-enhanced";
 
@@ -352,7 +356,6 @@ export function EnhancedFields({
               "intendedTargets",
               "intendedRelease",
               "difficulty",
-              "tolerance",
               "broadPath",
             ]
           : section === "miss"
@@ -365,53 +368,7 @@ export function EnhancedFields({
   const relevantGroups = section === "review" ? [...groups] : [];
 
   function valuesChanged(values: Values, key: string) {
-    if (key === "misses") {
-      onChange(selectMisses(value, (values.misses ?? []) as string[]));
-      return;
-    }
-
-    const next = { ...value, values, assessments: { ...value.assessments } };
-
-    const group = catalogue[key].group as (typeof groups)[number] | undefined;
-
-    if (group && values[key] !== undefined)
-      next.assessments[group] = "assessed";
-
-    if (
-      key === "contactResult" &&
-      values[key] === "intended_first_contact_missed" &&
-      !((values.misses ?? []) as string[]).some((m) => m.startsWith("flash_"))
-    ) {
-      onChange(
-        selectMisses(next, [
-          ...((values.misses ?? []) as string[]),
-          "flash_with_side_unclear",
-        ]),
-      );
-      return;
-    }
-
-    const rollMiss = {
-      too_far: "roll_too_far",
-      not_far_enough: "roll_not_far_enough",
-      wrong_direction: "roll_wrong_direction",
-      shooter_lost: "shooter_lost_when_intended_to_stay",
-    }[String(values[key])];
-
-    if (
-      key === "rollResult" &&
-      rollMiss &&
-      next.assessments.misses === "assessed"
-    ) {
-      onChange(
-        selectMisses(next, [
-          ...new Set([...((values.misses ?? []) as string[]), rollMiss]),
-        ]),
-      );
-      return;
-    }
-
-    onChange(next);
+    onChange(changeObservation(value, key, values[key]));
   }
 
   function assessment(group: (typeof groups)[number]) {
@@ -518,37 +475,39 @@ export function EnhancedFields({
 
     if (key === "misses")
       return <MissPicker key={key} value={value} onChange={onChange} />;
-    if (key === "observedWeight")
+    if (
+      [
+        "observedWeight",
+        "contactResult",
+        "rollResult",
+        "toleranceResult",
+      ].includes(key)
+    ) {
+      const group = catalogue[key].group as (typeof groups)[number];
       return (
         <label key={key}>
-          Observed weight
+          {catalogue[key].label}
           <select
-            aria-label="Observed weight"
+            aria-label={catalogue[key].label}
             value={String(
-              value.values.observedWeight ??
-                value.assessments.weight ??
-                "not_assessed",
+              value.values[key] ?? value.assessments[group] ?? "not_assessed",
             )}
             onChange={(e) => {
               const choice = e.target.value;
-              const next = {
-                ...value,
-                values: { ...value.values },
-                assessments: { ...value.assessments },
-              };
-              if (choice === "not_assessed" || choice === "not_applicable") {
-                next.assessments.weight = choice;
-                delete next.values.observedWeight;
-              } else {
-                next.assessments.weight = "assessed";
-                next.values.observedWeight = choice;
-              }
+              const cleared =
+                choice === "not_assessed" || choice === "not_applicable";
+              const next = changeObservation(
+                value,
+                key,
+                cleared ? undefined : choice,
+              );
+              if (cleared) next.assessments[group] = choice;
               onChange(next);
             }}
           >
             <option value="not_assessed">Not assessed</option>
             <option value="not_applicable">Not applicable</option>
-            {catalogue.observedWeight.choices!.map((choice) => (
+            {catalogue[key].choices!.map((choice) => (
               <option key={choice} value={choice}>
                 {label(choice)}
               </option>
@@ -556,28 +515,64 @@ export function EnhancedFields({
           </select>
         </label>
       );
+    }
 
     return <div key={key}>{control}</div>;
   }
 
-  if (section === "review" || section === "result") {
+  const detailResults = [
+    "contactResult",
+    "rollResult",
+    "rollOther",
+    "removedTargets",
+  ];
+  if (section === "call")
+    return (
+      <div className="enhanced-fields">
+        {renderField("intendedWeight")}
+        {renderField("guardToClear")}
+        <details className="enhanced-call-details">
+          <summary>Optional call details</summary>
+          <div className="enhanced-fields">
+            {selected
+              .filter((k) => k !== "intendedWeight" && k !== "guardToClear")
+              .map(renderField)}
+          </div>
+        </details>
+      </div>
+    );
+  if (section === "result")
+    return (
+      <>
+        {renderField("observedWeight")}
+        {detailResults.some((key) => resultRelevant(value.values, key)) && (
+          <details className="enhanced-result-details">
+            <summary>More details</summary>
+            <div className="enhanced-fields">
+              {detailResults
+                .filter((key) => resultRelevant(value.values, key))
+                .map(renderField)}
+            </div>
+          </details>
+        )}
+      </>
+    );
+
+  if (section === "review") {
     const sections: {
       title: string;
       fields: string[];
       assessments?: (typeof groups)[number][];
     }[] = [
       {
-        title: "Contact, roll and result assessments",
+        title: "Weight basis and historical result details",
         fields: [
           "weightBasis",
           "weightBasisOther",
-          "contactResult",
-          "rollResult",
-          "rollOther",
-          "removedTargets",
+          "tolerance",
           "toleranceResult",
+          ...detailResults.filter((key) => !resultRelevant(value.values, key)),
         ],
-        assessments: ["contact", "roll", "removal", "tolerance"],
       },
 
       {
@@ -618,22 +613,15 @@ export function EnhancedFields({
 
     return (
       <div className="enhanced-review-sections">
-        {section === "result" && (
-          <div className="enhanced-fields">{renderField("observedWeight")}</div>
-        )}
-        {sections
-          .filter((_, index) =>
-            section === "result" ? index === 0 : index !== 0,
-          )
-          .map((s) => (
-            <details key={s.title}>
-              <summary>{s.title}</summary>
-              <div className="enhanced-fields">
-                {s.assessments?.map(assessment)}
-                {s.fields.map(renderField)}
-              </div>
-            </details>
-          ))}
+        {sections.map((s) => (
+          <details key={s.title}>
+            <summary>{s.title}</summary>
+            <div className="enhanced-fields">
+              {s.assessments?.map(assessment)}
+              {s.fields.map(renderField)}
+            </div>
+          </details>
+        ))}
       </div>
     );
   }
@@ -1039,6 +1027,10 @@ export function EnhancedReview({ event }: { event: CoachEvent }) {
         />
       )}
 
+      {data.ready && (
+        <AssessmentCoverage shots={shots} documents={data.documents} />
+      )}
+
       {selected && data.ready && (
         <form
           onSubmit={async (e) => {
@@ -1130,6 +1122,35 @@ export function EnhancedReview({ event }: { event: CoachEvent }) {
                 Use current game context for this shot
               </button>
             )}
+
+          {record && (
+            <details>
+              <summary>Saved observation details</summary>
+              <dl>
+                {Object.entries((record.value as Supplement).values).map(
+                  ([key, v]) => (
+                    <div key={key}>
+                      <dt>{catalogue[key]?.label ?? label(key)}</dt>
+                      <dd>
+                        {Array.isArray(v)
+                          ? v.length
+                            ? v.map(label).join(", ")
+                            : "Explicitly none recorded"
+                          : typeof v === "string" && catalogue[key]?.choices
+                            ? label(v)
+                            : String(v)}
+                      </dd>
+                    </div>
+                  ),
+                )}
+              </dl>
+              <p>
+                {Object.entries((record.value as Supplement).assessments)
+                  .map(([key, v]) => `${label(key)}: ${label(v)}`)
+                  .join(" · ")}
+              </p>
+            </details>
+          )}
 
           {!!record?.conflicts?.length && (
             <p role="alert">

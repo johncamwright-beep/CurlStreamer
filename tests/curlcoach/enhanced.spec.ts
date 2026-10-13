@@ -74,15 +74,6 @@ test("persistent coach mode, atomic capture, Standard correction and supplementa
     .getByLabel("Shot", { exact: true })
     .selectOption("enhanced:runback_double");
   await page
-    .locator(".coach-entry-section > summary")
-    .filter({ hasText: "Shot selection" })
-    .click();
-  await expect(page.getByLabel("Shot", { exact: true })).toBeHidden();
-  await page
-    .locator(".coach-entry-section > summary")
-    .filter({ hasText: "Shot selection" })
-    .click();
-  await page
     .getByRole("combobox", { name: "Called weight", exact: true })
     .selectOption("back_12");
 
@@ -101,11 +92,15 @@ test("persistent coach mode, atomic capture, Standard correction and supplementa
   await expect(
     page.getByRole("combobox", { name: "First contact result", exact: true }),
   ).toBeHidden();
-  await page.getByText("Optional call details", { exact: true }).click();
+  await page.getByRole("button", { name: /^Optional call details/ }).click();
   await page
     .getByLabel("Contact plan", { exact: true })
     .selectOption("direct_contact_with_target");
 
+  await page
+    .getByRole("dialog")
+    .getByRole("button", { name: "Done", exact: true })
+    .click();
   await page.getByLabel("Guard to clear", { exact: true }).selectOption("yes");
 
   await page
@@ -115,7 +110,7 @@ test("persistent coach mode, atomic capture, Standard correction and supplementa
     .getByLabel("Add another miss", { exact: true })
     .selectOption("roll_too_far");
   await page.getByRole("button", { name: "Remove additional miss 1" }).click();
-  await page.getByText("More details", { exact: true }).click();
+  await page.getByRole("button", { name: /^More details/ }).click();
   await expect(
     page.getByRole("combobox", { name: "First contact result", exact: true }),
   ).toHaveValue("intended_first_contact_missed");
@@ -124,8 +119,10 @@ test("persistent coach mode, atomic capture, Standard correction and supplementa
     page.getByLabel("Target stones removed", { exact: true }),
   ).toBeHidden();
   await page
-    .getByText("Detailed Enhanced review · optional", { exact: true })
+    .getByRole("dialog")
+    .getByRole("button", { name: "Done", exact: true })
     .click();
+  await page.getByRole("button", { name: /^Detailed Enhanced review/ }).click();
   await page
     .getByText("Weight basis and historical result details", { exact: true })
     .click();
@@ -257,10 +254,14 @@ test("persistent coach mode, atomic capture, Standard correction and supplementa
     .getByRole("combobox", { name: "Called weight", exact: true })
     .selectOption("control_weight_takeout");
 
-  await page.getByText("More details", { exact: true }).click();
+  await page.getByRole("button", { name: /^More details/ }).click();
   await page
     .getByRole("combobox", { name: "First contact result", exact: true })
     .selectOption("not_assessed");
+  await page
+    .getByRole("dialog")
+    .getByRole("button", { name: "Done", exact: true })
+    .click();
   await expect(
     page.getByRole("combobox", { name: "What happened?", exact: true }),
   ).toHaveValue("not_assessed");
@@ -282,10 +283,14 @@ test("persistent coach mode, atomic capture, Standard correction and supplementa
     page.getByRole("combobox", { name: "Called weight", exact: true }),
   ).toHaveValue("control_weight_takeout");
 
-  await page.getByText("More details", { exact: true }).click();
+  await page.getByRole("button", { name: /^More details/ }).click();
   await expect(
     page.getByRole("combobox", { name: "First contact result", exact: true }),
   ).toHaveValue("not_assessed");
+  await page
+    .getByRole("dialog")
+    .getByRole("button", { name: "Done", exact: true })
+    .click();
   const cleared = await (await page.request.get(url)).json();
   const clearedValue = cleared.documents.find(
     (d: { shotId: string }) => d.shotId === saved.shotId,

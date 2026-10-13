@@ -320,6 +320,7 @@ test("reload preserves drafts and lineup changes never rewrite recorded players"
   await expect(
     page.getByRole("combobox", { name: "Stone", exact: true }),
   ).toHaveValue("2");
+  await page.getByRole("button", { name: /^Notes & review/ }).click();
   await page.getByLabel("Private coaching note").fill("Next rock note");
   await page.reload();
   await expect(page.getByLabel("Private coaching note")).toHaveValue(

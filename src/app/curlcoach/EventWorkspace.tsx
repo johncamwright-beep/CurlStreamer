@@ -57,6 +57,8 @@ import {
 } from "@/lib/curlcoach/analysis";
 import EventReportLibrary from "./EventReportLibrary";
 import ScoringWakeLock from "./ScoringWakeLock";
+import EntryOverlay from "./EntryOverlay";
+import ShotTrackerBrand from "./ShotTrackerBrand";
 import "./coach.css";
 const pages = [
   "Charting",
@@ -288,7 +290,6 @@ function WorkspaceContent({
 }) {
   const metrics = useMetrics();
   const reloadMetrics = metrics.reload;
-  const [menuOpen, setMenuOpen] = useState(false);
   const [shotFilters, setShotFilters] = useState(defaultShotFilters);
   const drafts = useRef(new Map<string, TrackerResume>());
   const resumeStore = useRef<ResumeStore | null>(null);
@@ -665,64 +666,84 @@ function WorkspaceContent({
     <div className="coach-workspace">
       <aside className="event-sidebar">
         <div className="coach-topbar">
-          <button
-            type="button"
-            className="coach-menu-toggle"
-            aria-label="Shot Tracker menu"
-            aria-expanded={menuOpen}
-            aria-controls="coach-menu"
-            onClick={() => setMenuOpen(!menuOpen)}
+          <ShotTrackerBrand />
+          <nav
+            className="tracker-primary-nav"
+            aria-label="Shot Tracker shortcuts"
           >
-            <span aria-hidden="true">☰</span> {view}
-          </button>
-        </div>
-        <div
-          id="coach-menu"
-          hidden={!menuOpen}
-          onKeyDown={(e) => {
-            if (e.key === "Escape") {
-              setMenuOpen(false);
-              document
-                .querySelector<HTMLButtonElement>(".coach-menu-toggle")
-                ?.focus();
-            }
-          }}
-        >
-          <a className="event-brand" href="#charting">
-            SHOT <span>TRACKER</span>
-          </a>
-          <nav aria-label="Shot Tracker pages">
-            {pages
-              .filter(
-                (page) =>
-                  page !== "Enhanced review" ||
-                  metrics.preferences.mode === "enhanced",
-              )
-              .map((page) => (
-                <a
-                  href={`#${slug(page)}`}
-                  onClick={() => setMenuOpen(false)}
-                  aria-current={view === page ? "page" : undefined}
-                  key={page}
-                >
-                  {page}
-                </a>
-              ))}
+            <a
+              href="#charting"
+              aria-current={view === "Charting" ? "page" : undefined}
+            >
+              Charting
+            </a>
+            <a
+              href="#shot-performance"
+              aria-current={statistics ? "page" : undefined}
+            >
+              Analysis
+            </a>
+            <a
+              href="#flagged-shots"
+              aria-current={view === "Flagged shots" ? "page" : undefined}
+            >
+              Flagged shots
+            </a>
+            <a
+              href="#event-reports"
+              aria-current={view === "Event reports" ? "page" : undefined}
+            >
+              Reports
+            </a>
+            <a
+              href="#options"
+              aria-current={view === "Options" ? "page" : undefined}
+            >
+              Options
+            </a>
           </nav>
-          <div className="event-sidebar-footer">
-            {mode === "streamer" ? (
-              <nav aria-label="Account">
-                <a href="/account">Account &amp; Settings</a>
-                {platformAdmin && <a href="/admin">Platform administration</a>}
+          <EntryOverlay
+            title="Shot Tracker menu"
+            className="tracker-navigation"
+          >
+            <div
+              id="coach-menu"
+              onClick={(e) => {
+                if ((e.target as HTMLElement).closest("a"))
+                  e.currentTarget.closest("dialog")?.close();
+              }}
+            >
+              <nav aria-label="Shot Tracker pages">
+                {pages
+                  .filter(
+                    (page) =>
+                      page !== "Enhanced review" ||
+                      metrics.preferences.mode === "enhanced",
+                  )
+                  .map((page) => (
+                    <a
+                      href={`#${slug(page)}`}
+                      aria-current={view === page ? "page" : undefined}
+                      key={page}
+                    >
+                      {page}
+                    </a>
+                  ))}
               </nav>
-            ) : (
-              <>
-                Local development
-                <br />
-                Add-on disabled in production
-              </>
-            )}
-          </div>
+              <div className="event-sidebar-footer">
+                {mode === "streamer" ? (
+                  <nav aria-label="Account">
+                    <a href="/account">Account &amp; Settings</a>
+                    {platformAdmin && (
+                      <a href="/admin">Platform administration</a>
+                    )}
+                  </nav>
+                ) : (
+                  <p>Local development · Synthetic data</p>
+                )}
+              </div>
+            </div>
+          </EntryOverlay>
         </div>
       </aside>
       <main className="event-main">

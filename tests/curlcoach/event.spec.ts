@@ -98,9 +98,14 @@ test("charting draft survives analysis navigation and season reads are cached", 
       .click();
   }
   await page.getByLabel("End", { exact: true }).fill("3");
+  await page.getByRole("button", { name: /^Notes & review/ }).click();
   await page
     .getByLabel("Private coaching note")
     .fill("Keep this unsaved draft");
+  await page
+    .getByRole("dialog")
+    .getByRole("button", { name: "Done", exact: true })
+    .click();
   let reads = 0;
   page.on("request", (request) => {
     if (

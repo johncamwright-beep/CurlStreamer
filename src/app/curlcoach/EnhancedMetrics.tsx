@@ -31,6 +31,7 @@ import {
 } from "@/lib/curlcoach/enhanced-catalog";
 
 import { MissPicker } from "./EntryControls";
+import EntryOverlay from "./EntryOverlay";
 import { AssessmentCoverage } from "./AssessmentCoverage";
 import {
   changeObservation,
@@ -531,14 +532,17 @@ export function EnhancedFields({
       <div className="enhanced-fields">
         {renderField("intendedWeight")}
         {renderField("guardToClear")}
-        <details className="enhanced-call-details">
-          <summary>Optional call details</summary>
+        <EntryOverlay
+          className="enhanced-call-details"
+          title="Optional call details"
+          description="Contact plan, roll, targets and release."
+        >
           <div className="enhanced-fields">
             {selected
               .filter((k) => k !== "intendedWeight" && k !== "guardToClear")
               .map(renderField)}
           </div>
-        </details>
+        </EntryOverlay>
       </div>
     );
   if (section === "result")
@@ -546,14 +550,17 @@ export function EnhancedFields({
       <>
         {renderField("observedWeight")}
         {detailResults.some((key) => resultRelevant(value.values, key)) && (
-          <details className="enhanced-result-details">
-            <summary>More details</summary>
+          <EntryOverlay
+            className="enhanced-result-details"
+            title="More details"
+            description="First contact, roll and target stones removed."
+          >
             <div className="enhanced-fields">
               {detailResults
                 .filter((key) => resultRelevant(value.values, key))
                 .map(renderField)}
             </div>
-          </details>
+          </EntryOverlay>
         )}
       </>
     );

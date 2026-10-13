@@ -1182,3 +1182,463 @@
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 140px), 1fr));
   gap: 10px;
 }
+/* Shot Tracker workspace refresh: stable canvas, overlay detail, touch-first entry. */
+.coach-workspace {
+  background: radial-gradient(ellipse at top left, #10283e 0, #081522 55%);
+  color: #eaf2fc;
+}
+.coach-workspace .event-sidebar {
+  background: #0c1d30;
+  border-color: #294259;
+  padding: 12px 24px;
+}
+.coach-topbar {
+  flex-wrap: nowrap;
+  gap: 20px;
+}
+.shot-tracker-brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: #f3f7ff;
+  text-decoration: none;
+  min-height: 48px;
+  flex-shrink: 0;
+}
+.shot-tracker-brand > span {
+  font-size: 24px;
+  font-weight: 750;
+  letter-spacing: -0.025em;
+}
+.shot-tracker-brand small {
+  display: block;
+  font-size: 12px;
+  color: #99b6d3;
+  font-weight: 400;
+  letter-spacing: 0;
+}
+.event-sidebar .tracker-primary-nav {
+  margin-left: auto;
+  flex-direction: row;
+  gap: 4px;
+}
+.event-sidebar nav a[aria-current="page"] {
+  background: #183855;
+  color: #8ecaff;
+  box-shadow: inset 0 -2px #50a9ff;
+}
+.tracker-navigation {
+  flex: 0 0 auto;
+}
+.coach-workspace button {
+  background: #153149;
+  color: #e4f1ff;
+  border-color: #34536c;
+}
+.coach-workspace button:hover:not(:disabled) {
+  border-color: #64b6ff;
+}
+.coach-workspace :focus-visible {
+  outline: 3px solid #72bdff;
+  outline-offset: 3px;
+}
+.coach-workspace .event-main {
+  width: 100%;
+  max-width: 1500px;
+  margin: auto;
+  padding: 24px 28px 80px;
+}
+.event-header h1 {
+  font-size: clamp(24px, 3vw, 32px);
+  letter-spacing: -0.025em;
+}
+.event-header > .event-filter-bar {
+  gap: 12px;
+}
+.coach-workspace select,
+.coach-workspace input,
+.coach-workspace textarea {
+  background: #0a1c2c;
+  border: 1px solid #35536c;
+  color: #eff6ff;
+  border-radius: 9px;
+}
+.coach-workspace select:focus,
+.coach-workspace input:focus,
+.coach-workspace textarea:focus {
+  border-color: #50aaff;
+}
+.coach-workspace .coach-scoring .coach-panel {
+  background: #0e2032;
+  border-color: #2b465d;
+  border-radius: 14px;
+  padding: 20px;
+}
+.coach-workspace .coach-scoring .tracker-entry-panel {
+  background: transparent;
+  border: 0;
+  padding: 0;
+  margin-top: 24px;
+}
+.tracker-entry-panel > p {
+  margin: 4px 0 18px;
+  color: #aec5db;
+}
+.tracker-entry-layout {
+  display: grid;
+  gap: 18px;
+  align-items: start;
+}
+.tracker-quick-entry,
+.tracker-context-card {
+  background: #0d2032;
+  border: 1px solid #2c4d65;
+  border-radius: 14px;
+  padding: 20px;
+}
+.tracker-quick-heading {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: start;
+  margin-bottom: 22px;
+}
+.tracker-quick-heading h3,
+.tracker-context-card h3 {
+  font-size: 18px;
+  font-weight: 700;
+  margin: 0;
+}
+.tracker-quick-heading p {
+  margin: 5px 0 0;
+  color: #9eb9d2;
+  font-size: 13px;
+}
+.tracker-quick-heading a {
+  color: #80bfff;
+  font-size: 12px;
+  padding: 12px 0;
+}
+.coach-workspace .coach-scoring .coach-fields {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px 10px;
+}
+.coach-workspace .coach-scoring label {
+  font-size: 13px;
+  gap: 7px;
+}
+.coach-workspace .coach-scoring input,
+.coach-workspace .coach-scoring select,
+.coach-workspace .coach-scoring textarea {
+  min-height: 48px;
+  font-size: 16px;
+  padding: 10px;
+}
+.coach-entry-section {
+  border: 0;
+  padding: 0;
+  margin-top: 10px;
+}
+.coach-entry-section h3 {
+  font-size: 12px;
+  font-weight: 650;
+  text-transform: uppercase;
+  color: #8cabc6;
+  letter-spacing: 0.07em;
+  margin: 0 0 10px;
+}
+.coach-entry-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+.coach-fields > .enhanced-miss-rows,
+.coach-fields > .entry-overlay {
+  grid-column: 1 / -1;
+}
+.tracker-entry-aside {
+  display: grid;
+  gap: 12px;
+}
+.tracker-entry-aside .enhanced {
+  margin: 0;
+}
+.tracker-context-card p {
+  color: #bed5e9;
+  margin: 12px 0;
+}
+.tracker-context-card dl {
+  margin: 0;
+  border-top: 1px solid #29475e;
+  padding-top: 12px;
+}
+.tracker-context-card dl > div {
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+  padding: 6px 0;
+  font-size: 14px;
+}
+.tracker-context-card dt {
+  color: #94afc9;
+}
+.tracker-context-card dd {
+  margin: 0;
+  text-align: right;
+}
+.coach-workspace .entry-overlay-trigger {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  text-align: left;
+  padding: 16px;
+  margin: 0;
+  background: #10283d;
+  border: 1px solid #2d506b;
+  border-radius: 12px;
+}
+.entry-overlay-trigger strong {
+  display: block;
+  font-size: 14px;
+}
+.entry-overlay-trigger small {
+  display: block;
+  margin-top: 5px;
+  color: #9fbbd4;
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.5;
+}
+.entry-overlay-trigger > span:last-child {
+  color: #67b5ff;
+}
+.coach-workspace .tracker-navigation .entry-overlay-trigger {
+  padding: 12px;
+}
+.entry-dialog {
+  color: #eaf3ff;
+  background: #0d2134;
+  border: 1px solid #436680;
+  border-radius: 18px;
+  width: min(720px, calc(100vw - 32px));
+  max-height: 85dvh;
+  padding: 0;
+  margin: auto;
+  box-shadow: 0 28px 90px #0009;
+}
+.entry-dialog::backdrop {
+  background: #020b16b8;
+  backdrop-filter: blur(4px);
+}
+.entry-dialog[open] {
+  display: flex;
+  flex-direction: column;
+}
+.entry-dialog-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px 20px;
+  border-bottom: 1px solid #35546c;
+}
+.entry-dialog-heading h2 {
+  margin: 0 !important;
+  font-size: 18px !important;
+}
+.coach-workspace .entry-dialog-heading button {
+  min-width: 44px;
+  margin: 0;
+  font-size: 24px;
+  padding: 4px;
+}
+.entry-dialog-content {
+  padding: 20px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  min-height: 0;
+}
+.entry-dialog-content > label {
+  margin-block: 14px !important;
+}
+.entry-dialog footer {
+  padding: 12px 20px max(12px, env(safe-area-inset-bottom));
+  border-top: 1px solid #35546c;
+}
+.coach-workspace .entry-dialog footer button {
+  margin: 0;
+  width: 100%;
+  background: #459ef5;
+  color: #061827;
+}
+.entry-dialog #coach-menu {
+  max-height: none;
+  max-width: none;
+  padding: 0;
+}
+.coach-workspace .coach-entry-actions {
+  position: sticky;
+  bottom: 0;
+  z-index: 10;
+  background: #0b1b2ef2;
+  border: 1px solid #304c65;
+  border-radius: 12px;
+  padding: 12px;
+  margin: 18px 0;
+  box-shadow: 0 -8px 24px #0002;
+}
+.coach-workspace .coach-entry-actions button[value="save"] {
+  background: #469ff6;
+  color: #071b2e;
+  border-color: #76bfff;
+}
+.coach-workspace .coach-entry-actions button[value="next"] {
+  border-color: #48a6ff;
+  color: #b8ddff;
+}
+@media (min-width: 1050px) {
+  .tracker-entry-layout {
+    grid-template-columns: minmax(0, 2fr) minmax(280px, 1fr);
+  }
+}
+@media (max-width: 1100px) {
+  .event-sidebar .tracker-primary-nav {
+    display: none;
+  }
+  .tracker-navigation {
+    margin-left: auto;
+  }
+}
+@media (max-width: 600px) {
+  .coach-workspace .event-sidebar {
+    padding: 10px 14px;
+  }
+  .shot-tracker-brand > span {
+    font-size: 21px;
+  }
+  .shot-tracker-brand small {
+    display: none;
+  }
+  .tracker-navigation .entry-overlay-trigger strong {
+    font-size: 0;
+  }
+  .tracker-navigation .entry-overlay-trigger strong::after {
+    content: "☰";
+    font-size: 22px;
+  }
+  .tracker-navigation .entry-overlay-trigger > span:last-child {
+    display: none;
+  }
+  .coach-workspace .event-main {
+    padding: 18px 12px 70px;
+  }
+  .tracker-quick-entry {
+    padding: 16px 12px;
+  }
+  .tracker-quick-heading {
+    flex-wrap: wrap;
+    margin-bottom: 16px;
+    gap: 0;
+  }
+  .tracker-quick-heading a {
+    padding: 10px 0 0;
+  }
+  .coach-workspace .coach-scoring .coach-fields {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .coach-entry-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .tracker-context-card {
+    display: none;
+  }
+  .entry-dialog {
+    width: 100%;
+    max-width: 100%;
+    max-height: 88dvh;
+    margin: auto 0 0;
+    border-radius: 20px 20px 0 0;
+  }
+  .entry-dialog-heading {
+    padding: 14px 16px;
+  }
+  .entry-dialog-content {
+    padding: 16px;
+  }
+  .coach-workspace .coach-entry-actions {
+    gap: 8px;
+    padding: 10px;
+    bottom: 0;
+  }
+  .coach-entry-actions button[value="save"],
+  .coach-entry-actions button[value="next"] {
+    flex: 1 1 40%;
+  }
+  .coach-entry-actions button {
+    font-size: 13px;
+  }
+}
+
+@media (min-width: 1050px) {
+  .event-header {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: end;
+    gap: 24px;
+  }
+  .event-header > .event-filter-bar {
+    grid-column: 2;
+    grid-row: 1;
+  }
+  .event-header > button {
+    grid-column: 3;
+    grid-row: 1;
+  }
+  .coach-scoring > header.coach-panel {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 16px;
+    padding: 12px 18px;
+  }
+  .coach-scoring > header.coach-panel h2 {
+    margin: 0;
+  }
+  .coach-session-actions button {
+    margin-top: 0;
+  }
+}
+@media (max-width: 600px) {
+  .coach-session-actions {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    padding-bottom: 4px;
+  }
+  .coach-session-actions button {
+    flex: 0 0 auto;
+    margin-top: 0;
+  }
+  .coach-workspace .coach-entry-actions {
+    position: fixed;
+    left: 12px;
+    right: 12px;
+    width: auto;
+    bottom: max(8px, env(safe-area-inset-bottom));
+    margin: 0;
+  }
+  .coach-scoring {
+    padding-bottom: 130px;
+  }
+}
+@media (min-width: 1200px) {
+  .tracker-quick-entry
+    .coach-entry-section[aria-label="Shot selection"]
+    .coach-entry-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+  .tracker-quick-entry
+    .coach-entry-section[aria-label="Execution"]
+    .coach-entry-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}

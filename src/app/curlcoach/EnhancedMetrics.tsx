@@ -31,6 +31,8 @@ import {
   type Values,
 } from "@/lib/curlcoach/enhanced-catalog";
 
+import { MissPicker } from "./EntryControls";
+
 import type { EnhancedDocument } from "@/lib/providers/shot-tracker-enhanced";
 
 import { gameShots, type CoachEvent } from "@/lib/curlcoach/event";
@@ -185,34 +187,67 @@ export function ValueField({
     onChange(copy);
   }
 
-  if (field.multiple)
+  if (field.multiple) {
+    const selected = Array.isArray(value) ? value : [];
     return (
-      <fieldset className="enhanced-multiple">
-        <legend>{field.label}</legend>
-        {field.choices!.map((choice) => (
-          <label key={choice}>
-            <input
-              type="checkbox"
-              checked={Array.isArray(value) && value.includes(choice)}
-              onChange={(e) =>
-                set(
-                  e.target.checked
-                    ? [...(Array.isArray(value) ? value : []), choice]
-                    : (Array.isArray(value) ? value : []).filter(
-                        (v) => v !== choice,
-                      ),
-                )
-              }
-            />
-            {label(choice)}
-          </label>
+      <div className="enhanced-multiple">
+        {selected.map((choice, index) => (
+          <div className="enhanced-select-row" key={index}>
+            <label>
+              {field.label} {index + 1}
+              <select
+                aria-label={`${field.label} ${index + 1}`}
+                value={choice}
+                onChange={(e) =>
+                  set(
+                    selected.map((v, i) => (i === index ? e.target.value : v)),
+                  )
+                }
+              >
+                {field
+                  .choices!.filter((v) => v === choice || !selected.includes(v))
+                  .map((v) => (
+                    <option key={v} value={v}>
+                      {label(v)}
+                    </option>
+                  ))}
+              </select>
+            </label>
+            <button
+              type="button"
+              aria-label={`Remove ${field.label.toLowerCase()} ${index + 1}`}
+              onClick={() => set(selected.filter((_, i) => i !== index))}
+            >
+              Remove
+            </button>
+          </div>
         ))}
-        <button type="button" onClick={() => set([])}>
-          Assessed with no listed{" "}
-          {name === "misses" ? "miss" : "additional issue"}
-        </button>
-      </fieldset>
+        <label>
+          {selected.length ? `Add ${field.label.toLowerCase()}` : field.label}
+          <select
+            aria-label={field.label}
+            value={Array.isArray(value) && !selected.length ? "none" : ""}
+            onChange={(e) => {
+              if (e.target.value === "none") set([]);
+              else if (e.target.value) set([...selected, e.target.value]);
+            }}
+          >
+            <option value="">
+              {selected.length ? "Choose another" : "Not recorded"}
+            </option>
+            {!selected.length && <option value="none">None recorded</option>}
+            {field
+              .choices!.filter((v) => !selected.includes(v))
+              .map((v) => (
+                <option key={v} value={v}>
+                  {label(v)}
+                </option>
+              ))}
+          </select>
+        </label>
+      </div>
     );
+  }
 
   return (
     <label>
@@ -298,7 +333,7 @@ export function EnhancedFields({
 }: {
   value: Supplement;
   onChange: (s: Supplement) => void;
-  section?: "detail" | "call" | "miss" | "review";
+  section?: "detail" | "call" | "miss" | "result" | "review" | "otherDetail";
   paths?: string[];
   shots?: (Shot & { id: string })[];
   source?: Shot;
@@ -306,26 +341,28 @@ export function EnhancedFields({
   const selected =
     section === "detail"
       ? ["detail", "detailOther"]
-      : section === "call"
-        ? ["intendedWeight", "contactPlan", "guardToClear"]
-        : section === "miss"
+      : section === "otherDetail"
+        ? ["detailOther"]
+        : section === "call"
           ? [
-              "observedWeight",
-              "misses",
-              "primaryMiss",
-              "missOther",
+              "intendedWeight",
+              "contactPlan",
+              "guardToClear",
+              "intendedRoll",
+              "intendedTargets",
+              "intendedRelease",
+              "difficulty",
+              "tolerance",
               "broadPath",
             ]
-          : Object.keys(catalogue).filter(
-              (k) => catalogue[k].location === "Review",
-            );
-
-  const relevantGroups =
-    section === "review"
-      ? [...groups]
-      : section === "miss"
-        ? (["weight", "misses"] as const)
-        : [];
+          : section === "miss"
+            ? ["misses", "missOther"]
+            : section === "result"
+              ? ["observedWeight"]
+              : Object.keys(catalogue).filter(
+                  (k) => catalogue[k].location === "Review",
+                );
+  const relevantGroups = section === "review" ? [...groups] : [];
 
   function valuesChanged(values: Values, key: string) {
     if (key === "misses") {
@@ -480,40 +517,55 @@ export function EnhancedFields({
     );
 
     if (key === "misses")
+      return <MissPicker key={key} value={value} onChange={onChange} />;
+    if (key === "observedWeight")
       return (
-        <details key={key} className="enhanced-miss-picker">
-          <summary>
-            Observed miss details ·{" "}
-            {(value.values.misses as string[] | undefined)?.length
-              ? (value.values.misses as string[]).map(label).join(", ")
-              : value.assessments.misses === "assessed" && value.values.misses
-                ? "No listed miss"
-                : "Not assessed"}
-          </summary>
-          {control}
-        </details>
+        <label key={key}>
+          Observed weight
+          <select
+            aria-label="Observed weight"
+            value={String(
+              value.values.observedWeight ??
+                value.assessments.weight ??
+                "not_assessed",
+            )}
+            onChange={(e) => {
+              const choice = e.target.value;
+              const next = {
+                ...value,
+                values: { ...value.values },
+                assessments: { ...value.assessments },
+              };
+              if (choice === "not_assessed" || choice === "not_applicable") {
+                next.assessments.weight = choice;
+                delete next.values.observedWeight;
+              } else {
+                next.assessments.weight = "assessed";
+                next.values.observedWeight = choice;
+              }
+              onChange(next);
+            }}
+          >
+            <option value="not_assessed">Not assessed</option>
+            <option value="not_applicable">Not applicable</option>
+            {catalogue.observedWeight.choices!.map((choice) => (
+              <option key={choice} value={choice}>
+                {label(choice)}
+              </option>
+            ))}
+          </select>
+        </label>
       );
 
     return <div key={key}>{control}</div>;
   }
 
-  if (section === "review") {
+  if (section === "review" || section === "result") {
     const sections: {
       title: string;
       fields: string[];
       assessments?: (typeof groups)[number][];
     }[] = [
-      {
-        title: "Called shot context",
-        fields: [
-          "intendedRoll",
-          "intendedTargets",
-          "intendedRelease",
-          "difficulty",
-          "tolerance",
-        ],
-      },
-
       {
         title: "Contact, roll and result assessments",
         fields: [
@@ -565,16 +617,23 @@ export function EnhancedFields({
     ];
 
     return (
-      <div>
-        {sections.map((s) => (
-          <details key={s.title}>
-            <summary>{s.title}</summary>
-            <div className="enhanced-fields">
-              {s.assessments?.map(assessment)}
-              {s.fields.map(renderField)}
-            </div>
-          </details>
-        ))}
+      <div className="enhanced-review-sections">
+        {section === "result" && (
+          <div className="enhanced-fields">{renderField("observedWeight")}</div>
+        )}
+        {sections
+          .filter((_, index) =>
+            section === "result" ? index === 0 : index !== 0,
+          )
+          .map((s) => (
+            <details key={s.title}>
+              <summary>{s.title}</summary>
+              <div className="enhanced-fields">
+                {s.assessments?.map(assessment)}
+                {s.fields.map(renderField)}
+              </div>
+            </details>
+          ))}
       </div>
     );
   }
@@ -1080,9 +1139,27 @@ export function EnhancedReview({ event }: { event: CoachEvent }) {
             </p>
           )}
 
-          <EnhancedFields section="detail" value={draft} onChange={setDraft} />
-          <EnhancedFields section="call" value={draft} onChange={setDraft} />
-          <EnhancedFields section="miss" value={draft} onChange={setDraft} />
+          <details className="coach-entry-section" open>
+            <summary>Shot selection</summary>
+            <EnhancedFields
+              section="detail"
+              value={draft}
+              onChange={setDraft}
+            />
+            <EnhancedFields section="call" value={draft} onChange={setDraft} />
+          </details>
+          <details className="coach-entry-section" open>
+            <summary>Execution</summary>
+            <EnhancedFields
+              section="result"
+              value={draft}
+              onChange={setDraft}
+            />
+          </details>
+          <details className="coach-entry-section" open>
+            <summary>Observed misses</summary>
+            <EnhancedFields section="miss" value={draft} onChange={setDraft} />
+          </details>
           <EnhancedFields
             value={draft}
             onChange={setDraft}

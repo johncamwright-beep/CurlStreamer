@@ -65,18 +65,23 @@ test("persistent coach mode, atomic capture, Standard correction and supplementa
     .getByRole("combobox", { name: "Stone", exact: true })
     .selectOption("1");
 
+  await expect(page.getByLabel("Shot type", { exact: true })).toHaveCount(0);
+  await expect(page.getByLabel("Detailed shot", { exact: true })).toHaveCount(
+    0,
+  );
+  await page.getByLabel("Shot", { exact: true }).selectOption("standard:Draw");
   await page
-    .getByRole("combobox", { name: "Shot type", exact: true })
-    .selectOption("");
-
+    .getByLabel("Shot", { exact: true })
+    .selectOption("enhanced:runback_double");
   await page
-    .getByLabel("Detailed shot", { exact: true })
-    .selectOption("runback_double");
-
-  await expect(
-    page.getByRole("combobox", { name: "Shot type", exact: true }),
-  ).toHaveValue("Runback/Multiple");
-
+    .locator(".coach-entry-section > summary")
+    .filter({ hasText: "Shot selection" })
+    .click();
+  await expect(page.getByLabel("Shot", { exact: true })).toBeHidden();
+  await page
+    .locator(".coach-entry-section > summary")
+    .filter({ hasText: "Shot selection" })
+    .click();
   await page
     .getByRole("combobox", { name: "Intended weight", exact: true })
     .selectOption("back_12");
@@ -88,10 +93,12 @@ test("persistent coach mode, atomic capture, Standard correction and supplementa
   await page.getByLabel("Guard to clear", { exact: true }).selectOption("yes");
 
   await page
-    .getByText("Observed miss details · Not assessed", { exact: true })
-    .click();
-
-  await page.getByLabel("Flash wide", { exact: true }).check();
+    .getByLabel("Primary miss", { exact: true })
+    .selectOption("flash_wide");
+  await page
+    .getByLabel("Add another miss", { exact: true })
+    .selectOption("roll_too_far");
+  await page.getByRole("button", { name: "Remove additional miss 1" }).click();
   await page.reload();
   // The anonymous synthetic lab has no account-scoped Standard resume store.
   // Return to the same slot; its Enhanced draft must still be retained.
@@ -100,14 +107,18 @@ test("persistent coach mode, atomic capture, Standard correction and supplementa
     .getByRole("combobox", { name: "Stone", exact: true })
     .selectOption("1");
   await page
-    .getByRole("combobox", { name: "Shot type", exact: true })
-    .selectOption("Runback/Multiple");
+    .getByRole("combobox", { name: "Shot", exact: true })
+    .selectOption("enhanced:runback_double");
   await expect(
     page.getByRole("combobox", { name: "Intended weight", exact: true }),
   ).toHaveValue("back_12");
-  await expect(
-    page.getByText("Observed miss details · Flash wide", { exact: true }),
-  ).toBeVisible();
+  await expect(page.getByLabel("Primary miss", { exact: true })).toHaveValue(
+    "flash_wide",
+  );
+  await page.screenshot({
+    path: `work/compact-charting-${info.project.name}.png`,
+    fullPage: true,
+  });
 
   await page
     .getByRole("combobox", { name: "Execution", exact: true })
@@ -136,6 +147,7 @@ test("persistent coach mode, atomic capture, Standard correction and supplementa
   );
 
   expect(saved).toBeTruthy();
+  expect(saved.shot.type).toBe("Runback/Multiple");
 
   const url = `/api/curlcoach/enhanced?gameId=${game.id}&eventId=practice`;
 

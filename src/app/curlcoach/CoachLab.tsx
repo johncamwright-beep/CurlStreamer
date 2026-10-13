@@ -4,7 +4,13 @@ import {
   withRecordedReviewTime,
   type BroadcastReview,
 } from "@/lib/curlcoach/review";
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import {
   currentShots,
   deficiencies,
@@ -35,10 +41,10 @@ import {
 import {
   emptySupplement,
   captureError,
-  suggestStandard,
   supplementSchema,
   type Supplement,
 } from "@/lib/curlcoach/enhanced-catalog";
+import { ShotPicker } from "./EntryControls";
 import {
   EnhancedFields,
   GameContext,
@@ -188,10 +194,6 @@ export default function CoachLab({
     } catch {
       /* In-memory draft remains. */
     }
-    if (value.values.detail !== enhanced.values.detail)
-      setDraft(
-        suggestStandard(String(value.values.detail ?? ""), draft, !!editing),
-      );
   }
   const pendingShot = useRef<{
     signature: string;
@@ -671,6 +673,16 @@ export default function CoachLab({
       )}
     </>
   );
+  function entryGroup(title: string, children: ReactNode) {
+    return enhancedMode ? (
+      <details className="coach-entry-section" open>
+        <summary>{title}</summary>
+        <div className="coach-entry-grid">{children}</div>
+      </details>
+    ) : (
+      <>{children}</>
+    );
+  }
   return (
     <section className={context ? "coach-lab coach-scoring" : "coach-lab"}>
       {lineupOpen && (
@@ -833,55 +845,89 @@ export default function CoachLab({
                         <option value="2">2</option>
                       </select>
                     </label>
-                    {choose("type", "Shot type", shotTypes)}
-                    {enhancedMode && (
-                      <EnhancedFields
-                        section="detail"
-                        value={enhanced}
-                        onChange={changeEnhanced}
-                      />
+                    {entryGroup(
+                      "Shot selection",
+                      <>
+                        {enhancedMode ? (
+                          <ShotPicker
+                            shot={draft}
+                            value={enhanced}
+                            editing={!!editing}
+                            onChange={(shot, value) => {
+                              changeEnhanced(value);
+                              setDraft(shot);
+                            }}
+                          />
+                        ) : (
+                          choose("type", "Shot type", shotTypes)
+                        )}
+                        {enhancedMode && (
+                          <EnhancedFields
+                            section="otherDetail"
+                            value={enhanced}
+                            onChange={changeEnhanced}
+                          />
+                        )}
+                        {choose("turn", "Turn / target", turns)}
+                        {enhancedMode && (
+                          <EnhancedFields
+                            section="call"
+                            value={enhanced}
+                            onChange={changeEnhanced}
+                          />
+                        )}
+                      </>,
                     )}
-                    {choose("turn", "Turn / target", turns)}
-                    {enhancedMode && (
-                      <EnhancedFields
-                        section="call"
-                        value={enhanced}
-                        onChange={changeEnhanced}
-                      />
+                    {entryGroup(
+                      "Execution",
+                      <>
+                        {choose("execution", "Execution", executions)}
+                        <label>
+                          Numeric grade
+                          <select
+                            value={draft.grade ?? ""}
+                            disabled={!!draft.excluded}
+                            onChange={(e) =>
+                              setDraft({
+                                ...draft,
+                                grade:
+                                  e.target.value === ""
+                                    ? null
+                                    : Number(e.target.value),
+                              })
+                            }
+                          >
+                            <option value="">Not graded</option>
+                            {[0, 1, 2, 3, 4, 5].map((n) => (
+                              <option key={n}>{n}</option>
+                            ))}
+                          </select>
+                        </label>
+                        {enhancedMode && (
+                          <EnhancedFields
+                            section="result"
+                            value={enhanced}
+                            onChange={changeEnhanced}
+                          />
+                        )}
+                      </>,
                     )}
-                    {choose("execution", "Execution", executions)}
-                    <label>
-                      Numeric grade
-                      <select
-                        value={draft.grade ?? ""}
-                        disabled={!!draft.excluded}
-                        onChange={(e) =>
-                          setDraft({
-                            ...draft,
-                            grade:
-                              e.target.value === ""
-                                ? null
-                                : Number(e.target.value),
-                          })
-                        }
-                      >
-                        <option value="">Not graded</option>
-                        {[0, 1, 2, 3, 4, 5].map((n) => (
-                          <option key={n}>{n}</option>
-                        ))}
-                      </select>
-                    </label>
-                    {enhancedMode && (
-                      <EnhancedFields
-                        section="miss"
-                        value={enhanced}
-                        onChange={changeEnhanced}
-                      />
+                    {entryGroup(
+                      "Observed misses",
+                      <>
+                        {enhancedMode && (
+                          <EnhancedFields
+                            section="miss"
+                            value={enhanced}
+                            onChange={changeEnhanced}
+                          />
+                        )}
+                        {choose("deficiency", "Deficiency", deficiencies)}
+                        {choose("line", "Line", lines)}
+                        {choose("release", "Release", releases)}
+                        {choose("technical", "Technical", technicals)}
+                      </>,
                     )}
-                    {choose("deficiency", "Deficiency", deficiencies)}
-                    {choose("line", "Line", lines)}
-                    {choose("release", "Release", releases)}
-                    {choose("technical", "Technical", technicals)}
                     {choose("review", "Review category", reviews)}
                     <label>
                       Excluded attempt

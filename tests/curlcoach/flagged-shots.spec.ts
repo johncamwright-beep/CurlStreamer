@@ -40,6 +40,7 @@ test("flagged-shot menu retains filters and exposes review links and editable ti
   await expect(
     page.getByRole("heading", { name: "Flagged shots", exact: true }),
   ).toBeVisible();
+  await expect.poll(() => latestEvent).not.toBe("");
   await expect(
     page.getByRole("combobox", { name: "Event", exact: true }),
   ).toHaveValue(latestEvent);

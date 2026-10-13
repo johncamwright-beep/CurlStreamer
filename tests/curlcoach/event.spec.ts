@@ -28,7 +28,7 @@ test("five analysis pages preserve scope, show percentages and fit mobile", asyn
         includeHidden: true,
       })
       .getByRole("link", { includeHidden: true }),
-  ).toHaveCount(7);
+  ).toHaveCount(8);
   await navigate(page, "Shot performance");
   await expect(
     page.getByRole("heading", { name: "Performance by shot type" }),

@@ -8,11 +8,14 @@ import {
   sessionCookie,
 } from "@/lib/curlcoach/access";
 import { commandSchema, lineupSchema } from "@/lib/curlcoach/model";
+import { enhancedWriteSchema } from "@/lib/curlcoach/enhanced-catalog";
+import { saveEnhanced } from "@/lib/providers/shot-tracker-enhanced";
 import { sampleCatalog, sampleEvent } from "@/lib/curlcoach/event";
 import {
   readCoachState,
   writeCoachEvent,
   writeCoachLineup,
+  writeLocalEnhanced,
 } from "@/lib/providers/curlcoach-local";
 import { loadStreamerEvent } from "@/lib/providers/curlcoach-streamer";
 import { requireCoachAccount } from "@/lib/curlcoach/production-access";
@@ -162,6 +165,7 @@ export async function POST(request: Request) {
     .extend({
       gameId: z.string().min(1).max(100),
       command: commandSchema.optional(),
+      enhanced: enhancedWriteSchema.optional(),
       action: z.enum(["finish", "reopen", "set-lineup"]).optional(),
       lineup: lineupSchema.optional(),
       requestId: z.uuid().optional(),
@@ -172,10 +176,12 @@ export async function POST(request: Request) {
         ? !value.action &&
           !value.requestId &&
           value.expectedRevision === undefined &&
-          !value.lineup
+          !value.lineup &&
+          (!value.enhanced || !!value.command.shot)
         : !!value.action &&
           !!value.requestId &&
           value.expectedRevision !== undefined &&
+          !value.enhanced &&
           (value.action === "set-lineup" ? !!value.lineup : !value.lineup),
     )
     .safeParse(await request.json().catch(() => null));
@@ -220,7 +226,22 @@ export async function POST(request: Request) {
           { error: "Private lifecycle requires a connected account." },
           { status: 400 },
         );
-      else result = writeCoachEvent(input.data.command, game.state, actor);
+      else
+        result = input.data.enhanced
+          ? writeLocalEnhanced(
+              game.state,
+              {
+                kind: "supplement",
+                requestId: input.data.command.requestId,
+                shotId: input.data.command.shotId,
+                expectedRevision: input.data.enhanced.expectedRevision,
+                sourceRevision: input.data.command.expectedRevision + 1,
+                value: input.data.enhanced.supplement,
+              },
+              actor,
+              input.data.command,
+            ).state
+          : writeCoachEvent(input.data.command, game.state, actor);
     } else {
       const scope = {
         organizationId: event.organizationId,
@@ -247,7 +268,23 @@ export async function POST(request: Request) {
           { status: 409, headers: privateHeaders },
         );
       result = input.data.command
-        ? await saveCoachState(scope, state, input.data.command)
+        ? input.data.enhanced
+          ? (
+              await saveEnhanced(
+                scope,
+                {
+                  kind: "supplement",
+                  requestId: input.data.command.requestId,
+                  shotId: input.data.command.shotId,
+                  expectedRevision: input.data.enhanced.expectedRevision,
+                  sourceRevision: input.data.command.expectedRevision + 1,
+                  value: input.data.enhanced.supplement,
+                },
+                state,
+                input.data.command,
+              )
+            ).state
+          : await saveCoachState(scope, state, input.data.command)
         : input.data.action === "set-lineup"
           ? await saveCoachLineup(scope, state, {
               action: "set-lineup",

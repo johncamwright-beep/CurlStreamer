@@ -1079,29 +1079,6 @@
   color: #082f49;
   font-weight: 600;
 }
-.enhanced-multiple {
-  grid-column: 1 / -1;
-  border: 1px solid #52677a;
-  padding: 12px;
-  border-radius: 10px;
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
-  gap: 8px;
-}
-.enhanced-multiple label,
-.coach-lab .enhanced-multiple label {
-  display: flex;
-  flex-direction: row;
-  align-items: center;
-  gap: 10px;
-  min-height: 44px;
-}
-.enhanced-multiple input,
-.coach-lab .enhanced-multiple input {
-  width: 20px;
-  min-height: 20px;
-  height: 20px;
-}
 .enhanced article {
   padding-block: 12px;
   border-bottom: 1px solid #334155;
@@ -1115,23 +1092,77 @@
 .coach-fields > .enhanced-fields {
   grid-column: 1 / -1;
 }
-.enhanced-multiple {
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 210px), 1fr));
-}
-.enhanced-fields > label {
-  min-width: 0;
-}
+
+.enhanced-fields > label,
 .enhanced-fields > div,
 .enhanced-fields > details {
   min-width: 0;
 }
-.enhanced-miss-picker {
+.coach-entry-section {
+  grid-column: 1 / -1;
+  border: 1px solid #334155;
+  border-radius: 10px;
+  padding: 0 12px 12px;
+}
+.coach-entry-section > summary {
+  min-height: 44px;
+  padding: 12px 0;
+  cursor: pointer;
+  font-weight: 700;
+}
+.coach-entry-section:not([open]) {
+  padding-bottom: 0;
+}
+.coach-entry-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 140px), 1fr));
+  gap: 10px;
+  align-items: start;
+}
+.coach-entry-grid > .enhanced-fields {
+  display: contents;
+}
+.coach-entry-grid label,
+.enhanced-multiple label,
+.enhanced-miss-rows label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  min-width: 0;
+}
+.coach-entry-grid select,
+.coach-entry-grid input {
+  width: 100%;
+  min-width: 0;
+  min-height: 44px;
+}
+.enhanced-multiple,
+.enhanced-miss-rows {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+.enhanced-select-row {
+  display: flex;
+  gap: 6px;
+  align-items: end;
+  min-width: 0;
+}
+.enhanced-select-row label {
+  flex: 1;
+}
+.enhanced-select-row button {
+  min-height: 44px;
+  flex: 0 0 auto;
+}
+.coach-entry-grid > .enhanced-review-sections {
   grid-column: 1 / -1;
 }
-.enhanced-miss-picker > summary {
-  min-height: 44px;
-  padding: 12px;
-  border: 1px solid #52677a;
-  border-radius: 8px;
-  cursor: pointer;
+.enhanced-review-sections .enhanced-fields {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 140px), 1fr));
+  gap: 10px;
+}
+.coach-entry-grid .enhanced-review-sections details {
+  margin-top: 10px;
 }

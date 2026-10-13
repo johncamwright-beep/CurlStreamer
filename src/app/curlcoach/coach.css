@@ -1166,3 +1166,19 @@
 .coach-entry-grid .enhanced-review-sections details {
   margin-top: 10px;
 }
+.enhanced-call-details,
+.enhanced-result-details {
+  grid-column: 1 / -1;
+}
+.enhanced-call-details > summary,
+.enhanced-result-details > summary,
+.enhanced-coverage > summary {
+  min-height: 44px;
+  padding-block: 12px;
+  cursor: pointer;
+}
+.enhanced-result-details .enhanced-fields,
+.enhanced-call-details .enhanced-fields {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 140px), 1fr));
+  gap: 10px;
+}

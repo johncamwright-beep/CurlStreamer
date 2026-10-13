@@ -87,7 +87,7 @@ export const catalogue: Record<string, Field> = {
     example: "Raise and roll",
   },
   intendedWeight: field(
-    "Intended weight",
+    "Called weight",
     [
       "1_guard",
       "2_guard",
@@ -221,7 +221,7 @@ export const catalogue: Record<string, Field> = {
     example: "Rolled behind a different stone",
   },
   removedTargets: {
-    label: "Nominated targets actually removed",
+    label: "Target stones removed",
     number: true,
     max: 15,
     location: "Review",

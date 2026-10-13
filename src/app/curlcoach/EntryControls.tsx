@@ -76,9 +76,9 @@ export function MissPicker({
   return (
     <div className="enhanced-miss-rows">
       <label>
-        Primary miss
+        What happened?
         <select
-          aria-label="Primary miss"
+          aria-label="What happened?"
           value={selected}
           onChange={(e) => {
             const choice = e.target.value;
@@ -104,7 +104,7 @@ export function MissPicker({
           }}
         >
           <option value="not_assessed">Not assessed</option>
-          <option value="none">No listed miss</option>
+          <option value="none">No observed miss</option>
           <option value="not_applicable">Not applicable</option>
           {missChoices.map((m) => (
             <option key={m} value={m}>

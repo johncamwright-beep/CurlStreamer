@@ -18,7 +18,7 @@ The existing ten Standard categories, eight turns, independent outcome and 0–5
 
 ## Storage and authorization
 
-Apply **0086_enhanced_shot_capture.sql** after the current migrations through 0085, in a separately authorized release. It adds `shot_tracker_enhanced_commands` and scoped read/save RPCs. No migration has been applied to a hosted database for this task.
+**0086_enhanced_shot_capture.sql** adds `shot_tracker_enhanced_commands` and scoped read/save RPCs after migration 0085. It was applied during the separately authorized October 12 release (PR #129). Subsequent entry-interface refinements require no new migration.
 
 The append-only records carry organization, authenticated actor, kind, game/shot identity, request ID, Enhanced revision, source shot revision, immutable input/result, and timestamp. Kinds are preferences, game context and shot supplement. Current documents are projected from their latest revisions. Preferences revisions also retain the call definitions referenced by shots. There is no new Standard payload field or profile version.
 
@@ -79,10 +79,24 @@ Live Enhanced drafts retain their original supplement revision in coach/org/game
 
 The full Shot Tracker run initially exposed an obsolete video-review text assertion and a fixture-readiness race in the flagged-shot test. Both assertions were corrected and the complete 40-test suite passed. Standard behavior was not changed to satisfy either assertion. Non-blocking lint warnings remain in the repository, including the generation-counter cleanup warning in the new data-loading hook; no validation failure remains.
 
-No migration was applied to a hosted database. No merge, push, deployment, report send, billing change or production record modification was performed.
+At the initial implementation checkpoint above, no hosted migration, merge, deployment, report send, billing change or production record modification had been performed. Prompt 1 was subsequently released through PR #129 on October 12; compact entry was released through PR #130 on October 13.
 
 ## Compact entry follow-up
 
 Branch `codex/compact-enhanced-entry`, based on integrated commit `0314251f5b6575b1b33607151d210dd6b488ff05`. No new migration, dependency or production data change. `EntryControls.tsx` and `entry-selection.ts` implement the combined shot selector and dropdown miss controls. Removing a miss clears its dependent contact/roll result while preserving unrelated observations. Unit tests cover classification preservation and assessment states; phone/tablet tests cover section toggling, single-picker capture, miss removal, reload, persistence and Standard-only corrections. Prompt 2 continues to consume the same versioned storage contract.
 
 Follow-up validation (October 13): formatting and typecheck passed; full unit suite 2,555 passed / 143 skipped, followed by all 5 entry-selection tests passing after the unmapped-Other safeguard. Both production builds within `test:e2e` passed; main browser suite 366 passed / 162 skipped and configured integration suite 122 passed. Shot Tracker browser suite initially passed 39/40; the phone PDF download timed out. That PDF test and Enhanced entry passed on phone and tablet in the targeted retry (4/4). Final compact phone/tablet screenshots were visually inspected. No report was sent and no production team data was modified.
+
+## Simplified result-entry follow-up — October 13, 2026
+
+Branch `codex/simplified-result-entry`, based on `d47bc6343cbf7289406794fc91f76e4a0128c5e0`. No migration, dependency, Standard payload, scoring arithmetic, historical-record rewrite, or AI-report change.
+
+- Shot selection keeps the combined picker, Called weight and optional Guard to clear prominent. Other call details are collapsed. Execution keeps Observed weight visible; a collapsed More details section exposes first contact, roll and Target stones removed only for explicit applicable calls. Shot categories do not establish opportunities.
+- What happened? offers every existing miss choice plus explicit No observed miss, Not assessed and Not applicable. It starts unassessed. Result selections directly set their assessment state; clearing returns them to unassessed. Matching contact/roll observations are reused and corrected together, without inventing a cause, grade or technique. Clearing the last positive miss does not establish that no miss occurred.
+- Separate contact/roll/removal/tolerance assessment dropdowns are removed. Weight basis, tolerance and historical results remain accessible in optional detailed review. An unrelated edit preserves hidden values, historical not-applicable states, source metadata and definition references. Enhanced review includes a collapsed readout of all saved observations.
+- Assessment coverage shows assessed versus known opportunities for included recorded attempts in the selected game, separating unassessed observations, not-applicable cases, missing calls and conflicts. It does not claim success rates, complete game coverage, or unthrown-stone counts. Prompt 2 still owns the specified S/E performance metrics and event analysis.
+- Existing event AI reports, PDFs, email delivery and allowances are unchanged. Season Development AI generation remains a later phase; the automatic-season-report preference remains inert.
+
+Implementation: `result-entry.ts` owns explicit result transitions and call relevance; `assessment-coverage.ts` owns coverage; `EnhancedMetrics.tsx`, `EntryControls.tsx`, `AssessmentCoverage.tsx`, `CoachLab.tsx` and `coach.css` render the workflow. The catalogue changes display labels only. Unit and phone/tablet browser tests cover capture, correction, clearing, Standard/Enhanced switching and hidden-history preservation.
+
+Validation: formatting and typecheck passed; full unit suite 2,563 passed / 143 skipped; standalone production build passed using synthetic configuration. Focused Enhanced phone/tablet workflow passed (2/2); screenshots inspected. Full browser regressions passed: main suite 366 passed / 162 configuration-gated skips; additional integration suite 122 passed; Shot Tracker suite all 40 phone/tablet tests passed, including PDF/report tests. Initial focused browser assertions matched a hidden, mounted Charting control while reviewing a shot; selectors now target the visible controls. Non-blocking repository lint and Browserslist warnings remain. No merge, deployment, production data write or real report send was performed for this follow-up.

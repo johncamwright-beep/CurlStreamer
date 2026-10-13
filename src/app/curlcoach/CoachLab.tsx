@@ -45,6 +45,7 @@ import {
   type Supplement,
 } from "@/lib/curlcoach/enhanced-catalog";
 import { ShotPicker } from "./EntryControls";
+import { AssessmentCoverage } from "./AssessmentCoverage";
 import {
   EnhancedFields,
   GameContext,
@@ -1178,6 +1179,12 @@ export default function CoachLab({
               <strong>{team.excluded}</strong>
             </div>
           </section>
+          {enhancedMode && enhancedData.ready && (
+            <AssessmentCoverage
+              shots={shots}
+              documents={enhancedData.documents}
+            />
+          )}
           {!rosterReady && context?.source === "streamer" && (
             <section className="event-notice" aria-label="Roster required">
               Add your team roster before charting attempts.{" "}

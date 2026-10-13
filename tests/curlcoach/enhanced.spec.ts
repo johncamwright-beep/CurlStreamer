@@ -83,9 +83,25 @@ test("persistent coach mode, atomic capture, Standard correction and supplementa
     .filter({ hasText: "Shot selection" })
     .click();
   await page
-    .getByRole("combobox", { name: "Intended weight", exact: true })
+    .getByRole("combobox", { name: "Called weight", exact: true })
     .selectOption("back_12");
 
+  await expect(
+    page.getByLabel("Contact assessment", { exact: true }),
+  ).toHaveCount(0);
+  await expect(page.getByLabel("Roll assessment", { exact: true })).toHaveCount(
+    0,
+  );
+  await expect(
+    page.getByLabel("Removal assessment", { exact: true }),
+  ).toHaveCount(0);
+  await expect(
+    page.getByLabel("Tolerance assessment", { exact: true }),
+  ).toHaveCount(0);
+  await expect(
+    page.getByRole("combobox", { name: "First contact result", exact: true }),
+  ).toBeHidden();
+  await page.getByText("Optional call details", { exact: true }).click();
   await page
     .getByLabel("Contact plan", { exact: true })
     .selectOption("direct_contact_with_target");
@@ -93,12 +109,36 @@ test("persistent coach mode, atomic capture, Standard correction and supplementa
   await page.getByLabel("Guard to clear", { exact: true }).selectOption("yes");
 
   await page
-    .getByLabel("Primary miss", { exact: true })
+    .getByRole("combobox", { name: "What happened?", exact: true })
     .selectOption("flash_wide");
   await page
     .getByLabel("Add another miss", { exact: true })
     .selectOption("roll_too_far");
   await page.getByRole("button", { name: "Remove additional miss 1" }).click();
+  await page.getByText("More details", { exact: true }).click();
+  await expect(
+    page.getByRole("combobox", { name: "First contact result", exact: true }),
+  ).toHaveValue("intended_first_contact_missed");
+  await expect(page.getByLabel("Roll result", { exact: true })).toBeHidden();
+  await expect(
+    page.getByLabel("Target stones removed", { exact: true }),
+  ).toBeHidden();
+  await page
+    .getByText("Detailed Enhanced review · optional", { exact: true })
+    .click();
+  await page
+    .getByText("Weight basis and historical result details", { exact: true })
+    .click();
+  await page
+    .getByLabel("Weight assessment basis", { exact: true })
+    .selectOption("timing");
+  await page
+    .getByLabel("Available tolerance", { exact: true })
+    .selectOption("tight");
+  await page
+    .getByLabel("Tolerance result", { exact: true })
+    .selectOption("outside_called_tolerance");
+
   await page.reload();
   // The anonymous synthetic lab has no account-scoped Standard resume store.
   // Return to the same slot; its Enhanced draft must still be retained.
@@ -110,13 +150,13 @@ test("persistent coach mode, atomic capture, Standard correction and supplementa
     .getByRole("combobox", { name: "Shot", exact: true })
     .selectOption("enhanced:runback_double");
   await expect(
-    page.getByRole("combobox", { name: "Intended weight", exact: true }),
+    page.getByRole("combobox", { name: "Called weight", exact: true }),
   ).toHaveValue("back_12");
-  await expect(page.getByLabel("Primary miss", { exact: true })).toHaveValue(
-    "flash_wide",
-  );
+  await expect(
+    page.getByRole("combobox", { name: "What happened?", exact: true }),
+  ).toHaveValue("flash_wide");
   await page.screenshot({
-    path: `work/compact-charting-${info.project.name}.png`,
+    path: `work/simplified-charting-${info.project.name}.png`,
     fullPage: true,
   });
 
@@ -210,13 +250,20 @@ test("persistent coach mode, atomic capture, Standard correction and supplementa
     .selectOption(saved.shotId);
 
   await expect(
-    page.getByRole("combobox", { name: "Intended weight", exact: true }),
+    page.getByRole("combobox", { name: "Called weight", exact: true }),
   ).toHaveValue("back_12");
 
   await page
-    .getByRole("combobox", { name: "Intended weight", exact: true })
+    .getByRole("combobox", { name: "Called weight", exact: true })
     .selectOption("control_weight_takeout");
 
+  await page.getByText("More details", { exact: true }).click();
+  await page
+    .getByRole("combobox", { name: "First contact result", exact: true })
+    .selectOption("not_assessed");
+  await expect(
+    page.getByRole("combobox", { name: "What happened?", exact: true }),
+  ).toHaveValue("not_assessed");
   await page
     .getByRole("button", { name: "Save Enhanced review", exact: true })
     .click();
@@ -232,8 +279,43 @@ test("persistent coach mode, atomic capture, Standard correction and supplementa
     .selectOption(saved.shotId);
 
   await expect(
-    page.getByRole("combobox", { name: "Intended weight", exact: true }),
+    page.getByRole("combobox", { name: "Called weight", exact: true }),
   ).toHaveValue("control_weight_takeout");
+
+  await page.getByText("More details", { exact: true }).click();
+  await expect(
+    page.getByRole("combobox", { name: "First contact result", exact: true }),
+  ).toHaveValue("not_assessed");
+  const cleared = await (await page.request.get(url)).json();
+  const clearedValue = cleared.documents.find(
+    (d: { shotId: string }) => d.shotId === saved.shotId,
+  ).value;
+  expect(clearedValue.assessments.contact).toBe("not_assessed");
+  expect(clearedValue.values.contactResult).toBeUndefined();
+  expect(clearedValue.values.misses).toBeUndefined();
+  expect(clearedValue.values.toleranceResult).toBe("outside_called_tolerance");
+  expect(clearedValue.values.tolerance).toBe("tight");
+  expect(clearedValue.values.weightBasis).toBe("timing");
+  await page
+    .getByRole("combobox", { name: "What happened?", exact: true })
+    .selectOption("none");
+  await page
+    .getByRole("button", { name: "Save Enhanced review", exact: true })
+    .click();
+  await expect(
+    page.getByText("Enhanced review saved. Standard scores are unchanged."),
+  ).toBeVisible();
+  await page.reload();
+  await page
+    .getByRole("combobox", { name: "Review shot", exact: true })
+    .selectOption(saved.shotId);
+  await expect(
+    page.getByRole("combobox", { name: "What happened?", exact: true }),
+  ).toHaveValue("none");
+  await page.getByText("Saved observation details", { exact: true }).click();
+  await expect(
+    page.locator("dd").getByText("Outside called tolerance", { exact: true }),
+  ).toBeVisible();
 
   expect(
     await page.evaluate(

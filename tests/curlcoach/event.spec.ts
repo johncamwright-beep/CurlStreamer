@@ -1,4 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
+// Full-form regression coverage; mobile tabs are exercised in mobile-entry.spec.ts.
+test.use({ viewport: { width: 820, height: 1180 } });
+
 test.skip(!process.env.CURLCOACH_E2E, "Use the Shot Tracker config");
 async function open(page: Page, path = "/curlcoach") {
   await page.goto(path);

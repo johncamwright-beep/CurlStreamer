@@ -8,11 +8,13 @@ export default function EntryOverlay({
   description,
   children,
   className = "",
+  inline = false,
 }: {
   title: string;
   description?: string;
   children: ReactNode;
   className?: string;
+  inline?: boolean;
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
   const trigger = useRef<HTMLButtonElement>(null);
@@ -21,6 +23,7 @@ export default function EntryOverlay({
   function close() {
     dialog.current?.close();
   }
+  if (inline) return <>{children}</>;
   return (
     <div className={`entry-overlay ${className}`}>
       <button

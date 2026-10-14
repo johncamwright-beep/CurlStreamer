@@ -12,6 +12,7 @@ import {
 } from "@/lib/curlcoach/review";
 import {
   useCallback,
+  useId,
   useEffect,
   useRef,
   useState,
@@ -237,8 +238,20 @@ export default function CoachLab({
   function goToCurrent() {
     setEditing(null);
     setDraft(currentDraft.current);
+    setEntryTab("Shot");
     entry.current?.scrollIntoView({ block: "start", behavior: "smooth" });
   }
+  const [mobileEntry, setMobileEntry] = useState(false);
+  const [entryTab, setEntryTab] = useState("Shot");
+  const entryId = useId();
+  const entryTabs = ["Shot", "Execution", "Technical", "Notes"];
+  useEffect(() => {
+    const query = window.matchMedia("(max-width: 600px)");
+    const update = () => setMobileEntry(query.matches);
+    update();
+    query.addEventListener("change", update);
+    return () => query.removeEventListener("change", update);
+  }, []);
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
   const [lineupOpen, setLineupOpen] = useState(false);
@@ -389,6 +402,7 @@ export default function CoachLab({
           ? "Attempt saved. Report updated."
           : "Attempt removed by an audited revision.",
       );
+      if (shot) setEntryTab("Shot");
       if (shot && advance) {
         const next = nextTurn(
           shot,
@@ -607,7 +621,11 @@ export default function CoachLab({
           {field !== "position" && <option value="">Not recorded</option>}
           {options.map((value) => (
             <option key={value} value={value}>
-              {field === "turn" ? turnLabel(value) : value}
+              {field === "turn"
+                ? mobileEntry
+                  ? value
+                  : turnLabel(value)
+                : value}
             </option>
           ))}
         </select>
@@ -741,7 +759,26 @@ export default function CoachLab({
   );
   function entryGroup(title: string, children: ReactNode) {
     return (
-      <section className="coach-entry-section" aria-label={title}>
+      <section
+        className="coach-entry-section"
+        aria-label={title}
+        role={mobileEntry ? "tabpanel" : undefined}
+        id={`${entryId}-${title === "Shot selection" ? "Shot" : title === "Technical observation" ? "Technical" : title}-panel`}
+        aria-labelledby={
+          mobileEntry
+            ? `${entryId}-${title === "Shot selection" ? "Shot" : title === "Technical observation" ? "Technical" : title}-tab`
+            : undefined
+        }
+        hidden={
+          mobileEntry &&
+          entryTab !==
+            (title === "Shot selection"
+              ? "Shot"
+              : title === "Technical observation"
+                ? "Technical"
+                : title)
+        }
+      >
         <h3>{title}</h3>
         <div className="coach-entry-grid">{children}</div>
       </section>
@@ -795,16 +832,18 @@ export default function CoachLab({
       {context && (
         <header className="coach-panel">
           <h2>{context.label ?? "Selected game"}</h2>
-          {gamePicker}
-          {!closed && started && (
-            <div
-              className="coach-session-actions"
-              role="group"
-              aria-label="Game actions"
-            >
-              {sessionActions}
-            </div>
-          )}
+          <EntryOverlay title="Game controls" inline={!mobileEntry}>
+            {gamePicker}
+            {!closed && started && (
+              <div
+                className="coach-session-actions"
+                role="group"
+                aria-label="Game actions"
+              >
+                {sessionActions}
+              </div>
+            )}
+          </EntryOverlay>
         </header>
       )}
       {!open ? (
@@ -887,19 +926,27 @@ export default function CoachLab({
                       </p>
                       <dl className="tracker-shooting-stats">
                         <div>
-                          <dt>Player shooting</dt>
+                          <dt>{mobileEntry ? "Player" : "Player shooting"}</dt>
                           <dd>{percentage(shooter.percent)}</dd>
                         </div>
                         <div>
-                          <dt>Player weighted shooting</dt>
+                          <dt>
+                            {mobileEntry
+                              ? "Player (W)"
+                              : "Player weighted shooting"}
+                          </dt>
                           <dd>{percentage(shooterWeighted.adjusted)}</dd>
                         </div>
                         <div>
-                          <dt>Team shooting</dt>
+                          <dt>{mobileEntry ? "Team" : "Team shooting"}</dt>
                           <dd>{percentage(team.percent)}</dd>
                         </div>
                         <div>
-                          <dt>Team weighted shooting</dt>
+                          <dt>
+                            {mobileEntry
+                              ? "Team (W)"
+                              : "Team weighted shooting"}
+                          </dt>
                           <dd>
                             {percentage(
                               difficultySummary(classifiedShots).adjusted,
@@ -976,7 +1023,52 @@ export default function CoachLab({
                         </div>
                       </EntryOverlay>
                     </section>
-                    <div className="tracker-quick-entry">
+                    {mobileEntry && (
+                      <div
+                        className="tracker-entry-tabs"
+                        role="tablist"
+                        aria-label="Shot entry sections"
+                      >
+                        {entryTabs.map((tab, index) => (
+                          <button
+                            key={tab}
+                            type="button"
+                            role="tab"
+                            id={`${entryId}-${tab}-tab`}
+                            aria-controls={`${entryId}-${tab}-panel`}
+                            aria-selected={entryTab === tab}
+                            tabIndex={entryTab === tab ? 0 : -1}
+                            onClick={() => setEntryTab(tab)}
+                            onKeyDown={(event) => {
+                              const next =
+                                event.key === "ArrowRight"
+                                  ? (index + 1) % 4
+                                  : event.key === "ArrowLeft"
+                                    ? (index + 3) % 4
+                                    : event.key === "Home"
+                                      ? 0
+                                      : event.key === "End"
+                                        ? 3
+                                        : -1;
+                              if (next < 0) return;
+                              event.preventDefault();
+                              setEntryTab(entryTabs[next]);
+                              document
+                                .getElementById(
+                                  `${entryId}-${entryTabs[next]}-tab`,
+                                )
+                                ?.focus();
+                            }}
+                          >
+                            {tab}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                    <div
+                      className="tracker-quick-entry"
+                      hidden={mobileEntry && entryTab === "Notes"}
+                    >
                       <div className="coach-fields">
                         {" "}
                         {entryGroup(
@@ -993,6 +1085,11 @@ export default function CoachLab({
                               }}
                             />
                             {choose("turn", "Turn / target", turns)}
+                            {mobileEntry && draft.turn && (
+                              <p className="tracker-turn-description">
+                                {turnLabel(draft.turn)}
+                              </p>
+                            )}
                             {!!context &&
                               metrics.ready &&
                               enhancedData.ready && (
@@ -1069,9 +1166,18 @@ export default function CoachLab({
                         )}
                       </div>
                     </div>
-                    <div className="tracker-entry-notes">
+                    <div
+                      className="tracker-entry-notes"
+                      role={mobileEntry ? "tabpanel" : undefined}
+                      id={`${entryId}-Notes-panel`}
+                      aria-labelledby={
+                        mobileEntry ? `${entryId}-Notes-tab` : undefined
+                      }
+                      hidden={mobileEntry && entryTab !== "Notes"}
+                    >
                       <EntryOverlay
                         title="Notes & review"
+                        inline={mobileEntry}
                         description={
                           draft.note
                             ? "Coaching note added · edit notes and flags."
@@ -1257,7 +1363,9 @@ export default function CoachLab({
                         ? "Saving…"
                         : editing
                           ? "Save correction"
-                          : "Save attempt"}
+                          : mobileEntry
+                            ? "Save Shot"
+                            : "Save attempt"}
                     </button>
                     <button
                       type="submit"
@@ -1265,7 +1373,7 @@ export default function CoachLab({
                       disabled={!nextTurn(draft, shots, players, lineup)}
                       title="Save this attempt and move to the next turn"
                     >
-                      {busy ? "Saving next turn…" : "Next turn →"}
+                      {busy ? "Saving…" : mobileEntry ? "Next" : "Next turn →"}
                     </button>
                     <button type="button" onClick={goToCurrent}>
                       Go to current shot

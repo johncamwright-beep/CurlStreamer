@@ -1,4 +1,7 @@
 import { expect, test } from "@playwright/test";
+// Full-form regression coverage; mobile tabs are exercised in mobile-entry.spec.ts.
+test.use({ viewport: { width: 820, height: 1180 } });
+
 test.skip(
   !process.env.CURLCOACH_E2E,
   "Run with playwright.curlcoach.config.ts",
@@ -143,7 +146,7 @@ test("scoped local lab charts, corrects and audits a synthetic shot", async ({
   ).toBe(true);
   await page.screenshot({
     path: `test-results/curlcoach-${testInfo.project.name}.png`,
-    fullPage: true,
+    fullPage: false,
   });
   await attempt.getByRole("button", { name: "Remove attempt" }).click();
   await expect(attempt).toHaveCount(0);

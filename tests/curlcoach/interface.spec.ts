@@ -1,5 +1,8 @@
 import { expect, test } from "@playwright/test";
 
+// Full-form regression coverage; mobile tabs are exercised in mobile-entry.spec.ts.
+test.use({ viewport: { width: 820, height: 1180 } });
+
 test.skip(!process.env.CURLCOACH_E2E, "Use the Shot Tracker config");
 
 test("entry overlays preserve draft, keep the page stable and restore focus", async ({

@@ -774,7 +774,7 @@ function WorkspaceContent({
           </EntryOverlay>
         </div>
       </aside>
-      <main className="event-main">
+      <main className="event-main" data-view={view}>
         <header className="event-header">
           <div>
             <h1>{view}</h1>

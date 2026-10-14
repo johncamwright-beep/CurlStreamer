@@ -1763,3 +1763,159 @@
     width: 100%;
   }
 }
+
+.coach-entry-section[hidden],
+.tracker-quick-entry[hidden],
+.tracker-entry-notes[hidden] {
+  display: none !important;
+}
+@media (max-width: 600px) {
+  .coach-scoring > header.coach-panel {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 10px;
+    margin-bottom: 10px;
+  }
+  .coach-scoring > header.coach-panel h2 {
+    font-size: 15px;
+    margin: 0;
+  }
+  .coach-scoring > header.coach-panel > .entry-overlay {
+    flex: 0 0 auto;
+  }
+  .coach-scoring > header.coach-panel > .entry-overlay > button {
+    padding: 8px;
+    min-height: 44px;
+    font-size: 12px;
+  }
+  .tracker-entry-layout {
+    gap: 8px;
+  }
+  .tracker-entry-layout > .tracker-context-card {
+    padding: 10px;
+    gap: 4px 8px;
+  }
+  .tracker-context-card h3 {
+    font-size: 15px;
+    margin: 0;
+  }
+  .tracker-entry-layout > .tracker-context-card .tracker-shooting-stats {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 0;
+    grid-column: 1 / -1;
+    margin-top: 8px;
+  }
+  .tracker-entry-layout > .tracker-context-card .tracker-shooting-stats > div {
+    padding: 8px 3px;
+    border-radius: 0;
+    border-width: 0 1px 0 0;
+    text-align: center;
+    font-size: 11px;
+  }
+  .tracker-entry-layout
+    > .tracker-context-card
+    .tracker-shooting-stats
+    > div:last-child {
+    border-right: 0;
+  }
+  .tracker-context-card .tracker-shooting-stats dd {
+    text-align: center;
+    font-size: 18px;
+    margin: 6px 0 0;
+  }
+  .tracker-entry-tabs {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    grid-column: 1 / -1;
+    border-bottom: 1px solid #29475e;
+  }
+  .coach-workspace .tracker-entry-tabs button {
+    min-width: 0;
+    min-height: 44px;
+    padding: 8px 2px;
+    margin: 0;
+    font-size: 13px;
+    border: 0;
+    border-bottom: 3px solid transparent;
+    border-radius: 0;
+    background: transparent;
+  }
+  .coach-workspace .tracker-entry-tabs button[aria-selected="true"] {
+    color: #79c0ff;
+    border-bottom-color: #469ff6;
+    background: #16354c;
+  }
+  .coach-workspace .tracker-quick-entry {
+    padding: 10px;
+  }
+  .coach-entry-section + .coach-entry-section {
+    border: 0;
+    padding-top: 0;
+  }
+  .coach-entry-section > h3 {
+    display: none;
+  }
+  .coach-entry-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+  }
+  .coach-entry-grid label {
+    min-width: 0;
+    font-size: 12px;
+  }
+  .coach-entry-grid select {
+    font-size: 14px;
+    padding: 8px;
+    width: 100%;
+    text-overflow: ellipsis;
+  }
+  .tracker-turn-description {
+    grid-column: 1 / -1;
+    font-size: 11px;
+    color: #a9c1d6;
+    margin: 0;
+  }
+  .tracker-entry-notes {
+    padding: 10px;
+  }
+  .coach-workspace .coach-entry-actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 6px;
+    padding: 8px;
+  }
+  .coach-workspace .coach-entry-actions button {
+    margin: 0;
+    min-height: 44px;
+    padding: 8px;
+  }
+  .coach-entry-actions button:nth-child(3) {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 600px) {
+  .coach-workspace .event-main[data-view="Charting"] {
+    padding-top: 6px;
+  }
+  .event-main[data-view="Charting"] > .event-header h1 {
+    font-size: 18px;
+    margin: 0;
+  }
+  .coach-workspace .coach-scoring .tracker-entry-panel {
+    margin-top: 10px;
+  }
+  .coach-scoring > header.coach-panel > .entry-overlay > button strong {
+    font-size: 0;
+  }
+  .coach-scoring > header.coach-panel > .entry-overlay > button strong::after {
+    content: "More";
+    font-size: 12px;
+  }
+}
+
+.coach-workspace .tracker-entry-tabs button[aria-selected="false"]:hover {
+  border-bottom-color: transparent;
+}

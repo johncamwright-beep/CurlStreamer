@@ -1,6 +1,7 @@
+import { openEntryTab } from "./entry-tabs";
 import { expect, test } from "@playwright/test";
 
-// Full-form regression coverage; mobile tabs are exercised in mobile-entry.spec.ts.
+// Shared tabbed entry regression coverage; phone and desktop layout is exercised in mobile-entry.spec.ts.
 test.use({ viewport: { width: 820, height: 1180 } });
 
 test.skip(!process.env.CURLCOACH_E2E, "Use the Shot Tracker config");
@@ -41,9 +42,11 @@ test("entry overlays preserve draft, keep the page stable and restore focus", as
       .getByRole("button", { name: "Confirm lineup & start", exact: true })
       .click();
   }
+  await openEntryTab(page, "Shot");
   await page
     .getByRole("combobox", { name: "Shot type", exact: true })
     .selectOption("Draw");
+  await openEntryTab(page, "Shot");
   await page
     .getByRole("combobox", { name: "Called weight", exact: true })
     .selectOption("button");
@@ -77,29 +80,22 @@ test("entry overlays preserve draft, keep the page stable and restore focus", as
     page.getByRole("combobox", { name: "Throwing position", exact: true }),
   ).toHaveValue("Second");
   await dialog.getByRole("button", { name: "Done", exact: true }).click();
+  await openEntryTab(page, "Shot");
   await expect(
     page.getByRole("combobox", { name: "Shot type", exact: true }),
   ).toHaveValue("Draw");
-  await page
-    .getByRole("button", { name: "Notes & review", exact: true })
-    .click();
+  await page.getByRole("tab", { name: "Notes", exact: true }).click();
+  await openEntryTab(page, "Notes");
   await page
     .getByLabel("Private coaching note")
     .fill("Synthetic overlay draft");
-  await page
-    .getByRole("dialog")
-    .getByRole("button", { name: "Done", exact: true })
-    .click();
-  await page
-    .getByRole("button", { name: "Notes & review", exact: true })
-    .click();
+  await openEntryTab(page, "Shot");
+  await page.getByRole("tab", { name: "Notes", exact: true }).click();
+  await openEntryTab(page, "Notes");
   await expect(page.getByLabel("Private coaching note")).toHaveValue(
     "Synthetic overlay draft",
   );
-  await page
-    .getByRole("dialog")
-    .getByRole("button", { name: "Done", exact: true })
-    .click();
+  await openEntryTab(page, "Shot");
   await page.evaluate(() => window.scrollTo(0, 0));
   await page.screenshot({
     path: `work/tracker-entry-${info.project.name}.png`,

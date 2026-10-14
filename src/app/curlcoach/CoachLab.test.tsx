@@ -71,8 +71,8 @@ describe("production CoachLab session state", () => {
 
     expect(html).toContain('value="stable-player-id"');
     expect(html).toContain("Taylor — Lead");
-    expect(html).toContain("Player weighted shooting");
-    expect(html).toContain("Team weighted shooting");
+    expect(html).toContain("Player (W)");
+    expect(html).toContain("Team (W)");
     for (const removed of [
       "Quick entry",
       "Game context",
@@ -83,7 +83,7 @@ describe("production CoachLab session state", () => {
     ])
       expect(html).not.toContain(removed);
     expect(html.indexOf("Technical observation")).toBeLessThan(
-      html.indexOf("Notes &amp; review"),
+      html.indexOf("Private coaching note"),
     );
     expect(html).toContain("Finish private coaching session");
   });

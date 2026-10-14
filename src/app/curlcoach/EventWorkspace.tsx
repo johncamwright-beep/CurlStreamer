@@ -18,7 +18,10 @@ import {
   situationWins,
   type rate,
 } from "@/lib/curlcoach/score-statistics";
-import { updateWorkspaceState } from "@/lib/curlcoach/workspace-state";
+import {
+  updateWorkspaceState,
+  refreshWorkspaceEvent,
+} from "@/lib/curlcoach/workspace-state";
 import { eventLevels } from "@/lib/team-hierarchy";
 import { preferredGame } from "@/lib/current-game";
 import {
@@ -530,11 +533,7 @@ function WorkspaceContent({
           !resetStatistics &&
           previous?.event.organizationId === current.event.organizationId &&
           previous.event.source === current.event.source
-            ? current.event.games.reduce(
-                (workspace, game) =>
-                  updateWorkspaceState(workspace, game.state),
-                previous,
-              )
+            ? refreshWorkspaceEvent(previous, current)
             : null,
         );
         const recommended = scheduledCoachGame(current.event.games);
@@ -567,6 +566,14 @@ function WorkspaceContent({
     void refresh(controller.signal, false);
     return () => controller.abort();
   }, [open, selectionReady, refresh]);
+  useEffect(() => {
+    if (!open || !selectionReady || mode !== "streamer") return;
+    const returned = () => {
+      if (document.visibilityState === "visible") void refresh();
+    };
+    document.addEventListener("visibilitychange", returned);
+    return () => document.removeEventListener("visibilitychange", returned);
+  }, [open, selectionReady, mode, refresh]);
   async function unlock(form: FormData) {
     setBusy(true);
     try {
@@ -1017,7 +1024,11 @@ function WorkspaceContent({
             </details>
           )}
         </header>
-        <p role="status" aria-live="polite">
+        <p
+          role="status"
+          aria-live="polite"
+          className={error || statsError ? "coach-save-error" : "sr-only"}
+        >
           {statistics && !statsReady && !error
             ? statsError || "Loading season statistics…"
             : busy

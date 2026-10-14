@@ -1,7 +1,8 @@
+import { openEntryTab } from "./entry-tabs";
 import { weightLabels } from "../../src/lib/curlcoach/shot-subtypes";
 import { expect, test, type Page } from "@playwright/test";
 
-// Full-form regression coverage; mobile tabs are exercised in mobile-entry.spec.ts.
+// Shared tabbed entry regression coverage; phone and desktop layout is exercised in mobile-entry.spec.ts.
 test.use({ viewport: { width: 820, height: 1180 } });
 
 test.skip(!process.env.CURLCOACH_E2E, "Use the Shot Tracker config");
@@ -75,9 +76,11 @@ test("workbook selections, corrections, clearing, Standard mode and historical p
   await expect(
     page.getByRole("region", { name: "Current shot context" }),
   ).toContainText(`End ${end}`);
+  await openEntryTab(page, "Shot");
   await page
     .getByRole("combobox", { name: "Shot type", exact: true })
     .selectOption("Guard/Front Stone");
+  await openEntryTab(page, "Shot");
   await page
     .getByRole("combobox", { name: "Shot subtype", exact: true })
     .selectOption("guard");
@@ -87,6 +90,7 @@ test("workbook selections, corrections, clearing, Standard mode and historical p
       .locator("option")
       .allTextContents(),
   ).toEqual(["Not recorded", "Guard 1", "Guard 2", "Guard 3"]);
+  await openEntryTab(page, "Execution");
   expect(
     await page
       .getByRole("combobox", { name: "Observed weight", exact: true })
@@ -106,39 +110,51 @@ test("workbook selections, corrections, clearing, Standard mode and historical p
     "Hog",
     "In-House",
   ]);
+  await openEntryTab(page, "Shot");
   await page
     .getByRole("combobox", { name: "Shot type", exact: true })
     .selectOption("Hit & Roll");
+  await openEntryTab(page, "Shot");
   await page
     .getByRole("combobox", { name: "Shot subtype", exact: true })
     .selectOption("hit_and_roll_under");
+  await openEntryTab(page, "Shot");
   await page
     .getByRole("combobox", { name: "Called weight", exact: true })
     .selectOption("control_weight_takeout");
+  await openEntryTab(page, "Shot");
   await page
     .getByRole("combobox", { name: "Shot difficulty", exact: true })
     .selectOption("demanding");
+  await openEntryTab(page, "Execution");
   await page
     .getByRole("combobox", { name: "Execution", exact: true })
     .selectOption("Make");
+  await openEntryTab(page, "Execution");
   await page
     .getByRole("combobox", { name: "Numeric grade", exact: true })
     .selectOption("5");
+  await openEntryTab(page, "Execution");
   await expect(
     page.getByRole("combobox", { name: "Result observations", exact: true }),
   ).toHaveValue("");
+  await openEntryTab(page, "Execution");
   await expect(
     page.getByRole("combobox", { name: "Observed weight", exact: true }),
   ).toHaveValue("");
+  await openEntryTab(page, "Execution");
   await page
     .getByRole("combobox", { name: "Observed weight", exact: true })
     .selectOption("button");
+  await openEntryTab(page, "Execution");
   await page
     .getByRole("combobox", { name: "Result observations", exact: true })
     .selectOption("roll_far");
+  await openEntryTab(page, "Execution");
   await page
     .getByRole("combobox", { name: "Add another miss", exact: true })
     .selectOption("jammed");
+  await openEntryTab(page, "Technical");
   await page
     .getByRole("combobox", { name: "Line", exact: true })
     .selectOption("Wide");
@@ -149,10 +165,10 @@ test("workbook selections, corrections, clearing, Standard mode and historical p
     page.getByRole("combobox", { name: "Guard to clear", exact: true }),
   ).toBeHidden();
   // Save first: historical details are available only during correction.
-  await page.getByRole("button", { name: "Save attempt", exact: true }).click();
+  await page.getByRole("button", { name: "Next Turn", exact: true }).click();
   await expect(
     page.locator(".coach-scoring [role=status]").first(),
-  ).toContainText("Attempt saved");
+  ).toContainText("Saved.");
   await page
     .getByRole("button", { name: "Recorded shots", exact: true })
     .click();
@@ -161,6 +177,7 @@ test("workbook selections, corrections, clearing, Standard mode and historical p
     .filter({ hasText: `End ${end}` })
     .getByRole("button", { name: "Edit", exact: true })
     .click();
+  await openEntryTab(page, "Notes");
   // Set historical details explicitly, then ensure ordinary corrections retain them.
   await page
     .getByRole("button", { name: /^Saved observation details/ })
@@ -213,11 +230,11 @@ test("workbook selections, corrections, clearing, Standard mode and historical p
   ).toBe("B");
   await expect(
     page.getByRole("region", { name: "Current shot context" }),
-  ).toContainText("Team weighted shooting");
+  ).toContainText("Team (W)");
   await expect(page.getByLabel("Difficulty-adjusted shooting")).toHaveCount(0);
   await expect(
     page.getByRole("region", { name: "Current shot context" }),
-  ).toContainText("Team weighted shooting");
+  ).toContainText("Team (W)");
   await expect(page.getByLabel("Difficulty-adjusted shooting")).toHaveCount(0);
   const url = `/api/curlcoach/enhanced?gameId=${game.id}&eventId=practice`;
   const read = async () =>
@@ -239,9 +256,11 @@ test("workbook selections, corrections, clearing, Standard mode and historical p
     .getByRole("button", { name: "Recorded shots", exact: true })
     .click();
   await attempt.getByRole("button", { name: "Edit", exact: true }).click();
+  await openEntryTab(page, "Execution");
   await page
     .getByRole("combobox", { name: "Result observations", exact: true })
     .selectOption("");
+  await openEntryTab(page, "Execution");
   await page
     .getByRole("combobox", { name: "Observed weight", exact: true })
     .selectOption("");
@@ -260,6 +279,7 @@ test("workbook selections, corrections, clearing, Standard mode and historical p
     toleranceResult: "outside_called_tolerance",
   });
   await mode(page, "standard");
+  await openEntryTab(page, "Shot");
   await expect(
     page.getByRole("combobox", { name: "Shot subtype", exact: true }),
   ).toHaveCount(0);
@@ -267,6 +287,7 @@ test("workbook selections, corrections, clearing, Standard mode and historical p
     .getByRole("button", { name: "Recorded shots", exact: true })
     .click();
   await attempt.getByRole("button", { name: "Edit", exact: true }).click();
+  await openEntryTab(page, "Shot");
   await expect(
     page.getByRole("combobox", { name: "Called weight", exact: true }),
   ).toBeVisible();
@@ -276,6 +297,7 @@ test("workbook selections, corrections, clearing, Standard mode and historical p
       .locator("option")
       .allTextContents(),
   ).toContain("Guard 1");
+  await openEntryTab(page, "Execution");
   await page
     .getByRole("combobox", { name: "Numeric grade", exact: true })
     .selectOption("4");
@@ -286,12 +308,13 @@ test("workbook selections, corrections, clearing, Standard mode and historical p
   expect((await read()).values).toEqual(cleared.values);
   await expect(
     page.getByRole("region", { name: "Current shot context" }),
-  ).toContainText("Team weighted shooting");
+  ).toContainText("Team (W)");
   await expect(page.getByLabel("Difficulty-adjusted shooting")).toHaveCount(0);
   await page
     .getByRole("button", { name: "Recorded shots", exact: true })
     .click();
   await attempt.getByRole("button", { name: "Edit", exact: true }).click();
+  await openEntryTab(page, "Shot");
   await page
     .getByRole("combobox", { name: "Called weight", exact: true })
     .selectOption("hack");
@@ -307,9 +330,11 @@ test("workbook selections, corrections, clearing, Standard mode and historical p
     .getByRole("button", { name: "Recorded shots", exact: true })
     .click();
   await attempt.getByRole("button", { name: "Edit", exact: true }).click();
+  await openEntryTab(page, "Shot");
   await expect(
     page.getByRole("combobox", { name: "Shot subtype", exact: true }),
   ).toHaveValue("hit_and_roll_under");
+  await openEntryTab(page, "Execution");
   await page
     .getByRole("combobox", { name: "Result observations", exact: true })
     .selectOption("none");
@@ -324,6 +349,7 @@ test("workbook selections, corrections, clearing, Standard mode and historical p
   await page
     .getByRole("combobox", { name: "Review shot", exact: true })
     .selectOption(saved.shotId);
+  await openEntryTab(page, "Execution");
   await expect(
     page.getByRole("combobox", { name: "Result observations", exact: true }),
   ).toHaveValue("none");

@@ -4,12 +4,12 @@ test.use({ actionTimeout: 10000 });
 
 test.skip(!process.env.CURLCOACH_E2E, "Use the Shot Tracker config");
 
-test("mobile tabs preserve the whole shot, static context and fixed actions", async ({
+test("phone and desktop tabs preserve the whole shot, static context and fixed actions", async ({
   page,
 }, info) => {
   test.setTimeout(90000);
   await page.setViewportSize({
-    width: info.project.name === "phone" ? 390 : 360,
+    width: info.project.name === "phone" ? 390 : 1440,
     height: 844,
   });
   await page.goto("/curlcoach?event=practice#options");
@@ -87,6 +87,24 @@ test("mobile tabs preserve the whole shot, static context and fixed actions", as
     "guard",
   );
   const actions = page.locator(".coach-entry-actions");
+  await expect(
+    actions.getByRole("button", { name: "Save attempt", exact: true }),
+  ).toHaveCount(0);
+  const context = page.getByRole("region", { name: "Current shot context" });
+  await page.evaluate(() => window.scrollTo(0, 0));
+  const beforeRefresh = await context.boundingBox();
+  await page.route("**/api/curlcoach/workspace?**", async (route) => {
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    await route.continue();
+  });
+  await page.getByRole("button", { name: "Refresh event" }).click();
+  const duringRefresh = await context.boundingBox();
+  expect(duringRefresh!.y).toBeCloseTo(beforeRefresh!.y, 0);
+  await expect(
+    page.getByRole("button", { name: "Refresh event" }),
+  ).toBeEnabled();
+  expect((await context.boundingBox())!.y).toBeCloseTo(beforeRefresh!.y, 0);
+  await page.unroute("**/api/curlcoach/workspace?**");
   const box = await actions.boundingBox();
   expect(box!.y + box!.height).toBeLessThanOrEqual(844);
   await page.evaluate(() => window.scrollTo(0, 0));
@@ -94,19 +112,38 @@ test("mobile tabs preserve the whole shot, static context and fixed actions", as
     path: `work/mobile-tabs-${info.project.name}.png`,
     fullPage: true,
   });
-  await page.getByRole("button", { name: "Save Shot", exact: true }).click();
+  await page.route("**/api/curlcoach/workspace", async (route) => {
+    if (route.request().method() === "POST") {
+      await route.fulfill({
+        status: 409,
+        json: { error: "Simulated save conflict" },
+      });
+    } else await route.continue();
+  });
+  await page.getByRole("button", { name: "Next Turn", exact: true }).click();
+  await expect(page.locator(".coach-save-error")).toHaveText(
+    "Simulated save conflict",
+  );
+  await expect(context).toContainText(`End ${end}`);
+  expect((await context.boundingBox())!.y).toBeCloseTo(beforeRefresh!.y, 0);
+  await page.unroute("**/api/curlcoach/workspace");
+  await page.getByRole("button", { name: "Next Turn", exact: true }).click();
   await expect(
     page.locator(".coach-scoring [role=status]").first(),
-  ).toContainText("Attempt saved");
-  await page
-    .getByRole("button", { name: "Game controls", exact: true })
-    .click();
+  ).toContainText("Saved.");
+  const gameControls = page.getByRole("button", {
+    name: "Game controls",
+    exact: true,
+  });
+  if (await gameControls.isVisible()) await gameControls.click();
   await page
     .getByRole("button", { name: "Resume tracking", exact: true })
     .click();
-  await page
-    .getByRole("button", { name: "Close Game controls", exact: true })
-    .click();
+  const closeControls = page.getByRole("button", {
+    name: "Close Game controls",
+    exact: true,
+  });
+  if (await closeControls.isVisible()) await closeControls.click();
   await expect(
     page.getByRole("region", { name: "Current shot context" }),
   ).toContainText(`End ${end}`);
@@ -121,7 +158,9 @@ test("mobile tabs preserve the whole shot, static context and fixed actions", as
   await expect(page.getByLabel("Private coaching note")).toHaveValue(
     "Mobile tab preservation",
   );
-  await page.getByRole("button", { name: "Next", exact: true }).click();
+  await page
+    .getByRole("button", { name: "Save correction", exact: true })
+    .click();
   await expect(
     page.getByRole("tab", { name: "Shot", exact: true }),
   ).toHaveAttribute("aria-selected", "true");

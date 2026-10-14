@@ -70,7 +70,7 @@ test("workbook selections, corrections, clearing, Standard mode and historical p
     .click();
   await expect(
     page.getByRole("region", { name: "Current shot context" }),
-  ).toContainText(`${end} /`);
+  ).toContainText(`End ${end}`);
   await page
     .getByRole("combobox", { name: "Shot type", exact: true })
     .selectOption("Guard/Front Stone");
@@ -144,8 +144,20 @@ test("workbook selections, corrections, clearing, Standard mode and historical p
   await expect(
     page.getByRole("combobox", { name: "Guard to clear", exact: true }),
   ).toBeHidden();
+  // Save first: historical details are available only during correction.
+  await page.getByRole("button", { name: "Save attempt", exact: true }).click();
+  await expect(
+    page.locator(".coach-scoring [role=status]").first(),
+  ).toContainText("Attempt saved");
+  await page
+    .locator(".coach-attempt")
+    .filter({ hasText: `End ${end}` })
+    .getByRole("button", { name: "Correct", exact: true })
+    .click();
   // Set historical details explicitly, then ensure ordinary corrections retain them.
-  await page.getByRole("button", { name: /^Detailed Enhanced review/ }).click();
+  await page
+    .getByRole("button", { name: /^Saved observation details/ })
+    .click();
   await page
     .getByText("Historical call and observations", { exact: true })
     .click();
@@ -165,7 +177,9 @@ test("workbook selections, corrections, clearing, Standard mode and historical p
     .getByRole("dialog")
     .getByRole("button", { name: "Done", exact: true })
     .click();
-  await page.getByRole("button", { name: "Save attempt", exact: true }).click();
+  await page
+    .getByRole("button", { name: "Save correction", exact: true })
+    .click();
   await expect(page.locator(".coach-scoring [role=status]").first()).toHaveText(
     "Attempt saved. Report updated.",
   );
@@ -190,12 +204,14 @@ test("workbook selections, corrections, clearing, Standard mode and historical p
       (r: { shotId: string }) => r.shotId === saved.shotId,
     ).level,
   ).toBe("B");
-  await expect(page.getByLabel("Difficulty-adjusted shooting")).toContainText(
-    "Coverage:",
+  await expect(page.getByRole("region", { name: "Team report" })).toContainText(
+    "Weighted team shooting",
   );
-  await expect(page.getByLabel("Difficulty-adjusted shooting")).toContainText(
-    "not official Curling Canada",
+  await expect(page.getByLabel("Difficulty-adjusted shooting")).toHaveCount(0);
+  await expect(page.getByRole("region", { name: "Team report" })).toContainText(
+    "Weighted team shooting",
   );
+  await expect(page.getByLabel("Difficulty-adjusted shooting")).toHaveCount(0);
   const url = `/api/curlcoach/enhanced?gameId=${game.id}&eventId=practice`;
   const read = async () =>
     (await (await page.request.get(url)).json()).documents.find(
@@ -255,9 +271,10 @@ test("workbook selections, corrections, clearing, Standard mode and historical p
     .click();
   await expect(attempt).toContainText("4/5");
   expect((await read()).values).toEqual(cleared.values);
-  await expect(page.getByLabel("Difficulty-adjusted shooting")).toContainText(
-    "Difficulty adjusted:",
+  await expect(page.getByRole("region", { name: "Team report" })).toContainText(
+    "Weighted team shooting",
   );
+  await expect(page.getByLabel("Difficulty-adjusted shooting")).toHaveCount(0);
   await attempt.getByRole("button", { name: "Correct", exact: true }).click();
   await page
     .getByRole("combobox", { name: "Called weight", exact: true })

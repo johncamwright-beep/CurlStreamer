@@ -39,12 +39,7 @@ import {
   type TrackerResume,
 } from "@/lib/curlcoach/resume-storage";
 import CoachLab, { turnLabel } from "./CoachLab";
-import {
-  EnhancedReview,
-  MetricsOptions,
-  MetricsProvider,
-  useMetrics,
-} from "./EnhancedMetrics";
+import { EnhancedReview, MetricsProvider, useMetrics } from "./EnhancedMetrics";
 
 import AnalysisPanels from "./AnalysisPanels";
 import TechnicalReview from "./TechnicalReview";
@@ -56,6 +51,7 @@ import {
   filterAnalysisShots,
 } from "@/lib/curlcoach/analysis";
 import EventReportLibrary from "./EventReportLibrary";
+import { MetricsOptions } from "./EnhancedMetrics";
 import ScoringWakeLock from "./ScoringWakeLock";
 import EntryOverlay from "./EntryOverlay";
 import ShotTrackerBrand from "./ShotTrackerBrand";
@@ -667,6 +663,51 @@ function WorkspaceContent({
     }
   }
 
+  const gamePicker = (
+    <EntryOverlay title="Change game">
+      <div className="coach-entry-grid">
+        <label>
+          Event
+          <select
+            value={eventId || event?.id}
+            disabled={!data || busy}
+            onChange={(e) => {
+              setBusy(true);
+              setError("");
+              setEventId(e.target.value);
+              setAnalysisGame("all");
+              setPlayer("all");
+              remember(source, e.target.value);
+            }}
+          >
+            {data?.catalog.map((e) => (
+              <option key={e.id} value={e.id}>
+                {e.name}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
+          Game
+          <select
+            value={gameId}
+            disabled={busy}
+            onChange={(e) => {
+              setGameId(e.target.value);
+              remember(source, event!.id, e.target.value);
+            }}
+          >
+            {event?.games.map((g) => (
+              <option key={g.id} value={g.id}>
+                {g.label} · {g.teamName} vs {g.opponent}
+                {coachingClosed(g) ? " · Closed" : ""}
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
+    </EntryOverlay>
+  );
   return (
     <div className="coach-workspace">
       <aside className="event-sidebar">
@@ -766,7 +807,7 @@ function WorkspaceContent({
               <span aria-hidden="true">↻</span>
             </button>
           )}
-          {open && (
+          {open && view !== "Charting" && (
             <div className="event-selectors event-filter-bar">
               {mode === "lab" && (
                 <label>
@@ -864,26 +905,7 @@ function WorkspaceContent({
                   </select>
                 </label>
               )}
-              {view === "Charting" && event && (
-                <label className="event-game-picker">
-                  Game
-                  <select
-                    value={gameId}
-                    onChange={(e) => {
-                      setGameId(e.target.value);
-                      remember(source, event.id, e.target.value);
-                    }}
-                  >
-                    {event.games.map((g) => (
-                      <option key={g.id} value={g.id}>
-                        {g.label} · vs {g.opponent}
-                        {coachingClosed(g) ? " · Closed — review only" : ""}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              )}
-              {view !== "Charting" && view !== "Event reports" && (
+              {view !== "Event reports" && (
                 <>
                   <label>
                     Game
@@ -1030,10 +1052,17 @@ function WorkspaceContent({
             <button disabled={busy}>Unlock lab</button>
           </form>
         ) : view === "Options" ? (
-          <MetricsOptions />
+          mode === "lab" ? (
+            <MetricsOptions />
+          ) : (
+            <a href="/account?section=shot-tracker">
+              Open Shot Tracker options in Account &amp; Settings
+            </a>
+          )
         ) : !event || (eventId && event.id !== eventId) ? (
           <section className="event-card">
             <h2>{error ? "Event data is unavailable" : "Loading event…"}</h2>
+            {view === "Charting" && data && gamePicker}
             {error && (
               <>
                 <p>{error}</p>
@@ -1079,6 +1108,7 @@ function WorkspaceContent({
                 <CoachLab
                   key={`${source}:${event.id}:${game.id}`}
                   unlocked
+                  gamePicker={gamePicker}
                   onResumeTracking={() => {
                     const current = drafts.current.get(
                       resumeId({ source, eventId: event.id, gameId: game.id }),
@@ -1108,7 +1138,7 @@ function WorkspaceContent({
                   }
                   context={{
                     source,
-                    label: `${game.label} · vs ${game.opponent}`,
+                    label: `${game.label} · ${game.teamName} vs ${game.opponent}`,
                     eventId: event.id,
                     gameId: game.id,
                     readOnlyReason:
@@ -1123,7 +1153,10 @@ function WorkspaceContent({
                   }}
                 />
               ) : (
-                <p>No games in this event.</p>
+                <section className="event-card">
+                  <p>No games in this event.</p>
+                  {gamePicker}
+                </section>
               )}
             </div>
 

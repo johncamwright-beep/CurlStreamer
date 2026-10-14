@@ -1703,3 +1703,13 @@
     grid-row: 1 / span 2;
   }
 }
+
+.tracker-entry-notes {
+  grid-column: 1 / -1;
+}
+.tracker-entry-layout > .tracker-quick-entry {
+  grid-column: 1 / -1;
+}
+.coach-scoring .coach-summary {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}

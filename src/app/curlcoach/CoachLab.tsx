@@ -1,5 +1,4 @@
 "use client";
-import DifficultySummary from "./DifficultySummary";
 import {
   difficultyRecords,
   withDifficulty,
@@ -58,7 +57,6 @@ import {
   ResultsEntry,
 } from "./SubtypeEntry";
 import EntryOverlay from "./EntryOverlay";
-import { AssessmentCoverage } from "./AssessmentCoverage";
 import {
   EnhancedFields,
   GameContext,
@@ -104,6 +102,7 @@ function inferredDraft(
 export default function CoachLab({
   unlocked,
   onResumeTracking,
+  gamePicker,
   context,
   resume,
   onResume,
@@ -111,6 +110,7 @@ export default function CoachLab({
   onTrackingProgress,
 }: {
   unlocked: boolean;
+  gamePicker?: ReactNode;
   onResumeTracking?: () => void;
   resume?: { draft: Shot; editing: string | null; current?: Shot };
   onResume?: (value: {
@@ -640,6 +640,13 @@ export default function CoachLab({
   const classifiedShots = shots.map((s) =>
     withDifficulty(s, difficultyRows, enhancedData.ready),
   );
+  const shooterShots = shots.filter((s) => s.playerId === draft.playerId);
+  const shooter = report(shooterShots);
+  const shooterWeighted = difficultySummary(
+    classifiedShots.filter((s) => s.playerId === draft.playerId),
+  );
+  const percentage = (value: number | null) =>
+    value === null ? "—" : value.toFixed(1) + "%";
   const lastRevision = new Map(
     state?.events.map((event, index) => [event.shotId, index]),
   );
@@ -748,9 +755,10 @@ export default function CoachLab({
           </button>
         </p>
       )}
-      {context && !closed && (
+      {context && (
         <header className="coach-panel">
           <h2>{context.label ?? "Selected game"}</h2>
+          {gamePicker}
           {!closed && started && (
             <div
               className="coach-session-actions"
@@ -804,10 +812,7 @@ export default function CoachLab({
         <>
           <div className="coach-columns">
             <section ref={entry} className="coach-panel tracker-entry-panel">
-              <h2>{editing ? "Correct attempt" : "Chart an attempt"}</h2>
-              <p>
-                End {draft.end} · Rock {rockNumber(draft)} of 8
-              </p>
+              {editing && <h2>Correct attempt</h2>}
               <form
                 className="tracker-entry-form"
                 onChangeCapture={() => {
@@ -836,24 +841,21 @@ export default function CoachLab({
                       className="tracker-context-card"
                       aria-label="Current shot context"
                     >
-                      <h3>Game context</h3>
-                      <p>{context?.label ?? "Local practice game"}</p>
+                      <h3>
+                        {players.find((p) => p.id === draft.playerId)?.name} —{" "}
+                        {draft.position}
+                      </h3>
+                      <p>
+                        End {draft.end} · Rock {draft.stone}
+                      </p>
                       <dl>
                         <div>
-                          <dt>Player</dt>
-                          <dd>
-                            {players.find((p) => p.id === draft.playerId)?.name}
-                          </dd>
+                          <dt>Shooting</dt>
+                          <dd>{percentage(shooter.percent)}</dd>
                         </div>
                         <div>
-                          <dt>Position</dt>
-                          <dd>{draft.position}</dd>
-                        </div>
-                        <div>
-                          <dt>End / rock</dt>
-                          <dd>
-                            {draft.end} / {rockNumber(draft)} of 8
-                          </dd>
+                          <dt>Weighted shooting</dt>
+                          <dd>{percentage(shooterWeighted.adjusted)}</dd>
                         </div>
                       </dl>
                       <EntryOverlay title="Change">
@@ -926,18 +928,6 @@ export default function CoachLab({
                       </EntryOverlay>
                     </section>
                     <div className="tracker-quick-entry">
-                      <div className="tracker-quick-heading">
-                        <div>
-                          <h3>Quick entry</h3>
-                          <p>Record the call and what happened.</p>
-                        </div>
-                        <a href="#options">
-                          {enhancedMode
-                            ? "Enhanced metrics"
-                            : "Standard metrics"}{" "}
-                          ↗
-                        </a>
-                      </div>
                       <div className="coach-fields">
                         {" "}
                         {entryGroup(
@@ -1030,7 +1020,7 @@ export default function CoachLab({
                         )}
                       </div>
                     </div>
-                    <aside className="tracker-entry-aside">
+                    <div className="tracker-entry-notes">
                       <EntryOverlay
                         title="Notes & review"
                         description={
@@ -1161,7 +1151,7 @@ export default function CoachLab({
                           />
                         </label>
                       </EntryOverlay>
-                      {enhancedMode && (
+                      {editing && enhancedMode && (
                         <div className="enhanced">
                           {enhancedData.error && (
                             <p role="alert">{enhancedData.error}</p>
@@ -1173,7 +1163,7 @@ export default function CoachLab({
                             </p>
                           )}
                           <EntryOverlay
-                            title="Detailed Enhanced review · optional"
+                            title="Saved observation details"
                             description="Historical observations, context and assessment basis."
                           >
                             <EnhancedFields
@@ -1210,17 +1200,7 @@ export default function CoachLab({
                           </EntryOverlay>
                         </div>
                       )}
-                      <EntryOverlay
-                        title="Turn / target guide"
-                        description="Understand CW, CCW, C, S and IO."
-                      >
-                        <p>
-                          CW / CCW: clockwise / counterclockwise. C / S: broom
-                          inside / outside the four-foot lines. IO: travel away
-                          from centre; other codes mean towards centre.
-                        </p>
-                      </EntryOverlay>
-                    </aside>
+                    </div>
                   </div>
                   <div className="coach-entry-actions">
                     <button type="submit" value="save">
@@ -1302,30 +1282,12 @@ export default function CoachLab({
               </strong>
             </div>
             <div>
-              <span>Graded / shots</span>
+              <span>Weighted team shooting</span>
               <strong>
-                {team.scored} / {team.attempts}
+                {percentage(difficultySummary(classifiedShots).adjusted)}
               </strong>
             </div>
-            <div>
-              <span>Ungraded</span>
-              <strong>{team.missing}</strong>
-            </div>
-            <div>
-              <span>Excluded</span>
-              <strong>{team.excluded}</strong>
-            </div>
           </section>
-          <DifficultySummary
-            compact
-            value={difficultySummary(classifiedShots)}
-          />
-          {enhancedMode && enhancedData.ready && (
-            <AssessmentCoverage
-              shots={shots}
-              documents={enhancedData.documents}
-            />
-          )}
           {!rosterReady && context?.source === "streamer" && (
             <section className="event-notice" aria-label="Roster required">
               Add your team roster before charting attempts.{" "}

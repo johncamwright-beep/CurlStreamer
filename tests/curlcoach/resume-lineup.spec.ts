@@ -219,7 +219,11 @@ async function fixture(
     `/__tracker_fixture?event=${eventOne}&game=${gameOne}#scoring`,
   );
   await expect(
-    page.getByRole("combobox", { name: "Game", exact: true }),
+    page.getByRole("combobox", {
+      name: "Game",
+      exact: true,
+      includeHidden: true,
+    }),
   ).toHaveValue(gameOne);
   return games;
 }
@@ -282,6 +286,7 @@ test("new games require lineup confirmation and keep actions inside the selected
     .getByRole("dialog", { name: "Change", exact: true })
     .getByRole("button", { name: "Done", exact: true })
     .click();
+  await page.getByRole("button", { name: "Change game", exact: true }).click();
   await page
     .getByRole("combobox", { name: "Game", exact: true })
     .selectOption(gameTwo);
@@ -290,6 +295,7 @@ test("new games require lineup confirmation and keep actions inside the selected
   ).toBeVisible();
   await expect(page.getByLabel("Numeric grade")).toBeHidden();
   await start(page);
+  await page.getByRole("button", { name: "Change game", exact: true }).click();
   await page
     .getByRole("combobox", { name: "Game", exact: true })
     .selectOption(gameOne);
@@ -327,12 +333,21 @@ test("event transitions retain the event picker without flashing an unavailable 
   page,
 }) => {
   await fixture(page);
+  await page.getByRole("button", { name: "Change game", exact: true }).click();
   await page
     .getByRole("combobox", { name: "Event", exact: true })
     .selectOption(eventTwo);
   await expect(
+    page.getByRole("button", { name: "Start Charting" }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "Change game", exact: true }).click();
+  await expect(
     page.getByRole("combobox", { name: "Event", exact: true }),
   ).toHaveValue(eventTwo);
+  await page
+    .getByRole("dialog")
+    .getByRole("button", { name: "Done", exact: true })
+    .click();
   await expect(
     page.getByRole("heading", { name: "Event data is unavailable" }),
   ).toHaveCount(0);
@@ -340,7 +355,11 @@ test("event transitions retain the event picker without flashing an unavailable 
     page.getByRole("button", { name: "Start Charting" }),
   ).toBeVisible();
   await expect(
-    page.getByRole("combobox", { name: "Game", exact: true }),
+    page.getByRole("combobox", {
+      name: "Game",
+      exact: true,
+      includeHidden: true,
+    }),
   ).toHaveValue(gameThree);
 });
 test("lost lineup response retries the original request and retains the three-player lineup", async ({

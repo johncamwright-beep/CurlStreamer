@@ -70,6 +70,21 @@ describe("production CoachLab session state", () => {
     const html = render("open", players, true);
 
     expect(html).toContain('value="stable-player-id"');
+    expect(html).toContain("Taylor — Lead");
+    expect(html).toContain("Weighted shooting");
+    expect(html).toContain("Weighted team shooting");
+    for (const removed of [
+      "Quick entry",
+      "Game context",
+      "Graded / shots",
+      "Assessment coverage",
+      "Provisional illustrative",
+      "Turn / target guide",
+    ])
+      expect(html).not.toContain(removed);
+    expect(html.indexOf("Technical observation")).toBeLessThan(
+      html.indexOf("Notes &amp; review"),
+    );
     expect(html).toContain("Finish private coaching session");
   });
 

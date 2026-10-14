@@ -192,6 +192,37 @@ describe("assessment coverage", () => {
       assessed: 1,
       unknownCall: 1,
     });
+    const destinations = changeObservation(
+      assessed,
+      "observedDestination",
+      "button",
+    );
+    const explicitNone = changeObservation(
+      destinations,
+      "resultObservations",
+      [],
+    );
+    const newRows = assessmentCoverage(
+      [...shots, excluded],
+      [{ ...doc, value: explicitNone }],
+    );
+    for (const group of ["destination", "results"]) {
+      expect(newRows.find((r) => r.group === group)).toMatchObject({
+        eligible: 2,
+        assessed: 1,
+        unassessed: 1,
+      });
+    }
+    const unassessed = changeObservation(
+      explicitNone,
+      "resultObservations",
+      undefined,
+    );
+    expect(
+      assessmentCoverage(shots, [{ ...doc, value: unassessed }]).find(
+        (r) => r.group === "results",
+      ),
+    ).toMatchObject({ assessed: 0, unassessed: 2 });
     const conflicted = assessmentCoverage(shots, [
       { ...doc, conflicts: ["source identity requires reconciliation"] },
     ]);

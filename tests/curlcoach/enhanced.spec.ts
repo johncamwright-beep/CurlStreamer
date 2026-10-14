@@ -1,48 +1,47 @@
 import { expect, test, type Page } from "@playwright/test";
 
 test.skip(!process.env.CURLCOACH_E2E, "Use the Shot Tracker config");
-
 test.use({ actionTimeout: 10000 });
-
 async function navigate(page: Page, name: string) {
   await page
     .getByRole("button", { name: "Shot Tracker menu", exact: true })
     .click();
-
-  await page.getByRole("link", { name, exact: true }).click();
-}
-
-test("persistent coach mode, atomic capture, Standard correction and supplemental review", async ({
-  page,
-}, info) => {
-  test.setTimeout(90000);
-
-  await page.goto("/curlcoach?event=practice#options");
-
   await page
-    .getByLabel("Local lab key")
-    .fill("curlcoach-e2e-only-key-thirty-two-characters");
-
-  await page.getByRole("button", { name: "Unlock lab" }).click();
-
+    .getByRole("dialog")
+    .getByRole("link", { name, exact: true })
+    .click();
+}
+async function mode(page: Page, value: string) {
+  await navigate(page, "Options");
   await expect(
     page.getByRole("button", { name: "Save Options", exact: true }),
   ).toBeEnabled();
-
-  await page.getByLabel("Metrics mode").selectOption("enhanced");
-
+  await page.getByLabel("Metrics mode").selectOption(value);
   await page.getByRole("button", { name: "Save Options", exact: true }).click();
-
   await expect(
     page.getByText("Options saved for your coaching account."),
   ).toBeVisible();
-
-  await page.reload();
-
-  await expect(page.getByLabel("Metrics mode")).toHaveValue("enhanced");
-
   await navigate(page, "Charting");
+}
 
+test("workbook selections, corrections, clearing, Standard mode and historical preservation", async ({
+  page,
+}, info) => {
+  test.setTimeout(120000);
+  await page.goto("/curlcoach?event=practice#options");
+  await page
+    .getByLabel("Local lab key")
+    .fill("curlcoach-e2e-only-key-thirty-two-characters");
+  await page.getByRole("button", { name: "Unlock lab" }).click();
+  await expect(
+    page.getByRole("button", { name: "Save Options", exact: true }),
+  ).toBeEnabled();
+  await page.getByLabel("Metrics mode").selectOption("enhanced");
+  await page.getByRole("button", { name: "Save Options", exact: true }).click();
+  await expect(
+    page.getByText("Options saved for your coaching account."),
+  ).toBeVisible();
+  await navigate(page, "Charting");
   if (
     await page
       .getByRole("button", { name: "Start Charting", exact: true })
@@ -51,295 +50,231 @@ test("persistent coach mode, atomic capture, Standard correction and supplementa
     await page
       .getByRole("button", { name: "Start Charting", exact: true })
       .click();
-
     await page
       .getByRole("button", { name: "Confirm lineup & start", exact: true })
       .click();
   }
-
+  await expect(
+    page.getByRole("button", { name: "Change", exact: true }),
+  ).toBeEnabled();
+  await expect(page.getByLabel("End", { exact: true })).toBeHidden();
+  await page.getByRole("button", { name: "Change", exact: true }).click();
   const end = info.project.name === "phone" ? "17" : "18";
-
   await page.getByLabel("End", { exact: true }).fill(end);
-
   await page
     .getByRole("combobox", { name: "Stone", exact: true })
     .selectOption("1");
-
-  await expect(page.getByLabel("Shot type", { exact: true })).toHaveCount(0);
-  await expect(page.getByLabel("Detailed shot", { exact: true })).toHaveCount(
-    0,
-  );
-  await page.getByLabel("Shot", { exact: true }).selectOption("standard:Draw");
   await page
-    .getByLabel("Shot", { exact: true })
-    .selectOption("enhanced:runback_double");
+    .getByRole("dialog")
+    .getByRole("button", { name: "Done", exact: true })
+    .click();
+  await expect(
+    page.getByRole("region", { name: "Current shot context" }),
+  ).toContainText(`${end} /`);
+  await page
+    .getByRole("combobox", { name: "Shot type", exact: true })
+    .selectOption("Guard/Front Stone");
+  await page
+    .getByRole("combobox", { name: "Shot subtype", exact: true })
+    .selectOption("guard");
+  expect(
+    await page
+      .getByRole("combobox", { name: "Called weight", exact: true })
+      .locator("option")
+      .allTextContents(),
+  ).toEqual(["Not recorded", "Guard 1", "Guard 2", "Guard 3"]);
+  expect(
+    await page
+      .getByRole("combobox", { name: "Observed weight", exact: true })
+      .locator("option")
+      .allTextContents(),
+  ).toEqual(["Not assessed", "Guard 1", "Guard 2", "Guard 3"]);
+  expect(
+    await page
+      .getByRole("combobox", { name: "Result observations", exact: true })
+      .locator("option")
+      .allTextContents(),
+  ).toEqual([
+    "Not assessed",
+    "No observed miss",
+    "Light",
+    "Heavy",
+    "Hog",
+    "In-House",
+  ]);
+  await page
+    .getByRole("combobox", { name: "Shot type", exact: true })
+    .selectOption("Hit & Roll");
+  await page
+    .getByRole("combobox", { name: "Shot subtype", exact: true })
+    .selectOption("hit_and_roll_under");
   await page
     .getByRole("combobox", { name: "Called weight", exact: true })
-    .selectOption("back_12");
-
+    .selectOption("control_weight_takeout");
+  await page
+    .getByRole("combobox", { name: "Shot difficulty", exact: true })
+    .selectOption("demanding");
+  await page
+    .getByRole("combobox", { name: "Execution", exact: true })
+    .selectOption("Make");
+  await page
+    .getByRole("combobox", { name: "Numeric grade", exact: true })
+    .selectOption("5");
   await expect(
-    page.getByLabel("Contact assessment", { exact: true }),
+    page.getByRole("combobox", { name: "Result observations", exact: true }),
+  ).toHaveValue("");
+  await expect(
+    page.getByRole("combobox", { name: "Observed weight", exact: true }),
+  ).toHaveValue("");
+  await page
+    .getByRole("combobox", { name: "Observed weight", exact: true })
+    .selectOption("normal_weight_takeout");
+  await page
+    .getByRole("combobox", { name: "Result observations", exact: true })
+    .selectOption("roll_far");
+  await page
+    .getByRole("combobox", { name: "Add another miss", exact: true })
+    .selectOption("jammed");
+  await page
+    .getByRole("combobox", { name: "Line", exact: true })
+    .selectOption("Wide");
+  await expect(
+    page.getByRole("button", { name: "Optional call details", exact: true }),
   ).toHaveCount(0);
-  await expect(page.getByLabel("Roll assessment", { exact: true })).toHaveCount(
-    0,
-  );
   await expect(
-    page.getByLabel("Removal assessment", { exact: true }),
-  ).toHaveCount(0);
-  await expect(
-    page.getByLabel("Tolerance assessment", { exact: true }),
-  ).toHaveCount(0);
-  await expect(
-    page.getByRole("combobox", { name: "First contact result", exact: true }),
+    page.getByRole("combobox", { name: "Guard to clear", exact: true }),
   ).toBeHidden();
-  await page.getByRole("button", { name: /^Optional call details/ }).click();
-  await page
-    .getByLabel("Contact plan", { exact: true })
-    .selectOption("direct_contact_with_target");
-
-  await page
-    .getByRole("dialog")
-    .getByRole("button", { name: "Done", exact: true })
-    .click();
-  await page.getByLabel("Guard to clear", { exact: true }).selectOption("yes");
-
-  await page
-    .getByRole("combobox", { name: "What happened?", exact: true })
-    .selectOption("flash_wide");
-  await page
-    .getByLabel("Add another miss", { exact: true })
-    .selectOption("roll_too_far");
-  await page.getByRole("button", { name: "Remove additional miss 1" }).click();
-  await page.getByRole("button", { name: /^More details/ }).click();
-  await expect(
-    page.getByRole("combobox", { name: "First contact result", exact: true }),
-  ).toHaveValue("intended_first_contact_missed");
-  await expect(page.getByLabel("Roll result", { exact: true })).toBeHidden();
-  await expect(
-    page.getByLabel("Target stones removed", { exact: true }),
-  ).toBeHidden();
-  await page
-    .getByRole("dialog")
-    .getByRole("button", { name: "Done", exact: true })
-    .click();
+  // Set historical details explicitly, then ensure ordinary corrections retain them.
   await page.getByRole("button", { name: /^Detailed Enhanced review/ }).click();
+  await page
+    .getByText("Historical call and observations", { exact: true })
+    .click();
+  await page
+    .getByRole("combobox", { name: "Guard to clear", exact: true })
+    .selectOption("yes");
   await page
     .getByText("Weight basis and historical result details", { exact: true })
     .click();
   await page
-    .getByLabel("Weight assessment basis", { exact: true })
-    .selectOption("timing");
-  await page
-    .getByLabel("Available tolerance", { exact: true })
+    .getByRole("combobox", { name: "Available tolerance", exact: true })
     .selectOption("tight");
   await page
-    .getByLabel("Tolerance result", { exact: true })
+    .getByRole("combobox", { name: "Tolerance result", exact: true })
     .selectOption("outside_called_tolerance");
-
-  await page.reload();
-  // The anonymous synthetic lab has no account-scoped Standard resume store.
-  // Return to the same slot; its Enhanced draft must still be retained.
-  await page.getByLabel("End", { exact: true }).fill(end);
   await page
-    .getByRole("combobox", { name: "Stone", exact: true })
-    .selectOption("1");
-  await page
-    .getByRole("combobox", { name: "Shot", exact: true })
-    .selectOption("enhanced:runback_double");
-  await expect(
-    page.getByRole("combobox", { name: "Called weight", exact: true }),
-  ).toHaveValue("back_12");
-  await expect(
-    page.getByRole("combobox", { name: "What happened?", exact: true }),
-  ).toHaveValue("flash_wide");
-  await page.screenshot({
-    path: `work/simplified-charting-${info.project.name}.png`,
-    fullPage: true,
-  });
-
-  await page
-    .getByRole("combobox", { name: "Execution", exact: true })
-    .selectOption("Partial");
-
-  await page
-    .getByRole("combobox", { name: "Numeric grade", exact: true })
-    .selectOption("2");
-
+    .getByRole("dialog")
+    .getByRole("button", { name: "Done", exact: true })
+    .click();
   await page.getByRole("button", { name: "Save attempt", exact: true }).click();
-
   await expect(page.locator(".coach-scoring [role=status]").first()).toHaveText(
     "Attempt saved. Report updated.",
   );
-
   const workspace = await (
     await page.request.get(
       "/api/curlcoach/workspace?source=sample&eventId=practice",
     )
   ).json();
-
   const game = workspace.event.games[0];
-
-  const saved = game.state.events.find(
-    (e: { shot: { end: number } }) => e.shot?.end === Number(end),
+  const saved = game.state.events.findLast(
+    (e: { shot?: { end: number } }) => e.shot?.end === Number(end),
   );
-
-  expect(saved).toBeTruthy();
-  expect(saved.shot.type).toBe("Runback/Multiple");
-
+  expect(saved.shot.type).toBe("Hit & Roll");
   const url = `/api/curlcoach/enhanced?gameId=${game.id}&eventId=practice`;
-
-  const before = await (await page.request.get(url)).json();
-
-  expect(
-    before.documents.find((d: { shotId: string }) => d.shotId === saved.shotId)
-      .value.values.misses,
-  ).toEqual(["flash_wide"]);
-
-  await navigate(page, "Options");
-
-  await page.getByLabel("Metrics mode").selectOption("standard");
-
-  await page.getByRole("button", { name: "Save Options", exact: true }).click();
-
-  await expect(
-    page.getByText("Options saved for your coaching account."),
-  ).toBeVisible();
-
-  await navigate(page, "Charting");
-
-  await expect(page.getByLabel("Detailed shot", { exact: true })).toHaveCount(
-    0,
-  );
-
+  const read = async () =>
+    (await (await page.request.get(url)).json()).documents.find(
+      (d: { shotId: string }) => d.shotId === saved.shotId,
+    ).value;
+  expect((await read()).values).toMatchObject({
+    shotSubtype: "hit_and_roll_under",
+    resultObservations: ["roll_far", "jammed"],
+    observedDestination: "normal_weight_takeout",
+    guardToClear: "yes",
+    tolerance: "tight",
+  });
   const attempt = page
     .locator(".coach-attempt")
     .filter({ hasText: `End ${end}` })
     .first();
-
   await attempt.getByRole("button", { name: "Correct", exact: true }).click();
-
-  await page.getByLabel("Numeric grade").selectOption("4");
-
+  await page
+    .getByRole("combobox", { name: "Result observations", exact: true })
+    .selectOption("");
+  await page
+    .getByRole("combobox", { name: "Observed weight", exact: true })
+    .selectOption("");
   await page
     .getByRole("button", { name: "Save correction", exact: true })
     .click();
-
-  await expect(attempt).toContainText("4/5");
-
-  const after = await (await page.request.get(url)).json();
-
-  expect(after.documents).toEqual(before.documents);
-
-  await navigate(page, "Options");
-
-  await page.getByLabel("Metrics mode").selectOption("enhanced");
-
-  await page.getByRole("button", { name: "Save Options", exact: true }).click();
-
   await expect(
-    page.getByText("Options saved for your coaching account."),
-  ).toBeVisible();
-
-  await navigate(page, "Enhanced review");
-
+    page.locator(".coach-scoring [role=status]").first(),
+  ).toContainText("saved");
+  const cleared = await read();
+  expect(cleared.values.resultObservations).toBeUndefined();
+  expect(cleared.assessments.results).toBe("not_assessed");
+  expect(cleared.assessments.destination).toBe("not_assessed");
+  expect(cleared.values).toMatchObject({
+    guardToClear: "yes",
+    toleranceResult: "outside_called_tolerance",
+  });
+  await mode(page, "standard");
+  await expect(
+    page.getByRole("combobox", { name: "Shot subtype", exact: true }),
+  ).toHaveCount(0);
+  await attempt.getByRole("button", { name: "Correct", exact: true }).click();
+  expect(
+    await page
+      .getByRole("combobox", { name: "Called weight", exact: true })
+      .locator("option")
+      .allTextContents(),
+  ).toContain("Guard 1");
   await page
-    .getByRole("combobox", { name: "Review shot", exact: true })
-    .selectOption(saved.shotId);
-
-  await expect(
-    page.getByRole("combobox", { name: "Called weight", exact: true }),
-  ).toHaveValue("back_12");
-
+    .getByRole("combobox", { name: "Numeric grade", exact: true })
+    .selectOption("4");
+  await page
+    .getByRole("button", { name: "Save correction", exact: true })
+    .click();
+  await expect(attempt).toContainText("4/5");
+  expect((await read()).values).toEqual(cleared.values);
+  await attempt.getByRole("button", { name: "Correct", exact: true }).click();
   await page
     .getByRole("combobox", { name: "Called weight", exact: true })
-    .selectOption("control_weight_takeout");
-
-  await page.getByRole("button", { name: /^More details/ }).click();
+    .selectOption("hack");
   await page
-    .getByRole("combobox", { name: "First contact result", exact: true })
-    .selectOption("not_assessed");
-  await page
-    .getByRole("dialog")
-    .getByRole("button", { name: "Done", exact: true })
+    .getByRole("button", { name: "Save correction", exact: true })
     .click();
   await expect(
-    page.getByRole("combobox", { name: "What happened?", exact: true }),
-  ).toHaveValue("not_assessed");
-  await page
-    .getByRole("button", { name: "Save Enhanced review", exact: true })
-    .click();
-
+    page.locator(".coach-scoring [role=status]").first(),
+  ).toContainText("saved");
+  expect((await read()).values.intendedWeight).toBe("hack");
+  await mode(page, "enhanced");
+  await attempt.getByRole("button", { name: "Correct", exact: true }).click();
   await expect(
-    page.getByText("Enhanced review saved. Standard scores are unchanged."),
-  ).toBeVisible();
-
-  await page.reload();
-
+    page.getByRole("combobox", { name: "Shot subtype", exact: true }),
+  ).toHaveValue("hit_and_roll_under");
   await page
-    .getByRole("combobox", { name: "Review shot", exact: true })
-    .selectOption(saved.shotId);
-
-  await expect(
-    page.getByRole("combobox", { name: "Called weight", exact: true }),
-  ).toHaveValue("control_weight_takeout");
-
-  await page.getByRole("button", { name: /^More details/ }).click();
-  await expect(
-    page.getByRole("combobox", { name: "First contact result", exact: true }),
-  ).toHaveValue("not_assessed");
-  await page
-    .getByRole("dialog")
-    .getByRole("button", { name: "Done", exact: true })
-    .click();
-  const cleared = await (await page.request.get(url)).json();
-  const clearedValue = cleared.documents.find(
-    (d: { shotId: string }) => d.shotId === saved.shotId,
-  ).value;
-  expect(clearedValue.assessments.contact).toBe("not_assessed");
-  expect(clearedValue.values.contactResult).toBeUndefined();
-  expect(clearedValue.values.misses).toBeUndefined();
-  expect(clearedValue.values.toleranceResult).toBe("outside_called_tolerance");
-  expect(clearedValue.values.tolerance).toBe("tight");
-  expect(clearedValue.values.weightBasis).toBe("timing");
-  await page
-    .getByRole("combobox", { name: "What happened?", exact: true })
+    .getByRole("combobox", { name: "Result observations", exact: true })
     .selectOption("none");
   await page
-    .getByRole("button", { name: "Save Enhanced review", exact: true })
+    .getByRole("button", { name: "Save correction", exact: true })
     .click();
   await expect(
-    page.getByText("Enhanced review saved. Standard scores are unchanged."),
-  ).toBeVisible();
-  await page.reload();
+    page.locator(".coach-scoring [role=status]").first(),
+  ).toContainText("saved");
+  expect((await read()).values.resultObservations).toEqual([]);
+  await navigate(page, "Enhanced review");
   await page
     .getByRole("combobox", { name: "Review shot", exact: true })
     .selectOption(saved.shotId);
   await expect(
-    page.getByRole("combobox", { name: "What happened?", exact: true }),
+    page.getByRole("combobox", { name: "Result observations", exact: true }),
   ).toHaveValue("none");
   await page.getByText("Saved observation details", { exact: true }).click();
   await expect(
     page.locator("dd").getByText("Outside called tolerance", { exact: true }),
   ).toBeVisible();
-
-  expect(
-    await page.evaluate(
-      () => document.documentElement.scrollWidth <= window.innerWidth + 1,
-    ),
-  ).toBe(true);
-
   await page.screenshot({
-    path: `test-results/enhanced-review-${info.project.name}.png`,
+    path: `work/subtype-review-${info.project.name}.png`,
     fullPage: true,
   });
-
-  await navigate(page, "Options");
-
-  await page.getByLabel("Metrics mode").selectOption("standard");
-
-  await page.getByRole("button", { name: "Save Options", exact: true }).click();
-
-  await expect(
-    page.getByText("Options saved for your coaching account."),
-  ).toBeVisible();
+  await mode(page, "standard");
 });

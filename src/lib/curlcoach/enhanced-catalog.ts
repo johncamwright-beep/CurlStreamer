@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { allWeights, allResults, shotSubtypes } from "./shot-subtypes";
 import { releases, technicals, type Shot } from "./model";
 
 export const ENHANCED_VERSION = "enhanced-v1" as const;
@@ -73,6 +74,29 @@ export const missChoices = [
   "other_observable_miss",
 ] as const;
 export const catalogue: Record<string, Field> = {
+  shotSubtype: field(
+    "Shot subtype",
+    shotSubtypes.map((s) => s.id),
+    "Live",
+    "Workbook subtype under the explicitly selected Standard shot. Original detail remains historical.",
+  ),
+  observedDestination: field(
+    "Observed weight destination",
+    allWeights,
+    "Live",
+    "Actual recorded destination or takeout weight category; not a Light/Heavy assessment.",
+    "destination",
+  ),
+  resultObservations: {
+    ...field(
+      "Result observations",
+      allResults,
+      "Live",
+      "Explicit observations from the workbook. An empty assessed list means No observed miss; missing means unassessed.",
+      "results",
+    ),
+    multiple: true,
+  },
   detail: field(
     "Detailed shot",
     Object.keys(detailMappings),
@@ -105,6 +129,27 @@ export const catalogue: Record<string, Field> = {
       "normal_weight_takeout",
       "peel_takeout",
       "takeout_weight_unspecified",
+      ...allWeights.filter(
+        (w) =>
+          ![
+            "1_guard",
+            "2_guard",
+            "3_guard",
+            "top_12",
+            "top_8",
+            "top_4",
+            "button",
+            "back_button",
+            "back_4",
+            "back_8",
+            "back_12",
+            "back_line",
+            "control_weight_takeout",
+            "normal_weight_takeout",
+            "peel_takeout",
+            "takeout_weight_unspecified",
+          ].includes(w),
+      ),
     ],
     "Live",
     "Called destination or takeout weight; these are categories, not a numeric scale.",
@@ -164,7 +209,7 @@ export const catalogue: Record<string, Field> = {
     "Called margin; not inferred from a miss.",
   ),
   observedWeight: field(
-    "Observed weight",
+    "Weight assessment (historical)",
     ["light", "on_target", "heavy"],
     "Live",
     "An explicit weight assessment, independent of grade.",
@@ -473,6 +518,8 @@ export const assessmentStates = [
   "not_applicable",
 ] as const;
 export const groups = [
+  "destination",
+  "results",
   "weight",
   "contact",
   "roll",

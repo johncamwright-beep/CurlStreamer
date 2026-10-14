@@ -1,4 +1,5 @@
 "use client";
+import { difficultyEntryLabels } from "@/lib/curlcoach/difficulty";
 
 import { shotTypes, type Shot } from "@/lib/curlcoach/model";
 import {
@@ -132,6 +133,7 @@ export function DifficultyEntry({
       title="Shot difficulty"
       value={String(value.values.difficulty ?? "")}
       choices={[...catalogue.difficulty.choices!]}
+      labels={difficultyEntryLabels}
       onChange={(choice) =>
         onChange(changeObservation(value, "difficulty", choice || undefined))
       }

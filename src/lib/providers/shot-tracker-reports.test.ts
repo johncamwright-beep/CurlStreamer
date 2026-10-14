@@ -205,3 +205,18 @@ it("saves complete team-only evidence and makes separate calls for each player",
   expect(individual.reports.length).toBeGreaterThan(1);
   expect(m.generate).toHaveBeenCalledTimes(individual.reports.length);
 });
+
+it("invalidates new report snapshots on difficulty changes while retaining legacy fingerprints", () => {
+  const e = event(),
+    before = reportFingerprint(e, "team"),
+    legacy = reportFingerprint(e, "team", "shot-tracker-event-v6");
+  e.games[0].difficultyReady = true;
+  e.games[0].difficultyRecords = [
+    { shotId: "test", identity: "test", level: "C", revision: 1 },
+  ];
+  expect(reportFingerprint(e, "team")).not.toBe(before);
+  expect(reportFingerprint(e, "team", "shot-tracker-event-v6")).toBe(legacy);
+  const classified = reportFingerprint(e, "team");
+  e.games[0].difficultyRecords[0].level = "B";
+  expect(reportFingerprint(e, "team")).not.toBe(classified);
+});

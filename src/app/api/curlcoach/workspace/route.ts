@@ -1,3 +1,4 @@
+import { loadEventDifficulty } from "@/lib/providers/shot-tracker-difficulty";
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import { z } from "zod";
@@ -102,6 +103,7 @@ export async function GET(request: Request) {
   if (response) return response;
   const input = selection
     .extend({
+      includeDifficulty: z.literal("true").optional(),
       seasonId: z
         .union([
           z.string().uuid(),
@@ -141,6 +143,8 @@ export async function GET(request: Request) {
       ...game,
       state: states[index],
     }));
+    if (input.data.includeDifficulty)
+      await loadEventDifficulty(event, actor, labEnabled());
     return NextResponse.json(
       { event, catalog, seasons, refreshedAt: new Date().toISOString() },
       { headers: { "Cache-Control": "no-store" } },

@@ -1,4 +1,5 @@
 "use client";
+import DifficultySummary from "./DifficultySummary";
 import { ReportEmail } from "./ReportEmail";
 import { MissReport } from "./MissReport";
 import { reportLegend } from "@/lib/curlcoach/report-legend";
@@ -368,6 +369,7 @@ function ReportBody({ report }: { report: SavedReport }) {
       {report.technical?.some((g) => g.recorded > 0) && (
         <TechnicalReview groups={report.technical} compact />
       )}
+      {report.difficulty && <DifficultySummary value={report.difficulty} />}
       {reportSections(report).map((s) => (
         <section key={s.title}>
           <h4 className="mb-3 text-lg font-bold">{s.title}</h4>

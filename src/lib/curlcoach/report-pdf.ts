@@ -1,3 +1,9 @@
+import {
+  difficultyDescription,
+  difficultyCaveat,
+  difficultyPercent,
+  type DifficultySummary,
+} from "./difficulty";
 import type { SavedReport } from "./reports";
 import { reportPDFFilename, reportPDFTitle } from "./report-filename";
 export { reportPDFFilename } from "./report-filename";
@@ -168,6 +174,25 @@ export async function buildReportPDF(report: SavedReport, eventName: string) {
     y += 42;
   }
   const sections = reportSections(report);
+  const difficultyBlock = (d: DifficultySummary) => {
+    heading("Difficulty context - secondary metric");
+    text(difficultyDescription(d));
+    text(
+      `Classified subset actual ${difficultyPercent(d.actual)}; expected ${difficultyPercent(d.expected)}. Reference baseline ${difficultyPercent(d.benchmarks.baseline)}. Benchmark set ${d.benchmarks.version}.`,
+    );
+    table(
+      ["Difficulty", "Shots / mix", "Actual", "Expected"],
+      d.mix.map((r) => [
+        r.level,
+        `${r.count} / ${difficultyPercent(r.share)}`,
+        difficultyPercent(r.actual),
+        difficultyPercent(r.expected),
+      ]),
+      [35, 63, 40, 40],
+    );
+    text(difficultyCaveat);
+  };
+  if (report.difficulty) difficultyBlock(report.difficulty);
   heading("Overall assessment");
   sections[0].findings.forEach((f) => text(f.text));
   const shots = stats.filter((m) => m.id !== "overall");
@@ -301,6 +326,7 @@ export async function buildReportPDF(report: SavedReport, eventName: string) {
       heading(`Game-by-game review: ${game.title}`);
       const summary = report.narrative.games?.find((g) => g.key === game.key);
       if (summary) text(summary.text);
+      if (game.difficulty) text(difficultyDescription(game.difficulty));
       const metrics = game.groups.flatMap((group) =>
         group.metrics.map((m) => [
           `${group.title}: ${m.label}${m.value === "—" ? "" : "\n" + (m.basis ? basisText(m.basis) : report.evidence.find((e) => e.id === m.id) ? evidenceBasis(report.evidence.find((e) => e.id === m.id)!) : "Sample unavailable")}`,

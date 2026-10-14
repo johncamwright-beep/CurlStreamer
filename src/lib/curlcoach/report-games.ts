@@ -1,5 +1,7 @@
+import { difficultyGameShots } from "./event";
+import { difficultySummary, type DifficultySummary } from "./difficulty";
+import { difficultyEvidence } from "./difficulty-evidence";
 import {
-  currentShots,
   report,
   shotTypes,
   turns,
@@ -14,6 +16,7 @@ import { technicalSummary, technicalEvidence } from "./technical";
 export type ReportGame = {
   key: string;
   title: string;
+  difficulty?: DifficultySummary;
   groups: {
     title: string;
     metrics: {
@@ -30,8 +33,15 @@ export function playerReportGames(event: CoachEvent, playerId: string) {
   const evidence: Evidence[] = [];
   const games = event.games.map((g, index): ReportGame => {
     const key = `game-${index + 1}`;
-    const shots = currentShots(g.state.events).filter(
+    const shots = difficultyGameShots(g).filter(
       (s) => s.playerId === playerId && !s.excluded,
+    );
+    evidence.push(
+      ...difficultyEvidence(
+        shots,
+        `${key}-difficulty`,
+        `Game ${index + 1} difficulty`,
+      ),
     );
     const metric = (
       suffix: string,
@@ -98,6 +108,7 @@ export function playerReportGames(event: CoachEvent, playerId: string) {
     return {
       key,
       title: g.label || `Game ${index + 1}`,
+      difficulty: difficultySummary(shots),
       groups: [
         {
           title: "Overall shooting",

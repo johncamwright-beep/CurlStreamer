@@ -1,3 +1,4 @@
+import { withDifficulty, type DifficultyRecord } from "./difficulty";
 import type { EventLevel } from "@/lib/team-hierarchy";
 import type { ReviewCorrection } from "./flagged-shots";
 import {
@@ -46,6 +47,8 @@ export type CoachGame = {
   reviewCorrections?: ReviewCorrection[];
   roster?: RosterEntry[];
   state: State;
+  difficultyRecords?: DifficultyRecord[];
+  difficultyReady?: boolean;
 };
 export type CoachEvent = {
   id: string;
@@ -82,6 +85,16 @@ export function gameShots(game: CoachGame) {
 export function eventShots(event: CoachEvent) {
   return event.games.flatMap((game) =>
     gameShots(game).map((shot) => ({ ...shot, gameId: game.id })),
+  );
+}
+export function difficultyGameShots(game: CoachGame) {
+  return gameShots(game).map((shot) =>
+    withDifficulty(shot, game.difficultyRecords, game.difficultyReady),
+  );
+}
+export function difficultyEventShots(event: CoachEvent) {
+  return event.games.flatMap((game) =>
+    difficultyGameShots(game).map((shot) => ({ ...shot, gameId: game.id })),
   );
 }
 export function family(shot: Shot) {

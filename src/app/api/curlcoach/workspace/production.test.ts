@@ -1,3 +1,6 @@
+vi.mock("@/lib/providers/shot-tracker-difficulty", () => ({
+  loadEventDifficulty: mocks.difficulty,
+}));
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { emptyState, type State } from "@/lib/curlcoach/model";
 import type { CoachEvent } from "@/lib/curlcoach/event";
@@ -10,6 +13,7 @@ const ids = {
   otherGame: "00000000-0000-4000-8000-000000000005",
 };
 const mocks = vi.hoisted(() => ({
+  difficulty: vi.fn(),
   account: vi.fn(),
   productionSource: vi.fn(),
   load: vi.fn(),
@@ -289,4 +293,18 @@ it("saves an actor-scoped eight-rock lineup and rejects malformed or unauthorize
   );
   expect((await send({ ...body, lineup: ["player-1"] })).status).toBe(400);
   expect((await send({ ...body, gameId: ids.otherGame })).status).toBe(403);
+});
+
+it("loads optional difficulty only after account and workspace authorization", async () => {
+  const url = `http://localhost/api/curlcoach/workspace?source=streamer&eventId=${ids.event}&includeDifficulty=true`;
+  expect((await GET(new Request(url))).status).toBe(200);
+  expect(mocks.difficulty).toHaveBeenCalledWith(
+    expect.objectContaining({ organizationId: ids.organization }),
+    ids.actor,
+    false,
+  );
+  mocks.difficulty.mockClear();
+  mocks.account.mockResolvedValue(null);
+  expect((await GET(new Request(url))).status).toBe(403);
+  expect(mocks.difficulty).not.toHaveBeenCalled();
 });

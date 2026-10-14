@@ -179,6 +179,23 @@ test("workbook selections, corrections, clearing, Standard mode and historical p
     (e: { shot?: { end: number } }) => e.shot?.end === Number(end),
   );
   expect(saved.shot.type).toBe("Hit & Roll");
+  const difficultyWorkspace = await (
+    await page.request.get(
+      "/api/curlcoach/workspace?source=sample&eventId=practice&includeDifficulty=true",
+    )
+  ).json();
+  expect(difficultyWorkspace.event.games[0].difficultyReady).toBe(true);
+  expect(
+    difficultyWorkspace.event.games[0].difficultyRecords.find(
+      (r: { shotId: string }) => r.shotId === saved.shotId,
+    ).level,
+  ).toBe("B");
+  await expect(page.getByLabel("Difficulty-adjusted shooting")).toContainText(
+    "Coverage:",
+  );
+  await expect(page.getByLabel("Difficulty-adjusted shooting")).toContainText(
+    "not official Curling Canada",
+  );
   const url = `/api/curlcoach/enhanced?gameId=${game.id}&eventId=practice`;
   const read = async () =>
     (await (await page.request.get(url)).json()).documents.find(
@@ -238,6 +255,9 @@ test("workbook selections, corrections, clearing, Standard mode and historical p
     .click();
   await expect(attempt).toContainText("4/5");
   expect((await read()).values).toEqual(cleared.values);
+  await expect(page.getByLabel("Difficulty-adjusted shooting")).toContainText(
+    "Difficulty adjusted:",
+  );
   await attempt.getByRole("button", { name: "Correct", exact: true }).click();
   await page
     .getByRole("combobox", { name: "Called weight", exact: true })

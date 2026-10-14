@@ -10,6 +10,9 @@ import {
 } from "../../src/lib/curlcoach/model";
 import type { CoachGame, Workspace } from "../../src/lib/curlcoach/event";
 
+// Full-form regression coverage; mobile tabs are exercised in mobile-entry.spec.ts.
+test.use({ viewport: { width: 820, height: 1180 } });
+
 test.skip(!process.env.CURLCOACH_E2E, "Use the Shot Tracker config");
 test.use({ screenshot: "only-on-failure", actionTimeout: 10000 });
 const organizationId = "resume-fixture-organization";

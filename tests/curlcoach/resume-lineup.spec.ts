@@ -81,6 +81,7 @@ async function fixture(
   options: {
     loseFirstLineupResponse?: boolean;
     lineupRequests?: string[];
+    enhancedFailure?: "preferences" | "game";
   } = {},
 ) {
   const games = new Map<string, CoachGame>();
@@ -121,14 +122,20 @@ async function fixture(
       body: `<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>${stylesheet}dialog{max-height:90vh;overflow:auto}dialog label{display:block}</style><p>BROWSER TEST FIXTURE · mocked authorized API</p><div id="root"></div><script src="/__tracker_bundle.js"></script>`,
     }),
   );
-  await page.route("**/api/curlcoach/enhanced**", (route) =>
-    route.fulfill({
+  await page.route("**/api/curlcoach/enhanced**", (route) => {
+    const isGame = new URL(route.request().url()).searchParams.has("gameId");
+    if (options.enhancedFailure === (isGame ? "game" : "preferences"))
+      return route.fulfill({
+        status: 503,
+        json: { error: "Synthetic observations outage" },
+      });
+    return route.fulfill({
       json: {
         documents: [],
         scope: { organizationId, actorUserId: "coach-one" },
       },
-    }),
-  );
+    });
+  });
   await page.route("**/api/account/navigation", (route) =>
     route.fulfill({ json: { platformAdmin: false } }),
   );
@@ -226,6 +233,32 @@ async function start(page: Page) {
     .click();
   await expect(page.getByLabel("Numeric grade")).toBeVisible();
 }
+for (const enhancedFailure of ["preferences", "game"] as const) {
+  test(`Standard charting saves during a ${enhancedFailure} observations outage`, async ({
+    page,
+  }) => {
+    const games = await fixture(page, { enhancedFailure });
+    await start(page);
+    await expect(page.getByRole("alert")).toContainText(
+      "Synthetic observations outage",
+    );
+    await page.getByLabel("Numeric grade").selectOption("4");
+    const save = page.waitForRequest(
+      (request) =>
+        request.method() === "POST" &&
+        request.url().includes("/api/curlcoach/workspace"),
+    );
+    await page
+      .getByRole("button", { name: "Save attempt", exact: true })
+      .click();
+    expect((await save).postDataJSON()).not.toHaveProperty("enhanced");
+    await expect(
+      page.locator(".coach-scoring [role=status]").first(),
+    ).toContainText("saved");
+    expect(games.get(gameOne)!.state.events.at(-1)?.shot?.grade).toBe(4);
+  });
+}
+
 test("new games require lineup confirmation and keep actions inside the selected game", async ({
   page,
 }, info) => {

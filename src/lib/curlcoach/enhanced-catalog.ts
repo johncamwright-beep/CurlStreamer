@@ -717,6 +717,14 @@ export const emptySupplement = (): Supplement => ({
 });
 export function standardConflicts(s: Supplement, shot: Shot): string[] {
   const conflicts: string[] = [];
+  if (
+    s.values.shotSubtype &&
+    !shotSubtypes.some(
+      (subtype) =>
+        subtype.id === s.values.shotSubtype && subtype.standard === shot.type,
+    )
+  )
+    conflicts.push("source shot subtype requires reconciliation");
   for (const key of ["line", "release"] as const)
     if (s.assessments[key] === "assessed" && !shot[key]) conflicts.push(key);
   for (const key of ["line", "release", "technical"] as const)

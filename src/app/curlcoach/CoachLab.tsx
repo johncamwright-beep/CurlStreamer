@@ -721,10 +721,16 @@ export default function CoachLab({
       <p role="status" aria-live="polite">
         {message}
       </p>
-      {enhancedData.error && (
+      {(metrics.error || enhancedData.error) && (
         <p role="alert">
-          {enhancedData.error}{" "}
-          <button onClick={() => void enhancedData.reload()}>
+          {metrics.error || enhancedData.error} Standard-only charting remains
+          available in Standard mode; supplemental fields wait for observations
+          to load.{" "}
+          <button
+            onClick={() =>
+              void (metrics.error ? metrics.reload() : enhancedData.reload())
+            }
+          >
             Retry observations
           </button>
         </p>
@@ -809,7 +815,7 @@ export default function CoachLab({
                     !state ||
                     closed ||
                     !rosterReady ||
-                    (!!context && (!metrics.ready || !enhancedData.ready))
+                    (enhancedMode && !enhancedData.ready)
                   }
                 >
                   <div className="tracker-entry-layout">
@@ -929,23 +935,28 @@ export default function CoachLab({
                               value={enhanced}
                               enhanced={enhancedMode}
                               onShot={setDraft}
-                              onChange={changeEnhanced}
+                              onChange={(value) => {
+                                if (metrics.ready && enhancedData.ready)
+                                  changeEnhanced(value);
+                              }}
                             />
                             {choose("turn", "Turn / target", turns)}
-                            {!!context && (
-                              <>
-                                <WeightEntry
-                                  shot={draft}
-                                  value={enhanced}
-                                  enhanced={enhancedMode}
-                                  onChange={changeEnhanced}
-                                />
-                                <DifficultyEntry
-                                  value={enhanced}
-                                  onChange={changeEnhanced}
-                                />
-                              </>
-                            )}
+                            {!!context &&
+                              metrics.ready &&
+                              enhancedData.ready && (
+                                <>
+                                  <WeightEntry
+                                    shot={draft}
+                                    value={enhanced}
+                                    enhanced={enhancedMode}
+                                    onChange={changeEnhanced}
+                                  />
+                                  <DifficultyEntry
+                                    value={enhanced}
+                                    onChange={changeEnhanced}
+                                  />
+                                </>
+                              )}
                           </>,
                         )}
                         {entryGroup(
@@ -974,23 +985,25 @@ export default function CoachLab({
                                 ))}
                               </select>
                             </label>
-                            {!!context && (
-                              <>
-                                <WeightEntry
-                                  observed
-                                  shot={draft}
-                                  value={enhanced}
-                                  enhanced={enhancedMode}
-                                  onChange={changeEnhanced}
-                                />
-                                <ResultsEntry
-                                  shot={draft}
-                                  value={enhanced}
-                                  enhanced={enhancedMode}
-                                  onChange={changeEnhanced}
-                                />
-                              </>
-                            )}
+                            {!!context &&
+                              metrics.ready &&
+                              enhancedData.ready && (
+                                <>
+                                  <WeightEntry
+                                    observed
+                                    shot={draft}
+                                    value={enhanced}
+                                    enhanced={enhancedMode}
+                                    onChange={changeEnhanced}
+                                  />
+                                  <ResultsEntry
+                                    shot={draft}
+                                    value={enhanced}
+                                    enhanced={enhancedMode}
+                                    onChange={changeEnhanced}
+                                  />
+                                </>
+                              )}
                             {choose("deficiency", "Deficiency", deficiencies)}
                           </>,
                         )}

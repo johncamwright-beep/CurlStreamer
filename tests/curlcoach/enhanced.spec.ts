@@ -221,6 +221,9 @@ test("workbook selections, corrections, clearing, Standard mode and historical p
     page.getByRole("combobox", { name: "Shot subtype", exact: true }),
   ).toHaveCount(0);
   await attempt.getByRole("button", { name: "Correct", exact: true }).click();
+  await expect(
+    page.getByRole("combobox", { name: "Called weight", exact: true }),
+  ).toBeVisible();
   expect(
     await page
       .getByRole("combobox", { name: "Called weight", exact: true })

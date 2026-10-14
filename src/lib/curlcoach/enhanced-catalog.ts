@@ -301,7 +301,7 @@ export const catalogue: Record<string, Field> = {
     label: "Other observable miss",
     max: 200,
     location: "Live",
-    meaning: "Required when Other observable miss is selected.",
+    meaning: "Optional historical description of an observed miss.",
     example: "Stopped on an unintended stone",
   },
   additionalDeficiencies: {
@@ -597,11 +597,6 @@ export const supplementSchema = z
     ])
       if (v[key] === selected && !String(v[other] ?? "").trim())
         fail(`${catalogue[other].label} is required.`);
-    if (
-      misses.includes("other_observable_miss") &&
-      !String(v.missOther ?? "").trim()
-    )
-      fail("Describe the other observable miss.");
     if (
       misses.length &&
       (!v.primaryMiss || !misses.includes(String(v.primaryMiss)))

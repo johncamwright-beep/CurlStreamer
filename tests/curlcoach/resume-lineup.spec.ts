@@ -415,6 +415,11 @@ test("reload preserves drafts and lineup changes never rewrite recorded players"
     .selectOption("chris");
   await page.getByRole("button", { name: "Save lineup", exact: true }).click();
   expect(games.get(gameOne)!.state.events[0].shot!.playerId).toBe("alice");
-  await page.getByRole("button", { name: "Undo latest change" }).click();
+  await page
+    .getByRole("button", { name: "Recorded shots", exact: true })
+    .click();
+  await page
+    .getByRole("button", { name: "Remove attempt", exact: true })
+    .click();
   await expect.poll(() => games.get(gameOne)!.state.events.length).toBe(2);
 });

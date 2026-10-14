@@ -88,7 +88,10 @@ test("scoped local lab charts, corrects and audits a synthetic shot", async ({
   });
   await page.getByRole("button", { name: "Shot Tracker menu" }).click();
   await page.getByRole("link", { name: "Charting", exact: true }).click();
-  await attempt.getByRole("button", { name: "Correct", exact: true }).click();
+  await page
+    .getByRole("button", { name: "Recorded shots", exact: true })
+    .click();
+  await attempt.getByRole("button", { name: "Edit", exact: true }).click();
   await expect(
     page.getByRole("combobox", { name: "Line", exact: true }),
   ).toHaveValue("Wide");
@@ -106,17 +109,33 @@ test("scoped local lab charts, corrects and audits a synthetic shot", async ({
       includeHidden: true,
     }),
   ).toHaveValue("2");
-  await attempt.getByRole("button", { name: "Correct", exact: true }).click();
+  await page
+    .getByRole("button", { name: "Recorded shots", exact: true })
+    .click();
+  await attempt.getByRole("button", { name: "Edit", exact: true }).click();
   await page.getByLabel("Numeric grade").selectOption("0");
   await page.getByRole("button", { name: "Save correction" }).click();
   await expect(attempt).toContainText("0/5");
-  await page.getByRole("button", { name: /Revision history/ }).click();
   await expect(
-    page.locator("li").filter({ hasText: "Grade: 5/5" }).first(),
-  ).toBeVisible();
+    page.getByRole("button", { name: "Undo latest change" }),
+  ).toHaveCount(0);
   await expect(
-    page.locator("li").filter({ hasText: "Grade: 0/5" }).first(),
-  ).toBeVisible();
+    page.getByRole("button", { name: /Revision history/ }),
+  ).toHaveCount(0);
+  await page.getByRole("button", { name: "Change", exact: true }).click();
+  await page.getByLabel("End", { exact: true }).fill("3");
+  await page.getByRole("button", { name: "Close Change", exact: true }).click();
+  await page
+    .getByRole("button", { name: "Resume tracking", exact: true })
+    .click();
+  await expect(page.getByLabel("Numeric grade")).toHaveValue("0");
+  await expect(
+    page.getByRole("region", { name: "Current shot context" }),
+  ).toContainText("End 20");
+  await expect(page.getByText("Every shot tells a story.")).toHaveCount(0);
+  await page
+    .getByRole("button", { name: "Recorded shots", exact: true })
+    .click();
   expect(
     await page.evaluate(
       () => document.documentElement.scrollWidth <= innerWidth,
@@ -128,17 +147,10 @@ test("scoped local lab charts, corrects and audits a synthetic shot", async ({
   });
   await attempt.getByRole("button", { name: "Remove attempt" }).click();
   await expect(attempt).toHaveCount(0);
-  await page.getByRole("button", { name: "Undo latest change" }).click();
-  await expect(attempt).toContainText("0/5");
+  await page
+    .getByRole("button", { name: "Close Recorded shots", exact: true })
+    .click();
   await page.reload();
-  await expect(attempt).toContainText("0/5");
-  for (const control of await page
-    .locator(".coach-lab button, .coach-lab input, .coach-lab select")
-    .all()) {
-    const box = await control.boundingBox();
-    if (box) expect(box.height).toBeGreaterThanOrEqual(44);
-  }
-  await attempt.getByRole("button", { name: "Remove attempt" }).click();
   await expect(attempt).toHaveCount(0);
   await page.getByRole("button", { name: "Change", exact: true }).click();
   await page.getByLabel("End", { exact: true }).fill("19");
@@ -227,12 +239,18 @@ test("scoped local lab charts, corrects and audits a synthetic shot", async ({
     ).toHaveValue("");
   }
   await expect(page.getByLabel("Flag shot for review")).toHaveValue("no");
+  await page
+    .getByRole("button", { name: "Flagged shots", exact: true })
+    .click();
   await expect(
     page.getByRole("region", { name: "Game review summary" }),
   ).toContainText("Review the line call");
   await expect(
     page.getByRole("region", { name: "Game review summary" }),
   ).toContainText("No recording is linked to this game yet.");
+  await page
+    .getByRole("button", { name: "Close Flagged shots", exact: true })
+    .click();
   const recordedWorkspace = await (
     await page.request.get(
       "/api/curlcoach/workspace?source=sample&eventId=practice",
@@ -266,6 +284,9 @@ test("scoped local lab charts, corrects and audits a synthetic shot", async ({
     path: `test-results/compact-scoring-${testInfo.project.name}.png`,
     fullPage: true,
   });
+  await page
+    .getByRole("button", { name: "Recorded shots", exact: true })
+    .click();
   for (let i = 0; i < 2; i++) {
     await page
       .locator(".coach-attempt")

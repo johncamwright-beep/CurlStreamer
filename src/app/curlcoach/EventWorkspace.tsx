@@ -290,7 +290,6 @@ function WorkspaceContent({
   const drafts = useRef(new Map<string, TrackerResume>());
   const resumeStore = useRef<ResumeStore | null>(null);
 
-  const [resumeResetKey, setResumeResetKey] = useState(0);
   const [platformAdmin, setPlatformAdmin] = useState(false);
   useEffect(() => {
     if (mode !== "streamer") return;
@@ -1092,29 +1091,9 @@ function WorkspaceContent({
                   key={`${source}:${event.id}:${game.id}`}
                   unlocked
                   gamePicker={gamePicker}
-                  onResumeTracking={() => {
-                    const current = drafts.current.get(
-                      resumeId({ source, eventId: event.id, gameId: game.id }),
-                    );
-                    if (current)
-                      drafts.current.set(
-                        resumeId({
-                          source,
-                          eventId: event.id,
-                          gameId: game.id,
-                        }),
-                        {
-                          ...current,
-                          draft: current.current ?? current.draft,
-                          editing: null,
-                        },
-                      );
-                    setResumeResetKey((value) => value + 1);
-                  }}
                   resume={drafts.current.get(
                     resumeId({ source, eventId: event.id, gameId: game.id }),
                   )}
-                  resumeResetKey={resumeResetKey}
                   onResume={(value) => retainDraft(value)}
                   onTrackingProgress={(value) =>
                     retainDraft(value, true, value.stateRevision)

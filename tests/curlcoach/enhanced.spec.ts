@@ -151,9 +151,12 @@ test("workbook selections, corrections, clearing, Standard mode and historical p
     page.locator(".coach-scoring [role=status]").first(),
   ).toContainText("Attempt saved");
   await page
+    .getByRole("button", { name: "Recorded shots", exact: true })
+    .click();
+  await page
     .locator(".coach-attempt")
     .filter({ hasText: `End ${end}` })
-    .getByRole("button", { name: "Correct", exact: true })
+    .getByRole("button", { name: "Edit", exact: true })
     .click();
   // Set historical details explicitly, then ensure ordinary corrections retain them.
   await page
@@ -205,13 +208,13 @@ test("workbook selections, corrections, clearing, Standard mode and historical p
       (r: { shotId: string }) => r.shotId === saved.shotId,
     ).level,
   ).toBe("B");
-  await expect(page.getByRole("region", { name: "Team report" })).toContainText(
-    "Weighted team shooting",
-  );
+  await expect(
+    page.getByRole("region", { name: "Current shot context" }),
+  ).toContainText("Team weighted shooting");
   await expect(page.getByLabel("Difficulty-adjusted shooting")).toHaveCount(0);
-  await expect(page.getByRole("region", { name: "Team report" })).toContainText(
-    "Weighted team shooting",
-  );
+  await expect(
+    page.getByRole("region", { name: "Current shot context" }),
+  ).toContainText("Team weighted shooting");
   await expect(page.getByLabel("Difficulty-adjusted shooting")).toHaveCount(0);
   const url = `/api/curlcoach/enhanced?gameId=${game.id}&eventId=practice`;
   const read = async () =>
@@ -229,7 +232,10 @@ test("workbook selections, corrections, clearing, Standard mode and historical p
     .locator(".coach-attempt")
     .filter({ hasText: `End ${end}` })
     .first();
-  await attempt.getByRole("button", { name: "Correct", exact: true }).click();
+  await page
+    .getByRole("button", { name: "Recorded shots", exact: true })
+    .click();
+  await attempt.getByRole("button", { name: "Edit", exact: true }).click();
   await page
     .getByRole("combobox", { name: "Result observations", exact: true })
     .selectOption("");
@@ -254,7 +260,10 @@ test("workbook selections, corrections, clearing, Standard mode and historical p
   await expect(
     page.getByRole("combobox", { name: "Shot subtype", exact: true }),
   ).toHaveCount(0);
-  await attempt.getByRole("button", { name: "Correct", exact: true }).click();
+  await page
+    .getByRole("button", { name: "Recorded shots", exact: true })
+    .click();
+  await attempt.getByRole("button", { name: "Edit", exact: true }).click();
   await expect(
     page.getByRole("combobox", { name: "Called weight", exact: true }),
   ).toBeVisible();
@@ -272,11 +281,14 @@ test("workbook selections, corrections, clearing, Standard mode and historical p
     .click();
   await expect(attempt).toContainText("4/5");
   expect((await read()).values).toEqual(cleared.values);
-  await expect(page.getByRole("region", { name: "Team report" })).toContainText(
-    "Weighted team shooting",
-  );
+  await expect(
+    page.getByRole("region", { name: "Current shot context" }),
+  ).toContainText("Team weighted shooting");
   await expect(page.getByLabel("Difficulty-adjusted shooting")).toHaveCount(0);
-  await attempt.getByRole("button", { name: "Correct", exact: true }).click();
+  await page
+    .getByRole("button", { name: "Recorded shots", exact: true })
+    .click();
+  await attempt.getByRole("button", { name: "Edit", exact: true }).click();
   await page
     .getByRole("combobox", { name: "Called weight", exact: true })
     .selectOption("hack");
@@ -288,7 +300,10 @@ test("workbook selections, corrections, clearing, Standard mode and historical p
   ).toContainText("saved");
   expect((await read()).values.intendedWeight).toBe("hack");
   await mode(page, "enhanced");
-  await attempt.getByRole("button", { name: "Correct", exact: true }).click();
+  await page
+    .getByRole("button", { name: "Recorded shots", exact: true })
+    .click();
+  await attempt.getByRole("button", { name: "Edit", exact: true }).click();
   await expect(
     page.getByRole("combobox", { name: "Shot subtype", exact: true }),
   ).toHaveValue("hit_and_roll_under");

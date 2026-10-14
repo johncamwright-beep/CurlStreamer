@@ -29,9 +29,7 @@ export default function ShotTrackerBrand() {
           strokeLinecap="round"
         />
       </svg>
-      <span>
-        Shot Tracker<small>Every shot tells a story.</small>
-      </span>
+      <span>Shot Tracker</span>
     </a>
   );
 }

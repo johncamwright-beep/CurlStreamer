@@ -122,10 +122,7 @@ test("entry overlays preserve draft, keep the page stable and restore focus", as
     ),
   ).toBe(true);
   // Restore the shared synthetic lab setting for later Standard workflow tests.
-  await page
-    .getByRole("navigation", { name: "Shot Tracker shortcuts" })
-    .getByRole("link", { name: "Options", exact: true })
-    .click();
+  await page.goto("/curlcoach?event=practice#options");
   await page.getByLabel("Metrics mode").selectOption("standard");
   await page.getByRole("button", { name: "Save Options", exact: true }).click();
   await expect(

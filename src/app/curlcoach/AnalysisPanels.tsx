@@ -1,10 +1,5 @@
 "use client";
-import DifficultySummary from "./DifficultySummary";
-import {
-  difficultySummary,
-  difficultyPercent,
-  difficultyPAE,
-} from "@/lib/curlcoach/difficulty";
+import { difficultySummary } from "@/lib/curlcoach/difficulty";
 import { useState } from "react";
 import {
   report,
@@ -126,63 +121,11 @@ export default function AnalysisPanels({
               <strong>{shooting(rows)}</strong>
             </div>
           ))}
+          <div aria-label="Difficulty-adjusted shooting">
+            <span>Difficulty-adjusted shooting</span>
+            <strong>{pct(difficultySummary(shots).adjusted)}</strong>
+          </div>
         </div>
-      )}
-      {mode !== "misses" && (
-        <DifficultySummary value={difficultySummary(shots)} compact />
-      )}
-      {mode !== "misses" && (
-        <details className="event-card">
-          <summary>Difficulty-adjusted detail</summary>
-          <DifficultySummary value={difficultySummary(shots)} />
-          <Table
-            title="Player difficulty context"
-            columns={[
-              "Traditional shooting",
-              "Difficulty adjusted",
-              "Above expected",
-              "Classified / eligible",
-              "A / B / C shots",
-            ]}
-            rows={players.map((p) => {
-              const pool = shots.filter((s) => s.playerId === p.id);
-              const d = difficultySummary(pool);
-              return {
-                label: p.name,
-                values: [
-                  shooting(pool),
-                  difficultyPercent(d.adjusted),
-                  difficultyPAE(d.pae),
-                  `${d.classified} / ${d.eligible}${d.classified < 10 ? " · Small sample" : d.classified < 20 ? " · Tentative" : ""}`,
-                  d.mix.map((r) => r.count).join(" / "),
-                ],
-              };
-            })}
-          />
-          <Table
-            title="Difficulty through games / events / ends"
-            columns={[
-              "Traditional shooting",
-              "Difficulty adjusted",
-              "Above expected",
-              "Classified / eligible",
-              "A / B / C shots",
-            ]}
-            rows={trendGroups.map((r) => {
-              const d = difficultySummary(r.rows);
-              return {
-                label: r.label,
-                values: [
-                  shooting(r.rows),
-                  difficultyPercent(d.adjusted),
-                  difficultyPAE(d.pae),
-                  `${d.classified} / ${d.eligible}${d.classified < 10 ? " · Small sample" : d.classified < 20 ? " · Tentative" : ""}`,
-                  d.mix.map((m) => m.count).join(" / "),
-                ],
-              };
-            })}
-          />
-        </details>
       )}
       <section className="event-card" aria-label="Analysis summary">
         <h2>
@@ -397,8 +340,8 @@ export default function AnalysisPanels({
       </section>
       {compare && seasonReady && mode !== "misses" && (
         <section className="event-card">
-          <h3>Season difficulty context (including selection)</h3>
-          <DifficultySummary value={difficultySummary(seasonShots)} />
+          <h3>Season difficulty-adjusted shooting</h3>
+          <strong>{pct(difficultySummary(seasonShots).adjusted)}</strong>
         </section>
       )}
       {mode === "performance" && (

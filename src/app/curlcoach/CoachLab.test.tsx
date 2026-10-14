@@ -71,8 +71,8 @@ describe("production CoachLab session state", () => {
 
     expect(html).toContain('value="stable-player-id"');
     expect(html).toContain("Taylor — Lead");
-    expect(html).toContain("Weighted shooting");
-    expect(html).toContain("Weighted team shooting");
+    expect(html).toContain("Player weighted shooting");
+    expect(html).toContain("Team weighted shooting");
     for (const removed of [
       "Quick entry",
       "Game context",

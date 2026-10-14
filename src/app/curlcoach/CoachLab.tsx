@@ -101,24 +101,20 @@ function inferredDraft(
 }
 export default function CoachLab({
   unlocked,
-  onResumeTracking,
   gamePicker,
   context,
   resume,
   onResume,
-  resumeResetKey = 0,
   onTrackingProgress,
 }: {
   unlocked: boolean;
   gamePicker?: ReactNode;
-  onResumeTracking?: () => void;
   resume?: { draft: Shot; editing: string | null; current?: Shot };
   onResume?: (value: {
     draft: Shot;
     editing: string | null;
     current?: Shot;
   }) => void;
-  resumeResetKey?: number;
   onTrackingProgress?: (value: {
     draft: Shot;
     editing: string | null;
@@ -216,19 +212,6 @@ export default function CoachLab({
   } | null>(null);
   const currentDraft = useRef(resume?.current ?? draft);
   const deliberateDraftChange = useRef(false);
-  const lastReset = useRef(resumeResetKey);
-  useEffect(() => {
-    if (lastReset.current === resumeResetKey) return;
-    lastReset.current = resumeResetKey;
-    const restored =
-      resume?.current ??
-      resume?.draft ??
-      inferredDraft(state, state?.roster ?? context?.roster ?? [...roster]);
-    currentDraft.current = restored;
-    setDraft(restored);
-    setEditing(null);
-    entry.current?.scrollIntoView({ block: "start", behavior: "smooth" });
-  }, [resumeResetKey, resume, state, context?.roster]);
   useEffect(() => {
     onResume?.({
       draft,
@@ -258,7 +241,6 @@ export default function CoachLab({
   }
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
-  const [history, setHistory] = useState(false);
   const [lineupOpen, setLineupOpen] = useState(false);
   const pendingLineup = useRef<{
     signature: string;
@@ -664,34 +646,86 @@ export default function CoachLab({
           Edit lineup
         </button>
       )}
-      {onResumeTracking && (
-        <button onClick={onResumeTracking} disabled={busy}>
-          Resume tracking
-        </button>
-      )}
       <button
-        aria-label="Undo latest change"
-        title="Undo latest change"
-        disabled={busy || closed || !state?.events.length}
+        disabled={busy || !recentShots.length}
         onClick={() => {
-          if (!state?.events.length) return;
-          const latest = state.events[state.events.length - 1];
-          const previous = [...state.events.slice(0, -1)]
-            .reverse()
-            .find((event) => event.shotId === latest.shotId);
-          void save(previous?.shot ?? null, latest.shotId);
+          const shot = recentShots[0];
+          if (!shot) return;
+          const { id, ...value } = shot;
+          setDraft(value);
+          setEditing(id);
+          setMessage("");
+          entry.current?.scrollIntoView({ block: "start", behavior: "smooth" });
         }}
       >
-        Undo
+        Resume tracking
       </button>
-      <button
-        onClick={() => setHistory(!history)}
-        aria-expanded={history}
-        aria-label={`Revision history (${state?.events.length ?? 0})`}
-        title="Revision history"
-      >
-        History ({state?.events.length ?? 0})
-      </button>
+      <EntryOverlay title="Recorded shots">
+        {!shots.length && (
+          <p>
+            No attempts yet. Ungraded or unthrown stones are never treated as
+            misses.
+          </p>
+        )}
+        {recentShots.map((shot) => (
+          <article className="coach-attempt" key={shot.id}>
+            <div>
+              <strong>
+                End {shot.end} · {shot.position} · Stone {shot.stone}
+              </strong>
+              <p>
+                {players.find((p) => p.id === shot.playerId)?.name ??
+                  shot.playerId}{" "}
+                · {shot.type ?? "Type not recorded"} ·{" "}
+                {shot.excluded ??
+                  (shot.grade === null ? "Not graded" : `${shot.grade}/5`)}
+              </p>
+              {shot.note && <p>{shot.note}</p>}
+              {(shot.flagged ?? !!shot.review) && <p>⚑ Flagged for review</p>}
+            </div>
+            <button
+              disabled={busy || closed}
+              onClick={(event) => {
+                event.currentTarget.closest("dialog")?.close();
+                const { id, ...value } = shot;
+                setEditing(id);
+                setDraft(value);
+                setMessage(
+                  "Editing selected attempt above. Previous values remain in history.",
+                );
+              }}
+            >
+              Edit
+            </button>
+            <button
+              disabled={busy || closed}
+              onClick={() => void save(null, shot.id)}
+            >
+              Remove attempt
+            </button>
+          </article>
+        ))}
+      </EntryOverlay>
+      <EntryOverlay title="Flagged shots">
+        <ReviewSummary
+          shots={shots.map((shot) => {
+            const correction = context?.reviewCorrections?.find(
+              (c) => c.shotId === shot.id,
+            );
+            if (correction)
+              return {
+                ...shot,
+                note: correction.note,
+                videoReview: correction.video,
+              };
+            return withBroadcastReview(
+              withRecordedReviewTime(shot, state?.events ?? []),
+              context?.broadcastReview,
+            );
+          })}
+          players={players}
+        />
+      </EntryOverlay>
       {context?.source === "streamer" && !closed && (
         <button
           className="coach-finish"
@@ -727,7 +761,7 @@ export default function CoachLab({
       {!context && (
         <header>
           <p className="coach-eyebrow">SHOT TRACKER / LOCAL LAB</p>
-          <h1>Every shot tells a story.</h1>
+          <h1>Shot Tracker</h1>
           <p>
             Synthetic practice game · Four-person curling · Provisional tracker
             profile
@@ -754,6 +788,9 @@ export default function CoachLab({
             Retry observations
           </button>
         </p>
+      )}
+      {!context && (
+        <div className="coach-session-actions">{sessionActions}</div>
       )}
       {context && (
         <header className="coach-panel">
@@ -848,14 +885,26 @@ export default function CoachLab({
                       <p>
                         End {draft.end} · Rock {draft.stone}
                       </p>
-                      <dl>
+                      <dl className="tracker-shooting-stats">
                         <div>
-                          <dt>Shooting</dt>
+                          <dt>Player shooting</dt>
                           <dd>{percentage(shooter.percent)}</dd>
                         </div>
                         <div>
-                          <dt>Weighted shooting</dt>
+                          <dt>Player weighted shooting</dt>
                           <dd>{percentage(shooterWeighted.adjusted)}</dd>
+                        </div>
+                        <div>
+                          <dt>Team shooting</dt>
+                          <dd>{percentage(team.percent)}</dd>
+                        </div>
+                        <div>
+                          <dt>Team weighted shooting</dt>
+                          <dd>
+                            {percentage(
+                              difficultySummary(classifiedShots).adjusted,
+                            )}
+                          </dd>
                         </div>
                       </dl>
                       <EntryOverlay title="Change">
@@ -1272,146 +1321,12 @@ export default function CoachLab({
               </button>
             </section>
           </div>
-          <section className="coach-summary" aria-label="Team report">
-            <div>
-              <span>Team shooting</span>
-              <strong>
-                {team.percent === null
-                  ? "No data"
-                  : `${team.percent.toFixed(1)}%`}
-              </strong>
-            </div>
-            <div>
-              <span>Weighted team shooting</span>
-              <strong>
-                {percentage(difficultySummary(classifiedShots).adjusted)}
-              </strong>
-            </div>
-          </section>
           {!rosterReady && context?.source === "streamer" && (
             <section className="event-notice" aria-label="Roster required">
               Add your team roster before charting attempts.{" "}
               <a href="/account">Open Account team setup</a>
             </section>
           )}
-          <section className="coach-panel">
-            <h2>Recorded attempts</h2>
-            {!shots.length && (
-              <p>
-                No attempts yet. Ungraded or unthrown stones are never treated
-                as misses.
-              </p>
-            )}
-            {recentShots.map((shot) => (
-              <article className="coach-attempt" key={shot.id}>
-                <div>
-                  <strong>
-                    End {shot.end} · {shot.position} · Stone {shot.stone}
-                  </strong>
-                  <p>
-                    {players.find((p) => p.id === shot.playerId)?.name ??
-                      shot.playerId}{" "}
-                    · {shot.type ?? "Type not recorded"} ·{" "}
-                    {shot.excluded ??
-                      (shot.grade === null ? "Not graded" : `${shot.grade}/5`)}
-                  </p>
-                  {shot.note && <p>{shot.note}</p>}
-                  {(shot.flagged ?? !!shot.review) && (
-                    <p>⚑ Flagged for review</p>
-                  )}
-                </div>
-                <button
-                  disabled={busy || closed}
-                  onClick={() => {
-                    const { id, ...value } = shot;
-                    setEditing(id);
-                    setDraft(value);
-                    setMessage(
-                      "Editing selected attempt above. Previous values remain in history.",
-                    );
-                  }}
-                >
-                  Correct
-                </button>
-                <button
-                  disabled={busy || closed}
-                  onClick={() => void save(null, shot.id)}
-                >
-                  Remove attempt
-                </button>
-              </article>
-            ))}
-          </section>
-          <ReviewSummary
-            shots={shots.map((shot) => {
-              const correction = context?.reviewCorrections?.find(
-                (c) => c.shotId === shot.id,
-              );
-              if (correction)
-                return {
-                  ...shot,
-                  note: correction.note,
-                  videoReview: correction.video,
-                };
-              return withBroadcastReview(
-                withRecordedReviewTime(shot, state?.events ?? []),
-                context?.broadcastReview,
-              );
-            })}
-            players={players}
-          />
-          <section className="coach-panel" hidden={!!context && !history}>
-            {!context && sessionActions}
-            {history && (
-              <ol>
-                {[...(state?.events ?? [])].reverse().map((event) => (
-                  <li key={event.requestId}>
-                    <strong>Revision {event.revision}</strong> ·{" "}
-                    {new Date(event.at).toLocaleString()}
-                    {event.shot ? (
-                      <p>
-                        End {event.shot.end} · {event.shot.position} · Stone{" "}
-                        {event.shot.stone} ·{" "}
-                        {
-                          players.find(
-                            (player) => player.id === event.shot?.playerId,
-                          )?.name
-                        }
-                        <br />
-                        {event.shot.type ?? "Type not recorded"} · Grade:{" "}
-                        {event.shot.grade === null
-                          ? "Not graded"
-                          : `${event.shot.grade}/5`}{" "}
-                        · {event.shot.execution ?? "Execution not recorded"}
-                        <br />
-                        {event.shot.excluded
-                          ? `Excluded: ${event.shot.excluded}`
-                          : "Included attempt"}
-                        {event.shot.note && (
-                          <>
-                            <br />
-                            Note: {event.shot.note}
-                          </>
-                        )}
-                        {(event.shot.flagged ?? !!event.shot.review) && (
-                          <>
-                            <br />
-                            Flagged for review · look-back{" "}
-                            {event.shot.videoReview?.lookBackSeconds ?? 30}s ·
-                            video time{" "}
-                            {event.shot.videoReview?.positionSeconds ??
-                              "pending"}
-                          </>
-                        )}
-                      </p>
-                    ) : (
-                      <p>Attempt removed. Earlier values are retained above.</p>
-                    )}
-                  </li>
-                ))}
-              </ol>
-            )}
-          </section>
         </>
       )}
     </section>

@@ -1,3 +1,4 @@
+import { weightLabels } from "../../src/lib/curlcoach/shot-subtypes";
 import { expect, test, type Page } from "@playwright/test";
 
 test.skip(!process.env.CURLCOACH_E2E, "Use the Shot Tracker config");
@@ -12,7 +13,7 @@ async function navigate(page: Page, name: string) {
     .click();
 }
 async function mode(page: Page, value: string) {
-  await navigate(page, "Options");
+  await page.goto("/curlcoach?event=practice#options");
   await expect(
     page.getByRole("button", { name: "Save Options", exact: true }),
   ).toBeEnabled();
@@ -88,7 +89,7 @@ test("workbook selections, corrections, clearing, Standard mode and historical p
       .getByRole("combobox", { name: "Observed weight", exact: true })
       .locator("option")
       .allTextContents(),
-  ).toEqual(["Not assessed", "Guard 1", "Guard 2", "Guard 3"]);
+  ).toEqual(["Not assessed", ...Object.values(weightLabels)]);
   expect(
     await page
       .getByRole("combobox", { name: "Result observations", exact: true })
@@ -128,7 +129,7 @@ test("workbook selections, corrections, clearing, Standard mode and historical p
   ).toHaveValue("");
   await page
     .getByRole("combobox", { name: "Observed weight", exact: true })
-    .selectOption("normal_weight_takeout");
+    .selectOption("button");
   await page
     .getByRole("combobox", { name: "Result observations", exact: true })
     .selectOption("roll_far");
@@ -150,9 +151,12 @@ test("workbook selections, corrections, clearing, Standard mode and historical p
     page.locator(".coach-scoring [role=status]").first(),
   ).toContainText("Attempt saved");
   await page
+    .getByRole("button", { name: "Recorded shots", exact: true })
+    .click();
+  await page
     .locator(".coach-attempt")
     .filter({ hasText: `End ${end}` })
-    .getByRole("button", { name: "Correct", exact: true })
+    .getByRole("button", { name: "Edit", exact: true })
     .click();
   // Set historical details explicitly, then ensure ordinary corrections retain them.
   await page
@@ -204,13 +208,13 @@ test("workbook selections, corrections, clearing, Standard mode and historical p
       (r: { shotId: string }) => r.shotId === saved.shotId,
     ).level,
   ).toBe("B");
-  await expect(page.getByRole("region", { name: "Team report" })).toContainText(
-    "Weighted team shooting",
-  );
+  await expect(
+    page.getByRole("region", { name: "Current shot context" }),
+  ).toContainText("Team weighted shooting");
   await expect(page.getByLabel("Difficulty-adjusted shooting")).toHaveCount(0);
-  await expect(page.getByRole("region", { name: "Team report" })).toContainText(
-    "Weighted team shooting",
-  );
+  await expect(
+    page.getByRole("region", { name: "Current shot context" }),
+  ).toContainText("Team weighted shooting");
   await expect(page.getByLabel("Difficulty-adjusted shooting")).toHaveCount(0);
   const url = `/api/curlcoach/enhanced?gameId=${game.id}&eventId=practice`;
   const read = async () =>
@@ -220,7 +224,7 @@ test("workbook selections, corrections, clearing, Standard mode and historical p
   expect((await read()).values).toMatchObject({
     shotSubtype: "hit_and_roll_under",
     resultObservations: ["roll_far", "jammed"],
-    observedDestination: "normal_weight_takeout",
+    observedDestination: "button",
     guardToClear: "yes",
     tolerance: "tight",
   });
@@ -228,7 +232,10 @@ test("workbook selections, corrections, clearing, Standard mode and historical p
     .locator(".coach-attempt")
     .filter({ hasText: `End ${end}` })
     .first();
-  await attempt.getByRole("button", { name: "Correct", exact: true }).click();
+  await page
+    .getByRole("button", { name: "Recorded shots", exact: true })
+    .click();
+  await attempt.getByRole("button", { name: "Edit", exact: true }).click();
   await page
     .getByRole("combobox", { name: "Result observations", exact: true })
     .selectOption("");
@@ -253,7 +260,10 @@ test("workbook selections, corrections, clearing, Standard mode and historical p
   await expect(
     page.getByRole("combobox", { name: "Shot subtype", exact: true }),
   ).toHaveCount(0);
-  await attempt.getByRole("button", { name: "Correct", exact: true }).click();
+  await page
+    .getByRole("button", { name: "Recorded shots", exact: true })
+    .click();
+  await attempt.getByRole("button", { name: "Edit", exact: true }).click();
   await expect(
     page.getByRole("combobox", { name: "Called weight", exact: true }),
   ).toBeVisible();
@@ -271,11 +281,14 @@ test("workbook selections, corrections, clearing, Standard mode and historical p
     .click();
   await expect(attempt).toContainText("4/5");
   expect((await read()).values).toEqual(cleared.values);
-  await expect(page.getByRole("region", { name: "Team report" })).toContainText(
-    "Weighted team shooting",
-  );
+  await expect(
+    page.getByRole("region", { name: "Current shot context" }),
+  ).toContainText("Team weighted shooting");
   await expect(page.getByLabel("Difficulty-adjusted shooting")).toHaveCount(0);
-  await attempt.getByRole("button", { name: "Correct", exact: true }).click();
+  await page
+    .getByRole("button", { name: "Recorded shots", exact: true })
+    .click();
+  await attempt.getByRole("button", { name: "Edit", exact: true }).click();
   await page
     .getByRole("combobox", { name: "Called weight", exact: true })
     .selectOption("hack");
@@ -287,7 +300,10 @@ test("workbook selections, corrections, clearing, Standard mode and historical p
   ).toContainText("saved");
   expect((await read()).values.intendedWeight).toBe("hack");
   await mode(page, "enhanced");
-  await attempt.getByRole("button", { name: "Correct", exact: true }).click();
+  await page
+    .getByRole("button", { name: "Recorded shots", exact: true })
+    .click();
+  await attempt.getByRole("button", { name: "Edit", exact: true }).click();
   await expect(
     page.getByRole("combobox", { name: "Shot subtype", exact: true }),
   ).toHaveValue("hit_and_roll_under");

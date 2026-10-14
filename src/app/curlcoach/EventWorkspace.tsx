@@ -290,7 +290,6 @@ function WorkspaceContent({
   const drafts = useRef(new Map<string, TrackerResume>());
   const resumeStore = useRef<ResumeStore | null>(null);
 
-  const [resumeResetKey, setResumeResetKey] = useState(0);
   const [platformAdmin, setPlatformAdmin] = useState(false);
   useEffect(() => {
     if (mode !== "streamer") return;
@@ -365,7 +364,11 @@ function WorkspaceContent({
       setEventId(stored.active.eventId);
       setGameId(stored.active.gameId);
     }
-    const read = () =>
+    const read = () => {
+      if (mode === "streamer" && location.hash === "#options") {
+        window.location.replace("/account?section=shot-tracker");
+        return;
+      }
       setView(
         pages.find(
           (p) =>
@@ -381,6 +384,7 @@ function WorkspaceContent({
             }[location.hash.slice(1)] ?? location.hash.slice(1)),
         ) ?? "Charting",
       );
+    };
     read();
     setSelectionReady(true);
     window.addEventListener("hashchange", read);
@@ -663,6 +667,11 @@ function WorkspaceContent({
     }
   }
 
+  const navigationPages = pages.filter(
+    (page) =>
+      page !== "Options" &&
+      (page !== "Enhanced review" || metrics.preferences.mode === "enhanced"),
+  );
   const gamePicker = (
     <EntryOverlay title="Change game">
       <div className="coach-entry-grid">
@@ -717,36 +726,15 @@ function WorkspaceContent({
             className="tracker-primary-nav"
             aria-label="Shot Tracker shortcuts"
           >
-            <a
-              href="#charting"
-              aria-current={view === "Charting" ? "page" : undefined}
-            >
-              Charting
-            </a>
-            <a
-              href="#shot-performance"
-              aria-current={statistics ? "page" : undefined}
-            >
-              Analysis
-            </a>
-            <a
-              href="#flagged-shots"
-              aria-current={view === "Flagged shots" ? "page" : undefined}
-            >
-              Flagged shots
-            </a>
-            <a
-              href="#event-reports"
-              aria-current={view === "Event reports" ? "page" : undefined}
-            >
-              Reports
-            </a>
-            <a
-              href="#options"
-              aria-current={view === "Options" ? "page" : undefined}
-            >
-              Options
-            </a>
+            {navigationPages.map((page) => (
+              <a
+                key={page}
+                href={`#${slug(page)}`}
+                aria-current={view === page ? "page" : undefined}
+              >
+                {page}
+              </a>
+            ))}
           </nav>
           <EntryOverlay
             title="Shot Tracker menu"
@@ -760,21 +748,15 @@ function WorkspaceContent({
               }}
             >
               <nav aria-label="Shot Tracker pages">
-                {pages
-                  .filter(
-                    (page) =>
-                      page !== "Enhanced review" ||
-                      metrics.preferences.mode === "enhanced",
-                  )
-                  .map((page) => (
-                    <a
-                      href={`#${slug(page)}`}
-                      aria-current={view === page ? "page" : undefined}
-                      key={page}
-                    >
-                      {page}
-                    </a>
-                  ))}
+                {navigationPages.map((page) => (
+                  <a
+                    href={`#${slug(page)}`}
+                    aria-current={view === page ? "page" : undefined}
+                    key={page}
+                  >
+                    {page}
+                  </a>
+                ))}
               </nav>
               <div className="event-sidebar-footer">
                 {mode === "streamer" ? (
@@ -1109,29 +1091,9 @@ function WorkspaceContent({
                   key={`${source}:${event.id}:${game.id}`}
                   unlocked
                   gamePicker={gamePicker}
-                  onResumeTracking={() => {
-                    const current = drafts.current.get(
-                      resumeId({ source, eventId: event.id, gameId: game.id }),
-                    );
-                    if (current)
-                      drafts.current.set(
-                        resumeId({
-                          source,
-                          eventId: event.id,
-                          gameId: game.id,
-                        }),
-                        {
-                          ...current,
-                          draft: current.current ?? current.draft,
-                          editing: null,
-                        },
-                      );
-                    setResumeResetKey((value) => value + 1);
-                  }}
                   resume={drafts.current.get(
                     resumeId({ source, eventId: event.id, gameId: game.id }),
                   )}
-                  resumeResetKey={resumeResetKey}
                   onResume={(value) => retainDraft(value)}
                   onTrackingProgress={(value) =>
                     retainDraft(value, true, value.stateRevision)

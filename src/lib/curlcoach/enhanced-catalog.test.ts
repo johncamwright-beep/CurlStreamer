@@ -24,6 +24,14 @@ import {
 } from "@/lib/providers/shot-tracker-enhanced";
 import { standardShot, optionFixture } from "@/test/enhanced-fixtures";
 describe("versioned Enhanced capture", () => {
+  it("accepts an other miss without requiring removed text controls and retains historical descriptions", () => {
+    const value = selectMisses(emptySupplement(), ["other_observable_miss"]);
+    expect(supplementSchema.safeParse(value).success).toBe(true);
+    value.values.missOther = "Historical description";
+    expect(supplementSchema.parse(value).values.missOther).toBe(
+      "Historical description",
+    );
+  });
   it("rejects wrong field types without throwing outside Zod validation", () => {
     for (const values of [
       { misses: "flash_wide" },

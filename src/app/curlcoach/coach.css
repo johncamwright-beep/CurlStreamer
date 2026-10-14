@@ -1713,3 +1713,53 @@
 .coach-scoring .coach-summary {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
+
+@media (min-width: 1101px) {
+  .event-sidebar .tracker-primary-nav {
+    flex: 1;
+    min-width: 0;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+  }
+  .event-sidebar .tracker-primary-nav a {
+    white-space: nowrap;
+    min-height: 44px;
+    padding: 10px;
+  }
+}
+.event-shot-metrics {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 180px), 1fr));
+}
+
+.tracker-entry-layout > .tracker-context-card .tracker-shooting-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 8px;
+  width: 100%;
+}
+.tracker-entry-layout > .tracker-context-card .tracker-shooting-stats > div {
+  display: block;
+  border: 1px solid var(--line, #294858);
+  border-radius: 10px;
+  padding: 12px;
+  background: #122e39;
+}
+.tracker-shooting-stats dd {
+  margin: 8px 0 0;
+  font-weight: 700;
+  font-size: 1.3rem;
+}
+
+@media (max-width: 600px) {
+  .coach-session-actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    overflow: visible;
+    width: 100%;
+  }
+  .coach-session-actions > button,
+  .coach-session-actions > .entry-overlay {
+    min-width: 0;
+    width: 100%;
+  }
+}

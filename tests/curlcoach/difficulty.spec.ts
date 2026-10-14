@@ -63,17 +63,28 @@ test("persisted difficulty follows analytics filters without changing primary sh
   const summary = page
     .locator('[aria-label="Difficulty-adjusted shooting"]:visible')
     .first();
-  await expect(summary).toContainText("Difficulty adjusted: 95.0%");
-  await expect(summary).toContainText("Above expected: +25.0 pp");
-  await expect(summary).toContainText("1 of 1 eligible graded shots");
-  await expect(summary).toContainText("Small sample");
+  await expect(summary).toContainText("95.0%");
   await expect(page.locator(".event-shot-metrics").first()).toContainText(
     "80.0%",
   );
-  await page.getByText("Difficulty-adjusted detail", { exact: true }).click();
   await expect(
-    page.getByRole("region", { name: "Player difficulty context" }),
-  ).toContainText("95.0%");
+    page.getByText("Difficulty-adjusted detail", { exact: true }),
+  ).toHaveCount(0);
+  await expect(
+    page.getByText(/Provisional illustrative benchmarks/),
+  ).toHaveCount(0);
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  const top = page.getByRole("navigation", { name: "Shot Tracker shortcuts" });
+  const menu = page.getByRole("navigation", {
+    name: "Shot Tracker pages",
+    includeHidden: true,
+  });
+  expect(await top.getByRole("link").allTextContents()).toEqual(
+    await menu.getByRole("link", { includeHidden: true }).allTextContents(),
+  );
+  await expect(
+    top.getByRole("link", { name: "Options", exact: true }),
+  ).toHaveCount(0);
   expect(
     await page.evaluate(
       () => document.documentElement.scrollWidth <= innerWidth,

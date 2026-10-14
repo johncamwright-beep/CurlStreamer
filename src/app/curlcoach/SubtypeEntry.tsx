@@ -10,6 +10,7 @@ import {
 import { changeObservation } from "@/lib/curlcoach/result-entry";
 import {
   entryChoices,
+  allWeights,
   shotSubtypes,
   weightLabels,
   resultLabels,
@@ -114,7 +115,9 @@ export function WeightEntry({
       blank={observed ? "Not assessed" : "Not recorded"}
       value={String(value.values[key] ?? "")}
       choices={
-        entryChoices(shot.type, value.values.shotSubtype, enhanced).weights
+        observed
+          ? allWeights
+          : entryChoices(shot.type, value.values.shotSubtype, enhanced).weights
       }
       labels={weightLabels}
       onChange={(choice) =>

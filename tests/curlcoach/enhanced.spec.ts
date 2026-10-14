@@ -1,3 +1,4 @@
+import { weightLabels } from "../../src/lib/curlcoach/shot-subtypes";
 import { expect, test, type Page } from "@playwright/test";
 
 test.skip(!process.env.CURLCOACH_E2E, "Use the Shot Tracker config");
@@ -12,7 +13,7 @@ async function navigate(page: Page, name: string) {
     .click();
 }
 async function mode(page: Page, value: string) {
-  await navigate(page, "Options");
+  await page.goto("/curlcoach?event=practice#options");
   await expect(
     page.getByRole("button", { name: "Save Options", exact: true }),
   ).toBeEnabled();
@@ -88,7 +89,7 @@ test("workbook selections, corrections, clearing, Standard mode and historical p
       .getByRole("combobox", { name: "Observed weight", exact: true })
       .locator("option")
       .allTextContents(),
-  ).toEqual(["Not assessed", "Guard 1", "Guard 2", "Guard 3"]);
+  ).toEqual(["Not assessed", ...Object.values(weightLabels)]);
   expect(
     await page
       .getByRole("combobox", { name: "Result observations", exact: true })
@@ -128,7 +129,7 @@ test("workbook selections, corrections, clearing, Standard mode and historical p
   ).toHaveValue("");
   await page
     .getByRole("combobox", { name: "Observed weight", exact: true })
-    .selectOption("normal_weight_takeout");
+    .selectOption("button");
   await page
     .getByRole("combobox", { name: "Result observations", exact: true })
     .selectOption("roll_far");
@@ -220,7 +221,7 @@ test("workbook selections, corrections, clearing, Standard mode and historical p
   expect((await read()).values).toMatchObject({
     shotSubtype: "hit_and_roll_under",
     resultObservations: ["roll_far", "jammed"],
-    observedDestination: "normal_weight_takeout",
+    observedDestination: "button",
     guardToClear: "yes",
     tolerance: "tight",
   });

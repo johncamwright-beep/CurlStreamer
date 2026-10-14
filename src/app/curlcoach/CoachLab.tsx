@@ -1,4 +1,11 @@
 "use client";
+import DifficultySummary from "./DifficultySummary";
+import {
+  difficultyRecords,
+  withDifficulty,
+  difficultySummary,
+  difficultyDescription,
+} from "@/lib/curlcoach/difficulty";
 import {
   withBroadcastReview,
   withRecordedReviewTime,
@@ -627,6 +634,12 @@ export default function CoachLab({
   }
   const shots = state ? currentShots(state.events) : [];
   const team = report(shots);
+  const difficultyRows = state
+    ? difficultyRecords(state, enhancedData.documents)
+    : [];
+  const classifiedShots = shots.map((s) =>
+    withDifficulty(s, difficultyRows, enhancedData.ready),
+  );
   const lastRevision = new Map(
     state?.events.map((event, index) => [event.shotId, index]),
   );
@@ -1257,6 +1270,15 @@ export default function CoachLab({
                       · {r.scored} scored · {r.missing} missing · {r.excluded}{" "}
                       excluded
                     </span>
+                    <small>
+                      {difficultyDescription(
+                        difficultySummary(
+                          classifiedShots.filter(
+                            (s) => s.playerId === player.id,
+                          ),
+                        ),
+                      )}
+                    </small>
                   </div>
                 );
               })}
@@ -1294,6 +1316,10 @@ export default function CoachLab({
               <strong>{team.excluded}</strong>
             </div>
           </section>
+          <DifficultySummary
+            compact
+            value={difficultySummary(classifiedShots)}
+          />
           {enhancedMode && enhancedData.ready && (
             <AssessmentCoverage
               shots={shots}

@@ -8,7 +8,7 @@ import {
   type State,
 } from "@/lib/curlcoach/model";
 import {
-  eventShots,
+  difficultyEventShots,
   type CoachEvent,
   type CoachGame,
   type Workspace,
@@ -456,12 +456,19 @@ function WorkspaceContent({
   }, [view, seasonReady, statsData, data]);
   const hasData = !!data;
   useEffect(() => {
+    if (!statistics) setStatsData(null);
+  }, [statistics]);
+  useEffect(() => {
     if (!open || !statistics || !hasData || seasonReady) return;
     const controller = new AbortController();
     setStatsError("");
     void fetch(
       "/api/curlcoach/workspace?" +
-        new URLSearchParams({ source, seasonId: selectedSeason }),
+        new URLSearchParams({
+          source,
+          seasonId: selectedSeason,
+          includeDifficulty: "true",
+        }),
       { cache: "no-store", signal: controller.signal },
     )
       .then(async (response) => {
@@ -609,7 +616,7 @@ function WorkspaceContent({
       ).values(),
     ],
     all = event
-      ? eventShots({ ...event, games: analysisGames }).filter((s) =>
+      ? difficultyEventShots({ ...event, games: analysisGames }).filter((s) =>
           analysisGames.some((g) => g.id === s.gameId),
         )
       : [],
@@ -624,9 +631,7 @@ function WorkspaceContent({
   }
   function saved(state: State) {
     savedStates.current.set(state.gameId, state);
-    setStatsData((current) =>
-      current ? updateWorkspaceState(current, state) : current,
-    );
+    setStatsData(null);
     setData((current) =>
       current ? updateWorkspaceState(current, state) : current,
     );
@@ -1154,7 +1159,7 @@ function WorkspaceContent({
                       players={analysisPlayers}
                       catalog={analysisData?.catalog ?? []}
                       seasonShots={filterAnalysisShots(
-                        eventShots({
+                        difficultyEventShots({
                           ...event,
                           games: seasonReady
                             ? (statsData?.event.games.filter(

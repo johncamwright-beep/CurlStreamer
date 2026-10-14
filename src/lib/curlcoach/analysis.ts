@@ -1,8 +1,9 @@
+import type { DifficultyShot } from "./difficulty";
 import { deficiencies, type Shot } from "./model";
 import { family, type CoachGame } from "./event";
 import { observedEnds } from "./score-statistics";
 
-export type AnalysisShot = Shot & { id: string; gameId: string };
+export type AnalysisShot = DifficultyShot & { id: string; gameId: string };
 export type ShotFilters = {
   type: string;
   turn: string;

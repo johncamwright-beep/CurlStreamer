@@ -1,0 +1,5 @@
+{
+  "version": "illustrative-v1",
+  "baseline": 70,
+  "expected": { "A": 85, "B": 70, "C": 55 }
+}

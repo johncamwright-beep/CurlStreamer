@@ -48,6 +48,15 @@ export function reportSections(report: SavedReport) {
       statistics: finding.evidence
         .flatMap((id) => {
           const e = report.evidence.find((e) => e.id === id);
+          if (id.includes("difficulty"))
+            return e
+              ? [
+                  {
+                    label: e.label,
+                    value: e.value.split("Provisional illustrative")[0],
+                  },
+                ]
+              : [];
           const value = e?.value.match(/\d+(?:\.\d+)?%/)?.[0];
           return e && value
             ? [

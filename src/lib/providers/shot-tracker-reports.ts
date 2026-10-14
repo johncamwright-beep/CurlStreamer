@@ -1,3 +1,5 @@
+import { loadEventDifficulty } from "./shot-tracker-difficulty";
+import { difficultyBenchmarks } from "@/lib/curlcoach/difficulty";
 import "server-only";
 import { withReportFlags } from "@/lib/curlcoach/flagged-shots";
 import { reportMisses } from "@/lib/curlcoach/report-misses";
@@ -49,6 +51,7 @@ export async function loadReportEvent(account: CoachAccount, eventId: string) {
       },
       game.state,
     );
+  await loadEventDifficulty(event, account.userId);
   return event;
 }
 export function reportFingerprint(
@@ -60,6 +63,9 @@ export function reportFingerprint(
     .update(
       JSON.stringify({
         policy,
+        ...(Number(policy.match(/-v(\d+)$/)?.[1]) >= 7
+          ? { difficultyBenchmarks }
+          : {}),
         model: process.env.SHOT_TRACKER_AI_MODEL ?? "",
         audience,
         event: {
@@ -72,6 +78,12 @@ export function reportFingerprint(
             available: g.scoreboardAvailable,
             hammer: g.initialHammer,
             state: g.state,
+            ...(Number(policy.match(/-v(\d+)$/)?.[1]) >= 7
+              ? {
+                  difficultyRecords: g.difficultyRecords ?? [],
+                  difficultyReady: g.difficultyReady ?? false,
+                }
+              : {}),
           })),
         },
       }),
@@ -307,7 +319,7 @@ export async function generateEventReports(
     if (audience === "coach") {
       const players = reportPlayers(event);
       for (const entry of packet.reports[0].evidence)
-        if (entry.id.startsWith("player-"))
+        if (/^player-\d+$/.test(entry.id))
           entry.label += ` · ${players[Number(entry.id.slice(7)) - 1]?.name ?? ""}`;
     }
     if (

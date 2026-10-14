@@ -431,3 +431,36 @@ it("uses only the opponent's matching seasonal level, never the event level", as
     (await loadProductionStreamerEvent(eid)).event.games[0].competitionLevel,
   ).toBeNull();
 });
+
+it("removes a Streamer-deleted game from event data and direct game selection", async () => {
+  const original = await m.games();
+  m.games.mockResolvedValue({
+    ok: true,
+    value: original.value.map((g: object) => ({
+      ...g,
+      game_status: "deleted",
+    })),
+  });
+  expect((await loadProductionStreamerEvent(eid)).event.games).toEqual([]);
+  expect((await loadProductionStreamerEvent(eid, gid)).event.games).toEqual([]);
+  // Restoring from Streamer trash makes the same private history available again.
+  m.games.mockResolvedValue(original);
+  expect(
+    (await loadProductionStreamerEvent(eid)).event.games.map((g) => g.id),
+  ).toEqual([gid]);
+});
+
+it("returns an empty standalone event after its last game is deleted", async () => {
+  const original = await m.games();
+  m.games.mockResolvedValue({
+    ok: true,
+    value: original.value.map((g: object) => ({
+      ...g,
+      event_id: null,
+      game_status: "deleted",
+    })),
+  });
+  const result = await loadProductionStreamerEvent("standalone");
+  expect(result.event.id).toBe("standalone");
+  expect(result.event.games).toEqual([]);
+});

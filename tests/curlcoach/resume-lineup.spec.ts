@@ -1,3 +1,4 @@
+import { openEntryTab } from "./entry-tabs";
 import { build } from "esbuild";
 import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
@@ -10,7 +11,7 @@ import {
 } from "../../src/lib/curlcoach/model";
 import type { CoachGame, Workspace } from "../../src/lib/curlcoach/event";
 
-// Full-form regression coverage; mobile tabs are exercised in mobile-entry.spec.ts.
+// Shared tabbed entry regression coverage; phone and desktop layout is exercised in mobile-entry.spec.ts.
 test.use({ viewport: { width: 820, height: 1180 } });
 
 test.skip(!process.env.CURLCOACH_E2E, "Use the Shot Tracker config");
@@ -238,8 +239,33 @@ async function start(page: Page) {
   await page
     .getByRole("button", { name: "Confirm lineup & start", exact: true })
     .click();
+  await openEntryTab(page, "Execution");
   await expect(page.getByLabel("Numeric grade")).toBeVisible();
 }
+test("refresh removes a deleted selected game and its cached charting controls", async ({
+  page,
+}) => {
+  const games = await fixture(page);
+  await start(page);
+  games.delete(gameOne);
+  games.delete(gameTwo);
+  await page.getByRole("button", { name: "Refresh event" }).click();
+  await expect(
+    page.getByRole("button", { name: "Refresh event" }),
+  ).toBeEnabled();
+  await expect(
+    page.getByRole("button", { name: "Next Turn", exact: true }),
+  ).toBeHidden();
+  await expect(
+    page.getByRole("region", { name: "Current shot context" }),
+  ).toBeHidden();
+  await expect(
+    page.getByRole("heading", {
+      name: "Event data is unavailable",
+      exact: true,
+    }),
+  ).toBeHidden();
+});
 for (const enhancedFailure of ["preferences", "game"] as const) {
   test(`Standard charting saves during a ${enhancedFailure} observations outage`, async ({
     page,
@@ -249,19 +275,18 @@ for (const enhancedFailure of ["preferences", "game"] as const) {
     await expect(page.getByRole("alert")).toContainText(
       "Synthetic observations outage",
     );
+    await openEntryTab(page, "Execution");
     await page.getByLabel("Numeric grade").selectOption("4");
     const save = page.waitForRequest(
       (request) =>
         request.method() === "POST" &&
         request.url().includes("/api/curlcoach/workspace"),
     );
-    await page
-      .getByRole("button", { name: "Save attempt", exact: true })
-      .click();
+    await page.getByRole("button", { name: "Next Turn", exact: true }).click();
     expect((await save).postDataJSON()).not.toHaveProperty("enhanced");
     await expect(
       page.locator(".coach-scoring [role=status]").first(),
-    ).toContainText("saved");
+    ).toContainText("Saved.");
     expect(games.get(gameOne)!.state.events.at(-1)?.shot?.grade).toBe(4);
   });
 }
@@ -321,9 +346,11 @@ test("completed games show only their closed panel until explicitly reopened", a
   await expect(page.getByLabel("Numeric grade")).toBeHidden();
   await expect(page.getByRole("button", { name: "Edit lineup" })).toBeHidden();
   await page.getByRole("button", { name: "Reopen", exact: true }).click();
+  await openEntryTab(page, "Execution");
   await expect(page.getByLabel("Numeric grade")).toBeVisible();
   expect(games.get(gameOne)!.status).toBe("completed");
   await page.reload();
+  await openEntryTab(page, "Execution");
   await expect(page.getByLabel("Numeric grade")).toBeVisible();
   await page
     .getByRole("button", { name: "Finish private coaching session" })
@@ -382,6 +409,7 @@ test("lost lineup response retries the original request and retains the three-pl
   await page.getByRole("button", { name: "Confirm lineup & start" }).click();
   await expect(page.getByRole("dialog").getByRole("alert")).toBeVisible();
   await page.getByRole("button", { name: "Confirm lineup & start" }).click();
+  await openEntryTab(page, "Execution");
   await expect(page.getByLabel("Numeric grade")).toBeVisible();
   expect(requests).toHaveLength(2);
   expect(requests[0]).toBe(requests[1]);
@@ -393,11 +421,13 @@ test("reload preserves drafts and lineup changes never rewrite recorded players"
 }) => {
   const games = await fixture(page);
   await start(page);
+  await openEntryTab(page, "Shot");
   await page
     .getByRole("combobox", { name: "Shot type", exact: true })
     .selectOption("Draw");
+  await openEntryTab(page, "Execution");
   await page.getByLabel("Numeric grade").selectOption("4");
-  await page.getByRole("button", { name: /^Next turn/ }).click();
+  await page.getByRole("button", { name: /^Next Turn/ }).click();
   await expect(
     page.getByRole("combobox", {
       name: "Stone",
@@ -405,9 +435,11 @@ test("reload preserves drafts and lineup changes never rewrite recorded players"
       includeHidden: true,
     }),
   ).toHaveValue("2");
-  await page.getByRole("button", { name: /^Notes & review/ }).click();
+  await page.getByRole("tab", { name: "Notes", exact: true }).click();
+  await openEntryTab(page, "Notes");
   await page.getByLabel("Private coaching note").fill("Next rock note");
   await page.reload();
+  await openEntryTab(page, "Notes");
   await expect(page.getByLabel("Private coaching note")).toHaveValue(
     "Next rock note",
   );

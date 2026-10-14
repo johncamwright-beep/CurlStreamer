@@ -241,10 +241,8 @@ export default function CoachLab({
     setEntryTab("Shot");
     entry.current?.scrollIntoView({ block: "start", behavior: "smooth" });
   }
+  const tabbedEntry = true;
   const [mobileEntry, setMobileEntry] = useState(false);
-  const [entryTab, setEntryTab] = useState("Shot");
-  const entryId = useId();
-  const entryTabs = ["Shot", "Execution", "Technical", "Notes"];
   useEffect(() => {
     const query = window.matchMedia("(max-width: 600px)");
     const update = () => setMobileEntry(query.matches);
@@ -252,7 +250,19 @@ export default function CoachLab({
     query.addEventListener("change", update);
     return () => query.removeEventListener("change", update);
   }, []);
-  const [message, setMessage] = useState("");
+  const [entryTab, setEntryTab] = useState("Shot");
+  const entryId = useId();
+  const entryTabs = ["Shot", "Execution", "Technical", "Notes"];
+  const [message, setStatusMessage] = useState("");
+  const [messageIsError, setMessageIsError] = useState(false);
+  function setMessage(value: string) {
+    setMessageIsError(false);
+    setStatusMessage(value);
+  }
+  function setFailure(value: string) {
+    setMessageIsError(true);
+    setStatusMessage(value);
+  }
   const [busy, setBusy] = useState(false);
   const [lineupOpen, setLineupOpen] = useState(false);
   const pendingLineup = useRef<{
@@ -288,7 +298,7 @@ export default function CoachLab({
           : data,
       );
     } catch (error) {
-      setMessage(
+      setFailure(
         error instanceof Error ? error.message : "Cannot reach the local lab.",
       );
     }
@@ -309,7 +319,7 @@ export default function CoachLab({
       setOpen(true);
       setMessage("");
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Unable to unlock.");
+      setFailure(error instanceof Error ? error.message : "Unable to unlock.");
     } finally {
       setBusy(false);
     }
@@ -458,7 +468,7 @@ export default function CoachLab({
         });
       }
     } catch (error) {
-      setMessage(
+      setFailure(
         captureError(error, "Save not confirmed. Reload before retrying."),
       );
     } finally {
@@ -565,7 +575,7 @@ export default function CoachLab({
           : "Private coaching session reopened.",
       );
     } catch (error) {
-      setMessage(
+      setFailure(
         error instanceof Error
           ? error.message
           : "Session update was not confirmed.",
@@ -622,7 +632,7 @@ export default function CoachLab({
           {options.map((value) => (
             <option key={value} value={value}>
               {field === "turn"
-                ? mobileEntry
+                ? tabbedEntry
                   ? value
                   : turnLabel(value)
                 : value}
@@ -762,15 +772,15 @@ export default function CoachLab({
       <section
         className="coach-entry-section"
         aria-label={title}
-        role={mobileEntry ? "tabpanel" : undefined}
+        role={tabbedEntry ? "tabpanel" : undefined}
         id={`${entryId}-${title === "Shot selection" ? "Shot" : title === "Technical observation" ? "Technical" : title}-panel`}
         aria-labelledby={
-          mobileEntry
+          tabbedEntry
             ? `${entryId}-${title === "Shot selection" ? "Shot" : title === "Technical observation" ? "Technical" : title}-tab`
             : undefined
         }
         hidden={
-          mobileEntry &&
+          tabbedEntry &&
           entryTab !==
             (title === "Shot selection"
               ? "Shot"
@@ -809,7 +819,11 @@ export default function CoachLab({
           </p>
         </header>
       )}
-      <p role="status" aria-live="polite">
+      <p
+        role="status"
+        aria-live="polite"
+        className={messageIsError ? "coach-save-error" : "sr-only"}
+      >
         {message}
       </p>
       {(metrics.error || enhancedData.error) && (
@@ -896,10 +910,7 @@ export default function CoachLab({
                 }}
                 onSubmit={(e) => {
                   e.preventDefault();
-                  const advance =
-                    (e.nativeEvent as SubmitEvent).submitter?.getAttribute(
-                      "value",
-                    ) === "next";
+                  const advance = !editing;
                   void save(draft, editing ?? crypto.randomUUID(), advance);
                 }}
               >
@@ -926,24 +937,24 @@ export default function CoachLab({
                       </p>
                       <dl className="tracker-shooting-stats">
                         <div>
-                          <dt>{mobileEntry ? "Player" : "Player shooting"}</dt>
+                          <dt>{tabbedEntry ? "Player" : "Player shooting"}</dt>
                           <dd>{percentage(shooter.percent)}</dd>
                         </div>
                         <div>
                           <dt>
-                            {mobileEntry
+                            {tabbedEntry
                               ? "Player (W)"
                               : "Player weighted shooting"}
                           </dt>
                           <dd>{percentage(shooterWeighted.adjusted)}</dd>
                         </div>
                         <div>
-                          <dt>{mobileEntry ? "Team" : "Team shooting"}</dt>
+                          <dt>{tabbedEntry ? "Team" : "Team shooting"}</dt>
                           <dd>{percentage(team.percent)}</dd>
                         </div>
                         <div>
                           <dt>
-                            {mobileEntry
+                            {tabbedEntry
                               ? "Team (W)"
                               : "Team weighted shooting"}
                           </dt>
@@ -1023,7 +1034,7 @@ export default function CoachLab({
                         </div>
                       </EntryOverlay>
                     </section>
-                    {mobileEntry && (
+                    {tabbedEntry && (
                       <div
                         className="tracker-entry-tabs"
                         role="tablist"
@@ -1067,7 +1078,7 @@ export default function CoachLab({
                     )}
                     <div
                       className="tracker-quick-entry"
-                      hidden={mobileEntry && entryTab === "Notes"}
+                      hidden={tabbedEntry && entryTab === "Notes"}
                     >
                       <div className="coach-fields">
                         {" "}
@@ -1085,7 +1096,7 @@ export default function CoachLab({
                               }}
                             />
                             {choose("turn", "Turn / target", turns)}
-                            {mobileEntry && draft.turn && (
+                            {tabbedEntry && draft.turn && (
                               <p className="tracker-turn-description">
                                 {turnLabel(draft.turn)}
                               </p>
@@ -1168,16 +1179,16 @@ export default function CoachLab({
                     </div>
                     <div
                       className="tracker-entry-notes"
-                      role={mobileEntry ? "tabpanel" : undefined}
+                      role={tabbedEntry ? "tabpanel" : undefined}
                       id={`${entryId}-Notes-panel`}
                       aria-labelledby={
-                        mobileEntry ? `${entryId}-Notes-tab` : undefined
+                        tabbedEntry ? `${entryId}-Notes-tab` : undefined
                       }
-                      hidden={mobileEntry && entryTab !== "Notes"}
+                      hidden={tabbedEntry && entryTab !== "Notes"}
                     >
                       <EntryOverlay
                         title="Notes & review"
-                        inline={mobileEntry}
+                        inline={tabbedEntry}
                         description={
                           draft.note
                             ? "Coaching note added · edit notes and flags."
@@ -1358,22 +1369,20 @@ export default function CoachLab({
                     </div>
                   </div>
                   <div className="coach-entry-actions">
-                    <button type="submit" value="save">
-                      {busy
-                        ? "Saving…"
-                        : editing
-                          ? "Save correction"
-                          : mobileEntry
-                            ? "Save Shot"
-                            : "Save attempt"}
-                    </button>
                     <button
                       type="submit"
-                      value="next"
-                      disabled={!nextTurn(draft, shots, players, lineup)}
-                      title="Save this attempt and move to the next turn"
+                      value={editing ? "save" : "next"}
+                      title={
+                        editing
+                          ? "Save this correction"
+                          : "Save this shot and move to the next turn"
+                      }
                     >
-                      {busy ? "Saving…" : mobileEntry ? "Next" : "Next turn →"}
+                      {busy
+                        ? "Saving\u2026"
+                        : editing
+                          ? "Save correction"
+                          : "Next Turn"}
                     </button>
                     <button type="button" onClick={goToCurrent}>
                       Go to current shot

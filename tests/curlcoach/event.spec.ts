@@ -1,5 +1,6 @@
+import { openEntryTab } from "./entry-tabs";
 import { expect, test, type Page } from "@playwright/test";
-// Full-form regression coverage; mobile tabs are exercised in mobile-entry.spec.ts.
+// Shared tabbed entry regression coverage; phone and desktop layout is exercised in mobile-entry.spec.ts.
 test.use({ viewport: { width: 820, height: 1180 } });
 
 test.skip(!process.env.CURLCOACH_E2E, "Use the Shot Tracker config");
@@ -40,6 +41,7 @@ test("five analysis pages preserve scope, show percentages and fit mobile", asyn
     .getByRole("combobox", { name: "Team / player", exact: true })
     .selectOption("lead");
   await page.getByText("More filters", { exact: true }).click();
+  await openEntryTab(page, "Shot");
   await page
     .getByRole("combobox", { name: "Shot type", exact: true })
     .selectOption("Draw");
@@ -47,6 +49,7 @@ test("five analysis pages preserve scope, show percentages and fit mobile", asyn
   await expect(
     page.getByRole("combobox", { name: "Team / player", exact: true }),
   ).toHaveValue("lead");
+  await openEntryTab(page, "Shot");
   await expect(
     page.getByRole("combobox", { name: "Shot type", exact: true }),
   ).toHaveValue("Draw");
@@ -106,14 +109,12 @@ test("charting draft survives analysis navigation and season reads are cached", 
     .getByRole("dialog", { name: "Change", exact: true })
     .getByRole("button", { name: "Done", exact: true })
     .click();
-  await page.getByRole("button", { name: /^Notes & review/ }).click();
+  await page.getByRole("tab", { name: "Notes", exact: true }).click();
+  await openEntryTab(page, "Notes");
   await page
     .getByLabel("Private coaching note")
     .fill("Keep this unsaved draft");
-  await page
-    .getByRole("dialog")
-    .getByRole("button", { name: "Done", exact: true })
-    .click();
+  await openEntryTab(page, "Shot");
   let reads = 0;
   page.on("request", (request) => {
     if (
@@ -133,6 +134,7 @@ test("charting draft survives analysis navigation and season reads are cached", 
   await navigate(page, "Game analysis");
   await navigate(page, "Charting");
   await expect(page.getByLabel("End", { exact: true })).toHaveValue("3");
+  await openEntryTab(page, "Notes");
   await expect(page.getByLabel("Private coaching note")).toHaveValue(
     "Keep this unsaved draft",
   );

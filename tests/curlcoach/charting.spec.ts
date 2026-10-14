@@ -1,5 +1,6 @@
+import { openEntryTab } from "./entry-tabs";
 import { expect, test } from "@playwright/test";
-// Full-form regression coverage; mobile tabs are exercised in mobile-entry.spec.ts.
+// Shared tabbed entry regression coverage; phone and desktop layout is exercised in mobile-entry.spec.ts.
 test.use({ viewport: { width: 820, height: 1180 } });
 
 test.skip(
@@ -33,7 +34,7 @@ test("scoped local lab charts, corrects and audits a synthetic shot", async ({
   }
 
   await expect(
-    page.getByRole("button", { name: "Save attempt", exact: true }),
+    page.getByRole("button", { name: "Next Turn", exact: true }),
   ).toBeEnabled();
   await page.getByRole("button", { name: "Change", exact: true }).click();
   await page.getByLabel("End", { exact: true }).fill("20");
@@ -49,27 +50,33 @@ test("scoped local lab charts, corrects and audits a synthetic shot", async ({
     .getByRole("dialog", { name: "Change", exact: true })
     .getByRole("button", { name: "Done", exact: true })
     .click();
+  await openEntryTab(page, "Shot");
   await page
     .getByRole("combobox", { name: "Shot type", exact: true })
     .selectOption("Draw");
+  await openEntryTab(page, "Execution");
   await page.getByLabel("Numeric grade").selectOption("5");
+  await openEntryTab(page, "Technical");
   for (const field of ["Line", "Release", "Technical"]) {
     await expect(
       page.getByRole("combobox", { name: field, exact: true }),
     ).toHaveValue("");
   }
+  await openEntryTab(page, "Technical");
   await page
     .getByRole("combobox", { name: "Line", exact: true })
     .selectOption("Wide");
+  await openEntryTab(page, "Technical");
   await page
     .getByRole("combobox", { name: "Release", exact: true })
     .selectOption("Soft");
+  await openEntryTab(page, "Technical");
   await page
     .getByRole("combobox", { name: "Technical", exact: true })
     .selectOption("Understep");
-  await page.getByRole("button", { name: "Save attempt", exact: true }).click();
-  await expect(page.locator(".coach-scoring [role=status]")).toHaveText(
-    "Attempt saved. Report updated.",
+  await page.getByRole("button", { name: "Next Turn", exact: true }).click();
+  await expect(page.locator(".coach-scoring [role=status]")).toContainText(
+    "Saved.",
   );
   const attempt = page.locator(".coach-attempt").filter({ hasText: "End 20" });
   await expect(attempt).toContainText("5/5");
@@ -80,6 +87,7 @@ test("scoped local lab charts, corrects and audits a synthetic shot", async ({
   await expect(
     page.getByRole("heading", { name: "Technical Review", exact: true }),
   ).toBeVisible();
+  await openEntryTab(page, "Technical");
   await expect(
     page
       .getByRole("region", { name: "Line", exact: true })
@@ -95,12 +103,15 @@ test("scoped local lab charts, corrects and audits a synthetic shot", async ({
     .getByRole("button", { name: "Recorded shots", exact: true })
     .click();
   await attempt.getByRole("button", { name: "Edit", exact: true }).click();
+  await openEntryTab(page, "Technical");
   await expect(
     page.getByRole("combobox", { name: "Line", exact: true }),
   ).toHaveValue("Wide");
+  await openEntryTab(page, "Technical");
   await expect(
     page.getByRole("combobox", { name: "Release", exact: true }),
   ).toHaveValue("Soft");
+  await openEntryTab(page, "Technical");
   await expect(
     page.getByRole("combobox", { name: "Technical", exact: true }),
   ).toHaveValue("Understep");
@@ -116,6 +127,7 @@ test("scoped local lab charts, corrects and audits a synthetic shot", async ({
     .getByRole("button", { name: "Recorded shots", exact: true })
     .click();
   await attempt.getByRole("button", { name: "Edit", exact: true }).click();
+  await openEntryTab(page, "Execution");
   await page.getByLabel("Numeric grade").selectOption("0");
   await page.getByRole("button", { name: "Save correction" }).click();
   await expect(attempt).toContainText("0/5");
@@ -131,6 +143,7 @@ test("scoped local lab charts, corrects and audits a synthetic shot", async ({
   await page
     .getByRole("button", { name: "Resume tracking", exact: true })
     .click();
+  await openEntryTab(page, "Execution");
   await expect(page.getByLabel("Numeric grade")).toHaveValue("0");
   await expect(
     page.getByRole("region", { name: "Current shot context" }),
@@ -161,7 +174,8 @@ test("scoped local lab charts, corrects and audits a synthetic shot", async ({
     .getByRole("dialog", { name: "Change", exact: true })
     .getByRole("button", { name: "Done", exact: true })
     .click();
-  await page.getByRole("button", { name: /^Notes & review/ }).click();
+  await page.getByRole("tab", { name: "Notes", exact: true }).click();
+  await openEntryTab(page, "Notes");
   await page.getByLabel("Flag shot for review").selectOption("yes");
   for (const [label, seconds] of [
     ["30s", "30"],
@@ -180,17 +194,16 @@ test("scoped local lab charts, corrects and audits a synthetic shot", async ({
     page.getByRole("button", { name: "30s", exact: true }),
   ).toHaveAttribute("aria-pressed", "false");
   await page.getByRole("button", { name: "45s", exact: true }).click();
+  await openEntryTab(page, "Notes");
   await page.getByLabel("Private coaching note").fill("Review the line call");
-  await page
-    .getByRole("dialog")
-    .getByRole("button", { name: "Done", exact: true })
-    .click();
+  await openEntryTab(page, "Shot");
+  await openEntryTab(page, "Shot");
   await page
     .getByRole("combobox", { name: "Turn / target", exact: true })
     .selectOption({
-      label:
-        "CW C IO — Clockwise; broom inside four-foot lines; away from centre",
+      value: "CW C IO",
     });
+  await openEntryTab(page, "Shot");
   await expect(
     page.getByRole("combobox", { name: "Turn / target", exact: true }),
   ).toHaveValue("CW C IO");
@@ -202,9 +215,11 @@ test("scoped local lab charts, corrects and audits a synthetic shot", async ({
     .getByRole("dialog", { name: "Change", exact: true })
     .getByRole("button", { name: "Done", exact: true })
     .click();
+  await openEntryTab(page, "Shot");
   await page
     .getByRole("combobox", { name: "Shot type", exact: true })
     .selectOption("Draw");
+  await openEntryTab(page, "Execution");
   await page.getByLabel("Numeric grade").selectOption("5");
   await page.route("**/api/curlcoach/workspace", async (route) => {
     if (route.request().method() === "POST")
@@ -215,7 +230,7 @@ test("scoped local lab charts, corrects and audits a synthetic shot", async ({
       });
     else await route.continue();
   });
-  await page.getByRole("button", { name: "Next turn" }).click();
+  await page.getByRole("button", { name: "Next Turn" }).click();
   await expect(page.locator(".coach-scoring [role=status]")).toContainText(
     "Test save conflict",
   );
@@ -227,7 +242,7 @@ test("scoped local lab charts, corrects and audits a synthetic shot", async ({
     }),
   ).toHaveValue("1");
   await page.unroute("**/api/curlcoach/workspace");
-  await page.getByRole("button", { name: "Next turn" }).click();
+  await page.getByRole("button", { name: "Next Turn" }).click();
   await expect(
     page.getByRole("combobox", {
       name: "Stone",
@@ -235,12 +250,15 @@ test("scoped local lab charts, corrects and audits a synthetic shot", async ({
       includeHidden: true,
     }),
   ).toHaveValue("2");
+  await openEntryTab(page, "Execution");
   await expect(page.getByLabel("Numeric grade")).toHaveValue("");
+  await openEntryTab(page, "Technical");
   for (const field of ["Line", "Release", "Technical"]) {
     await expect(
       page.getByRole("combobox", { name: field, exact: true }),
     ).toHaveValue("");
   }
+  await openEntryTab(page, "Notes");
   await expect(page.getByLabel("Flag shot for review")).toHaveValue("no");
   await page
     .getByRole("button", { name: "Flagged shots", exact: true })
@@ -264,11 +282,13 @@ test("scoped local lab charts, corrects and audits a synthetic shot", async ({
       event.shot?.note === "Review the line call",
   );
   expect(flagged.shot.videoReview.lookBackSeconds).toBe(45);
+  await openEntryTab(page, "Shot");
   await page
     .getByRole("combobox", { name: "Shot type", exact: true })
     .selectOption("Draw");
+  await openEntryTab(page, "Execution");
   await page.getByLabel("Numeric grade").selectOption("4");
-  await page.getByRole("button", { name: "Next turn" }).click();
+  await page.getByRole("button", { name: "Next Turn" }).click();
   await expect(
     page.getByRole("combobox", {
       name: "Throwing position",

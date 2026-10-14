@@ -99,7 +99,10 @@ export async function loadProductionStreamerEvent(
         z.object({ event_id: z.string().nullable(), game_status: z.string() }),
       )
       .parse(games.value)
-      .some((game) => game.event_id === null && game.game_status !== "deleted")
+      .some(
+        (game) => game.event_id === null && game.game_status !== "deleted",
+      ) ||
+    eventId === "standalone"
   )
     catalog.push({
       id: "standalone",

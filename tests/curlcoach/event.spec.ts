@@ -97,7 +97,12 @@ test("charting draft survives analysis navigation and season reads are cached", 
       .getByRole("button", { name: "Confirm lineup & start", exact: true })
       .click();
   }
+  await page.getByRole("button", { name: "Change", exact: true }).click();
   await page.getByLabel("End", { exact: true }).fill("3");
+  await page
+    .getByRole("dialog", { name: "Change", exact: true })
+    .getByRole("button", { name: "Done", exact: true })
+    .click();
   await page.getByRole("button", { name: /^Notes & review/ }).click();
   await page
     .getByLabel("Private coaching note")

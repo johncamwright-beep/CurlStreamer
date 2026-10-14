@@ -1,4 +1,5 @@
 import { build } from "esbuild";
+import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { expect, test, type Page } from "@playwright/test";
 import {
@@ -10,6 +11,7 @@ import {
 import type { CoachGame, Workspace } from "../../src/lib/curlcoach/event";
 
 test.skip(!process.env.CURLCOACH_E2E, "Use the Shot Tracker config");
+test.use({ screenshot: "only-on-failure", actionTimeout: 10000 });
 const organizationId = "resume-fixture-organization";
 const eventOne = "11111111-1111-4111-8111-111111111111";
 const eventTwo = "22222222-2222-4222-8222-222222222222";
@@ -32,12 +34,23 @@ const assignment = [
   "chris",
 ];
 let javascript = "";
-const stylesheet = readFileSync("src/app/curlcoach/coach.css", "utf8");
+let stylesheet = "";
 
 // Mount the real workspace with an authenticated actor scope. The lab server
 // intentionally lacks that scope, so these visibly labelled browser fixtures
 // exercise private reload behavior without weakening production access checks.
 test.beforeAll(async () => {
+  execFileSync(process.execPath, [
+    "node_modules/tailwindcss/lib/cli.js",
+    "-i",
+    "src/app/globals.css",
+    "-o",
+    "work/resume-fixture.css",
+    "--minify",
+  ]);
+  stylesheet =
+    readFileSync("work/resume-fixture.css", "utf8") +
+    readFileSync("src/app/curlcoach/coach.css", "utf8");
   const bundle = await build({
     bundle: true,
     format: "iife",
@@ -68,6 +81,7 @@ async function fixture(
   options: {
     loseFirstLineupResponse?: boolean;
     lineupRequests?: string[];
+    enhancedFailure?: "preferences" | "game";
   } = {},
 ) {
   const games = new Map<string, CoachGame>();
@@ -108,6 +122,20 @@ async function fixture(
       body: `<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>${stylesheet}dialog{max-height:90vh;overflow:auto}dialog label{display:block}</style><p>BROWSER TEST FIXTURE · mocked authorized API</p><div id="root"></div><script src="/__tracker_bundle.js"></script>`,
     }),
   );
+  await page.route("**/api/curlcoach/enhanced**", (route) => {
+    const isGame = new URL(route.request().url()).searchParams.has("gameId");
+    if (options.enhancedFailure === (isGame ? "game" : "preferences"))
+      return route.fulfill({
+        status: 503,
+        json: { error: "Synthetic observations outage" },
+      });
+    return route.fulfill({
+      json: {
+        documents: [],
+        scope: { organizationId, actorUserId: "coach-one" },
+      },
+    });
+  });
   await page.route("**/api/account/navigation", (route) =>
     route.fulfill({ json: { platformAdmin: false } }),
   );
@@ -205,6 +233,32 @@ async function start(page: Page) {
     .click();
   await expect(page.getByLabel("Numeric grade")).toBeVisible();
 }
+for (const enhancedFailure of ["preferences", "game"] as const) {
+  test(`Standard charting saves during a ${enhancedFailure} observations outage`, async ({
+    page,
+  }) => {
+    const games = await fixture(page, { enhancedFailure });
+    await start(page);
+    await expect(page.getByRole("alert")).toContainText(
+      "Synthetic observations outage",
+    );
+    await page.getByLabel("Numeric grade").selectOption("4");
+    const save = page.waitForRequest(
+      (request) =>
+        request.method() === "POST" &&
+        request.url().includes("/api/curlcoach/workspace"),
+    );
+    await page
+      .getByRole("button", { name: "Save attempt", exact: true })
+      .click();
+    expect((await save).postDataJSON()).not.toHaveProperty("enhanced");
+    await expect(
+      page.locator(".coach-scoring [role=status]").first(),
+    ).toContainText("saved");
+    expect(games.get(gameOne)!.state.events.at(-1)?.shot?.grade).toBe(4);
+  });
+}
+
 test("new games require lineup confirmation and keep actions inside the selected game", async ({
   page,
 }, info) => {
@@ -222,7 +276,12 @@ test("new games require lineup confirmation and keep actions inside the selected
       .getByRole("group", { name: "Game actions" })
       .getByRole("button", { name: "Edit lineup" }),
   ).toBeVisible();
+  await page.getByRole("button", { name: "Change", exact: true }).click();
   await page.getByLabel("End", { exact: true }).fill("3");
+  await page
+    .getByRole("dialog", { name: "Change", exact: true })
+    .getByRole("button", { name: "Done", exact: true })
+    .click();
   await page
     .getByRole("combobox", { name: "Game", exact: true })
     .selectOption(gameTwo);
@@ -318,7 +377,11 @@ test("reload preserves drafts and lineup changes never rewrite recorded players"
   await page.getByLabel("Numeric grade").selectOption("4");
   await page.getByRole("button", { name: /^Next turn/ }).click();
   await expect(
-    page.getByRole("combobox", { name: "Stone", exact: true }),
+    page.getByRole("combobox", {
+      name: "Stone",
+      exact: true,
+      includeHidden: true,
+    }),
   ).toHaveValue("2");
   await page.getByRole("button", { name: /^Notes & review/ }).click();
   await page.getByLabel("Private coaching note").fill("Next rock note");

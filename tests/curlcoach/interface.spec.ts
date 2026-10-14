@@ -39,13 +39,13 @@ test("entry overlays preserve draft, keep the page stable and restore focus", as
       .click();
   }
   await page
-    .getByRole("combobox", { name: "Shot", exact: true })
-    .selectOption("standard:Draw");
+    .getByRole("combobox", { name: "Shot type", exact: true })
+    .selectOption("Draw");
   await page
     .getByRole("combobox", { name: "Called weight", exact: true })
     .selectOption("button");
   const trigger = page.getByRole("button", {
-    name: "Observed miss details",
+    name: "Change",
     exact: true,
   });
   const height = await page.evaluate(
@@ -53,13 +53,13 @@ test("entry overlays preserve draft, keep the page stable and restore focus", as
   );
   await trigger.click();
   const dialog = page.getByRole("dialog", {
-    name: "Observed miss details",
+    name: "Change",
     exact: true,
   });
   await expect(dialog).toBeVisible();
   await page
-    .getByRole("combobox", { name: "Line", exact: true })
-    .selectOption("Wide");
+    .getByRole("combobox", { name: "Throwing position", exact: true })
+    .selectOption("Second");
   expect(await page.evaluate(() => document.documentElement.scrollHeight)).toBe(
     height,
   );
@@ -71,12 +71,12 @@ test("entry overlays preserve draft, keep the page stable and restore focus", as
   await expect(trigger).toBeFocused();
   await trigger.click();
   await expect(
-    page.getByRole("combobox", { name: "Line", exact: true }),
-  ).toHaveValue("Wide");
+    page.getByRole("combobox", { name: "Throwing position", exact: true }),
+  ).toHaveValue("Second");
   await dialog.getByRole("button", { name: "Done", exact: true }).click();
   await expect(
-    page.getByRole("combobox", { name: "Shot", exact: true }),
-  ).toHaveValue("standard:Draw");
+    page.getByRole("combobox", { name: "Shot type", exact: true }),
+  ).toHaveValue("Draw");
   await page
     .getByRole("button", { name: "Notes & review", exact: true })
     .click();

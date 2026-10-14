@@ -18,7 +18,10 @@ import {
   shotSchema,
   type Shot,
 } from "./model";
-import { supplementConflicts } from "@/lib/providers/shot-tracker-enhanced";
+import {
+  supplementConflicts,
+  eligibleSupplement,
+} from "@/lib/providers/shot-tracker-enhanced";
 import { standardShot, optionFixture } from "@/test/enhanced-fixtures";
 describe("versioned Enhanced capture", () => {
   it("rejects wrong field types without throwing outside Zod validation", () => {
@@ -159,6 +162,26 @@ describe("versioned Enhanced capture", () => {
       supplementConflicts(doc, correct({ ...standardShot, line: "Tight" })),
     ).toEqual(["line"]);
     expect(currentShots(first.events)).toHaveLength(1);
+    const subtypeDoc = {
+      ...doc,
+      value: { ...value, values: { shotSubtype: "hit_and_roll_under" } },
+    };
+    expect(
+      supplementConflicts(
+        subtypeDoc,
+        correct({ ...standardShot, type: "Hit & Roll" }),
+      ),
+    ).toEqual([]);
+    const incompatible = eligibleSupplement(
+      subtypeDoc,
+      correct({ ...standardShot, type: "Draw" }),
+    );
+    expect(incompatible.conflicts).toContain(
+      "source shot subtype requires reconciliation",
+    );
+    expect(incompatible.unavailableGroups).toContain("results");
+    expect(incompatible.unavailableGroups).toContain("destination");
+    expect(incompatible.value.values.shotSubtype).toBe("hit_and_roll_under");
     expect(standardConflicts(value, { ...standardShot, line: null })).toEqual([
       "line",
     ]);

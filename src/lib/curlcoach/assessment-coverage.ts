@@ -4,6 +4,8 @@ import type { EnhancedDocument } from "../providers/shot-tracker-enhanced";
 import { resultRelevant } from "./result-entry";
 
 const measures = [
+  ["destination", "Recorded weight destination", "observedDestination", null],
+  ["results", "Result observations", "resultObservations", null],
   ["weight", "Observed weight", "observedWeight", null],
   ["misses", "Observed misses", "misses", null],
   ["contact", "First contact", "contactResult", "contactPlan"],

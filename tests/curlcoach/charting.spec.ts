@@ -32,15 +32,24 @@ test("scoped local lab charts, corrects and audits a synthetic shot", async ({
   await expect(
     page.getByRole("button", { name: "Save attempt", exact: true }),
   ).toBeEnabled();
+  await page.getByRole("button", { name: "Change", exact: true }).click();
   await page.getByLabel("End", { exact: true }).fill("20");
   await page
-    .getByRole("combobox", { name: "Stone", exact: true })
+    .getByRole("dialog", { name: "Change", exact: true })
+    .getByRole("button", { name: "Done", exact: true })
+    .click();
+  await page.getByRole("button", { name: "Change", exact: true }).click();
+  await page
+    .getByRole("combobox", { name: "Stone", exact: true, includeHidden: true })
     .selectOption("1");
+  await page
+    .getByRole("dialog", { name: "Change", exact: true })
+    .getByRole("button", { name: "Done", exact: true })
+    .click();
   await page
     .getByRole("combobox", { name: "Shot type", exact: true })
     .selectOption("Draw");
   await page.getByLabel("Numeric grade").selectOption("5");
-  await page.getByRole("button", { name: /^Observed miss details/ }).click();
   for (const field of ["Line", "Release", "Technical"]) {
     await expect(
       page.getByRole("combobox", { name: field, exact: true }),
@@ -55,10 +64,6 @@ test("scoped local lab charts, corrects and audits a synthetic shot", async ({
   await page
     .getByRole("combobox", { name: "Technical", exact: true })
     .selectOption("Understep");
-  await page
-    .getByRole("dialog")
-    .getByRole("button", { name: "Done", exact: true })
-    .click();
   await page.getByRole("button", { name: "Save attempt", exact: true }).click();
   await expect(page.locator(".coach-scoring [role=status]")).toHaveText(
     "Attempt saved. Report updated.",
@@ -84,7 +89,6 @@ test("scoped local lab charts, corrects and audits a synthetic shot", async ({
   await page.getByRole("button", { name: "Shot Tracker menu" }).click();
   await page.getByRole("link", { name: "Charting", exact: true }).click();
   await attempt.getByRole("button", { name: "Correct", exact: true }).click();
-  await page.getByRole("button", { name: /^Observed miss details/ }).click();
   await expect(
     page.getByRole("combobox", { name: "Line", exact: true }),
   ).toHaveValue("Wide");
@@ -94,13 +98,13 @@ test("scoped local lab charts, corrects and audits a synthetic shot", async ({
   await expect(
     page.getByRole("combobox", { name: "Technical", exact: true }),
   ).toHaveValue("Understep");
-  await page
-    .getByRole("dialog")
-    .getByRole("button", { name: "Done", exact: true })
-    .click();
   await page.getByRole("button", { name: "Go to current shot" }).click();
   await expect(
-    page.getByRole("combobox", { name: "Stone", exact: true }),
+    page.getByRole("combobox", {
+      name: "Stone",
+      exact: true,
+      includeHidden: true,
+    }),
   ).toHaveValue("2");
   await attempt.getByRole("button", { name: "Correct", exact: true }).click();
   await page.getByLabel("Numeric grade").selectOption("0");
@@ -136,7 +140,12 @@ test("scoped local lab charts, corrects and audits a synthetic shot", async ({
   }
   await attempt.getByRole("button", { name: "Remove attempt" }).click();
   await expect(attempt).toHaveCount(0);
+  await page.getByRole("button", { name: "Change", exact: true }).click();
   await page.getByLabel("End", { exact: true }).fill("19");
+  await page
+    .getByRole("dialog", { name: "Change", exact: true })
+    .getByRole("button", { name: "Done", exact: true })
+    .click();
   await page.getByRole("button", { name: /^Notes & review/ }).click();
   await page.getByLabel("Flag shot for review").selectOption("yes");
   for (const [label, seconds] of [
@@ -170,9 +179,14 @@ test("scoped local lab charts, corrects and audits a synthetic shot", async ({
   await expect(
     page.getByRole("combobox", { name: "Turn / target", exact: true }),
   ).toHaveValue("CW C IO");
+  await page.getByRole("button", { name: "Change", exact: true }).click();
   await page
-    .getByRole("combobox", { name: "Stone", exact: true })
+    .getByRole("combobox", { name: "Stone", exact: true, includeHidden: true })
     .selectOption("1");
+  await page
+    .getByRole("dialog", { name: "Change", exact: true })
+    .getByRole("button", { name: "Done", exact: true })
+    .click();
   await page
     .getByRole("combobox", { name: "Shot type", exact: true })
     .selectOption("Draw");
@@ -191,24 +205,27 @@ test("scoped local lab charts, corrects and audits a synthetic shot", async ({
     "Test save conflict",
   );
   await expect(
-    page.getByRole("combobox", { name: "Stone", exact: true }),
+    page.getByRole("combobox", {
+      name: "Stone",
+      exact: true,
+      includeHidden: true,
+    }),
   ).toHaveValue("1");
   await page.unroute("**/api/curlcoach/workspace");
   await page.getByRole("button", { name: "Next turn" }).click();
   await expect(
-    page.getByRole("combobox", { name: "Stone", exact: true }),
+    page.getByRole("combobox", {
+      name: "Stone",
+      exact: true,
+      includeHidden: true,
+    }),
   ).toHaveValue("2");
   await expect(page.getByLabel("Numeric grade")).toHaveValue("");
-  await page.getByRole("button", { name: /^Observed miss details/ }).click();
   for (const field of ["Line", "Release", "Technical"]) {
     await expect(
       page.getByRole("combobox", { name: field, exact: true }),
     ).toHaveValue("");
   }
-  await page
-    .getByRole("dialog")
-    .getByRole("button", { name: "Done", exact: true })
-    .click();
   await expect(page.getByLabel("Flag shot for review")).toHaveValue("no");
   await expect(
     page.getByRole("region", { name: "Game review summary" }),
@@ -232,10 +249,18 @@ test("scoped local lab charts, corrects and audits a synthetic shot", async ({
   await page.getByLabel("Numeric grade").selectOption("4");
   await page.getByRole("button", { name: "Next turn" }).click();
   await expect(
-    page.getByRole("combobox", { name: "Throwing position", exact: true }),
+    page.getByRole("combobox", {
+      name: "Throwing position",
+      exact: true,
+      includeHidden: true,
+    }),
   ).toHaveValue("Second");
   await expect(
-    page.getByRole("combobox", { name: "Player", exact: true }),
+    page.getByRole("combobox", {
+      name: "Player",
+      exact: true,
+      includeHidden: true,
+    }),
   ).toHaveValue("second");
   await page.screenshot({
     path: `test-results/compact-scoring-${testInfo.project.name}.png`,

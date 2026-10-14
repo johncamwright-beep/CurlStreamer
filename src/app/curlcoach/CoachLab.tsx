@@ -44,7 +44,12 @@ import {
   supplementSchema,
   type Supplement,
 } from "@/lib/curlcoach/enhanced-catalog";
-import { ShotPicker } from "./EntryControls";
+import {
+  ShotTypeEntry,
+  WeightEntry,
+  DifficultyEntry,
+  ResultsEntry,
+} from "./SubtypeEntry";
 import EntryOverlay from "./EntryOverlay";
 import { AssessmentCoverage } from "./AssessmentCoverage";
 import {
@@ -153,7 +158,7 @@ export default function CoachLab({
   const enhancedData = useEnhancedGame(
     context?.gameId,
     context?.eventId,
-    enhancedMode,
+    metrics.ready && !!context,
   );
   const enhancedRecord = enhancedData.documents.find(
     (d) => d.kind === "supplement" && d.shotId === editing,
@@ -311,7 +316,11 @@ export default function CoachLab({
     if (!state || closed || !started) return;
     setBusy(true);
     try {
-      const includeEnhanced = enhancedMode && shot !== null && shot === draft;
+      const includeEnhanced =
+        !!context &&
+        (enhancedMode || enhancedDraft?.key === enhancedKey) &&
+        shot !== null &&
+        shot === draft;
       if (includeEnhanced && !enhancedData.ready)
         throw new Error(
           "Wait for Enhanced observations to load, or reload the event.",
@@ -580,6 +589,7 @@ export default function CoachLab({
       <label>
         {label}
         <select
+          aria-label={label}
           value={draft[field] ?? ""}
           onChange={(e) =>
             setDraft({
@@ -711,6 +721,20 @@ export default function CoachLab({
       <p role="status" aria-live="polite">
         {message}
       </p>
+      {(metrics.error || enhancedData.error) && (
+        <p role="alert">
+          {metrics.error || enhancedData.error} Standard-only charting remains
+          available in Standard mode; supplemental fields wait for observations
+          to load.{" "}
+          <button
+            onClick={() =>
+              void (metrics.error ? metrics.reload() : enhancedData.reload())
+            }
+          >
+            Retry observations
+          </button>
+        </p>
+      )}
       {context && !closed && (
         <header className="coach-panel">
           <h2>{context.label ?? "Selected game"}</h2>
@@ -785,8 +809,109 @@ export default function CoachLab({
                   void save(draft, editing ?? crypto.randomUUID(), advance);
                 }}
               >
-                <fieldset disabled={busy || !state || closed || !rosterReady}>
+                <fieldset
+                  disabled={
+                    busy ||
+                    !state ||
+                    closed ||
+                    !rosterReady ||
+                    (enhancedMode && !enhancedData.ready)
+                  }
+                >
                   <div className="tracker-entry-layout">
+                    <section
+                      className="tracker-context-card"
+                      aria-label="Current shot context"
+                    >
+                      <h3>Game context</h3>
+                      <p>{context?.label ?? "Local practice game"}</p>
+                      <dl>
+                        <div>
+                          <dt>Player</dt>
+                          <dd>
+                            {players.find((p) => p.id === draft.playerId)?.name}
+                          </dd>
+                        </div>
+                        <div>
+                          <dt>Position</dt>
+                          <dd>{draft.position}</dd>
+                        </div>
+                        <div>
+                          <dt>End / rock</dt>
+                          <dd>
+                            {draft.end} / {rockNumber(draft)} of 8
+                          </dd>
+                        </div>
+                      </dl>
+                      <EntryOverlay title="Change">
+                        <div className="coach-entry-grid">
+                          <label>
+                            Player
+                            <select
+                              aria-label="Player"
+                              value={draft.playerId}
+                              onChange={(e) =>
+                                setDraft({
+                                  ...draft,
+                                  playerId: e.target.value as Shot["playerId"],
+                                })
+                              }
+                            >
+                              {players.map((p) => (
+                                <option value={p.id} key={p.id}>
+                                  {p.name}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+                          {choose("position", "Throwing position", [
+                            "Lead",
+                            "Second",
+                            "Third",
+                            "Fourth",
+                          ])}
+                          <label>
+                            End
+                            <input
+                              type="number"
+                              min="1"
+                              max="20"
+                              value={draft.end}
+                              required
+                              onChange={(e) =>
+                                setDraft({
+                                  ...draft,
+                                  end: Number(e.target.value),
+                                })
+                              }
+                            />
+                          </label>
+                          <label>
+                            Stone
+                            <select
+                              aria-label="Stone"
+                              value={draft.stone}
+                              onChange={(e) =>
+                                setDraft({
+                                  ...draft,
+                                  stone: Number(e.target.value),
+                                  playerId:
+                                    lineup[
+                                      rockNumber({
+                                        position: draft.position,
+                                        stone: Number(e.target.value),
+                                      }) - 1
+                                    ] ?? draft.playerId,
+                                })
+                              }
+                            >
+                              <option value="1">1</option>
+                              <option value="2">2</option>
+                            </select>
+                          </label>
+                        </div>
+                      </EntryOverlay>
+                    </section>
                     <div className="tracker-quick-entry">
                       <div className="tracker-quick-heading">
                         <div>
@@ -801,99 +926,37 @@ export default function CoachLab({
                         </a>
                       </div>
                       <div className="coach-fields">
-                        <label>
-                          Player
-                          <select
-                            value={draft.playerId}
-                            onChange={(e) =>
-                              setDraft({
-                                ...draft,
-                                playerId: e.target.value as Shot["playerId"],
-                              })
-                            }
-                          >
-                            {players.map((p) => (
-                              <option value={p.id} key={p.id}>
-                                {p.name}
-                              </option>
-                            ))}
-                          </select>
-                        </label>
-                        {choose("position", "Throwing position", [
-                          "Lead",
-                          "Second",
-                          "Third",
-                          "Fourth",
-                        ])}
-                        <label>
-                          End
-                          <input
-                            type="number"
-                            min="1"
-                            max="20"
-                            value={draft.end}
-                            required
-                            onChange={(e) =>
-                              setDraft({
-                                ...draft,
-                                end: Number(e.target.value),
-                              })
-                            }
-                          />
-                        </label>
-                        <label>
-                          Stone
-                          <select
-                            value={draft.stone}
-                            onChange={(e) =>
-                              setDraft({
-                                ...draft,
-                                stone: Number(e.target.value),
-                                playerId:
-                                  lineup[
-                                    rockNumber({
-                                      position: draft.position,
-                                      stone: Number(e.target.value),
-                                    }) - 1
-                                  ] ?? draft.playerId,
-                              })
-                            }
-                          >
-                            <option value="1">1</option>
-                            <option value="2">2</option>
-                          </select>
-                        </label>
+                        {" "}
                         {entryGroup(
                           "Shot selection",
                           <>
-                            {enhancedMode ? (
-                              <ShotPicker
-                                shot={draft}
-                                value={enhanced}
-                                editing={!!editing}
-                                onChange={(shot, value) => {
+                            <ShotTypeEntry
+                              shot={draft}
+                              value={enhanced}
+                              enhanced={enhancedMode}
+                              onShot={setDraft}
+                              onChange={(value) => {
+                                if (metrics.ready && enhancedData.ready)
                                   changeEnhanced(value);
-                                  setDraft(shot);
-                                }}
-                              />
-                            ) : (
-                              choose("type", "Shot type", shotTypes)
-                            )}
-                            {enhancedMode && (
-                              <EnhancedFields
-                                section="otherDetail"
-                                value={enhanced}
-                                onChange={changeEnhanced}
-                              />
-                            )}
+                              }}
+                            />
                             {choose("turn", "Turn / target", turns)}
-                            {enhancedMode && (
-                              <EnhancedFields
-                                section="call"
-                                value={enhanced}
-                                onChange={changeEnhanced}
-                              />
-                            )}
+                            {!!context &&
+                              metrics.ready &&
+                              enhancedData.ready && (
+                                <>
+                                  <WeightEntry
+                                    shot={draft}
+                                    value={enhanced}
+                                    enhanced={enhancedMode}
+                                    onChange={changeEnhanced}
+                                  />
+                                  <DifficultyEntry
+                                    value={enhanced}
+                                    onChange={changeEnhanced}
+                                  />
+                                </>
+                              )}
                           </>,
                         )}
                         {entryGroup(
@@ -903,6 +966,7 @@ export default function CoachLab({
                             <label>
                               Numeric grade
                               <select
+                                aria-label="Numeric grade"
                                 value={draft.grade ?? ""}
                                 disabled={!!draft.excluded}
                                 onChange={(e) =>
@@ -921,64 +985,39 @@ export default function CoachLab({
                                 ))}
                               </select>
                             </label>
-                            {enhancedMode && (
-                              <EnhancedFields
-                                section="result"
-                                value={enhanced}
-                                onChange={changeEnhanced}
-                              />
-                            )}
+                            {!!context &&
+                              metrics.ready &&
+                              enhancedData.ready && (
+                                <>
+                                  <WeightEntry
+                                    observed
+                                    shot={draft}
+                                    value={enhanced}
+                                    enhanced={enhancedMode}
+                                    onChange={changeEnhanced}
+                                  />
+                                  <ResultsEntry
+                                    shot={draft}
+                                    value={enhanced}
+                                    enhanced={enhancedMode}
+                                    onChange={changeEnhanced}
+                                  />
+                                </>
+                              )}
+                            {choose("deficiency", "Deficiency", deficiencies)}
                           </>,
                         )}
-                        {enhancedMode && (
-                          <EnhancedFields
-                            section="miss"
-                            value={enhanced}
-                            onChange={changeEnhanced}
-                          />
-                        )}
-                        <EntryOverlay
-                          title="Observed miss details"
-                          description="Deficiency, line, release and technical observations."
-                        >
-                          <div className="coach-entry-grid">
-                            {choose("deficiency", "Deficiency", deficiencies)}
+                        {entryGroup(
+                          "Technical observation",
+                          <>
                             {choose("line", "Line", lines)}
                             {choose("release", "Release", releases)}
                             {choose("technical", "Technical", technicals)}
-                          </div>
-                        </EntryOverlay>
+                          </>,
+                        )}
                       </div>
                     </div>
                     <aside className="tracker-entry-aside">
-                      <section
-                        className="tracker-context-card"
-                        aria-label="Current shot context"
-                      >
-                        <h3>Game context</h3>
-                        <p>{context?.label ?? "Local practice game"}</p>
-                        <dl>
-                          <div>
-                            <dt>Player</dt>
-                            <dd>
-                              {
-                                players.find((p) => p.id === draft.playerId)
-                                  ?.name
-                              }
-                            </dd>
-                          </div>
-                          <div>
-                            <dt>Position</dt>
-                            <dd>{draft.position}</dd>
-                          </div>
-                          <div>
-                            <dt>End / rock</dt>
-                            <dd>
-                              {draft.end} / {rockNumber(draft)} of 8
-                            </dd>
-                          </div>
-                        </dl>
-                      </section>
                       <EntryOverlay
                         title="Notes & review"
                         description={

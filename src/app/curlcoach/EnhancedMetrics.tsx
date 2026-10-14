@@ -31,6 +31,8 @@ import {
 } from "@/lib/curlcoach/enhanced-catalog";
 
 import { MissPicker } from "./EntryControls";
+import { WeightEntry, ResultsEntry, DifficultyEntry } from "./SubtypeEntry";
+import { shotSubtypes } from "@/lib/curlcoach/shot-subtypes";
 import EntryOverlay from "./EntryOverlay";
 import { AssessmentCoverage } from "./AssessmentCoverage";
 import {
@@ -572,13 +574,29 @@ export function EnhancedFields({
       assessments?: (typeof groups)[number][];
     }[] = [
       {
+        title: "Historical call and observations",
+        fields: [
+          "detail",
+          "detailOther",
+          "contactPlan",
+          "guardToClear",
+          "intendedRoll",
+          "intendedTargets",
+          "intendedRelease",
+          "broadPath",
+          "observedWeight",
+          "misses",
+          "missOther",
+        ],
+      },
+      {
         title: "Weight basis and historical result details",
         fields: [
           "weightBasis",
           "weightBasisOther",
           "tolerance",
           "toleranceResult",
-          ...detailResults.filter((key) => !resultRelevant(value.values, key)),
+          ...detailResults,
         ],
       },
 
@@ -1167,27 +1185,52 @@ export function EnhancedReview({ event }: { event: CoachEvent }) {
             </p>
           )}
 
-          <details className="coach-entry-section" open>
-            <summary>Shot selection</summary>
-            <EnhancedFields
-              section="detail"
+          <section className="coach-entry-section">
+            <h3>Shot selection</h3>
+            <p>Shot type: {selected.type ?? "Not recorded"}</p>
+            <ValueField
+              name="shotSubtype"
+              field={{
+                ...catalogue.shotSubtype,
+                choices: shotSubtypes
+                  .filter(
+                    (s) =>
+                      s.standard === selected.type ||
+                      s.id === draft.values.shotSubtype,
+                  )
+                  .map((s) => s.id),
+              }}
+              values={draft.values}
+              onChange={(values) =>
+                setDraft(
+                  changeObservation(draft, "shotSubtype", values.shotSubtype),
+                )
+              }
+            />
+            <WeightEntry
+              shot={selected}
               value={draft}
+              enhanced
               onChange={setDraft}
             />
-            <EnhancedFields section="call" value={draft} onChange={setDraft} />
-          </details>
-          <details className="coach-entry-section" open>
-            <summary>Execution</summary>
-            <EnhancedFields
-              section="result"
+            <DifficultyEntry value={draft} onChange={setDraft} />
+          </section>
+          <section className="coach-entry-section">
+            <h3>Execution observations</h3>
+            <WeightEntry
+              observed
+              shot={selected}
               value={draft}
+              enhanced
               onChange={setDraft}
             />
-          </details>
-          <details className="coach-entry-section" open>
-            <summary>Observed misses</summary>
-            <EnhancedFields section="miss" value={draft} onChange={setDraft} />
-          </details>
+            <ResultsEntry
+              shot={selected}
+              value={draft}
+              enhanced
+              onChange={setDraft}
+            />
+          </section>
           <EnhancedFields
             value={draft}
             onChange={setDraft}

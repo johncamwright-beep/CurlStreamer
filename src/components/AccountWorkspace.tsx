@@ -5,7 +5,13 @@ import { TeamNews } from "./TeamNews";
 import { TeamTrial } from "./TeamTrial";
 import { TeamMembers } from "./TeamMembers";
 import { SponsorLibrary } from "@/app/sponsors/SponsorLibrary";
+import "@/app/curlcoach/coach.css";
+import {
+  MetricsOptions,
+  MetricsProvider,
+} from "@/app/curlcoach/EnhancedMetrics";
 const sections = [
+  ["shot-tracker", "Shot Tracker options"],
   ["account", "Account info"],
   ["subscription", "Trial & subscription"],
   ["team", "Team info"],
@@ -89,6 +95,11 @@ export function AccountWorkspace({
         aria-label={sections.find(([id]) => id === current)?.[1]}
       >
         <div hidden={current !== "account"}>{account}</div>
+        {current === "shot-tracker" && (
+          <MetricsProvider>
+            <MetricsOptions />
+          </MetricsProvider>
+        )}
         {teamName && (
           <>
             <div hidden={current !== "subscription"}>

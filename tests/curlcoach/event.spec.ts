@@ -7,8 +7,8 @@ async function open(page: Page, path = "/curlcoach") {
     .fill("curlcoach-e2e-only-key-thirty-two-characters");
   await page.getByRole("button", { name: "Unlock lab" }).click();
   await expect(
-    page.getByRole("combobox", { name: "Game", exact: true }),
-  ).toBeVisible();
+    page.getByRole("button", { name: "Refresh event", exact: true }),
+  ).toBeEnabled();
 }
 async function navigate(page: Page, name: string) {
   await page

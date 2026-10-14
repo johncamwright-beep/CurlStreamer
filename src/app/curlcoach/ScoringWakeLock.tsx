@@ -1,11 +1,10 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
+
+/** Keep the screen awake during active charting, where supported by the browser. */
 export default function ScoringWakeLock({ active }: { active: boolean }) {
-  const [enabled, setEnabled] = useState(true);
-  const [status, setStatus] = useState("Requesting…");
-  const [retry, setRetry] = useState(0);
   useEffect(() => {
-    if (!active || !enabled) return;
+    if (!active) return;
     let stopped = false;
     let pending = false;
     let lock: WakeLockSentinel | undefined;
@@ -14,13 +13,10 @@ export default function ScoringWakeLock({ active }: { active: boolean }) {
         stopped ||
         pending ||
         document.visibilityState !== "visible" ||
-        (lock && !lock.released)
+        (lock && !lock.released) ||
+        !navigator.wakeLock
       )
         return;
-      if (!navigator.wakeLock) {
-        setStatus("Unavailable on this browser");
-        return;
-      }
       pending = true;
       try {
         const next = await navigator.wakeLock.request("screen");
@@ -29,49 +25,26 @@ export default function ScoringWakeLock({ active }: { active: boolean }) {
           return;
         }
         lock = next;
-        setStatus("Screen staying awake");
-        next.addEventListener("release", () => {
-          if (!stopped) setStatus("Paused — tap Retry");
-        });
       } catch {
-        if (!stopped) setStatus("Unavailable — tap Retry");
+        /* Browser or battery policy can deny a wake lock. Retry on interaction. */
       } finally {
         pending = false;
       }
     }
-    const visible = () => {
-      if (document.visibilityState === "visible") void acquire();
+    const retry = () => {
+      void acquire();
     };
-    document.addEventListener("visibilitychange", visible);
+    document.addEventListener("visibilitychange", retry);
+    document.addEventListener("pointerdown", retry);
+    document.addEventListener("keydown", retry);
     void acquire();
     return () => {
       stopped = true;
-      document.removeEventListener("visibilitychange", visible);
+      document.removeEventListener("visibilitychange", retry);
+      document.removeEventListener("pointerdown", retry);
+      document.removeEventListener("keydown", retry);
       void lock?.release().catch(() => {});
     };
-  }, [active, enabled, retry]);
-  return (
-    <div className="coach-wake-control">
-      <label>
-        <input
-          type="checkbox"
-          checked={enabled}
-          onChange={(e) => setEnabled(e.target.checked)}
-        />
-        Keep screen awake
-      </label>
-      <small role="status">{!enabled ? "Off" : status}</small>
-      {enabled && status !== "Screen staying awake" && (
-        <button
-          type="button"
-          onClick={() => {
-            setStatus("Requesting…");
-            setRetry((n) => n + 1);
-          }}
-        >
-          Retry
-        </button>
-      )}
-    </div>
-  );
+  }, [active]);
+  return null;
 }

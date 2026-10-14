@@ -34,8 +34,8 @@ test("miss review scopes season data and screen wake follows scoring", async ({
     .fill("curlcoach-e2e-only-key-thirty-two-characters");
   await page.getByRole("button", { name: "Unlock lab" }).click();
   await expect(
-    page.getByText("Screen staying awake", { exact: true }),
-  ).toBeVisible();
+    page.getByLabel("Keep screen awake", { exact: true }),
+  ).toHaveCount(0);
   const wake = () =>
     page.evaluate(
       () =>
@@ -45,14 +45,6 @@ test("miss review scopes season data and screen wake follows scoring", async ({
           }
         ).wakeTest,
     );
-  await page.getByLabel("Keep screen awake", { exact: true }).uncheck();
-  await expect
-    .poll(async () => {
-      const s = await wake();
-      return s.requests - s.releases;
-    })
-    .toBe(0);
-  await page.getByLabel("Keep screen awake", { exact: true }).check();
   await expect
     .poll(async () => {
       const s = await wake();
@@ -102,8 +94,8 @@ test("miss review scopes season data and screen wake follows scoring", async ({
     .click();
   await page.getByRole("link", { name: "Charting", exact: true }).click();
   await expect(
-    page.getByText("Screen staying awake", { exact: true }),
-  ).toBeVisible();
+    page.getByLabel("Keep screen awake", { exact: true }),
+  ).toHaveCount(0);
   await expect
     .poll(async () => {
       const s = await wake();

@@ -211,6 +211,26 @@ test("report navigation is read-only, generation is explicit, and PDFs contain o
           ],
         }
       : {}),
+    advanced: {
+      included: 4,
+      recorded: 3,
+      unavailable: 0,
+      needsReview: 0,
+      groups: [
+        {
+          title: "Called and observed weight",
+          metrics: [
+            {
+              id: "advanced-weight-1_guard-2_guard",
+              label: "Called Guard 1; observed Guard 2",
+              value: "50.0% (2 of 4 shots)",
+              sample: 4,
+              confidence: "small",
+            },
+          ],
+        },
+      ],
+    },
     limitations: ["PRIVATE COVERAGE DETAILS"],
     evidence: [
       {
@@ -364,6 +384,18 @@ test("report navigation is read-only, generation is explicit, and PDFs contain o
   await page.getByText("Game statistics", { exact: true }).click();
   await expect(page.getByText("80.0%", { exact: true })).toBeVisible();
   await expect(page.getByText("—", { exact: true })).toBeVisible();
+  await page.getByText("Called and observed weight", { exact: true }).click();
+  await expect(
+    page.getByText("Called Guard 1; observed Guard 2", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByText("50.0% (2 of 4 shots)", { exact: false }),
+  ).toBeVisible();
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth,
+    ),
+  ).toBe(true);
   const pending = page.waitForEvent("download");
   await page.getByRole("button", { name: "Download PDF", exact: true }).click();
   const download = await pending;

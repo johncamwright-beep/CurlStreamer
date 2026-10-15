@@ -302,6 +302,34 @@ export async function buildReportPDF(report: SavedReport, eventName: string) {
       [54, 62, 62],
     );
   }
+  const advancedTables = (
+    summary?: import("./advanced-report").AdvancedReport,
+  ) => {
+    if (!summary) return;
+    heading("Advanced analytics");
+    text(
+      `${summary.recorded} of ${summary.included} included shots have validated Enhanced records. ${summary.unavailable} unavailable; ${summary.needsReview} need review. Shares use assessed observations; multiple tags may overlap.`,
+      8,
+      false,
+      muted,
+    );
+    for (const group of summary.groups) {
+      heading(group.title);
+      table(
+        ["Measurement", "Result / basis"],
+        group.metrics.map((m) => [
+          m.label,
+          m.value +
+            (m.sample < 10
+              ? " * Small sample"
+              : m.sample < 20
+                ? " * Tentative"
+                : ""),
+        ]),
+        [90, 88],
+      );
+    }
+  };
   for (const section of sections.slice(1)) {
     heading(section.title);
     section.findings.forEach((f, i) => {
@@ -319,6 +347,7 @@ export async function buildReportPDF(report: SavedReport, eventName: string) {
         );
     });
   }
+  advancedTables(report.advanced);
   if (report.games?.length) {
     for (const game of report.games) {
       pdf.addPage();
@@ -327,6 +356,7 @@ export async function buildReportPDF(report: SavedReport, eventName: string) {
       const summary = report.narrative.games?.find((g) => g.key === game.key);
       if (summary) text(summary.text);
       if (game.difficulty) text(difficultyDescription(game.difficulty));
+      advancedTables(game.advanced);
       const metrics = game.groups.flatMap((group) =>
         group.metrics.map((m) => [
           `${group.title}: ${m.label}${m.value === "—" ? "" : "\n" + (m.basis ? basisText(m.basis) : report.evidence.find((e) => e.id === m.id) ? evidenceBasis(report.evidence.find((e) => e.id === m.id)!) : "Sample unavailable")}`,

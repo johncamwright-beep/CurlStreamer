@@ -149,5 +149,8 @@ it("limits individual technical evidence to the athlete and the matching game", 
   expect(input.evidence.some((e) => e.id.startsWith("game-2-technical"))).toBe(
     false,
   );
-  expect(reportInputs(event, "team")[0].technical).toBeUndefined();
+  const team = reportInputs(event, "team")[0];
+  expect(team.technical?.[0].recorded).toBe(2);
+  expect(team.technical?.[1].recorded).toBe(1);
+  expect(JSON.stringify(team.evidence)).not.toMatch(/Alex|Blair|player-/);
 });

@@ -34,6 +34,7 @@ export function reportSections(report: SavedReport) {
       title: "Next practice",
       findings:
         report.misses?.practice.length &&
+        !report.advanced?.recorded &&
         !report.technical?.some((g) => g.recorded > 0)
           ? report.misses.practice.map((p) => ({
               text: `${p.title} (focus: ${p.target}): ${p.setup} Check progress: ${p.measure}`,

@@ -13,6 +13,7 @@ import {
   type CoachGame,
   type Workspace,
 } from "@/lib/curlcoach/event";
+import { analysisEventShots } from "@/lib/curlcoach/advanced-analysis";
 import {
   teamScoreStatistics,
   situationWins,
@@ -41,13 +42,16 @@ import {
   type ResumeStore,
   type TrackerResume,
 } from "@/lib/curlcoach/resume-storage";
-import CoachLab, { turnLabel } from "./CoachLab";
+import CoachLab from "./CoachLab";
 import { EnhancedReview, MetricsProvider, useMetrics } from "./EnhancedMetrics";
 
 import AnalysisPanels from "./AnalysisPanels";
-import TechnicalReview from "./TechnicalReview";
+import AnalysisDashboard, {
+  AnalysisNavigation,
+  ANALYSIS_TABS,
+  type AnalysisTab,
+} from "./AnalysisDashboard";
 import FlaggedShots from "./FlaggedShots";
-import { technicalSummary } from "@/lib/curlcoach/technical";
 import Table from "./AnalysisTable";
 import {
   defaultShotFilters,
@@ -61,9 +65,7 @@ import ShotTrackerBrand from "./ShotTrackerBrand";
 import "./coach.css";
 const pages = [
   "Charting",
-  "Shot performance",
-  "Miss analysis",
-  "Technical Review",
+  "Analysis",
   "Game analysis",
   "Flagged shots",
   "Event reports",
@@ -313,6 +315,7 @@ function WorkspaceContent({
   }, [mode]);
   const [open, setOpen] = useState(unlocked),
     [view, setView] = useState<Page>("Charting"),
+    [analysisTab, setAnalysisTab] = useState<AnalysisTab>("performance"),
     [source, setSource] = useState<"sample" | "streamer">(
       mode === "streamer" ? "streamer" : "sample",
     ),
@@ -372,21 +375,34 @@ function WorkspaceContent({
         window.location.replace("/account?section=shot-tracker");
         return;
       }
-      setView(
-        pages.find(
-          (p) =>
-            slug(p) ===
-            ({
-              scoring: "charting",
-              "data-tables": "shot-performance",
-              "shot-breakdown": "shot-performance",
-              team: "shot-performance",
-              "team-statistics": "shot-performance",
-              "scoreboard-analysis": "game-analysis",
-              "end-by-end-scores": "game-analysis",
-            }[location.hash.slice(1)] ?? location.hash.slice(1)),
-        ) ?? "Charting",
-      );
+      const hash = location.hash.slice(1);
+      const legacyAnalysis: Record<string, AnalysisTab> = {
+        "shot-performance": "performance",
+        "data-tables": "performance",
+        "shot-breakdown": "performance",
+        team: "performance",
+        "team-statistics": "performance",
+        "miss-analysis": "misses",
+        "technical-review": "technical",
+      };
+      if (
+        hash === "analysis" ||
+        hash.startsWith("analysis/") ||
+        legacyAnalysis[hash]
+      ) {
+        setView("Analysis");
+        const tab = legacyAnalysis[hash] ?? hash.split("/")[1];
+        if (tab && Object.hasOwn(ANALYSIS_TABS, tab))
+          setAnalysisTab(tab as AnalysisTab);
+        return;
+      }
+      const alias =
+        {
+          scoring: "charting",
+          "scoreboard-analysis": "game-analysis",
+          "end-by-end-scores": "game-analysis",
+        }[hash] ?? hash;
+      setView(pages.find((page) => slug(page) === alias) ?? "Charting");
     };
     read();
     setSelectionReady(true);
@@ -623,12 +639,21 @@ function WorkspaceContent({
       ).values(),
     ],
     all = event
-      ? difficultyEventShots({ ...event, games: analysisGames }).filter((s) =>
+      ? analysisEventShots({ ...event, games: analysisGames }).filter((s) =>
           analysisGames.some((g) => g.id === s.gameId),
         )
       : [],
     playerShots = all.filter((s) => player === "all" || s.playerId === player),
     selected = filterAnalysisShots(playerShots, analysisGames, shotFilters);
+  function changeAnalysisTab(tab: AnalysisTab) {
+    setAnalysisTab(tab);
+    setView("Analysis");
+    history.replaceState(
+      null,
+      "",
+      `${location.pathname}${location.search}#analysis/${tab}`,
+    );
+  }
   function remember(source: string, event: string, game = "") {
     history.replaceState(
       null,
@@ -736,6 +761,11 @@ function WorkspaceContent({
             {navigationPages.map((page) => (
               <a
                 key={page}
+                data-primary={
+                  page === "Charting" || page === "Analysis"
+                    ? "true"
+                    : undefined
+                }
                 href={`#${slug(page)}`}
                 aria-current={view === page ? "page" : undefined}
               >
@@ -782,9 +812,15 @@ function WorkspaceContent({
         </div>
       </aside>
       <main className="event-main" data-view={view}>
+        {view === "Analysis" && (
+          <AnalysisNavigation
+            tab={analysisTab}
+            onTabChange={changeAnalysisTab}
+          />
+        )}
         <header className="event-header">
           <div>
-            <h1>{view}</h1>
+            <h1>{view === "Analysis" ? ANALYSIS_TABS[analysisTab] : view}</h1>
           </div>
           {open && (
             <button
@@ -1017,10 +1053,12 @@ function WorkspaceContent({
                   Reset more filters
                 </button>
               </div>
-              <p className="score-stat-caption">
-                Shot filters use the score and hammer at the start of the end.
-                Unknown situations are excluded when filtered.
-              </p>
+              {view !== "Analysis" && (
+                <p className="score-stat-caption">
+                  Shot filters use the score and hammer at the start of the end.
+                  Unknown situations are excluded when filtered.
+                </p>
+              )}
             </details>
           )}
         </header>
@@ -1148,18 +1186,35 @@ function WorkspaceContent({
                       canSave={mode === "streamer"}
                       onSaved={() => refresh()}
                     />
-                  ) : view === "Technical Review" ? (
-                    <TechnicalReview groups={technicalSummary(selected)} />
+                  ) : view === "Analysis" ? (
+                    <>
+                      {analysisTab === "advanced" &&
+                        !seasonReady &&
+                        !statsError && (
+                          <section className="event-card" role="status">
+                            Loading advanced analysis…
+                          </section>
+                        )}
+                      <div
+                        hidden={
+                          analysisTab === "advanced" &&
+                          !seasonReady &&
+                          !statsError
+                        }
+                      >
+                        <AnalysisDashboard
+                          shots={selected}
+                          games={analysisGames}
+                          players={analysisPlayers}
+                          tab={analysisTab}
+                          onTabChange={changeAnalysisTab}
+                        />
+                      </div>
+                    </>
                   ) : (
                     <AnalysisPanels
                       key={view}
-                      mode={
-                        view === "Miss analysis"
-                          ? "misses"
-                          : view === "Game analysis"
-                            ? "game"
-                            : "performance"
-                      }
+                      mode="game"
                       shots={selected}
                       games={analysisGames}
                       players={analysisPlayers}

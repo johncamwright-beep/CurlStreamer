@@ -18,8 +18,8 @@ export const defaultShotFilters: ShotFilters = {
   hammer: "all",
   margin: "all",
 };
-export function filterAnalysisShots(
-  shots: AnalysisShot[],
+export function filterAnalysisShots<T extends AnalysisShot>(
+  shots: T[],
   games: CoachGame[],
   filters: ShotFilters,
 ) {

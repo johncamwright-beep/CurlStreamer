@@ -82,23 +82,31 @@ test("scoped local lab charts, corrects and audits a synthetic shot", async ({
   await expect(attempt).toContainText("5/5");
   await page.getByRole("button", { name: "Shot Tracker menu" }).click();
   await page
-    .getByRole("link", { name: "Technical Review", exact: true })
+    .getByRole("dialog")
+    .getByRole("link", { name: "Analysis", exact: true })
+    .click();
+  await page
+    .getByRole("tab", { name: "Technical Review", exact: true })
     .click();
   await expect(
-    page.getByRole("heading", { name: "Technical Review", exact: true }),
+    page.getByRole("heading", { name: "Line accuracy", exact: true }),
   ).toBeVisible();
   await openEntryTab(page, "Technical");
   await expect(
     page
-      .getByRole("region", { name: "Line", exact: true })
-      .getByRole("row", { name: /Wide/ }),
+      .getByRole("region", { name: "Line accuracy", exact: true })
+      .locator(".analysis-bar")
+      .filter({ hasText: "Wide" }),
   ).toContainText("100.0%");
   await page.screenshot({
     path: `test-results/technical-review-${testInfo.project.name}.png`,
     fullPage: true,
   });
   await page.getByRole("button", { name: "Shot Tracker menu" }).click();
-  await page.getByRole("link", { name: "Charting", exact: true }).click();
+  await page
+    .getByRole("dialog")
+    .getByRole("link", { name: "Charting", exact: true })
+    .click();
   await page
     .getByRole("button", { name: "Recorded shots", exact: true })
     .click();

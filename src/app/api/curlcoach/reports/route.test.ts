@@ -72,6 +72,7 @@ it("uses server-authorized event and private no-store responses", async () => {
     { userId: "coach", organizationId: "org" },
     { id: eventId },
     "team",
+    undefined,
   );
 });
 it("never leaks source errors", async () => {

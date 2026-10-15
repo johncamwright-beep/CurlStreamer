@@ -3,7 +3,7 @@ import { evidenceBasis } from "./report-counts";
 
 /** Keep source counts for validation, but show only useful shooting percentages. */
 export function reportPercentages(report: SavedReport) {
-  return report.evidence.flatMap((e) => {
+  const values = report.evidence.flatMap((e) => {
     if (e.id !== "overall" && !e.id.startsWith("type-")) return [];
     const percent = e.value.match(/^\d+(?:\.\d+)?%/);
     return percent
@@ -17,6 +17,18 @@ export function reportPercentages(report: SavedReport) {
         ]
       : [];
   });
+  if (
+    report.highlights &&
+    report.difficulty?.adjusted !== null &&
+    report.difficulty?.adjusted !== undefined
+  )
+    values.push({
+      id: "adjusted",
+      label: "Difficulty-adjusted shooting",
+      value: `${report.difficulty.adjusted.toFixed(1)}%`,
+      basis: `${report.difficulty.classified} classified shots; provisional comparison index`,
+    });
+  return values;
 }
 export function reportSections(report: SavedReport) {
   const names = new Map(
@@ -31,8 +43,17 @@ export function reportSections(report: SavedReport) {
     { title: "What went well", findings: report.narrative.strengths },
     { title: "Where to improve", findings: report.narrative.priorities },
     {
+      title: "Opening to closing ends",
+      findings: report.narrative.withinGames ?? [],
+    },
+    {
+      title: "Changes across the event",
+      findings: report.narrative.acrossGames ?? [],
+    },
+    {
       title: "Next practice",
       findings:
+        !report.highlights &&
         report.misses?.practice.length &&
         !report.advanced?.recorded &&
         !report.technical?.some((g) => g.recorded > 0)
@@ -42,40 +63,42 @@ export function reportSections(report: SavedReport) {
             }))
           : report.narrative.practice,
     },
-  ].map((section) => ({
-    ...section,
-    findings: section.findings.map((finding) => ({
-      ...finding,
-      statistics: finding.evidence
-        .flatMap((id) => {
-          const e = report.evidence.find((e) => e.id === id);
-          if (id.includes("difficulty"))
-            return e
+  ]
+    .filter((section) => section.findings.length)
+    .map((section) => ({
+      ...section,
+      findings: section.findings.map((finding) => ({
+        ...finding,
+        statistics: finding.evidence
+          .flatMap((id) => {
+            const e = report.evidence.find((e) => e.id === id);
+            if (id.startsWith("trend-") || id.includes("difficulty"))
+              return e
+                ? [
+                    {
+                      label: e.label,
+                      value: e.value.split("Provisional illustrative")[0],
+                    },
+                  ]
+                : [];
+            const value = e?.value.match(/\d+(?:\.\d+)?%/)?.[0];
+            return e && value
               ? [
                   {
-                    label: e.label,
-                    value: e.value.split("Provisional illustrative")[0],
+                    label: e.label.replace(
+                      /\bPlayer [A-H]\b/g,
+                      (alias) => names.get(alias) ?? alias,
+                    ),
+                    value: `${value} (${evidenceBasis(e)})`,
                   },
                 ]
               : [];
-          const value = e?.value.match(/\d+(?:\.\d+)?%/)?.[0];
-          return e && value
-            ? [
-                {
-                  label: e.label.replace(
-                    /\bPlayer [A-H]\b/g,
-                    (alias) => names.get(alias) ?? alias,
-                  ),
-                  value: `${value} (${evidenceBasis(e)})`,
-                },
-              ]
-            : [];
-        })
-        .slice(0, 2),
-      text: finding.text.replace(
-        /\bPlayer [A-H]\b/g,
-        (alias) => names.get(alias) ?? alias,
-      ),
-    })),
-  }));
+          })
+          .slice(0, 2),
+        text: finding.text.replace(
+          /\bPlayer [A-H]\b/g,
+          (alias) => names.get(alias) ?? alias,
+        ),
+      })),
+    }));
 }

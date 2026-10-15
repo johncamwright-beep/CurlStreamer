@@ -20,7 +20,8 @@ vi.mock("./curlcoach-production-streamer", () => ({
   loadProductionStreamerEvent: m.source,
 }));
 vi.mock("./curlcoach-store", () => ({ loadCoachState: m.load }));
-vi.mock("./shot-tracker-ai", () => ({
+vi.mock("./shot-tracker-ai", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./shot-tracker-ai")>()),
   reportAIConfig: () => ({ model: "test" }),
   generateShotTrackerNarrative: m.generate,
 }));
@@ -77,7 +78,8 @@ beforeEach(() => {
   m.load.mockImplementation((_s, initial) => initial);
   m.rpc.mockImplementation(async (name) => ({
     error: null,
-    data: name === "claim_shot_tracker_report" ? { status: "claimed" } : true,
+    data:
+      name === "claim_shot_tracker_report_step" ? { status: "claimed" } : true,
   }));
   m.generate.mockResolvedValue({
     summary: { text: "Our team works together.", evidence: ["overall"] },
@@ -202,7 +204,8 @@ it("saves complete team-only evidence and makes separate calls for each player",
   ).toBe(false);
   m.generate.mockClear();
   const individual = await generateEventReports(account, e, "players");
-  expect(individual.reports.length).toBeGreaterThan(1);
+  expect(individual.complete).toBe(false);
+  expect(individual.reports).toHaveLength(1);
   expect(m.generate).toHaveBeenCalledTimes(individual.reports.length);
 });
 
@@ -241,4 +244,37 @@ it("tracks advanced edits in new snapshots without invalidating saved v7 fingerp
   const measured = reportFingerprint(e, "team");
   e.games[0].advancedRecords[0].values.resultObservations = [];
   expect(reportFingerprint(e, "team")).not.toBe(measured);
+});
+
+it("continues player checkpoints across requests and does not regenerate ready players", async () => {
+  const e = event();
+  m.source.mockImplementation(async () => ({ event: structuredClone(e) }));
+  const progress: Record<string, ReportPacket["reports"][number]> = {};
+  m.rpc.mockImplementation(async (name, args) => ({
+    error: null,
+    data:
+      name === "claim_shot_tracker_report_step"
+        ? { status: "claimed" }
+        : name === "read_shot_tracker_reports"
+          ? [
+              {
+                audience: "players",
+                fingerprint: reportFingerprint(e, "players"),
+                progress,
+              },
+            ]
+          : name === "checkpoint_shot_tracker_report"
+            ? !!(progress[args.p_key] = args.p_report)
+            : true,
+  }));
+  let packet: ReportPacket;
+  do {
+    packet = await generateEventReports(account, e, "players");
+  } while (packet.complete === false);
+  expect(packet.reports).toHaveLength(reportPlayers(e).length);
+  expect(m.generate).toHaveBeenCalledTimes(reportPlayers(e).length);
+  expect(new Set(packet.reports.map((r) => r.playerId)).size).toBe(
+    reportPlayers(e).length,
+  );
+  expect(JSON.stringify(packet).length).toBeLessThan(300000);
 });

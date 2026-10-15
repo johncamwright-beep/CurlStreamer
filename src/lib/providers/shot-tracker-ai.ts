@@ -63,20 +63,28 @@ async function generateOnce(
   const config = reportAIConfig();
   if (!config) throw new Error("AI reports are not configured");
   if (!input.evidence.length) throw new Error("No report evidence");
-  const gameKeys = input.games?.map((g) => g.key) ?? [];
+  const gameKeys = input.highlights
+    ? []
+    : (input.games?.map((g) => g.key) ?? []);
   const finding = narrativeSchema.shape.summary.extend({
     text: narrativeSchema.shape.summary.shape.text
       .max(gameKeys.length ? 450 : 1200)
       .regex(/^[^0-9<>]*$/),
     evidence: z
-      .array(z.enum(input.evidence.map((e) => e.id) as [string, ...string[]]))
+      .array(
+        z.enum(
+          selectPromptEvidence(input).map((e) => e.id) as [string, ...string[]],
+        ),
+      )
       .min(1)
       .max(gameKeys.length ? 3 : 6),
   });
   const baseSchema = narrativeSchema.omit({ games: true }).extend({
     summary: finding,
-    strengths: z.array(finding).min(1).max(2),
-    priorities: z.array(finding).min(1).max(2),
+    withinGames: z.array(finding).max(5),
+    acrossGames: z.array(finding).max(5),
+    strengths: z.array(finding).max(5),
+    priorities: z.array(finding).max(5),
     practice: z.array(finding).min(1).max(2),
     review: z.array(finding).min(1).max(2),
   });
@@ -102,7 +110,9 @@ async function generateOnce(
     body: JSON.stringify({
       model: config.model,
       store: false,
-      max_output_tokens: Math.min(12000, 3200 + 400 * gameKeys.length),
+      max_output_tokens: input.highlights
+        ? 8000
+        : Math.min(12000, 3200 + 400 * gameKeys.length),
       instructions:
         REPORT_INSTRUCTIONS +
         "\n" +
@@ -113,7 +123,7 @@ async function generateOnce(
         "\n" +
         correction,
       input: JSON.stringify({
-        evidence: input.evidence,
+        evidence: selectPromptEvidence(input),
         limitations: input.limitations,
         ...(gameKeys.length ? { gameKeys } : {}),
       }),
@@ -211,4 +221,22 @@ async function requestReport(init: RequestInit): Promise<Response> {
       signal: init.signal ?? undefined,
     });
   }
+}
+
+/** Reserve trend evidence before supporting aggregates; never send an exhaustive audit. */
+export function selectPromptEvidence(input: ReportInput) {
+  if (!input.highlights) return input.evidence;
+  const selected = [
+    ...Object.values(input.highlights).flat(),
+    ...input.evidence.filter(
+      (e) =>
+        ["overall", "miss-rate", "results"].includes(e.id) ||
+        e.id.startsWith("difficulty") ||
+        /^player-\d+$/.test(e.id),
+    ),
+    ...input.evidence
+      .filter((e) => e.sample >= 5)
+      .sort((a, b) => b.sample - a.sample),
+  ];
+  return [...new Map(selected.map((e) => [e.id, e])).values()].slice(0, 100);
 }

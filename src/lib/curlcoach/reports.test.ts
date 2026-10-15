@@ -85,6 +85,7 @@ describe("event report evidence boundaries", () => {
   });
   it("requires one short, game-scoped paragraph per game and rejects cross-game evidence", () => {
     const input = reportInputs(event(), "players")[0];
+    delete input.highlights; // Compatibility for previously saved report format.
     const value = narrative();
     value.games = input.games!.map((g) => ({
       key: g.key,

@@ -140,7 +140,7 @@ export async function buildReportPDF(report: SavedReport, eventName: string) {
   const stats = reportPercentages(report);
   const cards = [
     ...stats
-      .filter((m) => m.id === "overall")
+      .filter((m) => m.id === "overall" || m.id === "adjusted")
       .map((m) => ({ label: m.label, value: m.value, basis: m.basis })),
     ...(report.misses
       ? [
@@ -192,11 +192,12 @@ export async function buildReportPDF(report: SavedReport, eventName: string) {
     );
     text(difficultyCaveat);
   };
-  if (report.difficulty) difficultyBlock(report.difficulty);
+  if (!report.highlights && report.difficulty)
+    difficultyBlock(report.difficulty);
   heading("Overall assessment");
   sections[0].findings.forEach((f) => text(f.text));
   const shots = stats.filter((m) => m.id !== "overall");
-  if (shots.length) {
+  if (!report.highlights && shots.length) {
     heading("Shot execution");
     table(
       ["Shot type", "Shooting %", "Sample / points"],
@@ -204,7 +205,7 @@ export async function buildReportPDF(report: SavedReport, eventName: string) {
       [65, 33, 80],
     );
   }
-  if (report.misses) {
+  if (!report.highlights && report.misses) {
     const m = report.misses;
     heading("Miss diagnosis");
     text(m.focus);
@@ -280,7 +281,7 @@ export async function buildReportPDF(report: SavedReport, eventName: string) {
       );
     }
   }
-  if (report.technical?.some((g) => g.recorded > 0)) {
+  if (!report.highlights && report.technical?.some((g) => g.recorded > 0)) {
     heading("Technical review");
     text(
       "Each share uses observations recorded for that field. Miss rates use classified execution outcomes with that observation. Missing labels are not successful deliveries.",
@@ -347,8 +348,8 @@ export async function buildReportPDF(report: SavedReport, eventName: string) {
         );
     });
   }
-  advancedTables(report.advanced);
-  if (report.games?.length) {
+  if (!report.highlights) advancedTables(report.advanced);
+  if (!report.highlights && report.games?.length) {
     for (const game of report.games) {
       pdf.addPage();
       header();
@@ -395,13 +396,15 @@ export async function buildReportPDF(report: SavedReport, eventName: string) {
       } else text("Recording unavailable.", 9, false, muted);
     }
   }
-  heading("Report legend");
-  table(
-    ["Code / measure", "Meaning"],
-    reportLegend.map(([code, meaning]) => [code, meaning]),
-    [44, 134],
-    true,
-  );
+  if (!report.highlights) {
+    heading("Report legend");
+    table(
+      ["Code / measure", "Meaning"],
+      reportLegend.map(([code, meaning]) => [code, meaning]),
+      [44, 134],
+      true,
+    );
+  }
   heading("How to use this report");
   text(
     "These are observations from charted shots. Shot difficulty, ice and tactical intent can affect results. Review video and coaching observations before attributing a miss to a technical cause. Shooting percentages use the recorded scoring scale; they are not Curling Canada benchmarks.",

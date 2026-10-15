@@ -1,5 +1,5 @@
 import type { EndScore, GameState, ScoreEvent, Team } from "./types";
-import { GameStateConflictError } from "./game-state-conflict";
+import { ScoringIntentConflictError } from "./game-state-conflict";
 
 export type ScoringAction =
   | {
@@ -88,18 +88,20 @@ export function applyScoringAction(
   );
   if (existing) {
     if (!intentMatches(existing, action))
-      throw new GameStateConflictError("Scoring intent was already used");
+      throw new ScoringIntentConflictError("Scoring intent was already used");
     return { idempotent: true };
   }
 
   const lastEventId = game.scoreEvents.at(-1)?.id ?? null;
   if (lastEventId !== action.expectedLastEventId)
-    throw new GameStateConflictError("Scoring history position changed");
+    throw new ScoringIntentConflictError("Scoring history position changed");
 
   if (action.type === "undo") {
     const target = activeEvents(game.scoreEvents).at(-1);
     if (!target || target.id !== action.expectedTargetId)
-      throw new GameStateConflictError("Scoring history changed before Undo");
+      throw new ScoringIntentConflictError(
+        "Scoring history changed before Undo",
+      );
     const event: ScoreEvent = {
       id: action.intentId,
       at,
@@ -113,7 +115,7 @@ export function applyScoringAction(
 
   const score = deriveScore(game);
   if (score.currentEnd !== action.expectedEnd)
-    throw new GameStateConflictError("Scoring position changed");
+    throw new ScoringIntentConflictError("Scoring position changed");
   if (action.type === "score") {
     if (!score.hammer)
       throw new Error("Hammer must be selected before scoring");

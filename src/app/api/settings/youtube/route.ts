@@ -19,9 +19,15 @@ export async function DELETE(request: Request) {
   try {
     await disconnectYouTubeConnection(user);
     return NextResponse.json({ ok: true });
-  } catch {
+  } catch (error) {
     return NextResponse.json(
-      { error: "YouTube connection could not be disconnected" },
+      {
+        error:
+          error instanceof Error &&
+          error.message === "youtube_connection_in_use"
+            ? "An unfinished broadcast still uses this channel. Reconnect the same channel in your regular browser, then stop or recover that broadcast before disconnecting."
+            : "YouTube connection could not be disconnected",
+      },
       { status: 409 },
     );
   }

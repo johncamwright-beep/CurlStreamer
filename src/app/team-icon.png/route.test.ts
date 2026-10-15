@@ -1,0 +1,154 @@
+import { beforeEach, describe, expect, it, vi } from "vitest";
+
+const { headers, readFile, readPublishedTeamProfile, sharp } = vi.hoisted(
+  () => ({
+    headers: vi.fn(),
+    readFile: vi.fn(),
+    readPublishedTeamProfile: vi.fn(),
+    sharp: vi.fn(),
+  }),
+);
+
+vi.mock("next/headers", () => ({ headers }));
+vi.mock("node:fs/promises", () => ({ readFile }));
+vi.mock("@/lib/providers/public-team-profile", () => ({
+  readPublishedTeamProfile,
+}));
+vi.mock("sharp", () => ({ default: sharp }));
+
+import { GET } from "./route";
+
+function configureSharp() {
+  sharp.mockImplementation((input: Buffer) => ({
+    metadata: () =>
+      input.toString() === "invalid"
+        ? Promise.reject(new Error("invalid image"))
+        : Promise.resolve({}),
+    resize: () => ({
+      png: () => ({ toBuffer: () => Promise.resolve(Buffer.from("png")) }),
+    }),
+  }));
+}
+
+describe("team favicon route", () => {
+  beforeEach(() => {
+    vi.restoreAllMocks();
+    headers.mockResolvedValue({
+      get: (name: string) =>
+        name === "host" ? "benning.curlstreamer.app" : null,
+    });
+    readFile.mockResolvedValue(Buffer.from("fallback"));
+    readPublishedTeamProfile.mockResolvedValue({ logo_url: null });
+    configureSharp();
+  });
+
+  it("uses the branded fallback when a streamed upload exceeds the size cap", async () => {
+    readPublishedTeamProfile.mockResolvedValue({
+      logo_url:
+        "https://project.supabase.co/storage/v1/object/public/team-public-media/benning/logo",
+    });
+    process.env.NEXT_PUBLIC_SUPABASE_URL = "https://project.supabase.co";
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(
+          new ReadableStream({
+            start(controller) {
+              controller.enqueue(new Uint8Array(1024 * 1024));
+              controller.enqueue(new Uint8Array(1));
+              controller.close();
+            },
+          }),
+          { status: 200 },
+        ),
+      ),
+    );
+
+    const response = await GET();
+
+    expect(response.status).toBe(200);
+    expect(readFile).toHaveBeenCalledWith(
+      expect.stringMatching(
+        /public[\\/]branding[\\/]curlstreamer-app-icon\.png$/,
+      ),
+    );
+    expect(Buffer.from(await response.arrayBuffer())).toEqual(
+      Buffer.from("png"),
+    );
+    expect(
+      sharp.mock.calls.some(
+        ([input]) => Buffer.from(input).toString() === "fallback",
+      ),
+    ).toBe(true);
+  });
+
+  it("uses the branded fallback when an upload cannot be decoded", async () => {
+    readPublishedTeamProfile.mockResolvedValue({
+      logo_url:
+        "https://project.supabase.co/storage/v1/object/public/team-public-media/benning/logo",
+    });
+    process.env.NEXT_PUBLIC_SUPABASE_URL = "https://project.supabase.co";
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(new Response("invalid", { status: 200 })),
+    );
+
+    const response = await GET();
+
+    expect(response.status).toBe(200);
+    expect(Buffer.from(await response.arrayBuffer())).toEqual(
+      Buffer.from("png"),
+    );
+    expect(
+      sharp.mock.calls.filter(
+        ([input]) => Buffer.from(input).toString() === "invalid",
+      ),
+    ).toHaveLength(1);
+  });
+
+  it("keeps a team's uploaded logo as its favicon", async () => {
+    readPublishedTeamProfile.mockResolvedValue({
+      logo_url:
+        "https://project.supabase.co/storage/v1/object/public/team-public-media/benning/logo",
+    });
+    process.env.NEXT_PUBLIC_SUPABASE_URL = "https://project.supabase.co";
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(new Response("team logo", { status: 200 })),
+    );
+
+    const response = await GET();
+
+    expect(response.status).toBe(200);
+    expect(sharp).toHaveBeenLastCalledWith(Buffer.from("team logo"), {
+      limitInputPixels: 20000000,
+    });
+  });
+
+  it("revalidates the stable favicon URL and reuses only identical rendered bytes", async () => {
+    const first = await GET();
+    expect(first.headers.get("cache-control")).toBe(
+      "public, max-age=0, must-revalidate",
+    );
+    const etag = first.headers.get("etag");
+    expect(etag).toMatch(/^"[a-f0-9]{64}"$/);
+    headers.mockResolvedValue(
+      new Headers({ host: "benning.curlstreamer.app", "if-none-match": etag! }),
+    );
+    const unchanged = await GET();
+    expect(unchanged.status).toBe(304);
+    expect(await unchanged.text()).toBe("");
+
+    sharp.mockImplementation(() => ({
+      resize: () => ({
+        png: () => ({
+          toBuffer: () => Promise.resolve(Buffer.from("new png")),
+        }),
+      }),
+    }));
+    const replaced = await GET();
+    expect(replaced.status).toBe(200);
+    expect(replaced.headers.get("etag")).not.toBe(etag);
+    expect(await replaced.text()).toBe("new png");
+  });
+});

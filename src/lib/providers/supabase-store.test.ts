@@ -11,9 +11,13 @@ vi.mock("@supabase/supabase-js", () => ({
   createClient: () => ({
     rpc: mocks.rpc,
     from: () => ({
-      select: () => ({
-        eq: () => ({ maybeSingle: mocks.maybeSingle }),
-      }),
+      select: (columns: string) => {
+        if (columns.includes("games("))
+          throw new Error("permission denied for table games");
+        return {
+          eq: () => ({ maybeSingle: mocks.maybeSingle }),
+        };
+      },
     }),
   }),
 }));
@@ -21,8 +25,10 @@ vi.mock("@supabase/supabase-js", () => ({
 import {
   claimRole,
   createGame,
+  getGame,
   listCameraIdentityGenerations,
   prepareRoleInvitation,
+  prepareCameraReconnect,
   releaseRole,
   updateGame,
 } from "./supabase-store";
@@ -80,6 +86,46 @@ describe("Supabase game creation", () => {
       p_config: config,
       p_state: game,
     });
+  });
+
+  it("reads the versioned snapshot without accessing the protected games table", async () => {
+    const game = storedGame();
+    game.config.eventName = "Orion · Game 3";
+    mocks.maybeSingle.mockResolvedValue({
+      data: { state: game, version: 2 },
+      error: null,
+    });
+    expect(await getGame(game.id)).toEqual(game);
+  });
+
+  it("saves rock colours through the versioned state write without appending a scoring event", async () => {
+    const game = storedGame();
+    mocks.maybeSingle.mockResolvedValue({
+      data: { state: game, version: 2 },
+      error: null,
+    });
+    mocks.rpc.mockResolvedValue({ data: 3, error: null });
+    await updateGame(game.id, {
+      type: "rock-colours",
+      homeColor: "#facc15",
+      awayColor: "#2563eb",
+    });
+    expect(mocks.rpc).toHaveBeenCalledWith(
+      "write_game_state",
+      expect.objectContaining({
+        p_expected_version: 2,
+        p_state: expect.objectContaining({
+          config: expect.objectContaining({
+            homeColor: "#facc15",
+            awayColor: "#2563eb",
+          }),
+          scoreEvents: game.scoreEvents,
+        }),
+      }),
+    );
+    expect(
+      mocks.rpc.mock.calls.some(([name]) => name === "append_score_event"),
+    ).toBe(false);
   });
 
   it("redacts credentials from logged database errors", async () => {
@@ -383,12 +429,12 @@ describe("Supabase score-event persistence", () => {
     expect(mocks.rpc).not.toHaveBeenCalled();
   });
 
-  it("rejects the update when the atomic RPC fails", async () => {
+  it("bounds fresh-snapshot attempts when the atomic RPC keeps losing its version race", async () => {
     const game = storedGame();
-    mocks.maybeSingle.mockResolvedValue({
-      data: { state: game, version: 43 },
+    mocks.maybeSingle.mockImplementation(async () => ({
+      data: { state: structuredClone(game), version: 43 },
       error: null,
-    });
+    }));
     mocks.rpc.mockResolvedValue({
       error: { code: "40001", message: "stale game state" },
     });
@@ -405,8 +451,8 @@ describe("Supabase score-event persistence", () => {
         blank: false,
       }),
     ).rejects.toThrow("Score update conflict");
-    expect(mocks.maybeSingle).toHaveBeenCalledOnce();
-    expect(mocks.rpc).toHaveBeenCalledOnce();
+    expect(mocks.maybeSingle).toHaveBeenCalledTimes(3);
+    expect(mocks.rpc).toHaveBeenCalledTimes(3);
   });
 
   it("reports a persistence failure without returning false success", async () => {
@@ -429,6 +475,193 @@ describe("Supabase score-event persistence", () => {
         team: "away",
       }),
     ).rejects.toThrow("Supabase score update failed");
+  });
+
+  const scoreIntent = {
+    type: "score",
+    intentId: "10000000-0000-4000-8000-000000000018",
+    expectedEnd: 1,
+    expectedLastEventId: null,
+    team: "home",
+    points: 2,
+    blank: false,
+  } as const;
+
+  it("merges a racing camera heartbeat while committing the same scoring intent", async () => {
+    const game = storedGame();
+    const cameraUpdated = structuredClone(game);
+    cameraUpdated.cameraHealth = {
+      "camera-home": { phase: "live", updatedAt: 99 },
+    };
+    cameraUpdated.connections["camera-home"] = true;
+    mocks.maybeSingle
+      .mockResolvedValueOnce({
+        data: { state: game, version: 50 },
+        error: null,
+      })
+      .mockResolvedValueOnce({
+        data: { state: cameraUpdated, version: 51 },
+        error: null,
+      });
+    mocks.rpc
+      .mockResolvedValueOnce({ error: { code: "PT409", message: "stale" } })
+      .mockResolvedValueOnce({ error: null });
+
+    const result = await updateGame(game.id, scoreIntent);
+
+    expect(result!.cameraHealth).toEqual(cameraUpdated.cameraHealth);
+    expect(result!.connections["camera-home"]).toBe(true);
+    expect(result!.scoreEvents).toHaveLength(1);
+    expect(result!.scoreEvents[0].id).toBe(scoreIntent.intentId);
+    expect(mocks.rpc).toHaveBeenLastCalledWith(
+      "append_score_event",
+      expect.objectContaining({ p_expected_version: 51, p_state: result }),
+    );
+    expect(mocks.maybeSingle).toHaveBeenCalledTimes(2);
+    expect(mocks.rpc).toHaveBeenCalledTimes(2);
+  });
+
+  it("stops before another append when a competing scorer wins the version race", async () => {
+    const game = storedGame();
+    const competing = structuredClone(game);
+    competing.scoreEvents.push({
+      id: "20000000-0000-4000-8000-000000000018",
+      at: 99,
+      type: "end",
+      score: { end: 1, team: "away", points: 1, blank: false },
+      expectedLastEventId: null,
+    });
+    mocks.maybeSingle
+      .mockResolvedValueOnce({
+        data: { state: game, version: 50 },
+        error: null,
+      })
+      .mockResolvedValueOnce({
+        data: { state: competing, version: 51 },
+        error: null,
+      });
+    mocks.rpc.mockResolvedValue({ error: { code: "PT409", message: "stale" } });
+
+    await expect(updateGame(game.id, scoreIntent)).rejects.toThrow(
+      "Scoring history position changed",
+    );
+    expect(competing.scoreEvents).toHaveLength(1);
+    expect(mocks.rpc).toHaveBeenCalledOnce();
+  });
+
+  it("returns the exact already committed intent after a concurrent identical request", async () => {
+    const game = storedGame();
+    const committed = structuredClone(game);
+    committed.scoreEvents.push({
+      id: scoreIntent.intentId,
+      at: 99,
+      type: "end",
+      score: { end: 1, team: "home", points: 2, blank: false },
+      expectedLastEventId: null,
+    });
+    mocks.maybeSingle
+      .mockResolvedValueOnce({
+        data: { state: game, version: 50 },
+        error: null,
+      })
+      .mockResolvedValueOnce({
+        data: { state: committed, version: 51 },
+        error: null,
+      });
+    mocks.rpc.mockResolvedValue({ error: { code: "PT409", message: "stale" } });
+
+    expect(await updateGame(game.id, scoreIntent)).toBe(committed);
+    expect(committed.scoreEvents).toHaveLength(1);
+    expect(mocks.rpc).toHaveBeenCalledOnce();
+  });
+
+  it("rechecks scorer assignment before retrying after a camera update", async () => {
+    const game = storedGame();
+    game.claims.scorer = "scorer-device";
+    game.claimGenerations = { scorer: 4 };
+    const reassigned = structuredClone(game);
+    reassigned.claimGenerations!.scorer = 5;
+    mocks.maybeSingle
+      .mockResolvedValueOnce({
+        data: { state: game, version: 50 },
+        error: null,
+      })
+      .mockResolvedValueOnce({
+        data: { state: reassigned, version: 51 },
+        error: null,
+      });
+    mocks.rpc.mockResolvedValue({ error: { code: "PT409", message: "stale" } });
+
+    await expect(
+      updateGame(game.id, scoreIntent, {
+        role: "scorer",
+        claim: "scorer-device",
+        generation: 4,
+      }),
+    ).rejects.toThrow("Participant assignment changed");
+    expect(mocks.rpc).toHaveBeenCalledOnce();
+  });
+
+  it("does not acknowledge success until the score RPC commits", async () => {
+    const game = storedGame();
+    mocks.maybeSingle.mockResolvedValue({
+      data: { state: game, version: 50 },
+      error: null,
+    });
+    let commit!: (result: { error: null }) => void;
+    mocks.rpc.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          commit = resolve;
+        }),
+    );
+    let acknowledged = false;
+    const update = updateGame(game.id, scoreIntent).then((result) => {
+      acknowledged = true;
+      return result;
+    });
+    await vi.waitFor(() => expect(mocks.rpc).toHaveBeenCalledOnce());
+    expect(acknowledged).toBe(false);
+    commit({ error: null });
+    expect((await update)!.scoreEvents).toHaveLength(1);
+    expect(acknowledged).toBe(true);
+  });
+
+  it("recovers a committed intent after a lost acknowledgement without appending twice", async () => {
+    let persisted = storedGame();
+    mocks.maybeSingle.mockImplementation(async () => ({
+      data: { state: structuredClone(persisted), version: 50 },
+      error: null,
+    }));
+    mocks.rpc.mockImplementation(async (_operation, args) => {
+      // Model the transaction committing before its response is lost.
+      persisted = structuredClone(args.p_state);
+      throw new Error("Response lost after commit");
+    });
+
+    await expect(updateGame(persisted.id, scoreIntent)).rejects.toThrow(
+      "Response lost after commit",
+    );
+    expect(mocks.rpc).toHaveBeenCalledOnce();
+    expect(persisted.scoreEvents).toHaveLength(1);
+
+    const recovered = await updateGame(persisted.id, scoreIntent);
+    expect(recovered).toEqual(persisted);
+    expect(recovered!.scoreEvents[0].id).toBe(scoreIntent.intentId);
+    expect(mocks.rpc).toHaveBeenCalledOnce();
+  });
+
+  it("rejects closed state on the authoritative mutation read", async () => {
+    const game = storedGame();
+    game.status = "closed";
+    mocks.maybeSingle.mockResolvedValue({
+      data: { state: game, version: 50 },
+      error: null,
+    });
+    await expect(updateGame(game.id, scoreIntent)).rejects.toThrow(
+      "This game is closed",
+    );
+    expect(mocks.rpc).not.toHaveBeenCalled();
   });
 
   it("keeps deletion's legacy Close Game retry harmless after completion", async () => {
@@ -509,26 +742,29 @@ describe("Supabase score-event persistence", () => {
     });
   });
 
-  it("surfaces an ordinary stale write as a state conflict", async () => {
-    const game = storedGame();
-    mocks.maybeSingle.mockResolvedValue({
-      data: { state: game, version: 49 },
-      error: null,
-    });
-    mocks.rpc.mockResolvedValue({
-      error: { code: "40001", message: "stale game state" },
-    });
+  it.each(["PT409", "40001"])(
+    "surfaces an ordinary stale write (%s) as a state conflict",
+    async (code) => {
+      const game = storedGame();
+      mocks.maybeSingle.mockResolvedValue({
+        data: { state: game, version: 49 },
+        error: null,
+      });
+      mocks.rpc.mockResolvedValue({
+        error: { code, message: "stale game state" },
+      });
 
-    await expect(
-      updateGame(game.id, {
-        type: "connection",
-        role: "camera-home",
-        connected: true,
-      }),
-    ).rejects.toThrow("Game state update conflict");
-    expect(mocks.maybeSingle).toHaveBeenCalledTimes(3);
-    expect(mocks.rpc).toHaveBeenCalledTimes(3);
-  });
+      await expect(
+        updateGame(game.id, {
+          type: "connection",
+          role: "camera-home",
+          connected: true,
+        }),
+      ).rejects.toThrow("Game state update conflict");
+      expect(mocks.maybeSingle).toHaveBeenCalledTimes(3);
+      expect(mocks.rpc).toHaveBeenCalledTimes(3);
+    },
+  );
 
   it("retries camera live state on fresh scored state without erasing the score", async () => {
     const claimant = "77777777-7777-4777-8777-777777777777";
@@ -864,6 +1100,41 @@ describe("Supabase score-event persistence", () => {
 });
 
 describe("Supabase assignment generation RPCs", () => {
+  it("renews only database-selected valid device and generation metadata", async () => {
+    const deviceId = "22222222-2222-4222-8222-222222222222";
+    mocks.rpc.mockResolvedValueOnce({
+      data: { deviceId, generation: 4 },
+      error: null,
+    });
+    await expect(
+      prepareCameraReconnect(
+        "game-1",
+        "camera-home",
+        "renewal",
+        "2030-01-01T00:00:00.000Z",
+      ),
+    ).resolves.toEqual({ deviceId, generation: 4 });
+    expect(mocks.rpc).toHaveBeenCalledWith("prepare_game_camera_reconnect", {
+      p_game_id: "game-1",
+      p_role: "camera-home",
+      p_invitation_id: "renewal",
+      p_expires_at: "2030-01-01T00:00:00.000Z",
+    });
+    mocks.rpc.mockResolvedValueOnce({
+      data: { deviceId: "invalid", generation: -1 },
+      error: null,
+    });
+    expect(
+      (
+        await prepareCameraReconnect(
+          "game-1",
+          "camera-home",
+          "invalid",
+          "2030-01-01T00:00:00.000Z",
+        )
+      ).error,
+    ).toBeTruthy();
+  });
   beforeEach(() => {
     mocks.rpc.mockReset().mockResolvedValue({ error: null });
     mocks.maybeSingle.mockReset();

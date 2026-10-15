@@ -77,6 +77,7 @@ describe("YouTube connection test", () => {
     });
     const response = await POST(request());
     expect(response.status).toBe(409);
+    expect(await response.json()).toMatchObject({ code: "channel_mismatch" });
     expect(mocks.finish).toHaveBeenCalledWith(
       user,
       organizationId,
@@ -90,6 +91,12 @@ describe("YouTube connection test", () => {
     mocks.refresh.mockRejectedValue(new Error("youtube_provider_unavailable"));
     const response = await POST(request());
     expect(response.status).toBe(409);
+    expect(await response.json()).toEqual({
+      code: "youtube_provider_unavailable",
+      error: expect.stringContaining(
+        "could not reach Google's YouTube service",
+      ),
+    });
     expect(mocks.finish).toHaveBeenCalledWith(
       user,
       organizationId,
@@ -101,13 +108,80 @@ describe("YouTube connection test", () => {
 
   it("marks an invalid grant as requiring reconnect", async () => {
     mocks.refresh.mockRejectedValue(new Error("youtube_reconnect_required"));
-    await POST(request());
+    const response = await POST(request());
+    expect((await response.json()).error).toContain("Reconnect this channel");
     expect(mocks.finish).toHaveBeenCalledWith(
       user,
       organizationId,
       8,
       false,
       "reconnect_required",
+    );
+  });
+
+  it.each([
+    ["youtube_scope_missing", "approve the requested permissions", true],
+    [
+      "youtube_channel_selection_required",
+      "choose the account that owns the team's channel",
+      true,
+    ],
+    ["youtube_credentials_unavailable", "could not read the saved", true],
+    ["youtube_quota_exceeded", "API limit has been reached", false],
+    ["youtube_live_permission_blocked", "blocking live broadcasts", false],
+    ["youtube_live_streaming_not_enabled", "not enabled", false],
+    ["youtube_provider_rejected", "Google rejected", false],
+  ])(
+    "returns an actionable safe category for %s",
+    async (code, message, reconnect) => {
+      mocks.channel.mockRejectedValue(new Error(code));
+      const response = await POST(request());
+      expect(response.status).toBe(409);
+      expect(await response.json()).toEqual({
+        code,
+        error: expect.stringContaining(message),
+      });
+      expect(mocks.finish).toHaveBeenCalledWith(
+        user,
+        organizationId,
+        8,
+        false,
+        reconnect ? "reconnect_required" : "test_unavailable",
+      );
+    },
+  );
+
+  it("identifies server configuration failures before loading saved authorization", async () => {
+    mocks.configuration.mockImplementation(() => {
+      throw new Error("youtube_configuration_unavailable");
+    });
+    const response = await POST(request());
+    expect(response.status).toBe(409);
+    expect(await response.json()).toEqual({
+      code: "youtube_configuration_unavailable",
+      error: expect.stringContaining("server configuration issue"),
+    });
+    expect(mocks.credentials).not.toHaveBeenCalled();
+    expect(mocks.finish).not.toHaveBeenCalled();
+  });
+
+  it("never returns or persists arbitrary provider exceptions or credentials", async () => {
+    const secret = "Bearer private-token rtmps://private.test/private-key";
+    mocks.refresh.mockRejectedValue(new Error(secret));
+    const response = await POST(request());
+    const body = await response.json();
+    expect(body).toEqual({
+      code: "youtube_test_unavailable",
+      error: expect.stringContaining("could not be completed"),
+    });
+    expect(JSON.stringify(body)).not.toContain("private");
+    expect(JSON.stringify(mocks.finish.mock.calls)).not.toContain("private");
+    expect(mocks.finish).toHaveBeenCalledWith(
+      user,
+      organizationId,
+      8,
+      false,
+      "test_unavailable",
     );
   });
 
@@ -125,7 +199,8 @@ describe("YouTube connection test", () => {
     const response = await POST(request());
     expect(response.status).toBe(409);
     expect(await response.json()).toEqual({
-      error: "YouTube connection test failed",
+      code: "youtube_test_finish_failed",
+      error: expect.stringContaining("could not be saved"),
     });
   });
 });

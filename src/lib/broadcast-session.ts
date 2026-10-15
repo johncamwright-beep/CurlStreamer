@@ -436,6 +436,34 @@ export async function stopGameBroadcast(
   gameId: string,
   credential: CompletionCredential,
 ): Promise<SafeBroadcastSession> {
+  // The durable journal owns transport selection, including terminal cleanup.
+  // Do not consult rollout flags: an existing local output must remain stoppable.
+  const { data: transport, error: transportError } =
+    await createAdminSupabaseClient().rpc("get_game_broadcast_transport", {
+      p_game_id: gameId,
+      ...(await actor(gameId, credential)),
+    });
+  if (transportError) {
+    if (!["42883", "PGRST202"].includes(transportError.code ?? ""))
+      throw Object.assign(new Error("broadcast_transport_unavailable"), {
+        code: transportError.code,
+      });
+    // Older deployments have only the preserved LiveKit journal.
+  } else if (transport === "local-obs") {
+    const { stopM4Session } =
+      await import("@/lib/providers/m4-youtube-session");
+    const stopped = await stopM4Session(gameId, credential);
+    return {
+      desiredState: stopped.desiredState,
+      status: stopped.status === "prepared" ? "preparing" : stopped.status,
+      ...(stopped.watchUrl ? { watchUrl: stopped.watchUrl } : {}),
+      ...(stopped.lastErrorCode
+        ? { lastErrorCode: stopped.lastErrorCode }
+        : {}),
+    };
+  } else if (transport !== "livekit" && transport !== null) {
+    throw new Error("broadcast_transport_invalid");
+  }
   let session = await claim(gameId, credential, "stopped");
   if (session.action !== "run") return safe(session);
   try {

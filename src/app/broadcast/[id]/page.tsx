@@ -2,8 +2,11 @@
 import { use, useEffect, useState } from "react";
 import { useGame } from "@/components/GameSync";
 import { BroadcastCanvas } from "@/components/BroadcastCanvas";
+import { useStudioPreviewMode } from "@/components/StudioPreviewMode";
+import { StudioProgramPreview } from "@/components/StudioProgramPreview";
 import { BroadcastOperatorNavigation } from "@/components/BroadcastOperatorNavigation";
 import { AppNavigation } from "@/components/AppNavigation";
+import { BroadcastCameraZoomControls } from "@/components/CameraZoomControls";
 import { hasOrganizerAccess, hasScoringAccess } from "@/lib/access-session";
 import { gameEntryPresentation, gameEntryCapabilities } from "@/lib/game-entry";
 import { GameReadScreen } from "@/components/GameReadScreen";
@@ -26,6 +29,7 @@ export default function Broadcast({
   params: Promise<{ id: string }>;
 }) {
   const { id } = use(params);
+  const directPreview = useStudioPreviewMode();
   const {
     game,
     completion,
@@ -35,16 +39,24 @@ export default function Broadcast({
     refreshContext,
   } = useGame(id, "broadcast", undefined, true);
   const [scale, setScale] = useState<number>();
-  const [detailsOpen, setDetailsOpen] = useState(false);
+  const [compact, setCompact] = useState(false);
   const [operator, setOperator] = useState(false);
+  const zoomRail =
+    Boolean(game) &&
+    (operator ||
+      ["owner", "team_admin", "game_operator", "scorer"].includes(accountRole));
   useEffect(() => setOperator(hasScoringAccess(localStorage, id)), [id]);
   useEffect(() => {
     const fit = () => {
       const viewport = availableViewport();
+      const narrow = viewport.width <= 700;
+      setCompact(narrow);
       setScale(
         Math.min(
-          viewport.width / PROGRAM_WIDTH,
-          viewport.height / PROGRAM_HEIGHT,
+          Math.max(1, viewport.width - (zoomRail && !narrow ? 272 : 0)) /
+            PROGRAM_WIDTH,
+          Math.max(1, viewport.height - (zoomRail && narrow ? 300 : 0)) /
+            PROGRAM_HEIGHT,
         ),
       );
     };
@@ -57,7 +69,7 @@ export default function Broadcast({
       window.removeEventListener("orientationchange", fit);
       window.visualViewport?.removeEventListener("resize", fit);
     };
-  }, []);
+  }, [zoomRail]);
   if (error || (!game && !completion))
     return (
       <GameReadScreen
@@ -88,34 +100,9 @@ export default function Broadcast({
             className="broadcast-app-navigation"
             gameContext={{ id, ...presentation, capabilities }}
           />
-          <aside
-            className="broadcast-entry-context"
-            aria-label="Preview game context"
-          >
-            <button
-              aria-expanded={detailsOpen}
-              onClick={() => setDetailsOpen(!detailsOpen)}
-            >
-              {detailsOpen ? "Hide game details" : "Show game details"}
-            </button>
-            {detailsOpen && (
-              <>
-                <strong>{presentation.title}</strong>
-                <p aria-label="Game schedule">{presentation.scheduledLabel}</p>
-                <p>
-                  Program preview · this picture does not confirm YouTube
-                  delivery.
-                </p>
-                {presentation.scheduledLabel === "Schedule unavailable" && (
-                  <button onClick={() => void refreshContext()}>
-                    Refresh game details
-                  </button>
-                )}
-              </>
-            )}
-          </aside>
         </>
       )}
+      {zoomRail && <BroadcastCameraZoomControls id={id} />}
       <div
         data-testid="broadcast-visible-wrapper"
         className="broadcast-visible-wrapper"
@@ -125,6 +112,8 @@ export default function Broadcast({
             : {
                 width: PROGRAM_WIDTH * scale,
                 height: PROGRAM_HEIGHT * scale,
+                marginLeft: zoomRail && !compact ? 272 : 0,
+                marginBottom: zoomRail && compact ? 300 : 0,
               }
         }
       >
@@ -143,7 +132,11 @@ export default function Broadcast({
               </div>
             </div>
           ) : game ? (
-            <BroadcastCanvas game={game} />
+            directPreview ? (
+              <StudioProgramPreview gameId={id} />
+            ) : (
+              <BroadcastCanvas game={game} />
+            )
           ) : null}
         </div>
       </div>

@@ -53,5 +53,13 @@ describe("game entry context", () => {
       scoring: false,
       assignOpponent: true,
     });
+    expect(
+      gameEntryCapabilities("game_operator", false, false, false),
+    ).toMatchObject({
+      control: true,
+      scoring: true,
+      broadcast: true,
+      editSchedule: true,
+    });
   });
 });

@@ -35,7 +35,10 @@ export default async function OpponentsPage() {
       </header>
       <OpponentDirectory
         opponents={result.value as never[]}
-        canEdit={context.account.membership.role !== "viewer"}
+        canEdit={
+          context.account.membership.role === "owner" ||
+          context.account.membership.role === "team_admin"
+        }
       />
     </main>
   );

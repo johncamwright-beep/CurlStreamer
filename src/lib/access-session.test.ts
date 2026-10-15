@@ -24,6 +24,30 @@ function storage(initial: Record<string, string> = {}) {
 }
 
 describe("browser access sessions", () => {
+  it("publishes with the new assignment after reclaiming on a phone with an old cached participant", () => {
+    const old = token({
+      purpose: "participant",
+      gameId: "game-1",
+      role: "camera-home",
+      assignmentGeneration: 1,
+    });
+    const fresh = token({
+      purpose: "participant",
+      gameId: "game-1",
+      role: "camera-home",
+      assignmentGeneration: 3,
+    });
+    const store = storage({
+      "curlcast-participant-access-game-1": old,
+      "curlcast-access-game-1": old,
+    });
+    preserveAndStoreParticipantAccess(store, "game-1", fresh);
+    expect(cameraPublishAccessToken(store, "game-1", "camera-home")).toBe(
+      fresh,
+    );
+    expect(gameAccessToken(store, "game-1")).toBe(fresh);
+    expect(hasOrganizerAccess(store, "game-1")).toBe(false);
+  });
   it("selects the preserved matching camera token instead of organizer authority", () => {
     const organizer = token({ purpose: "organizer", gameId: "game-1" });
     const camera = token({
@@ -65,6 +89,7 @@ describe("browser access sessions", () => {
   it.each([
     ["owner", false, true],
     ["team_admin", false, true],
+    ["game_operator", false, true],
     ["scorer", false, false],
     ["viewer", false, false],
     ["", true, true],

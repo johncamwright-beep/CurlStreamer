@@ -49,6 +49,9 @@ export default async function NewGamePage({
         events={data.events}
         opponents={opponents.value as never[]}
         games={data.games}
+        canManageTeamDetails={
+          data.role === "owner" || data.role === "team_admin"
+        }
         preselectedEventId={preselected}
       />
     </main>

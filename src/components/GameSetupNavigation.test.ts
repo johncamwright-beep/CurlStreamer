@@ -27,7 +27,7 @@ describe("setup navigation", () => {
 
   it("is present at the top of scorer and broadcast views", () => {
     expect(scorer.indexOf("<GameSetupNavigation")).toBeLessThan(
-      scorer.indexOf("<header"),
+      scorer.indexOf("<ScoringSummary"),
     );
     expect(broadcast.indexOf("<GameSetupNavigation")).toBeLessThan(
       broadcast.indexOf("<BroadcastCanvas"),

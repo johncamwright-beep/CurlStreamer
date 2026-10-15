@@ -3,7 +3,7 @@ import { z } from "zod";
 import { readGame } from "@/lib/providers/game-read";
 import { broadcastGame, joinGame } from "@/lib/game-projection";
 import { actionSchema, hasSafeSponsorContent } from "@/lib/schema";
-import { getGame, updateGame } from "@/lib/store";
+import { updateGame } from "@/lib/store";
 import {
   authorizationError,
   authorizeGame,
@@ -15,7 +15,12 @@ import {
   gameBroadcastSponsors,
   gameLibrarySponsors,
 } from "@/lib/providers/sponsor-library";
-import { isGameStateConflictError } from "@/lib/game-state-conflict";
+import {
+  GameClosedError,
+  ScoringIntentConflictError,
+  ScoringWriteConflictError,
+  isGameStateConflictError,
+} from "@/lib/game-state-conflict";
 export const dynamic = "force-dynamic";
 const readParams = z.object({ id: z.string().regex(/^[a-zA-Z0-9-]{1,64}$/) });
 const readView = z.enum(["broadcast", "join"]).optional();
@@ -95,7 +100,7 @@ export async function GET(
                 "x-curlcast-operator": String(authorization.role !== "viewer"),
                 "x-curlcast-account-role": authorization.role,
                 "access-control-expose-headers":
-                  "x-curlcast-operator, x-curlcast-account-role",
+                  "x-curlcast-operator, x-curlcast-account-role, x-curlcast-m1-pilot",
               }
             : undefined,
       });
@@ -162,6 +167,10 @@ export async function GET(
       {
         headers: {
           "x-curlcast-operator": "true",
+          "x-curlcast-m1-pilot":
+            process.env.CURLCAST_M1_DIRECT_SPIKE === "disposable"
+              ? "true"
+              : "false",
           "x-curlcast-account-role":
             authorization.via === "account" ? authorization.role : "",
           "access-control-expose-headers":
@@ -177,7 +186,10 @@ export async function PATCH(
   request: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  const { id } = await params;
+  const parsed = readParams.safeParse(await params);
+  if (!parsed.success)
+    return gameResponse({ error: "Invalid game request" }, { status: 400 });
+  const { id } = parsed.data;
   const authorization = await authorizeGame(request, id, {
     accountRoles: operatorRoles,
     tokenAllowed: (access) => access.purpose !== "invitation",
@@ -186,10 +198,7 @@ export async function PATCH(
     const failure = authorizationError(authorization);
     return gameResponse({ error: failure.error }, { status: failure.status });
   }
-  const existing = await getGame(id);
-  if (existing?.status === "closed")
-    return gameResponse({ error: "This game is closed" }, { status: 410 });
-  const body = actionSchema.safeParse(await request.json());
+  const body = actionSchema.safeParse(await request.json().catch(() => null));
   if (!body.success)
     return gameResponse({ error: "Invalid update" }, { status: 400 });
   if (
@@ -209,12 +218,24 @@ export async function PATCH(
     !(
       (body.data.type === "connection" ||
         body.data.type === "camera-health" ||
-        body.data.type === "camera-framing") &&
+        body.data.type === "camera-framing" ||
+        body.data.type === "camera-zoom-status" ||
+        body.data.type === "camera-audio-status") &&
       body.data.role === authorization.access.role
     )
   )
     return gameResponse(
       { error: "This role cannot make that update" },
+      { status: 403 },
+    );
+  if (
+    body.data.type === "camera-audio-status" &&
+    authorization.via === "token" &&
+    authorization.access.purpose === "participant" &&
+    authorization.access.role !== body.data.role
+  )
+    return gameResponse(
+      { error: "Only the assigned camera can report microphone status" },
       { status: 403 },
     );
   if (
@@ -239,6 +260,26 @@ export async function PATCH(
         : undefined;
     game = await updateGame(id, body.data, expectedAuthority);
   } catch (error) {
+    if (error instanceof GameClosedError)
+      return gameResponse({ error: error.message }, { status: 410 });
+    if (error instanceof ScoringIntentConflictError)
+      return gameResponse(
+        {
+          error:
+            "The score changed before this update was saved. Review the current score.",
+          code: "scoring_stale_intent",
+        },
+        { status: 409 },
+      );
+    if (error instanceof ScoringWriteConflictError)
+      return gameResponse(
+        {
+          error:
+            "This score could not be saved while the game was updating. Try again.",
+          code: "scoring_write_conflict",
+        },
+        { status: 409 },
+      );
     const message = error instanceof Error ? error.message : "";
     if (message.includes("Hammer must be selected"))
       return gameResponse({ error: message }, { status: 409 });

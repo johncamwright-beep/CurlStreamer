@@ -1,6 +1,12 @@
 "use client";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { OpponentDetailsDialog } from "./OpponentDetailsDialog";
+import {
+  opponentSeasonDirectorySchema,
+  type OpponentSeasonDirectory,
+} from "@/lib/opponent-seasons";
+import { OpponentProfilePicker } from "./OpponentProfilePicker";
 
 type Opponent = {
   id: string;
@@ -17,6 +23,47 @@ export function OpponentDirectory({
   canEdit: boolean;
 }) {
   const router = useRouter();
+  const [seasonData, setSeasonData] = useState<OpponentSeasonDirectory | null>(
+    null,
+  );
+  const [seasonId, setSeasonId] = useState("");
+  const [editing, setEditing] = useState<Opponent | "create" | null>(null);
+  const editingTrigger = useRef<HTMLButtonElement | null>(null);
+  const [seasonError, setSeasonError] = useState("");
+  const [reload, setReload] = useState(0);
+  const [savedMessage, setSavedMessage] = useState("");
+  useEffect(() => {
+    const controller = new AbortController();
+    void fetch("/api/opponent-seasons", {
+      cache: "no-store",
+      signal: controller.signal,
+    })
+      .then(async (response) => {
+        if (!response.ok) throw Error("Season details could not be loaded.");
+        const data = opponentSeasonDirectorySchema.parse(await response.json());
+        if (!controller.signal.aborted) {
+          setSeasonData(data);
+          setSeasonError("");
+          setSeasonId((current) =>
+            data.seasons.some((s) => s.id === current)
+              ? current
+              : (data.seasons.find((s) => s.status === "active")?.id ??
+                data.seasons[0]?.id ??
+                ""),
+          );
+        }
+      })
+      .catch(() => {
+        if (!controller.signal.aborted)
+          setSeasonError("Season details could not be loaded.");
+      });
+    return () => controller.abort();
+  }, [reload]);
+  const seasonName =
+    seasonData?.seasons.find((s) => s.id === seasonId)?.name ??
+    "Selected season";
+  const seasonArchived =
+    seasonData?.seasons.find((s) => s.id === seasonId)?.status === "archived";
   const [search, setSearch] = useState("");
   const [error, setError] = useState("");
   const shown = useMemo(
@@ -44,6 +91,51 @@ export function OpponentDirectory({
   }
   return (
     <div className="grid gap-4">
+      {seasonData && (
+        <label>
+          Opponent season
+          <select
+            className="mt-1 min-h-11 w-full rounded-lg bg-slate-800 p-3"
+            value={seasonId}
+            disabled={editing !== null}
+            onChange={(e) => {
+              setSeasonId(e.target.value);
+              setSavedMessage("");
+            }}
+          >
+            {seasonData.seasons.map((season) => (
+              <option key={season.id} value={season.id}>
+                {season.name}
+                {season.status === "active" ? " (Current)" : ""}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
+      {seasonData?.seasons.length === 0 && (
+        <p>
+          Create a season in Seasons &amp; events to add seasonal opponent
+          details.
+        </p>
+      )}
+      {canEdit && seasonArchived && (
+        <p>
+          This season is archived. Select an available season to add or edit
+          opponents.
+        </p>
+      )}
+      {seasonError && (
+        <p role="alert">
+          {seasonError}{" "}
+          <button
+            className="btn-secondary"
+            onClick={() => setReload((n) => n + 1)}
+          >
+            Retry season details
+          </button>
+        </p>
+      )}
+      {savedMessage && <p role="status">{savedMessage}</p>}
       <label>
         Search opponents
         <input
@@ -54,24 +146,62 @@ export function OpponentDirectory({
         />
       </label>
       {canEdit && (
-        <form
-          className="flex flex-col gap-2 sm:flex-row"
-          onSubmit={(e) => {
-            e.preventDefault();
-            const name = new FormData(e.currentTarget).get("name");
-            void mutate("createOpponent", { input: { displayName: name } });
+        <OpponentProfilePicker
+          initialQuery={search}
+          onLinked={() => router.refresh()}
+        />
+      )}
+      {canEdit && (
+        <button
+          type="button"
+          className="btn min-h-11 justify-self-start"
+          disabled={!seasonId || seasonArchived || editing !== null}
+          onClick={(event) => {
+            editingTrigger.current = event.currentTarget;
+            setEditing("create");
+            setSavedMessage("");
           }}
         >
-          <label className="flex-1">
-            Add new opponent
-            <input
-              name="name"
-              required
-              className="mt-1 w-full rounded-lg bg-slate-800 p-3"
-            />
-          </label>
-          <button className="btn self-end">Add opponent</button>
-        </form>
+          Add opponent
+        </button>
+      )}
+      {editing && seasonId && (
+        <OpponentDetailsDialog
+          mode={editing === "create" ? "create" : "edit"}
+          opponent={editing === "create" ? undefined : editing}
+          initialName={editing === "create" ? search.trim() : undefined}
+          seasonId={seasonId}
+          seasonName={seasonName}
+          returnFocusTo={editingTrigger.current}
+          onCancel={() => setEditing(null)}
+          onSaved={(value) => {
+            if (value.profile) {
+              const profile = value.profile;
+              setSeasonData((current) =>
+                current
+                  ? {
+                      ...current,
+                      profiles: [
+                        ...current.profiles.filter(
+                          (p) =>
+                            !(
+                              p.opponent_id === profile.opponent_id &&
+                              p.season_id === profile.season_id
+                            ),
+                        ),
+                        profile,
+                      ],
+                    }
+                  : current,
+              );
+            }
+            setEditing(null);
+            setSavedMessage(
+              value.display_name + " · " + seasonName + " saved.",
+            );
+            router.refresh();
+          }}
+        />
       )}
       {error && (
         <p role="alert" className="text-red-300">
@@ -82,39 +212,81 @@ export function OpponentDirectory({
         <p className="panel">No matching opponents.</p>
       ) : (
         <ul className="grid gap-3">
-          {shown.map((opponent) => (
-            <li
-              className="panel flex flex-wrap items-center justify-between gap-3"
-              key={opponent.id}
-            >
-              <div>
-                <h2 className="font-bold">{opponent.display_name}</h2>
-                <p className="text-sm text-slate-300">
-                  {opponent.archived_at ? "Archived" : "Active"} ·{" "}
-                  {opponent.games_played} game
-                  {Number(opponent.games_played) === 1 ? "" : "s"}
-                  {opponent.last_played_at
-                    ? ` · Last played ${new Date(opponent.last_played_at).toLocaleDateString()}`
-                    : ""}
-                </p>
-              </div>
-              {canEdit && (
-                <button
-                  className="btn-secondary"
-                  onClick={() =>
-                    void mutate(
-                      opponent.archived_at
-                        ? "restoreOpponent"
-                        : "archiveOpponent",
-                      { opponentId: opponent.id },
-                    )
-                  }
-                >
-                  {opponent.archived_at ? "Restore" : "Archive"}
-                </button>
-              )}
-            </li>
-          ))}
+          {shown.map((opponent) => {
+            const profile = seasonData?.profiles.find(
+              (p) => p.opponent_id === opponent.id && p.season_id === seasonId,
+            );
+            return (
+              <li
+                className="panel flex flex-wrap items-center justify-between gap-3"
+                key={opponent.id}
+              >
+                <div>
+                  <h2 className="font-bold">
+                    {opponent.display_name}
+                    {seasonId && (
+                      <span className="ml-2 text-sm font-normal text-slate-300">
+                        {seasonName}
+                      </span>
+                    )}
+                  </h2>
+                  {profile && (
+                    <p className="text-sm text-slate-300">
+                      {profile.level ?? "Level not recorded"}
+                      {Object.values(profile.roster).filter(Boolean).length > 0
+                        ? " · " +
+                          Object.values(profile.roster)
+                            .filter(Boolean)
+                            .join(", ")
+                        : " · Players not recorded"}
+                    </p>
+                  )}
+                  <p className="text-sm text-slate-300">
+                    {opponent.archived_at ? "Archived" : "Active"} ·{" "}
+                    {opponent.games_played} game
+                    {Number(opponent.games_played) === 1 ? "" : "s"}
+                    {opponent.last_played_at
+                      ? ` · Last played ${new Date(opponent.last_played_at).toLocaleDateString()}`
+                      : ""}
+                  </p>
+                  <OpponentProfilePicker
+                    opponentId={opponent.id}
+                    initialQuery={opponent.display_name}
+                    canEdit={canEdit && !opponent.archived_at}
+                    onLinked={() => router.refresh()}
+                  />
+                </div>
+                {canEdit && seasonId && !opponent.archived_at && (
+                  <button
+                    className="btn-secondary"
+                    disabled={seasonArchived || editing !== null}
+                    onClick={(event) => {
+                      editingTrigger.current = event.currentTarget;
+                      setEditing(opponent);
+                      setSavedMessage("");
+                    }}
+                  >
+                    Edit
+                  </button>
+                )}
+                {canEdit && (
+                  <button
+                    className="btn-secondary"
+                    onClick={() =>
+                      void mutate(
+                        opponent.archived_at
+                          ? "restoreOpponent"
+                          : "archiveOpponent",
+                        { opponentId: opponent.id },
+                      )
+                    }
+                  >
+                    {opponent.archived_at ? "Restore" : "Archive"}
+                  </button>
+                )}
+              </li>
+            );
+          })}
         </ul>
       )}
     </div>

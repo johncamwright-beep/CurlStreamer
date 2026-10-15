@@ -1,6 +1,73 @@
 import { expect, test, type Page } from "@playwright/test";
 import { gameFixture, testGameId } from "../src/test/game-fixture";
 
+test("desktop workspace replaces manual link passing without automatic writes", async ({
+  page,
+}) => {
+  await page.addInitScript(() =>
+    Object.defineProperty(navigator, "userAgent", {
+      get: () => "CurlStreamerStudio/0.3",
+    }),
+  );
+  const { state } = await fixture(page);
+  await page.goto("/games/" + testGameId + "/studio");
+  await expect(
+    page.getByRole("heading", { name: "Recording on this PC" }),
+  ).toBeVisible();
+  await expect(
+    page.getByText("Use Start recording at the bottom of Studio.", {
+      exact: false,
+    }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Copy game link" }),
+  ).toHaveCount(0);
+  await expect(page.getByLabel("Game link", { exact: true })).toHaveCount(0);
+  expect(state.writes).toEqual([]);
+});
+
+test("Windows Studio setup is reachable and performs no automatic writes", async ({
+  page,
+}) => {
+  const { state } = await fixture(page);
+  await page.goto(`/games/${testGameId}`);
+  await page.getByRole("link", { name: "Set up Windows Studio" }).click();
+  await expect(
+    page.getByRole("heading", { name: "Windows Studio", exact: true }),
+  ).toBeVisible();
+  await expect(page.getByLabel("Game link", { exact: true })).toHaveValue(
+    `${new URL(page.url()).origin}/games/${testGameId}`,
+  );
+  await expect(
+    page.getByText("Direct-camera recording is not enabled", { exact: false }),
+  ).toBeVisible();
+  await expect(
+    page.getByText("YouTube pairing and streaming are not enabled", {
+      exact: false,
+    }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Copy game link" }),
+  ).toBeVisible();
+  expect(state.writes).toEqual([]);
+});
+
+test("scorer cannot access Studio setup controls", async ({ page }) => {
+  const { state } = await fixture(page, "scorer");
+  await page.goto(`/games/${testGameId}`);
+  await expect(
+    page.getByRole("link", { name: "Set up Windows Studio" }),
+  ).toHaveCount(0);
+  await page.goto(`/games/${testGameId}/studio`);
+  await expect(
+    page.getByText("Sign in as this game’s administrator", { exact: false }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Copy game link" }),
+  ).toHaveCount(0);
+  expect(state.writes).toEqual([]);
+});
+
 async function fixture(page: Page, role = "owner") {
   const game = gameFixture();
   game.config.homeName = "Northern Ontario Curling Club";
@@ -146,9 +213,8 @@ test("current game carries authoritative metadata across control scoring and pre
     `/broadcast/${testGameId}`,
   ]) {
     await page.goto(path);
-    if (path.startsWith("/broadcast/"))
-      await page.getByRole("button", { name: "Show game details" }).click();
-    await expect(page.getByLabel("Game schedule")).toContainText("6:30 PM");
+    if (!path.startsWith("/broadcast/"))
+      await expect(page.getByLabel("Game schedule")).toContainText("6:30 PM");
     await page.getByRole("button", { name: "Open navigation menu" }).click();
     const nav = page.getByRole("navigation", {
       name: "CurlStreamer navigation",
@@ -218,7 +284,7 @@ test("loading and failed reads have recovery without replaying invitation writes
   state.delayed = true;
   await page.goto(`/games/${testGameId}`);
   await expect(
-    page.getByRole("heading", { name: "Loading game control…" }),
+    page.getByRole("heading", { name: "Loading game…" }),
   ).toBeVisible();
   await expect(
     page.getByRole("link", { name: "Back to games", exact: true }),
@@ -237,10 +303,11 @@ test("loading and failed reads have recovery without replaying invitation writes
     "Invitation response uncertain",
   );
   const invitationWrites = state.writes.length;
-  expect(invitationWrites).toBe(4);
+  // A failed chooser request stops before issuing any individual invitations.
+  expect(invitationWrites).toBe(1);
   state.failure = true;
   await expect(
-    page.getByRole("heading", { name: "Game control unavailable" }),
+    page.getByRole("heading", { name: "Game unavailable" }),
   ).toBeVisible();
   await page.screenshot({
     path: info.outputPath(`game-control-error-${info.project.name}.png`),
@@ -260,7 +327,7 @@ test("loading and failed reads have recovery without replaying invitation writes
   await expect(page.getByTestId("broadcast-canvas")).toHaveCount(0);
   state.unreadable = false;
   await page.getByRole("button", { name: "Try again", exact: true }).click();
-  await expect(page.getByTestId("broadcast-canvas")).toBeVisible();
+  await expect(page.getByTestId("broadcast-visible-wrapper")).toBeVisible();
 });
 
 test("unavailable schedule preserves clearly labeled same-game device context", async ({
@@ -361,12 +428,9 @@ test("scoring read retry refreshes unavailable schedule and preview details can 
   );
   await page.goto(`/broadcast/${testGameId}`);
   await expect(page.getByLabel("Game schedule")).toHaveCount(0);
-  await page.getByRole("button", { name: "Show game details" }).click();
-  await expect(page.getByLabel("Game schedule")).toContainText(
-    "America/Toronto",
-  );
-  await page.getByRole("button", { name: "Hide game details" }).click();
-  await expect(page.getByLabel("Game schedule")).toHaveCount(0);
+  await expect(
+    page.getByRole("button", { name: "Show game details" }),
+  ).toHaveCount(0);
   await expect(page.getByTestId("broadcast-fixed-canvas")).toHaveCSS(
     "width",
     "1920px",
@@ -427,4 +491,25 @@ test("a hung initial context read does not block ordinary polling or restore sta
   } finally {
     release();
   }
+});
+
+test("Studio opens a TBD game in Game Scoring instead of the legacy lobby", async ({
+  page,
+}) => {
+  await page.addInitScript(() =>
+    Object.defineProperty(navigator, "userAgent", {
+      value: "CurlStreamerStudio/0.3",
+    }),
+  );
+  const { game, state } = await fixture(page);
+  game.config.awayName = "Opponent TBD";
+  await page.goto("/games/" + testGameId);
+  await expect(page).toHaveURL(new RegExp("/score/" + testGameId));
+  await expect(
+    page.getByRole("link", { name: "Assign opponent", exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "Device readiness" }),
+  ).toHaveCount(0);
+  expect(state.writes).toEqual([]);
 });

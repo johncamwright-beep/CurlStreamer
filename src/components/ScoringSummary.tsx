@@ -1,8 +1,19 @@
 import { deriveScore } from "@/lib/scoring";
 import type { GameState } from "@/lib/types";
 import { HammerIcon } from "./HammerIcon";
+import type { ReactNode } from "react";
 
-export function ScoringSummary({ game }: { game: GameState }) {
+export function ScoringSummary({
+  game,
+  actions,
+  initialHammer,
+  expanded = false,
+}: {
+  game: GameState;
+  actions?: ReactNode;
+  expanded?: boolean;
+  initialHammer?: { disabled: boolean; select(side: "home" | "away"): void };
+}) {
   const score = deriveScore(game);
   const endCount = Math.max(game.config.scheduledEnds, score.currentEnd);
   return (
@@ -12,7 +23,13 @@ export function ScoringSummary({ game }: { game: GameState }) {
     >
       <div className="scoring-section-heading">
         <h2 id="match-score-heading">Match score</h2>
-        <span className="scoring-badge">End {score.currentEnd}</span>
+        <div className="flex items-center gap-2">
+          <span className="scoring-badge">End {score.currentEnd}</span>
+          {!score.hammer && initialHammer && (
+            <span className="text-xs text-slate-300">Choose hammer ↓</span>
+          )}
+          {actions}
+        </div>
       </div>
       {(["home", "away"] as const).map((side) => (
         <div className="scoring-team-row" key={side}>
@@ -29,6 +46,17 @@ export function ScoringSummary({ game }: { game: GameState }) {
               label={`${game.config[`${side}Name`]}: Last stone advantage (Hammer)`}
             />
           )}
+          {!score.hammer && initialHammer && (
+            <button
+              className="scoring-initial-hammer"
+              disabled={initialHammer.disabled}
+              aria-label={`Give ${game.config[`${side}Name`]} hammer in End 1`}
+              title="Choose starting hammer"
+              onClick={() => initialHammer.select(side)}
+            >
+              <HammerIcon label="Choose hammer" />
+            </button>
+          )}
           <strong
             className="scoring-total"
             aria-label={`${game.config[`${side}Name`]} total: ${score.totals[side]}`}
@@ -37,8 +65,12 @@ export function ScoringSummary({ game }: { game: GameState }) {
           </strong>
         </div>
       ))}
-      <details className="scoring-history-details">
-        <summary>End-by-end score</summary>
+      <details className="scoring-history-details" open={expanded || undefined}>
+        <summary
+          onClick={expanded ? (event) => event.preventDefault() : undefined}
+        >
+          End-by-end score
+        </summary>
         <div
           className="scoring-history"
           role="region"
@@ -55,6 +87,7 @@ export function ScoringSummary({ game }: { game: GameState }) {
                     {i + 1}
                   </th>
                 ))}
+                <th scope="col">Total</th>
               </tr>
             </thead>
             <tbody>
@@ -73,6 +106,9 @@ export function ScoringSummary({ game }: { game: GameState }) {
                       </td>
                     );
                   })}
+                  <td>
+                    <strong>{score.totals[side]}</strong>
+                  </td>
                 </tr>
               ))}
             </tbody>

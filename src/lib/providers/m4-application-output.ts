@@ -1,0 +1,105 @@
+// Node-only coordinator. Native launcher/bootstrap and OBS output-start UI are separate.
+import type { M4DesktopClient } from "./m4-desktop-client";
+import type { M4NativePipeClient } from "./m4-native-pipe";
+const fail = () => new Error("m4_application_output_unavailable");
+
+/** Connects once-only server handoff to the native pipe. Calls never retry target
+ * delivery. The native process independently enforces the last acknowledged lease. */
+export class M4ApplicationOutput {
+  #started = false;
+  #running = false;
+  #stopping = false;
+  #stop?: Promise<ReturnType<M4ApplicationOutput["snapshot"]>>;
+  #heartbeat?: Promise<ReturnType<M4ApplicationOutput["snapshot"]>>;
+  constructor(
+    private desktop: M4DesktopClient,
+    private native: Pick<
+      M4NativePipeClient,
+      "arm" | "renew" | "stop" | "snapshot"
+    > &
+      Partial<Pick<M4NativePipeClient, "observe" | "supportsObservations">>,
+  ) {}
+  snapshot() {
+    return { desktop: this.desktop.snapshot(), native: this.native.snapshot() };
+  }
+  async start(intentId: string) {
+    if (this.#started || this.#stopping) throw fail();
+    this.#started = true;
+    try {
+      await this.desktop.handoffOutput(intentId, async (target, remaining) => {
+        if (this.#stopping) throw fail();
+        await this.native.arm(target, remaining);
+      });
+      if (this.#stopping) throw fail();
+      this.#running = true;
+      return this.snapshot();
+    } catch {
+      await this.stop().catch(() => undefined);
+      throw fail();
+    }
+  }
+  heartbeat() {
+    if (!this.#running || this.#stopping) return Promise.reject(fail());
+    if (this.#heartbeat) return this.#heartbeat;
+    this.#heartbeat = this.#renew().finally(() => {
+      this.#heartbeat = undefined;
+    });
+    return this.#heartbeat;
+  }
+  async #renew() {
+    try {
+      const response = await this.desktop.heartbeat();
+      if (
+        response.desiredAction !== "wait" ||
+        !response.authorized ||
+        this.#stopping
+      ) {
+        await this.stop();
+        return this.snapshot();
+      }
+      // Feed the short native watchdog from the last verified server deadline.
+      // A transport failure cannot extend that deadline; remainingLeaseMs is
+      // capped at 30 seconds and shrinks to zero as the acknowledged grant ends.
+      // This permits temporary network loss while still stopping if the local
+      // controller dies, the grant expires, or the server explicitly revokes it.
+      await this.native.renew(this.desktop.remainingLeaseMs());
+      return { ...this.snapshot(), leaseRenewed: response.leaseRenewed };
+    } catch {
+      await this.stop().catch(() => undefined);
+      throw fail();
+    }
+  }
+  stop() {
+    this.#stopping = true;
+    this.#running = false;
+    this.#stop ??= this.#cleanup();
+    return this.#stop;
+  }
+  async #cleanup() {
+    if (this.native.supportsObservations === true) {
+      if (!this.native.observe) throw fail();
+      // A database stopped receipt is used to release provider cleanup. It must
+      // follow actual encoder stop, rather than the private authority STOP ACK.
+      try {
+        await this.native.stop();
+        const until = performance.now() + 4000;
+        for (;;) {
+          const observation = await this.native.observe();
+          if (observation.state === "stopped") break;
+          if (performance.now() >= until) throw fail();
+          await new Promise((resolve) => setTimeout(resolve, 50));
+        }
+        await this.desktop.stop();
+        return this.snapshot();
+      } catch {
+        throw fail();
+      }
+    }
+    const results = await Promise.allSettled([
+      this.native.stop(),
+      this.desktop.stop(),
+    ]);
+    if (results.some((result) => result.status === "rejected")) throw fail();
+    return this.snapshot();
+  }
+}

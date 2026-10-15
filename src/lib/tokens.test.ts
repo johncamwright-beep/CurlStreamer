@@ -3,10 +3,31 @@ import {
   issueOrganizerToken,
   issueParticipantToken,
   issueRoleToken,
+  issueCameraReconnectToken,
   readAccessToken,
 } from "./tokens";
 
 describe("game access lifecycle", () => {
+  it("binds a reconnect invitation to one existing device for ten minutes", async () => {
+    const claims = await readAccessToken(
+      await issueCameraReconnectToken(
+        "game-1",
+        "camera-away",
+        "renewal-id",
+        "original-device",
+        3,
+      ),
+    );
+    expect(claims).toMatchObject({
+      purpose: "invitation",
+      gameId: "game-1",
+      role: "camera-away",
+      deviceId: "original-device",
+      assignmentGeneration: 3,
+      jti: "renewal-id",
+    });
+    expect(claims.exp! - claims.iat!).toBe(600);
+  });
   it("exchanges brief invitations for game-length participant sessions", async () => {
     const invitation = await issueRoleToken(
       "game-1",

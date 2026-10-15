@@ -1,0 +1,1451 @@
+"use client";
+import {
+  difficultyRecords,
+  withDifficulty,
+  difficultySummary,
+  difficultyDescription,
+} from "@/lib/curlcoach/difficulty";
+import {
+  withBroadcastReview,
+  withRecordedReviewTime,
+  type BroadcastReview,
+} from "@/lib/curlcoach/review";
+import {
+  useCallback,
+  useId,
+  useEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
+import {
+  currentShots,
+  deficiencies,
+  lines,
+  releases,
+  technicals,
+  exclusions,
+  executions,
+  report,
+  reviews,
+  roster,
+  shotTypes,
+  turns,
+  type Shot,
+  type State,
+} from "@/lib/curlcoach/model";
+import "./coach.css";
+import { nextTurn } from "@/lib/curlcoach/next-turn";
+import { resolvedLineup, rockNumber } from "@/lib/curlcoach/lineup";
+import LineupDialog from "./LineupDialog";
+import ReviewSummary from "./ReviewSummary";
+import type { ReviewCorrection } from "@/lib/curlcoach/flagged-shots";
+import {
+  readEnhancedDraft,
+  writeEnhancedDraft,
+  type EnhancedDraft,
+} from "@/lib/curlcoach/enhanced-drafts";
+import {
+  emptySupplement,
+  captureError,
+  supplementSchema,
+  type Supplement,
+} from "@/lib/curlcoach/enhanced-catalog";
+import {
+  ShotTypeEntry,
+  WeightEntry,
+  DifficultyEntry,
+  ResultsEntry,
+} from "./SubtypeEntry";
+import EntryOverlay from "./EntryOverlay";
+import {
+  EnhancedFields,
+  GameContext,
+  useEnhancedGame,
+  useMetrics,
+} from "./EnhancedMetrics";
+
+export function turnLabel(value: string) {
+  const [turn, target, direction] = value.split(" ");
+  return `${value} — ${turn === "CW" ? "Clockwise" : "Counterclockwise"}; broom ${target === "C" ? "inside" : "outside"} four-foot lines; ${direction === "IO" ? "away from" : "towards"} centre`;
+}
+
+const blank: Shot = {
+  playerId: "lead",
+  position: "Lead",
+  end: 1,
+  stone: 1,
+  type: null,
+  turn: null,
+  execution: null,
+  grade: null,
+  deficiency: null,
+  review: null,
+  excluded: null,
+  note: "",
+};
+function blankDraft(playerId: string): Shot {
+  return { ...blank, playerId };
+}
+function inferredDraft(
+  state: State | null,
+  players: readonly NonNullable<State["roster"]>[number][],
+): Shot {
+  const shots = currentShots(state?.events ?? []);
+  const latest = [...shots].sort(
+    (a, b) => b.end - a.end || rockNumber(b) - rockNumber(a),
+  )[0];
+  const lineup = resolvedLineup(players, state?.lineup);
+  return latest
+    ? (nextTurn(latest, shots, players, lineup) ?? latest)
+    : blankDraft(lineup[0] ?? "");
+}
+export default function CoachLab({
+  unlocked,
+  gamePicker,
+  context,
+  resume,
+  onResume,
+  onTrackingProgress,
+}: {
+  unlocked: boolean;
+  gamePicker?: ReactNode;
+  resume?: { draft: Shot; editing: string | null; current?: Shot };
+  onResume?: (value: {
+    draft: Shot;
+    editing: string | null;
+    current?: Shot;
+  }) => void;
+  onTrackingProgress?: (value: {
+    draft: Shot;
+    editing: string | null;
+    current?: Shot;
+    stateRevision: number;
+  }) => void;
+  context?: {
+    source: "sample" | "streamer";
+    label?: string;
+    eventId: string;
+    gameId: string;
+    readOnlyReason?: string | null;
+    roster?: State["roster"];
+    initialState: State;
+    broadcastReview?: BroadcastReview;
+    reviewCorrections?: ReviewCorrection[];
+    onSaved: (state: State) => void;
+  };
+}) {
+  const [open, setOpen] = useState(unlocked);
+  const [state, setState] = useState<State | null>(
+    context?.initialState ?? null,
+  );
+  const latestState = useRef(state);
+  useEffect(() => {
+    latestState.current = state;
+  }, [state]);
+  useEffect(() => {
+    if (context) setState(context.initialState);
+  }, [context?.initialState]);
+  const initialPlayers =
+    context?.initialState.roster ?? context?.roster ?? roster;
+  const [draft, setDraft] = useState<Shot>(
+    () =>
+      resume?.draft ??
+      inferredDraft(context?.initialState ?? null, initialPlayers),
+  );
+  const [editing, setEditing] = useState<string | null>(
+    resume?.editing ?? null,
+  );
+  const metrics = useMetrics();
+  const enhancedMode =
+    metrics.ready && metrics.preferences.mode === "enhanced" && !!context;
+  const enhancedData = useEnhancedGame(
+    context?.gameId,
+    context?.eventId,
+    metrics.ready && !!context,
+  );
+  const enhancedRecord = enhancedData.documents.find(
+    (d) => d.kind === "supplement" && d.shotId === editing,
+  );
+  const enhancedKey = `shot-enhanced-draft:${metrics.scopeKey}:${context?.gameId}:${editing ?? `${draft.end}:${draft.position}:${draft.stone}`}`;
+  const [enhancedDraft, setEnhancedDraft] = useState<{
+    key: string;
+    value: Supplement;
+    revision: number;
+  } | null>(null);
+  const enhancedFallback = (): EnhancedDraft => {
+    const contextRecord = enhancedData.documents.find(
+      (d) => d.kind === "context",
+    );
+    const value = enhancedRecord
+      ? (enhancedRecord.value as Supplement)
+      : {
+          ...emptySupplement(),
+          definitionRevision: metrics.revision,
+          contextRevision: contextRecord?.revision ?? 0,
+          contextSnapshot:
+            (contextRecord?.value as Supplement["contextSnapshot"]) ?? {},
+        };
+    const fallback = { value, revision: enhancedRecord?.revision ?? 0 };
+    if (typeof window === "undefined") return fallback;
+    try {
+      return readEnhancedDraft(sessionStorage, enhancedKey, fallback);
+    } catch {
+      return fallback;
+    }
+  };
+  const enhancedEntry =
+    enhancedDraft?.key === enhancedKey ? enhancedDraft : enhancedFallback();
+  const enhanced = enhancedEntry.value;
+  function changeEnhanced(value: Supplement) {
+    const next = { value, revision: enhancedEntry.revision };
+    setEnhancedDraft({ key: enhancedKey, ...next });
+    try {
+      writeEnhancedDraft(sessionStorage, enhancedKey, next);
+    } catch {
+      /* In-memory draft remains. */
+    }
+  }
+  const pendingShot = useRef<{
+    signature: string;
+    requestId: string;
+    shotId: string;
+  } | null>(null);
+  const currentDraft = useRef(resume?.current ?? draft);
+  const deliberateDraftChange = useRef(false);
+  useEffect(() => {
+    onResume?.({
+      draft,
+      editing,
+      current: editing ? currentDraft.current : draft,
+    });
+  }, [draft, editing, onResume]);
+  useEffect(() => {
+    if (!deliberateDraftChange.current) return;
+    deliberateDraftChange.current = false;
+    if (!editing && state)
+      onTrackingProgress?.({
+        draft,
+        editing: null,
+        current: draft,
+        stateRevision: state.revision ?? state.events.length,
+      });
+  }, [draft, editing, onTrackingProgress, state]);
+  const entry = useRef<HTMLElement>(null);
+  useEffect(() => {
+    if (!editing) currentDraft.current = draft;
+  }, [draft, editing]);
+  function goToCurrent() {
+    setEditing(null);
+    setDraft(currentDraft.current);
+    setEntryTab("Shot");
+    entry.current?.scrollIntoView({ block: "start", behavior: "smooth" });
+  }
+  const tabbedEntry = true;
+  const [mobileEntry, setMobileEntry] = useState(false);
+  useEffect(() => {
+    const query = window.matchMedia("(max-width: 600px)");
+    const update = () => setMobileEntry(query.matches);
+    update();
+    query.addEventListener("change", update);
+    return () => query.removeEventListener("change", update);
+  }, []);
+  const [entryTab, setEntryTab] = useState("Shot");
+  const entryId = useId();
+  const entryTabs = ["Shot", "Execution", "Technical", "Notes"];
+  const [message, setStatusMessage] = useState("");
+  const [messageIsError, setMessageIsError] = useState(false);
+  function setMessage(value: string) {
+    setMessageIsError(false);
+    setStatusMessage(value);
+  }
+  function setFailure(value: string) {
+    setMessageIsError(true);
+    setStatusMessage(value);
+  }
+  const [busy, setBusy] = useState(false);
+  const [lineupOpen, setLineupOpen] = useState(false);
+  const pendingLineup = useRef<{
+    signature: string;
+    requestId: string;
+    expectedRevision: number;
+  } | null>(null);
+  const players = state?.roster ?? context?.roster ?? roster;
+  const lineup = resolvedLineup(players, state?.lineup);
+  const closed = state?.status === "closed" || !!context?.readOnlyReason;
+  const rosterReady = players.length > 0;
+  const started =
+    !context || !!state?.lineupEvents?.length || !!state?.events.length;
+  useEffect(() => {
+    if (rosterReady && !players.some((player) => player.id === draft.playerId))
+      setDraft((current) => ({ ...current, playerId: players[0].id }));
+  }, [draft.playerId, players, rosterReady]);
+  const load = useCallback(async () => {
+    try {
+      const response = await fetch(
+        context
+          ? `/api/curlcoach/workspace?source=${context.source}&eventId=${encodeURIComponent(context.eventId)}`
+          : "/api/curlcoach/game",
+        { cache: "no-store" },
+      );
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error);
+      setState(
+        context
+          ? data.event.games.find(
+              (game: { id: string }) => game.id === context.gameId,
+            )?.state
+          : data,
+      );
+    } catch (error) {
+      setFailure(
+        error instanceof Error ? error.message : "Cannot reach the local lab.",
+      );
+    }
+  }, [context]);
+  useEffect(() => {
+    if (open && !context) void load();
+  }, [open, load, context]);
+  async function unlock(form: FormData) {
+    setBusy(true);
+    try {
+      const response = await fetch("/api/curlcoach/session", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ key: form.get("key") }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error);
+      setOpen(true);
+      setMessage("");
+    } catch (error) {
+      setFailure(error instanceof Error ? error.message : "Unable to unlock.");
+    } finally {
+      setBusy(false);
+    }
+  }
+  async function save(shot: Shot | null, id: string, advance = false) {
+    if (!state || closed || !started) return;
+    setBusy(true);
+    try {
+      const includeEnhanced =
+        !!context &&
+        (enhancedMode || enhancedDraft?.key === enhancedKey) &&
+        shot !== null &&
+        shot === draft;
+      if (includeEnhanced && !enhancedData.ready)
+        throw new Error(
+          "Wait for Enhanced observations to load, or reload the event.",
+        );
+      const supplement = includeEnhanced
+        ? supplementSchema.parse({
+            ...enhanced,
+            values: {
+              ...enhanced.values,
+              source:
+                enhanced.values.source ??
+                (editing ? "coach_retrospective_review" : "live_entry"),
+            },
+          })
+        : undefined;
+      const signature = JSON.stringify({
+        shot,
+        editing: editing ?? (shot === draft ? "new" : id),
+        revision: state.revision ?? state.events.length,
+        supplement,
+        enhancedRevision: enhancedEntry.revision,
+      });
+      if (pendingShot.current?.signature !== signature)
+        pendingShot.current = {
+          signature,
+          requestId: crypto.randomUUID(),
+          shotId: id,
+        };
+      const command = {
+        requestId: pendingShot.current.requestId,
+        expectedRevision: state.revision ?? state.events.length,
+        shotId: pendingShot.current.shotId,
+        shot,
+      };
+      const response = await fetch(
+        context ? "/api/curlcoach/workspace" : "/api/curlcoach/game",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(
+            context
+              ? {
+                  source: context.source,
+                  eventId: context.eventId,
+                  gameId: context.gameId,
+                  command,
+                  ...(supplement
+                    ? {
+                        enhanced: {
+                          expectedRevision: enhancedEntry.revision,
+                          supplement,
+                        },
+                      }
+                    : {}),
+                }
+              : command,
+          ),
+        },
+      );
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error);
+      pendingShot.current = null;
+      if (includeEnhanced) {
+        try {
+          sessionStorage.removeItem(enhancedKey);
+        } catch {
+          /* Optional storage. */
+        }
+        setEnhancedDraft(null);
+        await enhancedData.reload();
+      }
+      setState(data);
+      context?.onSaved(data);
+      setEditing(null);
+      setMessage(
+        shot
+          ? "Attempt saved. Report updated."
+          : "Attempt removed by an audited revision.",
+      );
+      if (shot) setEntryTab("Shot");
+      if (shot && advance) {
+        const next = nextTurn(
+          shot,
+          currentShots(data.events),
+          data.roster ?? players,
+          resolvedLineup(data.roster ?? players, data.lineup),
+        );
+        if (next) {
+          const existing = currentShots(data.events).find(
+            (attempt) =>
+              attempt.end === next.end &&
+              attempt.position === next.position &&
+              attempt.stone === next.stone,
+          );
+          if (existing) {
+            const { id: nextId, ...values } = existing;
+            setDraft(values);
+            setEditing(nextId);
+            setMessage(
+              `Saved. Next turn already recorded: end ${next.end}, ${next.position}, stone ${next.stone}. Review or correct it.`,
+            );
+          } else {
+            setDraft(next);
+            setMessage(
+              `Saved. Next turn: end ${next.end}, ${next.position}, stone ${next.stone}.`,
+            );
+          }
+        }
+      } else if (editing) setDraft(currentDraft.current);
+      else if (shot)
+        setDraft(
+          nextTurn(
+            shot,
+            currentShots(data.events),
+            data.roster ?? players,
+            resolvedLineup(data.roster ?? players, data.lineup),
+          ) ?? shot,
+        );
+      if (shot && !editing) {
+        const current =
+          nextTurn(
+            shot,
+            currentShots(data.events),
+            data.roster ?? players,
+            resolvedLineup(data.roster ?? players, data.lineup),
+          ) ?? shot;
+        currentDraft.current = current;
+        onTrackingProgress?.({
+          draft: current,
+          editing: null,
+          current,
+          stateRevision: data.revision ?? data.events.length,
+        });
+      }
+    } catch (error) {
+      setFailure(
+        captureError(error, "Save not confirmed. Reload before retrying."),
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
+  async function saveLineup(nextLineup: string[]) {
+    if (!context || !state) throw new Error("Open a game to set its lineup.");
+    const signature = JSON.stringify(nextLineup);
+    if (
+      pendingLineup.current &&
+      (state.revision ?? state.events.length) !==
+        pendingLineup.current.expectedRevision &&
+      !state.lineupEvents?.some(
+        (event) => event.requestId === pendingLineup.current?.requestId,
+      )
+    )
+      pendingLineup.current = null;
+    if (pendingLineup.current?.signature !== signature)
+      pendingLineup.current = {
+        signature,
+        requestId: crypto.randomUUID(),
+        expectedRevision: state.revision ?? state.events.length,
+      };
+    const command = pendingLineup.current;
+    const response = await fetch("/api/curlcoach/workspace", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        source: context.source,
+        eventId: context.eventId,
+        gameId: context.gameId,
+        action: "set-lineup",
+        lineup: nextLineup,
+        requestId: command.requestId,
+        expectedRevision: command.expectedRevision,
+      }),
+    });
+    const data = await response.json();
+    if (!response.ok)
+      throw new Error(data.error ?? "Lineup could not be saved.");
+    pendingLineup.current = null;
+    // A durable retry returns its original committed snapshot. A refresh or
+    // another tab may already have advanced this private session beyond it.
+    const current = latestState.current ?? state;
+    const confirmed: State =
+      (current.revision ?? current.events.length) >
+      (data.revision ?? data.events.length)
+        ? current
+        : data;
+    const confirmedLineup = resolvedLineup(
+      confirmed.roster ?? players,
+      confirmed.lineup,
+    );
+    latestState.current = confirmed;
+    setState(confirmed);
+    context.onSaved(confirmed);
+    currentDraft.current = {
+      ...currentDraft.current,
+      playerId: confirmedLineup[rockNumber(currentDraft.current) - 1],
+    };
+    if (!editing) {
+      const updated = {
+        ...draft,
+        playerId: confirmedLineup[rockNumber(draft) - 1],
+      };
+      setDraft(updated);
+      currentDraft.current = updated;
+    }
+    onTrackingProgress?.({
+      draft: currentDraft.current,
+      editing: null,
+      current: currentDraft.current,
+      stateRevision: confirmed.revision ?? confirmed.events.length,
+    });
+    setLineupOpen(false);
+    setMessage(
+      "Game lineup saved. Recorded attempts keep their original player.",
+    );
+  }
+  async function lifecycle(action: "finish" | "reopen") {
+    if (!context || !state) return;
+    setBusy(true);
+    try {
+      const response = await fetch("/api/curlcoach/workspace", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          source: context.source,
+          eventId: context.eventId,
+          gameId: context.gameId,
+          action,
+          requestId: crypto.randomUUID(),
+          expectedRevision: state.revision ?? state.events.length,
+        }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error);
+      setState(data);
+      context.onSaved(data);
+      setMessage(
+        action === "finish"
+          ? "Private coaching session closed. Shared game scoring continues normally."
+          : "Private coaching session reopened.",
+      );
+    } catch (error) {
+      setFailure(
+        error instanceof Error
+          ? error.message
+          : "Session update was not confirmed.",
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
+  function choose(
+    field:
+      | "position"
+      | "type"
+      | "turn"
+      | "execution"
+      | "deficiency"
+      | "line"
+      | "release"
+      | "technical"
+      | "review",
+    label: string,
+    options: readonly string[],
+  ) {
+    return (
+      <label>
+        {label}
+        <select
+          aria-label={label}
+          value={draft[field] ?? ""}
+          onChange={(e) =>
+            setDraft({
+              ...draft,
+              [field]: e.target.value || null,
+              ...(field === "review" && e.target.value
+                ? {
+                    flagged: true,
+                    flaggedAt: draft.flaggedAt ?? new Date().toISOString(),
+                  }
+                : {}),
+              ...(field === "position"
+                ? {
+                    playerId:
+                      lineup[
+                        rockNumber({
+                          position: e.target.value as Shot["position"],
+                          stone: draft.stone,
+                        }) - 1
+                      ] ?? draft.playerId,
+                  }
+                : {}),
+            })
+          }
+        >
+          {field !== "position" && <option value="">Not recorded</option>}
+          {options.map((value) => (
+            <option key={value} value={value}>
+              {field === "turn"
+                ? tabbedEntry
+                  ? value
+                  : turnLabel(value)
+                : value}
+            </option>
+          ))}
+        </select>
+      </label>
+    );
+  }
+  const shots = state ? currentShots(state.events) : [];
+  const team = report(shots);
+  const difficultyRows = state
+    ? difficultyRecords(state, enhancedData.documents)
+    : [];
+  const classifiedShots = shots.map((s) =>
+    withDifficulty(s, difficultyRows, enhancedData.ready),
+  );
+  const shooterShots = shots.filter((s) => s.playerId === draft.playerId);
+  const shooter = report(shooterShots);
+  const shooterWeighted = difficultySummary(
+    classifiedShots.filter((s) => s.playerId === draft.playerId),
+  );
+  const percentage = (value: number | null) =>
+    value === null ? "—" : value.toFixed(1) + "%";
+  const lastRevision = new Map(
+    state?.events.map((event, index) => [event.shotId, index]),
+  );
+  const recentShots = [...shots].sort(
+    (a, b) => (lastRevision.get(b.id) ?? 0) - (lastRevision.get(a.id) ?? 0),
+  );
+  const sessionActions = (
+    <>
+      {" "}
+      {context && (
+        <button
+          disabled={busy || closed || !rosterReady}
+          onClick={() => setLineupOpen(true)}
+        >
+          Edit lineup
+        </button>
+      )}
+      <button
+        disabled={busy || !recentShots.length}
+        onClick={() => {
+          const shot = recentShots[0];
+          if (!shot) return;
+          const { id, ...value } = shot;
+          setDraft(value);
+          setEditing(id);
+          setMessage("");
+          entry.current?.scrollIntoView({ block: "start", behavior: "smooth" });
+        }}
+      >
+        Resume tracking
+      </button>
+      <EntryOverlay title="Recorded shots">
+        {!shots.length && (
+          <p>
+            No attempts yet. Ungraded or unthrown stones are never treated as
+            misses.
+          </p>
+        )}
+        {recentShots.map((shot) => (
+          <article className="coach-attempt" key={shot.id}>
+            <div>
+              <strong>
+                End {shot.end} · {shot.position} · Stone {shot.stone}
+              </strong>
+              <p>
+                {players.find((p) => p.id === shot.playerId)?.name ??
+                  shot.playerId}{" "}
+                · {shot.type ?? "Type not recorded"} ·{" "}
+                {shot.excluded ??
+                  (shot.grade === null ? "Not graded" : `${shot.grade}/5`)}
+              </p>
+              {shot.note && <p>{shot.note}</p>}
+              {(shot.flagged ?? !!shot.review) && <p>⚑ Flagged for review</p>}
+            </div>
+            <button
+              disabled={busy || closed}
+              onClick={(event) => {
+                event.currentTarget.closest("dialog")?.close();
+                const { id, ...value } = shot;
+                setEditing(id);
+                setDraft(value);
+                setMessage(
+                  "Editing selected attempt above. Previous values remain in history.",
+                );
+              }}
+            >
+              Edit
+            </button>
+            <button
+              disabled={busy || closed}
+              onClick={() => void save(null, shot.id)}
+            >
+              Remove attempt
+            </button>
+          </article>
+        ))}
+      </EntryOverlay>
+      <EntryOverlay title="Flagged shots">
+        <ReviewSummary
+          shots={shots.map((shot) => {
+            const correction = context?.reviewCorrections?.find(
+              (c) => c.shotId === shot.id,
+            );
+            if (correction)
+              return {
+                ...shot,
+                note: correction.note,
+                videoReview: correction.video,
+              };
+            return withBroadcastReview(
+              withRecordedReviewTime(shot, state?.events ?? []),
+              context?.broadcastReview,
+            );
+          })}
+          players={players}
+        />
+      </EntryOverlay>
+      {context?.source === "streamer" && !closed && (
+        <button
+          className="coach-finish"
+          aria-label="Finish private coaching session"
+          title="Finish private coaching session"
+          disabled={busy}
+          onClick={() => void lifecycle("finish")}
+        >
+          Finish
+        </button>
+      )}
+    </>
+  );
+  function entryGroup(title: string, children: ReactNode) {
+    return (
+      <section
+        className="coach-entry-section"
+        aria-label={title}
+        role={tabbedEntry ? "tabpanel" : undefined}
+        id={`${entryId}-${title === "Shot selection" ? "Shot" : title === "Technical observation" ? "Technical" : title}-panel`}
+        aria-labelledby={
+          tabbedEntry
+            ? `${entryId}-${title === "Shot selection" ? "Shot" : title === "Technical observation" ? "Technical" : title}-tab`
+            : undefined
+        }
+        hidden={
+          tabbedEntry &&
+          entryTab !==
+            (title === "Shot selection"
+              ? "Shot"
+              : title === "Technical observation"
+                ? "Technical"
+                : title)
+        }
+      >
+        <h3>{title}</h3>
+        <div className="coach-entry-grid">{children}</div>
+      </section>
+    );
+  }
+  return (
+    <section className={context ? "coach-lab coach-scoring" : "coach-lab"}>
+      {lineupOpen && (
+        <LineupDialog
+          starting={!started}
+          players={players}
+          lineup={state?.lineup}
+          onSave={saveLineup}
+          onCancel={() => setLineupOpen(false)}
+        />
+      )}
+      {!context && (
+        <header>
+          <p className="coach-eyebrow">SHOT TRACKER / LOCAL LAB</p>
+          <h1>Shot Tracker</h1>
+          <p>
+            Synthetic practice game · Four-person curling · Provisional tracker
+            profile
+          </p>
+          <p className="coach-notice">
+            Mock coaching data only. This lab does not change the scoreboard,
+            control broadcast audio, or connect to a shared database.
+          </p>
+        </header>
+      )}
+      <p
+        role="status"
+        aria-live="polite"
+        className={messageIsError ? "coach-save-error" : "sr-only"}
+      >
+        {message}
+      </p>
+      {(metrics.error || enhancedData.error) && (
+        <p role="alert">
+          {metrics.error || enhancedData.error} Standard-only charting remains
+          available in Standard mode; supplemental fields wait for observations
+          to load.{" "}
+          <button
+            onClick={() =>
+              void (metrics.error ? metrics.reload() : enhancedData.reload())
+            }
+          >
+            Retry observations
+          </button>
+        </p>
+      )}
+      {!context && (
+        <div className="coach-session-actions">{sessionActions}</div>
+      )}
+      {context && (
+        <header className="coach-panel">
+          <h2>{context.label ?? "Selected game"}</h2>
+          <EntryOverlay title="Game controls" inline={!mobileEntry}>
+            {gamePicker}
+            {!closed && started && (
+              <div
+                className="coach-session-actions"
+                role="group"
+                aria-label="Game actions"
+              >
+                {sessionActions}
+              </div>
+            )}
+          </EntryOverlay>
+        </header>
+      )}
+      {!open ? (
+        <form action={unlock} className="coach-panel">
+          <h2>Unlock your local session</h2>
+          <label>
+            Local lab key
+            <input name="key" type="password" required autoComplete="off" />
+          </label>
+          <button disabled={busy}>Unlock lab</button>
+        </form>
+      ) : closed ? (
+        <section className="coach-panel" aria-label="Closed coaching session">
+          <h2>Game closed</h2>
+          <p>
+            {context?.readOnlyReason ?? "This game is closed for charting."}
+          </p>
+          {context && (
+            <button disabled={busy} onClick={() => void lifecycle("reopen")}>
+              Reopen
+            </button>
+          )}
+        </section>
+      ) : !started ? (
+        <section className="coach-panel">
+          <h2>Ready to chart this game</h2>
+          <p>Confirm the lineup before tracking the first rock.</p>
+          {!rosterReady && (
+            <p>
+              Add your team roster before charting attempts.{" "}
+              <a href="/account">Open Account team setup</a>
+            </p>
+          )}
+          <button
+            disabled={busy || !rosterReady}
+            onClick={() => setLineupOpen(true)}
+          >
+            Start Charting
+          </button>
+        </section>
+      ) : (
+        <>
+          <div className="coach-columns">
+            <section ref={entry} className="coach-panel tracker-entry-panel">
+              {editing && <h2>Correct attempt</h2>}
+              <form
+                className="tracker-entry-form"
+                onChangeCapture={() => {
+                  deliberateDraftChange.current = true;
+                }}
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  const advance = !editing;
+                  void save(draft, editing ?? crypto.randomUUID(), advance);
+                }}
+              >
+                <fieldset
+                  disabled={
+                    busy ||
+                    !state ||
+                    closed ||
+                    !rosterReady ||
+                    (enhancedMode && !enhancedData.ready)
+                  }
+                >
+                  <div className="tracker-entry-layout">
+                    <section
+                      className="tracker-context-card"
+                      aria-label="Current shot context"
+                    >
+                      <h3>
+                        {players.find((p) => p.id === draft.playerId)?.name} —{" "}
+                        {draft.position}
+                      </h3>
+                      <p>
+                        End {draft.end} · Rock {draft.stone}
+                      </p>
+                      <dl className="tracker-shooting-stats">
+                        <div>
+                          <dt>{tabbedEntry ? "Player" : "Player shooting"}</dt>
+                          <dd>{percentage(shooter.percent)}</dd>
+                        </div>
+                        <div>
+                          <dt>
+                            {tabbedEntry
+                              ? "Player (W)"
+                              : "Player weighted shooting"}
+                          </dt>
+                          <dd>{percentage(shooterWeighted.adjusted)}</dd>
+                        </div>
+                        <div>
+                          <dt>{tabbedEntry ? "Team" : "Team shooting"}</dt>
+                          <dd>{percentage(team.percent)}</dd>
+                        </div>
+                        <div>
+                          <dt>
+                            {tabbedEntry
+                              ? "Team (W)"
+                              : "Team weighted shooting"}
+                          </dt>
+                          <dd>
+                            {percentage(
+                              difficultySummary(classifiedShots).adjusted,
+                            )}
+                          </dd>
+                        </div>
+                      </dl>
+                      <EntryOverlay title="Change">
+                        <div className="coach-entry-grid">
+                          <label>
+                            Player
+                            <select
+                              aria-label="Player"
+                              value={draft.playerId}
+                              onChange={(e) =>
+                                setDraft({
+                                  ...draft,
+                                  playerId: e.target.value as Shot["playerId"],
+                                })
+                              }
+                            >
+                              {players.map((p) => (
+                                <option value={p.id} key={p.id}>
+                                  {p.name}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+                          {choose("position", "Throwing position", [
+                            "Lead",
+                            "Second",
+                            "Third",
+                            "Fourth",
+                          ])}
+                          <label>
+                            End
+                            <input
+                              type="number"
+                              min="1"
+                              max="20"
+                              value={draft.end}
+                              required
+                              onChange={(e) =>
+                                setDraft({
+                                  ...draft,
+                                  end: Number(e.target.value),
+                                })
+                              }
+                            />
+                          </label>
+                          <label>
+                            Stone
+                            <select
+                              aria-label="Stone"
+                              value={draft.stone}
+                              onChange={(e) =>
+                                setDraft({
+                                  ...draft,
+                                  stone: Number(e.target.value),
+                                  playerId:
+                                    lineup[
+                                      rockNumber({
+                                        position: draft.position,
+                                        stone: Number(e.target.value),
+                                      }) - 1
+                                    ] ?? draft.playerId,
+                                })
+                              }
+                            >
+                              <option value="1">1</option>
+                              <option value="2">2</option>
+                            </select>
+                          </label>
+                        </div>
+                      </EntryOverlay>
+                    </section>
+                    {tabbedEntry && (
+                      <div
+                        className="tracker-entry-tabs"
+                        role="tablist"
+                        aria-label="Shot entry sections"
+                      >
+                        {entryTabs.map((tab, index) => (
+                          <button
+                            key={tab}
+                            type="button"
+                            role="tab"
+                            id={`${entryId}-${tab}-tab`}
+                            aria-controls={`${entryId}-${tab}-panel`}
+                            aria-selected={entryTab === tab}
+                            tabIndex={entryTab === tab ? 0 : -1}
+                            onClick={() => setEntryTab(tab)}
+                            onKeyDown={(event) => {
+                              const next =
+                                event.key === "ArrowRight"
+                                  ? (index + 1) % 4
+                                  : event.key === "ArrowLeft"
+                                    ? (index + 3) % 4
+                                    : event.key === "Home"
+                                      ? 0
+                                      : event.key === "End"
+                                        ? 3
+                                        : -1;
+                              if (next < 0) return;
+                              event.preventDefault();
+                              setEntryTab(entryTabs[next]);
+                              document
+                                .getElementById(
+                                  `${entryId}-${entryTabs[next]}-tab`,
+                                )
+                                ?.focus();
+                            }}
+                          >
+                            {tab}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                    <div
+                      className="tracker-quick-entry"
+                      hidden={tabbedEntry && entryTab === "Notes"}
+                    >
+                      <div className="coach-fields">
+                        {" "}
+                        {entryGroup(
+                          "Shot selection",
+                          <>
+                            <ShotTypeEntry
+                              shot={draft}
+                              value={enhanced}
+                              enhanced={enhancedMode}
+                              onShot={setDraft}
+                              onChange={(value) => {
+                                if (metrics.ready && enhancedData.ready)
+                                  changeEnhanced(value);
+                              }}
+                            />
+                            {choose("turn", "Turn / target", turns)}
+                            {tabbedEntry && draft.turn && (
+                              <p className="tracker-turn-description">
+                                {turnLabel(draft.turn)}
+                              </p>
+                            )}
+                            {!!context &&
+                              metrics.ready &&
+                              enhancedData.ready && (
+                                <>
+                                  <WeightEntry
+                                    shot={draft}
+                                    value={enhanced}
+                                    enhanced={enhancedMode}
+                                    onChange={changeEnhanced}
+                                  />
+                                  <DifficultyEntry
+                                    value={enhanced}
+                                    onChange={changeEnhanced}
+                                  />
+                                </>
+                              )}
+                          </>,
+                        )}
+                        {entryGroup(
+                          "Execution",
+                          <>
+                            {choose("execution", "Execution", executions)}
+                            <label>
+                              Numeric grade
+                              <select
+                                aria-label="Numeric grade"
+                                value={draft.grade ?? ""}
+                                disabled={!!draft.excluded}
+                                onChange={(e) =>
+                                  setDraft({
+                                    ...draft,
+                                    grade:
+                                      e.target.value === ""
+                                        ? null
+                                        : Number(e.target.value),
+                                  })
+                                }
+                              >
+                                <option value="">Not graded</option>
+                                {[0, 1, 2, 3, 4, 5].map((n) => (
+                                  <option key={n}>{n}</option>
+                                ))}
+                              </select>
+                            </label>
+                            {!!context &&
+                              metrics.ready &&
+                              enhancedData.ready && (
+                                <>
+                                  <WeightEntry
+                                    observed
+                                    shot={draft}
+                                    value={enhanced}
+                                    enhanced={enhancedMode}
+                                    onChange={changeEnhanced}
+                                  />
+                                  <ResultsEntry
+                                    shot={draft}
+                                    value={enhanced}
+                                    enhanced={enhancedMode}
+                                    onChange={changeEnhanced}
+                                  />
+                                </>
+                              )}
+                            {choose("deficiency", "Deficiency", deficiencies)}
+                          </>,
+                        )}
+                        {entryGroup(
+                          "Technical observation",
+                          <>
+                            {choose("line", "Line", lines)}
+                            {choose("release", "Release", releases)}
+                            {choose("technical", "Technical", technicals)}
+                          </>,
+                        )}
+                      </div>
+                    </div>
+                    <div
+                      className="tracker-entry-notes"
+                      role={tabbedEntry ? "tabpanel" : undefined}
+                      id={`${entryId}-Notes-panel`}
+                      aria-labelledby={
+                        tabbedEntry ? `${entryId}-Notes-tab` : undefined
+                      }
+                      hidden={tabbedEntry && entryTab !== "Notes"}
+                    >
+                      <EntryOverlay
+                        title="Notes & review"
+                        inline={tabbedEntry}
+                        description={
+                          draft.note
+                            ? "Coaching note added · edit notes and flags."
+                            : (draft.flagged ?? !!draft.review)
+                              ? "Flagged for review · edit notes and flags."
+                              : "Add a coaching note, flag or review category."
+                        }
+                        className="tracker-notes"
+                      >
+                        <div className="coach-entry-grid">
+                          {choose("review", "Review category", reviews)}
+                          <label>
+                            Excluded attempt
+                            <select
+                              value={draft.excluded ?? ""}
+                              onChange={(e) =>
+                                setDraft({
+                                  ...draft,
+                                  excluded: (e.target.value ||
+                                    null) as Shot["excluded"],
+                                  grade: e.target.value ? null : draft.grade,
+                                })
+                              }
+                            >
+                              <option value="">Include in scoring</option>
+                              {exclusions.map((v) => (
+                                <option key={v}>{v}</option>
+                              ))}
+                            </select>
+                          </label>
+                        </div>
+                        <label>
+                          Flag shot for review
+                          <select
+                            value={
+                              (draft.flagged ?? !!draft.review) ? "yes" : "no"
+                            }
+                            onChange={(e) =>
+                              setDraft({
+                                ...draft,
+                                flagged: e.target.value === "yes",
+                                flaggedAt:
+                                  e.target.value === "yes"
+                                    ? new Date().toISOString()
+                                    : draft.flaggedAt,
+                              })
+                            }
+                          >
+                            <option value="no">No</option>
+                            <option value="yes">Yes</option>
+                          </select>
+                        </label>
+                        {(draft.flagged ?? !!draft.review) && (
+                          <div className="coach-video-fields">
+                            <div
+                              className="coach-time-presets"
+                              role="group"
+                              aria-label="Go back presets"
+                            >
+                              {[30, 45, 60, 90, 120, 180, 240].map(
+                                (seconds) => (
+                                  <button
+                                    key={seconds}
+                                    type="button"
+                                    aria-pressed={
+                                      (draft.videoReview?.lookBackSeconds ??
+                                        30) === seconds
+                                    }
+                                    onClick={() =>
+                                      setDraft({
+                                        ...draft,
+                                        videoReview: {
+                                          url: "",
+                                          positionSeconds: null,
+                                          ...draft.videoReview,
+                                          lookBackSeconds: seconds,
+                                        },
+                                      })
+                                    }
+                                  >
+                                    {seconds < 120
+                                      ? `${seconds}s`
+                                      : `${seconds / 60}m`}
+                                  </button>
+                                ),
+                              )}
+                            </div>
+                            <label>
+                              Go back (seconds)
+                              <input
+                                type="number"
+                                min="0"
+                                max="3600"
+                                step="1"
+                                value={draft.videoReview?.lookBackSeconds ?? 30}
+                                onChange={(e) =>
+                                  setDraft({
+                                    ...draft,
+                                    videoReview: {
+                                      url: "",
+                                      positionSeconds: null,
+                                      ...draft.videoReview,
+                                      lookBackSeconds: Number(e.target.value),
+                                    },
+                                  })
+                                }
+                              />
+                            </label>
+                            <p>
+                              Flag time saved automatically. Review links use
+                              the game’s CurlStreamer broadcast when video
+                              timing is available. Refresh the event after the
+                              broadcast starts.
+                            </p>
+                          </div>
+                        )}
+                        <label>
+                          Private coaching note
+                          <textarea
+                            rows={4}
+                            maxLength={1000}
+                            value={draft.note}
+                            onChange={(e) =>
+                              setDraft({ ...draft, note: e.target.value })
+                            }
+                          />
+                        </label>
+                      </EntryOverlay>
+                      {editing && enhancedMode && (
+                        <div className="enhanced">
+                          {enhancedData.error && (
+                            <p role="alert">{enhancedData.error}</p>
+                          )}
+                          {!!enhancedRecord?.conflicts?.length && (
+                            <p role="alert">
+                              Enhanced observations need review:{" "}
+                              {enhancedRecord.conflicts.join(", ")}
+                            </p>
+                          )}
+                          <EntryOverlay
+                            title="Saved observation details"
+                            description="Historical observations, context and assessment basis."
+                          >
+                            <EnhancedFields
+                              value={enhanced}
+                              onChange={changeEnhanced}
+                              shots={shots}
+                              source={draft}
+                              paths={metrics.preferences.definitions.namedPaths
+                                .split("\n")
+                                .filter(Boolean)}
+                            />
+                            {enhancedData.ready && context && (
+                              <GameContext
+                                gameId={context.gameId}
+                                eventId={context.eventId}
+                                documents={enhancedData.documents}
+                                onSaved={enhancedData.reload}
+                              />
+                            )}
+                            <button
+                              type="button"
+                              onClick={async () => {
+                                try {
+                                  sessionStorage.removeItem(enhancedKey);
+                                } catch {
+                                  /* Optional storage. */
+                                }
+                                setEnhancedDraft(null);
+                                await enhancedData.reload();
+                              }}
+                            >
+                              Discard Enhanced draft and reload
+                            </button>
+                          </EntryOverlay>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                  <div className="coach-entry-actions">
+                    <button
+                      type="submit"
+                      value={editing ? "save" : "next"}
+                      title={
+                        editing
+                          ? "Save this correction"
+                          : "Save this shot and move to the next turn"
+                      }
+                    >
+                      {busy
+                        ? "Saving\u2026"
+                        : editing
+                          ? "Save correction"
+                          : "Next Turn"}
+                    </button>
+                    <button type="button" onClick={goToCurrent}>
+                      Go to current shot
+                    </button>
+                    {editing && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setEditing(null);
+                          setDraft(currentDraft.current);
+                        }}
+                      >
+                        Cancel correction
+                      </button>
+                    )}
+                  </div>
+                </fieldset>
+              </form>
+            </section>
+            <section className="coach-panel">
+              <h2>Player report</h2>
+              {players.map((player) => {
+                const r = report(shots.filter((s) => s.playerId === player.id));
+                return (
+                  <div className="coach-player" key={player.id}>
+                    <strong>{player.name}</strong>
+                    <span>
+                      {r.percent === null
+                        ? "No data"
+                        : `${r.percent.toFixed(1)}%`}{" "}
+                      · {r.scored} scored · {r.missing} missing · {r.excluded}{" "}
+                      excluded
+                    </span>
+                    <small>
+                      {difficultyDescription(
+                        difficultySummary(
+                          classifiedShots.filter(
+                            (s) => s.playerId === player.id,
+                          ),
+                        ),
+                      )}
+                    </small>
+                  </div>
+                );
+              })}
+              <p>
+                Roster identity is saved with this private coaching session.
+                Select the throwing position for substitutions; reports retain
+                player identity.
+              </p>
+              <button disabled={busy} onClick={() => void load()}>
+                Reload local data
+              </button>
+            </section>
+          </div>
+          {!rosterReady && context?.source === "streamer" && (
+            <section className="event-notice" aria-label="Roster required">
+              Add your team roster before charting attempts.{" "}
+              <a href="/account">Open Account team setup</a>
+            </section>
+          )}
+        </>
+      )}
+    </section>
+  );
+}

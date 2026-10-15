@@ -1,4 +1,9 @@
 import { difficultyGameShots } from "./event";
+import {
+  advancedReport,
+  advancedEvidence,
+  type AdvancedReport,
+} from "./advanced-report";
 import { difficultySummary, type DifficultySummary } from "./difficulty";
 import { difficultyEvidence } from "./difficulty-evidence";
 import {
@@ -14,6 +19,7 @@ import type { Evidence } from "./reports";
 import type { ReportBasis } from "./report-counts";
 import { technicalSummary, technicalEvidence } from "./technical";
 export type ReportGame = {
+  advanced?: AdvancedReport;
   key: string;
   title: string;
   difficulty?: DifficultySummary;
@@ -33,6 +39,12 @@ export function playerReportGames(event: CoachEvent, playerId: string) {
   const evidence: Evidence[] = [];
   const games = event.games.map((g, index): ReportGame => {
     const key = `game-${index + 1}`;
+    const advanced = advancedReport(
+      { ...event, games: [g] },
+      playerId,
+      `${key}-advanced`,
+    );
+    evidence.push(...advancedEvidence(advanced, 40));
     const shots = difficultyGameShots(g).filter(
       (s) => s.playerId === playerId && !s.excluded,
     );
@@ -108,6 +120,7 @@ export function playerReportGames(event: CoachEvent, playerId: string) {
     return {
       key,
       title: g.label || `Game ${index + 1}`,
+      advanced,
       difficulty: difficultySummary(shots),
       groups: [
         {

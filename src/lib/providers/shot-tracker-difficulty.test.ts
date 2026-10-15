@@ -81,3 +81,32 @@ it("reads synthetic documents only through the local path", async () => {
     "synthetic-coach",
   );
 });
+it("adds report analytics only on the report path and never forwards private free text", async () => {
+  const event = sampleEvent("shorty-example");
+  mocks.load.mockImplementation(async (_scope, state) =>
+    currentShots(state.events).map((s) => ({
+      kind: "supplement",
+      shotId: s.id,
+      revision: 1,
+      sourceRevision: state.events.find(
+        (e: { shotId: string }) => e.shotId === s.id,
+      ).revision,
+      at: "now",
+      value: {
+        ...emptySupplement(),
+        values: { instruction: "PRIVATE COACH", resultObservations: ["heavy"] },
+        assessments: { results: "assessed" },
+      },
+    })),
+  );
+  await loadEventDifficulty(event, "coach");
+  expect(event.games[0].advancedRecords).toBeUndefined();
+  await loadEventDifficulty(event, "coach", false, true);
+  expect(event.games[0].advancedReady).toBe(true);
+  expect(event.games[0].advancedRecords?.[0].values.resultObservations).toEqual(
+    ["heavy"],
+  );
+  expect(JSON.stringify(event.games[0].advancedRecords)).not.toContain(
+    "PRIVATE",
+  );
+});

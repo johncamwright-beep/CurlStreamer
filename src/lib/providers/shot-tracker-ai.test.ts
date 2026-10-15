@@ -303,3 +303,31 @@ it("does not expose upstream failures or accept truncated responses", async () =
     "incomplete",
   );
 });
+it("passes advanced evidence and coaching instructions to the model without raw records", async () => {
+  configure();
+  const fetcher = vi
+    .fn()
+    .mockResolvedValue(
+      generated(
+        "Rehearse the recorded weight pattern.",
+        "advanced-results-heavy",
+      ),
+    );
+  vi.stubGlobal("fetch", fetcher);
+  const row = {
+    id: "advanced-results-heavy",
+    label: "Heavy result observations",
+    value: "50.0% (2 of 4 shots)",
+    sample: 4,
+    confidence: "small" as const,
+  };
+  await generateShotTrackerNarrative({ ...input, evidence: [row] }, "team", []);
+  const body = JSON.parse(fetcher.mock.calls[0][1].body);
+  expect(JSON.parse(body.input).evidence).toEqual([row]);
+  expect(body.instructions).toContain(
+    "Called-versus-observed weight rows are categorical",
+  );
+  expect(body.instructions).toContain(
+    "When advanced evidence supports a priority",
+  );
+});

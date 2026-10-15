@@ -24,6 +24,8 @@ import { activeEvents } from "@/lib/scoring";
 import type { GameConfig, ScoreEvent, Team } from "@/lib/types";
 
 export type CoachGame = {
+  advancedRecords?: import("./advanced-report").AdvancedRecord[];
+  advancedReady?: boolean;
   id: string;
   eventId: string;
   label: string;

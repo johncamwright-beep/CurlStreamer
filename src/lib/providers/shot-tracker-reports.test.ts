@@ -220,3 +220,25 @@ it("invalidates new report snapshots on difficulty changes while retaining legac
   e.games[0].difficultyRecords[0].level = "B";
   expect(reportFingerprint(e, "team")).not.toBe(classified);
 });
+it("tracks advanced edits in new snapshots without invalidating saved v7 fingerprints", () => {
+  const e = event(),
+    old = reportFingerprint(e, "team", "shot-tracker-event-v7"),
+    before = reportFingerprint(e, "team");
+  e.games[0].advancedReady = true;
+  e.games[0].advancedRecords = [
+    {
+      shotId: "one",
+      identity: "one",
+      revision: 1,
+      valid: true,
+      needsReview: false,
+      values: { resultObservations: ["heavy"] },
+      assessments: { results: "assessed" },
+    },
+  ];
+  expect(reportFingerprint(e, "team")).not.toBe(before);
+  expect(reportFingerprint(e, "team", "shot-tracker-event-v7")).toBe(old);
+  const measured = reportFingerprint(e, "team");
+  e.games[0].advancedRecords[0].values.resultObservations = [];
+  expect(reportFingerprint(e, "team")).not.toBe(measured);
+});

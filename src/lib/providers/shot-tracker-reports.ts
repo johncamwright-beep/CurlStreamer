@@ -51,7 +51,7 @@ export async function loadReportEvent(account: CoachAccount, eventId: string) {
       },
       game.state,
     );
-  await loadEventDifficulty(event, account.userId);
+  await loadEventDifficulty(event, account.userId, false, true);
   return event;
 }
 export function reportFingerprint(
@@ -78,6 +78,12 @@ export function reportFingerprint(
             available: g.scoreboardAvailable,
             hammer: g.initialHammer,
             state: g.state,
+            ...(Number(policy.match(/-v(\d+)$/)?.[1]) >= 8
+              ? {
+                  advancedRecords: g.advancedRecords ?? [],
+                  advancedReady: g.advancedReady ?? false,
+                }
+              : {}),
             ...(Number(policy.match(/-v(\d+)$/)?.[1]) >= 7
               ? {
                   difficultyRecords: g.difficultyRecords ?? [],

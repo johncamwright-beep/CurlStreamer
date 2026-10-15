@@ -1,4 +1,5 @@
 "use client";
+import AdvancedReport from "./AdvancedReport";
 import DifficultySummary from "./DifficultySummary";
 import { ReportEmail } from "./ReportEmail";
 import { MissReport } from "./MissReport";
@@ -370,6 +371,7 @@ function ReportBody({ report }: { report: SavedReport }) {
         <TechnicalReview groups={report.technical} compact />
       )}
       {report.difficulty && <DifficultySummary value={report.difficulty} />}
+      <AdvancedReport summary={report.advanced} />
       {reportSections(report).map((s) => (
         <section key={s.title}>
           <h4 className="mb-3 text-lg font-bold">{s.title}</h4>
@@ -454,6 +456,7 @@ function ReportBody({ report }: { report: SavedReport }) {
                   ))}
                 </div>
               </details>
+              <AdvancedReport summary={game.advanced} />
             </section>
           ))}
         </section>

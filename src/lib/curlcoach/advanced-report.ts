@@ -129,6 +129,7 @@ export function advancedReport(
   event: CoachEvent,
   playerId?: string,
   prefix = "advanced",
+  includeAssessedZeroes = false,
 ): AdvancedReport {
   const rows: Row[] = [];
   let unavailable = 0,
@@ -240,7 +241,7 @@ export function advancedReport(
           ? (value(r, key) as string[]).includes(code)
           : value(r, key) === code,
       );
-      if (selected.length)
+      if (selected.length || includeAssessedZeroes)
         add(
           metrics,
           `${suffix}-${code}`,

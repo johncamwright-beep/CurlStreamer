@@ -40,7 +40,13 @@ export default function EventReportLibrary() {
           ← All events
         </button>
         <h2 className="text-2xl font-bold">{selected.name}</h2>
-        <EventReports key={selected.id} eventId={selected.id} />
+        <EventReports
+          key={selected.id}
+          eventId={selected.id}
+          autoStart={
+            !selected.saved && !selected.processing && selected.complete
+          }
+        />
       </div>
     );
   return (
@@ -64,9 +70,9 @@ export default function EventReportLibrary() {
                 {e.processing
                   ? "Generating"
                   : e.saved === 3
-                    ? "Reports ready"
+                    ? "All report groups ready"
                     : e.saved
-                      ? "Some reports ready"
+                      ? "Partly complete - view progress"
                       : e.complete
                         ? "Not generated"
                         : "Event in progress"}

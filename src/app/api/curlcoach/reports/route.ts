@@ -40,7 +40,14 @@ async function handle(request: Request, write: boolean) {
     if (write) {
       const input = reportRequestSchema.parse(parsed.data);
       return NextResponse.json(
-        { packet: await generateEventReports(account, event, input.audience) },
+        {
+          packet: await generateEventReports(
+            account,
+            event,
+            input.audience,
+            input.upgrade,
+          ),
+        },
         { headers },
       );
     }

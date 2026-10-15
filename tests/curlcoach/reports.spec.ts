@@ -8,6 +8,139 @@ let js = "";
 let libraryJs = "";
 let workspaceJs = "";
 let css = "";
+
+test("player generation continues automatically, exposes a partial failure and retries remaining work", async ({
+  page,
+}) => {
+  const entries = new Map<string, object>();
+  let playerRequests = 0;
+  const summary = {
+    text: "Draw weight settled later in the event.",
+    evidence: ["overall"],
+  };
+  const saved = (key: string, title: string) => ({
+    key,
+    title,
+    evidence: [
+      {
+        id: "overall",
+        label: "Shooting",
+        value: "75.0%",
+        sample: 20,
+        confidence: "event",
+      },
+    ],
+    limitations: [],
+    highlights: {
+      strengths: [],
+      priorities: [],
+      withinGames: [],
+      acrossGames: [],
+    },
+    narrative: {
+      summary,
+      strengths: [],
+      priorities: [],
+      practice: [summary],
+      review: [],
+    },
+  });
+  const players = [
+    { key: "player-1", name: "Alex" },
+    { key: "player-2", name: "Blair" },
+  ];
+  const first = saved("player-1", "Alex");
+  await page.route("**/api/curlcoach/reports**", async (route) => {
+    if (route.request().method() === "POST") {
+      const { audience } = route.request().postDataJSON();
+      if (audience === "players") playerRequests++;
+      const partial = audience === "players" && playerRequests < 3;
+      const packet = {
+        audience,
+        eventName: "Test event",
+        policy: "shot-tracker-event-v9",
+        generatedAt: new Date().toISOString(),
+        complete: !partial,
+        reports:
+          audience === "players"
+            ? partial
+              ? [first]
+              : [first, saved("player-2", "Blair")]
+            : [saved(audience, audience)],
+      };
+      const failed = audience === "players" && playerRequests === 2;
+      entries.set(audience, {
+        audience,
+        status: failed ? "failed" : partial ? "processing" : "ready",
+        resumable: partial && !failed,
+        readyKeys: partial ? ["player-1"] : [],
+        stale: false,
+        packet,
+      });
+      await route.fulfill(
+        failed
+          ? {
+              status: 503,
+              json: { error: "Provider timeout. Completed reports are saved." },
+            }
+          : { json: { packet } },
+      );
+      return;
+    }
+    await route.fulfill({
+      json: {
+        configured: true,
+        eligible: true,
+        reason: null,
+        players,
+        allowance: {
+          used: 1,
+          limit: 20,
+          reserved: true,
+          owned: true,
+          completed: ["coach", "team"].filter((a) => entries.has(a)),
+        },
+        entries: [...entries.values()],
+      },
+    });
+  });
+  await page.route("**/progress-fixture", (route) =>
+    route.fulfill({
+      contentType: "text/html",
+      body:
+        '<html><head><meta name="viewport" content="width=device-width, initial-scale=1"><style>' +
+        css +
+        '</style></head><body><div id="root"></div><script>' +
+        js +
+        "</script></body></html>",
+    }),
+  );
+  await page.goto("/progress-fixture");
+  await page
+    .getByRole("button", { name: "Generate reports", exact: true })
+    .click();
+  await expect(page.getByText("Alex: Ready", { exact: true })).toBeVisible();
+  await expect(
+    page.getByText("Blair: Failed - retry available", { exact: true }),
+  ).toBeVisible();
+  expect(playerRequests).toBe(2);
+  await page
+    .getByRole("button", { name: "Generate remaining reports", exact: true })
+    .click();
+  await expect(page.getByText("Blair: Ready", { exact: true })).toBeVisible();
+  expect(playerRequests).toBe(3);
+  await page.screenshot({
+    path: "work/trend-progress-phone.png",
+    fullPage: true,
+  });
+  await expect(
+    page.getByRole("button", {
+      name: "Generate remaining reports",
+      exact: true,
+    }),
+  ).toHaveCount(0);
+});
+
 test.beforeAll(async () => {
   execFileSync(process.execPath, [
     "node_modules/tailwindcss/lib/cli.js",
@@ -61,7 +194,7 @@ test.beforeAll(async () => {
   });
   workspaceJs = workspace.outputFiles[0].text;
 });
-test("event library offers generate or view without automatic generation", async ({
+test("event library views saved reports without generation and starts a new set with one click", async ({
   page,
 }) => {
   let posts = 0;
@@ -148,7 +281,7 @@ test("event library offers generate or view without automatic generation", async
   await expect(
     page.getByRole("button", { name: "Generate reports", exact: true }),
   ).toBeEnabled();
-  expect(posts).toBe(0);
+  await expect.poll(() => posts).toBe(3);
 });
 test("report navigation is read-only, generation is explicit, and PDFs contain only the selected report", async ({
   page,
@@ -374,6 +507,7 @@ test("report navigation is read-only, generation is explicit, and PDFs contain o
   await expect(page.getByRole("article")).toContainText("76.3%");
   await expect(page.getByRole("article")).toContainText("85.6%");
   await expect(page.getByRole("article")).toContainText("301 graded shots");
+  await page.getByText("Report legend", { exact: true }).first().click();
   await expect(
     page.getByRole("heading", { name: "Report legend", exact: true }),
   ).toBeVisible();
@@ -384,6 +518,7 @@ test("report navigation is read-only, generation is explicit, and PDFs contain o
   await page.getByText("Game statistics", { exact: true }).click();
   await expect(page.getByText("80.0%", { exact: true })).toBeVisible();
   await expect(page.getByText("—", { exact: true })).toBeVisible();
+  await page.getByText("Supporting statistics", { exact: true }).click();
   await page.getByText("Called and observed weight", { exact: true }).click();
   await expect(
     page.getByText("Called Guard 1; observed Guard 2", { exact: true }),
@@ -637,6 +772,10 @@ test("report email requires recipient review and explicit send; coach reports ha
     page.getByRole("button", { name: "Email team report", exact: true }),
   ).toHaveCount(0);
   await page.getByRole("button", { name: "Team report", exact: true }).click();
+  await expect(
+    page.getByRole("region", { name: "Miss diagnosis" }),
+  ).toBeHidden();
+  await page.getByText("Supporting statistics", { exact: true }).click();
   await expect(
     page.getByRole("region", { name: "Miss diagnosis" }),
   ).toBeVisible();

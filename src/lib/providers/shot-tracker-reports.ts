@@ -26,6 +26,7 @@ import { loadCoachState } from "./curlcoach-store";
 import {
   generateShotTrackerNarrative,
   reportAIConfig,
+  selectPromptEvidence,
 } from "./shot-tracker-ai";
 
 export async function loadReportEvent(account: CoachAccount, eventId: string) {
@@ -123,6 +124,9 @@ export async function getEventReports(
         status: z.enum(["ready", "processing", "failed"]),
         updated_at: z.string(),
         packet: z.unknown(),
+        step_pending: z.boolean().optional(),
+        generation_version: z.number().optional(),
+        progress: z.record(z.string(), z.unknown()).optional(),
       }),
     )
     .parse(await rpc("read_shot_tracker_reports", account, event.id));
@@ -142,10 +146,21 @@ export async function getEventReports(
     configured: !!reportAIConfig(),
     eligible: !eventReportEligibility(event),
     reason: eventReportEligibility(event),
+    players: reportPlayers(event).map((p, i) => ({
+      key: `player-${i + 1}`,
+      name: p.name,
+    })),
     entries: rows.map((r) => ({
+      readyKeys:
+        r.fingerprint === reportFingerprint(event, r.audience)
+          ? Object.keys(r.progress ?? {})
+          : [],
+      resumable: !!r.step_pending,
+      version: r.generation_version,
       audience: r.audience,
       status:
         r.status === "processing" &&
+        !r.step_pending &&
         Date.parse(r.updated_at) < Date.now() - 180_000
           ? "failed"
           : r.status,
@@ -165,7 +180,21 @@ export async function getEventReports(
               ),
               event,
             )
-          : null,
+          : r.fingerprint === reportFingerprint(event, r.audience) &&
+              Object.keys(r.progress ?? {}).length
+            ? withReportFlags(
+                {
+                  eventName: event.name,
+                  audience: r.audience,
+                  policy: REPORT_POLICY,
+                  generatedAt: r.updated_at,
+                  reports: Object.values(
+                    r.progress ?? {},
+                  ) as ReportPacket["reports"],
+                },
+                event,
+              )
+            : null,
     })),
   };
 }
@@ -243,6 +272,7 @@ export async function generateEventReports(
   account: CoachAccount,
   event: CoachEvent,
   audience: ReportAudience,
+  upgrade = false,
 ) {
   const reason = eventReportEligibility(event);
   if (reason) throw new ReportError(reason, 409);
@@ -262,10 +292,10 @@ export async function generateEventReports(
     p_lease: lease,
   };
   const claim = (await rpc(
-    "claim_shot_tracker_report",
+    "claim_shot_tracker_report_step",
     account,
     event.id,
-    args,
+    { ...args, p_upgrade: upgrade },
   )) as { status: string; packet?: ReportPacket };
   if (claim.status === "ready") return withReportFlags(claim.packet!, event);
   if (claim.status !== "claimed")
@@ -281,6 +311,20 @@ export async function generateEventReports(
               : "A team report is already being generated. Check again shortly.",
       429,
     );
+  const checkpointRows = (await rpc(
+    "read_shot_tracker_reports",
+    account,
+    event.id,
+  )) as {
+    audience: string;
+    fingerprint: string;
+    progress?: Record<string, ReportPacket["reports"][number]>;
+  }[];
+  const checkpoints = Array.isArray(checkpointRows)
+    ? (checkpointRows.find(
+        (r) => r.audience === audience && r.fingerprint === fingerprint,
+      )?.progress ?? {})
+    : {};
   const abort = new AbortController();
   const deadline = setTimeout(() => abort.abort(), 130_000);
   try {
@@ -296,21 +340,62 @@ export async function generateEventReports(
       generatedAt: new Date().toISOString(),
       reports: [],
     };
-    // Avoid a burst of large player prompts on lower-throughput API projects.
+    // A completed player survives another player's timeout. Retry only missing work.
     for (const input of inputs) {
+      const cached = checkpoints[input.key];
+      if (cached) {
+        packet.reports.push(cached);
+        continue;
+      }
       const narrative = await generateShotTrackerNarrative(
         input,
         audience,
         names,
         signal,
       );
-      packet.reports.push({
+      const fresh = await loadReportEvent(account, event.id);
+      if (
+        eventReportEligibility(fresh) ||
+        reportFingerprint(fresh, audience) !== fingerprint
+      )
+        throw new ReportError(
+          "Event data changed. Refresh before generating the report again.",
+          409,
+        );
+      const saved = {
         ...input,
+        // Store only evidence used by this concise report; the original charting is unchanged.
+        evidence: selectPromptEvidence(input),
+        games: undefined,
+        advanced: undefined,
+        technical: undefined,
         narrative,
         ...(audience === "players"
           ? { playerId: reportPlayers(event)[packet.reports.length].id }
           : {}),
-      });
+      };
+      if (
+        !(await rpc("checkpoint_shot_tracker_report", account, event.id, {
+          ...args,
+          p_key: input.key,
+          p_report: saved,
+        }))
+      )
+        throw new Error("Report lease expired");
+      packet.reports.push(saved);
+      // One player per HTTP request: each gets a full time budget, with durable continuation.
+      if (audience === "players" && packet.reports.length < inputs.length) {
+        if (
+          !(await rpc(
+            "release_shot_tracker_report_step",
+            account,
+            event.id,
+            args,
+          ))
+        )
+          throw new Error("Report lease expired");
+        return withReportFlags({ ...packet, complete: false }, fresh);
+      }
     }
     // Refuse to publish if results, grades, roster, membership or completion changed mid-generation.
     const fresh = await loadReportEvent(account, event.id);
@@ -329,7 +414,7 @@ export async function generateEventReports(
           entry.label += ` · ${players[Number(entry.id.slice(7)) - 1]?.name ?? ""}`;
     }
     if (
-      !(await rpc("finish_shot_tracker_report", account, event.id, {
+      !(await rpc("finish_shot_tracker_report_step", account, event.id, {
         ...args,
         p_packet: packet,
       }))
@@ -357,7 +442,7 @@ export async function generateEventReports(
           ? error.message
           : "validation_or_service_failure",
     });
-    await rpc("finish_shot_tracker_report", account, event.id, {
+    await rpc("finish_shot_tracker_report_step", account, event.id, {
       ...args,
       p_packet: null,
     }).catch(() => undefined);

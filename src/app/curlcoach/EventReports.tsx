@@ -46,8 +46,10 @@ const audiences = [
 export default function EventReports({
   eventId,
   renderLayout,
+  autoStart = false,
 }: {
   eventId: string;
+  autoStart?: boolean;
   renderLayout?: (navigation: ReactNode, content: ReactNode) => ReactNode;
 }) {
   const [status, setStatus] = useState<ReportStatus | null>(null),
@@ -55,6 +57,10 @@ export default function EventReports({
     [busy, setBusy] = useState<ReportAudience | null>(null),
     [selected, setSelected] = useState<string>("coach");
   const [generatingSet, setGeneratingSet] = useState(false);
+  const started = useRef(false);
+  const [failures, setFailures] = useState<
+    Partial<Record<ReportAudience, string>>
+  >({});
   const [downloading, setDownloading] = useState(false);
   const active = useRef<AbortController | null>(null);
   const load = useCallback(
@@ -83,9 +89,11 @@ export default function EventReports({
       active.current?.abort();
     };
   }, [load]);
-  const processing = status?.entries.some((e) => e.status === "processing");
+  const processing = status?.entries.some(
+    (e) => e.status === "processing" && !e.resumable,
+  );
   useEffect(() => {
-    if (!processing || busy) return;
+    if (!processing && !busy) return;
     const c = new AbortController();
     const timer = setInterval(
       () => void load(c.signal).catch(() => undefined),
@@ -96,45 +104,57 @@ export default function EventReports({
       c.abort();
     };
   }, [processing, busy, load]);
-  async function generate(audience: ReportAudience) {
+  async function generate(audience: ReportAudience, upgrade = false) {
     if (busy) return;
     setBusy(audience);
     setSelected(audience);
     setError("");
+    setFailures((f) => ({ ...f, [audience]: undefined }));
     const c = new AbortController();
     active.current = c;
     try {
-      const r = await fetch("/api/curlcoach/reports", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ eventId, audience }),
-        signal: c.signal,
-      });
-      const data = await r.json();
-      if (!r.ok) throw new Error(data.error ?? "Report generation failed.");
-      if (!c.signal.aborted) {
-        setStatus((s) =>
-          s
-            ? {
-                ...s,
-                entries: [
-                  ...s.entries.filter((e) => e.audience !== audience),
-                  {
-                    audience,
-                    status: "ready",
-                    stale: false,
-                    packet: data.packet as ReportPacket,
-                  },
-                ],
-              }
-            : s,
-        );
-        await load(c.signal);
-        return true;
+      for (;;) {
+        const r = await fetch("/api/curlcoach/reports", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ eventId, audience, upgrade }),
+          signal: c.signal,
+        });
+        const data = await r.json();
+        if (!r.ok) throw new Error(data.error ?? "Report generation failed.");
+        if (!c.signal.aborted) {
+          setStatus((s) =>
+            s
+              ? {
+                  ...s,
+                  entries: [
+                    ...s.entries.filter((e) => e.audience !== audience),
+                    {
+                      audience,
+                      status:
+                        data.packet?.complete === false
+                          ? "processing"
+                          : "ready",
+                      resumable: data.packet?.complete === false,
+                      stale: false,
+                      packet: data.packet as ReportPacket,
+                    },
+                  ],
+                }
+              : s,
+          );
+          await load(c.signal);
+          if (data.packet?.complete === false) continue;
+          return true;
+        }
+        break;
       }
     } catch (e) {
       if (!c.signal.aborted) {
-        setError(e instanceof Error ? e.message : "Report unavailable.");
+        setFailures((f) => ({
+          ...f,
+          [audience]: e instanceof Error ? e.message : "Report unavailable.",
+        }));
         void load(c.signal).catch(() => undefined);
       }
     } finally {
@@ -148,7 +168,8 @@ export default function EventReports({
     packet?.reports.find((r) => r.key === selected.split(":")[1]) ??
     packet?.reports[0];
   const missing = audiences.filter(
-    (a) => !status?.entries.some((e) => e.audience === a.id && e.packet),
+    (a) =>
+      !status?.entries.some((e) => e.audience === a.id && e.status === "ready"),
   );
   const canGenerate =
     !!status?.configured &&
@@ -156,18 +177,46 @@ export default function EventReports({
     status.allowance.owned &&
     (status.allowance.reserved ||
       status.allowance.used < status.allowance.limit) &&
-    missing.some((a) => !status.allowance.completed.includes(a.id));
-  async function generateSet() {
-    if (generatingSet || busy || !canGenerate) return;
+    missing.some(
+      (a) =>
+        !status.allowance.completed.includes(a.id) ||
+        status.entries.some((e) => e.audience === a.id && e.version === 9),
+    );
+  const outdated = audiences.filter((a) =>
+    status?.entries.some(
+      (e) =>
+        e.audience === a.id &&
+        e.packet &&
+        e.packet.policy !== "shot-tracker-event-v9",
+    ),
+  );
+  const canUpgrade =
+    !!status?.configured &&
+    status.eligible &&
+    status.allowance.owned &&
+    outdated.length > 0;
+  async function generateSet(upgrade = false) {
+    if (generatingSet || busy || !(upgrade ? canUpgrade : canGenerate)) return;
     setGeneratingSet(true);
     try {
-      for (const a of missing) {
-        if (!(await generate(a.id))) break;
+      for (const a of upgrade
+        ? audiences.filter((a) => outdated.includes(a) || missing.includes(a))
+        : missing) {
+        await generate(
+          a.id,
+          upgrade || !!status?.allowance.completed.includes(a.id),
+        );
       }
     } finally {
       setGeneratingSet(false);
     }
   }
+  useEffect(() => {
+    if (autoStart && status && canGenerate && !started.current) {
+      started.current = true;
+      void generateSet();
+    }
+  });
   async function download() {
     if (!current || !packet || downloading) return;
     setDownloading(true);
@@ -260,6 +309,15 @@ export default function EventReports({
               season
             </span>
           )}
+          {canUpgrade && (
+            <button
+              className="btn min-h-11"
+              disabled={generatingSet || !!busy || !!processing}
+              onClick={() => void generateSet(true)}
+            >
+              Update to trend analysis
+            </button>
+          )}
           {!!missing.length && (
             <button
               className="btn min-h-11"
@@ -275,6 +333,67 @@ export default function EventReports({
           )}
         </div>
       </header>
+      {status && (
+        <div
+          aria-label="Report generation progress"
+          aria-live="polite"
+          className="rounded-lg border border-slate-500/40 p-4 space-y-2"
+        >
+          {audiences.map((a) => {
+            const item = status.entries.find((e) => e.audience === a.id);
+            const running =
+              busy === a.id ||
+              (item?.status === "processing" && !item.resumable);
+            const state =
+              item?.status === "ready"
+                ? "Ready"
+                : failures[a.id] || item?.status === "failed"
+                  ? "Needs retry"
+                  : running
+                    ? "Generating"
+                    : item?.resumable
+                      ? "Paused - resume remaining reports"
+                      : generatingSet
+                        ? "Queued"
+                        : "Not generated";
+            return (
+              <div key={a.id}>
+                <p className="font-semibold">
+                  {a.label}: {state}
+                </p>
+                {failures[a.id] && (
+                  <p role="alert" className="text-sm">
+                    {failures[a.id]}
+                  </p>
+                )}
+                {a.id === "players" &&
+                  status.players?.map((p) => {
+                    const ready =
+                      item?.packet?.reports.some((r) => r.key === p.key) ||
+                      item?.readyKeys?.includes(p.key);
+                    const firstMissing = status.players?.find(
+                      (x) => !item?.readyKeys?.includes(x.key),
+                    );
+                    return (
+                      <p className="text-sm" key={p.key}>
+                        {p.name}:{" "}
+                        {ready
+                          ? "Ready"
+                          : running && firstMissing?.key === p.key
+                            ? "Generating"
+                            : state === "Needs retry"
+                              ? firstMissing?.key === p.key
+                                ? "Failed - retry available"
+                                : "Waiting for retry"
+                              : "Queued"}
+                      </p>
+                    );
+                  })}
+              </div>
+            );
+          })}
+        </div>
+      )}
       {!status && !error && <p role="status">Loading reports…</p>}
       {status && !current && status.reason && (
         <p role="status">{status.reason}</p>
@@ -307,7 +426,7 @@ export default function EventReports({
                 {downloading ? "Preparing PDF…" : "Download PDF"}
               </button>
             </div>
-            {selectedAudience !== "coach" && (
+            {selectedAudience !== "coach" && entry?.status === "ready" && (
               <ReportEmail
                 key={`${eventId}:${selectedAudience}:${current.key}`}
                 eventId={eventId}
@@ -344,7 +463,9 @@ export default function EventReports({
   );
 }
 function ReportBody({ report }: { report: SavedReport }) {
-  const percentages = reportPercentages(report);
+  const percentages = reportPercentages(report).filter(
+    (m) => m.id === "overall",
+  );
   return (
     <article className="report-document space-y-7">
       <div
@@ -366,12 +487,6 @@ function ReportBody({ report }: { report: SavedReport }) {
           </div>
         ))}
       </div>
-      {report.misses && <MissReport misses={report.misses} />}
-      {report.technical?.some((g) => g.recorded > 0) && (
-        <TechnicalReview groups={report.technical} compact />
-      )}
-      {report.difficulty && <DifficultySummary value={report.difficulty} />}
-      <AdvancedReport summary={report.advanced} />
       {reportSections(report).map((s) => (
         <section key={s.title}>
           <h4 className="mb-3 text-lg font-bold">{s.title}</h4>
@@ -391,6 +506,17 @@ function ReportBody({ report }: { report: SavedReport }) {
           </div>
         </section>
       ))}
+      <details>
+        <summary className="min-h-11 cursor-pointer py-3 font-semibold">
+          Supporting statistics
+        </summary>
+        {report.misses && <MissReport misses={report.misses} />}
+        {report.technical?.some((g) => g.recorded > 0) && (
+          <TechnicalReview groups={report.technical} compact />
+        )}
+        {report.difficulty && <DifficultySummary value={report.difficulty} />}
+        <AdvancedReport summary={report.advanced} />
+      </details>
       {!!report.games?.length && (
         <section className="space-y-4" aria-label="Game by game">
           <h4 className="text-xl font-bold">Game by game</h4>
@@ -484,7 +610,10 @@ function ReportBody({ report }: { report: SavedReport }) {
           ))}
         </section>
       )}
-      <section aria-label="Report legend">
+      <details aria-label="Report legend">
+        <summary className="min-h-11 cursor-pointer py-3">
+          Report legend
+        </summary>
         <h4 className="mb-3 text-lg font-bold">Report legend</h4>
         <dl className="space-y-3">
           {reportLegend.map(([code, meaning]) => (
@@ -494,7 +623,7 @@ function ReportBody({ report }: { report: SavedReport }) {
             </div>
           ))}
         </dl>
-      </section>
+      </details>
     </article>
   );
 }

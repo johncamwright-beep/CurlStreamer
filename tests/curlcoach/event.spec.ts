@@ -15,13 +15,23 @@ async function open(page: Page, path = "/curlcoach") {
   ).toBeEnabled();
 }
 async function navigate(page: Page, name: string) {
+  const analysisTab = [
+    "Shot Performance",
+    "Miss Analysis",
+    "Technical Review",
+    "Advanced Analysis",
+  ].includes(name);
   await page
     .getByRole("button", { name: "Shot Tracker menu", exact: true })
     .click();
-  await page.getByRole("link", { name, exact: true }).click();
+  await page
+    .getByRole("dialog", { name: "Shot Tracker menu", exact: true })
+    .getByRole("link", { name: analysisTab ? "Analysis" : name, exact: true })
+    .click();
+  if (analysisTab) await page.getByRole("tab", { name, exact: true }).click();
   await expect(page.getByRole("heading", { name, exact: true })).toBeVisible();
 }
-test("five analysis pages preserve scope, show percentages and fit mobile", async ({
+test("analysis reports preserve scope, show percentages and fit mobile", async ({
   page,
 }, info) => {
   await open(page);
@@ -32,10 +42,10 @@ test("five analysis pages preserve scope, show percentages and fit mobile", asyn
         includeHidden: true,
       })
       .getByRole("link", { includeHidden: true }),
-  ).toHaveCount(7);
-  await navigate(page, "Shot performance");
+  ).toHaveCount(5);
+  await navigate(page, "Shot Performance");
   await expect(
-    page.getByRole("heading", { name: "Performance by shot type" }),
+    page.getByRole("heading", { name: "Performance by shot" }),
   ).toBeVisible();
   await page
     .getByRole("combobox", { name: "Team / player", exact: true })
@@ -45,7 +55,7 @@ test("five analysis pages preserve scope, show percentages and fit mobile", asyn
   await page
     .getByRole("combobox", { name: "Shot type", exact: true })
     .selectOption("Draw");
-  await navigate(page, "Miss analysis");
+  await navigate(page, "Miss Analysis");
   await expect(
     page.getByRole("combobox", { name: "Team / player", exact: true }),
   ).toHaveValue("lead");
@@ -54,15 +64,18 @@ test("five analysis pages preserve scope, show percentages and fit mobile", asyn
     page.getByRole("combobox", { name: "Shot type", exact: true }),
   ).toHaveValue("Draw");
   await expect(
-    page.getByRole("region", { name: "Miss breakdown", exact: true }),
-  ).toContainText("Share of diagnosed misses");
+    page.getByRole("region", { name: "Recorded reasons", exact: true }),
+  ).toContainText("Share · Shots");
   await page.getByRole("button", { name: "Reset more filters" }).click();
   await page
-    .getByRole("checkbox", { name: "Compare with this season" })
-    .check();
+    .getByRole("combobox", { name: "Event", exact: true })
+    .selectOption("all");
   await expect(
-    page.getByRole("region", { name: "Selection versus season" }),
+    page.getByRole("region", { name: "Miss overview" }),
   ).toBeVisible();
+  await expect(
+    page.getByRole("combobox", { name: "Event", exact: true }),
+  ).toHaveValue("all");
   await page.screenshot({
     path: `work/analysis-misses-${info.project.name}.png`,
     fullPage: true,
@@ -123,14 +136,17 @@ test("charting draft survives analysis navigation and season reads are cached", 
     )
       reads++;
   });
-  await navigate(page, "Shot performance");
+  await navigate(page, "Shot Performance");
   await page
-    .getByRole("checkbox", { name: "Compare with this season" })
-    .check();
+    .getByRole("combobox", { name: "Event", exact: true })
+    .selectOption("all");
   await expect(
-    page.getByRole("region", { name: "Selection versus season" }),
+    page.getByRole("region", { name: "Performance overview" }),
   ).toBeVisible();
-  await navigate(page, "Miss analysis");
+  await expect(
+    page.getByRole("combobox", { name: "Event", exact: true }),
+  ).toHaveValue("all");
+  await navigate(page, "Miss Analysis");
   await navigate(page, "Game analysis");
   await navigate(page, "Charting");
   await expect(page.getByLabel("End", { exact: true })).toHaveValue("3");
@@ -145,8 +161,8 @@ test("old analysis links resolve to the consolidated pages", async ({
 }) => {
   await open(page, "/curlcoach#team-statistics");
   await expect(
-    page.getByRole("heading", { name: "Shot performance", exact: true }),
-  ).toBeVisible();
+    page.getByRole("tab", { name: "Shot Performance", exact: true }),
+  ).toHaveAttribute("aria-selected", "true");
   await page.evaluate(() => {
     location.hash = "end-by-end-scores";
   });

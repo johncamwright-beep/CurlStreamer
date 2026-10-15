@@ -11,9 +11,12 @@ test("persisted difficulty follows analytics filters without changing primary sh
     .fill("curlcoach-e2e-only-key-thirty-two-characters");
   await page.getByRole("button", { name: "Unlock lab" }).click();
   await expect(
-    page.getByRole("heading", { name: "Shot performance", exact: true }),
+    page.getByRole("region", { name: "Performance overview", exact: true }),
   ).toBeVisible();
   await expect(page.getByLabel("Local lab key")).toBeHidden();
+  await expect(
+    page.getByRole("tab", { name: "Shot Performance", exact: true }),
+  ).toHaveAttribute("aria-selected", "true");
   const workspace = await (
     await page.request.get(
       "/api/curlcoach/workspace?source=sample&eventId=practice",
@@ -22,6 +25,7 @@ test("persisted difficulty follows analytics filters without changing primary sh
   const game = workspace.event.games[0],
     end = info.project.name === "phone" ? 19 : 20;
   const supplement = emptySupplement();
+  const shotId = crypto.randomUUID();
   supplement.values.difficulty = "very_demanding";
   const response = await page.request.post("/api/curlcoach/workspace", {
     headers: { origin: "http://127.0.0.1:3012" },
@@ -31,7 +35,7 @@ test("persisted difficulty follows analytics filters without changing primary sh
       gameId: game.id,
       command: {
         requestId: crypto.randomUUID(),
-        shotId: crypto.randomUUID(),
+        shotId,
         expectedRevision: game.state.revision,
         shot: {
           playerId: "lead",
@@ -60,13 +64,22 @@ test("persisted difficulty follows analytics filters without changing primary sh
   await page
     .getByRole("combobox", { name: "End", exact: true })
     .selectOption(String(end));
-  const summary = page
-    .locator('[aria-label="Difficulty-adjusted shooting"]:visible')
-    .first();
-  await expect(summary).toContainText("95.0%");
-  await expect(page.locator(".event-shot-metrics").first()).toContainText(
-    "80.0%",
-  );
+  await expect(
+    page.getByRole("region", { name: "Performance overview", exact: true }),
+  ).toContainText("80.0%");
+  await page
+    .getByRole("tab", { name: "Advanced Analysis", exact: true })
+    .click();
+  const difficulty = page.getByRole("region", {
+    name: "Difficulty",
+    exact: true,
+  });
+  await difficulty.getByText("Weighted score details", { exact: true }).click();
+  await expect(
+    difficulty.locator("dl > div").filter({
+      has: page.getByText("Difficulty-adjusted index", { exact: true }),
+    }),
+  ).toContainText("95.0");
   await expect(
     page.getByText("Difficulty-adjusted detail", { exact: true }),
   ).toHaveCount(0);
@@ -94,4 +107,19 @@ test("persisted difficulty follows analytics filters without changing primary sh
     path: `work/difficulty-${info.project.name}.png`,
     fullPage: true,
   });
+  const removal = await page.request.post("/api/curlcoach/workspace", {
+    headers: { origin: "http://127.0.0.1:3012" },
+    data: {
+      source: "sample",
+      eventId: "practice",
+      gameId: game.id,
+      command: {
+        requestId: crypto.randomUUID(),
+        shotId,
+        expectedRevision: game.state.revision + 1,
+        shot: null,
+      },
+    },
+  });
+  expect(removal.ok(), await removal.text()).toBe(true);
 });

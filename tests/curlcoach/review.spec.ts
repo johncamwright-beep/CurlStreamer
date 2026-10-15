@@ -54,9 +54,13 @@ test("miss review scopes season data and screen wake follows scoring", async ({
   await page
     .getByRole("button", { name: "Shot Tracker menu", exact: true })
     .click();
-  await page.getByRole("link", { name: "Miss analysis", exact: true }).click();
+  await page
+    .getByRole("dialog")
+    .getByRole("link", { name: "Analysis", exact: true })
+    .click();
+  await page.getByRole("tab", { name: "Miss Analysis", exact: true }).click();
   await expect(
-    page.getByRole("region", { name: "Miss breakdown", exact: true }),
+    page.getByRole("region", { name: "Recorded reasons", exact: true }),
   ).toBeVisible();
   await expect(page.locator(".event-metrics")).toHaveCount(0);
   await expect
@@ -76,14 +80,16 @@ test("miss review scopes season data and screen wake follows scoring", async ({
     .getByRole("combobox", { name: "Shot type", exact: true })
     .selectOption("Draw");
   await page
-    .locator("summary")
-    .filter({ hasText: /^Shot review/ })
+    .getByRole("region", { name: "Practice priorities", exact: true })
+    .getByRole("button", { name: /^Review \d+ shots/ })
+    .first()
     .click();
-  await page
-    .getByRole("combobox", { name: "Review category", exact: true })
-    .selectOption("Light");
-  await expect(page.locator(".coach-review-item").first()).toBeVisible();
-  await page.getByRole("checkbox", { name: "Flagged shots only" }).check();
+  const reviewed = page.getByRole("region", {
+    name: "Review shots",
+    exact: true,
+  });
+  await expect(reviewed).toBeVisible();
+  await expect(reviewed.locator("article").first()).toContainText("Draw");
   expect(
     await page.evaluate(
       () => document.documentElement.scrollWidth <= innerWidth,
@@ -92,7 +98,10 @@ test("miss review scopes season data and screen wake follows scoring", async ({
   await page
     .getByRole("button", { name: "Shot Tracker menu", exact: true })
     .click();
-  await page.getByRole("link", { name: "Charting", exact: true }).click();
+  await page
+    .getByRole("dialog")
+    .getByRole("link", { name: "Charting", exact: true })
+    .click();
   await expect(
     page.getByLabel("Keep screen awake", { exact: true }),
   ).toHaveCount(0);
@@ -129,27 +138,65 @@ test("broadcast flags open the same timed link in scoring, game review and miss 
     }
     await route.fulfill({ response, json: body });
   });
-  await page.goto("/curlcoach");
+  await page.goto("/curlcoach?event=shorty-example#charting");
   await page
     .getByLabel("Local lab key")
     .fill("curlcoach-e2e-only-key-thirty-two-characters");
   await page.getByRole("button", { name: "Unlock lab" }).click();
   const link = () =>
     page.getByRole("link", { name: "Review video from 0:19:15" }).first();
+  await expect(page.getByLabel("Local lab key")).toBeHidden();
+  await expect(
+    page.getByRole("region", { name: "Current shot context", exact: true }),
+  ).toBeVisible();
+  const gameControls = page.getByRole("button", {
+    name: "Game controls",
+    exact: true,
+  });
+  const nestedControls = await gameControls.isVisible();
+  if (nestedControls) await gameControls.click();
+  await page
+    .getByRole("button", { name: "Flagged shots", exact: true })
+    .click();
   await expect(link()).toHaveAttribute(
     "href",
     "https://www.youtube.com/watch?v=abcdefghijk&t=1155s",
   );
-  for (const name of ["Game analysis", "Miss analysis"]) {
+  await page
+    .getByRole("button", { name: "Close Flagged shots", exact: true })
+    .click();
+  if (nestedControls)
+    await page
+      .getByRole("button", { name: "Close Game controls", exact: true })
+      .click();
+  for (const name of ["Game analysis", "Miss Analysis"]) {
     await page
       .getByRole("button", { name: "Shot Tracker menu", exact: true })
       .click();
-    await page.getByRole("link", { name, exact: true }).click();
     await page
-      .locator("summary")
-      .filter({ hasText: /^Shot review/ })
+      .getByRole("dialog")
+      .getByRole("link", {
+        name: name === "Miss Analysis" ? "Analysis" : name,
+        exact: true,
+      })
       .click();
-    await page.locator(".coach-review-item > summary").first().click();
+    if (name === "Miss Analysis") {
+      await page.getByRole("tab", { name, exact: true }).click();
+      await page
+        .getByRole("region", { name: "Practice priorities", exact: true })
+        .getByRole("button", { name: /^Review \d+ shots/ })
+        .first()
+        .click();
+      await expect(
+        page.getByRole("region", { name: "Review shots", exact: true }),
+      ).toBeVisible();
+    } else {
+      await page
+        .locator("summary")
+        .filter({ hasText: /^Shot review/ })
+        .click();
+      await page.locator(".coach-review-item > summary").first().click();
+    }
     await expect(
       page.getByRole("link", { name: /^Review video/, exact: false }).first(),
     ).toHaveAttribute(

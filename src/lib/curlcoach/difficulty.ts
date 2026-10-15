@@ -72,6 +72,7 @@ export function difficultyRecords(
       original.position === shot.position &&
       original.end === shot.end &&
       original.stone === shot.stone &&
+      original.type === shot.type &&
       ![...(doc.conflicts ?? []), ...standardConflicts(parsed.data, shot)].some(
         (c) => c.startsWith("source ") || c.startsWith("difficulty"),
       );

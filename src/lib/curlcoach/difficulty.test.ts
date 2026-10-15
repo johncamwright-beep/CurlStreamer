@@ -239,6 +239,48 @@ describe("difficulty adjusted shooting", () => {
     );
     expect(difficultySummary(difficultyGameShots(g)).classified).toBe(0);
   });
+  it("invalidates difficulty on a source-type correction even without a recorded subtype", () => {
+    const event = sampleEvent("practice"),
+      game = event.games[0];
+    const id = crypto.randomUUID();
+    game.state = append(
+      emptyState(),
+      { requestId: crypto.randomUUID(), expectedRevision: 0, shotId: id, shot },
+      "coach",
+    );
+    const value = emptySupplement();
+    value.values.difficulty = "routine";
+    const doc: EnhancedDocument = {
+      kind: "supplement",
+      shotId: id,
+      sourceRevision: 1,
+      revision: 1,
+      at: "now",
+      value,
+    };
+    game.difficultyReady = true;
+    game.difficultyRecords = difficultyRecords(game.state, [doc]);
+    expect(difficultySummary(difficultyGameShots(game)).classified).toBe(1);
+    game.state = append(
+      game.state,
+      {
+        requestId: crypto.randomUUID(),
+        expectedRevision: 1,
+        shotId: id,
+        shot: { ...shot, type: "Come Around" },
+      },
+      "coach",
+    );
+    // Both a cached projection and a fresh supplement read reject the stale call.
+    expect(difficultySummary(difficultyGameShots(game)).classified).toBe(0);
+    game.difficultyRecords = difficultyRecords(game.state, [doc]);
+    expect(difficultySummary(difficultyGameShots(game)).classified).toBe(0);
+    // An observation explicitly saved against the corrected source is eligible.
+    doc.sourceRevision = 2;
+    doc.revision = 2;
+    game.difficultyRecords = difficultyRecords(game.state, [doc]);
+    expect(difficultySummary(difficultyGameShots(game)).classified).toBe(1);
+  });
   it("aggregates players, games, events and season by eligible shots; reports share the calculation", () => {
     const event = sampleEvent("shorty-example");
     event.games.forEach((g, i) => {

@@ -1,6 +1,7 @@
 import "server-only";
 import type { CoachEvent } from "@/lib/curlcoach/event";
 import { difficultyRecords } from "@/lib/curlcoach/difficulty";
+import { analysisRecords } from "@/lib/curlcoach/advanced-analysis";
 import { loadEnhanced } from "./shot-tracker-enhanced";
 import { readLocalEnhanced } from "./curlcoach-local";
 
@@ -26,9 +27,13 @@ export async function loadEventDifficulty(
               );
           game.difficultyRecords = difficultyRecords(game.state, documents);
           game.difficultyReady = true;
+          game.analysisRecords = analysisRecords(game.state, documents);
+          game.analysisReady = true;
         } catch {
           game.difficultyRecords = [];
           game.difficultyReady = false;
+          game.analysisRecords = [];
+          game.analysisReady = false;
         }
       }),
     );

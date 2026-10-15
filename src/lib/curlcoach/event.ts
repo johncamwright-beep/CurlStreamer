@@ -1,4 +1,5 @@
 import { withDifficulty, type DifficultyRecord } from "./difficulty";
+import type { AnalysisRecord } from "./advanced-analysis";
 import type { EventLevel } from "@/lib/team-hierarchy";
 import type { ReviewCorrection } from "./flagged-shots";
 import {
@@ -49,6 +50,8 @@ export type CoachGame = {
   state: State;
   difficultyRecords?: DifficultyRecord[];
   difficultyReady?: boolean;
+  analysisRecords?: AnalysisRecord[];
+  analysisReady?: boolean;
 };
 export type CoachEvent = {
   id: string;

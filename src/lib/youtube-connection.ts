@@ -3,6 +3,7 @@ import "server-only";
 import type { User } from "@supabase/supabase-js";
 import { z } from "zod";
 import { createAdminSupabaseClient } from "@/lib/supabase/admin";
+import { revokeAndDisconnectYouTubeConnection } from "@/lib/providers/youtube-disconnect";
 
 const statusRow = z.object({
   channel_id: z.string().nullable(),
@@ -158,10 +159,5 @@ export async function finishYouTubeConnectionTest(
 }
 
 export async function disconnectYouTubeConnection(user: User) {
-  await rpc(
-    "disconnect",
-    "disconnect_youtube_connection",
-    { p_user_id: user.id },
-    z.coerce.number().int().positive(),
-  );
+  await revokeAndDisconnectYouTubeConnection(user);
 }

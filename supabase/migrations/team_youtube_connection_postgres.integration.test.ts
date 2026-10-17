@@ -70,6 +70,8 @@ describe.skipIf(!enabled)("team YouTube connection PostgreSQL boundary", () => {
   it("authorizes administrators and rejects stale organization/version writes", () => {
     const organizationA = randomUUID();
     const organizationB = randomUUID();
+    const organizationC = randomUUID();
+    const organizationD = randomUUID();
     const owner = randomUUID();
     const administrator = randomUUID();
     const scorer = randomUUID();
@@ -82,12 +84,13 @@ describe.skipIf(!enabled)("team YouTube connection PostgreSQL boundary", () => {
     expect(
       psql(`
         insert into public.organizations(id,name) values
-          ('${organizationA}','YouTube A'),('${organizationB}','YouTube B');
+          ('${organizationA}','YouTube A'),('${organizationB}','YouTube B'),
+          ('${organizationC}','Unverified'),('${organizationD}','Inactive');
         ${account(owner, organizationA)}
         ${account(administrator, organizationA, { role: "team_admin" })}
         ${account(scorer, organizationA, { role: "scorer" })}
-        ${account(unverified, organizationA, { verified: false })}
-        ${account(inactive, organizationA, { active: false })}
+        ${account(unverified, organizationC, { verified: false })}
+        ${account(inactive, organizationD, { active: false })}
         ${account(otherOwner, organizationB)}
       `).ok,
     ).toBe(true);
@@ -143,10 +146,11 @@ describe.skipIf(!enabled)("team YouTube connection PostgreSQL boundary", () => {
     ).toBe(true);
     expect(
       psql(
-        `select public.disconnect_youtube_connection('${administrator}')`,
+        `with receipt as (select * from public.begin_youtube_disconnect('${administrator}'))
+         select public.finish_youtube_disconnect('${administrator}',organization_id,connection_version,disconnect_operation_id) from receipt`,
         true,
       ).stdout,
-    ).toBe("2");
+    ).toBe("3");
     const staleCallback = psql(
       `select public.complete_youtube_connection('${administrator}','${organizationA}',1,
         '${ciphertext}','stale-channel','Stale')`,
@@ -158,7 +162,7 @@ describe.skipIf(!enabled)("team YouTube connection PostgreSQL boundary", () => {
       psql(`select connection_status,connection_version,channel_id is null
         from public.broadcast_settings where organization_id='${organizationA}' and provider='youtube'`)
         .stdout,
-    ).toBe("disconnected|2|t");
+    ).toBe("disconnected|3|t");
 
     const movedAttempt = "c".repeat(64);
     expect(
@@ -170,11 +174,12 @@ describe.skipIf(!enabled)("team YouTube connection PostgreSQL boundary", () => {
     ).toBe(true);
     expect(
       psql(
-        `update public.team_memberships set organization_id='${organizationB}' where user_id='${owner}'`,
+        `update public.team_memberships set role='owner' where user_id='${administrator}';
+         update public.team_memberships set organization_id='${organizationB}' where user_id='${owner}'`,
       ).ok,
     ).toBe(true);
     const wrongOrganization = psql(
-      `select public.complete_youtube_connection('${owner}','${organizationA}',2,
+      `select public.complete_youtube_connection('${owner}','${organizationA}',3,
         '${ciphertext}','channel-a','Club A')`,
       true,
     );
@@ -193,21 +198,21 @@ describe.skipIf(!enabled)("team YouTube connection PostgreSQL boundary", () => {
     ).toBe(true);
     expect(
       psql(
-        `select public.complete_youtube_connection('${owner}','${organizationA}',2,
-          '${ciphertext}','channel-a','Club A')`,
-        true,
-      ).stdout,
-    ).toBe("3");
-    expect(
-      psql(
-        `select public.complete_youtube_connection('${administrator}','${organizationA}',3,
+        `select public.complete_youtube_connection('${owner}','${organizationA}',3,
           '${ciphertext}','channel-a','Club A')`,
         true,
       ).stdout,
     ).toBe("4");
+    expect(
+      psql(
+        `select public.complete_youtube_connection('${administrator}','${organizationA}',4,
+          '${ciphertext}','channel-a','Club A')`,
+        true,
+      ).stdout,
+    ).toBe("5");
     const staleTest = psql(
       `select public.finish_youtube_connection_test(
-        '${owner}','${organizationA}',3,true,null)`,
+        '${owner}','${organizationA}',4,true,null)`,
       true,
     );
     expect(staleTest.ok).toBe(false);
@@ -216,7 +221,7 @@ describe.skipIf(!enabled)("team YouTube connection PostgreSQL boundary", () => {
       psql(`select connection_status,connection_version,channel_id
         from public.broadcast_settings where organization_id='${organizationA}' and provider='youtube'`)
         .stdout,
-    ).toBe("connected|4|channel-a");
+    ).toBe("connected|5|channel-a");
 
     expect(
       psql(`select

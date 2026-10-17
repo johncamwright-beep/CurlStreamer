@@ -503,6 +503,8 @@ export function MarketingHome() {
         <div className="wrap">
           <span>CurlStreamer · A home for your game.</span>
           <div className="site-footer-links">
+            <a href="/privacy">Privacy Policy</a>
+            <a href="/terms">Terms of Service</a>
             <a href="#pilot-privacy">Waitlist privacy</a>
             <a href="/login">Existing pilot member? Log in</a>
           </div>

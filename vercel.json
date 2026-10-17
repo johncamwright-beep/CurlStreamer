@@ -1,0 +1,5 @@
+{
+  "crons": [
+    { "path": "/api/cron/youtube-authorizations", "schedule": "17 8 * * *" }
+  ]
+}

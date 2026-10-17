@@ -12,6 +12,8 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       : [];
   const result: MetadataRoute.Sitemap = [
     { url: "https://www.curlstreamer.app/" },
+    { url: "https://www.curlstreamer.app/privacy" },
+    { url: "https://www.curlstreamer.app/terms" },
   ];
   const db = createAdminSupabaseClient();
   for (let offset = 0; offset < 49000; offset += 1000) {

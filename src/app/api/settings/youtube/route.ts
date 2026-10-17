@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { disconnectYouTubeConnection } from "@/lib/youtube-connection";
+import { revokeAndDisconnectYouTubeConnection } from "@/lib/providers/youtube-disconnect";
 import { isSameOrigin, requireYouTubeManager } from "@/lib/youtube-route-auth";
 
 export const dynamic = "force-dynamic";
@@ -17,7 +17,7 @@ export async function DELETE(request: Request) {
       { status: 403 },
     );
   try {
-    await disconnectYouTubeConnection(user);
+    await revokeAndDisconnectYouTubeConnection(user);
     return NextResponse.json({ ok: true });
   } catch (error) {
     return NextResponse.json(
@@ -26,7 +26,10 @@ export async function DELETE(request: Request) {
           error instanceof Error &&
           error.message === "youtube_connection_in_use"
             ? "An unfinished broadcast still uses this channel. Reconnect the same channel in your regular browser, then stop or recover that broadcast before disconnecting."
-            : "YouTube connection could not be disconnected",
+            : error instanceof Error &&
+                error.message === "youtube_disconnect_pending"
+              ? "YouTube disconnect is pending. New broadcasts are paused. Try Disconnect again to finish removing Google access."
+              : "YouTube connection could not be disconnected",
       },
       { status: 409 },
     );

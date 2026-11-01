@@ -156,6 +156,48 @@ export default function CoachLab({
   const [editing, setEditing] = useState<string | null>(
     resume?.editing ?? null,
   );
+  const [selection, setSelection] = useState(draft);
+  useEffect(() => setSelection(draft), [draft]);
+  function recallSelection() {
+    const existing = currentShots(latestState.current?.events ?? []).find(
+      (shot) =>
+        shot.end === selection.end &&
+        shot.position === selection.position &&
+        shot.stone === selection.stone,
+    );
+    if (
+      selection.end === draft.end &&
+      selection.position === draft.position &&
+      selection.stone === draft.stone &&
+      (!existing || existing.id === editing)
+    ) {
+      setDraft({ ...draft, playerId: selection.playerId });
+      return;
+    }
+    if (existing) {
+      const { id, ...values } = existing;
+      setEditing(id);
+      setDraft(values);
+    } else if (
+      editing &&
+      selection.end === currentDraft.current.end &&
+      selection.position === currentDraft.current.position &&
+      selection.stone === currentDraft.current.stone
+    ) {
+      setEditing(null);
+      setDraft(currentDraft.current);
+    } else {
+      setEditing(null);
+      setDraft({
+        ...blankDraft(selection.playerId),
+        end: selection.end,
+        position: selection.position,
+        stone: selection.stone,
+      });
+      deliberateDraftChange.current = true;
+    }
+    setEntryTab("Shot");
+  }
   const metrics = useMetrics();
   const enhancedMode =
     metrics.ready && metrics.preferences.mode === "enhanced" && !!context;
@@ -965,19 +1007,38 @@ export default function CoachLab({
                           </dd>
                         </div>
                       </dl>
-                      <EntryOverlay title="Change">
+                      <EntryOverlay
+                        title="Change"
+                        onOpen={() => setSelection(draft)}
+                        onDone={recallSelection}
+                      >
                         <div className="coach-entry-grid">
                           <label>
                             Player
                             <select
                               aria-label="Player"
-                              value={draft.playerId}
-                              onChange={(e) =>
-                                setDraft({
-                                  ...draft,
+                              value={selection.playerId}
+                              onChange={(e) => {
+                                const assignedRock = lineup.findIndex(
+                                  (id) => id === e.target.value,
+                                );
+                                setSelection({
+                                  ...selection,
                                   playerId: e.target.value as Shot["playerId"],
-                                })
-                              }
+                                  ...(assignedRock >= 0
+                                    ? {
+                                        position: (
+                                          [
+                                            "Lead",
+                                            "Second",
+                                            "Third",
+                                            "Fourth",
+                                          ] as const
+                                        )[Math.floor(assignedRock / 2)],
+                                      }
+                                    : {}),
+                                });
+                              }}
                             >
                               {players.map((p) => (
                                 <option value={p.id} key={p.id}>
@@ -986,23 +1047,47 @@ export default function CoachLab({
                               ))}
                             </select>
                           </label>
-                          {choose("position", "Throwing position", [
-                            "Lead",
-                            "Second",
-                            "Third",
-                            "Fourth",
-                          ])}
+                          <label>
+                            Throwing position
+                            <select
+                              aria-label="Throwing position"
+                              value={selection.position}
+                              onChange={(e) => {
+                                const position = e.target
+                                  .value as Shot["position"];
+                                setSelection({
+                                  ...selection,
+                                  position,
+                                  playerId:
+                                    lineup[
+                                      rockNumber({
+                                        position,
+                                        stone: selection.stone,
+                                      }) - 1
+                                    ] ?? selection.playerId,
+                                });
+                              }}
+                            >
+                              {["Lead", "Second", "Third", "Fourth"].map(
+                                (position) => (
+                                  <option key={position} value={position}>
+                                    {position}
+                                  </option>
+                                ),
+                              )}
+                            </select>
+                          </label>
                           <label>
                             End
                             <input
                               type="number"
                               min="1"
                               max="20"
-                              value={draft.end}
+                              value={selection.end}
                               required
                               onChange={(e) =>
-                                setDraft({
-                                  ...draft,
+                                setSelection({
+                                  ...selection,
                                   end: Number(e.target.value),
                                 })
                               }
@@ -1012,18 +1097,18 @@ export default function CoachLab({
                             Stone
                             <select
                               aria-label="Stone"
-                              value={draft.stone}
+                              value={selection.stone}
                               onChange={(e) =>
-                                setDraft({
-                                  ...draft,
+                                setSelection({
+                                  ...selection,
                                   stone: Number(e.target.value),
                                   playerId:
                                     lineup[
                                       rockNumber({
-                                        position: draft.position,
+                                        position: selection.position,
                                         stone: Number(e.target.value),
                                       }) - 1
-                                    ] ?? draft.playerId,
+                                    ] ?? selection.playerId,
                                 })
                               }
                             >

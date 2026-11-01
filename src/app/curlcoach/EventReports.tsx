@@ -93,14 +93,19 @@ export default function EventReports({
     (e) => e.status === "processing" && !e.resumable,
   );
   useEffect(() => {
-    if (!processing && !busy) return;
+    // Local generation refreshes after each completed step. Poll only work
+    // started elsewhere; each status read also loads the event's analytics.
+    if (!processing || busy) return;
     const c = new AbortController();
-    const timer = setInterval(
-      () => void load(c.signal).catch(() => undefined),
-      6000,
-    );
+    let timer: ReturnType<typeof setTimeout>;
+    async function poll() {
+      if (document.visibilityState === "visible")
+        await load(c.signal).catch(() => undefined);
+      if (!c.signal.aborted) timer = setTimeout(poll, 15000);
+    }
+    timer = setTimeout(poll, 15000);
     return () => {
-      clearInterval(timer);
+      clearTimeout(timer);
       c.abort();
     };
   }, [processing, busy, load]);

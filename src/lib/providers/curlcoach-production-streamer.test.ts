@@ -464,3 +464,41 @@ it("returns an empty standalone event after its last game is deleted", async () 
   expect(result.event.id).toBe("standalone");
   expect(result.event.games).toEqual([]);
 });
+
+it("shot writes skip analytical reads but still enforce event and game membership", async () => {
+  const { value } = await m.games();
+  m.games.mockResolvedValue({
+    ok: true,
+    value: [{ ...value[0], game_status: "active", completion_result: null }],
+  });
+  const result = await loadProductionStreamerEvent(
+    eid,
+    gid,
+    undefined,
+    account,
+    { details: false },
+  );
+  expect(result.event.games.map((g) => g.id)).toEqual([gid]);
+  expect(m.events).toHaveBeenCalledWith(account.user);
+  expect(m.games).toHaveBeenCalledWith(account.user);
+  expect(m.seasons).not.toHaveBeenCalled();
+  expect(m.opponentSeasons).not.toHaveBeenCalled();
+  expect(m.videos).not.toHaveBeenCalled();
+  expect(m.rpc).not.toHaveBeenCalled();
+  expect(
+    (
+      await loadProductionStreamerEvent(
+        eid,
+        "00000000-0000-4000-8000-000000000099",
+        undefined,
+        account,
+        { details: false },
+      )
+    ).event.games,
+  ).toEqual([]);
+  await expect(
+    loadProductionStreamerEvent("foreign-event", gid, undefined, account, {
+      details: false,
+    }),
+  ).rejects.toThrow("organization");
+});

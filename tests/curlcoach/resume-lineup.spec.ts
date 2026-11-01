@@ -458,3 +458,40 @@ test("reload preserves drafts and lineup changes never rewrite recorded players"
     .click();
   await expect.poll(() => games.get(gameOne)!.state.events.length).toBe(2);
 });
+
+test("Change recalls a recorded shot, saves an audited correction and returns to the current draft", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  const games = await fixture(page);
+  await start(page);
+  await page.getByLabel("Numeric grade").selectOption("2");
+  await page.getByRole("button", { name: "Next Turn", exact: true }).click();
+  await expect(
+    page.getByRole("region", { name: "Current shot context" }),
+  ).toContainText("Rock 2");
+  await openEntryTab(page, "Execution");
+  await page.getByLabel("Numeric grade").selectOption("4");
+  await page.getByRole("button", { name: "Change", exact: true }).click();
+  await page.getByLabel("Stone", { exact: true }).selectOption("1");
+  await page
+    .getByRole("dialog", { name: "Change", exact: true })
+    .getByRole("button", { name: "Done", exact: true })
+    .click();
+  await openEntryTab(page, "Execution");
+  await expect(page.getByLabel("Numeric grade")).toHaveValue("2");
+  await page.getByLabel("Numeric grade").selectOption("5");
+  await page
+    .getByRole("button", { name: "Save correction", exact: true })
+    .click();
+  await expect(
+    page.getByRole("region", { name: "Current shot context" }),
+  ).toContainText("Rock 2");
+  await openEntryTab(page, "Execution");
+  await expect(page.getByLabel("Numeric grade")).toHaveValue("4");
+  const events = games.get(gameOne)!.state.events;
+  expect(events).toHaveLength(2);
+  expect(events[0].shotId).toBe(events[1].shotId);
+  expect(events[0].shot?.grade).toBe(2);
+  expect(events[1].shot?.grade).toBe(5);
+});

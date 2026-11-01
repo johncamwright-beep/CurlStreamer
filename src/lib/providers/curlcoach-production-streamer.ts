@@ -54,17 +54,23 @@ export async function loadProductionStreamerEvent(
   gameId?: string,
   seasonId?: string,
   requestAccount?: CoachAccount,
+  options: { details?: boolean } = {},
 ) {
   // The route may pass an account it just authorized. Direct callers establish
   // the same request-local scope here; this is never cached across requests.
   const account = requestAccount ?? (await requireCoachAccount());
   if (!account) throw new Error("Private coaching access is required.");
+  const details = options.details !== false;
   const settingsResult = readTeamSettings(account.organizationId);
   const hierarchyResult = Promise.all([
     listEvents(account.user),
     listTeamHierarchyGames(account.user),
-    listSeasons(account.user),
-    listOpponentSeasons(account.user),
+    details
+      ? listSeasons(account.user)
+      : Promise.resolve({ ok: true as const, value: [] }),
+    details
+      ? listOpponentSeasons(account.user)
+      : Promise.resolve({ ok: true as const, value: [] }),
   ]);
   const [{ settings }, [events, games, seasonResult, opponentSeasons]] =
     await Promise.all([settingsResult, hierarchyResult]);
@@ -226,17 +232,22 @@ export async function loadProductionStreamerEvent(
     seasonId: selected.seasonId,
     games: [],
   };
-  const broadcastReviews = gameId
-    ? Promise.resolve<Awaited<ReturnType<typeof loadCoachBroadcastReviews>>>({})
-    : loadCoachBroadcastReviews(
-        account.organizationId,
+  const broadcastReviews =
+    gameId || !details
+      ? Promise.resolve<Awaited<ReturnType<typeof loadCoachBroadcastReviews>>>(
+          {},
+        )
+      : loadCoachBroadcastReviews(
+          account.organizationId,
+          rows.map((row) => row.id),
+          account.userId,
+        );
+  const reviewCorrections = details
+    ? await loadReviewCorrections(
+        account,
         rows.map((row) => row.id),
-        account.userId,
-      );
-  const reviewCorrections = await loadReviewCorrections(
-    account,
-    rows.map((row) => row.id),
-  );
+      )
+    : {};
   event.games = await mapWithConcurrency(
     rows,
     MAX_CONCURRENT_SCORE_READS,
@@ -254,7 +265,7 @@ export async function loadProductionStreamerEvent(
           type: "end",
           score,
         }));
-      else {
+      else if (details) {
         // IDs come only from the account-scoped listing above, never the caller.
         const { data: snapshot, error: readError } =
           await createAdminSupabaseClient().rpc("read_game_state", {

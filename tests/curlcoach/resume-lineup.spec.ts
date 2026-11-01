@@ -462,6 +462,7 @@ test("reload preserves drafts and lineup changes never rewrite recorded players"
 test("Change recalls a recorded shot, saves an audited correction and returns to the current draft", async ({
   page,
 }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
   const games = await fixture(page);
   await start(page);
   await page.getByLabel("Numeric grade").selectOption("2");

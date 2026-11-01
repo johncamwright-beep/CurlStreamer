@@ -9,12 +9,16 @@ export default function EntryOverlay({
   children,
   className = "",
   inline = false,
+  onOpen,
+  onDone,
 }: {
   title: string;
   description?: string;
   children: ReactNode;
   className?: string;
   inline?: boolean;
+  onOpen?: () => void;
+  onDone?: () => void;
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
   const trigger = useRef<HTMLButtonElement>(null);
@@ -34,6 +38,7 @@ export default function EntryOverlay({
         aria-haspopup="dialog"
         aria-expanded={open}
         onClick={() => {
+          onOpen?.();
           dialog.current?.showModal();
           setOpen(true);
         }}
@@ -72,7 +77,13 @@ export default function EntryOverlay({
         </header>
         <div className="entry-dialog-content">{children}</div>
         <footer>
-          <button type="button" onClick={close}>
+          <button
+            type="button"
+            onClick={() => {
+              onDone?.();
+              close();
+            }}
+          >
             Done
           </button>
         </footer>

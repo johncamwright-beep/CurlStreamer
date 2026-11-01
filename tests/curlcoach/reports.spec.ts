@@ -12,6 +12,13 @@ let css = "";
 test("player generation continues automatically, exposes a partial failure and retries remaining work", async ({
   page,
 }) => {
+  let statusReads = 0;
+  let generationStarted = false;
+  let releaseGeneration!: () => void;
+  const gate = new Promise<void>((resolve) => {
+    releaseGeneration = resolve;
+  });
+  await page.clock.install();
   const entries = new Map<string, object>();
   let playerRequests = 0;
   const summary = {
@@ -53,6 +60,10 @@ test("player generation continues automatically, exposes a partial failure and r
   await page.route("**/api/curlcoach/reports**", async (route) => {
     if (route.request().method() === "POST") {
       const { audience } = route.request().postDataJSON();
+      if (audience === "coach") {
+        generationStarted = true;
+        await gate;
+      }
       if (audience === "players") playerRequests++;
       const partial = audience === "players" && playerRequests < 3;
       const packet = {
@@ -87,6 +98,7 @@ test("player generation continues automatically, exposes a partial failure and r
       );
       return;
     }
+    statusReads++;
     await route.fulfill({
       json: {
         configured: true,
@@ -119,6 +131,10 @@ test("player generation continues automatically, exposes a partial failure and r
   await page
     .getByRole("button", { name: "Generate reports", exact: true })
     .click();
+  await expect.poll(() => generationStarted).toBe(true);
+  await page.clock.fastForward(20000);
+  expect(statusReads).toBe(1);
+  releaseGeneration();
   await expect(page.getByText("Alex: Ready", { exact: true })).toBeVisible();
   await expect(
     page.getByText("Blair: Failed - retry available", { exact: true }),

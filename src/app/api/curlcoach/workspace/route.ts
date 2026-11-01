@@ -70,7 +70,9 @@ async function source(
     if (input.source !== "streamer")
       throw new Error("Sample data is only available in the local lab.");
     return gameId
-      ? loadProductionStreamerEvent(input.eventId, gameId, undefined, account)
+      ? loadProductionStreamerEvent(input.eventId, gameId, undefined, account, {
+          details: false,
+        })
       : seasonId
         ? loadProductionStreamerEvent(undefined, undefined, seasonId, account)
         : loadProductionStreamerEvent(

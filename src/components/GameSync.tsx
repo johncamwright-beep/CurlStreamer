@@ -188,6 +188,7 @@ export function useGame<V extends GameView = undefined>(
     void refresh(includeContext);
     let stopped = false;
     let running = false;
+    let requested = false;
     let timer: ReturnType<typeof setTimeout>;
     const schedule = () => {
       if (stopped) return;
@@ -201,16 +202,22 @@ export function useGame<V extends GameView = undefined>(
       );
     };
     const poll = async () => {
-      if (stopped || (running && !keepLiveWhenHidden)) return;
+      if (stopped) return;
+      if (running) {
+        requested = true;
+        return;
+      }
       running = true;
       clearTimeout(timer);
-      // Live receivers must still observe terminal state if an older read stalls.
-      if (keepLiveWhenHidden) schedule();
+      // Requests have a ten-second deadline; never stack reads during an outage.
       try {
         await refresh();
       } finally {
         running = false;
-        if (!keepLiveWhenHidden) schedule();
+        if (!stopped && requested) {
+          requested = false;
+          void poll();
+        } else schedule();
       }
     };
     const onVisibility = () => {

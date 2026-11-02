@@ -1,13 +1,17 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 vi.mock("server-only", () => ({}));
-const mocks = vi.hoisted(() => ({ studioAction: vi.fn(), from: vi.fn() }));
+const mocks = vi.hoisted(() => ({
+  studioAction: vi.fn(),
+  from: vi.fn(),
+  rpc: vi.fn(),
+}));
 vi.mock("./m2-studio-session", () => ({
   ...mocks,
   StudioRejected: class extends Error {},
   StudioUnavailable: class extends Error {},
 }));
 vi.mock("@/lib/supabase/admin", () => ({
-  createAdminSupabaseClient: () => ({ from: mocks.from }),
+  createAdminSupabaseClient: () => ({ from: mocks.from, rpc: mocks.rpc }),
 }));
 import {
   createProgramGrant,
@@ -36,6 +40,7 @@ describe("M3 one-use program grants", () => {
     vi.restoreAllMocks();
     vi.stubEnv("ROLE_TOKEN_SECRET", "test-program-cookie-secret-32-characters");
     mocks.studioAction.mockReset().mockResolvedValue({});
+    mocks.rpc.mockReset().mockResolvedValue({ data: true, error: null });
     const rows = new Map<
       string,
       { game_id: string; code_hash: string; scope: unknown; expires_at: string }
@@ -111,11 +116,22 @@ describe("M3 one-use program grants", () => {
       vi.useRealTimers();
     }
   });
-  it("retains the canvas with one valid slot but refuses two stale slots", async () => {
-    mocks.studioAction.mockRejectedValueOnce(new Error("released"));
+  it("checks both fixed slots in one read without renewing either", async () => {
     await expect(checkAvailableProgramScope(scope)).resolves.toBeUndefined();
-    mocks.studioAction.mockRejectedValue(new StudioRejected());
-    await expect(checkAvailableProgramScope(scope)).rejects.toThrow();
+    expect(mocks.rpc).toHaveBeenCalledExactlyOnceWith(
+      "m3_program_scope_available",
+      {
+        p_game_id: gameId,
+        p_organization_id: scope.organizationId,
+        p_home_session_id: scope.sessions["camera-home"],
+        p_away_session_id: scope.sessions["camera-away"],
+      },
+    );
+    expect(mocks.studioAction).not.toHaveBeenCalled();
+    mocks.rpc.mockResolvedValue({ data: false, error: null });
+    await expect(checkAvailableProgramScope(scope)).rejects.toBeInstanceOf(
+      StudioRejected,
+    );
   });
   it("expires program cookies after four hours", async () => {
     const value = await exchangeProgramGrant(
@@ -130,20 +146,22 @@ describe("M3 one-use program grants", () => {
       vi.useRealTimers();
     }
   });
-  it("does not turn two database outages into revoked program authority", async () => {
-    const failure = new StudioUnavailable();
-    mocks.studioAction.mockRejectedValue(failure);
-    await expect(checkAvailableProgramScope(scope)).rejects.toBe(failure);
-    mocks.studioAction.mockRejectedValueOnce(new StudioRejected());
-    await expect(checkAvailableProgramScope(scope)).rejects.toBe(failure);
-    mocks.studioAction.mockResolvedValueOnce({});
-    await expect(checkAvailableProgramScope(scope)).resolves.toBeUndefined();
-  });
-  it("treats an unexpected rejected database promise as unavailable, not revoked", async () => {
-    mocks.studioAction.mockRejectedValue(
-      new TypeError("fetch failed private URL"),
-    );
-    await expect(checkAvailableProgramScope(scope)).rejects.toBeInstanceOf(
+  it.each([
+    { data: null, error: { message: "private database detail" } },
+    { data: null, error: null },
+    { data: "true", error: null },
+  ])(
+    "does not treat unavailable/malformed database responses as revocation",
+    async (result) => {
+      mocks.rpc.mockResolvedValue(result);
+      await expect(checkAvailableProgramScope(scope)).rejects.toBeInstanceOf(
+        StudioUnavailable,
+      );
+    },
+  );
+  it("sanitizes unexpected transport rejection", async () => {
+    mocks.rpc.mockRejectedValue(new Error("private URL"));
+    await expect(checkAvailableProgramScope(scope)).rejects.toThrow(
       StudioUnavailable,
     );
   });

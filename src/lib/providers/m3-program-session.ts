@@ -111,41 +111,26 @@ export async function checkProgramScope(scope: ProgramScope) {
   );
 }
 export async function checkAvailableProgramScope(scope: ProgramScope) {
-  const results = await Promise.allSettled(
-    (Object.keys(scope.sessions) as CameraRole[]).map((cameraRole) =>
-      studioAction(
-        scope.gameId,
-        {
-          action: "check",
-          side: "receiver",
-          cameraRole,
-          sessionId: scope.sessions[cameraRole],
-        },
-        { organizationId: scope.organizationId },
-      ),
-    ),
-  );
-  // Each slot independently checks active game/org and its fixed session in SQL.
-  // A failed camera must not remove the healthy camera's score/sponsor canvas.
-  if (!results.some((result) => result.status === "fulfilled")) {
-    // A failed database call is not evidence that the signed program scope was
-    // revoked. Returning 409 here permanently closed the local program client.
-    const unavailable = results.find(
-      (result) =>
-        result.status === "rejected" &&
-        result.reason instanceof StudioUnavailable,
+  const validated = scopeSchema.parse(scope);
+  let result;
+  try {
+    result = await createAdminSupabaseClient().rpc(
+      "m3_program_scope_available",
+      {
+        p_game_id: validated.gameId,
+        p_organization_id: validated.organizationId,
+        p_home_session_id: validated.sessions["camera-home"],
+        p_away_session_id: validated.sessions["camera-away"],
+      },
     );
-    if (unavailable?.status === "rejected") throw unavailable.reason;
-    if (
-      results.some(
-        (result) =>
-          result.status === "rejected" &&
-          !(result.reason instanceof StudioRejected),
-      )
-    )
-      throw new StudioUnavailable("database");
-    throw new StudioRejected();
+  } catch {
+    throw new StudioUnavailable("database");
   }
+  // Read authorization must not renew presence. Explicit receiver check/ticket
+  // calls retain heartbeat and recovery responsibilities.
+  if (result.error || typeof result.data !== "boolean")
+    throw new StudioUnavailable("database");
+  if (!result.data) throw new StudioRejected();
 }
 export async function prepareProgramScope(
   gameId: string,

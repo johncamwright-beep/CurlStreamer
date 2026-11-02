@@ -15,5 +15,5 @@ export function gamePollDelay({
   if (lifecycle && lifecycle !== "active") return 30_000;
   if (error) return 10_000;
   if (hidden && !keepLiveWhenHidden) return 15_000;
-  return 1_000;
+  return 2_000;
 }

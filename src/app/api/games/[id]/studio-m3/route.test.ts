@@ -199,6 +199,11 @@ describe("M3 restricted program route", () => {
     expect(mocks.issueStudioTicket).not.toHaveBeenCalled();
   });
   it("returns a retryable service failure and correlated database stage for an unavailable scope check", async () => {
+    mocks.readGame.mockResolvedValue({
+      kind: "active",
+      game: { sponsors: [] },
+    });
+    mocks.gameBroadcastSponsors.mockResolvedValue([]);
     mocks.checkAvailableProgramScope.mockRejectedValueOnce(
       new StudioUnavailable("database"),
     );

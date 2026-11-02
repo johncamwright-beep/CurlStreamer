@@ -216,7 +216,7 @@ export function StudioYouTube({
       }
     }
     void load();
-    const timer = setInterval(load, 10000);
+    const timer = setInterval(load, 30000);
     return () => {
       controller.abort();
       clearInterval(timer);

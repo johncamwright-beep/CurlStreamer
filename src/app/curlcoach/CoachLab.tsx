@@ -42,6 +42,7 @@ import ReviewSummary from "./ReviewSummary";
 import type { ReviewCorrection } from "@/lib/curlcoach/flagged-shots";
 import {
   readEnhancedDraft,
+  savedSupplementSchema,
   writeEnhancedDraft,
   type EnhancedDraft,
 } from "@/lib/curlcoach/enhanced-drafts";
@@ -434,7 +435,7 @@ export default function CoachLab({
           ),
         },
       );
-      const data = await response.json();
+      const { enhancedDocument, ...data } = await response.json();
       if (!response.ok) throw new Error(data.error);
       pendingShot.current = null;
       if (includeEnhanced) {
@@ -444,7 +445,10 @@ export default function CoachLab({
           /* Optional storage. */
         }
         setEnhancedDraft(null);
-        await enhancedData.reload();
+        const confirmed = savedSupplementSchema.safeParse(enhancedDocument);
+        if (confirmed.success && confirmed.data.shotId === command.shotId)
+          enhancedData.acceptSaved(confirmed.data);
+        else await enhancedData.reload();
       }
       setState(data);
       context?.onSaved(data);

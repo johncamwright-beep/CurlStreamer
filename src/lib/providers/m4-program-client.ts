@@ -1,4 +1,9 @@
 // Node-owned program authority. Never import into a browser bundle.
+import { ChangedReadCache } from "../changed-read-cache";
+import {
+  gameChangeNoticeSchema,
+  subscribeGameChanges,
+} from "./game-change-subscription";
 import { performance } from "node:perf_hooks";
 import { z } from "zod";
 import type { PrivateProgramGame } from "../game-projection";
@@ -156,6 +161,9 @@ const projectedGame = z.object({
  * scoped realtime tickets out of persistent browser storage/logs.
  */
 export class M4ProgramClient {
+  #gameCache = new ChangedReadCache<PrivateProgramGame>();
+  #noticeTopic?: string;
+  #closeNotice?: () => void;
   #endpoint: string;
   #origin: string;
   #gameId: string;
@@ -204,6 +212,10 @@ export class M4ProgramClient {
     return this.#state === "active" && performance.now() < this.#deadline;
   }
   close() {
+    this.#gameCache.clear();
+    this.#closeNotice?.();
+    this.#closeNotice = undefined;
+    this.#noticeTopic = undefined;
     if (this.#state !== "closed")
       this.#log({ layer: "session", code: "stopped" });
     this.#state = "closed";
@@ -479,19 +491,38 @@ export class M4ProgramClient {
       this.close();
       throw fail();
     }
+    return this.#gameCache.read(() => this.#readFreshGame());
+  }
+  async #readFreshGame(): Promise<PrivateProgramGame> {
     try {
       const { value } = await this.#call(undefined, this.#cookie, "GET");
       if (!this.active) throw fail();
-      const { game, organizationId } = z
+      const { game, organizationId, changeNotice } = z
         .object({
           game: projectedGame.extend({
             nativeCameraAudio: projectedGame.shape.cameraAudio,
           }),
           organizationId: z.uuid().optional(),
+          changeNotice: gameChangeNoticeSchema.optional(),
         })
         .parse(value);
       if (game.id !== this.#gameId) throw fail();
       this.#organizationId = organizationId;
+      if (JSON.stringify(changeNotice) !== this.#noticeTopic) {
+        this.#closeNotice?.();
+        this.#gameCache.connected = false;
+        this.#noticeTopic = JSON.stringify(changeNotice);
+        this.#closeNotice = changeNotice
+          ? subscribeGameChanges(
+              changeNotice,
+              () => this.#gameCache.invalidate(),
+              (ready) => {
+                this.#gameCache.connected = ready;
+                this.#gameCache.invalidate();
+              },
+            )
+          : undefined;
+      }
       return { ...game, cameraFraming: game.cameraFraming };
     } catch (cause) {
       // GET checks the entire program scope; a failure differs from a waiting slot.

@@ -165,10 +165,21 @@ test("workbook selections, corrections, clearing, Standard mode and historical p
     page.getByRole("combobox", { name: "Guard to clear", exact: true }),
   ).toBeHidden();
   // Save first: historical details are available only during correction.
+  let observationReloads = 0;
+  const countReloads = (request: import("@playwright/test").Request) => {
+    if (
+      request.method() === "GET" &&
+      request.url().includes("/api/curlcoach/enhanced?gameId=")
+    )
+      observationReloads++;
+  };
+  page.on("request", countReloads);
   await page.getByRole("button", { name: "Next Turn", exact: true }).click();
   await expect(
     page.locator(".coach-scoring [role=status]").first(),
   ).toContainText("Saved.");
+  expect(observationReloads).toBe(0);
+  page.off("request", countReloads);
   await page
     .getByRole("button", { name: "Recorded shots", exact: true })
     .click();

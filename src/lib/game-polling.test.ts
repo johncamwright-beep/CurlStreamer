@@ -22,4 +22,8 @@ describe("game polling cadence", () => {
         gamePollDelay({ ...active, lifecycle, keepLiveWhenHidden: true }),
       ).toBe(30000);
   });
+  it("uses bounded fallback only while change notifications are connected", () => {
+    expect(gamePollDelay({ ...active, noticeConnected: true })).toBe(10_000);
+    expect(gamePollDelay({ ...active, noticeConnected: false })).toBe(2_000);
+  });
 });

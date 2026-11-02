@@ -859,7 +859,24 @@ export function useEnhancedGame(
     };
   }, [reload]);
 
-  return { documents, ready, error, reload, setDocuments };
+  const acceptSaved = (document: EnhancedDocument) => {
+    generation.current++;
+    setDocuments((current) => {
+      const prior = current.find(
+        (row) => row.kind === document.kind && row.shotId === document.shotId,
+      );
+      if (prior && prior.revision > document.revision) return current;
+      return [
+        ...current.filter(
+          (row) => row.kind !== document.kind || row.shotId !== document.shotId,
+        ),
+        document,
+      ];
+    });
+    setReady(true);
+    setError("");
+  };
+  return { documents, ready, error, reload, setDocuments, acceptSaved };
 }
 
 export function GameContext({

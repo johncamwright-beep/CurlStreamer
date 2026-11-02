@@ -139,14 +139,12 @@ it("renews locally between cloud checks, retries failures and stops on revocatio
     state: "active",
     authorized: true,
   });
-  const heartbeat = vi
-    .spyOn(desktop, "heartbeat")
-    .mockResolvedValue({
-      state: "active",
-      authorized: true,
-      desiredAction: "wait",
-      leaseRenewed: true,
-    });
+  const heartbeat = vi.spyOn(desktop, "heartbeat").mockResolvedValue({
+    state: "active",
+    authorized: true,
+    desiredAction: "wait",
+    leaseRenewed: true,
+  });
   vi.spyOn(desktop, "stop").mockResolvedValue({
     state: "stopped",
     authorized: false,

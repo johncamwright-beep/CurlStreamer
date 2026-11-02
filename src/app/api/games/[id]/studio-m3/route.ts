@@ -221,7 +221,6 @@ async function handleGET(
   try {
     requireStudioConfiguration();
     const scope = await readProgramScope(request, id.data);
-    await checkAvailableProgramScope(scope);
     const result = await readGame(id.data);
     if (result.kind !== "active") throw new StudioRejected();
     const sponsors = await gameBroadcastSponsors(id.data);
@@ -233,6 +232,8 @@ async function handleGET(
         (sponsor.dataUrl === "/sponsors/community.svg" ||
           sponsor.dataUrl === "/sponsors/rock.svg"),
     );
+    // Validate once after asynchronous reads, before exposing any projection.
+    await checkAvailableProgramScope(scope);
     const publicProjection = broadcastGame(
       { ...result.game, sponsors: bundledSponsors },
       sponsors,
@@ -243,7 +244,6 @@ async function handleGET(
       ...privateProgramSponsorIds(publicProjection, sponsors),
       nativeCameraAudio: nativeCameraAudioIntent(result.game),
     };
-    await checkAvailableProgramScope(scope);
     return response({ game, organizationId: scope.organizationId });
   } catch (cause) {
     return failure(cause);

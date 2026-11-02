@@ -171,7 +171,7 @@ test("camera cards share a row on a tablet and reconnect QR collapses when onlin
   await first.getByRole("button", { name: "Show reconnect QR" }).click();
   await expect(first.getByRole("img")).toBeVisible();
   online = true;
-  await page.clock.fastForward(5000);
+  await page.clock.fastForward(15000);
   await expect(first.getByRole("status")).toHaveText(
     "Phone online · Waiting for video",
   );

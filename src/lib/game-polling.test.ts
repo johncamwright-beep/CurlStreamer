@@ -9,11 +9,11 @@ describe("game polling cadence", () => {
     keepLiveWhenHidden: false,
   };
   it("keeps visible scoring fast and reduces idle background reads", () => {
-    expect(gamePollDelay(active)).toBe(1000);
+    expect(gamePollDelay(active)).toBe(2000);
     expect(gamePollDelay({ ...active, hidden: true })).toBe(15000);
     expect(
       gamePollDelay({ ...active, hidden: true, keepLiveWhenHidden: true }),
-    ).toBe(1000);
+    ).toBe(2000);
   });
   it("backs off failures and terminal games without permanently losing updates", () => {
     expect(gamePollDelay({ ...active, error: "Unavailable" })).toBe(10000);

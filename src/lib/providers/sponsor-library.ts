@@ -27,6 +27,58 @@ type BroadcastSponsorCacheEntry = {
 };
 const broadcastSponsorCache = new Map<string, BroadcastSponsorCacheEntry>();
 
+// Media metadata only: callers must still authorize each game request. Other
+// server instances reconcile within 15 seconds; local edits invalidate at once.
+const metadataCache = new Map<string, { until: number; rows: SponsorRow[] }>();
+const metadataFlights = new Map<string, Promise<SponsorRow[]>>();
+const libraryUrlCache = new Map<string, BroadcastSponsorCacheEntry>();
+let sponsorRevision = 0;
+export function invalidateSponsorCache() {
+  sponsorRevision++;
+  metadataCache.clear();
+  metadataFlights.clear();
+  libraryUrlCache.clear();
+  broadcastSponsorCache.clear();
+}
+function boundedSet<T>(cache: Map<string, T>, key: string, value: T) {
+  if (!cache.has(key) && cache.size >= 256)
+    cache.delete(cache.keys().next().value!);
+  cache.set(key, value);
+}
+async function sponsorRows(gameId: string, organizationId?: string) {
+  const key = organizationId
+    ? `organization:${organizationId}`
+    : `game:${gameId}`;
+  const cached = metadataCache.get(key);
+  if (cached && cached.until > Date.now()) return cached.rows;
+  const existing = metadataFlights.get(key);
+  if (existing) return existing;
+  const revision = sponsorRevision;
+  const load = (async () => {
+    const { data, error } = await createAdminSupabaseClient().rpc(
+      organizationId
+        ? "list_sponsors_for_organization"
+        : "list_game_organization_sponsors",
+      organizationId
+        ? { p_organization_id: organizationId }
+        : { p_game_id: gameId },
+    );
+    if (error) throw new Error("Sponsor library unavailable");
+    const rows = ((data ?? []) as SponsorRow[]).filter(
+      (row) => !row.archived_at,
+    );
+    if (revision === sponsorRevision)
+      boundedSet(metadataCache, key, { until: Date.now() + 15_000, rows });
+    return rows;
+  })();
+  metadataFlights.set(key, load);
+  try {
+    return await load;
+  } finally {
+    if (metadataFlights.get(key) === load) metadataFlights.delete(key);
+  }
+}
+
 function broadcastSponsorStateKey(rows: SponsorRow[]) {
   return JSON.stringify(
     rows.map((row) => [
@@ -99,18 +151,19 @@ export async function gameLibrarySponsors(
   gameId: string,
   verifiedOrganizationId?: string,
 ): Promise<Sponsor[]> {
-  const { data, error } = await createAdminSupabaseClient().rpc(
-    verifiedOrganizationId
-      ? "list_sponsors_for_organization"
-      : "list_game_organization_sponsors",
-    verifiedOrganizationId
-      ? { p_organization_id: verifiedOrganizationId }
-      : { p_game_id: gameId },
+  const rows = await sponsorRows(gameId, verifiedOrganizationId);
+  const key = verifiedOrganizationId
+    ? `organization:${verifiedOrganizationId}`
+    : `game:${gameId}`;
+  const stateKey = broadcastSponsorStateKey(rows);
+  const cached = libraryUrlCache.get(key);
+  if (cached && cached.stateKey === stateKey && cached.expiresAt > Date.now())
+    return cached.sponsors;
+  const { sponsors, complete } = await presentAvailable(
+    rows,
+    SIGNED_URL_SECONDS,
   );
-  if (error) throw new Error("Sponsor library unavailable");
-  const rows = ((data ?? []) as SponsorRow[]).filter((row) => !row.archived_at);
-  const { sponsors } = await presentAvailable(rows, SIGNED_URL_SECONDS);
-  return sponsors.map((s) => ({
+  const result = sponsors.map((s) => ({
     id: s.id,
     name: s.name,
     altText: s.altText,
@@ -119,6 +172,13 @@ export async function gameLibrarySponsors(
     rotation: 0,
     website: s.website,
   }));
+  if (complete)
+    boundedSet(libraryUrlCache, key, {
+      stateKey,
+      expiresAt: Date.now() + 4 * 60 * 1000,
+      sponsors: result,
+    });
+  return result;
 }
 
 /** Public Broadcast receives renderable URLs, never the underlying storage path. */
@@ -126,12 +186,7 @@ export async function gameBroadcastSponsors(
   gameId: string,
 ): Promise<Sponsor[]> {
   if (process.env.NODE_ENV !== "production") return [];
-  const { data, error } = await createAdminSupabaseClient().rpc(
-    "list_game_organization_sponsors",
-    { p_game_id: gameId },
-  );
-  if (error) throw new Error("Sponsor library unavailable");
-  const rows = ((data ?? []) as SponsorRow[]).filter((row) => !row.archived_at);
+  const rows = await sponsorRows(gameId);
   const stateKey = broadcastSponsorStateKey(rows);
   const cached = broadcastSponsorCache.get(gameId);
   if (cached && cached.stateKey === stateKey && cached.expiresAt > Date.now())
@@ -147,7 +202,7 @@ export async function gameBroadcastSponsors(
     website: sponsor.website,
   }));
   if (presented.complete)
-    broadcastSponsorCache.set(gameId, {
+    boundedSet(broadcastSponsorCache, gameId, {
       stateKey,
       expiresAt: Date.now() + PUBLIC_BROADCAST_CACHE_MS,
       sponsors,
@@ -253,6 +308,7 @@ export async function createSponsors(
     }
     throw error;
   }
+  invalidateSponsorCache();
   return listSponsorLibrary(user);
 }
 
@@ -286,6 +342,7 @@ export async function updateSponsor(
     params,
   );
   if (error) throw new Error("Sponsor update failed");
+  invalidateSponsorCache();
   return listSponsorLibrary(user);
 }
 
@@ -295,6 +352,7 @@ export async function reorderSponsors(user: User, ids: string[]) {
     { p_user_id: user.id, p_ids: ids },
   );
   if (error) throw new Error("Sponsor reorder failed");
+  invalidateSponsorCache();
   return listSponsorLibrary(user);
 }
 
@@ -328,5 +386,6 @@ export async function replaceSponsor(
   }
   if (typeof oldPath === "string")
     await db.storage.from(BUCKET).remove([oldPath]);
+  invalidateSponsorCache();
   return listSponsorLibrary(user);
 }

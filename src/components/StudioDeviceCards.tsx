@@ -1009,7 +1009,7 @@ export function StudioDeviceCards({
       }
     };
     void poll();
-    const timer = setInterval(() => void poll(), 5000);
+    const timer = setInterval(() => void poll(), 15000);
     return () => {
       cancelled = true;
       clearInterval(timer);

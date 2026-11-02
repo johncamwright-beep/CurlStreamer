@@ -1,5 +1,10 @@
 "use client";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  gameChangeNoticeSchema,
+  subscribeGameChanges,
+  type GameChangeNotice,
+} from "@/lib/providers/game-change-subscription";
 import type { GameState } from "@/lib/types";
 import type { BroadcastGame, JoinGame } from "@/lib/game-projection";
 import { clearCurrentGameIfMatching } from "@/lib/current-game";
@@ -41,6 +46,9 @@ export function useGame<V extends GameView = undefined>(
   const [m1Pilot, setM1Pilot] = useState(false);
   const [navigationMetadata, setNavigationMetadata] =
     useState<GameNavigationMetadata>();
+  const [changeNotice, setChangeNotice] = useState<GameChangeNotice>();
+  const noticeConnected = useRef(false);
+  const requestNoticeRefresh = useRef<() => void>(() => {});
   const pollingState = useRef({ lifecycle, error });
   pollingState.current = { lifecycle, error };
   const refreshGate = useRef(new GameRefreshGate());
@@ -106,6 +114,22 @@ export function useGame<V extends GameView = undefined>(
           if (refreshGate.current.accept(ticket))
             reportError("Game details could not be read. Try again.");
           return;
+        }
+        try {
+          const notice = gameChangeNoticeSchema.safeParse(
+            JSON.parse(r.headers.get("x-curlcast-change-notice") ?? "null"),
+          );
+          setChangeNotice((previous) =>
+            notice.success
+              ? previous?.topic === notice.data.topic &&
+                previous.url === notice.data.url &&
+                previous.key === notice.data.key
+                ? previous
+                : notice.data
+              : undefined,
+          );
+        } catch {
+          setChangeNotice(undefined);
         }
         const nextLifecycle =
           body?.status === "completed" ? "completed" : "active";
@@ -183,6 +207,8 @@ export function useGame<V extends GameView = undefined>(
     setAccountRole("");
     setM1Pilot(false);
     setNavigationMetadata(undefined);
+    setChangeNotice(undefined);
+    noticeConnected.current = false;
     // Routine state reads must recover even if initial context enrichment stalls.
     // Their responses have separate ordering and never request schedule metadata.
     void refresh(includeContext);
@@ -198,6 +224,7 @@ export function useGame<V extends GameView = undefined>(
           ...pollingState.current,
           hidden: document.hidden,
           keepLiveWhenHidden,
+          noticeConnected: noticeConnected.current,
         }),
       );
     };
@@ -227,18 +254,36 @@ export function useGame<V extends GameView = undefined>(
         schedule();
       }
     };
+    requestNoticeRefresh.current = () => void poll();
     schedule();
     document.addEventListener("visibilitychange", onVisibility);
     const channel = new BroadcastChannel(`curlcast-${id}`);
     channel.onmessage = () => void poll();
     return () => {
       stopped = true;
+      requestNoticeRefresh.current = () => {};
       clearTimeout(timer);
       document.removeEventListener("visibilitychange", onVisibility);
       currentContextGate.reset();
       channel.close();
     };
   }, [id, refresh, includeContext, keepLiveWhenHidden]);
+  useEffect(() => {
+    noticeConnected.current = false;
+    if (!changeNotice) return;
+    const close = subscribeGameChanges(
+      changeNotice,
+      () => requestNoticeRefresh.current(),
+      (ready) => {
+        noticeConnected.current = ready;
+        requestNoticeRefresh.current();
+      },
+    );
+    return () => {
+      noticeConnected.current = false;
+      close();
+    };
+  }, [changeNotice]);
   const act = useCallback(
     async (action: unknown) => {
       // Serialize program and scoring writes too: an older PATCH response must

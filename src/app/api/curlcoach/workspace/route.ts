@@ -9,6 +9,7 @@ import {
   sessionCookie,
 } from "@/lib/curlcoach/access";
 import { commandSchema, lineupSchema } from "@/lib/curlcoach/model";
+import type { EnhancedRecord } from "@/lib/curlcoach/enhanced-catalog";
 import { enhancedWriteSchema } from "@/lib/curlcoach/enhanced-catalog";
 import { saveEnhanced } from "@/lib/providers/shot-tracker-enhanced";
 import { sampleCatalog, sampleEvent } from "@/lib/curlcoach/event";
@@ -210,6 +211,8 @@ export async function POST(request: Request) {
         { status: 403 },
       );
     let result;
+    let confirmedEnhanced:
+      (EnhancedRecord<unknown> & { state: unknown }) | undefined;
     if (game.status === "deleted")
       return NextResponse.json(
         { error: "This game is closed and available for review only." },
@@ -234,7 +237,7 @@ export async function POST(request: Request) {
         );
       else
         result = input.data.enhanced
-          ? writeLocalEnhanced(
+          ? (confirmedEnhanced = writeLocalEnhanced(
               game.state,
               {
                 kind: "supplement",
@@ -246,7 +249,7 @@ export async function POST(request: Request) {
               },
               actor,
               input.data.command,
-            ).state
+            )).state
           : writeCoachEvent(input.data.command, game.state, actor);
     } else {
       const scope = {
@@ -275,21 +278,19 @@ export async function POST(request: Request) {
         );
       result = input.data.command
         ? input.data.enhanced
-          ? (
-              await saveEnhanced(
-                scope,
-                {
-                  kind: "supplement",
-                  requestId: input.data.command.requestId,
-                  shotId: input.data.command.shotId,
-                  expectedRevision: input.data.enhanced.expectedRevision,
-                  sourceRevision: input.data.command.expectedRevision + 1,
-                  value: input.data.enhanced.supplement,
-                },
-                state,
-                input.data.command,
-              )
-            ).state
+          ? (confirmedEnhanced = await saveEnhanced(
+              scope,
+              {
+                kind: "supplement",
+                requestId: input.data.command.requestId,
+                shotId: input.data.command.shotId,
+                expectedRevision: input.data.enhanced.expectedRevision,
+                sourceRevision: input.data.command.expectedRevision + 1,
+                value: input.data.enhanced.supplement,
+              },
+              state,
+              input.data.command,
+            )).state
           : await saveCoachState(scope, state, input.data.command)
         : input.data.action === "set-lineup"
           ? await saveCoachLineup(scope, state, {
@@ -306,7 +307,24 @@ export async function POST(request: Request) {
               input.data.expectedRevision!,
             );
     }
-    return NextResponse.json(result, { headers: privateHeaders });
+    return NextResponse.json(
+      {
+        ...result,
+        ...(confirmedEnhanced
+          ? {
+              enhancedDocument: {
+                kind: "supplement",
+                shotId: input.data.command!.shotId,
+                revision: confirmedEnhanced.revision,
+                sourceRevision: confirmedEnhanced.sourceRevision,
+                value: confirmedEnhanced.value,
+                at: confirmedEnhanced.at,
+              },
+            }
+          : {}),
+      },
+      { headers: privateHeaders },
+    );
   } catch {
     return NextResponse.json(
       {

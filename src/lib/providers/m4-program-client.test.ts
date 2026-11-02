@@ -1,6 +1,23 @@
 import { describe, expect, it, vi } from "vitest";
 import { M4ProgramClient } from "./m4-program-client";
 import { StudioTransportUnavailable } from "./studio-transport-error";
+const notices = vi.hoisted(() => ({
+  changed: undefined as (() => void) | undefined,
+  ready: undefined as ((ready: boolean) => void) | undefined,
+  close: vi.fn(),
+}));
+vi.mock("./game-change-subscription", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./game-change-subscription")>()),
+  subscribeGameChanges: (
+    _notice: unknown,
+    changed: () => void,
+    ready: (ready: boolean) => void,
+  ) => {
+    notices.changed = changed;
+    notices.ready = ready;
+    return notices.close;
+  },
+}));
 const game = "11111111-1111-4111-8111-111111111111";
 const session = "22222222-2222-4222-8222-222222222222";
 const origin = "https://pilot.invalid";
@@ -463,4 +480,37 @@ describe("Node program authority", () => {
     ).rejects.toThrow("m4_program_unavailable");
     expect(client.active).toBe(false);
   });
+});
+
+it("keeps the program local between changes and resumes fresh reads after disconnect", async () => {
+  const changeNotice = {
+    url: "https://example.supabase.co",
+    key: "public-key",
+    topic: "game-change-" + "a".repeat(64),
+  };
+  const fetcher = vi
+    .fn<typeof fetch>()
+    .mockResolvedValueOnce(exchange())
+    .mockImplementation(
+      async () =>
+        new Response(JSON.stringify({ game: projected, changeNotice })),
+    );
+  const client = new M4ProgramClient(game, origin, fetcher);
+  await client.exchange("a".repeat(43));
+  await client.readGame();
+  notices.ready!(true);
+  await client.readGame(); // Close the subscribe/read race with a fresh snapshot.
+  const before = fetcher.mock.calls.length;
+  for (let i = 0; i < 8; i++) expect((await client.readGame()).id).toBe(game);
+  expect(fetcher).toHaveBeenCalledTimes(before);
+  notices.changed!();
+  await client.readGame();
+  expect(fetcher).toHaveBeenCalledTimes(before + 1);
+  notices.ready!(false);
+  await client.readGame();
+  await client.readGame();
+  expect(fetcher).toHaveBeenCalledTimes(before + 3);
+  client.close();
+  await expect(client.readGame()).rejects.toThrow();
+  expect(notices.close).toHaveBeenCalled();
 });

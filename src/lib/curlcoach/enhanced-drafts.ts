@@ -1,6 +1,14 @@
 import { z } from "zod";
 import { supplementSchema, type Supplement } from "./enhanced-catalog";
 export type EnhancedDraft = { value: Supplement; revision: number };
+export const savedSupplementSchema = z.object({
+  kind: z.literal("supplement"),
+  shotId: z.uuid(),
+  revision: z.number().int().positive(),
+  sourceRevision: z.number().int().positive(),
+  value: supplementSchema,
+  at: z.string().datetime(),
+});
 // Drafts may contain incomplete cross-field assessments; committed saves may not.
 const draftSchema = z
   .object({

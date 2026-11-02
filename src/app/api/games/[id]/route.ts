@@ -1,3 +1,4 @@
+import { gameChangeNotice } from "@/lib/providers/game-change-notice";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { readGame } from "@/lib/providers/game-read";
@@ -167,6 +168,13 @@ export async function GET(
       {
         headers: {
           "x-curlcast-operator": "true",
+          ...(gameChangeNotice(id)
+            ? {
+                "x-curlcast-change-notice": JSON.stringify(
+                  gameChangeNotice(id),
+                ),
+              }
+            : {}),
           "x-curlcast-m1-pilot":
             process.env.CURLCAST_M1_DIRECT_SPIKE === "disposable"
               ? "true"

@@ -1,3 +1,4 @@
+import { gameChangeNotice } from "@/lib/providers/game-change-notice";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { authorizeGame, authorizationError } from "@/lib/game-authorization";
@@ -244,7 +245,11 @@ async function handleGET(
       ...privateProgramSponsorIds(publicProjection, sponsors),
       nativeCameraAudio: nativeCameraAudioIntent(result.game),
     };
-    return response({ game, organizationId: scope.organizationId });
+    return response({
+      game,
+      organizationId: scope.organizationId,
+      changeNotice: gameChangeNotice(id.data),
+    });
   } catch (cause) {
     return failure(cause);
   }

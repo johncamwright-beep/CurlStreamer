@@ -6,14 +6,16 @@ export function gamePollDelay({
   error,
   hidden,
   keepLiveWhenHidden,
+  noticeConnected = false,
 }: {
   lifecycle?: RefreshLifecycle;
   error: string;
   hidden: boolean;
   keepLiveWhenHidden: boolean;
+  noticeConnected?: boolean;
 }) {
   if (lifecycle && lifecycle !== "active") return 30_000;
   if (error) return 10_000;
   if (hidden && !keepLiveWhenHidden) return 15_000;
-  return 2_000;
+  return noticeConnected ? 10_000 : 2_000;
 }

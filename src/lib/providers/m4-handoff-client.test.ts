@@ -274,11 +274,11 @@ describe("once-only application handoff", () => {
     await app.heartbeat();
     expect(native.renew).toHaveBeenCalledWith(26000);
     fetcher.mockRejectedValueOnce(new Error("provider unavailable"));
-    advance(5000);
+    advance(6000);
     await app.heartbeat();
     expect(native.stop).not.toHaveBeenCalled();
     expect(native.renew).toHaveBeenCalledTimes(2);
-    expect(native.renew).toHaveBeenLastCalledWith(21000);
+    expect(native.renew).toHaveBeenLastCalledWith(20000);
     // Transport loss cannot extend the acknowledged deadline. Explicit revocation
     // still stops immediately and never delivers the destination again.
     fetcher.mockResolvedValueOnce(new Response("revoked", { status: 403 }));

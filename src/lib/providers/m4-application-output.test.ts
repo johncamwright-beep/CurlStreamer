@@ -1,4 +1,4 @@
-import { expect, it, vi } from "vitest";
+import { afterEach, expect, it, vi } from "vitest";
 import { M4ApplicationOutput } from "./m4-application-output";
 import { M4DesktopClient } from "./m4-desktop-client";
 
@@ -115,4 +115,74 @@ it("does not unlock cloud cleanup when a capable peer has no observation method"
     "m4_application_output_unavailable",
   );
   expect(cloudStop).not.toHaveBeenCalled();
+});
+
+afterEach(() => {
+  vi.useRealTimers();
+  vi.restoreAllMocks();
+});
+
+it("renews locally between cloud checks, retries failures and stops on revocation", async () => {
+  vi.useFakeTimers();
+  const desktop = new M4DesktopClient(
+    "11111111-1111-4111-8111-111111111111",
+    "https://pilot.invalid",
+  );
+  vi.spyOn(desktop, "snapshot").mockReturnValue({
+    state: "active",
+    authorized: true,
+  });
+  const remaining = vi
+    .spyOn(desktop, "remainingLeaseMs")
+    .mockReturnValue(30000);
+  vi.spyOn(desktop, "handoffOutput").mockResolvedValue({
+    state: "active",
+    authorized: true,
+  });
+  const heartbeat = vi.spyOn(desktop, "heartbeat").mockResolvedValue({
+    state: "active",
+    authorized: true,
+    desiredAction: "wait",
+    leaseRenewed: true,
+  });
+  vi.spyOn(desktop, "stop").mockResolvedValue({
+    state: "stopped",
+    authorized: false,
+  });
+  const native = {
+    arm: vi.fn(),
+    renew: vi.fn(),
+    stop: vi.fn(),
+    snapshot: () => ({ state: "armed" as const, deliveryAttempted: true }),
+  };
+  const output = new M4ApplicationOutput(desktop, native);
+  await output.start("intent");
+  await output.heartbeat();
+  for (let i = 0; i < 2; i++) {
+    await vi.advanceTimersByTimeAsync(5000);
+    await output.heartbeat();
+  }
+  expect(heartbeat).toHaveBeenCalledTimes(1);
+  expect(native.renew).toHaveBeenCalledTimes(3);
+  await vi.advanceTimersByTimeAsync(5000);
+  heartbeat.mockResolvedValueOnce({
+    state: "active",
+    authorized: true,
+    desiredAction: "wait",
+    leaseRenewed: false,
+  });
+  expect(await output.heartbeat()).toMatchObject({ leaseRenewed: false });
+  await vi.advanceTimersByTimeAsync(1000);
+  await output.heartbeat();
+  expect(heartbeat).toHaveBeenCalledTimes(3);
+  remaining.mockReturnValue(19000);
+  heartbeat.mockResolvedValueOnce({
+    state: "stopping",
+    authorized: false,
+    desiredAction: "stop",
+    leaseRenewed: false,
+  });
+  await output.heartbeat();
+  expect(heartbeat).toHaveBeenCalledTimes(4);
+  expect(native.stop).toHaveBeenCalledOnce();
 });

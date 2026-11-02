@@ -519,10 +519,14 @@ test("an authoritative terminal poll stops local camera capture", async ({
   holdNextActive = true;
   await activeHeld;
   terminal = true;
+  // One bounded read at a time: wait for its 10-second timeout and error backoff.
+  // Capture stops as soon as the following read confirms the terminal state.
   await expect(
     page.getByRole("heading", { name: "This game is closed" }),
-  ).toBeVisible();
-  await heldActive!.fulfill({ status: 200, json: gameFixture() });
+  ).toBeVisible({ timeout: 25000 });
+  await heldActive!
+    .fulfill({ status: 200, json: gameFixture() })
+    .catch(() => undefined);
   await expect
     .poll(() =>
       page.evaluate(

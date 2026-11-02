@@ -1,3 +1,4 @@
+import { cloudRenewalDue } from "./cloud-renewal";
 // Node-only coordinator. Native launcher/bootstrap and OBS output-start UI are separate.
 import type { M4DesktopClient } from "./m4-desktop-client";
 import type { M4NativePipeClient } from "./m4-native-pipe";
@@ -6,6 +7,7 @@ const fail = () => new Error("m4_application_output_unavailable");
 /** Connects once-only server handoff to the native pipe. Calls never retry target
  * delivery. The native process independently enforces the last acknowledged lease. */
 export class M4ApplicationOutput {
+  #lastCloudRenewal = -Infinity;
   #started = false;
   #running = false;
   #stopping = false;
@@ -48,7 +50,20 @@ export class M4ApplicationOutput {
   }
   async #renew() {
     try {
+      if (
+        !cloudRenewalDue(
+          performance.now() - this.#lastCloudRenewal,
+          this.desktop.remainingLeaseMs(),
+        )
+      ) {
+        // Reuse only the acknowledged deadline. Local renewal cannot extend it.
+        if (!this.desktop.snapshot().authorized || this.#stopping) throw fail();
+        await this.native.renew(this.desktop.remainingLeaseMs());
+        return this.snapshot();
+      }
       const response = await this.desktop.heartbeat();
+      this.#lastCloudRenewal =
+        response.leaseRenewed === false ? -Infinity : performance.now();
       if (
         response.desiredAction !== "wait" ||
         !response.authorized ||

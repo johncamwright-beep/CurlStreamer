@@ -154,6 +154,16 @@ test("Analysis keeps shared filters and charts saved advanced observations", asy
     const season = await page
       .getByRole("combobox", { name: "Season", exact: true })
       .inputValue();
+    const shotOrder = page.getByRole("combobox", {
+      name: "Performance by shot order",
+      exact: true,
+    });
+    await expect(shotOrder).toHaveValue("descending");
+    await shotOrder.selectOption("ascending");
+    await expect(shotOrder).toHaveValue("ascending");
+    await page
+      .getByRole("combobox", { name: "Performance by turn order", exact: true })
+      .selectOption("name");
     await page
       .getByRole("region", { name: "Performance by shot", exact: true })
       .getByRole("button", { name: /^Draw/ })

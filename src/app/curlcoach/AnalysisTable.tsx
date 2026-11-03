@@ -1,5 +1,10 @@
 "use client";
 import { useState } from "react";
+import AnalysisOrder from "./AnalysisOrder";
+import {
+  rankAnalysis,
+  type AnalysisOrder as Order,
+} from "@/lib/curlcoach/ranking";
 export default function Table({
   title,
   columns,
@@ -7,6 +12,7 @@ export default function Table({
   shotSelector = false,
   selectorLabel = "Shot type",
   optionLabel,
+  ranking,
 }: {
   title: string;
   columns: readonly string[];
@@ -14,17 +20,39 @@ export default function Table({
   shotSelector?: boolean;
   selectorLabel?: string;
   optionLabel?: (label: string) => string;
+  ranking?: "performance" | "frequency";
 }) {
+  const [order, setOrder] = useState<Order>("descending");
   const [shot, setShot] = useState("");
   const selectedShot = rows.some((row) => row.label === shot)
     ? shot
     : (rows[0]?.label ?? "");
   const visibleRows = shotSelector
     ? rows.filter((row) => row.label === selectedShot)
-    : rows;
+    : ranking
+      ? rankAnalysis(
+          rows,
+          order,
+          (row) => {
+            const value = Number.parseFloat(String(row.values[0]));
+            return Number.isFinite(value) ? value : null;
+          },
+          (row) => row.label,
+        )
+      : rows;
   return (
     <section className="event-card">
-      <h3>{title}</h3>
+      <div className="analysis-panelhead">
+        <h3>{title}</h3>
+        {ranking && !shotSelector && (
+          <AnalysisOrder
+            title={title}
+            value={order}
+            onChange={setOrder}
+            frequency={ranking === "frequency"}
+          />
+        )}
+      </div>
       {shotSelector && (
         <label className="event-shot-selector">
           {selectorLabel}

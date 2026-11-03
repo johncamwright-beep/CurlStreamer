@@ -158,6 +158,7 @@ export default function AnalysisPanels({
         <>
           <Table
             title="Miss breakdown"
+            ranking="frequency"
             columns={[
               "Share of diagnosed misses",
               "Frequency across diagnosed shots",
@@ -349,6 +350,7 @@ export default function AnalysisPanels({
           <summary>Execution, turn and player breakdowns</summary>
           <Table
             title="Execution outcomes"
+            ranking="frequency"
             columns={["Share of recorded execution"]}
             rows={executions.map((label) => {
               const pool = shots.filter(
@@ -374,6 +376,7 @@ export default function AnalysisPanels({
           </p>
           <Table
             title="Turn / target performance"
+            ranking="performance"
             columns={["Shooting"]}
             rows={turns.map((label) => ({
               label,
@@ -382,6 +385,7 @@ export default function AnalysisPanels({
           />
           <Table
             title="Player performance"
+            ranking="performance"
             columns={["Overall shooting", "Draws", "Hits"]}
             rows={players.map((p) => {
               const pool = shots.filter((s) => s.playerId === p.id);

@@ -68,6 +68,14 @@
   margin-bottom: 16px;
   flex-wrap: wrap;
 }
+.coach-workspace .analysis-panelhead select.analysis-order {
+  width: auto;
+  max-width: 100%;
+  min-height: 44px;
+  margin-left: auto;
+  padding: 8px 28px 8px 10px;
+  font-size: 12px;
+}
 .analysis-grid {
   display: grid;
   grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr);

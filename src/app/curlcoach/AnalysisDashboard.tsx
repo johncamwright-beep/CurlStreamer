@@ -30,6 +30,11 @@ import {
   supportedVideo,
 } from "@/lib/curlcoach/review";
 import "./analysis-dashboard.css";
+import AnalysisOrder from "./AnalysisOrder";
+import {
+  rankAnalysis,
+  type AnalysisOrder as Order,
+} from "@/lib/curlcoach/ranking";
 
 export const ANALYSIS_TABS = {
   performance: "Shot Performance",
@@ -276,6 +281,23 @@ export default function AnalysisDashboard({
   games: CoachGame[];
   players: RosterEntry[];
 }) {
+  const [orders, setOrders] = useState<Record<string, Order>>({});
+  const ordered = <T,>(
+    key: string,
+    rows: readonly T[],
+    value: (row: T) => number | null,
+    label: (row: T) => string,
+  ) => rankAnalysis(rows, orders[key] ?? "descending", value, label);
+  const orderControl = (key: string, frequency = false) => (
+    <AnalysisOrder
+      title={key}
+      value={orders[key] ?? "descending"}
+      frequency={frequency}
+      onChange={(value) =>
+        setOrders((previous) => ({ ...previous, [key]: value }))
+      }
+    />
+  );
   const [focus, setFocus] = useState("all");
   const [calledWeight, setCalledWeight] = useState("");
   const [allSubtypes, setAllSubtypes] = useState(false);
@@ -398,10 +420,18 @@ export default function AnalysisDashboard({
           <Execution shots={shots} />
         </section>
         <div className="analysis-grid">
-          <Panel title="Performance by shot">
+          <Panel
+            title="Performance by shot"
+            extra={orderControl("Performance by shot")}
+          >
             <Columns left="Shot type" right="Shooting · Shots" />
             {typed.length ? (
-              typed.map(({ type, rows }) => (
+              ordered(
+                "Performance by shot",
+                typed,
+                (row) => report(row.rows).percent,
+                (row) => row.type,
+              ).map(({ type, rows }) => (
                 <Bar
                   key={type}
                   label={type}
@@ -424,22 +454,29 @@ export default function AnalysisDashboard({
             >
               <Trend shots={shots} games={games} />
             </Panel>
-            <Panel title="Performance by turn">
+            <Panel
+              title="Performance by turn"
+              extra={orderControl("Performance by turn")}
+            >
               <Columns left="Turn / target" right="Shooting · Shots" />
-              {turns
-                .map((turn) => ({
-                  turn,
-                  rows: shots.filter((shot) => shot.turn === turn),
-                }))
-                .filter((row) => row.rows.length)
-                .map(({ turn, rows }) => (
-                  <Bar
-                    key={turn}
-                    label={turn}
-                    value={report(rows).percent}
-                    count={rows.length}
-                  />
-                ))}
+              {ordered(
+                "Performance by turn",
+                turns
+                  .map((turn) => ({
+                    turn,
+                    rows: shots.filter((shot) => shot.turn === turn),
+                  }))
+                  .filter((row) => row.rows.length),
+                (row) => report(row.rows).percent,
+                (row) => row.turn,
+              ).map(({ turn, rows }) => (
+                <Bar
+                  key={turn}
+                  label={turn}
+                  value={report(rows).percent}
+                  count={rows.length}
+                />
+              ))}
               {!shots.some((shot) => shot.turn) && (
                 <p className="analysis-empty">No recorded turns</p>
               )}
@@ -469,9 +506,7 @@ export default function AnalysisDashboard({
         rows,
         count: rows.filter(isMiss).length,
       }))
-      .filter((row) => row.count)
-      .sort((a, b) => b.count - a.count)
-      .slice(0, 5);
+      .filter((row) => row.count);
     content = (
       <>
         <section
@@ -497,39 +532,56 @@ export default function AnalysisDashboard({
                   <small> / {misses.length}</small>
                 </>
               }
-              detail={`${reasonsMissing} not recorded`}
+              detail={`${reasonsMissing} shots without a miss reason`}
             />
           </div>
           <Execution shots={shots} />
         </section>
         <div className="analysis-grid analysis-equal">
-          <Panel title="Recorded reasons">
+          <Panel
+            title="Recorded reasons"
+            extra={orderControl("Recorded reasons", true)}
+          >
             <Columns left="Coach assessment" right="Share · Shots" />
-            {reasons.map(({ tag, rows }) => (
+            {ordered(
+              "Recorded reasons",
+              [
+                ...reasons.map((row) => ({
+                  tag: row.tag as string,
+                  count: row.rows.length,
+                  tone: "amber",
+                })),
+                { tag: "No deficiency", count: noDeficiency, tone: "green" },
+              ],
+              (row) => row.count,
+              (row) => row.tag,
+            ).map(({ tag, count, tone }) => (
               <Bar
                 key={tag}
                 label={tag}
-                value={share(rows.length, misses.length)}
-                count={rows.length}
-                tone="amber"
+                value={share(count, misses.length)}
+                count={count}
+                tone={tone}
               />
             ))}
             <Bar
-              label="No deficiency"
-              value={share(noDeficiency, misses.length)}
-              count={noDeficiency}
-              tone="green"
-            />
-            <Bar
-              label="Not recorded"
+              label="Miss reason not recorded"
               value={share(reasonsMissing, misses.length)}
               count={reasonsMissing}
               tone="muted"
             />
           </Panel>
-          <Panel title="Where misses repeat">
+          <Panel
+            title="Where misses repeat"
+            extra={orderControl("Where misses repeat", true)}
+          >
             <Columns left="Shot type" right="Rate · Misses" />
-            {byType.map(({ label, rows, count }) => (
+            {ordered(
+              "Where misses repeat",
+              byType,
+              (row) => share(row.count, row.rows.length),
+              (row) => row.label,
+            ).map(({ label, rows, count }) => (
               <Bar
                 key={label}
                 label={label}
@@ -606,9 +658,12 @@ export default function AnalysisDashboard({
                   : "Delivery observations"
             }
             extra={
-              <span className="analysis-coverage">
-                {g.recorded} / {g.total} recorded
-              </span>
+              <>
+                <span className="analysis-coverage">
+                  {g.recorded} / {g.total} recorded
+                </span>
+                {orderControl(g.field, true)}
+              </>
             }
           >
             {g.field === "line" && (
@@ -623,18 +678,20 @@ export default function AnalysisDashboard({
               </div>
             )}
             {g.field !== "technical" ? (
-              g.rows
-                .filter((row) => g.field === "line" || row.count)
-                .sort((a, b) => (g.field === "line" ? 0 : b.count - a.count))
-                .map((row) => (
-                  <Bar
-                    key={row.label}
-                    label={row.label}
-                    value={row.percent}
-                    count={row.count}
-                    tone={g.field === "line" ? "green" : "blue"}
-                  />
-                ))
+              ordered(
+                g.field,
+                g.rows.filter((row) => g.field === "line" || row.count),
+                (row) => row.percent,
+                (row) => row.label,
+              ).map((row) => (
+                <Bar
+                  key={row.label}
+                  label={row.label}
+                  value={row.percent}
+                  count={row.count}
+                  tone={g.field === "line" ? "green" : "blue"}
+                />
+              ))
             ) : (
               <div className="analysis-tablewrap">
                 <table>
@@ -646,16 +703,18 @@ export default function AnalysisDashboard({
                     </tr>
                   </thead>
                   <tbody>
-                    {g.rows
-                      .filter((row) => row.count)
-                      .sort((a, b) => b.count - a.count)
-                      .map((row) => (
-                        <tr key={row.label}>
-                          <th scope="row">{row.label}</th>
-                          <td>{row.count}</td>
-                          <td>{percent(row.percent)}</td>
-                        </tr>
-                      ))}
+                    {ordered(
+                      g.field,
+                      g.rows.filter((row) => row.count),
+                      (row) => row.percent,
+                      (row) => row.label,
+                    ).map((row) => (
+                      <tr key={row.label}>
+                        <th scope="row">{row.label}</th>
+                        <td>{row.count}</td>
+                        <td>{percent(row.percent)}</td>
+                      </tr>
+                    ))}
                   </tbody>
                 </table>
               </div>
@@ -719,9 +778,18 @@ export default function AnalysisDashboard({
         tags.set(tag, [...(tags.get(tag) ?? []), shot]),
       ),
     );
-    const rankedTags = [...tags.entries()]
-      .sort((a, b) => b[1].length - a[1].length)
-      .slice(0, 5);
+    const rankedTags = ordered(
+      "Result observations",
+      [...tags.entries()],
+      (row) => row[1].length,
+      (row) => resultLabels[row[0]] ?? row[0],
+    );
+    const rankedSubtypes = ordered(
+      "Shot subtypes",
+      subtypes,
+      (row) => report(row[1]).percent,
+      (row) => shotSubtypes.find((s) => s.id === row[0])?.name ?? row[0],
+    );
     content = (
       <>
         <div className="analysis-local-focus">
@@ -743,18 +811,21 @@ export default function AnalysisDashboard({
           <Panel
             title="Shot subtypes"
             extra={
-              <span className="analysis-coverage">
-                {coverage.subtyped} / {coverage.eligible} recorded
-              </span>
+              <>
+                <span className="analysis-coverage">
+                  {coverage.subtyped} / {coverage.eligible} recorded
+                </span>
+                {orderControl("Shot subtypes")}
+              </>
             }
           >
             <Columns
               left={
-                allSubtypes ? "All recorded sub-shots" : "Most played sub-shots"
+                allSubtypes ? "All recorded sub-shots" : "First five sub-shots"
               }
               right="Shooting · Shots"
             />
-            {(allSubtypes ? subtypes : subtypes.slice(0, 5)).map(
+            {(allSubtypes ? rankedSubtypes : rankedSubtypes.slice(0, 5)).map(
               ([id, rows]) => (
                 <Bar
                   key={id}
@@ -787,37 +858,43 @@ export default function AnalysisDashboard({
           <Panel
             title="Called vs observed weight"
             extra={
-              <label className="analysis-local-label">
-                Called weight
-                <select
-                  value={called}
-                  disabled={!weights.length}
-                  onChange={(event) => setCalledWeight(event.target.value)}
-                >
-                  {!weights.length && <option value="">Not recorded</option>}
-                  {weights.map(([weight]) => (
-                    <option value={weight} key={weight}>
-                      {weightLabels[weight] ?? weight}
-                    </option>
-                  ))}
-                </select>
-              </label>
+              <>
+                <label className="analysis-local-label">
+                  Called weight
+                  <select
+                    value={called}
+                    disabled={!weights.length}
+                    onChange={(event) => setCalledWeight(event.target.value)}
+                  >
+                    {!weights.length && <option value="">Not recorded</option>}
+                    {weights.map(([weight]) => (
+                      <option value={weight} key={weight}>
+                        {weightLabels[weight] ?? weight}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                {orderControl("Called vs observed weight", true)}
+              </>
             }
           >
             <Columns
               left="Observed weight / destination"
               right="Share · Shots"
             />
-            {group(observed, (shot) => shot.observedDestination).map(
-              ([destination, rows]) => (
-                <Bar
-                  key={destination}
-                  label={weightLabels[destination] ?? destination}
-                  value={share(rows.length, observed.length)}
-                  count={rows.length}
-                />
-              ),
-            )}
+            {ordered(
+              "Called vs observed weight",
+              group(observed, (shot) => shot.observedDestination),
+              (row) => row[1].length,
+              (row) => weightLabels[row[0]] ?? row[0],
+            ).map(([destination, rows]) => (
+              <Bar
+                key={destination}
+                label={weightLabels[destination] ?? destination}
+                value={share(rows.length, observed.length)}
+                count={rows.length}
+              />
+            ))}
             {!observed.length && (
               <p className="analysis-empty">No observed weights recorded</p>
             )}
@@ -828,12 +905,15 @@ export default function AnalysisDashboard({
           <Panel
             title="Result observations"
             extra={
-              <span className="analysis-coverage">
-                {assessed.length} / {focused.length} assessed
-              </span>
+              <>
+                <span className="analysis-coverage">
+                  {assessed.length} / {focused.length} assessed
+                </span>
+                {orderControl("Result observations", true)}
+              </>
             }
           >
-            <Columns left="Top observed misses" right="Share · Shots" />
+            <Columns left="Observed misses" right="Share · Shots" />
             {rankedTags.map(([tag, rows]) => (
               <Bar
                 key={tag}
@@ -887,7 +967,7 @@ export default function AnalysisDashboard({
             </dl>
             {reviewContent}
           </Panel>
-          <Panel title="Difficulty">
+          <Panel title="Difficulty" extra={orderControl("Difficulty")}>
             <div className="analysis-dual">
               <div>
                 <strong className="analysis-big">
@@ -914,7 +994,12 @@ export default function AnalysisDashboard({
                   </tr>
                 </thead>
                 <tbody>
-                  {difficulty.mix.map((row) => (
+                  {ordered(
+                    "Difficulty",
+                    difficulty.mix,
+                    (row) => row.actual,
+                    (row) => row.level,
+                  ).map((row) => (
                     <tr key={row.level}>
                       <th scope="row">
                         {row.level} · {difficultyLabels[row.level]}

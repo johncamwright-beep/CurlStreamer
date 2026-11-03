@@ -220,6 +220,7 @@ function Scoreboard({
         {wins.length ? (
           <Table
             title="Win rate by starting situation"
+            ranking="performance"
             columns={["Win rate", "Wins / games", "Losses", "Ties"]}
             rows={wins.map((r) => ({
               label:

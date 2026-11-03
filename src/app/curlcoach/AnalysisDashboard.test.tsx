@@ -65,6 +65,20 @@ function render(tab: AnalysisTab, shots: AnalysisShot[]) {
   );
 }
 describe("Analysis dashboard", () => {
+  it("defaults shot breakdowns to strongest first with missing grades last", () => {
+    const html = render("performance", [
+      shot({ type: "Draw", grade: 1 }),
+      shot({ id: "best", type: "Hit & Stay", grade: 5 }),
+      shot({ id: "missing", type: "Peel", grade: null }),
+    ]);
+    const panel = html
+      .split('aria-label="Performance by shot"')[1]
+      .split("</section>")[0];
+    expect(panel.indexOf("Hit &amp; Stay")).toBeLessThan(panel.indexOf("Draw"));
+    expect(panel.indexOf("Draw")).toBeLessThan(panel.indexOf("Peel"));
+    expect(panel).toContain("Performance by shot order");
+    expect(panel).toContain("Weakest first");
+  });
   it("renders four labelled, keyboard-addressable report tabs", () => {
     const html = renderToStaticMarkup(
       <AnalysisNavigation tab="performance" onTabChange={vi.fn()} />,
@@ -92,7 +106,7 @@ describe("Analysis dashboard", () => {
     ]);
     expect(html).toContain("50.0%");
     expect(html).toContain("1 of 2 recorded outcomes");
-    expect(html).toContain("Not recorded");
+    expect(html).toContain("Miss reason not recorded");
     expect(html).toContain("0<small> / 1</small>");
   });
   it("preserves an explicit no-deficiency assessment on a missed execution", () => {
@@ -101,12 +115,12 @@ describe("Analysis dashboard", () => {
       shot({ id: "two", execution: "Xmiss", deficiency: null }),
     ]);
     expect(html).toContain("1<small> / 2</small>");
-    expect(html).toContain("1 not recorded");
+    expect(html).toContain("1 shots without a miss reason");
     expect(html).toMatch(
       /No deficiency<\/span>.*?50\.0%.*?analysis-count\">1<\/span>/,
     );
     expect(html).toMatch(
-      /Not recorded<\/span>.*?50\.0%.*?analysis-count\">1<\/span>/,
+      /Miss reason not recorded<\/span>.*?50\.0%.*?analysis-count\">1<\/span>/,
     );
     expect(html).toContain("No recorded miss patterns");
   });

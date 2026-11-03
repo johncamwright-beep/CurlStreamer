@@ -1,12 +1,5 @@
 "use client";
-import {
-  createContext,
-  useContext,
-  useEffect,
-  useRef,
-  useState,
-  type ReactNode,
-} from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import Link from "next/link";
 import { requestStudioPresentation } from "@/lib/studio-presentation-client";
@@ -23,8 +16,11 @@ import {
 } from "@/lib/studio-session";
 import "./studio-session.css";
 
-const Context = createContext<StudioSession | null>(null);
-export const useStudioSession = () => useContext(Context);
+import {
+  StudioSessionContext as Context,
+  useStudioSession,
+} from "./StudioSessionContext";
+export { useStudioSession } from "./StudioSessionContext";
 type NavigationRequest = {
   gameId: string;
   href: string;

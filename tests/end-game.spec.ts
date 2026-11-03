@@ -34,7 +34,7 @@ test("Studio close opens a scoped review and Cancel leaves the game active", asy
   });
   await page.goto(`/score/${testGameId}`);
   await expect(
-    page.getByRole("button", { name: "End Game", exact: true }),
+    page.getByRole("button", { name: "Game options", exact: true }),
   ).toBeVisible();
   await page.evaluate(() =>
     window.dispatchEvent(
@@ -53,6 +53,9 @@ test("Studio close opens a scoped review and Cancel leaves the game active", asy
       ),
     testGameId,
   );
+  await page
+    .getByRole("button", { name: "End game and stream", exact: true })
+    .click();
   await expect(
     page.getByRole("button", { name: "Review final score" }),
   ).toBeVisible();
@@ -153,7 +156,10 @@ test("End Game reviews the score and replaces controls with the saved result", a
   });
 
   await page.goto(`/games/${testGameId}`);
-  await page.getByRole("button", { name: "End Game" }).click();
+  await page.getByRole("button", { name: "Game options" }).click();
+  await page
+    .getByRole("button", { name: "End game and stream", exact: true })
+    .click();
   await expect(
     page.getByText("Visible to viewers on the completed-game page."),
   ).toBeVisible();
@@ -161,7 +167,10 @@ test("End Game reviews the score and replaces controls with the saved result", a
   await expect(
     page.getByRole("button", { name: "Review final score" }),
   ).toHaveCount(0);
-  await page.getByRole("button", { name: "End Game" }).click();
+  await page.getByRole("button", { name: "Game options" }).click();
+  await page
+    .getByRole("button", { name: "End game and stream", exact: true })
+    .click();
   await page
     .getByLabel("YouTube watch link (optional)")
     .fill("https://youtu.be/abcdefghijk");
@@ -191,7 +200,9 @@ test("End Game reviews the score and replaces controls with the saved result", a
   await expect(
     page.getByRole("link", { name: "Watch on YouTube" }),
   ).toHaveAttribute("href", "https://youtu.be/abcdefghijk");
-  await expect(page.getByRole("button", { name: "End Game" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Game options" })).toHaveCount(
+    0,
+  );
   await expect.poll(() => cleanupRetries).toBe(1);
   await expect(
     page.getByText("Live video shutdown has not been confirmed."),
@@ -252,12 +263,17 @@ test("authorized scoring page reviews and confirms End Game", async ({
   });
 
   await page.goto(`/score/${testGameId}`);
-  await expect(page.getByRole("button", { name: "End Game" })).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Game options" }),
+  ).toBeVisible();
   await page.screenshot({
     path: testInfo.outputPath("scoring-end-game-access.png"),
     fullPage: true,
   });
-  await page.getByRole("button", { name: "End Game" }).click();
+  await page.getByRole("button", { name: "Game options" }).click();
+  await page
+    .getByRole("button", { name: "End game and stream", exact: true })
+    .click();
   await page.getByRole("button", { name: "Review final score" }).click();
   await expect(page.getByText("Rocks 2 – 0 Stones")).toBeVisible();
   await page.screenshot({
@@ -282,7 +298,9 @@ test("scorer-only scoring access cannot End Game", async ({ page }) => {
   );
 
   await page.goto(`/score/${testGameId}`);
-  await expect(page.getByRole("button", { name: "End Game" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Game options" })).toHaveCount(
+    0,
+  );
   await expect(page.getByText("Game lifecycle")).toHaveCount(0);
 });
 

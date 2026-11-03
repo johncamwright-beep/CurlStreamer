@@ -10,6 +10,9 @@ import { organizerAccessToken } from "@/lib/access-session";
 import { announceGameCompletion } from "@/lib/dashboard-refresh";
 import { requestStudioPresentation } from "@/lib/studio-presentation-client";
 import type { StudioClosingPreparation } from "@/lib/studio-presentation-client";
+import { leaveStudioGame } from "@/lib/studio-session";
+import { useStudioSession } from "./StudioSessionContext";
+import { StudioOverlay } from "./StudioOverlay";
 
 const completionReplySchema = z
   .object({
@@ -73,6 +76,8 @@ export function EndGameControl({
   ) => void;
 }) {
   const [open, setOpen] = useState(false);
+  const [endChosen, setEndChosen] = useState(false);
+  const session = useStudioSession();
   const [watchUrl, setWatchUrl] = useState(sharedYoutubeWatchUrl ?? "");
   const [review, setReview] = useState<CompletionReview>();
   const [busy, setBusy] = useState(false);
@@ -113,11 +118,12 @@ export function EndGameControl({
   useEffect(() => {
     function requestEndGame(event: Event) {
       if ((event as CustomEvent).detail?.gameId !== gameId) return;
-      if (!enabled || disabled) {
+      if ((!enabled && !session?.canLeaveGame) || disabled) {
         notifyStudio("studio-end-game-unavailable");
         return;
       }
       setOpen(true);
+      setEndChosen(false);
       notifyStudio("studio-end-game-opened");
     }
     window.addEventListener("studio-end-game-request", requestEndGame);
@@ -126,7 +132,7 @@ export function EndGameControl({
     // The bridge only reports the result of this game-scoped UI request.
     // Authorization and final confirmation remain in the completion endpoint.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [gameId, enabled, disabled]);
+  }, [gameId, enabled, disabled, session?.canLeaveGame]);
 
   async function request(body: unknown) {
     const token =
@@ -244,29 +250,93 @@ export function EndGameControl({
     }
   }
 
-  if (!enabled) return null;
+  if (!enabled && !session?.canLeaveGame) return null;
+  const close = () => {
+    if (busy) return;
+    setOpen(false);
+    setEndChosen(false);
+    setReview(undefined);
+    setError("");
+    notifyStudio("studio-end-game-cancelled");
+  };
+  const canLeave =
+    session?.canLeaveGame &&
+    (!session.active || session.gameId === gameId) &&
+    !session.busy;
   return (
     <div>
       <button
-        className="btn-secondary border-red-700 text-red-200"
+        className="btn-secondary min-h-11 min-w-11 border-red-700 text-red-200"
+        aria-label="Game options"
+        title="Leave or end game"
         disabled={disabled}
         onClick={() => setOpen(true)}
       >
-        End Game
+        ×
       </button>
       {open && (
-        <section
-          className="mt-4 rounded-xl border border-red-800 p-4"
-          aria-labelledby="end-game-heading"
+        <StudioOverlay
+          title={endChosen ? "End game and stream" : "Leave or end game"}
+          open={open}
+          onClose={close}
+          dismissible={!busy}
         >
-          <h3 id="end-game-heading" className="text-xl font-bold">
-            End Game
-          </h3>
-          {!review ? (
+          {!endChosen ? (
+            <>
+              <div className="flex flex-col gap-3">
+                <button
+                  className="btn-secondary min-h-11"
+                  disabled={busy || disabled || !canLeave}
+                  onClick={async () => {
+                    setBusy(true);
+                    setError("");
+                    try {
+                      await leaveStudioGame(gameId);
+                      window.location.assign("/dashboard");
+                    } catch (cause) {
+                      setError(
+                        cause instanceof Error
+                          ? cause.message
+                          : "Could not leave this game.",
+                      );
+                      setBusy(false);
+                    }
+                  }}
+                >
+                  {busy
+                    ? "Pausing stream and saving recording…"
+                    : "Leave game and pause stream"}
+                </button>
+                <p>
+                  Your score and YouTube link are kept. Reopen this game in
+                  Studio and resume broadcasting when ready.
+                </p>
+                {!canLeave && (
+                  <p>
+                    Use the updated Windows Studio to leave and pause its
+                    stream.
+                  </p>
+                )}
+                <button
+                  className="btn min-h-11 border-red-700"
+                  disabled={busy || disabled || !enabled}
+                  onClick={() => {
+                    setEndChosen(true);
+                    setError("");
+                  }}
+                >
+                  End game and stream
+                </button>
+                <p>
+                  Review the final score, then close the game and end the
+                  broadcast.
+                </p>
+              </div>
+            </>
+          ) : !review ? (
             <>
               <p className="mt-2 text-slate-300">
-                Review the final score before permanently ending scoring and
-                live video.
+                Review the final score before ending scoring and live video.
               </p>
               <label className="mt-4 block font-bold">
                 YouTube watch link (optional)
@@ -294,8 +364,7 @@ export function EndGameControl({
                   className="btn-secondary"
                   disabled={busy}
                   onClick={() => {
-                    setOpen(false);
-                    notifyStudio("studio-end-game-cancelled");
+                    close();
                   }}
                 >
                   Cancel
@@ -353,7 +422,7 @@ export function EndGameControl({
               Game ended. Loading the saved final result…
             </p>
           )}
-        </section>
+        </StudioOverlay>
       )}
     </div>
   );

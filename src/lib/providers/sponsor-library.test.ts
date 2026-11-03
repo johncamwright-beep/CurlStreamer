@@ -1,6 +1,20 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import sharp from "sharp";
 
+const sharedCache = vi.hoisted(() => new Map<string, unknown>());
+vi.mock("next/cache", () => ({
+  revalidateTag: vi.fn(() => sharedCache.clear()),
+  unstable_cache:
+    (load: (...args: string[]) => Promise<unknown>) =>
+    async (...args: string[]) => {
+      const key = JSON.stringify(args);
+      if (sharedCache.has(key)) return sharedCache.get(key);
+      const result = await load(...args);
+      sharedCache.set(key, result);
+      return result;
+    },
+}));
+
 const mocks = vi.hoisted(() => ({ rpc: vi.fn(), createSignedUrl: vi.fn() }));
 vi.mock("@/lib/supabase/admin", () => ({
   createAdminSupabaseClient: () => ({
@@ -310,7 +324,7 @@ describe("anonymous Broadcast sponsors", () => {
     ]);
   });
 
-  it("reconciles external sponsor edits after 15 seconds", async () => {
+  it("retains metadata for a full game until explicit invalidation", async () => {
     vi.useFakeTimers();
     mocks.rpc
       .mockResolvedValueOnce({ data: [sponsorRow()], error: null })
@@ -322,7 +336,10 @@ describe("anonymous Broadcast sponsors", () => {
     expect(await gameBroadcastSponsors("ttl-game")).toHaveLength(1);
     expect(await gameBroadcastSponsors("ttl-game")).toHaveLength(1);
     expect(mocks.rpc).toHaveBeenCalledTimes(1);
-    vi.advanceTimersByTime(15001);
+    vi.advanceTimersByTime(3 * 60 * 60 * 1000);
+    expect(await gameBroadcastSponsors("ttl-game")).toHaveLength(1);
+    expect(mocks.rpc).toHaveBeenCalledTimes(1);
+    invalidateSponsorCache();
     expect(await gameBroadcastSponsors("ttl-game")).toEqual([]);
     expect(mocks.rpc).toHaveBeenCalledTimes(2);
   });
@@ -336,13 +353,13 @@ describe("anonymous Broadcast sponsors", () => {
     await gameLibrarySponsors("g", "org-b");
     expect(mocks.rpc).toHaveBeenCalledTimes(2);
   });
-  it("does not serve expired metadata when the database fails", async () => {
+  it("does not serve invalidated metadata when the database fails", async () => {
     vi.useFakeTimers();
     mocks.rpc
       .mockResolvedValueOnce({ data: [], error: null })
       .mockResolvedValueOnce({ data: null, error: { message: "offline" } });
     await gameBroadcastSponsors("fail-closed");
-    vi.advanceTimersByTime(15001);
+    invalidateSponsorCache();
     await expect(gameBroadcastSponsors("fail-closed")).rejects.toThrow(
       "Sponsor library unavailable",
     );

@@ -127,6 +127,7 @@ export default function GameLobby({
           gameId={id}
           completion={completed}
           cleanupControls={canManageCompletion(accountRole, organizerAccess)}
+          canReopen={["owner", "team_admin"].includes(accountRole)}
           initialCleanup={finishedCleanup}
         />
       </main>

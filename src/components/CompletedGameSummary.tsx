@@ -8,6 +8,7 @@ import type {
 import { organizerAccessToken } from "@/lib/access-session";
 import { z } from "zod";
 import { studioSessionBridge } from "@/lib/studio-session";
+import { ReopenGameControl } from "@/components/ReopenGameControl";
 
 function completionToken(gameId: string) {
   return (
@@ -28,11 +29,13 @@ export function CompletedGameSummary({
   completion,
   cleanupControls = false,
   initialCleanup,
+  canReopen = false,
 }: {
   gameId: string;
   completion: SafeGameCompletion;
   cleanupControls?: boolean;
   initialCleanup?: CompletionCleanup;
+  canReopen?: boolean;
 }) {
   const [cleanup, setCleanup] = useState<CompletionCleanup | undefined>(
     initialCleanup,
@@ -224,6 +227,11 @@ export function CompletedGameSummary({
             </button>
           </div>
         )}
+      {canReopen && (
+        <div>
+          <ReopenGameControl gameId={gameId} />
+        </div>
+      )}
       <Link className="btn-secondary mt-5 inline-flex" href="/dashboard">
         Back to Games
       </Link>

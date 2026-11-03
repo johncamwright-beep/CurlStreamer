@@ -5,7 +5,7 @@ import type { GameState } from "@/lib/types";
 import { clampZoom } from "@/lib/providers/livekit-client";
 import { useGame } from "@/components/GameSync";
 import { previewSubscribeAccessToken } from "@/lib/access-session";
-import { DEFAULT_PROGRAM_AUDIO_DELAY_MS } from "@/lib/program-sync";
+import { MicrophoneSyncControl } from "./MicrophoneSyncControl";
 import {
   cameraInputNativeZoom,
   useStudioCameraInputs,
@@ -85,39 +85,7 @@ export function CameraZoomControls({
         </select>
       </label>
       {layoutError && <p role="alert">{layoutError}</p>}
-      <label>
-        Microphone sync adjustment
-        <select
-          className="min-h-11"
-          aria-label="Microphone sync adjustment"
-          disabled={changing}
-          value={game.programAudioDelayMs ?? DEFAULT_PROGRAM_AUDIO_DELAY_MS}
-          onChange={async (event) => {
-            setChanging(true);
-            setLayoutError("");
-            try {
-              await act({
-                type: "program-audio-delay",
-                milliseconds: Number(event.target.value),
-              });
-            } catch {
-              setLayoutError("Could not change microphone sync. Try again.");
-            } finally {
-              setChanging(false);
-            }
-          }}
-        >
-          {[
-            -5000, -4000, -3000, -2500, -2000, -1500, -1000, -750, -500, -250,
-            0, 250, 500, 750, 1000, 1500, 2000, 2500, 3000, 4000, 5000,
-          ].map((value) => (
-            <option key={value} value={value}>
-              {value > 0 ? "+" : ""}
-              {value / 1000} seconds
-            </option>
-          ))}
-        </select>
-      </label>
+      <MicrophoneSyncControl value={game.programAudioDelayMs} act={act} />
       <p>
         Audio ahead +<br />
         Audio behind −

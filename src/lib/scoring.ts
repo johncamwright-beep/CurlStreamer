@@ -31,7 +31,10 @@ export function activeEvents(events: ScoreEvent[]) {
   );
   return events.filter((e) => e.type !== "undo" && !undone.has(e.id));
 }
-export function deriveScore(game: Pick<GameState, "config" | "scoreEvents">) {
+export function deriveScore(
+  game: Pick<GameState, "config" | "scoreEvents"> &
+    Partial<Pick<GameState, "status">>,
+) {
   let hammer: Team | null = game.config.initialHammer ?? null;
   const ends: EndScore[] = [];
   for (const event of activeEvents(game.scoreEvents)) {
@@ -49,7 +52,8 @@ export function deriveScore(game: Pick<GameState, "config" | "scoreEvents">) {
       home: ends.reduce((n, e) => n + (e.team === "home" ? e.points : 0), 0),
       away: ends.reduce((n, e) => n + (e.team === "away" ? e.points : 0), 0),
     },
-    currentEnd: Math.min(ends.length + 1, game.config.scheduledEnds),
+    currentEnd:
+      game.status === "completed" ? Math.max(1, ends.length) : ends.length + 1,
   };
 }
 

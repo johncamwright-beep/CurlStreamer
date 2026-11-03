@@ -35,16 +35,46 @@ test("portrait pan, signed microphone sync and slower sponsors save independent 
     page.getByRole("combobox", { name: "Camera layout" }),
   ).toBeVisible();
   await page.evaluate(() => (window as any).sources());
-  const delay = page.getByRole("combobox", {
+  const delay = page.getByRole("spinbutton", {
     name: "Microphone sync adjustment",
   });
-  await expect(delay).toHaveValue("-1500");
-  await delay.selectOption("2500");
-  await expect(delay).toHaveValue("2500");
-  await expect(delay.locator('option[value="-5000"]')).toHaveText("-5 seconds");
-  await expect(delay.locator('option[value="5000"]')).toHaveText("+5 seconds");
-  await delay.selectOption("-2500");
-  await expect(delay).toHaveValue("-2500");
+  await expect(delay).toHaveValue("2.75");
+  await delay.fill("2.755");
+  await delay.press("Enter");
+  await expect(delay).toBeEnabled();
+  await page
+    .getByRole("button", { name: "Decrease microphone delay by 1 second" })
+    .click();
+  await expect(delay).toHaveValue("1.755");
+  await delay.fill("0");
+  await delay.press("Enter");
+  await expect(delay).toBeEnabled();
+  const callsBeforeHold = await page.evaluate(
+    () => (window as any).calls.length,
+  );
+  await page
+    .getByRole("button", { name: "Increase microphone delay by 1 second" })
+    .hover();
+  await page.mouse.down();
+  await page.waitForTimeout(1600);
+  await expect(delay).toHaveValue("5");
+  expect(await page.evaluate(() => (window as any).calls.length)).toBe(
+    callsBeforeHold,
+  );
+  await page.mouse.up();
+  await expect
+    .poll(() => page.evaluate(() => (window as any).calls.length))
+    .toBe(callsBeforeHold + 1);
+  await expect(delay).toBeEnabled();
+  await delay.fill("6");
+  await delay.press("Tab");
+  await expect(page.getByRole("alert")).toContainText("−5 to +5");
+  expect(await page.evaluate(() => (window as any).calls.length)).toBe(
+    callsBeforeHold + 1,
+  );
+  await delay.fill("-2.5");
+  await delay.press("Enter");
+  await expect(delay).toHaveValue("-2.5");
   const left = page.getByRole("button", {
     name: "Camera 1 pan left",
     exact: true,
@@ -60,7 +90,7 @@ test("portrait pan, signed microphone sync and slower sponsors save independent 
   const actions = await page.evaluate(() => (window as any).calls);
   expect(actions).toContainEqual({
     type: "program-audio-delay",
-    milliseconds: 2500,
+    milliseconds: 2755,
   });
   expect(actions).toContainEqual({
     type: "program-audio-delay",
@@ -85,7 +115,7 @@ test("portrait pan, signed microphone sync and slower sponsors save independent 
     .getByRole("combobox", { name: "Camera layout" })
     .selectOption("stacked");
   await expect(left).toHaveCount(0);
-  await expect(delay).toHaveValue("-2500");
+  await expect(delay).toHaveValue("-2.5");
   await page.getByLabel("Carousel settings", { exact: true }).click();
   await page.getByLabel("Seconds per sponsor").selectOption("30");
   await expect(page.getByLabel("Seconds per sponsor")).toHaveValue("30");

@@ -1,5 +1,6 @@
 import "server-only";
 import { randomUUID } from "crypto";
+import { unstable_cache, revalidateTag } from "next/cache";
 import type { User } from "@supabase/supabase-js";
 import { createAdminSupabaseClient } from "@/lib/supabase/admin";
 import type { LibrarySponsor, Sponsor } from "@/lib/types";
@@ -27,15 +28,13 @@ type BroadcastSponsorCacheEntry = {
 };
 const broadcastSponsorCache = new Map<string, BroadcastSponsorCacheEntry>();
 
-// Media metadata only: callers must still authorize each game request. Other
-// server instances reconcile within 15 seconds; local edits invalidate at once.
-const metadataCache = new Map<string, { until: number; rows: SponsorRow[] }>();
+// Shared metadata only; callers must still authorize every game request.
+// Sponsor mutations invalidate all instances, without polling Supabase.
+const SPONSOR_METADATA_TAG = "curlcast-sponsor-metadata-v1";
 const metadataFlights = new Map<string, Promise<SponsorRow[]>>();
 const libraryUrlCache = new Map<string, BroadcastSponsorCacheEntry>();
-let sponsorRevision = 0;
 export function invalidateSponsorCache() {
-  sponsorRevision++;
-  metadataCache.clear();
+  revalidateTag(SPONSOR_METADATA_TAG);
   metadataFlights.clear();
   libraryUrlCache.clear();
   broadcastSponsorCache.clear();
@@ -45,16 +44,8 @@ function boundedSet<T>(cache: Map<string, T>, key: string, value: T) {
     cache.delete(cache.keys().next().value!);
   cache.set(key, value);
 }
-async function sponsorRows(gameId: string, organizationId?: string) {
-  const key = organizationId
-    ? `organization:${organizationId}`
-    : `game:${gameId}`;
-  const cached = metadataCache.get(key);
-  if (cached && cached.until > Date.now()) return cached.rows;
-  const existing = metadataFlights.get(key);
-  if (existing) return existing;
-  const revision = sponsorRevision;
-  const load = (async () => {
+const cachedSponsorRows = unstable_cache(
+  async (gameId: string, organizationId: string): Promise<SponsorRow[]> => {
     const { data, error } = await createAdminSupabaseClient().rpc(
       organizationId
         ? "list_sponsors_for_organization"
@@ -64,13 +55,21 @@ async function sponsorRows(gameId: string, organizationId?: string) {
         : { p_game_id: gameId },
     );
     if (error) throw new Error("Sponsor library unavailable");
-    const rows = ((data ?? []) as SponsorRow[]).filter(
-      (row) => !row.archived_at,
-    );
-    if (revision === sponsorRevision)
-      boundedSet(metadataCache, key, { until: Date.now() + 15_000, rows });
-    return rows;
-  })();
+    return ((data ?? []) as SponsorRow[]).filter((row) => !row.archived_at);
+  },
+  ["curlcast-sponsor-metadata-v1"],
+  { tags: [SPONSOR_METADATA_TAG], revalidate: false },
+);
+async function sponsorRows(gameId: string, organizationId?: string) {
+  const key = organizationId
+    ? `organization:${organizationId}`
+    : `game:${gameId}`;
+  const existing = metadataFlights.get(key);
+  if (existing) return existing;
+  const load = cachedSponsorRows(
+    organizationId ? "" : gameId,
+    organizationId ?? "",
+  );
   metadataFlights.set(key, load);
   try {
     return await load;

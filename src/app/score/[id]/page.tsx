@@ -157,6 +157,7 @@ function ScorerGame({ id }: { id: string }) {
           gameId={id}
           completion={completed}
           cleanupControls={canEndGame}
+          canReopen={["owner", "team_admin"].includes(accountRole)}
           initialCleanup={finishedCleanup}
         />
       </main>

@@ -8,6 +8,7 @@ import {
   studioLastLiveLabel,
   studioSessionSchema,
   stopStudioSession,
+  leaveStudioGame,
   type StudioSession,
 } from "./studio-session";
 
@@ -239,6 +240,51 @@ describe("native navigation receipts", () => {
   afterEach(() => {
     vi.useRealTimers();
     vi.unstubAllGlobals();
+  });
+
+  it("leaves only after a matching confirmed shutdown, never a foreign receipt", async () => {
+    const result = leaveStudioGame(gameId);
+    expect(sent[0]).toMatchObject({ type: "studio-game-leave", gameId });
+    let done = false;
+    void result.then(() => {
+      done = true;
+    });
+    events.dispatchEvent(
+      new CustomEvent("studio-game-leave-result", {
+        detail: { gameId: otherGameId, nonce: sent[0].nonce, ok: true },
+      }),
+    );
+    await Promise.resolve();
+    expect(done).toBe(false);
+    events.dispatchEvent(
+      new CustomEvent("studio-game-leave-result", {
+        detail: { gameId, nonce: sent[0].nonce, ok: true },
+      }),
+    );
+    await expect(result).resolves.toBeUndefined();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+  it("keeps the game open when shutdown fails or never responds", async () => {
+    const first = leaveStudioGame(gameId);
+    const rejected = expect(first).rejects.toThrow("Recording still closing");
+    events.dispatchEvent(
+      new CustomEvent("studio-game-leave-result", {
+        detail: {
+          gameId,
+          nonce: sent[0].nonce,
+          ok: false,
+          error: "Recording still closing",
+        },
+      }),
+    );
+    await rejected;
+    const second = leaveStudioGame(gameId);
+    const timedOut = expect(second).rejects.toThrow(
+      "has not confirmed shutdown",
+    );
+    await vi.advanceTimersByTimeAsync(130000);
+    await timedOut;
+    expect(vi.getTimerCount()).toBe(0);
   });
   function receipt(detail: unknown) {
     events.dispatchEvent(

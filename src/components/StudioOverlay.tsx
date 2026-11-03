@@ -6,11 +6,13 @@ export function StudioOverlay({
   open,
   onClose,
   children,
+  dismissible = true,
 }: {
   title: string;
   open: boolean;
   onClose: () => void;
   children: ReactNode;
+  dismissible?: boolean;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
   const titleId = useId();
@@ -23,7 +25,10 @@ export function StudioOverlay({
       ref={ref}
       className="studio-status-dialog studio-settings-dialog"
       aria-labelledby={titleId}
-      onCancel={onClose}
+      onCancel={(event) => {
+        if (!dismissible) event.preventDefault();
+        else onClose();
+      }}
       onClose={onClose}
     >
       <header>
@@ -31,6 +36,7 @@ export function StudioOverlay({
         <button
           className="btn-secondary min-h-11"
           type="button"
+          disabled={!dismissible}
           onClick={onClose}
         >
           Close

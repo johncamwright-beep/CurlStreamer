@@ -2,10 +2,10 @@ import { describe, expect, it } from "vitest";
 import { programSyncDelays } from "./program-sync";
 
 describe("signed program synchronization", () => {
-  it("defaults to 1.5 seconds of camera delay and preserves explicit zero", () => {
+  it("defaults to 2.75 seconds of microphone delay and preserves explicit zero", () => {
     expect(programSyncDelays(undefined)).toEqual({
-      microphoneDelayMs: 0,
-      cameraDelayMs: 1500,
+      microphoneDelayMs: 2750,
+      cameraDelayMs: 0,
     });
     expect(programSyncDelays(0)).toEqual({
       microphoneDelayMs: 0,

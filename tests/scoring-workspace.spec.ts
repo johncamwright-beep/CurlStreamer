@@ -444,7 +444,7 @@ test("desktop game day keeps scoring primary and settings available on demand", 
   ).toBeVisible();
   await expect(
     cameraSettings.getByLabel("Microphone sync adjustment"),
-  ).toHaveValue("-1500");
+  ).toHaveValue("2.75");
   await cameraSettings
     .getByRole("button", { name: "Close", exact: true })
     .click();
@@ -611,7 +611,7 @@ test("remote scorer only sees scoreboard controls", async ({ page }) => {
     page.getByText("Broadcast controls ↓", { exact: true }),
   ).toHaveCount(0);
   await expect(
-    page.getByRole("button", { name: "End Game", exact: true }),
+    page.getByRole("button", { name: "Game options", exact: true }),
   ).toHaveCount(0);
 });
 

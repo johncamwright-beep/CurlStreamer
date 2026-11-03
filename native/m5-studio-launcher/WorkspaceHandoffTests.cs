@@ -221,7 +221,16 @@ internal static class WorkspaceHandoffTests
                         if (typeof(Workspace).GetField("child", BindingFlags.Instance | BindingFlags.NonPublic).GetValue(form) != null || !File.Exists(Path.Combine(root,"FixtureProfile","recording-warning.json"))) throw new Exception("Dead controller blocked restart or lost cleanup warning.");
                         typeof(Workspace).GetField("busy", BindingFlags.Instance | BindingFlags.NonPublic).SetValue(form, false);
                     }
-                    File.WriteAllText(output, "PASS: native WebView2 handoff/preview boundaries, global account session, correlated navigation fallback, USB retention, cross-game replacement refusal, completed/failed session cleanup; no real media or accounts.");
+                    typeof(Workspace).GetField("gameEnded",flags).SetValue(form,false);
+                    await core.ExecuteScriptAsync("window.leaveReceipts=[];window.addEventListener('studio-game-leave-result',e=>window.leaveReceipts.push(e.detail));window.chrome.webview.postMessage({type:'studio-game-leave',gameId:'"+otherId+"',nonce:'33333333-3333-4333-8333-333333333333'});");
+                    await Task.Delay(100);
+                    if(await core.ExecuteScriptAsync("window.leaveReceipts.length")!="0") throw new Exception("Foreign leave request accepted.");
+                    var requestsBeforeLeave = requests;
+                    await core.ExecuteScriptAsync("window.chrome.webview.postMessage({type:'studio-game-leave',gameId:'"+id+"',nonce:'44444444-4444-4444-8444-444444444444'});");
+                    for(int i=0;i<30&&await core.ExecuteScriptAsync("window.leaveReceipts.length")=="0";i++) await Task.Delay(50);
+                    if(await core.ExecuteScriptAsync("window.leaveReceipts.length===1&&window.leaveReceipts[0].ok&&window.leaveReceipts[0].nonce==='44444444-4444-4444-8444-444444444444'")!="true") throw new Exception("Clean leave did not acknowledge matching request.");
+                    if((string)remembered.Invoke(form,null)!=id || (bool)typeof(Workspace).GetField("gameEnded",flags).GetValue(form) || requests!=requestsBeforeLeave) throw new Exception("Leave finalized the game or lost its resume target.");
+                    File.WriteAllText(output, "PASS: native WebView2 handoff/preview boundaries, global account session, correlated navigation fallback, USB retention, cross-game replacement refusal, completed/failed session cleanup, resumable leave without completion; no real media or accounts.");
                     result = 0;
                 } catch (Exception error) { File.WriteAllText(output, "FAIL: " + error.GetType().Name + " " + error.Message); }
                 finally { timeout.Stop(); typeof(Workspace).GetField("mayClose", BindingFlags.Instance | BindingFlags.NonPublic).SetValue(form, true); form.Close(); }

@@ -5,7 +5,7 @@ import { broadcastGame } from "./game-projection";
 describe("broadcast game projection", () => {
   it("sends the default sync adjustment to installed renderers and preserves a saved zero", () => {
     const game = gameFixture();
-    expect(broadcastGame(game).programAudioDelayMs).toBe(-1500);
+    expect(broadcastGame(game).programAudioDelayMs).toBe(2750);
     game.programAudioDelayMs = 0;
     expect(broadcastGame(game).programAudioDelayMs).toBe(0);
     game.programAudioDelayMs = 750;

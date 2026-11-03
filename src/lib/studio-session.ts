@@ -12,6 +12,7 @@ export const studioSessionSchema = z
     live: z.boolean(),
     lastLiveAgeMs: z.number().nonnegative().nullable().optional(),
     canHoldStream: z.boolean(),
+    canLeaveGame: z.boolean().optional(),
   })
   .strict();
 export type StudioSession = z.infer<typeof studioSessionSchema>;
@@ -186,6 +187,57 @@ export function stopStudioSession(gameId: string) {
     window.addEventListener("studio-session-stop-result", receive);
     try {
       bridge.postMessage({ type: "studio-session-stop", gameId, nonce });
+    } catch {
+      clean();
+      reject(Error("Windows Studio is unavailable."));
+    }
+  });
+}
+
+/** A correlated native acknowledgement is required before leaving the game. */
+export function leaveStudioGame(gameId: string) {
+  const bridge = studioSessionBridge();
+  if (!bridge)
+    return Promise.reject(
+      Error("Open this game in Windows Studio to pause its stream."),
+    );
+  const nonce = crypto.randomUUID();
+  return new Promise<void>((resolve, reject) => {
+    const clean = () => {
+      clearTimeout(timer);
+      window.removeEventListener("studio-game-leave-result", receive);
+    };
+    const receive = (event: Event) => {
+      const parsed = navigationReceiptSchema.safeParse(
+        (event as CustomEvent).detail,
+      );
+      if (
+        !parsed.success ||
+        parsed.data.gameId !== gameId ||
+        parsed.data.nonce !== nonce
+      )
+        return;
+      clean();
+      if (parsed.data.ok) resolve();
+      else
+        reject(
+          Error(
+            parsed.data.error ||
+              "Studio could not confirm the pause. Stay here and retry.",
+          ),
+        );
+    };
+    const timer = window.setTimeout(() => {
+      clean();
+      reject(
+        Error(
+          "Studio has not confirmed shutdown. Keep it open and check its status.",
+        ),
+      );
+    }, 130000);
+    window.addEventListener("studio-game-leave-result", receive);
+    try {
+      bridge.postMessage({ type: "studio-game-leave", gameId, nonce });
     } catch {
       clean();
       reject(Error("Windows Studio is unavailable."));

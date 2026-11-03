@@ -107,7 +107,10 @@ async function fixture(
         ),
       gameId,
     );
-  await page.getByRole("button", { name: "End Game", exact: true }).click();
+  await page.getByRole("button", { name: "Game options", exact: true }).click();
+  await page
+    .getByRole("button", { name: "End game and stream", exact: true })
+    .click();
   await page
     .getByRole("button", { name: "Review final score", exact: true })
     .click();

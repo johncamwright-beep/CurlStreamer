@@ -76,7 +76,7 @@ describe("curling scoring", () => {
     expect(state.totals.home).toBe(2);
   });
 
-  it("rejects a stale final-end intent when the displayed end is capped", () => {
+  it("advances beyond scheduled ends and rejects a stale final-end intent", () => {
     const game = {
       config,
       scoreEvents: Array.from({ length: 7 }, (_, index) =>
@@ -92,7 +92,7 @@ describe("curling scoring", () => {
       points: 1,
       blank: false,
     });
-    expect(deriveScore(game).currentEnd).toBe(8);
+    expect(deriveScore(game).currentEnd).toBe(9);
 
     expect(() =>
       applyScoringAction(game, {

@@ -90,11 +90,7 @@ internal sealed class Workspace : Form
             if (busy || closing) { await ConfirmForceClose(); return; }
             var game = runningGame ?? selectedGame ?? lastGame;
             if (game != null && !gameEnded) {
-                var choice = MessageBox.Show(this,
-                    "Do you want to end the game?\n\nYes: review and confirm the final score, then close Studio.\nNo: close Studio and return to this game later. Your score and YouTube link are kept.\nCancel: stay in Studio.\n\nClosing Studio interrupts local cameras, audio and video delivery.",
-                    "Close Studio", MessageBoxButtons.YesNoCancel, MessageBoxIcon.Question, MessageBoxDefaultButton.Button3);
-                if (choice == DialogResult.Cancel) { closeAfterGame = null; endRequestPending = false; return; }
-                if (choice == DialogResult.Yes) { await RequestEndGame(game); return; }
+                if (recording || selectedGame != null) { await RequestEndGame(game); return; }
                 RememberGame(game);
             }
             await CloseWorkspace();
@@ -161,6 +157,32 @@ internal sealed class Workspace : Form
             status.Text = "Shutdown was not confirmed. Press Ctrl+Shift+Q to force close Studio, or try closing again.";
             UpdateButtons();
         }
+    }
+    private async Task LeaveGame(string game, string nonce) {
+        var closeWindow = closeAfterGame == game;
+        var ok = false;
+        if (!busy && !closing && !gameEnded && selectedGame == game && (runningGame == null || runningGame == game)) {
+            busy = true; UpdateButtons();
+            try {
+                // Pause only local delivery. Never complete the YouTube broadcast
+                // or the scoring game; a new Studio session can reuse both.
+                RememberGame(game);
+                if (recording && TextValue(lastState, "streaming") == "armed") {
+                    var paused = await Command(new { action = "pause-stream" });
+                    ApplyState(paused);
+                    if (TextValue(paused, "streaming") != "paused" && TextValue(paused, "streaming") != "stopped")
+                        throw new InvalidDataException();
+                }
+                var receipt = child != null ? exited : null;
+                await CloseController();
+                ok = child == null && !recording && (receipt == null || await receipt.Task);
+                if (ok) { closeAfterGame = null; endRequestPending = false; }
+            } catch { status.Text = "Studio could not confirm pausing and saving. Stay here and try again."; }
+            finally { busy = false; UpdateButtons(); }
+        }
+        if (web.CoreWebView2 != null && WorkspacePolicy.SameOrigin(web.CoreWebView2.Source, origin))
+            await web.ExecuteScriptAsync("window.dispatchEvent(new CustomEvent('studio-game-leave-result',{detail:" + json.Serialize(new { gameId = game, nonce = nonce, ok = ok, error = ok ? null : "Studio could not confirm pausing and saving. Stay here and try again." }) + "}));");
+        if (ok && closeWindow) await CloseWorkspace();
     }
     private async Task ConfirmForceClose() {
         if (forceClosing || mayClose) return;
@@ -301,6 +323,13 @@ internal sealed class Workspace : Form
             var value = json.Deserialize<Dictionary<string, object>>(raw);
             if (WorkspacePolicy.ForceCloseRequest(value, selectedGame, runningGame) && WorkspacePolicy.Game(args.Source, origin) == selectedGame) { await ConfirmForceClose(); return; }
             if (value.Count == 1 && TextValue(value, "type") == "studio-session-observe") { PublishSessionStatus(); return; }
+            if (value.Count == 3 && TextValue(value, "type") == "studio-game-leave" &&
+                WorkspacePolicy.Game(args.Source, origin) == selectedGame && TextValue(value, "gameId") == selectedGame &&
+                selectedGame != null && (runningGame == null || runningGame == selectedGame)) {
+                Guid leaveNonce;
+                if (!Guid.TryParse(TextValue(value, "nonce"), out leaveNonce)) return;
+                await LeaveGame(selectedGame, leaveNonce.ToString()); return;
+            }
             if (TextValue(value, "type") == "studio-navigation-resolve") { await ResolveNavigation(value); return; }
             if (value.Count == 3 && TextValue(value, "type") == "studio-session-stop" &&
                 selectedGame != null && TextValue(value, "gameId") == runningGame && runningGame != null) {
@@ -361,7 +390,10 @@ internal sealed class Workspace : Form
                 if (busy) return;
                 if (type == "studio-youtube-start" || type == "studio-youtube-stop") { await YouTube(type == "studio-youtube-start"); return; }
                 if (type == "studio-game-ready") {
-                    if (endRequestPending && closeAfterGame == selectedGame) await DispatchEndGame();
+                    if (closeAfterGame == selectedGame) {
+                        if (endRequestPending) await DispatchEndGame();
+                        PublishSessionStatus(); return;
+                    }
                     if (!WorkspacePolicy.CanStartSession(runningGame, selectedGame)) { PublishSessionStatus(); return; }
                     if (runningGame != null && gameEnded) { PublishSessionStatus(); return; }
                     if (runningGame == null) gameEnded = false;
@@ -733,7 +765,7 @@ internal sealed class Workspace : Form
             presentation = active && presentation != null ? TextValue(presentation, "mode") ?? "live" : "live",
             streaming = active ? TextValue(lastState, "streaming") ?? "idle" : "idle",
             outputActive = active && output != null && TextValue(output, "state") == "active",
-            live = active && TextValue(lastState, "broadcast") == "live", canHoldStream = active && StateFlag("canHoldStream")
+            live = active && TextValue(lastState, "broadcast") == "live", canHoldStream = active && StateFlag("canHoldStream"), canLeaveGame = true
         }) + "}));");
     }
     private async Task Poll() {

@@ -99,7 +99,7 @@ describe("native program audio routing", () => {
           />,
         );
         expect(markup).toContain(
-          'data-endpoint="/usb-audio" data-enabled="true" data-volume="1" data-delay="0"',
+          `data-endpoint="/usb-audio" data-enabled="true" data-volume="1" data-delay="${milliseconds ?? 2750}"`,
         );
       }
       expect(render()).toContain(

@@ -1,4 +1,4 @@
-export const DEFAULT_PROGRAM_AUDIO_DELAY_MS = -1500;
+export const DEFAULT_PROGRAM_AUDIO_DELAY_MS = 2750;
 
 /** A late microphone cannot be played before capture: hold the cameras instead. */
 export function programSyncDelays(adjustmentMs: number | undefined) {

@@ -822,8 +822,25 @@ export async function createM4OperatorServer(options: {
         ) {
           const handle = programHandle!;
           const streamAttempt = ++streamEpoch;
-          if (input.action === "pause-stream") await handle.stream!.pause!();
-          else await handle.stream!.resume!();
+          if (input.action === "pause-stream") {
+            if (handle.presentation) {
+              try {
+                await handle.presentation.set("hold");
+                // Keep sending the acknowledged card before disconnecting RTMP.
+                await handle.presentation.dwell(5000);
+              } catch {
+                reply(409, {
+                  error: "Pause card was not confirmed. Please retry.",
+                });
+                return;
+              }
+            }
+            await handle.stream!.pause!();
+          } else {
+            await handle.stream!.resume!();
+            if (handle.presentation?.snapshot().mode === "hold")
+              await handle.presentation.set("live");
+          }
           if (streamAttempt === streamEpoch && programHandle === handle) {
             streaming = handle.stream!.snapshot().state;
             streamingMessage =

@@ -282,57 +282,73 @@ export function EndGameControl({
           dismissible={!busy}
         >
           {!endChosen ? (
-            <>
-              <div className="flex flex-col gap-3">
-                <button
-                  className="btn-secondary min-h-11"
-                  disabled={busy || disabled || !canLeave}
-                  onClick={async () => {
-                    setBusy(true);
-                    setError("");
-                    try {
-                      await leaveStudioGame(gameId);
-                      window.location.assign("/dashboard");
-                    } catch (cause) {
-                      setError(
-                        cause instanceof Error
-                          ? cause.message
-                          : "Could not leave this game.",
-                      );
-                      setBusy(false);
-                    }
-                  }}
+            busy ? (
+              <div
+                role="status"
+                aria-live="polite"
+                className="flex min-h-36 items-center justify-center gap-4"
+              >
+                <svg
+                  aria-hidden="true"
+                  className="h-8 w-8 animate-spin text-cyan-300"
+                  viewBox="0 0 24 24"
                 >
-                  {busy
-                    ? "Pausing stream and saving recording…"
-                    : "Leave game and pause stream"}
-                </button>
-                <p>
-                  Your score and YouTube link are kept. Reopen this game in
-                  Studio and resume broadcasting when ready.
-                </p>
-                {!canLeave && (
-                  <p>
-                    Use the updated Windows Studio to leave and pause its
-                    stream.
-                  </p>
-                )}
-                <button
-                  className="btn min-h-11 border-red-700"
-                  disabled={busy || disabled || !enabled}
-                  onClick={() => {
-                    setEndChosen(true);
-                    setError("");
-                  }}
-                >
-                  End game and stream
-                </button>
-                <p>
-                  Review the final score, then close the game and end the
-                  broadcast.
-                </p>
+                  <circle
+                    cx="12"
+                    cy="12"
+                    r="9"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="3"
+                    opacity="0.2"
+                  />
+                  <path
+                    d="M12 3a9 9 0 0 1 9 9"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="3"
+                    strokeLinecap="round"
+                  />
+                </svg>
+                <span>Please wait…</span>
               </div>
-            </>
+            ) : (
+              <>
+                <div className="flex flex-col gap-3">
+                  <button
+                    className="btn-secondary min-h-11"
+                    disabled={busy || disabled || !canLeave}
+                    onClick={async () => {
+                      setBusy(true);
+                      setError("");
+                      try {
+                        await leaveStudioGame(gameId);
+                        window.location.assign("/dashboard");
+                      } catch (cause) {
+                        setError(
+                          cause instanceof Error
+                            ? cause.message
+                            : "Could not leave this game.",
+                        );
+                        setBusy(false);
+                      }
+                    }}
+                  >
+                    Leave game and pause stream
+                  </button>
+                  <button
+                    className="btn min-h-11 border-red-700"
+                    disabled={busy || disabled || !enabled}
+                    onClick={() => {
+                      setEndChosen(true);
+                      setError("");
+                    }}
+                  >
+                    End game and stream
+                  </button>
+                </div>
+              </>
+            )
           ) : !review ? (
             <>
               <p className="mt-2 text-slate-300">

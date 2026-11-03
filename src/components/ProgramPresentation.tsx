@@ -127,7 +127,7 @@ export function ProgramPresentation() {
       />
       <h1 style={{ fontSize: 64, margin: 0 }}>
         {state.mode === "hold" || state.mode === "preparing-end"
-          ? "Stream temporarily off"
+          ? "Stream paused momentarily"
           : "Game over"}
       </h1>
       {state.mode === "ended" && completion && (

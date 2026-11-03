@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { M4DesktopClient } from "./m4-desktop-client";
 import { createM4OperatorServer } from "./m4-operator-server";
+import { createM4ProgramPresentation } from "./m4-program-presentation";
 
 const gameId = "11111111-1111-4111-8111-111111111111";
 const paths = {
@@ -21,6 +22,7 @@ async function fixture(
     streamStart?: (setState: (state: StreamState) => void) => Promise<void>;
     streamStop?: (setState: (state: StreamState) => void) => Promise<void>;
     observation?: object;
+    presentation?: ReturnType<typeof createM4ProgramPresentation>;
   } = {},
 ) {
   const directory = await mkdtemp(join(tmpdir(), "m4-operator-stream-"));
@@ -42,6 +44,9 @@ async function fixture(
     return {
       stop: recordingStop,
       closed,
+      ...(input.presentation
+        ? { presentation: { ...input.presentation, supported: true as const } }
+        : {}),
       rendererAddress: "http://127.0.0.1:4000",
       stream: {
         start: streamStart,
@@ -120,6 +125,53 @@ async function fixture(
 }
 
 describe("M4 operator streaming races", () => {
+  it("keeps output running until the pause card has dwelled, then restores live on resume", async () => {
+    const presentation = createM4ProgramPresentation(() => true);
+    let mode = "live";
+    vi.spyOn(presentation, "snapshot").mockImplementation(() => ({
+      generation: 1,
+      mode: mode as "live" | "hold",
+    }));
+    vi.spyOn(presentation, "set").mockImplementation(async (next) => {
+      mode = next;
+      return presentation.snapshot();
+    });
+    let finishDwell!: () => void;
+    vi.spyOn(presentation, "dwell").mockImplementation(
+      () =>
+        new Promise<void>((resolve) => {
+          finishDwell = resolve;
+        }),
+    );
+    const f = await fixture({ presentation });
+    try {
+      await f.ready();
+      await f.command({
+        action: "start-stream",
+        intentId: crypto.randomUUID(),
+      });
+      const pausing = f.command({ action: "pause-stream" });
+      await vi.waitFor(() =>
+        expect(presentation.dwell).toHaveBeenCalledWith(5000),
+      );
+      expect(presentation.set).toHaveBeenCalledWith("hold");
+      expect((await f.state()).streaming).toBe("armed");
+      finishDwell();
+      await pausing;
+      expect((await f.state()).streaming).toBe("paused");
+      await f.command({ action: "resume-stream" });
+      expect(presentation.set).toHaveBeenLastCalledWith("live");
+      expect((await f.state()).streaming).toBe("armed");
+      vi.mocked(presentation.set).mockRejectedValueOnce(
+        new Error("paint timeout"),
+      );
+      expect((await f.command({ action: "pause-stream" })).status).toBe(409);
+      expect((await f.state()).streaming).toBe("armed");
+    } finally {
+      await f.app.close();
+      await rm(f.directory, { recursive: true, force: true });
+    }
+  });
   it("disconnects and reconnects without releasing desktop authority or the camera program", async () => {
     const f = await fixture();
     try {

@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useId, useRef, useState } from "react";
 import { DEFAULT_PROGRAM_AUDIO_DELAY_MS } from "@/lib/program-sync";
+import { rememberMicrophoneSync } from "@/lib/microphone-sync-preference";
 
 export function MicrophoneSyncControl({
   value,
@@ -47,7 +48,11 @@ export function MicrophoneSyncControl({
     const milliseconds = Math.round(seconds * 1000);
     if (milliseconds === confirmed.current) {
       editing.current = false;
-      setError("");
+      setError(
+        rememberMicrophoneSync(milliseconds)
+          ? ""
+          : "Saved for this game, but this device could not remember it for new games.",
+      );
       return;
     }
     flight.current = true;
@@ -60,6 +65,10 @@ export function MicrophoneSyncControl({
       });
       confirmed.current = milliseconds;
       edit(String(Math.round(seconds * 1000) / 1000));
+      if (!rememberMicrophoneSync(milliseconds))
+        setError(
+          "Saved for this game, but this device could not remember it for new games.",
+        );
     } catch {
       setError("Could not save microphone sync. Try again.");
     } finally {

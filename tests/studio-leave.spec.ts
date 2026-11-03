@@ -43,9 +43,13 @@ test("leave pauses without finalizing, waits for acknowledgement, and retains er
   await page
     .getByRole("button", { name: "Leave game and pause stream", exact: true })
     .click();
+  await expect(page.getByRole("status")).toBeVisible();
+  await expect(page.getByRole("status")).toHaveText("Please wait…");
+  await expect(page.locator('[role="status"] svg')).toHaveClass(/animate-spin/);
   await expect(
-    page.getByText("Pausing stream and saving recording…"),
-  ).toBeVisible();
+    page.getByRole("button", { name: "End game and stream", exact: true }),
+  ).toHaveCount(0);
+  await expect(page.getByText(/Use the updated Windows Studio/)).toHaveCount(0);
   await page.keyboard.press("Escape");
   await expect(page.getByRole("dialog")).toBeVisible();
   await page.evaluate(() => {

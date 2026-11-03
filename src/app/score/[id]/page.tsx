@@ -26,6 +26,7 @@ import { StudioDeviceCards } from "@/components/StudioDeviceCards";
 import { StudioYouTube } from "@/components/StudioYouTube";
 import { StudioProgramPreview } from "@/components/StudioProgramPreview";
 import { CameraZoomControls } from "@/components/CameraZoomControls";
+import { useRememberedMicrophoneSync } from "@/components/useRememberedMicrophoneSync";
 import { StudioAudio } from "@/components/StudioAudio";
 import { cameraAudioControlEnabled } from "@/lib/camera-audio";
 import { useStudioCameraInputs } from "@/components/StudioCameraInputs";
@@ -105,6 +106,11 @@ function ScorerGame({ id }: { id: string }) {
   const completed = completion ?? finished;
   const terminal =
     Boolean(completed) || lifecycle === "closed" || lifecycle === "deleted";
+  const microphoneSyncError = useRememberedMicrophoneSync(
+    game,
+    !terminal && (accountOperator || organizerAccess),
+    act,
+  );
   const studioTitle = game
     ? gameEntryPresentation(game.config, navigationMetadata).title.slice(0, 200)
     : "";
@@ -460,6 +466,7 @@ function ScorerGame({ id }: { id: string }) {
           {canEndGame && (
             <div className="scoring-page-actions">
               {desktop && <StudioStatusArea />}
+              {microphoneSyncError && <p role="alert">{microphoneSyncError}</p>}
               {desktop && (
                 <div
                   id="studio-broadcast-actions"

@@ -301,7 +301,7 @@ test("native Studio tools share one compact row and open their own panels", asyn
   ).toBeVisible();
   await expect(
     page.getByLabel("Celebration", { exact: true }).locator("option"),
-  ).toHaveText(["Lightsaber", "Cat Dance"]);
+  ).toHaveText(["Lightsaber", "Cat Dance", "Trump Dance"]);
   await expect(
     page.getByRole("button", { name: "Play on stream" }),
   ).toBeDisabled();

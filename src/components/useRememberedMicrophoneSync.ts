@@ -19,14 +19,18 @@ export function useRememberedMicrophoneSync(
     initialized.current = game.id;
     setError("");
     const remembered = readMicrophoneSyncPreference();
-    if (validMicrophoneSync(game.programAudioDelayMs)) {
+    if (
+      remembered === undefined &&
+      validMicrophoneSync(game.programAudioDelayMs)
+    ) {
       // Upgrade existing profiles using their current game's saved calibration.
       // Visiting an older game must not replace a newer remembered preference.
       if (remembered === undefined)
         rememberMicrophoneSync(game.programAudioDelayMs);
       return;
     }
-    if (remembered === undefined) return;
+    if (remembered === undefined || remembered === game.programAudioDelayMs)
+      return;
     let cancelled = false;
     void act({ type: "program-audio-delay", milliseconds: remembered }).catch(
       () => {

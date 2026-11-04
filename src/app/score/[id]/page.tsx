@@ -106,6 +106,27 @@ function ScorerGame({ id }: { id: string }) {
   const completed = completion ?? finished;
   const terminal =
     Boolean(completed) || lifecycle === "closed" || lifecycle === "deleted";
+  const sponsorsInitialized = useRef(false);
+  const [sponsorStartError, setSponsorStartError] = useState("");
+  useEffect(() => {
+    if (
+      !desktop ||
+      terminal ||
+      !game ||
+      !(accountOperator || organizerAccess) ||
+      sponsorsInitialized.current
+    )
+      return;
+    if (!game.sponsors.some((sponsor) => sponsor.enabled)) return;
+    sponsorsInitialized.current = true;
+    if (!game.sponsorMode.active) {
+      void act({ type: "sponsor-mode", active: true }).catch(() =>
+        setSponsorStartError(
+          "Sponsors could not start. Open Sponsors to try again.",
+        ),
+      );
+    }
+  }, [desktop, terminal, game, accountOperator, organizerAccess, act]);
   const microphoneSyncError = useRememberedMicrophoneSync(
     game,
     !terminal && (accountOperator || organizerAccess),
@@ -299,6 +320,10 @@ function ScorerGame({ id }: { id: string }) {
     return `End ${action.expectedEnd} saved.`;
   }
   async function runScoringAction(action: ScoringAction) {
+    if (action.type === "score" && !score.hammer) {
+      setCorrectingHammer(true);
+      return;
+    }
     if (
       scoringFlight.current ||
       (failedIntent.current && failedIntent.current !== action)
@@ -512,7 +537,11 @@ function ScorerGame({ id }: { id: string }) {
             <ScoringSummary
               expanded={desktop}
               game={game}
-              initialHammer={{ disabled: scoringLocked, select: saveHammer }}
+              initialHammer={{
+                disabled: scoringLocked,
+                select: saveHammer,
+                open: desktop ? () => setCorrectingHammer(true) : undefined,
+              }}
               actions={
                 <InGameRockColours
                   homeName={game.config.homeName}
@@ -524,7 +553,7 @@ function ScorerGame({ id }: { id: string }) {
                 />
               }
             />
-            {score.hammer && (
+            {(desktop || score.hammer) && (
               <section
                 className="scoring-card scoring-entry"
                 aria-labelledby="record-end-heading"
@@ -645,7 +674,7 @@ function ScorerGame({ id }: { id: string }) {
                       : "There is no scoring change to undo."}
                 </p>
                 <StudioOverlay
-                  title="Correct Hammer"
+                  title={score.hammer ? "Correct Hammer" : "Choose Hammer"}
                   open={correctingHammer}
                   onClose={() => setCorrectingHammer(false)}
                 >
@@ -675,6 +704,7 @@ function ScorerGame({ id }: { id: string }) {
                 </StudioOverlay>
               </section>
             )}
+            <StudioStatusMessage message={sponsorStartError} />
             {scoringError && (
               <StudioStatusMessage message={`Scoring: ${scoringError}`} />
             )}

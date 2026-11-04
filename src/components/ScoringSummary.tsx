@@ -12,7 +12,11 @@ export function ScoringSummary({
   game: GameState;
   actions?: ReactNode;
   expanded?: boolean;
-  initialHammer?: { disabled: boolean; select(side: "home" | "away"): void };
+  initialHammer?: {
+    disabled: boolean;
+    select(side: "home" | "away"): void;
+    open?: () => void;
+  };
 }) {
   const score = deriveScore(game);
   const endCount = Math.max(game.config.scheduledEnds, score.currentEnd);
@@ -21,14 +25,23 @@ export function ScoringSummary({
       className="scoring-card scoring-summary"
       aria-labelledby="match-score-heading"
     >
-      <div className="scoring-section-heading">
+      <div className="scoring-section-heading scoring-summary-controls">
         <h2 id="match-score-heading">Match score</h2>
         <div className="flex items-center gap-2">
           <span className="scoring-badge">End {score.currentEnd}</span>
-          {!score.hammer && initialHammer && (
+          {!score.hammer && initialHammer && !initialHammer.open && (
             <span className="text-xs text-slate-300">Choose hammer ↓</span>
           )}
           {actions}
+          {initialHammer?.open && (
+            <button
+              className="btn-secondary"
+              disabled={initialHammer.disabled}
+              onClick={initialHammer.open}
+            >
+              {score.hammer ? "Change Hammer" : "Choose Hammer"}
+            </button>
+          )}
         </div>
       </div>
       {(["home", "away"] as const).map((side) => (
@@ -46,7 +59,7 @@ export function ScoringSummary({
               label={`${game.config[`${side}Name`]}: Last stone advantage (Hammer)`}
             />
           )}
-          {!score.hammer && initialHammer && (
+          {!score.hammer && initialHammer && !initialHammer.open && (
             <button
               className="scoring-initial-hammer"
               disabled={initialHammer.disabled}

@@ -71,14 +71,26 @@ export function StudioStatusMessage({
 export function StudioStatusArea() {
   const messages = useContext(MessagesContext);
   const dialog = useRef<HTMLDialogElement>(null);
+  const [visible, setVisible] = useState(false);
+  const latestMessage = messages[0];
+  useEffect(() => {
+    if (!latestMessage) return;
+    setVisible(true);
+    const timeout = setTimeout(() => setVisible(false), 8000);
+    return () => clearTimeout(timeout);
+  }, [latestMessage]);
   return (
     <>
       <button
         type="button"
-        className="btn-secondary min-h-11"
+        className="btn-secondary min-h-11 studio-status-preview"
+        aria-label="Status Log"
         onClick={() => dialog.current?.showModal()}
       >
-        Status Log
+        <span>Status Log</span>
+        <span className="studio-status-latest" role="status">
+          {visible ? latestMessage?.message : ""}
+        </span>
       </button>
       <dialog
         ref={dialog}

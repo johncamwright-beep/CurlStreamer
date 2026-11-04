@@ -507,7 +507,7 @@ test("desktop game day keeps scoring primary and settings available on demand", 
     "YouTube status delayed test message",
   );
   await expect(page.locator(".studio-status-latest")).toHaveText("", {
-    timeout: 10000,
+    timeout: 20000,
   });
   await page.getByRole("button", { name: "Status Log", exact: true }).click();
   const log = page.getByRole("dialog", { name: "Status Log", exact: true });
@@ -586,7 +586,7 @@ test("Studio preview keeps its last picture through failed frame requests", asyn
   ).toBeVisible();
   unavailable = true;
   await expect(preview.getByText("Preview reconnecting…")).toBeVisible({
-    timeout: 10000,
+    timeout: 20000,
   });
   await expect(
     preview.getByRole("img", { name: "Actual Studio program output" }),

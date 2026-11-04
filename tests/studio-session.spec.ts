@@ -181,6 +181,14 @@ test("replay-enabled status updates preview to LIVE and yields the badge during 
   await expect(badge).toHaveCount(0);
   await status(page, { replay: null });
   await expect(badge).toHaveText("LIVE");
+  await status(page, {
+    canLeaveGame: true,
+    replay: { state: 1, durationMs: 0, availableMs: 60000, clipId: null },
+  });
+  await page.getByRole("button", { name: "Game options", exact: true }).click();
+  await expect(
+    page.getByRole("button", { name: "Leave game and pause stream" }),
+  ).toBeEnabled();
 });
 
 test("continue leaves the game while its live Studio status remains available", async ({

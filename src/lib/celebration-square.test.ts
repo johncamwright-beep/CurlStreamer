@@ -2,16 +2,19 @@ import { describe, expect, it } from "vitest";
 import { celebrationSquareCrop } from "./celebration-square";
 import { lightsaberHeadTransforms } from "./lightsaber-compositor";
 import { catDanceHeadTransforms } from "./cat-dance-compositor";
+import { trumpDanceHeadTransforms } from "./trump-dance-compositor";
 
 describe("square celebration framing", () => {
-  for (const template of ["lightsaber", "cat-dance"] as const) {
+  for (const template of ["lightsaber", "cat-dance", "trump-dance"] as const) {
     it.each([0.55, 0.72, 1, 1.3])(
       `keeps the entire ${template} head in a square at aspect %s`,
       (aspect) => {
         const poses = (
           template === "lightsaber"
             ? lightsaberHeadTransforms
-            : catDanceHeadTransforms
+            : template === "cat-dance"
+              ? catDanceHeadTransforms
+              : trumpDanceHeadTransforms
         )(aspect);
         for (const pose of poses) {
           const crop = celebrationSquareCrop(template, pose);
@@ -22,7 +25,7 @@ describe("square celebration framing", () => {
             template === "lightsaber" ? 1440 : 1080,
           );
           expect(crop.y + crop.size).toBeLessThanOrEqual(
-            template === "lightsaber" ? 1080 : 1920,
+            template === "cat-dance" ? 1920 : 1080,
           );
           for (const x of [-pose.width / 2, pose.width / 2]) {
             for (const y of [-pose.height, 0]) {

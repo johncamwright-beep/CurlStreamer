@@ -11,7 +11,7 @@ function Get-CelebrationHash([string]$Path) {
 }
 $sourceDirectory = Join-Path (Resolve-Path -LiteralPath $SourceRoot).Path 'celebrations'
 $rendererDirectory = Join-Path ([IO.Path]::GetFullPath($StudioSource)) 'renderer/celebrations'
-$assets = @('lightsaber.mp4', 'cat-dance.mp4', 'lightsaber-foreground-0.png', 'lightsaber-foreground-1.png', 'lightsaber-foreground-2.png')
+$assets = @('lightsaber.mp4', 'cat-dance.mp4', 'trump-dance.mp4', 'lightsaber-foreground-0.png', 'lightsaber-foreground-1.png', 'lightsaber-foreground-2.png')
 New-Item -ItemType Directory -Path $rendererDirectory -Force | Out-Null
 foreach ($asset in $assets) {
   $source = Join-Path $sourceDirectory $asset

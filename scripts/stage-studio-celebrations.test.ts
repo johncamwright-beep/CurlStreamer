@@ -14,7 +14,7 @@ import { createM4ProgramBridge } from "../src/lib/providers/m4-program-bridge";
 
 describe("bundled celebration assets", () => {
   it.skipIf(process.platform !== "win32")(
-    "stages only the five generic assets and resolves them from the packaged renderer root",
+    "stages only the six generic assets and resolves them from the packaged renderer root",
     async () => {
       const root = await mkdtemp(
         join(tmpdir(), "curlcast-packaged-lightsaber-"),
@@ -24,6 +24,7 @@ describe("bundled celebration assets", () => {
       const assets = [
         "lightsaber.mp4",
         "cat-dance.mp4",
+        "trump-dance.mp4",
         "lightsaber-foreground-0.png",
         "lightsaber-foreground-1.png",
         "lightsaber-foreground-2.png",

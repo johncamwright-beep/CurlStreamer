@@ -108,8 +108,10 @@ export function StudioCelebrations({
     setError("");
     try {
       await act(action);
+      return true;
     } catch {
       setError("Celebration could not be updated. Try again.");
+      return false;
     } finally {
       setBusy(false);
     }
@@ -212,16 +214,17 @@ export function StudioCelebrations({
           className="btn min-h-11"
           type="button"
           disabled={busy || Boolean(activeCue) || !photo || photosLoading}
-          onClick={() =>
-            update({
+          onClick={async () => {
+            const played = await update({
               type: "celebration-play",
               triggerId: crypto.randomUUID(),
               templateId,
               ...(player ? { playerId: player.id } : {}),
               volume,
               muted,
-            })
-          }
+            });
+            if (played) close();
+          }}
         >
           Play on stream
         </button>
@@ -239,6 +242,10 @@ export function StudioCelebrations({
           Stop
         </button>
       </div>
+      <p className="mt-3 text-sm text-slate-300">
+        Play closes this panel. Live cameras return automatically when the clip
+        ends.
+      </p>
       {activeCue && (
         <p role="status">
           {Date.now() < activeCue.startedAt ? "Starting…" : "Playing"}
@@ -289,9 +296,16 @@ export function StudioCelebrations({
         <button
           type="button"
           className="btn-secondary min-h-11"
-          onClick={() => setOpen(true)}
+          onClick={() => {
+            if (activeCue)
+              void update({
+                type: "celebration-stop",
+                triggerId: crypto.randomUUID(),
+              });
+            else setOpen(true);
+          }}
         >
-          Celebrations
+          {activeCue ? "Stop celebration" : "Celebrations"}
         </button>
         <StudioOverlay title="Celebrations" open={open} onClose={close}>
           {content}

@@ -804,7 +804,11 @@ function ScorerGame({ id }: { id: string }) {
                 <>
                   <WindowsStudioRequired gameId={id} />
                   <ScoringProgramControls game={game} act={act} />
-                  <StudioCelebrations game={game} act={act} />
+                  <StudioCelebrations
+                    game={game}
+                    act={act}
+                    displayMode="dialog"
+                  />
                 </>
               )}
               {desktop && (

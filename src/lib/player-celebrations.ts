@@ -11,8 +11,18 @@ export const CELEBRATION_TEMPLATES = [
     description: "Your player's big-head cat dance moment.",
     durationMs: 9700,
   },
+  {
+    id: "trump-dance",
+    label: "Trump Dance",
+    description: "Your player's dance with animated party lights.",
+    durationMs: 9667,
+  },
 ] as const;
-export const CELEBRATION_TEMPLATE_IDS = ["lightsaber", "cat-dance"] as const;
+export const CELEBRATION_TEMPLATE_IDS = [
+  "lightsaber",
+  "cat-dance",
+  "trump-dance",
+] as const;
 export type CelebrationTemplateId = (typeof CELEBRATION_TEMPLATE_IDS)[number];
 export interface CelebrationCue {
   id: string;

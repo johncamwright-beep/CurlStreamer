@@ -2,13 +2,8 @@
 import { useEffect, useRef, useState } from "react";
 import { z } from "zod";
 import { StudioOverlay } from "./StudioOverlay";
+import { studioReplayStateSchema as replayState } from "@/lib/studio-session";
 
-const replayState = z.object({
-  state: z.number().int().min(0).max(7),
-  durationMs: z.number().int().min(0).max(90000),
-  availableMs: z.number().int().min(0).max(60000),
-  clipId: z.uuid().nullable(),
-});
 type Replay = z.infer<typeof replayState>;
 function bridge() {
   return (
@@ -42,7 +37,7 @@ export function StudioReplay({ gameId }: { gameId: string }) {
       const parsed = replayState.safeParse(detail.replay);
       const next = parsed.success ? parsed.data : null;
       const onAir = !!next && next.state >= 4 && next.state <= 6;
-      if (wasPlaying.current && !onAir) setOpen(false);
+      if (onAir || wasPlaying.current) setOpen(false);
       wasPlaying.current = onAir;
       setState(next);
     }

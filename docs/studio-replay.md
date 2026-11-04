@@ -6,8 +6,12 @@ chooses Play Replay. Preparing or cancelling a preview does not interrupt live
 output. Presets are disabled until that much footage exists.
 
 The program retains its recorded camera layout, scoreboard and sponsors. A
-moving REPLAY transition and quiet synthetic whoosh introduce playback; REPLAY
-remains visible throughout. A LIVE transition returns to current live output.
+full-screen OBS Swipe wash and quiet synthetic whoosh introduce playback; a red
+REPLAY bar remains across the top throughout playback. A LIVE wash returns to current live output.
+The chooser closes when playback begins so the operator watches Program Preview.
+Recorded program audio accompanies the replay. On each transition, outgoing audio
+fades down over 300 ms and incoming audio ramps up over 300 ms around the covered
+picture switch. Original source gains are restored; microphone sync is unchanged.
 Return Live interrupts a replay early. Pausing/ending the stream overrides replay.
 Decoder error or playback deadline also returns live.
 

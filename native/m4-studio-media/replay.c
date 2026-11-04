@@ -5,14 +5,16 @@
 
 /* 0 warming, 1 buffering, 2 saving, 3 preview, 4 entering, 5 replay, 6 returning, 7 unavailable. */
 struct studio_replay {
-    obs_source_t *live, *clip, *label, *sound;
+    obs_source_t *live, *clip, *label, *sound, *wash, *transition;
     obs_scene_t *scene;
-    obs_sceneitem_t *clip_item, *label_item;
+    obs_sceneitem_t *clip_item, *label_item, *transition_item;
+    bool switched;
     obs_output_t *buffer;
     uint32_t state, duration, start;
     ULONGLONG since, deadline, buffer_since, restart_at;
     volatile LONG saved;
     bool was_muted;
+    float live_volume, clip_volume;
     wchar_t clip_path[2048];
     char clip_utf8[4096];
 };
@@ -47,15 +49,29 @@ static bool sound_file(const wchar_t *cache, char *utf8, int capacity)
     }
     return fclose(f) == 0 && ok;
 }
-static void label(studio_replay *r, const char *text, bool transition)
+/* OBS performs the full-frame swipe. Switch the program only under the opaque card. */
+static obs_source_t *text_card(const char *name, int height, int size, uint32_t color)
 {
-    obs_data_t *s = obs_source_get_settings(r->label);
-    obs_data_set_string(s, "text", text);
-    obs_source_update(r->label, s); obs_data_release(s);
-    struct vec2 pos = {transition ? 500.0f : 32.0f, transition ? 440.0f : 28.0f};
-    struct vec2 scale = {transition ? 3.0f : 1.0f, transition ? 3.0f : 1.0f};
-    obs_sceneitem_set_pos(r->label_item, &pos); obs_sceneitem_set_scale(r->label_item, &scale);
-    obs_sceneitem_set_visible(r->label_item, true);
+    obs_data_t *s = obs_data_create(), *font = obs_data_create();
+    obs_data_set_string(font, "face", "Arial"); obs_data_set_int(font, "size", size); obs_data_set_int(font, "flags", 1);
+    obs_data_set_obj(s, "font", font); obs_data_release(font);
+    obs_data_set_string(s, "text", "REPLAY"); obs_data_set_int(s, "color", 0xffffff);
+    obs_data_set_int(s, "bk_color", color); obs_data_set_int(s, "bk_opacity", 100);
+    obs_data_set_bool(s, "extents", true); obs_data_set_int(s, "extents_cx", 1920); obs_data_set_int(s, "extents_cy", height);
+    obs_data_set_string(s, "align", "center"); obs_data_set_string(s, "valign", "center");
+    obs_source_t *source = obs_source_create_private("text_gdiplus_v3", name, s);
+    obs_data_release(s); return source;
+}
+static void wash_start(studio_replay *r, bool returning)
+{
+    obs_data_t *s = obs_source_get_settings(r->wash);
+    obs_data_set_string(s, "text", returning ? "LIVE" : "REPLAY");
+    obs_data_set_int(s, "bk_color", returning ? 0x78551a : 0x2424c7);
+    obs_source_update(r->wash, s); obs_data_release(s);
+    obs_transition_set(r->transition, NULL);
+    obs_transition_start(r->transition, OBS_TRANSITION_MODE_AUTO, 450, r->wash);
+    r->switched = false; r->since = GetTickCount64(); r->deadline = r->since + 1100;
+    obs_source_set_muted(r->sound, false); obs_source_media_restart(r->sound);
 }
 static void buffer_start(studio_replay *r)
 {
@@ -78,18 +94,19 @@ studio_replay *studio_replay_create(obs_source_t *live, obs_encoder_t *video, ob
     obs_output_set_video_encoder(r->buffer, video); obs_output_set_audio_encoder(r->buffer, audio, 0);
     signal_handler_connect(obs_output_get_signal_handler(r->buffer), "saved", saved, r);
     r->clip = media_source("Studio replay clip", ""); r->sound = media_source("Studio replay transition", sound);
-    s = obs_data_create(); obs_data_t *font = obs_data_create();
-    obs_data_set_string(font, "face", "Arial"); obs_data_set_int(font, "size", 48); obs_data_set_int(font, "flags", 1);
-    obs_data_set_obj(s, "font", font); obs_data_release(font);
-    obs_data_set_string(s, "text", " REPLAY "); obs_data_set_int(s, "color", 0xffffff);
-    obs_data_set_int(s, "bk_color", 0x302010); obs_data_set_int(s, "bk_opacity", 100);
-    r->label = obs_source_create_private("text_gdiplus_v3", "Studio replay indicator", s); obs_data_release(s);
-    if (!r->clip || !r->label || !r->sound) goto fail;
+    r->label = text_card("Studio replay indicator", 84, 52, 0x2424c7);
+    r->wash = text_card("Studio replay wash", 1080, 144, 0x2424c7);
+    s = obs_data_create(); obs_data_set_string(s, "direction", "left"); obs_data_set_bool(s, "swipe_in", true);
+    r->transition = obs_source_create_private("swipe_transition", "Studio OBS replay wipe", s); obs_data_release(s);
+    if (!r->clip || !r->label || !r->sound || !r->wash || !r->transition) goto fail;
+    obs_transition_set_size(r->transition, 1920, 1080); obs_transition_set(r->transition, NULL);
     obs_source_set_muted(r->clip, true); obs_source_set_muted(r->sound, true); obs_source_media_stop(r->sound);
     r->scene = obs_scene_create_private("Studio live and replay");
     if (!r->scene || !obs_scene_add(r->scene, live)) goto fail;
     r->clip_item = obs_scene_add(r->scene, r->clip); r->label_item = obs_scene_add(r->scene, r->label);
     if (!r->clip_item || !r->label_item || !obs_scene_add(r->scene, r->sound)) goto fail;
+    r->transition_item = obs_scene_add(r->scene, r->transition);
+    if (!r->transition_item) goto fail;
     obs_sceneitem_set_visible(r->clip_item, false); obs_sceneitem_set_visible(r->label_item, false);
     /* Keep the decoder available for private seek while its scene item is hidden. */
     obs_set_output_source(0, obs_scene_get_source(r->scene)); buffer_start(r);
@@ -100,11 +117,14 @@ fail:
 void studio_replay_cancel(studio_replay *r)
 {
     if (!r) return;
+    if (r->transition) obs_transition_set(r->transition, NULL);
     if (r->clip) { obs_source_set_muted(r->clip, true); obs_source_media_play_pause(r->clip, true); }
     if (r->clip_item) obs_sceneitem_set_visible(r->clip_item, false);
     if (r->label_item) obs_sceneitem_set_visible(r->label_item, false);
     if (r->sound) { obs_source_set_muted(r->sound, true); obs_source_media_stop(r->sound); }
     if (r->state >= 4 && r->state <= 6) {
+        obs_source_set_volume(r->live, r->live_volume);
+        obs_source_set_volume(r->clip, r->clip_volume);
         obs_source_set_muted(r->live, r->was_muted);
         /* Drain the shared encoder's delayed frames before accepting a new live window. */
         r->state = 0; r->buffer_since = 0; r->restart_at = GetTickCount64() + 2000;
@@ -120,6 +140,8 @@ void studio_replay_destroy(studio_replay *r)
     if (r->clip) obs_source_release(r->clip);
     if (r->label) obs_source_release(r->label);
     if (r->sound) obs_source_release(r->sound);
+    if (r->transition) obs_source_release(r->transition);
+    if (r->wash) obs_source_release(r->wash);
     free(r);
 }
 bool studio_replay_capture(studio_replay *r)
@@ -134,6 +156,7 @@ bool studio_replay_capture(studio_replay *r)
     if (!r->clip_item) { r->state = 7; return false; }
     obs_sceneitem_set_visible(r->clip_item, false);
     obs_sceneitem_set_order(r->label_item, OBS_ORDER_MOVE_TOP);
+    obs_sceneitem_set_order(r->transition_item, OBS_ORDER_MOVE_TOP);
     InterlockedExchange(&r->saved, 0); r->duration = 0; r->state = 2; r->deadline = GetTickCount64() + 15000;
     calldata_t cd = {0}; bool ok = proc_handler_call(obs_output_get_proc_handler(r->buffer), "save", &cd); calldata_free(&cd);
     if (!ok) r->state = 7; return ok;
@@ -142,27 +165,39 @@ bool studio_replay_play(studio_replay *r, uint32_t start_ms)
 {
     if (!r || r->state != 3 || start_ms + 250 > r->duration || (r->duration > 60000 && start_ms < r->duration - 60000)) return false;
     r->start = start_ms; r->was_muted = obs_source_muted(r->live);
+    r->live_volume = obs_source_get_volume(r->live); r->clip_volume = obs_source_get_volume(r->clip);
     obs_output_force_stop(r->buffer); /* Never record replay into the next replay window. */
     obs_source_media_set_time(r->clip, start_ms); obs_source_media_play_pause(r->clip, true);
-    label(r, " REPLAY ", true); obs_source_set_muted(r->sound, false); obs_source_media_restart(r->sound);
-    r->state = 4; r->deadline = GetTickCount64() + 500; return true;
+    wash_start(r, false); r->state = 4; return true;
 }
 void studio_replay_return(studio_replay *r)
 {
     if (r && (r->state == 4 || r->state == 5)) {
-        obs_source_set_muted(r->clip, true); label(r, " LIVE ", true);
-        obs_source_set_muted(r->sound, false); obs_source_media_restart(r->sound);
-        r->state = 6; r->deadline = GetTickCount64() + 500;
+        wash_start(r, true); r->state = 6;
     } else if (!r || r->state != 6) studio_replay_cancel(r);
 }
 void studio_replay_tick(studio_replay *r)
 {
     if (!r) return;
     ULONGLONG now = GetTickCount64();
-    if ((r->state == 4 || r->state == 6) && now < r->deadline) {
-        float progress = 1.0f - (float)(r->deadline - now) / 500.0f;
-        struct vec2 position = {-700.0f + progress * 2600.0f, 440.0f};
-        obs_sceneitem_set_pos(r->label_item, &position);
+    if ((r->state == 4 || r->state == 6) && !r->switched && now >= r->since + 650) {
+        bool entering = r->state == 4;
+        obs_source_set_muted(r->live, entering ? true : r->was_muted);
+        obs_source_set_muted(r->clip, !entering);
+        obs_sceneitem_set_visible(r->clip_item, entering); obs_sceneitem_set_visible(r->label_item, entering);
+        if (entering) obs_source_media_set_time(r->clip, r->start);
+        obs_source_media_play_pause(r->clip, !entering);
+        obs_transition_start(r->transition, OBS_TRANSITION_MODE_AUTO, 450, NULL);
+        r->switched = true;
+    }
+    if (r->state == 4 || r->state == 6) {
+        /* 300 ms fade down before the covered cut, 300 ms ramp up after it.
+         * Restore the original source gains; never alter microphone calibration. */
+        float elapsed = (float)(now - r->since);
+        float outgoing = elapsed <= 350 ? 1.0f : elapsed >= 650 ? 0.0f : (650.0f - elapsed) / 300.0f;
+        float incoming = elapsed <= 650 ? 0.0f : elapsed >= 950 ? 1.0f : (elapsed - 650.0f) / 300.0f;
+        obs_source_set_volume(r->live, r->live_volume * (r->state == 4 ? outgoing : incoming));
+        obs_source_set_volume(r->clip, r->clip_volume * (r->state == 4 ? incoming : outgoing));
     }
     if (r->state == 0 && r->restart_at && now >= r->restart_at) {
         r->restart_at = 0; buffer_start(r);
@@ -182,9 +217,6 @@ void studio_replay_tick(studio_replay *r)
             obs_source_media_play_pause(r->clip, true); r->duration = (uint32_t)duration; r->state = 3;
         } else if (now > r->deadline) r->state = 7;
     } else if (r->state == 4 && now >= r->deadline) {
-        obs_source_set_muted(r->live, true); obs_source_set_muted(r->clip, false);
-        obs_sceneitem_set_visible(r->clip_item, true); label(r, " REPLAY ", false);
-        obs_source_media_set_time(r->clip, r->start); obs_source_media_play_pause(r->clip, false);
         r->state = 5; r->since = now; r->deadline = now + r->duration - r->start + 1500;
     } else if (r->state == 5) {
         enum obs_media_state state = obs_source_media_get_state(r->clip);

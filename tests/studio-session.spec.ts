@@ -24,6 +24,7 @@ const liveSession: StudioSession = {
   outputActive: true,
   live: true,
   canHoldStream: true,
+  replay: null,
 };
 
 async function setup(page: Page, session = liveSession, bridge = true) {
@@ -156,6 +157,31 @@ async function presentationReceipt(
     { message, overrides },
   );
 }
+
+test("replay-enabled status updates preview to LIVE and yields the badge during replay", async ({
+  page,
+}) => {
+  await setup(page, { ...liveSession, live: false, outputActive: false });
+  const badge = page.locator(".studio-preview-status");
+  await expect(badge).toHaveText("PREVIEW");
+  await status(page, {
+    live: true,
+    outputActive: true,
+    replay: { state: 1, durationMs: 0, availableMs: 60000, clipId: null },
+  });
+  await expect(badge).toHaveText("LIVE");
+  await status(page, {
+    replay: {
+      state: 5,
+      durationMs: 60000,
+      availableMs: 0,
+      clipId: requestNonce,
+    },
+  });
+  await expect(badge).toHaveCount(0);
+  await status(page, { replay: null });
+  await expect(badge).toHaveText("LIVE");
+});
 
 test("continue leaves the game while its live Studio status remains available", async ({
   page,

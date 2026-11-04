@@ -149,7 +149,7 @@ try {
   mode = "hold"; // New live picture: replay must retain the earlier green picture.
   await delay(1000);
   await command("RPP1", 8, Math.max(0, duration - 3000));
-  await delay(800);
+  await delay(1300);
   assert.equal(
     (await command("RPS1", 24)).readUInt32LE(8),
     5,
@@ -179,9 +179,9 @@ try {
   }
   assert.equal(status.readUInt32LE(8), 3);
   await command("RPP1", 8, Math.max(0, status.readUInt32LE(12) - 2500));
-  await delay(800);
+  await delay(1300);
   await command("RPX1");
-  await delay(700);
+  await delay(1300);
   assert(
     (await command("RPS1", 24)).readUInt32LE(8) <= 1,
     "manual live return",
@@ -197,7 +197,7 @@ try {
     await delay(250);
   }
   await command("RPP1", 8, Math.max(0, status.readUInt32LE(12) - 2500));
-  await delay(800);
+  await delay(1300);
   await command("RFM1"); // Pause/end presentation takes priority immediately.
   assert(
     (await command("RPS1", 24)).readUInt32LE(8) <= 1,
@@ -235,6 +235,32 @@ try {
     "-",
   ]);
   const tones = [];
+  // Decode short windows after warmup: both recorded and current audio must
+  // contain intermediate gains, not just instantaneous full-volume switches.
+  for (const frequency of [440, 880]) {
+    const amplitudes = [];
+    for (
+      let offset = Math.ceil(warmMs / 50) * 1600;
+      offset + 1600 <= audio.length;
+      offset += 1600
+    ) {
+      let real = 0,
+        imaginary = 0;
+      for (let n = 0; n < 400; n++) {
+        const value = audio.readFloatLE(offset + n * 4);
+        real += value * Math.cos((n * 2 * Math.PI * frequency) / 8000);
+        imaginary += value * Math.sin((n * 2 * Math.PI * frequency) / 8000);
+      }
+      amplitudes.push(Math.hypot(real, imaginary));
+    }
+    const peak = Math.max(...amplitudes);
+    assert(
+      peak > 1 &&
+        amplitudes.filter((value) => value > peak * 0.15 && value < peak * 0.8)
+          .length >= 4,
+      `${frequency} Hz program audio has a gradual transition envelope`,
+    );
+  }
   for (let offset = 0; offset + 16000 <= audio.length; offset += 16000) {
     let e440 = 0,
       q440 = 0,
@@ -257,9 +283,20 @@ try {
     [440, 880, 440, 880],
     "replay audio replaces live audio and returns to current audio",
   );
+  let redBar = false,
+    fullWash = false;
+  for (let i = 0; i < frames.length; i += 1728) {
+    const red = (offset) =>
+      frames[i + offset] > 130 && frames[i + offset + 1] < 90;
+    if (red(3) && red(90) && frames[i + 1357] > 150) redBar = true;
+    if (red(3) && red(1356)) fullWash = true;
+  }
+  assert(redBar, "full-width red replay bar over captured program");
+  assert(fullWash, "OBS swipe fully covers output before reveal");
   const colors = [];
   for (let i = 0; i < frames.length; i += 1728) {
     const pixel = frames.subarray(i + 1356, i + 1359);
+    if (pixel[0] > 100 || pixel[2] > 70) continue; // Opaque OBS transition wash.
     const color =
       pixel[1] > 150 ? "recorded" : pixel[2] > 20 ? "live" : "startup";
     if (colors.at(-1) !== color) colors.push(color);

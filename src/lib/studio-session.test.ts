@@ -30,6 +30,24 @@ const session: StudioSession = {
 const request = { gameId, nonce, href: "https://curlstreamer.test/dashboard" };
 
 describe("Studio session status and navigation boundaries", () => {
+  it("accepts replay-enabled native status without losing confirmed live state", () => {
+    for (const replay of [
+      null,
+      { state: 5, durationMs: 62000, availableMs: 0, clipId: nonce },
+    ]) {
+      const parsed = studioSessionSchema.parse({
+        ...session,
+        replay,
+        canLeaveGame: true,
+      });
+      expect(studioSessionLabel(parsed)).toBe("Broadcast live");
+      expect(parsed.live && parsed.outputActive).toBe(true);
+    }
+    expect(
+      studioSessionSchema.safeParse({ ...session, replay: { state: 99 } })
+        .success,
+    ).toBe(false);
+  });
   it("accepts an idle nullable session and rejects untrusted schema extensions", () => {
     expect(studioSessionSchema.safeParse(session).success).toBe(true);
     expect(

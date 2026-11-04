@@ -5,6 +5,7 @@ const mocks = vi.hoisted(() => ({
   effect: undefined as (() => (() => void) | undefined) | undefined,
   state: null as CelebrationCue | null,
   setState: vi.fn(),
+  ref: undefined as { current: string } | undefined,
 }));
 vi.mock("react", async (importOriginal) => ({
   ...(await importOriginal<typeof import("react")>()),
@@ -12,6 +13,7 @@ vi.mock("react", async (importOriginal) => ({
     mocks.effect = effect;
   },
   useState: () => [mocks.state, mocks.setState],
+  useRef: (current: string) => (mocks.ref ??= { current }),
   useCallback: (callback: unknown) => callback,
 }));
 vi.mock("./PlayerCelebration", () => ({ PlayerCelebration: () => null }));
@@ -31,6 +33,7 @@ beforeEach(() => {
   vi.useFakeTimers();
   vi.setSystemTime(10000);
   mocks.state = null;
+  mocks.ref = undefined;
   vi.clearAllMocks();
   mocks.setState.mockImplementation((value) => {
     mocks.state = value;
@@ -38,6 +41,14 @@ beforeEach(() => {
 });
 afterEach(() => vi.useRealTimers());
 describe("program celebration once guard", () => {
+  it("does not retain the previous game's clip when switching games", () => {
+    ProgramCelebration({ gameId: "old", cue: cue("old"), nativeAudio: true });
+    mocks.effect?.();
+    const switched = ProgramCelebration({ gameId: "new", nativeAudio: true });
+    expect(switched.props.cue).toBeNull();
+    mocks.effect?.();
+    expect(mocks.state).toBeNull();
+  });
   it("mounts the future clip early for atomic head/video preload and keeps previews silent", () => {
     ProgramCelebration({ gameId: "preview", cue: cue("preview") });
     mocks.effect?.();
@@ -92,12 +103,53 @@ describe("program celebration once guard", () => {
   it("clears a queued cue immediately on Stop and at its bounded expiry", async () => {
     ProgramCelebration({ gameId: "stop", cue: cue("stop"), nativeAudio: true });
     mocks.effect?.();
-    ProgramCelebration({ gameId: "stop", nativeAudio: true });
+    ProgramCelebration({ gameId: "stop", nativeAudio: true, stopped: true });
     mocks.effect?.();
     expect(mocks.state).toBeNull();
     ProgramCelebration({ gameId: "expiry", cue: cue("expiry") });
     mocks.effect?.();
     await vi.advanceTimersByTimeAsync(8667);
+    expect(mocks.state).toBeNull();
+  });
+  it("starts late native cues from the beginning and finishes after cloud expiry", () => {
+    vi.setSystemTime(15000); // 2.5 seconds late, as observed in real Studio.
+    ProgramCelebration({ gameId: "late", cue: cue("late"), nativeAudio: true });
+    mocks.effect?.();
+    const loaded = ProgramCelebration({
+      gameId: "late",
+      cue: cue("late"),
+      nativeAudio: true,
+    });
+    expect(loaded.props.startWhenReady).toBe(true);
+    expect(loaded.props.onStart()).toBe(true);
+    vi.setSystemTime(19000); // The server now omits the expired request.
+    ProgramCelebration({ gameId: "late", nativeAudio: true });
+    mocks.effect?.();
+    const playing = ProgramCelebration({ gameId: "late", nativeAudio: true });
+    expect(playing.props.cue?.id).toBe("late");
+    playing.props.onFinished();
+    expect(mocks.state).toBeNull();
+  });
+  it("stops an already-started late cue when the server sends Stop", () => {
+    ProgramCelebration({
+      gameId: "late-stop",
+      cue: cue("late-stop"),
+      nativeAudio: true,
+    });
+    mocks.effect?.();
+    const playing = ProgramCelebration({
+      gameId: "late-stop",
+      cue: cue("late-stop"),
+      nativeAudio: true,
+    });
+    expect(playing.props.onStart()).toBe(true);
+    const stopped = ProgramCelebration({
+      gameId: "late-stop",
+      nativeAudio: true,
+      stopped: true,
+    });
+    expect(stopped.props.cue).toBeNull();
+    mocks.effect?.();
     expect(mocks.state).toBeNull();
   });
 });

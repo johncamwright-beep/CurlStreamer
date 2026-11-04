@@ -68,6 +68,7 @@ function validTimezone(timezone: string) {
 // fields accidentally added upstream must never enter the local renderer.
 const projectedGame = z.object({
   id: z.uuid(),
+  celebrationStopped: z.boolean().optional(),
   celebration: z
     .object({
       id: z.uuid(),

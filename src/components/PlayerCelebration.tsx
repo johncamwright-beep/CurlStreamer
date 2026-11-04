@@ -237,10 +237,12 @@ type AudioRoute = {
 export interface PlayerCelebrationProps {
   cue: CelebrationCue | null;
   nativeAudio?: boolean;
-  /** Local previews start their full duration after download and decode. */
+  /** Local playback starts its full duration after download and decode. */
   startWhenReady?: boolean;
   onReady?: () => void;
   onStart?: () => boolean | void;
+  onPlaying?: () => void;
+  onFinished?: () => void;
   onError?: (message: string) => void;
 }
 /** One actual source clip; decoded video time selects the matching tracked head frame. */
@@ -250,6 +252,8 @@ export function PlayerCelebration({
   startWhenReady = false,
   onReady,
   onStart,
+  onPlaying,
+  onFinished,
   onError,
 }: PlayerCelebrationProps) {
   const templateId = cue?.templateId ?? "lightsaber";
@@ -257,8 +261,14 @@ export function PlayerCelebration({
   const videoRef = useRef<HTMLVideoElement>(null),
     canvasRef = useRef<HTMLCanvasElement>(null);
   const audioRef = useRef<AudioRoute | null>(null);
-  const callbacks = useRef({ onReady, onStart, onError });
-  callbacks.current = { onReady, onStart, onError };
+  const callbacks = useRef({
+    onReady,
+    onStart,
+    onPlaying,
+    onFinished,
+    onError,
+  });
+  callbacks.current = { onReady, onStart, onPlaying, onFinished, onError };
   const [visible, setVisible] = useState(false);
   useEffect(() => {
     // Warm the dedicated stream output. Ordinary pages and silent previews
@@ -307,6 +317,7 @@ export function PlayerCelebration({
       video.pause();
       if (audioRef.current) audioRef.current.gain.gain.value = 0;
       setVisible(false);
+      callbacks.current.onFinished?.();
     };
     const fail = (error: unknown) => {
       if (cancelled) return;
@@ -468,6 +479,7 @@ export function PlayerCelebration({
           video.pause();
           return;
         }
+        callbacks.current.onPlaying?.();
         const nextVideoFrame = (
           _now: number,
           metadata: VideoFrameCallbackMetadata,

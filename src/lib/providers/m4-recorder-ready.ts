@@ -8,9 +8,12 @@ export async function readM4RecorderReady(
   timeoutMs = 15000,
   keepOpen = false,
   presentation = false,
+  replay = false,
 ) {
   const fail = () => new Error("m4_recording_unavailable");
-  const frame = Buffer.alloc((streaming ? 302 : 6) + (presentation ? 8 : 0));
+  const frame = Buffer.alloc(
+    (streaming ? 302 : 6) + (presentation ? 8 : 0) + (replay ? 8 : 0),
+  );
   let received = 0;
   try {
     await new Promise<void>((resolve, reject) => {
@@ -73,9 +76,17 @@ export async function readM4RecorderReady(
       !frame.subarray(6, 14).equals(Buffer.from([80, 67, 86, 49, 1, 0, 0, 0]))
     )
       throw fail();
+    const offset = presentation ? 14 : 6;
+    if (
+      replay &&
+      !frame
+        .subarray(offset, offset + 8)
+        .equals(Buffer.from([82, 80, 86, 49, 1, 0, 0, 0]))
+    )
+      throw fail();
     return streaming
       ? await readM4StudioBootstrap(
-          Readable.from([frame.subarray(presentation ? 14 : 6)]),
+          Readable.from([frame.subarray(offset + (replay ? 8 : 0))]),
         )
       : undefined;
   } catch {

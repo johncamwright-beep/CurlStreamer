@@ -1,4 +1,5 @@
 "use client";
+import { StudioReplay } from "@/components/StudioReplay";
 import { StudioOverlay } from "@/components/StudioOverlay";
 import { StudioPreviewStatus } from "@/components/StudioPreviewStatus";
 import { TeamLogo } from "@/components/TeamLogo";
@@ -771,6 +772,7 @@ function ScorerGame({ id }: { id: string }) {
                   <h2 className="scoring-eyebrow">Program preview</h2>
                   <StudioProgramPreview key={id} gameId={id} embedded />
                   <StudioPreviewStatus gameId={id} />
+                  <StudioReplay gameId={id} />
                   <button
                     className="btn-secondary min-h-11"
                     onClick={() => setCameraSettingsOpen(true)}

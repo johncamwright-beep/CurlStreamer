@@ -7,6 +7,7 @@ param(
   [string]$StudioRecorder,
   [string]$NoiseReductionDll,
   [switch]$PresentationControl,
+  [switch]$ReplayControl,
   [string]$BaselineStudio,
   [string]$BaselineManifestSha256
 )
@@ -17,7 +18,7 @@ if (-not $IpCameraHelper) {
 }
 if (-not (Test-Path -LiteralPath $IpCameraHelper -PathType Leaf)) { throw "Build the IP camera receiver before packaging Studio." }
 if ($StudioRecorder -and -not (Test-Path -LiteralPath $StudioRecorder -PathType Leaf)) { throw "Build the program recorder before packaging Studio." }
-if ($PresentationControl -and -not $StudioRecorder) { throw "Presentation support requires an explicitly rebuilt recorder." }
+if (($PresentationControl -or $ReplayControl) -and -not $StudioRecorder) { throw "Presentation support requires an explicitly rebuilt recorder." }
 $destinationPath = [IO.Path]::GetFullPath($Destination)
 if (Test-Path -LiteralPath $destinationPath) { throw "Use a new staging directory; existing installs are never overwritten." }
 if (-not $NoiseReductionDll) {
@@ -130,7 +131,9 @@ try {
     [ordered]@{ path = [IO.Path]::GetRelativePath($destinationPath, $_.FullName).Replace('\', '/'); sha256 = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant() }
   })
   $manifest = [ordered]@{ version = 1; release = $Release; obsVersion = "32.2.2"; nodeVersion = $nodeVersion; files = $files }
-  if ($PresentationControl) { $manifest.capabilities = @("program-presentation-v1") }
+  $manifest.capabilities = @()
+  if ($PresentationControl) { $manifest.capabilities += "program-presentation-v1" }
+  if ($ReplayControl) { $manifest.capabilities += "program-replay-v1" }
   $manifest |
     ConvertTo-Json -Depth 5 | Set-Content -LiteralPath (Join-Path $destinationPath "manifest.json") -Encoding utf8NoBOM
   Write-Output "Studio preview assembled. This is private staging, pending distribution notices and installer verification."

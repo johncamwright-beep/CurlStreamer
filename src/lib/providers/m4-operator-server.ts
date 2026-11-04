@@ -1,4 +1,5 @@
 // Temporary local operator surface for the pilot; the packaged Studio shell is pending.
+import { replayRange } from "./studio-replay-range";
 import { programCompletionSchema } from "../program-presentation";
 import { createServer, type IncomingMessage } from "node:http";
 import { randomBytes } from "node:crypto";
@@ -15,6 +16,15 @@ import { m4CameraInputSchema, m4CameraZoomSchema } from "../m4-camera-input";
 import { createM4IpCameraManager } from "./m4-ip-camera";
 
 const command = z.discriminatedUnion("action", [
+  z.object({ action: z.literal("capture-replay") }).strict(),
+  z.object({ action: z.literal("cancel-replay") }).strict(),
+  z
+    .object({
+      action: z.literal("play-replay"),
+      clipId: z.uuid(),
+      startMs: z.number().int().min(0).max(90000),
+    })
+    .strict(),
   z
     .object({
       action: z.literal("set-camera-zoom"),
@@ -124,7 +134,9 @@ type ProgramHandle = Omit<
   | "pushUsbAudio"
   | "stopPhone"
   | "presentation"
+  | "replay"
 > & {
+  replay?: Awaited<ReturnType<typeof startM4ProgramHost>>["replay"];
   presentation?: NonNullable<
     Awaited<ReturnType<typeof startM4ProgramHost>>["presentation"]
   >;
@@ -251,6 +263,7 @@ export async function createM4OperatorServer(options: {
     rendererRoot: string;
     streamPlugin?: string;
     presentationControl?: boolean;
+    replayControl?: boolean;
     start?: (invitation: string, recording: string) => Promise<ProgramHandle>;
   };
 }) {
@@ -281,6 +294,9 @@ export async function createM4OperatorServer(options: {
         : "Streaming is disabled for this pilot.",
     streamEpoch = 0;
   let programHandle: ProgramHandle | undefined;
+  let replayState: Awaited<
+    ReturnType<NonNullable<ProgramHandle["replay"]>["status"]>
+  > | null = null;
   let address = "";
   let closing = false;
   let cleanupFailed = false;
@@ -370,6 +386,7 @@ export async function createM4OperatorServer(options: {
         options.pairingEnabled === true &&
         Boolean(programHandle?.stream),
       streaming,
+      replay: programHandle?.replay ? replayState : null,
       canHoldStream: programHandle?.presentation?.supported === true,
       canGracefulEnd: programHandle?.presentation?.supported === true,
       presentation: programHandle?.presentation?.snapshot(),
@@ -486,7 +503,40 @@ export async function createM4OperatorServer(options: {
       reply(403, { error: "Request denied" });
       return;
     }
+    if (request.method === "GET" && request.url?.startsWith("/replay/")) {
+      const match = /^\/replay\/([a-f0-9-]{36})$/.exec(request.url);
+      const bytes =
+        match && program === "recording"
+          ? programHandle?.replay?.bytes(match[1])
+          : null;
+      if (!bytes) {
+        reply(404, { error: "Replay unavailable" });
+        return;
+      }
+      const range = replayRange(request.headers.range, bytes.length);
+      if (!range) {
+        response.writeHead(416, { "Content-Range": `bytes */${bytes.length}` });
+        response.end();
+        return;
+      }
+      response.writeHead(range.partial ? 206 : 200, {
+        "Content-Type": "video/mp4",
+        "Accept-Ranges": "bytes",
+        "Cache-Control": "no-store",
+        "Content-Length": range.end - range.start + 1,
+        ...(range.partial
+          ? {
+              "Content-Range": `bytes ${range.start}-${range.end}/${bytes.length}`,
+            }
+          : {}),
+      });
+      response.end(bytes.subarray(range.start, range.end + 1));
+      return;
+    }
     if (request.method === "GET" && request.url === "/state") {
+      const handle = programHandle;
+      const current = await handle?.replay?.status().catch(() => null);
+      if (programHandle === handle) replayState = current ?? null;
       reply(200, snapshot());
       return;
     }
@@ -533,6 +583,35 @@ export async function createM4OperatorServer(options: {
     }
     try {
       const input = await body(request);
+      if (
+        input.action === "capture-replay" ||
+        input.action === "play-replay" ||
+        input.action === "cancel-replay"
+      ) {
+        const handle = programHandle;
+        if (
+          busy ||
+          program !== "recording" ||
+          !handle?.replay ||
+          (input.action !== "cancel-replay" &&
+            handle.presentation?.snapshot().mode !== "live")
+        ) {
+          reply(409, { error: "Replay is unavailable" });
+          return;
+        }
+        busy++;
+        try {
+          if (input.action === "capture-replay") await handle.replay.capture();
+          else if (input.action === "play-replay")
+            await handle.replay.play(input.startMs, input.clipId);
+          else await handle.replay.cancel();
+          replayState = await handle.replay.status();
+        } finally {
+          busy--;
+        }
+        reply(200, snapshot());
+        return;
+      }
       if (input.action === "set-camera-zoom") {
         if (busy || ["starting", "stopping"].includes(program)) {
           reply(409, { error: "Action in progress" });
@@ -770,6 +849,7 @@ export async function createM4OperatorServer(options: {
                   rendererRoot: configuration.rendererRoot,
                   streamPlugin: configuration.streamPlugin,
                   presentationControl: configuration.presentationControl,
+                  replayControl: configuration.replayControl,
                 },
                 options.diagnostic,
                 options.connectionDiagnostic,

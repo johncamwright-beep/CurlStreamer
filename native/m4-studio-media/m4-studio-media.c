@@ -1,5 +1,6 @@
 /* Owned program recording and optional, independently authorized RTMP output. */
 #include "m4-studio-media.h"
+#include "replay.h"
 #include <windows.h>
 #include <obs.h>
 #include <stdio.h>
@@ -13,6 +14,7 @@ typedef bool (*bind_fn)(obs_service_t *, obs_output_t *);
 typedef bool (*start_fn)(obs_service_t *);
 
 struct m4_media {
+    studio_replay *replay;
     obs_output_t *record;
     obs_output_t *stream;
     obs_service_t *service;
@@ -196,6 +198,8 @@ bool m4_media_release(m4_media **reference)
     if (!reference || !*reference) return true;
     m4_media *m = *reference;
     if (m->record && (obs_output_active(m->record) || (m->started && WaitForSingleObject(m->stopped, 0) != WAIT_OBJECT_0))) return false;
+    studio_replay_destroy(m->replay); m->replay = NULL;
+    if (m->initialized) obs_wait_for_destroy_queue();
     if (m->preview_attached) obs_remove_raw_video_callback(preview_frame, m);
     if (m->preview_memory) UnmapViewOfFile(m->preview_memory);
     if (m->preview_mapping) CloseHandle(m->preview_mapping);
@@ -332,7 +336,7 @@ bool m4_media_prepare_stream(m4_media *m, const wchar_t *runtime_bin, const wcha
 bool m4_media_attach_stream(m4_media *m, HANDLE pipe, const unsigned char capability[32], uint32_t parent_pid)
 { return m && m->attach && m->service && m->attach(m->service, pipe, capability, parent_pid); }
 void m4_media_poll_stream(m4_media *m)
-{ if (m && m->start_stream && m->service) m->start_stream(m->service); }
+{ if (m) { studio_replay_tick(m->replay); if (m->start_stream && m->service) m->start_stream(m->service); } }
 void m4_media_program_health(const m4_media *m, uint32_t *sequence, uint32_t *paint_changes, uint32_t *age_ms, uint32_t *status)
 {
     *sequence = 0; *paint_changes = 0; *age_ms = UINT32_MAX; *status = 0;
@@ -347,6 +351,7 @@ void m4_media_program_health(const m4_media *m, uint32_t *sequence, uint32_t *pa
 bool m4_media_mute_program(m4_media *m, bool muted)
 {
     if (!m || !m->program || !m4_media_active(m)) return false;
+    studio_replay_cancel(m->replay);
     obs_source_set_muted(m->program, muted);
     return obs_source_muted(m->program) == muted;
 }
@@ -380,3 +385,16 @@ bool m4_media_finalize(m4_media *m, uint32_t timeout_ms)
     while (obs_output_active(m->record) && GetTickCount64() < deadline) Sleep(5);
     return InterlockedCompareExchange(&m->stop_code, 0, 0) == OBS_OUTPUT_SUCCESS && !obs_output_active(m->record);
 }
+
+bool m4_media_enable_replay(m4_media *m, const wchar_t *runtime_bin, const wchar_t *cache)
+{
+    char runtime[4096];
+    if (!m || !m->program || m->replay || !local_path(cache) ||
+        !WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS, runtime_bin, -1, runtime, sizeof(runtime), NULL, NULL) || !module(runtime, "obs-text")) return false;
+    m->replay = studio_replay_create(m->program, m->video, m->audio, cache);
+    return m->replay != NULL;
+}
+bool m4_media_replay_capture(m4_media *m) { return m && studio_replay_capture(m->replay); }
+bool m4_media_replay_play(m4_media *m, uint32_t start) { return m && studio_replay_play(m->replay, start); }
+void m4_media_replay_cancel(m4_media *m) { if (m) studio_replay_return(m->replay); }
+void m4_media_replay_status(m4_media *m, uint32_t *state, uint32_t *duration, uint32_t *available) { studio_replay_status(m ? m->replay : NULL, state, duration, available); }

@@ -15,6 +15,11 @@ bool m4_media_initialize(const wchar_t *runtime_bin, const wchar_t *absolute_mkv
  * URL is exactly http://127.0.0.1:<port>/; no credentials/query/fragment. */
 bool m4_media_initialize_program(const wchar_t *runtime_bin, const wchar_t *absolute_mkv, const wchar_t *fresh_cache_root, const char *public_loopback_url, m4_media **out);
 bool m4_media_start(m4_media *media);
+bool m4_media_enable_replay(m4_media *media, const wchar_t *runtime, const wchar_t *cache);
+bool m4_media_replay_capture(m4_media *media);
+bool m4_media_replay_play(m4_media *media, uint32_t start_ms);
+void m4_media_replay_cancel(m4_media *media);
+void m4_media_replay_status(m4_media *media, uint32_t *state, uint32_t *duration, uint32_t *available);
 /* Optional production memory-service output, sharing the program encoders.
  * Binding grants no stream authority; default plugin ARM remains denied. */
 bool m4_media_prepare_stream(m4_media *media, const wchar_t *runtime_bin, const wchar_t *absolute_plugin);

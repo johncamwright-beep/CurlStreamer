@@ -39,7 +39,7 @@ export function ScoringSummary({
               disabled={initialHammer.disabled}
               onClick={initialHammer.open}
             >
-              {score.hammer ? "Change Hammer" : "Choose Hammer"}
+              Hammer
             </button>
           )}
         </div>

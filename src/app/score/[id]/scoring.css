@@ -1582,3 +1582,171 @@
     height: 100%;
   }
 }
+
+/* Laptop cockpit: keep the operating surface compact without shrinking targets. */
+@media (min-width: 1200px) {
+  .scoring-desktop:not(.scoring-remote) {
+    padding: 12px;
+  }
+  .scoring-desktop .scoring-page-heading {
+    gap: 10px;
+    margin-bottom: 10px;
+  }
+  .scoring-desktop .scoring-title-block h1 {
+    font-size: clamp(16px, 1.25vw, 21px);
+    line-height: 1.2;
+  }
+  .scoring-desktop .scoring-title-block > p {
+    font-size: 12px;
+  }
+  .scoring-desktop .studio-status-preview {
+    width: clamp(180px, 23vw, 360px);
+  }
+  .scoring-desktop .studio-header-broadcast .studio-youtube-actions {
+    grid-template-columns: 140px 80px;
+  }
+  .scoring-desktop .scoring-columns {
+    gap: 10px;
+    grid-template-columns: minmax(0, 1.65fr) minmax(340px, 1.1fr) minmax(
+        0,
+        1.05fr
+      );
+  }
+  .scoring-desktop .scoring-card,
+  .scoring-desktop .scoring-preview-panel {
+    padding: 10px;
+  }
+  .scoring-desktop .scoring-summary {
+    gap: 8px;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 112px;
+  }
+  .scoring-desktop .scoring-summary .scoring-team-row {
+    min-height: 128px;
+    padding: 10px;
+  }
+  .scoring-desktop .scoring-team-row .scoring-team-name {
+    font-size: 15px;
+  }
+  .scoring-desktop .scoring-team-row .scoring-total {
+    font-size: 48px;
+  }
+  .scoring-desktop .scoring-summary-controls > div > button,
+  .scoring-desktop .scoring-summary-controls > div > div > button {
+    width: 100%;
+    height: 44px;
+    padding: 6px;
+    white-space: nowrap;
+    font-size: 12px;
+  }
+  .scoring-desktop .scoring-history {
+    margin-top: 4px;
+    padding-top: 4px;
+  }
+  .scoring-desktop .scoring-history td,
+  .scoring-desktop .scoring-history th {
+    padding: 6px 4px;
+    font-size: 12px;
+  }
+  .scoring-desktop .studio-device {
+    padding: 8px;
+  }
+  .scoring-desktop .studio-camera-device {
+    min-height: 0;
+    align-content: start;
+    gap: 4px;
+  }
+  .scoring-desktop .studio-device-camera-header {
+    align-items: start;
+    gap: 4px 6px;
+  }
+  .scoring-desktop .studio-device-number {
+    width: 28px;
+    height: 28px;
+    font-size: 16px;
+  }
+  .scoring-desktop .studio-device header {
+    margin: 0;
+    gap: 4px 6px;
+  }
+  .scoring-desktop .studio-device h2 {
+    font-size: 14px;
+  }
+  .scoring-desktop .studio-device-mic-volume {
+    margin: 0;
+    gap: 6px;
+    font-size: 11px;
+  }
+  .scoring-desktop .studio-device-primary-actions {
+    gap: 4px;
+  }
+  .scoring-desktop .studio-device-primary-actions > button {
+    height: 44px;
+    min-height: 44px !important;
+    padding: 4px !important;
+    font-size: 12px;
+    white-space: nowrap;
+    overflow-wrap: normal;
+  }
+  .scoring-desktop .studio-device-grid {
+    gap: 8px;
+    grid-template-rows: 1fr auto;
+  }
+  .scoring-desktop .scoring-preview-panel {
+    gap: 8px;
+  }
+  .scoring-desktop
+    .scoring-preview-panel
+    > section[aria-label="Studio program preview"] {
+    max-height: 180px;
+    min-height: 0 !important;
+  }
+  .scoring-desktop .scoring-preview-panel > button {
+    height: 44px;
+    min-height: 44px;
+  }
+  .scoring-desktop .studio-preview-status {
+    top: 40px;
+    left: 18px;
+  }
+  .scoring-desktop .scoring-entry {
+    grid-template-columns: 85px minmax(160px, 1fr) minmax(260px, 1.25fr) minmax(
+        310px,
+        1.5fr
+      );
+    gap: 6px;
+  }
+  .scoring-desktop .scoring-entry button {
+    min-height: 44px;
+    padding: 6px;
+    font-size: 12px;
+  }
+  .scoring-desktop .studio-usb-channels {
+    gap: 6px;
+  }
+  .scoring-desktop .studio-usb-channels > div {
+    padding: 8px;
+    min-height: 120px;
+  }
+  .scoring-desktop .studio-audio-compact {
+    grid-template-columns: 100px minmax(0, 1fr);
+    gap: 8px;
+  }
+  .scoring-desktop .scoring-control-tiles {
+    padding: 10px;
+    gap: 6px;
+  }
+}
+@media (min-width: 1200px) {
+  .scoring-desktop
+    .studio-device.studio-camera-device
+    > .studio-device-camera-header {
+    align-items: start;
+    gap: 4px 6px;
+    margin: 0;
+  }
+  .scoring-desktop .studio-device-camera-header .studio-device-number {
+    width: 28px;
+    height: 28px;
+    align-self: start;
+  }
+}

@@ -523,6 +523,7 @@ test("desktop game day keeps scoring primary and settings available on demand", 
     ),
   ).toBe(true);
   if (info.project.name !== "mobile") {
+    await page.setViewportSize({ width: 1280, height: 720 });
     const scoreBox = (await page
       .getByRole("region", { name: "Match score" })
       .boundingBox())!;
@@ -538,6 +539,15 @@ test("desktop game day keeps scoring primary and settings available on demand", 
       .getByRole("region", { name: "Remote scorer", exact: true })
       .boundingBox())!;
     expect(second.y).toBe(first.y);
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollHeight <= innerHeight,
+      ),
+    ).toBe(true);
+    await page.screenshot({
+      path: info.outputPath("studio-laptop-1280.png"),
+      fullPage: true,
+    });
     expect(remote.y).toBeGreaterThan(first.y);
     expect(
       Math.abs(remote.y + remote.height - scoreBox.y - scoreBox.height),

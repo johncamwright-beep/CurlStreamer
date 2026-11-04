@@ -474,11 +474,13 @@ function ScorerGame({ id }: { id: string }) {
               {desktop
                 ? `${game.config.homeName} vs ${game.config.awayName} — ${game.config.eventName || "Single Game"}`
                 : "Scoring"}
-              <TeamLogo
-                teamName={game.config.homeName}
-                imageUrl={game.config.homeLogoUrl}
-                className="ml-3 inline-block h-10 w-10 align-middle"
-              />
+              {!desktop && (
+                <TeamLogo
+                  teamName={game.config.homeName}
+                  imageUrl={game.config.homeLogoUrl}
+                  className="ml-3 inline-block h-10 w-10 align-middle"
+                />
+              )}
             </h1>
             {!desktop && <p className="scoring-match-title">{title}</p>}
             <p className="text-sm text-slate-300" aria-label="Game schedule">
@@ -655,7 +657,7 @@ function ScorerGame({ id }: { id: string }) {
                       })
                     }
                   >
-                    Undo last scoring change
+                    Undo
                   </button>
                   <button
                     disabled={scoringLocked}

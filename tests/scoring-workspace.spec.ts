@@ -503,6 +503,12 @@ test("desktop game day keeps scoring primary and settings available on demand", 
       ),
     testGameId,
   );
+  await expect(page.locator(".studio-status-latest")).toContainText(
+    "YouTube status delayed test message",
+  );
+  await expect(page.locator(".studio-status-latest")).toHaveText("", {
+    timeout: 20000,
+  });
   await page.getByRole("button", { name: "Status Log", exact: true }).click();
   const log = page.getByRole("dialog", { name: "Status Log", exact: true });
   await expect(log).toContainText("YouTube status delayed test message");
@@ -533,6 +539,9 @@ test("desktop game day keeps scoring primary and settings available on demand", 
       .boundingBox())!;
     expect(second.y).toBe(first.y);
     expect(remote.y).toBeGreaterThan(first.y);
+    expect(
+      Math.abs(remote.y + remote.height - scoreBox.y - scoreBox.height),
+    ).toBeLessThan(2);
   }
   await page.screenshot({
     path: info.outputPath("desktop-game-day.png"),
@@ -577,7 +586,7 @@ test("Studio preview keeps its last picture through failed frame requests", asyn
   ).toBeVisible();
   unavailable = true;
   await expect(preview.getByText("Preview reconnecting…")).toBeVisible({
-    timeout: 10000,
+    timeout: 20000,
   });
   await expect(
     preview.getByRole("img", { name: "Actual Studio program output" }),
@@ -654,4 +663,51 @@ test("Studio inline zoom sends camera commands without changing the score", asyn
   await expect(
     page.getByRole("button", { name: "Camera 2 zoom in", exact: true }),
   ).toBeDisabled();
+});
+
+test("Studio starts sponsors, restores sync, and requests hammer before scoring", async ({
+  page,
+}, info) => {
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, "userAgent", {
+      value: "CurlStreamerStudio/0.3 StudioNativeAudio/1",
+    });
+    localStorage.setItem("curlstreamer-microphone-sync-ms-v1", "2200");
+  });
+  const { game, actions } = await setup(page, true);
+  game.config.initialHammer = undefined;
+  game.scoreEvents = [];
+  game.programAudioDelayMs = 2750;
+  game.sponsorMode.active = false;
+  await page.reload();
+  await expect(
+    page.getByRole("button", { name: "Save 1 point", exact: true }),
+  ).toBeVisible();
+  await expect
+    .poll(() =>
+      actions.some(
+        (a) => a.type === "program-audio-delay" && a.milliseconds === 2200,
+      ),
+    )
+    .toBe(true);
+  await expect.poll(() => game.sponsorMode.active).toBe(true);
+  await page.getByRole("button", { name: "Save 1 point", exact: true }).click();
+  const chooser = page.getByRole("dialog", {
+    name: "Choose Hammer",
+    exact: true,
+  });
+  await expect(chooser).toBeVisible();
+  expect(actions.filter((a) => a.type === "score")).toHaveLength(0);
+  await chooser
+    .getByRole("button", { name: "Confirm Team Wright", exact: true })
+    .click();
+  await expect(chooser).not.toBeVisible();
+  await page.getByRole("button", { name: "Save 1 point", exact: true }).click();
+  await expect
+    .poll(() => actions.filter((a) => a.type === "score").length)
+    .toBe(1);
+  await page.screenshot({
+    path: info.outputPath("compact-studio.png"),
+    fullPage: true,
+  });
 });

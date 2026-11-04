@@ -1447,3 +1447,138 @@
     grid-template-columns: 140px 96px;
   }
 }
+
+/* Keep the operating controls alongside the content instead of above it. */
+.studio-audio-compact {
+  display: grid;
+  grid-template-columns: 112px minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
+}
+.studio-audio-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: stretch;
+}
+.studio-audio-actions h2 {
+  margin: 0;
+}
+.studio-audio-actions button {
+  min-height: 44px;
+  padding: 8px;
+}
+.studio-status-preview {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 360px;
+  max-width: 100%;
+  height: 48px;
+  text-align: left;
+}
+.studio-status-preview > :first-child {
+  flex-shrink: 0;
+}
+.studio-status-latest {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  font-weight: normal;
+}
+.scoring-desktop .scoring-summary {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 130px;
+  min-height: 0;
+  align-content: start;
+}
+.scoring-desktop .scoring-summary > .scoring-summary-controls {
+  grid-column: 3;
+  grid-row: 1;
+  margin: 0;
+}
+.scoring-desktop .scoring-summary-controls h2 {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+}
+.scoring-desktop .scoring-summary-controls > div {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  width: 100%;
+}
+.scoring-desktop .scoring-summary-controls .scoring-badge {
+  text-align: center;
+}
+.scoring-desktop .scoring-summary > .scoring-team-row {
+  grid-row: 1;
+  min-height: 144px;
+}
+.scoring-desktop .scoring-summary > .scoring-team-row:nth-child(2) {
+  grid-column: 1;
+}
+.scoring-desktop .scoring-summary > .scoring-team-row:nth-child(3) {
+  grid-column: 2;
+}
+.scoring-desktop .scoring-control-tiles {
+  padding: 12px;
+  gap: 8px;
+  align-self: start;
+}
+.scoring-desktop .scoring-control-tiles .scoring-eyebrow {
+  margin: 0;
+}
+.scoring-desktop .scoring-control-tiles > .studio-sponsors-launch,
+.scoring-desktop .studio-youtube-quick > a,
+.scoring-desktop .studio-youtube-quick .studio-youtube-watch > :is(a, button) {
+  height: 52px;
+  padding: 8px;
+}
+@media (max-width: 700px) {
+  .studio-audio-compact {
+    grid-template-columns: 1fr;
+  }
+  .studio-audio-actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .studio-audio-actions h2 {
+    grid-column: 1 / -1;
+  }
+  .scoring-desktop .scoring-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .scoring-desktop .scoring-summary > .scoring-summary-controls {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+  .scoring-desktop .scoring-summary-controls > div {
+    flex-direction: row;
+    flex-wrap: wrap;
+  }
+}
+@media (min-width: 1200px) {
+  .scoring-desktop .scoring-device-dock,
+  .scoring-desktop .scoring-device-dock > section,
+  .scoring-desktop .scoring-device-dock .studio-device-grid {
+    height: 100%;
+  }
+  .scoring-desktop .scoring-device-dock .studio-device-grid {
+    grid-template-rows: 1fr auto;
+  }
+  .scoring-desktop .scoring-control-tiles {
+    align-self: stretch;
+    grid-template-rows: auto 1fr 1fr;
+  }
+  .scoring-desktop .scoring-control-tiles > .studio-sponsors-launch,
+  .scoring-desktop .studio-youtube-quick > a,
+  .scoring-desktop
+    .studio-youtube-quick
+    .studio-youtube-watch
+    > :is(a, button) {
+    height: 100%;
+  }
+}

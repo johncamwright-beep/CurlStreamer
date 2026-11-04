@@ -111,13 +111,13 @@ export function StudioNativeUsbAudio({ gameId }: { gameId: string }) {
   return (
     <section
       aria-label="USB microphones"
-      className="studio-usb-audio space-y-2"
+      className="studio-usb-audio studio-audio-compact"
     >
-      <header className="flex min-h-11 flex-wrap items-center gap-2">
-        <h2 className="mr-auto font-bold">Audio</h2>
+      <header className="studio-audio-actions">
+        <h2 className="font-bold">Audio</h2>
         <button
           type="button"
-          className="min-h-11 rounded px-2 text-sm hover:bg-slate-800"
+          className="btn min-h-11"
           aria-expanded={expanded}
           aria-controls={controlsId}
           onClick={() => setExpanded(!expanded)}

@@ -1,4 +1,5 @@
 "use client";
+import { StudioCelebrations } from "@/components/StudioCelebrations";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useGame } from "./GameSync";
@@ -18,7 +19,7 @@ export function StudioSetup({
   directCameras: boolean;
   pairing: boolean;
 }) {
-  const { game, completion, accountRole, error, refreshContext, refresh } =
+  const { game, act, completion, accountRole, error, refreshContext, refresh } =
     useGame(id, undefined, undefined, true);
   const [organizer, setOrganizer] = useState(false);
   const [gameUrl, setGameUrl] = useState("");
@@ -89,6 +90,7 @@ export function StudioSetup({
             enabled
           />
         )}
+        {allowed && <StudioCelebrations game={game} act={act} />}
         <section className="studio-connect-note">
           <h2 className="font-semibold">Recording on this PC</h2>
           <p>

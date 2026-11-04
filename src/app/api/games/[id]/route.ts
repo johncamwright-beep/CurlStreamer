@@ -1,3 +1,4 @@
+import { resolveCelebrationRosterPlayerForGame } from "@/lib/providers/celebration-headshots";
 import { gameChangeNotice } from "@/lib/providers/game-change-notice";
 import { NextResponse } from "next/server";
 import { z } from "zod";
@@ -266,6 +267,23 @@ export async function PATCH(
             generation: authorization.access.assignmentGeneration,
           }
         : undefined;
+    if (body.data.type === "celebration-play") {
+      // Client-selected assets and names are never trusted as render URLs.
+      const player = body.data.playerId
+        ? await resolveCelebrationRosterPlayerForGame(
+            id,
+            body.data.playerId,
+          ).catch(() => undefined)
+        : undefined;
+      if (!player?.headshotUrl)
+        return gameResponse(
+          { error: "Player headshot is unavailable for this game" },
+          { status: 400 },
+        );
+      body.data.playerId = player.playerId;
+      body.data.playerName = player.playerName;
+      body.data.headshotUrl = player.headshotUrl;
+    }
     game = await updateGame(id, body.data, expectedAuthority);
   } catch (error) {
     if (error instanceof GameClosedError)

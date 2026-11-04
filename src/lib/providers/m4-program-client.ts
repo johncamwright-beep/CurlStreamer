@@ -1,3 +1,7 @@
+import {
+  CELEBRATION_TEMPLATE_IDS,
+  getCelebrationTemplate,
+} from "../player-celebrations";
 // Node-owned program authority. Never import into a browser bundle.
 import { ChangedReadCache } from "../changed-read-cache";
 import {
@@ -64,6 +68,25 @@ function validTimezone(timezone: string) {
 // fields accidentally added upstream must never enter the local renderer.
 const projectedGame = z.object({
   id: z.uuid(),
+  celebration: z
+    .object({
+      id: z.uuid(),
+      templateId: z.enum(CELEBRATION_TEMPLATE_IDS),
+      playerId: z.string().max(120),
+      playerName: z.string().max(100),
+      headshotUrl: sponsorUrl.nullish(),
+      startedAt: z.number().finite().nonnegative(),
+      expiresAt: z.number().finite().nonnegative(),
+      volume: z.number().finite().min(0).max(1),
+      muted: z.boolean(),
+    })
+    .refine(
+      (cue) =>
+        cue.expiresAt > cue.startedAt &&
+        cue.expiresAt - cue.startedAt <=
+          getCelebrationTemplate(cue.templateId).durationMs,
+    )
+    .optional(),
   broadcastSchedule: z
     .object({
       scheduledStart: z.string().datetime({ offset: true }),

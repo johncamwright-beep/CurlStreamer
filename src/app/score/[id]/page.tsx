@@ -1,5 +1,7 @@
 "use client";
 import { StudioReplay } from "@/components/StudioReplay";
+import { StudioCelebrations } from "@/components/StudioCelebrations";
+import { StudioToolsRow } from "@/components/StudioToolsRow";
 import { StudioOverlay } from "@/components/StudioOverlay";
 import { StudioPreviewStatus } from "@/components/StudioPreviewStatus";
 import { TeamLogo } from "@/components/TeamLogo";
@@ -772,13 +774,24 @@ function ScorerGame({ id }: { id: string }) {
                   <h2 className="scoring-eyebrow">Program preview</h2>
                   <StudioProgramPreview key={id} gameId={id} embedded />
                   <StudioPreviewStatus gameId={id} />
-                  <StudioReplay gameId={id} />
-                  <button
-                    className="btn-secondary min-h-11"
-                    onClick={() => setCameraSettingsOpen(true)}
-                  >
-                    Camera Settings
-                  </button>
+                  <StudioToolsRow
+                    cameraSettings={
+                      <button
+                        className="btn-secondary min-h-11"
+                        onClick={() => setCameraSettingsOpen(true)}
+                      >
+                        Camera Settings
+                      </button>
+                    }
+                    replay={<StudioReplay gameId={id} />}
+                    celebrations={
+                      <StudioCelebrations
+                        game={game}
+                        act={act}
+                        displayMode="dialog"
+                      />
+                    }
+                  />
                   <StudioOverlay
                     title="Camera Settings"
                     open={cameraSettingsOpen}
@@ -791,6 +804,7 @@ function ScorerGame({ id }: { id: string }) {
                 <>
                   <WindowsStudioRequired gameId={id} />
                   <ScoringProgramControls game={game} act={act} />
+                  <StudioCelebrations game={game} act={act} />
                 </>
               )}
               {desktop && (

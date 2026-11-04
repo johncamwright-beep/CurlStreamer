@@ -18,6 +18,7 @@ import {
 
 const mocks = vi.hoisted(() => ({
   getUser: vi.fn(),
+  resolveCelebration: vi.fn(),
   hierarchy: vi.fn(),
   loadActiveTeam: vi.fn(),
   listTeamGames: vi.fn(),
@@ -49,6 +50,9 @@ vi.mock("@/lib/providers/game-read", () => ({ readGame: mocks.readGame }));
 vi.mock("@/lib/providers/sponsor-library", () => ({
   gameBroadcastSponsors: mocks.gameBroadcastSponsors,
   gameLibrarySponsors: mocks.gameLibrarySponsors,
+}));
+vi.mock("@/lib/providers/celebration-headshots", () => ({
+  resolveCelebrationRosterPlayerForGame: mocks.resolveCelebration,
 }));
 import { GET, PATCH } from "./route";
 import {
@@ -1023,4 +1027,94 @@ describe("GET /api/games/[id] over HTTP", () => {
     expect(await response.json()).toEqual({ error: "Invalid update" });
     expect(mocks.updateGame).not.toHaveBeenCalled();
   });
+  it.each(["lightsaber", "cat-dance"])(
+    "resolves same-game roster art and overwrites forged %s URLs",
+    async (templateId) => {
+      anonymous();
+      mocks.resolveCelebration.mockResolvedValue({
+        playerId: "roster-1",
+        playerName: "Sam",
+        headshotUrl: "https://storage.invalid/signed.png?token=short",
+      });
+      const action = {
+        type: "celebration-play",
+        triggerId: "e0d16331-e641-4e3e-a453-adc6ba25eabb",
+        templateId,
+        playerId: "roster-1",
+        playerName: "forged",
+        headshotUrl: "https://attacker.invalid/track",
+        volume: 0.6,
+        muted: false,
+      };
+      const response = await PATCH(
+        new Request(origin + "/api/games/" + testGameId, {
+          method: "PATCH",
+          headers: {
+            authorization: "Bearer " + (await issueOrganizerToken(testGameId)),
+            "content-type": "application/json",
+          },
+          body: JSON.stringify(action),
+        }),
+        { params: Promise.resolve({ id: testGameId }) },
+      );
+      expect(response.status).toBe(200);
+      expect(mocks.resolveCelebration).toHaveBeenCalledWith(
+        testGameId,
+        "roster-1",
+      );
+      expect(mocks.updateGame).toHaveBeenCalledWith(
+        testGameId,
+        {
+          ...action,
+          playerName: "Sam",
+          headshotUrl: "https://storage.invalid/signed.png?token=short",
+        },
+        undefined,
+      );
+    },
+  );
+  it.each(["lightsaber", "cat-dance"])(
+    "requires a verified prepared head and denies camera %s commands",
+    async (templateId) => {
+      anonymous();
+      mocks.resolveCelebration.mockResolvedValue(undefined);
+      const action = {
+        type: "celebration-play",
+        triggerId: "e0d16331-e641-4e3e-a453-adc6ba25eabb",
+        templateId: "lightsaber",
+        playerId: "roster-no-photo",
+        headshotUrl: "https://attacker.invalid/track",
+        volume: 0.6,
+        muted: false,
+      };
+      const patch = (token: string) =>
+        PATCH(
+          new Request(origin + "/api/games/" + testGameId, {
+            method: "PATCH",
+            headers: {
+              authorization: "Bearer " + token,
+              "content-type": "application/json",
+            },
+            body: JSON.stringify(action),
+          }),
+          { params: Promise.resolve({ id: testGameId }) },
+        );
+      expect(
+        (
+          await patch(
+            await issueParticipantToken(
+              testGameId,
+              "camera-home",
+              game.claims["camera-home"]!,
+            ),
+          )
+        ).status,
+      ).toBe(403);
+      expect(mocks.updateGame).not.toHaveBeenCalled();
+      expect((await patch(await issueOrganizerToken(testGameId))).status).toBe(
+        400,
+      );
+      expect(mocks.updateGame).not.toHaveBeenCalled();
+    },
+  );
 });

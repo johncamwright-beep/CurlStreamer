@@ -1,0 +1,9 @@
+Celebration media
+
+lightsaber.mp4 and cat-dance.mp4 were supplied by the user for this private
+CurlStreamer installation. The lightsaber foreground PNGs are derived from
+the supplied lightsaber clip. Original audio is retained.
+
+These media assets are separate from the CurlStreamer software license.
+This package does not assert a third-party redistribution license for them.
+Personal headshots are stored separately and are not bundled in Studio.

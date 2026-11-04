@@ -1,3 +1,4 @@
+import { lightsaberByteRange } from "./lightsaber-video-range";
 import { createM4ProgramPresentation } from "./m4-program-presentation";
 import { createServer } from "node:http";
 import { randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
@@ -61,6 +62,7 @@ export async function createM4ProgramBridge(
     sponsorCacheDirectory?: string;
     /** Node-only download injection; never sent to the renderer. */
     teamLogoFetcher?: typeof fetch;
+    celebrationFetcher?: typeof fetch;
     diagnostic?: ConnectionDiagnostic;
     cameraInputs?: ReturnType<typeof createM4IpCameraManager>;
     closingAuthority?: () => Promise<number | undefined>;
@@ -123,7 +125,10 @@ export async function createM4ProgramBridge(
       '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 400"><rect width="800" height="400" rx="60" fill="#f8fafc"/><path d="M120 245h220l-35 75H155z" fill="#64748b"/><path d="M180 245c0-120 100-120 100 0" fill="none" stroke="#dc2626" stroke-width="35"/><text x="390" y="190" fill="#0f172a" font-family="sans-serif" font-size="72" font-weight="bold">ROCK</text><text x="390" y="270" fill="#0f172a" font-family="sans-serif" font-size="72" font-weight="bold">SOLID</text></svg>',
     ],
   ]);
+  const celebrationVideos = new Map<string, Promise<Buffer>>();
+  const lightsaberForeground = new Map<string, Promise<Buffer>>();
   let sponsorAssets: ReturnType<typeof createM4SponsorAssets> | undefined;
+  let celebrationAssets: ReturnType<typeof createM4SponsorAssets> | undefined;
   let teamLogo:
     { source: string; path: string; mime: string; bytes: Buffer } | undefined;
   let logoFlight:
@@ -279,7 +284,7 @@ export async function createM4ProgramBridge(
     response.setHeader("x-content-type-options", "nosniff");
     response.setHeader(
       "content-security-policy",
-      "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; connect-src 'self'; media-src blob:; frame-ancestors 'none'; base-uri 'none'; form-action 'none'",
+      "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; connect-src 'self'; media-src 'self' blob:; frame-ancestors 'none'; base-uri 'none'; form-action 'none'",
     );
     const reply = (status: number, value: unknown) => {
       if (response.destroyed) return;
@@ -460,6 +465,90 @@ export async function createM4ProgramBridge(
       response.end(rendererHtml());
       return;
     }
+    if (
+      (request.method === "GET" || request.method === "HEAD") &&
+      (request.url === "/celebrations/lightsaber.mp4" ||
+        request.url === "/celebrations/cat-dance.mp4")
+    ) {
+      const file = request.url!.slice(1);
+      try {
+        let asset = celebrationVideos.get(file);
+        if (!asset) {
+          asset = readFile(
+            join(
+              rendererAssets?.directory ?? join(process.cwd(), "public"),
+              file,
+            ),
+          ).then((bytes) => {
+            if (bytes.length > 32 * 1024 * 1024) throw Error();
+            return bytes;
+          });
+          celebrationVideos.set(file, asset);
+        }
+        const bytes = await asset;
+        const range = lightsaberByteRange(request.headers.range, bytes.length);
+        response.setHeader("accept-ranges", "bytes");
+        response.setHeader("content-type", "video/mp4");
+        if (range === null) {
+          response.writeHead(416, {
+            "content-range": "bytes */" + bytes.length,
+          });
+          response.end();
+          return;
+        }
+        const start = range?.start ?? 0,
+          end = range?.end ?? bytes.length - 1;
+        const headers: Record<string, string | number> = {
+          "content-length": end - start + 1,
+        };
+        if (range)
+          headers["content-range"] =
+            "bytes " + start + "-" + end + "/" + bytes.length;
+        response.writeHead(range ? 206 : 200, headers);
+        response.end(
+          request.method === "HEAD"
+            ? undefined
+            : bytes.subarray(start, end + 1),
+        );
+      } catch {
+        celebrationVideos.delete(file);
+        reply(404, { error: "Program asset unavailable" });
+      }
+      return;
+    }
+    if (
+      request.method === "GET" &&
+      /^\/celebrations\/lightsaber-foreground-[012]\.png$/.test(
+        request.url ?? "",
+      )
+    ) {
+      const file = request.url!.slice(1);
+      try {
+        let asset = lightsaberForeground.get(file);
+        if (!asset) {
+          asset = readFile(
+            join(
+              rendererAssets?.directory ?? join(process.cwd(), "public"),
+              file,
+            ),
+          ).then((bytes) => {
+            if (bytes.length > 3 * 1024 * 1024) throw Error();
+            return bytes;
+          });
+          lightsaberForeground.set(file, asset);
+        }
+        const bytes = await asset;
+        response.writeHead(200, {
+          "content-type": "image/png",
+          "content-length": bytes.length,
+        });
+        response.end(bytes);
+      } catch {
+        lightsaberForeground.delete(file);
+        reply(404, { error: "Program asset unavailable" });
+      }
+      return;
+    }
     if (request.method === "GET" && request.url === "/favicon.ico") {
       response.writeHead(204);
       response.end();
@@ -522,6 +611,19 @@ export async function createM4ProgramBridge(
       response.end(asset.bytes);
       return;
     }
+    if (
+      request.method === "GET" &&
+      request.url?.startsWith("/celebrations/headshot/")
+    ) {
+      const asset = celebrationAssets?.get(request.url);
+      if (!asset) return reply(404, { error: "Program asset unavailable" });
+      response.writeHead(200, {
+        "content-type": asset.mime,
+        "content-length": asset.bytes.length,
+      });
+      response.end(asset.bytes);
+      return;
+    }
     if (request.method === "GET" && request.url?.startsWith("/team-logo/")) {
       if (!teamLogo || request.url !== teamLogo.path)
         return reply(404, { error: "Program asset unavailable" });
@@ -549,6 +651,28 @@ export async function createM4ProgramBridge(
             cacheDirectory: rendererAssets.sponsorCacheDirectory,
           });
         }
+        if (rendererAssets?.sponsorStorageOrigin && organizationId) {
+          celebrationAssets ??= createM4SponsorAssets({
+            storageOrigin: rendererAssets.sponsorStorageOrigin,
+            organizationId,
+            bucket: "celebration-headshots",
+            localPrefix: "/celebrations/headshot",
+            downloadTimeoutMs: 1200,
+            fetcher: rendererAssets.celebrationFetcher,
+          });
+        }
+        const cue = game.celebration;
+        const localHeads = celebrationAssets
+          ? await celebrationAssets.sync(
+              cue?.headshotUrl
+                ? [{ id: cue.id, dataUrl: cue.headshotUrl, enabled: true }]
+                : [],
+            )
+          : [];
+        const celebration =
+          cue && localHeads[0]?.dataUrl
+            ? { ...cue, headshotUrl: localHeads[0].dataUrl }
+            : undefined;
         const sponsors = sponsorAssets
           ? await sponsorAssets.sync(game.sponsors)
           : game.sponsors.filter((sponsor) =>
@@ -560,6 +684,7 @@ export async function createM4ProgramBridge(
             ...game,
             config: { ...game.config, homeLogoUrl },
             sponsors,
+            celebration,
           },
         });
       } catch (cause) {
@@ -991,6 +1116,7 @@ export async function createM4ProgramBridge(
         expectedRendererCookie.fill(0);
         client.close();
         sponsorAssets?.close();
+        celebrationAssets?.close();
         logoFlight?.abort.abort();
         logoFlight = undefined;
         teamLogo = undefined;

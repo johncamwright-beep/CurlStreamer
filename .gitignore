@@ -38,3 +38,9 @@ pnpm-workspace.yaml
 
 .curlcoach-local/
 
+
+# Generic approved base clips ship; person previews and cutouts never do.
+!/public/celebrations/lightsaber.mp4
+!/public/celebrations/cat-dance.mp4
+/output/
+

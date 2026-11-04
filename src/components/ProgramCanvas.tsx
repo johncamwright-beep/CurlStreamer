@@ -1,4 +1,6 @@
 "use client";
+import { ProgramCelebration } from "./ProgramCelebration";
+import { currentCelebration } from "@/lib/celebration-state";
 import React, { useEffect, useState } from "react";
 import { TeamLogo } from "./TeamLogo";
 import { Scoreboard } from "./Scoreboard";
@@ -18,6 +20,7 @@ export interface ProgramCanvasProps {
   renderCamera: (role: ProgramCameraRole) => React.ReactNode;
   cameraAspects?: Partial<Record<ProgramCameraRole, number>>;
   audioStatus?: string;
+  celebrationAudio?: boolean;
   statusLabel?: string;
 }
 
@@ -33,6 +36,7 @@ export function ProgramComposition({
   cameraAspects,
   audioStatus = "Video only",
   statusLabel = "Local program",
+  celebrationAudio = false,
   containMedia = false,
   showStatus = true,
 }: ProgramCanvasProps & { containMedia?: boolean; showStatus?: boolean }) {
@@ -144,6 +148,15 @@ export function ProgramComposition({
           {visibleRoles.map((role, index) => (
             <React.Fragment key={role}>{camera(role, index)}</React.Fragment>
           ))}
+          <ProgramCelebration
+            gameId={game.id}
+            cue={
+              "celebrationEvents" in game
+                ? currentCelebration(game)
+                : (game as BroadcastGame).celebration
+            }
+            nativeAudio={celebrationAudio}
+          />
           {visibleSponsorOverlay && sponsor && (
             <SponsorFrame
               sponsors={sponsors}

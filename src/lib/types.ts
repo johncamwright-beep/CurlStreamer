@@ -1,3 +1,4 @@
+import type { CelebrationCue } from "./player-celebrations";
 export type Team = "home" | "away";
 export type Role = "camera-home" | "camera-away" | "scorer";
 export type ParticipantAuthority = {
@@ -86,6 +87,10 @@ export interface GameState {
   };
   createdAt: number;
   scoreEvents: ScoreEvent[];
+  celebrationEvents?: (
+    | { type: "play"; cue: CelebrationCue }
+    | { type: "stop"; id: string; at: number }
+  )[];
   layout: Layout;
   programCameraMode?: "auto" | "stacked" | "portrait";
   /** Signed mic sync: positive delays USB audio; negative holds camera media. */

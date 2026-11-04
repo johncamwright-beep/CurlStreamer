@@ -61,6 +61,9 @@ const wait = <T>(p: Promise<T>, abort: AbortController) => {
 };
 export function createM4SponsorAssets(options: {
   storageOrigin: string;
+  downloadTimeoutMs?: number;
+  bucket?: "organization-sponsors" | "celebration-headshots";
+  localPrefix?: "/sponsors/upload" | "/celebrations/headshot";
   organizationId: string;
   fetcher?: typeof fetch;
   /** Persistent explicit directory; files contain bytes and MIME metadata, never URLs. */
@@ -202,7 +205,7 @@ export function createM4SponsorAssets(options: {
     if (!id.safeParse(s.id).success) return;
     try {
       const u = new URL(s.dataUrl),
-        pre = `/storage/v1/object/sign/organization-sponsors/${options.organizationId}/`;
+        pre = `/storage/v1/object/sign/${options.bucket ?? "organization-sponsors"}/${options.organizationId}/`;
       if (
         u.origin !== origin.origin ||
         u.username ||
@@ -227,7 +230,10 @@ export function createM4SponsorAssets(options: {
     const abort = new AbortController();
     const promise = (async () => {
       await take();
-      const deadline = setTimeout(() => abort.abort(), 5000);
+      const deadline = setTimeout(
+        () => abort.abort(),
+        options.downloadTimeoutMs ?? 5000,
+      );
       try {
         if (closed || abort.signal.aborted) throw new Error();
         const disk = await readDisk(url.pathname);
@@ -244,7 +250,7 @@ export function createM4SponsorAssets(options: {
             mime: disk.mime,
             source: url.pathname,
             at: Date.now(),
-            path: `/sponsors/upload/${randomBytes(16).toString("hex")}`,
+            path: `${options.localPrefix ?? "/sponsors/upload"}/${randomBytes(16).toString("hex")}`,
           });
           used += disk.bytes.length;
           return;
@@ -296,7 +302,7 @@ export function createM4SponsorAssets(options: {
             mime: type,
             source: url.pathname,
             at: Date.now(),
-            path: `/sponsors/upload/${randomBytes(16).toString("hex")}`,
+            path: `${options.localPrefix ?? "/sponsors/upload"}/${randomBytes(16).toString("hex")}`,
           });
           used += bytes.length;
           await writeDisk(url.pathname, {

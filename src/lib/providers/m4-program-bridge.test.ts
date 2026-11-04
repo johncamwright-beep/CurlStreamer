@@ -937,3 +937,98 @@ describe("private loopback program API", () => {
     ).rejects.toThrow();
   });
 });
+
+it("serves only the two authenticated base clips with video byte ranges and strict media CSP", async () => {
+  const { mkdtemp, mkdir, writeFile, rm } = await import("node:fs/promises");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const directory = await mkdtemp(join(tmpdir(), "curlcast-clip-"));
+  const bytes = Buffer.from("generic-base-video-test-bytes");
+  await mkdir(join(directory, "celebrations"));
+  for (const clip of ["lightsaber.mp4", "cat-dance.mp4"])
+    await writeFile(join(directory, "celebrations", clip), bytes);
+  const foreground = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
+  await writeFile(
+    join(directory, "celebrations", "lightsaber-foreground-0.png"),
+    foreground,
+  );
+  const bridge = await createM4ProgramBridge(
+    { readGame: vi.fn(), action: vi.fn(), close: vi.fn() },
+    undefined,
+    { directory },
+  );
+  try {
+    const page = await fetch(bridge.rendererUrl);
+    const headers = {
+      origin: bridge.address,
+      cookie: page.headers.get("set-cookie")!.split(";")[0],
+    };
+    expect(page.headers.get("content-security-policy")).toContain(
+      "media-src 'self' blob:",
+    );
+    expect(
+      (await fetch(bridge.address + "/celebrations/lightsaber.mp4")).status,
+    ).toBe(403);
+    const image = await fetch(
+      bridge.address + "/celebrations/lightsaber-foreground-0.png",
+      { headers },
+    );
+    expect(image.status).toBe(200);
+    expect(image.headers.get("content-type")).toBe("image/png");
+    expect(Buffer.from(await image.arrayBuffer())).toEqual(foreground);
+    expect(
+      (
+        await fetch(
+          bridge.address + "/celebrations/lightsaber-foreground-3.png",
+          { headers },
+        )
+      ).status,
+    ).toBe(403);
+    for (const clip of ["lightsaber.mp4", "cat-dance.mp4"]) {
+      expect(
+        (await fetch(bridge.address + "/celebrations/" + clip)).status,
+      ).toBe(403);
+      const metadata = await fetch(bridge.address + "/celebrations/" + clip, {
+        method: "HEAD",
+        headers,
+      });
+      expect(metadata.status).toBe(200);
+      expect(metadata.headers.get("content-length")).toBe(String(bytes.length));
+      expect((await metadata.arrayBuffer()).byteLength).toBe(0);
+      const whole = await fetch(bridge.address + "/celebrations/" + clip, {
+        headers,
+      });
+      expect(whole.status).toBe(200);
+      expect(whole.headers.get("content-type")).toBe("video/mp4");
+      expect(Buffer.from(await whole.arrayBuffer())).toEqual(bytes);
+      const partial = await fetch(bridge.address + "/celebrations/" + clip, {
+        headers: { ...headers, range: "bytes=3-7" },
+      });
+      expect(partial.status).toBe(206);
+      expect(partial.headers.get("content-range")).toBe(
+        "bytes 3-7/" + bytes.length,
+      );
+      expect(Buffer.from(await partial.arrayBuffer())).toEqual(
+        bytes.subarray(3, 8),
+      );
+      const suffix = await fetch(bridge.address + "/celebrations/" + clip, {
+        headers: { ...headers, range: "bytes=-4" },
+      });
+      expect(suffix.status).toBe(206);
+      expect(Buffer.from(await suffix.arrayBuffer())).toEqual(
+        bytes.subarray(-4),
+      );
+      const invalid = await fetch(bridge.address + "/celebrations/" + clip, {
+        headers: { ...headers, range: "bytes=999999-" },
+      });
+      expect(invalid.status).toBe(416);
+    }
+    expect(
+      (await fetch(bridge.address + "/celebrations/another.mp4", { headers }))
+        .status,
+    ).toBe(403);
+  } finally {
+    await bridge.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});

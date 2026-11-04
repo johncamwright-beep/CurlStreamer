@@ -1,3 +1,5 @@
+import { currentCelebration } from "./celebration-state";
+import type { CelebrationCue } from "./player-celebrations";
 import { DEFAULT_PROGRAM_AUDIO_DELAY_MS } from "./program-sync";
 import { deriveScore } from "./scoring";
 import { cameraAudioEnabled } from "./camera-audio";
@@ -6,6 +8,7 @@ import type { GameConfig, GameState, Sponsor, Team } from "./types";
 
 export interface BroadcastGame {
   id: string;
+  celebration?: CelebrationCue;
   broadcastSchedule?: GameState["broadcastSchedule"];
   config: Pick<
     GameConfig,
@@ -64,8 +67,24 @@ export function broadcastGame(
     : game.sponsors.filter(
         (sponsor) => sponsor.enabled && hasSafeSponsorContent(sponsor.dataUrl),
       );
+  const cue = currentCelebration(game);
   return {
     id: game.id,
+    ...(cue
+      ? {
+          celebration: {
+            id: cue.id,
+            templateId: cue.templateId,
+            playerId: cue.playerId,
+            playerName: cue.playerName,
+            startedAt: cue.startedAt,
+            expiresAt: cue.expiresAt,
+            volume: cue.volume,
+            muted: cue.muted,
+            ...(cue.headshotUrl ? { headshotUrl: cue.headshotUrl } : {}),
+          },
+        }
+      : {}),
     ...(game.broadcastSchedule
       ? {
           broadcastSchedule: {

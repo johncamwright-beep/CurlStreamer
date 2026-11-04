@@ -1,3 +1,5 @@
+import { readFile } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
 import { spawn } from "node:child_process";
 import { dirname, join } from "node:path";
 import { z } from "zod";
@@ -8,15 +10,18 @@ import type { StudioDiagnostic } from "./m5-studio-diagnostics";
 
 /** A valid negative refresh acknowledgment leaves the inherited channel usable. */
 export function readM4ProgramControlAck(
-  tag: "RFR1" | "RFS1" | "RFM1" | "RFU1",
+  tag: "RFR1" | "RFS1" | "RFM1" | "RFU1" | "RPS1" | "RPC1" | "RPP1" | "RPX1",
   id: number,
   ack: Buffer,
 ): "accepted" | "rejected" {
-  if (ack.length !== (tag === "RFS1" ? 24 : 8) || ack.readUInt32LE(4) !== id)
+  if (
+    ack.length !== (tag === "RFS1" || tag === "RPS1" ? 24 : 8) ||
+    ack.readUInt32LE(4) !== id
+  )
     throw new Error("m4_recording_unavailable");
   const response = ack.subarray(0, 4).toString("ascii");
   if (tag !== "RFS1" && response === "RFF1") return "rejected";
-  if (response !== (tag === "RFS1" ? "RFP1" : "RFA1"))
+  if (response !== (tag === "RFS1" ? "RFP1" : tag === "RPS1" ? "RPT1" : "RFA1"))
     throw new Error("m4_recording_unavailable");
   return "accepted";
 }
@@ -70,6 +75,7 @@ export async function startM4StudioRecorder(paths: {
   recording: string;
   previewOnly?: boolean;
   presentationControl?: boolean;
+  replayControl?: boolean;
   streamPlugin?: string;
   program?: { url: string; cacheDirectory: string };
   diagnostic?: StudioDiagnostic;
@@ -114,6 +120,7 @@ export async function startM4StudioRecorder(paths: {
       ...(source && paths.presentationControl
         ? ["--presentation-control"]
         : []),
+      ...(source && paths.replayControl ? ["--replay-control"] : []),
     ],
     {
       cwd: dirname(paths.executable),
@@ -178,6 +185,7 @@ export async function startM4StudioRecorder(paths: {
       15000,
       Boolean(source),
       Boolean(source && paths.presentationControl),
+      Boolean(source && paths.replayControl),
     );
     if (bootstrap) {
       try {
@@ -200,7 +208,11 @@ export async function startM4StudioRecorder(paths: {
     let controlFlight = false;
     let controlFailed = false;
     let controlQueue: Promise<unknown> = Promise.resolve();
-    const commandNow = async (tag: "RFR1" | "RFS1" | "RFM1" | "RFU1") => {
+    const commandNow = async (
+      tag:
+        "RFR1" | "RFS1" | "RFM1" | "RFU1" | "RPS1" | "RPC1" | "RPP1" | "RPX1",
+      start?: number,
+    ) => {
       if (!source || exited || stopPromise || controlFlight || controlFailed)
         throw fail();
       controlFlight = true;
@@ -211,7 +223,7 @@ export async function startM4StudioRecorder(paths: {
       }
       try {
         return await new Promise<Buffer>((resolve, reject) => {
-          const ack = Buffer.alloc(tag === "RFS1" ? 24 : 8);
+          const ack = Buffer.alloc(tag === "RFS1" || tag === "RPS1" ? 24 : 8);
           let received = 0;
           let settled = false;
           const cleanup = () => {
@@ -250,9 +262,10 @@ export async function startM4StudioRecorder(paths: {
           child.stdout.once("error", unavailable);
           child.stdout.once("end", unavailable);
           child.once("exit", unavailable);
-          const request = Buffer.alloc(8);
+          const request = Buffer.alloc(tag === "RPP1" ? 12 : 8);
           request.write(tag);
           request.writeUInt32LE(id, 4);
+          if (tag === "RPP1") request.writeUInt32LE(start!, 8);
           child.stdin.write(request, (error) => {
             request.fill(0);
             if (error) unavailable();
@@ -262,8 +275,12 @@ export async function startM4StudioRecorder(paths: {
         controlFlight = false;
       }
     };
-    const command = (tag: "RFR1" | "RFS1" | "RFM1" | "RFU1") => {
-      const next = controlQueue.then(() => commandNow(tag));
+    const command = (
+      tag:
+        "RFR1" | "RFS1" | "RFM1" | "RFU1" | "RPS1" | "RPC1" | "RPP1" | "RPX1",
+      start?: number,
+    ) => {
+      const next = controlQueue.then(() => commandNow(tag, start));
       controlQueue = next.catch(() => undefined);
       return next;
     };
@@ -302,7 +319,84 @@ export async function startM4StudioRecorder(paths: {
         ack.fill(0);
       }
     };
+    let clipId: string | null = null;
+    let clipBytes: Buffer | null = null;
+    let capturePending = false;
+    let captureRevision = 0;
+    let clipLoad: Promise<Buffer> | null = null;
+    const replayCommand = async (
+      tag: "RPC1" | "RPP1" | "RPX1",
+      start?: number,
+    ) => {
+      if (!paths.replayControl) throw fail();
+      if (
+        tag === "RPP1" &&
+        (!Number.isInteger(start) || start! < 0 || start! > 90000 || !clipId)
+      )
+        throw fail();
+      const ack = await command(tag, start);
+      try {
+        if (ack.subarray(0, 4).toString("ascii") !== "RFA1") throw fail();
+      } finally {
+        ack.fill(0);
+      }
+    };
+    const replay =
+      paths.replayControl && source
+        ? {
+            async status() {
+              const ack = await command("RPS1");
+              try {
+                const state = ack.readUInt32LE(8),
+                  durationMs = ack.readUInt32LE(12),
+                  availableMs = ack.readUInt32LE(16);
+                if (state > 7 || durationMs > 90000 || availableMs > 60000)
+                  throw fail();
+                if (state === 3 && capturePending && !clipBytes) {
+                  const revision = captureRevision;
+                  const bytes = await (clipLoad ??= readFile(
+                    join(source.cacheDirectory, "replay.mp4"),
+                  ));
+                  if (bytes.length > 80 * 1024 * 1024 || !bytes.length)
+                    throw fail();
+                  if (revision === captureRevision && capturePending) {
+                    clipBytes = bytes;
+                    clipId = randomUUID();
+                    capturePending = false;
+                  }
+                }
+                return { state, durationMs, availableMs, clipId };
+              } finally {
+                ack.fill(0);
+              }
+            },
+            async capture() {
+              await replayCommand("RPC1");
+              captureRevision++;
+              clipLoad = null;
+              clipBytes = null;
+              clipId = null;
+              capturePending = true;
+            },
+            async play(startMs: number, id: string) {
+              if (id !== clipId || !clipBytes) throw fail();
+              await replayCommand("RPP1", startMs);
+            },
+            async cancel() {
+              await replayCommand("RPX1");
+              captureRevision++;
+              clipLoad = null;
+              capturePending = false;
+              clipId = null;
+              clipBytes = null;
+            },
+            bytes(id: string) {
+              return id === clipId ? clipBytes : null;
+            },
+          }
+        : undefined;
     return {
+      replay,
       stop,
       closed,
       refreshProgram,

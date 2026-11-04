@@ -1,7 +1,7 @@
 import { test, expect } from "@playwright/test";
 import { build } from "esbuild";
 const key = "curlstreamer-microphone-sync-ms-v1";
-test("last confirmed mic sync survives reload and new games without replacing saved game values", async ({
+test("last confirmed mic sync survives reload and restores the current calibration in new and older games", async ({
   page,
 }) => {
   const bundle = await build({
@@ -56,8 +56,11 @@ function App(){const params=new URLSearchParams(location.search);const[game,setG
   await expect(page.getByRole("alert")).toContainText("Could not save");
   expect(await page.evaluate((k) => localStorage.getItem(k), key)).toBe("0");
   await page.goto("/mic-memory-fixture?game=old&value=-1250");
-  await expect(input).toHaveValue("-1.25");
-  expect(await page.evaluate(() => (window as any).calls)).toEqual([]);
+  // The saved PC calibration remains authoritative when reopening an older game.
+  await expect(input).toHaveValue("0");
+  expect(await page.evaluate(() => (window as any).calls)).toEqual([
+    { type: "program-audio-delay", milliseconds: 0 },
+  ]);
   expect(await page.evaluate((k) => localStorage.getItem(k), key)).toBe("0");
   await input.fill("2.2");
   await input.press("Enter");

@@ -241,7 +241,9 @@ internal sealed class Workspace : Form
             core.Settings.AreHostObjectsAllowed = false;
             core.Settings.UserAgent += " CurlStreamerStudio/0.3";
             core.Settings.UserAgent += " StudioProgramPreview/1";
-            core.Settings.UserAgent += " StudioNativeAudio/1";
+            core.Settings.UserAgent += " StudioNativeAudio/1 StudioReplay/1";
+            core.AddWebResourceRequestedFilter(origin + "/__studio-replay/*", CoreWebView2WebResourceContext.All);
+            core.WebResourceRequested += ReplayResource;
             core.AddWebResourceRequestedFilter(origin + "/__studio-preview/*", CoreWebView2WebResourceContext.Image);
             core.WebResourceRequested += (s, e) => {
                 if (e.ResourceContext != CoreWebView2WebResourceContext.Image || !e.Request.Uri.StartsWith(origin + "/__studio-preview/")) return;
@@ -322,6 +324,27 @@ internal sealed class Workspace : Form
             if (raw.Length > 8192) return;
             var value = json.Deserialize<Dictionary<string, object>>(raw);
             if (WorkspacePolicy.ForceCloseRequest(value, selectedGame, runningGame) && WorkspacePolicy.Game(args.Source, origin) == selectedGame) { await ConfirmForceClose(); return; }
+            if (TextValue(value, "type") == "studio-replay") {
+                var action = TextValue(value, "action"); Guid nonce, clip;
+                if (selectedGame == null || selectedGame != runningGame || TextValue(value, "gameId") != runningGame ||
+                    WorkspacePolicy.Game(args.Source, origin) != runningGame || !Guid.TryParseExact(TextValue(value, "nonce"), "D", out nonce) ||
+                    busy || closing || !recording || (action != "capture" && action != "play" && action != "cancel")) return;
+                object startValue; double start = -1;
+                if (action == "play" && (value.Count != 6 || !Guid.TryParseExact(TextValue(value, "clipId"), "D", out clip) ||
+                    !value.TryGetValue("startMs", out startValue) || !(startValue is int || startValue is long || startValue is decimal || startValue is double) ||
+                    (start = Convert.ToDouble(startValue)) < 0 || start > 90000 || start != Math.Truncate(start))) return;
+                if (action != "play" && value.Count != 4) return;
+                var game = runningGame; var ok = false;
+                busy = true; PublishSessionStatus();
+                try {
+                    ApplyState(await Command(action == "play" ? (object)new { action = "play-replay", clipId = TextValue(value, "clipId"), startMs = (int)start } : new { action = action == "capture" ? "capture-replay" : "cancel-replay" }));
+                    ok = true;
+                } catch { }
+                finally { busy = false; PublishSessionStatus(); }
+                if (WorkspacePolicy.Game(web.CoreWebView2.Source, origin) == game)
+                    await web.ExecuteScriptAsync("window.dispatchEvent(new CustomEvent('studio-replay-result',{detail:" + json.Serialize(new { gameId = game, nonce = nonce.ToString(), ok = ok }) + "}));");
+                return;
+            }
             if (value.Count == 1 && TextValue(value, "type") == "studio-session-observe") { PublishSessionStatus(); return; }
             if (value.Count == 3 && TextValue(value, "type") == "studio-game-leave" &&
                 WorkspacePolicy.Game(args.Source, origin) == selectedGame && TextValue(value, "gameId") == selectedGame &&
@@ -757,16 +780,42 @@ internal sealed class Workspace : Form
         if (web.CoreWebView2 == null || !WorkspacePolicy.SameOrigin(web.CoreWebView2.Source, origin)) return;
         web.CoreWebView2.ExecuteScriptAsync("window.dispatchEvent(new CustomEvent('studio-recovery-status',{detail:" + json.Serialize(new { gameId = selectedGame, canForceClose = true }) + "}));");
         var active = recording && runningGame != null && child != null && !child.HasExited;
-        object presentationValue, outputValue;
+        object presentationValue, outputValue, replayValue;
+        var replay = lastState != null && lastState.TryGetValue("replay", out replayValue) ? replayValue : null;
         var presentation = lastState != null && lastState.TryGetValue("presentation", out presentationValue) ? presentationValue as Dictionary<string, object> : null;
         var output = lastState != null && lastState.TryGetValue("localOutput", out outputValue) ? outputValue as Dictionary<string, object> : null;
         web.CoreWebView2.ExecuteScriptAsync("window.dispatchEvent(new CustomEvent('studio-session-status',{detail:" + json.Serialize(new {
+            replay = active ? replay : null,
             gameId = active ? runningGame : null, title = active ? sessionTitle ?? "Current game" : "", active = active, busy = busy || closing,
             presentation = active && presentation != null ? TextValue(presentation, "mode") ?? "live" : "live",
             streaming = active ? TextValue(lastState, "streaming") ?? "idle" : "idle",
             outputActive = active && output != null && TextValue(output, "state") == "active",
             live = active && TextValue(lastState, "broadcast") == "live", canHoldStream = active && StateFlag("canHoldStream"), canLeaveGame = true
         }) + "}));");
+    }
+    private async void ReplayResource(object sender, CoreWebView2WebResourceRequestedEventArgs e) {
+        if (origin == null || !e.Request.Uri.StartsWith(origin + "/__studio-replay/")) return;
+        var deferral = e.GetDeferral();
+        try {
+            var game = runningGame; var controller = local; var source = new Uri(e.Request.Uri);
+            var parts = source.AbsolutePath.Split('/'); Guid clip;
+            if (!recording || game == null || game != selectedGame || controller == null || parts.Length != 4 ||
+                parts[2] != game || !Guid.TryParseExact(parts[3], "D", out clip) || e.Request.Method != "GET" ||
+                !WorkspacePolicy.SameOrigin(web.CoreWebView2.Source, origin)) throw new InvalidOperationException();
+            using (var timeout = new System.Threading.CancellationTokenSource(10000))
+            using (var request = new HttpRequestMessage(HttpMethod.Get, localAddress + "/replay/" + clip.ToString())) {
+                if (e.Request.Headers.Contains("Range")) request.Headers.TryAddWithoutValidation("Range", e.Request.Headers.GetHeader("Range"));
+                using (var response = await controller.SendAsync(request, timeout.Token)) {
+                    var bytes = await response.Content.ReadAsByteArrayAsync();
+                    if (bytes.Length > 80 * 1024 * 1024 || game != runningGame || selectedGame != game || controller != local) throw new InvalidOperationException();
+                    var headers = "Content-Type: video/mp4\r\nCache-Control: no-store\r\nAccept-Ranges: bytes\r\nContent-Length: " + bytes.Length;
+                    if (response.Content.Headers.ContentRange != null) headers += "\r\nContent-Range: " + response.Content.Headers.ContentRange.ToString();
+                    e.Response = web.CoreWebView2.Environment.CreateWebResourceResponse(new MemoryStream(bytes), (int)response.StatusCode, response.ReasonPhrase, headers);
+                }
+            }
+        } catch {
+            e.Response = web.CoreWebView2.Environment.CreateWebResourceResponse(new MemoryStream(new byte[0]), 503, "Replay unavailable", "Cache-Control: no-store");
+        } finally { deferral.Complete(); }
     }
     private async Task Poll() {
         if (polling || closing || local == null || !recording) return;

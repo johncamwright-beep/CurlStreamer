@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 4.2)
 project(m4_studio_media LANGUAGES C)
 find_package(libobs 32.2.2 EXACT CONFIG REQUIRED)
-add_library(m4_studio_media STATIC m4-studio-media.c ../m4-log-guard/m4-log-guard.c)
+add_library(m4_studio_media STATIC m4-studio-media.c replay.c ../m4-log-guard/m4-log-guard.c)
 target_include_directories(m4_studio_media PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}")
 target_link_libraries(m4_studio_media PUBLIC OBS::libobs advapi32)
 target_compile_definitions(m4_studio_media PRIVATE WIN32_LEAN_AND_MEAN _WIN32_WINNT=0x0A00)

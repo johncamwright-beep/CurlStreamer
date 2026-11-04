@@ -28,6 +28,7 @@ const optionsSchema = z
     recording: z.string().min(1),
     previewOnly: z.boolean().optional(),
     presentationControl: z.boolean().optional(),
+    replayControl: z.boolean().optional(),
     cacheRoot: z.string().min(1),
     rendererRoot: z.string().min(1),
     streamPlugin: z.string().min(1).optional(),
@@ -122,6 +123,7 @@ export async function startM4ProgramHost(
       recording: options.recording,
       previewOnly: options.previewOnly,
       presentationControl: options.presentationControl,
+      replayControl: options.replayControl,
       program: { url: bridge.rendererUrl, cacheDirectory },
       streamPlugin: options.streamPlugin,
       diagnostic,
@@ -178,6 +180,7 @@ export async function startM4ProgramHost(
     return cameraCleanup ? result : { ...result, finalized: false };
   });
   return {
+    replay: recorder.replay,
     stop,
     closed,
     ...(recorder.muteProgram
@@ -191,6 +194,7 @@ export async function startM4ProgramHost(
               completion?: import("../program-presentation").ProgramCompletion,
               deadlineAt?: number,
             ) {
+              await recorder.replay?.cancel();
               if (mode === "preparing-end") {
                 clearTimeout(endingTimer);
                 endingTimer = setTimeout(

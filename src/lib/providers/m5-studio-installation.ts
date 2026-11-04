@@ -36,7 +36,7 @@ const manifestSchema = z
   .object({
     version: z.literal(1),
     capabilities: z
-      .array(z.literal("program-presentation-v1"))
+      .array(z.enum(["program-presentation-v1", "program-replay-v1"]))
       .optional()
       .default([]),
     release: z.string().regex(/^\d+\.\d+\.\d+(?:-[a-z0-9.]+)?$/),

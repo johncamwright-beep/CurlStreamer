@@ -111,6 +111,7 @@ try {
         recordingRoot,
         cacheRoot: join(dataRoot, "Cache"),
         rendererRoot: join(root, "renderer"),
+        replayControl: manifest.capabilities.includes("program-replay-v1"),
         presentationControl: manifest.capabilities.includes(
           "program-presentation-v1",
         ),

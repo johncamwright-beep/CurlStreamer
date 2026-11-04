@@ -44,17 +44,17 @@ describe("Studio camera source tiles", () => {
     expect(markup).toContain("Ready to connect");
     expect(markup).toContain(">Connect</button>");
     expect(markup).not.toContain(">Reconnect</button>");
-    expect(markup).not.toContain("Hide from broadcast");
-    expect(markup).not.toContain("Show in broadcast");
+    expect(markup).not.toContain(">Hide<");
+    expect(markup).not.toContain(">Show<");
     expect(markup).not.toContain('aria-pressed="true"');
   });
   it("replaces visibility with one recovery action until media is ready", () => {
     const shown = tile(true, "tapo", "streaming", true);
-    expect(shown).toContain("Hide from broadcast");
+    expect(shown).toContain(">Hide<");
     expect(shown).toContain('aria-pressed="true"');
     expect(shown).not.toContain(">Reconnect</button>");
     const hidden = tile(true, "rtsp", "streaming", true, false);
-    expect(hidden).toContain("Show in broadcast");
+    expect(hidden).toContain(">Show<");
     expect(hidden).not.toContain('aria-pressed="true"');
     expect(hidden).not.toContain(">Reconnect</button>");
   });
@@ -63,7 +63,7 @@ describe("Studio camera source tiles", () => {
     expect(shown).toContain(">Reconnect</button>");
     expect(shown).not.toContain(">Connect</button>");
     const hidden = tile(true, "tapo", "streaming", undefined, false);
-    expect(hidden).toContain("Show in broadcast");
+    expect(hidden).toContain(">Show<");
     expect(hidden).not.toContain(">Connect</button>");
     expect(hidden).not.toContain('aria-pressed="true"');
     expect(tile(false, "tapo", "idle", false)).toContain(">Connect</button>");

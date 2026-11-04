@@ -239,7 +239,7 @@ test("shows and submits the exact append-only Undo effect", async ({
   await expect(
     page.getByText("Undo will reverse End 1 while keeping its history."),
   ).toBeVisible();
-  await page.getByRole("button", { name: "Undo last scoring change" }).click();
+  await page.getByRole("button", { name: "Undo", exact: true }).click();
   const action = await page.evaluate(() =>
     structuredClone(
       (globalThis as unknown as { __calls: unknown[] }).__calls[0],

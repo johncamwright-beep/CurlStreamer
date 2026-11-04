@@ -512,8 +512,8 @@ export function DeviceCard({
                 : !connectionStatus?.videoReceiving
                   ? "Reconnect"
                   : shown
-                    ? "Hide from broadcast"
-                    : "Show in broadcast"}
+                    ? "Hide"
+                    : "Show"}
             </button>
           )}
         </div>
@@ -663,11 +663,7 @@ export function DeviceCard({
                 }
               }}
             >
-              {claimed && !online
-                ? "Reconnect"
-                : shown
-                  ? "Hide from broadcast"
-                  : "Show in broadcast"}
+              {claimed && !online ? "Reconnect" : shown ? "Hide" : "Show"}
             </button>
           )}
         </div>

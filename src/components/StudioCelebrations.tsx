@@ -42,6 +42,7 @@ export function StudioCelebrations({
   const [volume, setVolume] = useState(0.65);
   const [muted, setMuted] = useState(false);
   const [preview, setPreview] = useState<CelebrationCue>();
+  const [previewLoading, setPreviewLoading] = useState(false);
   const [busy, setBusy] = useState(false);
   const [, tick] = useState(0);
   useEffect(() => {
@@ -118,6 +119,8 @@ export function StudioCelebrations({
   }
   function showPreview() {
     if (!player || !photo) return;
+    setError("");
+    setPreviewLoading(true);
     const now = Date.now();
     setPreview({
       id: crypto.randomUUID(),
@@ -271,8 +274,14 @@ export function StudioCelebrations({
           <PlayerCelebration
             key={preview.id}
             cue={preview}
-            onError={setError}
+            startWhenReady
+            onReady={() => setPreviewLoading(false)}
+            onError={(message) => {
+              setPreviewLoading(false);
+              setError(message);
+            }}
           />
+          {previewLoading && <p role="status">Loading preview…</p>}
         </div>
       )}
       <CelebrationHeadshotSetup

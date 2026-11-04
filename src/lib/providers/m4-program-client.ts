@@ -184,7 +184,12 @@ const projectedGame = z.object({
  * scoped realtime tickets out of persistent browser storage/logs.
  */
 export class M4ProgramClient {
-  #gameCache = new ChangedReadCache<PrivateProgramGame>();
+  // Ephemeral cues cannot depend on best-effort change notices: the ordinary
+  // ten-second fallback can miss an entire celebration when a notice is lost.
+  #gameCache = new ChangedReadCache<PrivateProgramGame>(
+    () => performance.now(),
+    1000,
+  );
   #noticeTopic?: string;
   #closeNotice?: () => void;
   #endpoint: string;

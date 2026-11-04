@@ -237,6 +237,8 @@ type AudioRoute = {
 export interface PlayerCelebrationProps {
   cue: CelebrationCue | null;
   nativeAudio?: boolean;
+  /** Local previews start their full duration after download and decode. */
+  startWhenReady?: boolean;
   onReady?: () => void;
   onStart?: () => boolean | void;
   onError?: (message: string) => void;
@@ -245,6 +247,7 @@ export interface PlayerCelebrationProps {
 export function PlayerCelebration({
   cue,
   nativeAudio = false,
+  startWhenReady = false,
   onReady,
   onStart,
   onError,
@@ -282,8 +285,14 @@ export function PlayerCelebration({
     setVisible(false);
     const video = videoRef.current,
       canvas = canvasRef.current;
-    if (!video || !canvas || !cue?.headshotUrl || cue.expiresAt <= Date.now())
+    if (
+      !video ||
+      !canvas ||
+      !cue?.headshotUrl ||
+      (!startWhenReady && cue.expiresAt <= Date.now())
+    )
       return;
+    let playbackCue = cue;
     video.dataset.celebrationStatus = "preloading";
     delete video.dataset.celebrationError;
     let cancelled = false,
@@ -339,11 +348,19 @@ export function PlayerCelebration({
       sourceCanvas.height = descriptor.height;
       const sourceContext = sourceCanvas.getContext("2d");
       if (!sourceContext) throw Error("Canvas unavailable");
+      if (startWhenReady) {
+        const startedAt = Date.now() + 50;
+        playbackCue = {
+          ...cue,
+          startedAt,
+          expiresAt: startedAt + getCelebrationTemplate(templateId).durationMs,
+        };
+      }
       video.dataset.celebrationStatus = "ready";
       callbacks.current.onReady?.();
       const paint = (time: number) => {
         if (cancelled || finished) return;
-        if (getCelebrationProgress(cue, Date.now()) === null) {
+        if (getCelebrationProgress(playbackCue, Date.now()) === null) {
           stop();
           return;
         }
@@ -397,12 +414,14 @@ export function PlayerCelebration({
       const start = async () => {
         if (cancelled) return;
         video.dataset.celebrationStatus = "starting";
-        const elapsed = Date.now() - cue.startedAt;
+        const elapsed = Date.now() - playbackCue.startedAt;
         if (
           elapsed > MAX_START_LATENESS_MS ||
-          getCelebrationProgress(cue, Date.now()) === null
+          getCelebrationProgress(playbackCue, Date.now()) === null
         ) {
-          stop();
+          fail(
+            Error("Celebration arrived too late to play. Please try again."),
+          );
           return;
         }
         if (nativeAudio) {
@@ -425,13 +444,13 @@ export function PlayerCelebration({
           if (route.output.context.state !== "running")
             throw Error("Program audio is not ready");
         }
-        const offset = Math.max(0, (Date.now() - cue.startedAt) / 1000);
+        const offset = Math.max(0, (Date.now() - playbackCue.startedAt) / 1000);
         if (offset * 1000 > MAX_START_LATENESS_MS) {
-          stop();
+          fail(Error("Celebration was not ready in time. Please try again."));
           return;
         }
         await seekToVideoTime(video, offset);
-        if (cancelled || cue.expiresAt <= Date.now()) return;
+        if (cancelled || playbackCue.expiresAt <= Date.now()) return;
         if (callbacks.current.onStart?.() === false) {
           stop();
           return;
@@ -465,11 +484,14 @@ export function PlayerCelebration({
         if ("requestVideoFrameCallback" in video)
           frameCallback = video.requestVideoFrameCallback(nextVideoFrame);
         else animationFrame = requestAnimationFrame(nextAnimationFrame);
-        expiryTimer = setTimeout(stop, Math.max(0, cue.expiresAt - Date.now()));
+        expiryTimer = setTimeout(
+          stop,
+          Math.max(0, playbackCue.expiresAt - Date.now()),
+        );
       };
       startTimer = setTimeout(
         () => void start().catch(fail),
-        Math.max(0, cue.startedAt - Date.now()),
+        Math.max(0, playbackCue.startedAt - Date.now()),
       );
     };
     void prepare().catch(fail);
@@ -486,7 +508,14 @@ export function PlayerCelebration({
       if (frameCallback) video.cancelVideoFrameCallback(frameCallback);
       cancelAnimationFrame(animationFrame);
     };
-  }, [cue?.id, cue?.headshotUrl, nativeAudio, templateId, descriptor]);
+  }, [
+    cue?.id,
+    cue?.headshotUrl,
+    nativeAudio,
+    startWhenReady,
+    templateId,
+    descriptor,
+  ]);
   return (
     <>
       <video

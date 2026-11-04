@@ -1,5 +1,6 @@
 import { createM4ProgramBridge } from "./m4-program-bridge";
 import sharp from "sharp";
+import { performance } from "node:perf_hooks";
 import { describe, expect, it, vi } from "vitest";
 import { M4ProgramClient } from "./m4-program-client";
 import { StudioTransportUnavailable } from "./studio-transport-error";
@@ -515,6 +516,56 @@ it("keeps the program local between changes and resumes fresh reads after discon
   client.close();
   await expect(client.readGame()).rejects.toThrow();
   expect(notices.close).toHaveBeenCalled();
+});
+
+it("receives a celebration within one second even when its change notice is lost", async () => {
+  let clock = 0;
+  const time = vi.spyOn(performance, "now").mockImplementation(() => clock);
+  let celebration: object | undefined;
+  const fetcher = vi
+    .fn<typeof fetch>()
+    .mockResolvedValueOnce(exchange())
+    .mockImplementation(
+      async () =>
+        new Response(
+          JSON.stringify({
+            game: { ...projected, celebration },
+            changeNotice: {
+              url: "https://example.supabase.co",
+              key: "public-key",
+              topic: "game-change-" + "a".repeat(64),
+            },
+          }),
+        ),
+    );
+  const client = new M4ProgramClient(game, origin, fetcher);
+  try {
+    await client.exchange("a".repeat(43));
+    await client.readGame();
+    notices.ready!(true);
+    await client.readGame();
+    const startedAt = Date.now() + 5000;
+    celebration = {
+      id: "33333333-3333-4333-8333-333333333333",
+      templateId: "cat-dance",
+      playerId: "player",
+      playerName: "Sam",
+      startedAt,
+      expiresAt: startedAt + 9700,
+      volume: 0.6,
+      muted: false,
+    };
+    clock = 999;
+    expect((await client.readGame()).celebration).toBeUndefined();
+    clock = 1000;
+    expect((await client.readGame()).celebration).toMatchObject(celebration);
+    celebration = undefined; // Stop must propagate without a notice too.
+    clock = 2000;
+    expect((await client.readGame()).celebration).toBeUndefined();
+  } finally {
+    client.close();
+    time.mockRestore();
+  }
 });
 
 it.each(["lightsaber", "cat-dance"])(

@@ -1750,3 +1750,17 @@
     align-self: start;
   }
 }
+
+.studio-tools-row > button {
+  min-height: 44px;
+  min-width: 0;
+  width: 100%;
+  padding-inline: 8px;
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.studio-tools-row > dialog {
+  grid-column: 1 / -1;
+}

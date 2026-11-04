@@ -1,3 +1,5 @@
+import { createM4ProgramBridge } from "./m4-program-bridge";
+import sharp from "sharp";
 import { describe, expect, it, vi } from "vitest";
 import { M4ProgramClient } from "./m4-program-client";
 import { StudioTransportUnavailable } from "./studio-transport-error";
@@ -514,3 +516,99 @@ it("keeps the program local between changes and resumes fresh reads after discon
   await expect(client.readGame()).rejects.toThrow();
   expect(notices.close).toHaveBeenCalled();
 });
+
+it.each(["lightsaber", "cat-dance"])(
+  "carries %s through the real native client and authenticated local artwork bridge",
+  async (templateId) => {
+    const organizationId = "22222222-2222-4222-8222-222222222222";
+    const bytes = await sharp({
+      create: {
+        width: 2,
+        height: 2,
+        channels: 4,
+        background: { r: 0, g: 0, b: 0, alpha: 0 },
+      },
+    })
+      .png()
+      .toBuffer();
+    const now = Date.now();
+    const cue = {
+      id: "33333333-3333-4333-8333-333333333333",
+      templateId,
+      playerId: "roster-1",
+      playerName: "Sam",
+      startedAt: now + 2500,
+      expiresAt: now + 2500 + (templateId === "cat-dance" ? 9700 : 6167),
+      volume: 0.6,
+      muted: false,
+      headshotUrl:
+        "https://storage.invalid/storage/v1/object/sign/celebration-headshots/" +
+        organizationId +
+        "/44444444-4444-4444-8444-444444444444.png?token=short",
+    };
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(exchange())
+      .mockImplementation(
+        async () =>
+          new Response(
+            JSON.stringify({
+              organizationId,
+              game: {
+                ...projected,
+                celebration: { ...cue, privateStoragePath: "private" },
+              },
+            }),
+          ),
+      );
+    const client = new M4ProgramClient(game, origin, fetcher);
+    await client.exchange("a".repeat(43));
+    const assets = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response(new Uint8Array(bytes), {
+        headers: { "content-type": "image/png" },
+      }),
+    );
+    const bridge = await createM4ProgramBridge(client, undefined, {
+      directory: ".",
+      sponsorStorageOrigin: "https://storage.invalid",
+      celebrationFetcher: assets,
+    });
+    try {
+      const page = await fetch(bridge.rendererUrl);
+      const headers = {
+        origin: bridge.address,
+        cookie: page.headers.get("set-cookie")!.split(";")[0],
+      };
+      expect(page.headers.get("content-security-policy")).toContain(
+        "img-src 'self' data: blob:",
+      );
+      const response = await fetch(bridge.address + "/program", { headers });
+      const value = (await response.json()).game;
+      expect(value.celebration).toMatchObject({
+        ...cue,
+        headshotUrl: expect.stringMatching(
+          /^\/celebrations\/headshot\/[a-f0-9]{32}$/,
+        ),
+      });
+      expect(JSON.stringify(value)).not.toContain("storage.invalid");
+      expect(value.celebration).not.toHaveProperty("privateStoragePath");
+      const image = await fetch(
+        bridge.address + value.celebration.headshotUrl,
+        {
+          headers,
+        },
+      );
+      expect(image.status).toBe(200);
+      expect(Buffer.from(await image.arrayBuffer())).toEqual(bytes);
+      expect(
+        (await fetch(bridge.address + value.celebration.headshotUrl)).status,
+      ).toBe(403);
+      expect(assets).toHaveBeenCalledWith(
+        new URL(cue.headshotUrl),
+        expect.objectContaining({ redirect: "error", cache: "no-store" }),
+      );
+    } finally {
+      await bridge.close();
+    }
+  },
+);

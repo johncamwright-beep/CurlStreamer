@@ -66,6 +66,7 @@ test.beforeAll(async () => {
         globalThis.__holdReads = false;
         globalThis.__reads = [];
         globalThis.fetch = (url, options = {}) => {
+          if (String(url).startsWith("/api/celebrations/headshots")) return Promise.resolve(new Response(JSON.stringify({players:[],headshots:[],canEdit:false})));
           if (!String(url).startsWith("/api/games/scoring-game")) return Promise.resolve(new Response("{}"));
           const state = String(url) === "/api/games/scoring-game2" ? globalThis.__game2 : globalThis.__game;
           if (options.method !== "PATCH") {

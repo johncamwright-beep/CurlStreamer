@@ -1,3 +1,4 @@
+import { CELEBRATION_TEMPLATE_IDS } from "./player-celebrations";
 import { z } from "zod";
 import { youtubeWatchUrlSchema } from "@/lib/youtube-watch";
 export const gameSchema = z
@@ -55,6 +56,21 @@ export const actionSchema = z.discriminatedUnion("type", [
       homeColor: z.string().regex(/^#[0-9a-fA-F]{6}$/),
       awayColor: z.string().regex(/^#[0-9a-fA-F]{6}$/),
     })
+    .strict(),
+  z
+    .object({
+      type: z.literal("celebration-play"),
+      triggerId: z.uuid(),
+      templateId: z.enum(CELEBRATION_TEMPLATE_IDS),
+      playerId: z.string().min(1).max(120),
+      playerName: z.string().trim().max(100).optional(),
+      headshotUrl: z.string().max(2048).optional(),
+      volume: z.number().finite().min(0).max(1),
+      muted: z.boolean(),
+    })
+    .strict(),
+  z
+    .object({ type: z.literal("celebration-stop"), triggerId: z.uuid() })
     .strict(),
   scoreActionSchema,
   z.object({

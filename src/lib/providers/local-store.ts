@@ -1,3 +1,4 @@
+import { applyCelebrationAction } from "../celebration-state";
 import { randomUUID } from "crypto";
 import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
@@ -321,6 +322,7 @@ export function updateGame(
         );
     }
     const now = Date.now();
+    applyCelebrationAction(game, action, now);
     if (
       action.type === "score" ||
       action.type === "hammer" ||

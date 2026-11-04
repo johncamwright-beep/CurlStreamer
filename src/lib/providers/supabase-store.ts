@@ -1,3 +1,4 @@
+import { applyCelebrationAction } from "../celebration-state";
 import "server-only";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { randomUUID } from "crypto";
@@ -266,6 +267,7 @@ async function saveScoreEvent(
 
 function applyAction(game: GameState, action: z.infer<typeof actionSchema>) {
   const now = Date.now();
+  applyCelebrationAction(game, action, now);
   const scoring =
     action.type === "score" ||
     action.type === "hammer" ||

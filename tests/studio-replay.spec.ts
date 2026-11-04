@@ -128,7 +128,7 @@ for (const failedVideo of [false, true])
       });
       await receipt();
       await status(5, "22222222-2222-4222-8222-222222222222");
-      await page.getByRole("button", { name: "Close", exact: true }).click();
+      await expect(page.getByRole("dialog")).not.toBeVisible();
     }
     await page
       .getByRole("button", { name: "Return Live", exact: true })

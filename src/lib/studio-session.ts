@@ -1,5 +1,14 @@
 import { z } from "zod";
 
+export const studioReplayStateSchema = z
+  .object({
+    state: z.number().int().min(0).max(7),
+    durationMs: z.number().int().min(0).max(90000),
+    availableMs: z.number().int().min(0).max(60000),
+    clipId: z.uuid().nullable(),
+  })
+  .strict();
+
 export const studioSessionSchema = z
   .object({
     gameId: z.uuid().nullable(),
@@ -13,6 +22,7 @@ export const studioSessionSchema = z
     lastLiveAgeMs: z.number().nonnegative().nullable().optional(),
     canHoldStream: z.boolean(),
     canLeaveGame: z.boolean().optional(),
+    replay: studioReplayStateSchema.nullable().optional(),
   })
   .strict();
 export type StudioSession = z.infer<typeof studioSessionSchema>;

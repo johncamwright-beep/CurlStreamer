@@ -390,7 +390,7 @@ bool m4_media_enable_replay(m4_media *m, const wchar_t *runtime_bin, const wchar
 {
     char runtime[4096];
     if (!m || !m->program || m->replay || !local_path(cache) ||
-        !WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS, runtime_bin, -1, runtime, sizeof(runtime), NULL, NULL) || !module(runtime, "obs-text")) return false;
+        !WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS, runtime_bin, -1, runtime, sizeof(runtime), NULL, NULL) || !module(runtime, "obs-text") || !module(runtime, "obs-transitions")) return false;
     m->replay = studio_replay_create(m->program, m->video, m->audio, cache);
     return m->replay != NULL;
 }

@@ -23,9 +23,9 @@ describe("durable celebration intent", () => {
     applyCelebrationAction(game, action, 1100);
     expect(game.celebrationEvents).toHaveLength(1);
     const cue = currentCelebration(game, 1100)!;
-    expect(cue.startedAt).toBe(3500);
-    expect(cue.expiresAt).toBe(9667);
-    expect(currentCelebration(game, 9667)).toBeUndefined();
+    expect(cue.startedAt).toBe(6000);
+    expect(cue.expiresAt).toBe(12167);
+    expect(currentCelebration(game, 12167)).toBeUndefined();
     expect({ ...game, celebrationEvents: undefined }).toEqual({
       ...before,
       celebrationEvents: undefined,
@@ -47,13 +47,13 @@ describe("durable celebration intent", () => {
     const catAction = { ...action, templateId: "cat-dance" as const };
     expect(actionSchema.safeParse(catAction).success).toBe(true);
     applyCelebrationAction(game, catAction, 1000);
-    expect(currentCelebration(game, 3500)).toMatchObject({
+    expect(currentCelebration(game, 6000)).toMatchObject({
       templateId: "cat-dance",
-      startedAt: 3500,
-      expiresAt: 13200,
+      startedAt: 6000,
+      expiresAt: 15700,
     });
-    expect(currentCelebration(game, 13199)?.templateId).toBe("cat-dance");
-    expect(currentCelebration(game, 13200)).toBeUndefined();
+    expect(currentCelebration(game, 15699)?.templateId).toBe("cat-dance");
+    expect(currentCelebration(game, 15700)).toBeUndefined();
   });
   it("validates templates, gain, finite numbers and trigger identity", () => {
     expect(actionSchema.safeParse(action).success).toBe(true);

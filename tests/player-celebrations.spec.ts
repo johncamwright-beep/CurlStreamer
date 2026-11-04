@@ -1,5 +1,79 @@
 import { expect, test } from "@playwright/test";
 import { build } from "esbuild";
+import { readFile } from "node:fs/promises";
+import sharp from "sharp";
+
+test("a cold preview waits for assets and then plays from the beginning", async ({
+  page,
+}) => {
+  const bundle = await build({
+    bundle: true,
+    write: false,
+    platform: "browser",
+    format: "iife",
+    jsx: "automatic",
+    tsconfig: "tsconfig.json",
+    stdin: {
+      loader: "tsx",
+      resolveDir: process.cwd(),
+      contents: `
+    import React from 'react';import {createRoot} from 'react-dom/client';import {PlayerCelebration} from './src/components/PlayerCelebration';
+    const now=Date.now();createRoot(document.getElementById('root')).render(<PlayerCelebration startWhenReady cue={{id:'cold-preview',templateId:'cat-dance',playerId:'mock',playerName:'MOCK',headshotUrl:'/cold-head.png',startedAt:now+2500,expiresAt:now+12200,volume:.5,muted:false}}/>);
+  `,
+    },
+  });
+  const head = await sharp({
+    create: {
+      width: 32,
+      height: 32,
+      channels: 4,
+      background: { r: 255, g: 180, b: 80, alpha: 1 },
+    },
+  })
+    .png()
+    .toBuffer();
+  await page.route("**/cold-head.png", async (route) => {
+    await new Promise((resolve) => setTimeout(resolve, 4500));
+    await route.fulfill({ contentType: "image/png", body: head });
+  });
+  await page.route("**/celebrations/cat-dance.mp4", async (route) =>
+    route.fulfill({
+      contentType: "video/mp4",
+      body: await readFile("public/celebrations/cat-dance.mp4"),
+    }),
+  );
+  await page.route("**/cold-preview.js", (route) =>
+    route.fulfill({
+      contentType: "text/javascript",
+      body: bundle.outputFiles[0].text,
+    }),
+  );
+  await page.route("**/cold-preview", (route) =>
+    route.fulfill({
+      contentType: "text/html",
+      body: '<div id="root" style="position:relative;width:320px;height:320px"></div><script src="/cold-preview.js"></script>',
+    }),
+  );
+  await page.goto("/cold-preview");
+  await expect(page.getByRole("img", { name: "MOCK: Cat Dance" })).toBeVisible({
+    timeout: 12000,
+  });
+  const video = page.locator("video[data-celebration-video]");
+  await expect
+    .poll(() => video.evaluate((v: HTMLVideoElement) => v.currentTime))
+    .toBeGreaterThan(0.1);
+  expect(
+    await video.evaluate((v: HTMLVideoElement) => ({
+      time: v.currentTime,
+      muted: v.muted,
+      paused: v.paused,
+    })),
+  ).toMatchObject({ muted: true, paused: false });
+  expect(
+    await video.evaluate((v: HTMLVideoElement) => v.currentTime),
+  ).toBeLessThan(2);
+});
+
 for (const templateId of ["lightsaber", "cat-dance", "trump-dance"]) {
   test(`Studio ${templateId} previews silently, plays, stops and recovers roster loading at mobile width`, async ({
     page,

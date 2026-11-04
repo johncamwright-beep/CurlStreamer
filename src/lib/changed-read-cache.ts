@@ -4,7 +4,10 @@ export class ChangedReadCache<T> {
   #pending?: Promise<T>;
   #epoch = 0;
   connected = false;
-  constructor(private now = () => performance.now()) {}
+  constructor(
+    private now = () => performance.now(),
+    private maxAgeMs = 10_000,
+  ) {}
   invalidate() {
     this.#epoch++;
   }
@@ -19,7 +22,7 @@ export class ChangedReadCache<T> {
       this.connected &&
       value &&
       value.epoch === this.#epoch &&
-      this.now() - value.at < 10_000
+      this.now() - value.at < this.maxAgeMs
     )
       return Promise.resolve(value.value);
     if (this.#pending) return this.#pending;

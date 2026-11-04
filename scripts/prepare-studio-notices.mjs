@@ -391,6 +391,24 @@ const inventory = {
       licenseFiles: files,
     })),
 };
+if (
+  await stat(join(studio, "renderer", "celebrations"))
+    .then(() => true)
+    .catch((error) => {
+      if (error.code === "ENOENT") return false;
+      throw error;
+    })
+) {
+  await copyFile(
+    join(repository, "public", "celebrations", "NOTICE.txt"),
+    join(licenses, "celebrations", "NOTICE.txt"),
+  );
+  inventory.sourcePointers.push({
+    component: "User-provided celebration videos and derived foreground images",
+    license: "Not specified by the media provider",
+    notices: ["licenses/celebrations/NOTICE.txt"],
+  });
+}
 await writeFile(
   join(studio, "THIRD_PARTY_NOTICES.json"),
   `${JSON.stringify(inventory, null, 2)}\n`,

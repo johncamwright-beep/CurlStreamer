@@ -19,8 +19,8 @@ const cue: CelebrationCue = {
   muted: false,
 };
 describe("actual Lightsaber celebration", () => {
-  it("exposes the two approved complete source clips", () => {
-    expect(CELEBRATION_TEMPLATES).toHaveLength(2);
+  it("exposes the three approved complete source clips", () => {
+    expect(CELEBRATION_TEMPLATES).toHaveLength(3);
     expect(CELEBRATION_TEMPLATES[0]).toMatchObject({
       id: "lightsaber",
       label: "Lightsaber",
@@ -30,6 +30,10 @@ describe("actual Lightsaber celebration", () => {
       id: "cat-dance",
       label: "Cat Dance",
       durationMs: 9700,
+    });
+    expect(CELEBRATION_TEMPLATES[2]).toMatchObject({
+      id: "trump-dance",
+      durationMs: 9667,
     });
   });
   it("bounds output by authoritative start and expiry without late replay", () => {

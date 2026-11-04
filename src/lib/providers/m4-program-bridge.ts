@@ -468,7 +468,8 @@ export async function createM4ProgramBridge(
     if (
       (request.method === "GET" || request.method === "HEAD") &&
       (request.url === "/celebrations/lightsaber.mp4" ||
-        request.url === "/celebrations/cat-dance.mp4")
+        request.url === "/celebrations/cat-dance.mp4" ||
+        request.url === "/celebrations/trump-dance.mp4")
     ) {
       const file = request.url!.slice(1);
       try {

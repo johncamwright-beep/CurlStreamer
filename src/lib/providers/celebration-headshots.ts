@@ -190,17 +190,8 @@ export async function resolveCelebrationPlayerForGame(
   gameId: string,
   headshotId: string,
 ) {
-  const db = createAdminSupabaseClient();
-  const game = await db
-    .from("games")
-    .select("organization_id")
-    .eq("id", z.uuid().parse(gameId))
-    .single();
-  if (game.error || !game.data?.organization_id)
-    throw Error("Game unavailable");
-  const { headshots } = await readCelebrationHeadshots(
-    game.data.organization_id,
-  );
+  const organizationId = await celebrationGameOrganization(gameId);
+  const { headshots } = await readCelebrationHeadshots(organizationId);
   const shot = headshots.find((shot) => shot.id === z.uuid().parse(headshotId));
   if (!shot) throw Error("Player photo is unavailable. Reload the roster.");
   return {
@@ -211,14 +202,15 @@ export async function resolveCelebrationPlayerForGame(
 }
 
 export async function celebrationGameOrganization(gameId: string) {
-  const game = await createAdminSupabaseClient()
-    .from("games")
-    .select("organization_id")
-    .eq("id", z.uuid().parse(gameId))
-    .single();
-  if (game.error || !game.data?.organization_id)
+  // Direct games reads are revoked from API roles, including service_role.
+  // Callers authorize the game first; this RPC returns only its active owner.
+  const game = await createAdminSupabaseClient().rpc(
+    "read_celebration_game_organization",
+    { p_game_id: z.uuid().parse(gameId) },
+  );
+  if (game.error || typeof game.data !== "string" || !game.data)
     throw Error("Game unavailable");
-  return game.data.organization_id as string;
+  return game.data;
 }
 export async function resolveCelebrationRosterPlayerForGame(
   gameId: string,

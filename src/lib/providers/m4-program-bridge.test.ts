@@ -945,7 +945,7 @@ it("serves only the two authenticated base clips with video byte ranges and stri
   const directory = await mkdtemp(join(tmpdir(), "curlcast-clip-"));
   const bytes = Buffer.from("generic-base-video-test-bytes");
   await mkdir(join(directory, "celebrations"));
-  for (const clip of ["lightsaber.mp4", "cat-dance.mp4"])
+  for (const clip of ["lightsaber.mp4", "cat-dance.mp4", "trump-dance.mp4"])
     await writeFile(join(directory, "celebrations", clip), bytes);
   const foreground = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
   await writeFile(
@@ -984,7 +984,7 @@ it("serves only the two authenticated base clips with video byte ranges and stri
         )
       ).status,
     ).toBe(403);
-    for (const clip of ["lightsaber.mp4", "cat-dance.mp4"]) {
+    for (const clip of ["lightsaber.mp4", "cat-dance.mp4", "trump-dance.mp4"]) {
       expect(
         (await fetch(bridge.address + "/celebrations/" + clip)).status,
       ).toBe(403);

@@ -9,11 +9,14 @@ const m = vi.hoisted(() => ({
   upload: vi.fn(),
   upsert: vi.fn(),
   queries: [] as [string, string, unknown][],
+  rpc: vi.fn(),
 }));
 vi.mock("./team-settings", () => ({ readTeamSettings: m.settings }));
 vi.mock("@/lib/supabase/admin", () => ({
   createAdminSupabaseClient: () => ({
+    rpc: m.rpc,
     from: (table: string) => {
+      if (table === "games") throw Error("Direct games reads are forbidden");
       const query = {
         select: () => query,
         upsert: m.upsert,
@@ -47,6 +50,7 @@ import {
   saveCelebrationCoachHeadshot,
   celebrationCoachId,
   coachHeadshotInputSchema,
+  celebrationGameOrganization,
 } from "./celebration-headshots";
 import { rosterPlayers } from "./player-contacts";
 const settings = defaultTeamPageSettings("Team");
@@ -58,6 +62,7 @@ beforeEach(() => {
   m.rows = [];
   m.queries = [];
   m.organization = "team-a";
+  m.rpc.mockImplementation(async () => ({ data: m.organization, error: null }));
   m.settings.mockResolvedValue({ settings });
   m.upload.mockResolvedValue({ error: null });
   m.upsert.mockResolvedValue({ error: null });
@@ -65,6 +70,20 @@ beforeEach(() => {
     data: { signedUrl: "https://test/signed/photo" },
     error: null,
   });
+});
+it("uses the service-only game lookup and fails closed when it is unavailable", async () => {
+  expect(await celebrationGameOrganization(gameId)).toBe("team-a");
+  expect(m.rpc).toHaveBeenCalledWith("read_celebration_game_organization", {
+    p_game_id: gameId,
+  });
+  m.rpc.mockResolvedValueOnce({ data: null, error: null });
+  await expect(celebrationGameOrganization(gameId)).rejects.toThrow(
+    "Game unavailable",
+  );
+  m.rpc.mockResolvedValueOnce({ data: null, error: { code: "42501" } });
+  await expect(celebrationGameOrganization(gameId)).rejects.toThrow(
+    "Game unavailable",
+  );
 });
 it("filters changed roster identities and cross-organization storage paths before signing", async () => {
   const player = rosterPlayers("team-a", settings)[0];

@@ -20,7 +20,16 @@ import {
   CELEBRATION_SQUARE_SIZE,
   celebrationSquareCrop,
 } from "@/lib/celebration-square";
-const VIDEOS = { lightsaber: LIGHTSABER_VIDEO, "cat-dance": CAT_DANCE_VIDEO };
+import {
+  TRUMP_DANCE_VIDEO,
+  trumpDanceFrameAt,
+  trumpDanceHeadTransforms,
+} from "@/lib/trump-dance-compositor";
+const VIDEOS = {
+  lightsaber: LIGHTSABER_VIDEO,
+  "cat-dance": CAT_DANCE_VIDEO,
+  "trump-dance": TRUMP_DANCE_VIDEO,
+};
 
 const MAX_START_LATENESS_MS = 1000;
 let foregroundImages: Promise<HTMLImageElement[]> | undefined;
@@ -321,7 +330,9 @@ export function PlayerCelebration({
         transforms = (
           templateId === "lightsaber"
             ? lightsaberHeadTransforms
-            : catDanceHeadTransforms
+            : templateId === "cat-dance"
+              ? catDanceHeadTransforms
+              : trumpDanceHeadTransforms
         )(head.width / head.height);
       const sourceCanvas = document.createElement("canvas");
       sourceCanvas.width = descriptor.width;
@@ -337,7 +348,11 @@ export function PlayerCelebration({
           return;
         }
         const frame = (
-          templateId === "lightsaber" ? lightsaberFrameAt : catDanceFrameAt
+          templateId === "lightsaber"
+            ? lightsaberFrameAt
+            : templateId === "cat-dance"
+              ? catDanceFrameAt
+              : trumpDanceFrameAt
         )(time);
         canvas.dataset.frame = String(frame);
         if (templateId === "lightsaber")

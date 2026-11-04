@@ -9,6 +9,7 @@ export function celebrationSquareCrop(
   head: LightsaberHeadTransform,
 ) {
   const size = CELEBRATION_SQUARE_SIZE;
+  if (template === "trump-dance") return { x: 0, y: 0, size };
   const sn = Math.sin(head.rotation),
     cs = Math.cos(head.rotation);
   const corners = [-head.width / 2, head.width / 2].flatMap((x) =>

@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 import { build } from "esbuild";
-for (const templateId of ["lightsaber", "cat-dance"]) {
+for (const templateId of ["lightsaber", "cat-dance", "trump-dance"]) {
   test(`Studio ${templateId} previews silently, plays, stops and recovers roster loading at mobile width`, async ({
     page,
   }) => {
@@ -18,8 +18,8 @@ for (const templateId of ["lightsaber", "cat-dance"]) {
         resolveDir: process.cwd(),
         contents: `
     import React from 'react';import {createRoot} from 'react-dom/client';import {StudioCelebrations} from './src/components/StudioCelebrations';import {gameFixture} from './src/test/game-fixture';
-    window.calls=[];window.audioContexts=0;const NativeAudio=window.AudioContext;window.AudioContext=class extends NativeAudio{constructor(...args){super(...args);window.audioContexts++;}};
-    createRoot(document.getElementById('root')).render(<StudioCelebrations game={gameFixture()} act={async action=>{window.calls.push(action)}}/>);
+    window.calls=[];window.rejectPlay=false;window.audioContexts=0;const NativeAudio=window.AudioContext;window.AudioContext=class extends NativeAudio{constructor(...args){super(...args);window.audioContexts++;}};
+    createRoot(document.getElementById('root')).render(<StudioCelebrations displayMode="dialog" game={gameFixture()} act={async action=>{if(window.rejectPlay)throw Error('Rejected');window.calls.push(action)}}/>);
   `,
       },
     });
@@ -86,7 +86,19 @@ for (const templateId of ["lightsaber", "cat-dance"]) {
     await expect(page.getByLabel("Celebration preview")).toBeVisible();
     expect(await page.evaluate(() => (window as any).calls)).toEqual([]);
     expect(await page.evaluate(() => (window as any).audioContexts)).toBe(0);
+    await page.evaluate(() => ((window as any).rejectPlay = true));
     await page.getByRole("button", { name: "Play on stream" }).click();
+    await expect(
+      page.getByRole("dialog", { name: "Celebrations", exact: true }),
+    ).toBeVisible();
+    await expect(page.getByRole("alert").first()).toContainText(
+      "could not be updated",
+    );
+    await page.evaluate(() => ((window as any).rejectPlay = false));
+    await page.getByRole("button", { name: "Play on stream" }).click();
+    await expect(
+      page.getByRole("dialog", { name: "Celebrations", exact: true }),
+    ).not.toBeVisible();
     const actions = await page.evaluate(() => (window as any).calls);
     expect(actions).toHaveLength(1);
     expect(actions[0]).toMatchObject({
@@ -96,6 +108,8 @@ for (const templateId of ["lightsaber", "cat-dance"]) {
     });
     expect(actions[0].triggerId).toMatch(/^[a-f0-9-]{36}$/);
     expect(actions[0]).not.toHaveProperty("headshotUrl");
+    await expect(page.getByLabel("Celebration preview")).toHaveCount(0);
+    await page.getByText("Celebrations", { exact: true }).first().click();
     await page.getByRole("button", { name: "Stop", exact: true }).click();
     expect(await page.evaluate(() => (window as any).calls[1].type)).toBe(
       "celebration-stop",
@@ -287,7 +301,7 @@ test("native Studio tools share one compact row and open their own panels", asyn
   ).toBeVisible();
   await expect(
     page.getByLabel("Celebration", { exact: true }).locator("option"),
-  ).toHaveText(["Lightsaber", "Cat Dance"]);
+  ).toHaveText(["Lightsaber", "Cat Dance", "Trump Dance"]);
   await expect(
     page.getByRole("button", { name: "Play on stream" }),
   ).toBeDisabled();

@@ -3,6 +3,89 @@ import { build } from "esbuild";
 import { readFile } from "node:fs/promises";
 import sharp from "sharp";
 
+test("late native playback finishes the full clip after cloud expiry and honors Stop", async ({
+  page,
+}) => {
+  const bundle = await build({
+    bundle: true,
+    write: false,
+    platform: "browser",
+    format: "iife",
+    jsx: "automatic",
+    tsconfig: "tsconfig.json",
+    stdin: {
+      loader: "tsx",
+      resolveDir: process.cwd(),
+      contents: `
+      import React from 'react'; import {createRoot} from 'react-dom/client';
+      import {ProgramCelebration} from './src/components/ProgramCelebration';
+      import {acquireProgramAudioOutput} from './src/lib/program-audio-output';
+      function Fixture(){
+        const [cue,setCue]=React.useState(); const [stopped,setStopped]=React.useState(false);
+        async function play(){const audio=acquireProgramAudioOutput(); await audio.context.resume(); setStopped(false);
+          const startedAt=Date.now()-2600;
+          setCue({id:crypto.randomUUID(),templateId:'cat-dance',playerId:'mock',playerName:'MOCK',headshotUrl:'/late-head.png',startedAt,expiresAt:startedAt+9700,volume:.1,muted:true});
+          setTimeout(()=>setCue(undefined),7100);
+        }
+        return <><button onClick={play}>Play late cue</button><button onClick={()=>{setStopped(true);setCue(undefined)}}>Stop cue</button><div style={{position:'relative',width:320,height:320}}><ProgramCelebration gameId="late-browser" nativeAudio cue={cue} stopped={stopped}/></div></>;
+      } createRoot(document.getElementById('root')).render(<Fixture/>);
+    `,
+    },
+  });
+  const head = await sharp({
+    create: {
+      width: 32,
+      height: 32,
+      channels: 4,
+      background: { r: 255, g: 180, b: 80, alpha: 1 },
+    },
+  })
+    .png()
+    .toBuffer();
+  await page.route("**/late-head.png", (route) =>
+    route.fulfill({ contentType: "image/png", body: head }),
+  );
+  await page.route("**/celebrations/**", async (route) => {
+    const name = new URL(route.request().url()).pathname;
+    if (name !== "/celebrations/cat-dance.mp4")
+      return route.fulfill({ status: 404 });
+    await route.fulfill({
+      contentType: "video/mp4",
+      body: await readFile("public" + name),
+    });
+  });
+  await page.route("**/late-native.js", (route) =>
+    route.fulfill({
+      contentType: "text/javascript",
+      body: bundle.outputFiles[0].text,
+    }),
+  );
+  await page.route("**/late-native", (route) =>
+    route.fulfill({
+      contentType: "text/html",
+      body: '<div id="root"></div><script src="/late-native.js"></script>',
+    }),
+  );
+  await page.goto("/late-native");
+  await page.getByRole("button", { name: "Play late cue" }).click();
+  const clip = page.getByRole("img", { name: "MOCK: Cat Dance" });
+  const video = page.locator("video[data-celebration-video]");
+  await expect(clip).toBeVisible();
+  expect(
+    await video.evaluate((v: HTMLVideoElement) => v.currentTime),
+  ).toBeLessThan(2);
+  await expect
+    .poll(() => video.evaluate((v: HTMLVideoElement) => v.currentTime), {
+      timeout: 13000,
+    })
+    .toBeGreaterThan(9);
+  await expect(clip).not.toBeVisible({ timeout: 3000 });
+  await page.getByRole("button", { name: "Play late cue" }).click();
+  await expect(clip).toBeVisible();
+  await page.getByRole("button", { name: "Stop cue" }).click();
+  await expect(clip).not.toBeVisible();
+});
+
 test("a cold preview waits for assets and then plays from the beginning", async ({
   page,
 }) => {

@@ -496,6 +496,7 @@ function ProgramRenderer() {
         )}
       <ProgramCanvas
         celebrationAudio
+        celebrationDiagnostic={log}
         game={game}
         cameraAspects={Object.fromEntries(
           roles.map((role) => [

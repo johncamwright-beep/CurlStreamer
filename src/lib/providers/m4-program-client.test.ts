@@ -71,6 +71,20 @@ const projected = {
   },
 };
 describe("Node program authority", () => {
+  it("carries an explicit celebration Stop to the native renderer", async () => {
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(exchange())
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({ game: { ...projected, celebrationStopped: true } }),
+        ),
+      );
+    const client = new M4ProgramClient(game, origin, fetcher);
+    await client.exchange("a".repeat(43));
+    expect((await client.readGame()).celebrationStopped).toBe(true);
+    client.close();
+  });
   it.each([-5000, -2500, 0, 5000])(
     "retains signed microphone sync adjustment %s for its authorized game",
     async (programAudioDelayMs) => {

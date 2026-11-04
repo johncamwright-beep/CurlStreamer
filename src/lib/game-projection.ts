@@ -9,6 +9,8 @@ import type { GameConfig, GameState, Sponsor, Team } from "./types";
 export interface BroadcastGame {
   id: string;
   celebration?: CelebrationCue;
+  /** Distinguishes an explicit Stop from a cue naturally expiring in transit. */
+  celebrationStopped?: boolean;
   broadcastSchedule?: GameState["broadcastSchedule"];
   config: Pick<
     GameConfig,
@@ -70,6 +72,9 @@ export function broadcastGame(
   const cue = currentCelebration(game);
   return {
     id: game.id,
+    ...(game.celebrationEvents?.at(-1)?.type === "stop"
+      ? { celebrationStopped: true }
+      : {}),
     ...(cue
       ? {
           celebration: {

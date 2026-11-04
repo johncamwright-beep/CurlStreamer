@@ -3,6 +3,34 @@ import { gameFixture } from "@/test/game-fixture";
 import { broadcastGame } from "./game-projection";
 
 describe("broadcast game projection", () => {
+  it("distinguishes explicit celebration Stop from natural cue expiry", () => {
+    const game = gameFixture();
+    const cue = {
+      id: "play",
+      templateId: "cat-dance" as const,
+      playerId: "player",
+      playerName: "Sam",
+      startedAt: 1,
+      expiresAt: 9701,
+      volume: 0.6,
+      muted: false,
+    };
+    game.celebrationEvents = [{ type: "play", cue }];
+    expect(broadcastGame(game).celebration).toBeUndefined();
+    expect(broadcastGame(game).celebrationStopped).toBeUndefined();
+    game.celebrationEvents.push({ type: "stop", id: "stop", at: 2 });
+    expect(broadcastGame(game).celebrationStopped).toBe(true);
+    game.celebrationEvents.push({
+      type: "play",
+      cue: {
+        ...cue,
+        id: "next",
+        startedAt: Date.now(),
+        expiresAt: Date.now() + 9700,
+      },
+    });
+    expect(broadcastGame(game).celebrationStopped).toBeUndefined();
+  });
   it("sends the default sync adjustment to installed renderers and preserves a saved zero", () => {
     const game = gameFixture();
     expect(broadcastGame(game).programAudioDelayMs).toBe(2750);

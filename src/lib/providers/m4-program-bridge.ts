@@ -129,6 +129,14 @@ export async function createM4ProgramBridge(
   const lightsaberForeground = new Map<string, Promise<Buffer>>();
   let sponsorAssets: ReturnType<typeof createM4SponsorAssets> | undefined;
   let celebrationAssets: ReturnType<typeof createM4SponsorAssets> | undefined;
+  let celebrationDiagnostic: { id: string; headReady?: boolean } | undefined;
+  const logCelebration: ConnectionDiagnostic = (event) => {
+    try {
+      rendererAssets?.diagnostic?.(event);
+    } catch {
+      /* Never affect output. */
+    }
+  };
   let teamLogo:
     { source: string; path: string; mime: string; bytes: Buffer } | undefined;
   let logoFlight:
@@ -663,6 +671,18 @@ export async function createM4ProgramBridge(
           });
         }
         const cue = game.celebration;
+        if (cue && celebrationDiagnostic?.id !== cue.id) {
+          celebrationDiagnostic = { id: cue.id };
+          logCelebration({
+            layer: "celebration",
+            code: "cue_received",
+            trace: cue.id,
+            durationMs: Math.min(
+              600_000,
+              Math.max(0, Date.now() - cue.startedAt),
+            ),
+          });
+        }
         const localHeads = celebrationAssets
           ? await celebrationAssets.sync(
               cue?.headshotUrl
@@ -674,6 +694,18 @@ export async function createM4ProgramBridge(
           cue && localHeads[0]?.dataUrl
             ? { ...cue, headshotUrl: localHeads[0].dataUrl }
             : undefined;
+        if (
+          cue &&
+          celebrationDiagnostic &&
+          celebrationDiagnostic.headReady !== Boolean(celebration)
+        ) {
+          celebrationDiagnostic.headReady = Boolean(celebration);
+          logCelebration({
+            layer: "celebration",
+            code: celebration ? "headshot_ready" : "headshot_unavailable",
+            trace: cue.id,
+          });
+        }
         const sponsors = sponsorAssets
           ? await sponsorAssets.sync(game.sponsors)
           : game.sponsors.filter((sponsor) =>

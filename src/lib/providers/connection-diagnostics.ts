@@ -25,6 +25,7 @@ export const connectionDiagnosticSchema = z
       "audio",
       "youtube",
       "program",
+      "celebration",
     ]),
     code: z.enum([
       ...m4YouTubeFailureCode.options,
@@ -74,6 +75,13 @@ export const connectionDiagnosticSchema = z
       "refresh_failed",
       "recovery_exhausted",
       "tcp_fallback",
+      "cue_received",
+      "headshot_ready",
+      "headshot_unavailable",
+      "playback_ready",
+      "playback_started",
+      "playback_failed",
+      "playback_late",
     ]),
     role: z.enum(["camera-home", "camera-away"]).optional(),
     stage: z

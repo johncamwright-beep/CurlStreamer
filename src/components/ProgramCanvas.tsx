@@ -6,6 +6,7 @@ import { TeamLogo } from "./TeamLogo";
 import { Scoreboard } from "./Scoreboard";
 import type { GameState } from "@/lib/types";
 import type { BroadcastGame } from "@/lib/game-projection";
+import type { ConnectionDiagnostic } from "@/lib/providers/connection-diagnostics";
 import { formatBroadcastRailTitle } from "@/lib/game-title";
 import { cameraIsShown } from "@/lib/camera-layout";
 import {
@@ -21,6 +22,7 @@ export interface ProgramCanvasProps {
   cameraAspects?: Partial<Record<ProgramCameraRole, number>>;
   audioStatus?: string;
   celebrationAudio?: boolean;
+  celebrationDiagnostic?: ConnectionDiagnostic;
   statusLabel?: string;
 }
 
@@ -37,6 +39,7 @@ export function ProgramComposition({
   audioStatus = "Video only",
   statusLabel = "Local program",
   celebrationAudio = false,
+  celebrationDiagnostic,
   containMedia = false,
   showStatus = true,
 }: ProgramCanvasProps & { containMedia?: boolean; showStatus?: boolean }) {
@@ -149,6 +152,12 @@ export function ProgramComposition({
             <React.Fragment key={role}>{camera(role, index)}</React.Fragment>
           ))}
           <ProgramCelebration
+            diagnostic={celebrationDiagnostic}
+            stopped={
+              "celebrationEvents" in game
+                ? game.celebrationEvents?.at(-1)?.type === "stop"
+                : (game as BroadcastGame).celebrationStopped
+            }
             gameId={game.id}
             cue={
               "celebrationEvents" in game

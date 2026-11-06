@@ -18,6 +18,7 @@ internal static class UsbAudioTests
         Check(BitConverter.GetBytes(Single.NaN), UsbAudioSampleFormat.Float32, 4, 0f, "Float32 NaN normalization");
         Check(BitConverter.GetBytes(Single.PositiveInfinity), UsbAudioSampleFormat.Float32, 4, 0f, "Float32 infinity normalization");
         if (UsbAudio.MixMono(.25f, 4) != .25f || UsbAudio.MixMono(.25f, 2) != .25f || UsbAudio.MixMono(1f, 0) != 0f || UsbAudio.MixMono(2f, 4) != 2f) throw new Exception("Mono mix lost microphone level or float headroom.");
+        CheckRecovery();
         CheckFourChannelPacket();
         CheckPeakPublication();
         if (args.Length == 1 && args[0] != "--enumerate") CheckProcessingPacket(args[0]);
@@ -27,6 +28,34 @@ internal static class UsbAudioTests
             Console.WriteLine("PASS: enumerated " + endpoints.Length + " active capture endpoint(s).");
         }
         return 0;
+    }
+
+    private static void CheckRecovery() {
+        var restoredLevels = new float[3]; var restoredMuted = new bool[3];
+        UsbAudio.RestoreControls(new[] {.37f, 0f}, new[] {true, false}, restoredLevels, restoredMuted);
+        if (restoredLevels[0] != .37f || restoredLevels[1] != 0f || restoredLevels[2] != 1f || !restoredMuted[0] || restoredMuted[1] || restoredMuted[2])
+            throw new Exception("Capture recovery lost gain/mute settings or new-channel defaults.");
+        int attempts = 0, failures = 0, waits = 0;
+        UsbAudio.RunRecovery(() => { if (++attempts < 3) throw new COMException("synthetic", unchecked((int)0x80004001)); },
+            () => true, delay => { if (delay > 0) waits++; return false; }, (ex, count) => failures = count);
+        if (attempts != 3 || failures != 2 || waits != 2) throw new Exception("Capture recovery did not reopen after transient failures.");
+        attempts = 0;
+        UsbAudio.RunRecovery(() => { attempts++; throw new NotImplementedException(); }, () => true,
+            delay => delay > 0, (ex, count) => {});
+        if (attempts != 1) throw new Exception("Stop did not cancel capture recovery.");
+        attempts = 0;
+        UsbAudio.RunRecovery(() => { attempts++; throw new COMException(); }, () => false,
+            delay => false, (ex, count) => {});
+        if (attempts != 1) throw new Exception("Initial startup failure unexpectedly retries.");
+        attempts = 0;
+        UsbAudio.RunRecovery(() => { attempts++; throw new InvalidOperationException(); }, () => true,
+            delay => false, (ex, count) => {});
+        if (attempts != 1) throw new Exception("Programming failure retried indefinitely.");
+        attempts = 0; int maximumWait = 0;
+        UsbAudio.RunRecovery(() => { attempts++; throw new NotImplementedException(); }, () => true,
+            delay => { maximumWait = Math.Max(maximumWait, delay); return attempts >= 8 && delay > 0; }, (ex, count) => {});
+        if (attempts != 8 || maximumWait != 5000) throw new Exception("Capture retries were not bounded/backed off.");
+        Console.WriteLine("PASS: capture retry, cancellation, startup failure and non-retryable failure.");
     }
 
     private static void CheckFourChannelPacket()

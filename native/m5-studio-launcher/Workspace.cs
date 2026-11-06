@@ -990,7 +990,7 @@ internal sealed class Workspace : Form
                 ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "CurlStreamer", "Studio", "usb-delivery.json")
                 : Path.Combine(profileDirectory, "usb-delivery.json");
             Directory.CreateDirectory(Path.GetDirectoryName(path));
-            File.WriteAllText(path, json.Serialize(new { timestampUtc = now.ToString("o"), running = running, diagnostics = diagnostics }));
+            File.WriteAllText(path, json.Serialize(new { timestampUtc = now.ToString("o"), running = running, diagnostics = diagnostics, capture = usbAudio.CaptureDiagnostics() }));
         } catch { /* Diagnostics must never interrupt audio capture or delivery. */ }
     }
     private async Task CloseController() {

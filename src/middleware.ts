@@ -34,9 +34,12 @@ export async function middleware(request: NextRequest) {
     [
       "/",
       "/download",
+      "/privacy",
+      "/terms",
       "/api/pilot-waitlist",
       "/api/stripe/webhook",
       "/api/stripe/season-webhook",
+      "/api/cron/youtube-authorizations",
     ].includes(request.nextUrl.pathname)
   )
     return NextResponse.next();

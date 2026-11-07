@@ -1,7 +1,9 @@
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { DeviceCard } from "./StudioDeviceCards";
+beforeAll(() => vi.stubGlobal("React", React));
+afterAll(() => vi.unstubAllGlobals());
 
 describe("Studio camera source tiles", () => {
   it.each([

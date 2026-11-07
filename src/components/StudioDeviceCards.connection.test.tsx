@@ -24,6 +24,7 @@ function primary(
   shown: boolean,
   onVisibility = vi.fn(async () => {}),
   videoReceiving = connectionEnabled,
+  kind: "tapo" | "phone" = "tapo",
 ) {
   const tree = DeviceCard({
     id: "game-1",
@@ -32,7 +33,7 @@ function primary(
     enabled: true,
     claimed: false,
     cameraInput: {
-      kind: "tapo",
+      kind,
       configured: true,
       phase: "idle",
       generation: 1,
@@ -75,6 +76,27 @@ function primary(
 beforeEach(() => vi.clearAllMocks());
 
 describe("IP source connection and picture actions", () => {
+  it("connects a saved native source from an unassigned slot without opening Settings", async () => {
+    vi.mocked(cameraInputNativeConnection).mockResolvedValue(true);
+    const f = primary(false, true, undefined, false, "phone");
+    await f.click();
+    expect(cameraInputNativeConnection).toHaveBeenCalledWith(
+      "game-1",
+      "camera-home",
+      "connect-camera",
+    );
+    expect(cameraInputNativeAction).not.toHaveBeenCalled();
+    expect(f.onVisibility).not.toHaveBeenCalled();
+  });
+  it("does not show a hidden saved source when connection fails", async () => {
+    vi.mocked(cameraInputNativeConnection).mockRejectedValue(
+      new Error("offline"),
+    );
+    const f = primary(false, false, undefined, false, "phone");
+    await f.click();
+    expect(cameraInputNativeAction).not.toHaveBeenCalled();
+    expect(f.onVisibility).not.toHaveBeenCalled();
+  });
   it("connects an OFF source without hiding an already shown picture", async () => {
     vi.mocked(cameraInputNativeConnection).mockResolvedValue(true);
     const f = primary(false, true);

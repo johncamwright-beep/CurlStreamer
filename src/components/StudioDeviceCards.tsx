@@ -638,9 +638,28 @@ export function DeviceCard({
               disabled={busy || layoutBusy || !enabled}
               onClick={async () => {
                 if (!claimed) {
-                  if (cameraInput)
-                    cameraInputNativeAction(id, role, "configure-camera");
-                  else setSettingsOpen(true);
+                  if (!cameraInput) {
+                    setSettingsOpen(true);
+                    return;
+                  }
+                  setBusy(true);
+                  setError("");
+                  try {
+                    await cameraInputNativeConnection(
+                      id,
+                      role,
+                      "connect-camera",
+                    );
+                    if (!shown) await onVisibility();
+                  } catch (cause) {
+                    setError(
+                      cause instanceof Error
+                        ? cause.message
+                        : "Could not connect the camera.",
+                    );
+                  } finally {
+                    setBusy(false);
+                  }
                   return;
                 }
                 if (claimed && !online) {

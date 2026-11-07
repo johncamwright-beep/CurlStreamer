@@ -522,6 +522,19 @@ internal sealed class Workspace : Form
         if (!busy && !closing && recording && selectedGame == game && runningGame == game) {
             busy = true; UpdateButtons();
             try {
+                if (TextValue(request, "action") == "connect-camera") {
+                    object currentInputs, currentSlot;
+                    var currentMap = lastState != null && lastState.TryGetValue("cameraInputs", out currentInputs) ? currentInputs as Dictionary<string, object> : null;
+                    var currentSource = currentMap != null && currentMap.TryGetValue(role, out currentSlot) ? currentSlot as Dictionary<string, object> : null;
+                    if (currentSource == null || TextValue(currentSource, "kind") == "phone") {
+                        var saved = CameraInputs.Load(LifecycleDirectory);
+                        Dictionary<string, object> savedSource;
+                        if (saved.TryGetValue(role, out savedSource) && TextValue(savedSource, "kind") != "phone") {
+                            ApplyState(await Command(new { action = "configure-camera-input", cameraRole = role, source = savedSource }));
+                            cameraInputs = saved;
+                        }
+                    }
+                }
                 var result = await Command(new { action = TextValue(request, "action") == "connect-camera" ? "connect-camera-input" : "disconnect-camera-input", cameraRole = role });
                 object inputs, slot, connection, revision;
                 var map = result.TryGetValue("cameraInputs", out inputs) ? inputs as Dictionary<string, object> : null;

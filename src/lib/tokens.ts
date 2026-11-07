@@ -63,6 +63,25 @@ export function issueChooserToken(gameId: string) {
   return issueAccessToken(gameId, "invitation", "30m");
 }
 
+/** Organizer-approved renewal stays bound to the original device and assignment. */
+export function issueCameraReconnectToken(
+  gameId: string,
+  role: "camera-home" | "camera-away",
+  invitationId: string,
+  deviceId: string,
+  generation: number,
+) {
+  return issueAccessToken(
+    gameId,
+    "invitation",
+    "10m",
+    role,
+    deviceId,
+    generation,
+    invitationId,
+  );
+}
+
 /** Game sessions cover setup, play, and reconnection without becoming permanent. */
 export function issueParticipantToken(
   gameId: string,

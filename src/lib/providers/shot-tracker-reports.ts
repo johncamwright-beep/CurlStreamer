@@ -1,0 +1,519 @@
+import { loadEventDifficulty } from "./shot-tracker-difficulty";
+import { difficultyBenchmarks } from "@/lib/curlcoach/difficulty";
+import "server-only";
+import { withReportFlags } from "@/lib/curlcoach/flagged-shots";
+import { reportMisses } from "@/lib/curlcoach/report-misses";
+import { createHash, randomUUID } from "node:crypto";
+import { z } from "zod";
+import {
+  listEvents,
+  listTeamHierarchyGames,
+} from "@/lib/team-hierarchy-service";
+import type { CoachAccount } from "@/lib/curlcoach/production-access";
+import type { CoachEvent } from "@/lib/curlcoach/event";
+import {
+  REPORT_POLICY,
+  eventReportEligibility,
+  reportInputs,
+  reportPlayers,
+  type ReportAudience,
+  type ReportPacket,
+  type ReportStatus,
+} from "@/lib/curlcoach/reports";
+import { createAdminSupabaseClient } from "@/lib/supabase/admin";
+import { loadProductionStreamerEvent } from "./curlcoach-production-streamer";
+import { loadCoachState } from "./curlcoach-store";
+import {
+  generateShotTrackerNarrative,
+  reportAIConfig,
+  selectPromptEvidence,
+} from "./shot-tracker-ai";
+
+export async function loadReportEvent(account: CoachAccount, eventId: string) {
+  const { event } = await loadProductionStreamerEvent(
+    eventId,
+    undefined,
+    undefined,
+    account,
+  );
+  if (event.id !== eventId || event.organizationId !== account.organizationId)
+    throw new Error("Event unavailable");
+  event.games.sort(
+    (a, b) =>
+      (a.scheduledStart ?? "").localeCompare(b.scheduledStart ?? "") ||
+      a.id.localeCompare(b.id),
+  );
+  for (const game of event.games)
+    game.state = await loadCoachState(
+      {
+        organizationId: account.organizationId,
+        actorUserId: account.userId,
+        gameId: game.id,
+      },
+      game.state,
+    );
+  await loadEventDifficulty(event, account.userId, false, true);
+  return event;
+}
+export function reportFingerprint(
+  event: CoachEvent,
+  audience: ReportAudience,
+  policy = REPORT_POLICY,
+) {
+  return createHash("sha256")
+    .update(
+      JSON.stringify({
+        policy,
+        ...(Number(policy.match(/-v(\d+)$/)?.[1]) >= 7
+          ? { difficultyBenchmarks }
+          : {}),
+        model: process.env.SHOT_TRACKER_AI_MODEL ?? "",
+        audience,
+        event: {
+          id: event.id,
+          name: event.name,
+          games: event.games.map((g) => ({
+            id: g.id,
+            status: g.status,
+            ends: g.ends,
+            available: g.scoreboardAvailable,
+            hammer: g.initialHammer,
+            state: g.state,
+            ...(Number(policy.match(/-v(\d+)$/)?.[1]) >= 8
+              ? {
+                  advancedRecords: g.advancedRecords ?? [],
+                  advancedReady: g.advancedReady ?? false,
+                }
+              : {}),
+            ...(Number(policy.match(/-v(\d+)$/)?.[1]) >= 7
+              ? {
+                  difficultyRecords: g.difficultyRecords ?? [],
+                  difficultyReady: g.difficultyReady ?? false,
+                }
+              : {}),
+          })),
+        },
+      }),
+    )
+    .digest("hex");
+}
+async function rpc(
+  name: string,
+  account: CoachAccount,
+  eventId: string,
+  extra: Record<string, unknown> = {},
+) {
+  const { data, error } = await createAdminSupabaseClient().rpc(name, {
+    p_actor: account.userId,
+    p_org: account.organizationId,
+    p_event: eventId,
+    ...extra,
+  });
+  if (error) throw new Error("Private report storage unavailable");
+  return data;
+}
+export async function getEventReports(
+  account: CoachAccount,
+  event: CoachEvent,
+): Promise<ReportStatus> {
+  const rows = z
+    .array(
+      z.object({
+        audience: z.enum(["coach", "team", "players"]),
+        fingerprint: z.string(),
+        status: z.enum(["ready", "processing", "failed"]),
+        updated_at: z.string(),
+        packet: z.unknown(),
+        step_pending: z.boolean().optional(),
+        generation_version: z.number().optional(),
+        progress: z.record(z.string(), z.unknown()).optional(),
+      }),
+    )
+    .parse(await rpc("read_shot_tracker_reports", account, event.id));
+  return {
+    allowance: z
+      .object({
+        seasonStart: z.string(),
+        used: z.number().int().nonnegative(),
+        limit: z.literal(20),
+        reserved: z.boolean(),
+        owned: z.boolean(),
+        completed: z.array(z.enum(["coach", "team", "players"])),
+      })
+      .parse(
+        await rpc("read_shot_tracker_report_allowance", account, event.id),
+      ),
+    configured: !!reportAIConfig(),
+    eligible: !eventReportEligibility(event),
+    reason: eventReportEligibility(event),
+    players: reportPlayers(event).map((p, i) => ({
+      key: `player-${i + 1}`,
+      name: p.name,
+    })),
+    entries: rows.map((r) => ({
+      readyKeys:
+        r.fingerprint === reportFingerprint(event, r.audience)
+          ? Object.keys(r.progress ?? {})
+          : [],
+      resumable: !!r.step_pending,
+      version: r.generation_version,
+      audience: r.audience,
+      status:
+        r.status === "processing" &&
+        !r.step_pending &&
+        Date.parse(r.updated_at) < Date.now() - 180_000
+          ? "failed"
+          : r.status,
+      stale: r.fingerprint !== reportFingerprint(event, r.audience),
+      packet:
+        r.status === "ready"
+          ? withReportFlags(
+              resolveReportPlayerIds(
+                r.packet as ReportPacket,
+                event,
+                r.fingerprint ===
+                  reportFingerprint(
+                    event,
+                    r.audience,
+                    (r.packet as ReportPacket)?.policy,
+                  ),
+              ),
+              event,
+            )
+          : r.fingerprint === reportFingerprint(event, r.audience) &&
+              Object.keys(r.progress ?? {}).length
+            ? withReportFlags(
+                {
+                  eventName: event.name,
+                  audience: r.audience,
+                  policy: REPORT_POLICY,
+                  generatedAt: r.updated_at,
+                  reports: Object.values(
+                    r.progress ?? {},
+                  ) as ReportPacket["reports"],
+                },
+                event,
+              )
+            : null,
+    })),
+  };
+}
+export class ReportError extends Error {
+  constructor(
+    message: string,
+    public status: number,
+  ) {
+    super(message);
+  }
+}
+export async function listReportEvents(account: CoachAccount) {
+  const [events, games] = await Promise.all([
+    listEvents(account.user),
+    listTeamHierarchyGames(account.user),
+  ]);
+  if (!events.ok || !games.ok) throw new Error("Event list unavailable");
+  const catalog = z
+    .array(
+      z.object({
+        id: z.uuid(),
+        name: z.string(),
+        start_date: z.string().nullish(),
+      }),
+    )
+    .parse(events.value);
+  const schedule = z
+    .array(
+      z.object({ event_id: z.string().nullable(), game_status: z.string() }),
+    )
+    .parse(games.value);
+  const results: {
+    id: string;
+    name: string;
+    date: string | null;
+    complete: boolean;
+    saved: number;
+    processing: boolean;
+  }[] = [];
+  let next = 0;
+  await Promise.all(
+    Array.from({ length: Math.min(4, catalog.length) }, async () => {
+      while (next < catalog.length) {
+        const e = catalog[next++];
+        const rows = z
+          .array(z.object({ status: z.string(), updated_at: z.string() }))
+          .parse(await rpc("read_shot_tracker_reports", account, e.id));
+        const eventGames = schedule.filter(
+          (g) => g.event_id === e.id && g.game_status !== "deleted",
+        );
+        results.push({
+          id: e.id,
+          name: e.name,
+          date: e.start_date ?? null,
+          complete:
+            eventGames.length > 0 &&
+            eventGames.every((g) => g.game_status === "completed"),
+          saved: rows.filter((r) => r.status === "ready").length,
+          processing: rows.some(
+            (r) =>
+              r.status === "processing" &&
+              Date.parse(r.updated_at) > Date.now() - 180000,
+          ),
+        });
+      }
+    }),
+  );
+  return results.sort(
+    (a, b) =>
+      (b.date ?? "").localeCompare(a.date ?? "") ||
+      a.name.localeCompare(b.name),
+  );
+}
+export async function generateEventReports(
+  account: CoachAccount,
+  event: CoachEvent,
+  audience: ReportAudience,
+  upgrade = false,
+) {
+  const reason = eventReportEligibility(event);
+  if (reason) throw new ReportError(reason, 409);
+  if (!reportAIConfig())
+    throw new ReportError("AI reports are not configured yet.", 503);
+  const inputs = reportInputs(event, audience);
+  if (!inputs.length || inputs.length > 8)
+    throw new ReportError(
+      "Reports support up to eight recorded players per event.",
+      422,
+    );
+  const fingerprint = reportFingerprint(event, audience),
+    lease = randomUUID();
+  const args = {
+    p_audience: audience,
+    p_fingerprint: fingerprint,
+    p_lease: lease,
+  };
+  const claim = (await rpc(
+    "claim_shot_tracker_report_step",
+    account,
+    event.id,
+    { ...args, p_upgrade: upgrade },
+  )) as { status: string; packet?: ReportPacket };
+  if (claim.status === "ready") return withReportFlags(claim.packet!, event);
+  if (claim.status !== "claimed")
+    throw new ReportError(
+      claim.status === "locked"
+        ? "This event's report set is already reserved or completed by a coaching account. Saved reports remain private to their author."
+        : claim.status === "season_limit"
+          ? "Your team has used all 20 event report sets for this season. Saved reports remain available."
+          : claim.status === "limit"
+            ? "The team's daily report allowance is reached. Try again tomorrow."
+            : claim.status === "cooldown"
+              ? "Please wait three minutes before retrying this report."
+              : "A team report is already being generated. Check again shortly.",
+      429,
+    );
+  const checkpointRows = (await rpc(
+    "read_shot_tracker_reports",
+    account,
+    event.id,
+  )) as {
+    audience: string;
+    fingerprint: string;
+    progress?: Record<string, ReportPacket["reports"][number]>;
+  }[];
+  const checkpoints = Array.isArray(checkpointRows)
+    ? (checkpointRows.find(
+        (r) => r.audience === audience && r.fingerprint === fingerprint,
+      )?.progress ?? {})
+    : {};
+  const abort = new AbortController();
+  const deadline = setTimeout(() => abort.abort(), 130_000);
+  try {
+    const names = reportPlayers(event).flatMap((p) => [
+      p.name,
+      ...p.name.split(/\s+/),
+    ]);
+    const signal = abort.signal;
+    const packet: ReportPacket = {
+      eventName: event.name,
+      audience,
+      policy: REPORT_POLICY,
+      generatedAt: new Date().toISOString(),
+      reports: [],
+    };
+    // A completed player survives another player's timeout. Retry only missing work.
+    for (const input of inputs) {
+      const cached = checkpoints[input.key];
+      if (cached) {
+        packet.reports.push(cached);
+        continue;
+      }
+      const narrative = await generateShotTrackerNarrative(
+        input,
+        audience,
+        names,
+        signal,
+      );
+      const fresh = await loadReportEvent(account, event.id);
+      if (
+        eventReportEligibility(fresh) ||
+        reportFingerprint(fresh, audience) !== fingerprint
+      )
+        throw new ReportError(
+          "Event data changed. Refresh before generating the report again.",
+          409,
+        );
+      const saved = {
+        ...input,
+        // Store only evidence used by this concise report; the original charting is unchanged.
+        evidence: selectPromptEvidence(input),
+        games: undefined,
+        advanced: undefined,
+        technical: undefined,
+        narrative,
+        ...(audience === "players"
+          ? { playerId: reportPlayers(event)[packet.reports.length].id }
+          : {}),
+      };
+      if (
+        !(await rpc("checkpoint_shot_tracker_report", account, event.id, {
+          ...args,
+          p_key: input.key,
+          p_report: saved,
+        }))
+      )
+        throw new Error("Report lease expired");
+      packet.reports.push(saved);
+      // One player per HTTP request: each gets a full time budget, with durable continuation.
+      if (audience === "players" && packet.reports.length < inputs.length) {
+        if (
+          !(await rpc(
+            "release_shot_tracker_report_step",
+            account,
+            event.id,
+            args,
+          ))
+        )
+          throw new Error("Report lease expired");
+        return withReportFlags({ ...packet, complete: false }, fresh);
+      }
+    }
+    // Refuse to publish if results, grades, roster, membership or completion changed mid-generation.
+    const fresh = await loadReportEvent(account, event.id);
+    if (
+      eventReportEligibility(fresh) ||
+      reportFingerprint(fresh, audience) !== fingerprint
+    )
+      throw new ReportError(
+        "Event data changed. Refresh before generating the report again.",
+        409,
+      );
+    if (audience === "coach") {
+      const players = reportPlayers(event);
+      for (const entry of packet.reports[0].evidence)
+        if (/^player-\d+$/.test(entry.id))
+          entry.label += ` · ${players[Number(entry.id.slice(7)) - 1]?.name ?? ""}`;
+    }
+    if (
+      !(await rpc("finish_shot_tracker_report_step", account, event.id, {
+        ...args,
+        p_packet: packet,
+      }))
+    )
+      throw new Error("Report lease expired");
+    return withReportFlags(packet, fresh);
+  } catch (error) {
+    abort.abort();
+    const reasons = [
+      "Report provider unavailable",
+      "Report generation incomplete",
+      "Report generation unavailable",
+      "Invalid report prose",
+      "Unsupported report interpretation",
+      "Unknown evidence",
+      "Private identity in report",
+      "Individual commentary in team report",
+      "Incorrect product name",
+      "Report lease expired",
+      "Private report storage unavailable",
+    ];
+    console.error("Shot Tracker report failed", {
+      reason:
+        error instanceof Error && reasons.includes(error.message)
+          ? error.message
+          : "validation_or_service_failure",
+    });
+    await rpc("finish_shot_tracker_report_step", account, event.id, {
+      ...args,
+      p_packet: null,
+    }).catch(() => undefined);
+    if (error instanceof ReportError) throw error;
+    throw new ReportError(
+      "The report could not be validated or saved. Your event data is safe; retry shortly.",
+      503,
+    );
+  } finally {
+    clearTimeout(deadline);
+  }
+}
+
+/** Legacy identity is recoverable only against the identical charted snapshot. Never guess by name alone. */
+export function resolveReportPlayerIds(
+  packet: ReportPacket,
+  event: CoachEvent,
+  sameSnapshot: boolean,
+): ReportPacket {
+  if (!sameSnapshot) return packet;
+  const players = reportPlayers(event);
+  const fresh = reportInputs(event, packet.audience);
+  const withCounts = (saved: ReportPacket["reports"][number]) => {
+    const source = fresh.find(
+      (r) => r.key === saved.key && r.title === saved.title,
+    );
+    if (!source) return saved;
+    return {
+      ...saved,
+      evidence: saved.evidence.map((e) => ({
+        ...e,
+        ...(source.evidence.find((s) => s.id === e.id)?.basis
+          ? { basis: source.evidence.find((s) => s.id === e.id)!.basis }
+          : {}),
+      })),
+      games: saved.games?.map((g) => ({
+        ...g,
+        groups: g.groups.map((group) => ({
+          ...group,
+          metrics: group.metrics.map((m) => ({
+            ...m,
+            basis: source.games
+              ?.find((s) => s.key === g.key)
+              ?.groups.flatMap((s) => s.metrics)
+              .find((s) => s.id === m.id)?.basis,
+          })),
+        })),
+      })),
+    };
+  };
+  return {
+    ...packet,
+    reports: packet.reports.map((saved) => {
+      const report = withCounts(saved);
+      if (packet.audience !== "players")
+        return { ...report, misses: reportMisses(event) };
+      const index = Number(report.key.replace(/^player-/, "")) - 1;
+      const player = report.playerId
+        ? players.find((p) => p.id === report.playerId)
+        : players[index];
+      if (
+        !player ||
+        player.name !== report.title ||
+        (!report.playerId && report.key !== `player-${index + 1}`)
+      )
+        return report;
+      return {
+        ...report,
+        playerId: player.id,
+        misses: reportMisses(event, player.id),
+      };
+    }),
+  };
+}

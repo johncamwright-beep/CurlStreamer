@@ -1,7 +1,10 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
-const page = readFileSync(new URL("./page.tsx", import.meta.url), "utf8");
+const page = readFileSync(
+  new URL("../../../components/YouTubeAccountPanel.tsx", import.meta.url),
+  "utf8",
+);
 const controls = readFileSync(
   new URL("../../../components/YouTubeSettingsControls.tsx", import.meta.url),
   "utf8",

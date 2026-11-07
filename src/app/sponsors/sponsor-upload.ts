@@ -1,11 +1,22 @@
-export type PendingSponsorFile = { file: File; id: string };
+import { optimizeUploadImage } from "@/lib/optimize-upload-image";
+export type PendingSponsorFile = {
+  file: File;
+  id: string;
+  name: string;
+  altText: string;
+  website?: string;
+};
 export type UploadOutcome = PendingSponsorFile & {
   ok: boolean;
   error?: string;
 };
 
 export function snapshotSponsorFiles(files: FileList | readonly File[]) {
-  return Array.from(files, (file) => ({ file, id: crypto.randomUUID() }));
+  return Array.from(files, (file) => ({
+    file,
+    id: crypto.randomUUID(),
+    ...sponsorDefaults(file.name),
+  }));
 }
 
 export function sponsorDefaults(filename: string) {
@@ -14,6 +25,29 @@ export function sponsorDefaults(filename: string) {
     .replace(/[_-]+/g, " ")
     .trim();
   return { name: name || "Sponsor", altText: `${name || "Sponsor"} logo` };
+}
+
+/** Returns a canonical sponsor website, or undefined when it was left blank. */
+export function normalizeSponsorWebsite(value?: string) {
+  const website = value?.trim();
+  if (!website) return undefined;
+  try {
+    const url = new URL(website);
+    if (
+      url.protocol !== "https:" ||
+      !url.hostname ||
+      url.username ||
+      url.password
+    )
+      return undefined;
+    return url.href;
+  } catch {
+    return undefined;
+  }
+}
+
+export function isSafeSponsorWebsite(value?: string) {
+  return !value?.trim() || Boolean(normalizeSponsorWebsite(value));
 }
 
 export function optimizedDimensions(
@@ -29,33 +63,7 @@ export function optimizedDimensions(
 }
 
 export async function optimizeSponsorFile(file: File): Promise<File> {
-  let bitmap: ImageBitmap;
-  try {
-    bitmap = await createImageBitmap(file, { imageOrientation: "from-image" });
-  } catch {
-    throw new Error(`${file.name}: the image could not be decoded.`);
-  }
-  try {
-    const size = optimizedDimensions(bitmap.width, bitmap.height);
-    const canvas = document.createElement("canvas");
-    canvas.width = size.width;
-    canvas.height = size.height;
-    const context = canvas.getContext("2d", { alpha: true });
-    if (!context)
-      throw new Error(`${file.name}: image optimization is unavailable.`);
-    context.drawImage(bitmap, 0, 0, size.width, size.height);
-    const blob = await new Promise<Blob | null>((resolve) =>
-      canvas.toBlob(resolve, "image/webp", 0.88),
-    );
-    if (!blob || blob.size > 4 * 1024 * 1024)
-      throw new Error(`${file.name}: the optimized image exceeds 4 MB.`);
-    return new File([blob], `${file.name.replace(/\.[^.]+$/, "")}.webp`, {
-      type: "image/webp",
-      lastModified: file.lastModified,
-    });
-  } finally {
-    bitmap.close();
-  }
+  return optimizeUploadImage(file);
 }
 
 export async function uploadSponsorFiles(
@@ -85,7 +93,14 @@ export async function uploadSponsorFiles(
     form.set("file", optimized);
     form.set(
       "metadata",
-      JSON.stringify([{ id: item.id, ...sponsorDefaults(item.file.name) }]),
+      JSON.stringify([
+        {
+          id: item.id,
+          name: item.name,
+          altText: item.altText,
+          website: normalizeSponsorWebsite(item.website),
+        },
+      ]),
     );
     progress?.(outcomes.length, pending.length, `Uploading ${item.file.name}`);
     const response = await request(form);

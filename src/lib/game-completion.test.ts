@@ -117,6 +117,33 @@ describe("internal game completion boundary", () => {
     );
   });
 
+  it("persists a validated shared watch link with the completion review", async () => {
+    mocks.rpc.mockResolvedValue({ data: [], error: null });
+    await reviewGameCompletion(
+      gameId,
+      await account(),
+      "https://youtu.be/abcdefghijk",
+    );
+
+    expect(mocks.rpc).toHaveBeenCalledWith(
+      "review_game_completion_with_link",
+      expect.objectContaining({
+        p_youtube_watch_url: "https://youtu.be/abcdefghijk",
+      }),
+    );
+  });
+
+  it("does not send an invalid shared watch link to the completion RPC", async () => {
+    expect(
+      await reviewGameCompletion(
+        gameId,
+        await account(),
+        "https://example.com",
+      ),
+    ).toEqual({ ok: false, kind: "service" });
+    expect(mocks.rpc).not.toHaveBeenCalled();
+  });
+
   it.each([
     () => issueOrganizerToken("44444444-4444-4444-8444-444444444444"),
     () => issueParticipantToken(gameId, "scorer", crypto.randomUUID()),
@@ -131,15 +158,18 @@ describe("internal game completion boundary", () => {
     expect(mocks.rpc).not.toHaveBeenCalled();
   });
 
-  it("maps stale reviewed revisions to an explicit conflict", async () => {
-    mocks.rpc.mockResolvedValue({ data: null, error: { code: "40001" } });
-    expect(
-      await completeReviewedGame(gameId, reviewId, {
-        kind: "organizer",
-        token: await issueOrganizerToken(gameId),
-      }),
-    ).toEqual({ ok: false, kind: "conflict" });
-  });
+  it.each(["PT409", "40001"])(
+    "maps stale reviewed revisions (%s) to an explicit conflict",
+    async (code) => {
+      mocks.rpc.mockResolvedValue({ data: null, error: { code } });
+      expect(
+        await completeReviewedGame(gameId, reviewId, {
+          kind: "organizer",
+          token: await issueOrganizerToken(gameId),
+        }),
+      ).toEqual({ ok: false, kind: "conflict" });
+    },
+  );
 
   it("returns the database completion identity on idempotent retries", async () => {
     const completed = {
@@ -205,5 +235,72 @@ describe("internal game completion boundary", () => {
       ok: true,
       value: { reviewId: storedReview },
     });
+  });
+  it("issues only the negotiated scope to atomic closing RPC and strips returned extra fields", async () => {
+    const closing = {
+      sessionId: gameId,
+      generation: 2,
+      intentId: reviewId,
+      capability: "final-card-v1" as const,
+    };
+    mocks.rpc.mockResolvedValue({
+      data: {
+        completion_id: gameId,
+        review_id: reviewId,
+        input_revision: 4,
+        result: {
+          outcome: "tie",
+          label: "Tie",
+          totals: { home: 2, away: 2 },
+          ends: [],
+        },
+        completed_at: "2026-10-05T12:00:00+00:00",
+        cleanup_status: "pending",
+        closing: {
+          sessionId: gameId,
+          generation: 2,
+          intentId: reviewId,
+          deadlineAt: "2026-10-05T12:00:15+00:00",
+          bearer: "private",
+        },
+      },
+      error: null,
+    });
+    const result = await completeReviewedGame(
+      gameId,
+      reviewId,
+      await account(),
+      closing,
+    );
+    expect(result).toMatchObject({
+      ok: true,
+      value: {
+        closing: { sessionId: gameId, generation: 2, intentId: reviewId },
+      },
+    });
+    expect(JSON.stringify(result)).not.toContain("private");
+    expect(mocks.rpc).toHaveBeenCalledWith(
+      "complete_reviewed_game_with_closing",
+      expect.objectContaining({
+        p_game_id: gameId,
+        p_closing: closing,
+        p_verified_organizer: false,
+      }),
+    );
+  });
+  it("cannot issue a closing grant with another game's organizer token", async () => {
+    const credential = {
+      kind: "organizer" as const,
+      token: await issueOrganizerToken(reviewId),
+    };
+    expect(
+      await completeReviewedGame(gameId, reviewId, credential, {
+        sessionId: gameId,
+        generation: 1,
+        intentId: reviewId,
+        capability: "final-card-v1",
+      }),
+    ).toMatchObject({ ok: false, kind: "authorization" });
+    expect(mocks.rpc).not.toHaveBeenCalled();
   });
 });

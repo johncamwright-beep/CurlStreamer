@@ -6,6 +6,9 @@ import type {
   SafeGameCompletion,
 } from "@/lib/game-completion";
 import { organizerAccessToken } from "@/lib/access-session";
+import { z } from "zod";
+import { studioSessionBridge } from "@/lib/studio-session";
+import { ReopenGameControl } from "@/components/ReopenGameControl";
 
 function completionToken(gameId: string) {
   return (
@@ -26,17 +29,36 @@ export function CompletedGameSummary({
   completion,
   cleanupControls = false,
   initialCleanup,
+  canReopen = false,
 }: {
   gameId: string;
   completion: SafeGameCompletion;
   cleanupControls?: boolean;
   initialCleanup?: CompletionCleanup;
+  canReopen?: boolean;
 }) {
   const [cleanup, setCleanup] = useState<CompletionCleanup | undefined>(
     initialCleanup,
   );
   const [cleanupError, setCleanupError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [canForceClose, setCanForceClose] = useState(false);
+  useEffect(() => {
+    const receive = (event: Event) => {
+      const result = z
+        .object({ gameId: z.uuid(), canForceClose: z.boolean() })
+        .strict()
+        .safeParse((event as CustomEvent).detail);
+      setCanForceClose(
+        result.success &&
+          result.data.gameId === gameId &&
+          result.data.canForceClose,
+      );
+    };
+    window.addEventListener("studio-recovery-status", receive);
+    studioSessionBridge()?.postMessage({ type: "studio-session-observe" });
+    return () => window.removeEventListener("studio-recovery-status", receive);
+  }, [gameId]);
   const cleanupStatus = cleanup?.status;
   const loadCleanup = useCallback(async () => {
     try {
@@ -44,6 +66,7 @@ export function CompletedGameSummary({
       const response = await fetch(`/api/games/${gameId}/completion`, {
         headers: token ? { authorization: `Bearer ${token}` } : {},
         cache: "no-store",
+        signal: AbortSignal.timeout(10000),
       });
       const value = await response.json().catch(() => null);
       if (!response.ok)
@@ -72,6 +95,7 @@ export function CompletedGameSummary({
           ...(token ? { authorization: `Bearer ${token}` } : {}),
         },
         body: JSON.stringify({ action: "retry-cleanup" }),
+        signal: AbortSignal.timeout(30000),
       });
       const value = await response.json().catch(() => null);
       if (!response.ok)
@@ -114,7 +138,10 @@ export function CompletedGameSummary({
   }
 
   return (
-    <section className="panel text-center" aria-labelledby="final-result">
+    <section
+      className="rounded-2xl border border-slate-700 bg-[#101e2c] p-6 text-center text-slate-100"
+      aria-labelledby="final-result"
+    >
       <p className="text-sm font-bold uppercase tracking-widest text-cyan-300">
         Final result
       </p>
@@ -178,10 +205,32 @@ export function CompletedGameSummary({
           )}
         </div>
       )}
-      {cleanup?.status === "complete" && (
-        <p role="status" className="mt-4 text-emerald-300">
-          LiveKit accepted all room shutdown requests.
-        </p>
+      {cleanupControls &&
+        canForceClose &&
+        (cleanupStatus !== "complete" || cleanupError) && (
+          <div className="mt-4">
+            <p className="text-sm text-slate-300">
+              The final score is saved. You can close Studio while YouTube
+              shutdown remains unconfirmed.
+            </p>
+            <button
+              className="btn-secondary mt-3"
+              title="Emergency exit (Ctrl+Shift+Q). Stops local video and audio; YouTube shutdown may still need retrying."
+              onClick={() =>
+                studioSessionBridge()?.postMessage({
+                  type: "studio-force-close",
+                  gameId,
+                })
+              }
+            >
+              Force close Studio
+            </button>
+          </div>
+        )}
+      {canReopen && (
+        <div>
+          <ReopenGameControl gameId={gameId} />
+        </div>
       )}
       <Link className="btn-secondary mt-5 inline-flex" href="/dashboard">
         Back to Games

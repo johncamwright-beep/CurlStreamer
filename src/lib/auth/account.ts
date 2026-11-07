@@ -7,7 +7,7 @@ export type AccountContext = {
   profile: { display_name: string; status: string };
   membership: null | {
     organization_id: string;
-    role: "owner" | "team_admin" | "scorer" | "viewer";
+    role: "owner" | "team_admin" | "game_operator" | "scorer" | "viewer";
     teamName: string;
   };
 };
@@ -29,25 +29,37 @@ function logAccountReadFailure(operation: string, error: unknown) {
 export async function getAccountContext(
   user: User,
 ): Promise<AccountContextResult> {
-  await ensureOwnProfile(user);
+  if (!user.email_confirmed_at) throw new Error("Verified account required");
   const db = createAdminSupabaseClient();
-  const { data: profile, error: profileError } = await db
-    .from("user_profiles")
-    .select("display_name,status")
-    .eq("user_id", user.id)
-    .single();
+  const readProfile = () =>
+    db
+      .from("user_profiles")
+      .select("display_name,status")
+      .eq("user_id", user.id)
+      .maybeSingle();
+  // Existing accounts need reads only. Keep authorization fresh per request,
+  // and initialize a profile only after a successful read confirms it is absent.
+  const [profileResult, { data: memberships, error: membershipError }] =
+    await Promise.all([
+      readProfile(),
+      db
+        .from("team_memberships")
+        .select("organization_id,role,organizations(name)")
+        .eq("user_id", user.id)
+        .eq("status", "active")
+        .order("created_at")
+        .limit(1),
+    ]);
+  let { data: profile, error: profileError } = profileResult;
+  if (!profileError && !profile) {
+    await ensureOwnProfile(user);
+    ({ data: profile, error: profileError } = await readProfile());
+  }
   if (profileError || !profile) {
     logAccountReadFailure("load_profile", profileError);
     return { ok: false };
   }
 
-  const { data: memberships, error: membershipError } = await db
-    .from("team_memberships")
-    .select("organization_id,role,organizations(name)")
-    .eq("user_id", user.id)
-    .eq("status", "active")
-    .order("created_at")
-    .limit(1);
   if (membershipError) {
     logAccountReadFailure("load_membership", membershipError);
     return { ok: false };
@@ -76,6 +88,7 @@ export const readableTeamRole = (role: string) =>
   ({
     owner: "Owner",
     team_admin: "Team administrator",
+    game_operator: "Game operator",
     scorer: "Scorer",
     viewer: "Viewer",
   })[role] ?? role;

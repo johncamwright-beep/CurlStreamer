@@ -1,35 +1,33 @@
-import { redirect } from "next/navigation";
-import { login } from "@/app/login/actions";
-import { AuthForm } from "@/components/AuthForm";
-import { createServerSupabaseClient } from "@/lib/supabase/server";
+import { MarketingHome } from "@/components/MarketingHome";
+import {
+  curlStreamerSearchTitle,
+  curlStreamerWebsiteStructuredData,
+  safeStructuredJson,
+} from "@/lib/team-seo";
+export const metadata = {
+  title: curlStreamerSearchTitle,
+  description:
+    "Bring the rink to everyone. Curling broadcasts, live scoring and team pages, with private coaching statistics through the optional Shot Tracker add-on. Join the CurlStreamer pilot waitlist.",
+  robots: { index: true, follow: true },
+  alternates: { canonical: "https://www.curlstreamer.app/" },
+  openGraph: {
+    title: curlStreamerSearchTitle,
+    siteName: "CurlStreamer",
+    type: "website",
+    url: "https://www.curlstreamer.app/",
+  },
+};
 
-export default async function HomePage() {
-  try {
-    const supabase = await createServerSupabaseClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-    if (user?.email_confirmed_at) redirect("/dashboard");
-  } catch (error) {
-    if (error instanceof Error && error.message.includes("NEXT_REDIRECT"))
-      throw error;
-    return <AuthenticationUnavailable />;
-  }
-  return <AuthForm mode="login" action={login} />;
-}
-
-function AuthenticationUnavailable() {
+export default function HomePage() {
   return (
-    <main className="mx-auto min-h-screen max-w-md p-5 md:py-12">
-      <section className="panel grid gap-4" role="alert" aria-live="polite">
-        <p className="font-bold tracking-widest text-cyan-300">CURLSTREAMER</p>
-        <h1 className="text-3xl font-black">
-          Sign in is temporarily unavailable
-        </h1>
-        <p>
-          Please try again later. Existing game and camera links still work.
-        </p>
-      </section>
-    </main>
+    <>
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{
+          __html: safeStructuredJson(curlStreamerWebsiteStructuredData()),
+        }}
+      />
+      <MarketingHome />
+    </>
   );
 }

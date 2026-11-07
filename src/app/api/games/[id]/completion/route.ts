@@ -1,7 +1,10 @@
-import { NextResponse } from "next/server";
+import { after, NextResponse } from "next/server";
+import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import {
   completeReviewedGame,
+  completionClosingRequestSchema,
+  completionCleanupReady,
   getCompletionCleanup,
   readGameCompletionSummary,
   recordCompletionCleanup,
@@ -16,13 +19,20 @@ import { youtubeWatchUrlSchema } from "@/lib/youtube-watch";
 import { readAccessToken } from "@/lib/tokens";
 
 export const dynamic = "force-dynamic";
+export const maxDuration = 30;
 const paramsSchema = z.object({ id: z.string().uuid() });
 const bodySchema = z.discriminatedUnion("action", [
   z.object({
     action: z.literal("review"),
     youtubeWatchUrl: z.string().max(500),
   }),
-  z.object({ action: z.literal("complete"), reviewId: z.string().uuid() }),
+  z
+    .object({
+      action: z.literal("complete"),
+      reviewId: z.string().uuid(),
+      closing: completionClosingRequestSchema.optional(),
+    })
+    .strict(),
   z.object({ action: z.literal("retry-cleanup") }),
 ]);
 
@@ -142,22 +152,75 @@ export async function POST(
   if (body.data.action === "retry-cleanup") {
     const authorized = await getCompletionCleanup(gameId, authority);
     if (!authorized.ok) return failure(authorized.kind);
-    return response(await cleanup(gameId, authority));
+    const ready = await completionCleanupReady(gameId, authority);
+    if (!ready.ok) return failure(ready.kind);
+    return response(
+      ready.value ? await cleanup(gameId, authority) : authorized.value,
+    );
   }
 
   const completed = await completeReviewedGame(
     gameId,
     body.data.reviewId,
     authority,
+    body.data.closing,
   );
   if (!completed.ok) return failure(completed.kind);
-  const cleanupResult = await cleanup(gameId, authority);
+  // Invalidate the Games projection only after the final result is committed.
+  // Teardown can fail independently without changing that saved result.
+  try {
+    revalidatePath("/dashboard");
+  } catch {
+    // Cache recovery must not turn a committed completion into a failed save.
+    console.error("Games cache invalidation unavailable after completion");
+  }
+  const closing = completed.value.closing ?? null;
+  let cleanupResult;
+  if (closing) {
+    const current = await getCompletionCleanup(gameId, authority);
+    cleanupResult = current.ok
+      ? current.value
+      : { status: "pending" as const, attempts: 0, lastError: null };
+    // Next owns this bounded task after sending the response, even if the caller
+    // disconnects. Studio independently stops at a verified closing deadline,
+    // or at its last acknowledged lease when it cannot recover the grant.
+    after(async () => {
+      const delay = Math.min(
+        15_000,
+        Math.max(0, Date.parse(closing.deadlineAt) - Date.now()),
+      );
+      await new Promise((resolve) => setTimeout(resolve, delay));
+      // Database time owns expiry. Allow bounded clock skew without extending
+      // native output authority or relying on a browser retry.
+      for (let attempt = 0; attempt < 5; attempt++) {
+        const ready = await completionCleanupReady(gameId, authority);
+        if (!ready.ok) return;
+        if (ready.value) {
+          await cleanup(gameId, authority);
+          return;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 1_000));
+      }
+    });
+  } else {
+    // A retry without capability must not bypass an earlier closing grant.
+    const ready = await completionCleanupReady(gameId, authority);
+    if (ready.ok && ready.value)
+      cleanupResult = await cleanup(gameId, authority);
+    else {
+      const current = await getCompletionCleanup(gameId, authority);
+      cleanupResult = current.ok
+        ? current.value
+        : { status: "pending" as const, attempts: 0, lastError: null };
+    }
+  }
   const summary = await readGameCompletionSummary(gameId).catch(
     () => undefined,
   );
   return response({
     completion: summary,
     cleanup: cleanupResult,
+    closing,
     ...(!summary ? { completionSaved: true } : {}),
   });
 }

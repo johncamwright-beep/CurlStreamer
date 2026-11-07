@@ -1,9 +1,45 @@
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { DeviceCard } from "./StudioDeviceCards";
+beforeAll(() => vi.stubGlobal("React", React));
+afterAll(() => vi.unstubAllGlobals());
 
 describe("Studio camera source tiles", () => {
+  it.each([
+    undefined,
+    {
+      kind: "phone" as const,
+      configured: false,
+      phase: "idle" as const,
+      generation: 1,
+    },
+  ])(
+    "offers Connect and one Settings control for an unassigned phone source",
+    (cameraInput) => {
+      const markup = renderToStaticMarkup(
+        <DeviceCard
+          id="new-game"
+          role="camera-home"
+          label="Camera 1"
+          enabled
+          claimed={false}
+          cameraInput={cameraInput}
+          shown
+          onVisibility={async () => undefined}
+          connectionStatus={{
+            receiverReady: true,
+            phoneOnline: false,
+            videoReceiving: false,
+          }}
+        />,
+      );
+      expect(markup.match(/>Settings<\/button>/g)).toHaveLength(1);
+      expect(markup).toContain(">Connect</button>");
+      expect(markup).not.toContain(">Hide</button>");
+      expect(markup).not.toContain('aria-pressed="true"');
+    },
+  );
   function tile(
     receiving: boolean,
     kind: "tapo" | "rtsp" = "tapo",

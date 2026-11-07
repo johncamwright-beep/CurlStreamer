@@ -623,18 +623,6 @@ export function DeviceCard({
               {micEnabled ? "Turn mic off" : "Turn mic on"}
             </button>
           )}
-          {!scorer && cameraInput && (
-            <button
-              className="studio-device-action secondary min-h-11"
-              disabled={!enabled}
-              onClick={() =>
-                cameraInputNativeAction(id, role, "configure-camera")
-              }
-            >
-              Settings
-            </button>
-          )}
-
           {onVisibility && (
             <button
               className="studio-device-action secondary"
@@ -646,9 +634,15 @@ export function DeviceCard({
           {!scorer && onVisibility && (
             <button
               className="studio-device-action secondary studio-device-visibility"
-              aria-pressed={claimed && !online ? undefined : shown}
+              aria-pressed={!claimed || !online ? undefined : shown}
               disabled={busy || layoutBusy || !enabled}
               onClick={async () => {
+                if (!claimed) {
+                  if (cameraInput)
+                    cameraInputNativeAction(id, role, "configure-camera");
+                  else setSettingsOpen(true);
+                  return;
+                }
                 if (claimed && !online) {
                   await reconnectCamera();
                   return;
@@ -663,7 +657,13 @@ export function DeviceCard({
                 }
               }}
             >
-              {claimed && !online ? "Reconnect" : shown ? "Hide" : "Show"}
+              {!claimed
+                ? "Connect"
+                : !online
+                  ? "Reconnect"
+                  : shown
+                    ? "Hide"
+                    : "Show"}
             </button>
           )}
         </div>
@@ -675,6 +675,17 @@ export function DeviceCard({
         onClose={() => setSettingsOpen(false)}
       >
         <div className="studio-device-actions">
+          {!scorer && cameraInput && (
+            <button
+              className="studio-device-action secondary min-h-11"
+              disabled={!enabled}
+              onClick={() =>
+                cameraInputNativeAction(id, role, "configure-camera")
+              }
+            >
+              Camera source
+            </button>
+          )}
           {!scorer && claimed && !onVisibility && (
             <button
               className="studio-device-action secondary"

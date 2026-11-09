@@ -28,10 +28,20 @@ for (const rolling of [false, true])
       await expect(
         page.getByRole("button", { name: "Use this start" }),
       ).toBeEnabled();
+      await expect(page.locator("video")).toHaveJSProperty("controls", false);
       await page
         .getByRole("slider", { name: "Drag to the beginning of the shot" })
         .fill("2");
+      await page
+        .getByRole("button", { name: "+1 second", exact: true })
+        .click();
+      await expect(page.locator("video")).toHaveJSProperty("currentTime", 3);
+      await page
+        .getByRole("button", { name: "−1 second", exact: true })
+        .click();
+      await expect(page.locator("video")).toHaveJSProperty("currentTime", 2);
       await page.getByRole("radio", { name: "Team", exact: true }).check();
+      await page.getByText("Add notes", { exact: true }).click();
       await page
         .getByLabel("Notes", { exact: true })
         .fill("Watch this together");

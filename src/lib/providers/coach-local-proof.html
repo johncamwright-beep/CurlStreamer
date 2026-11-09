@@ -71,15 +71,62 @@
     video {
       display: block;
       width: 100%;
-      max-height: 45vh;
+      max-height: 34vh;
+      pointer-events: none;
       object-fit: contain;
       background: #000;
       border-radius: 10px;
+    }
+    video::-webkit-media-controls {
+      display: none !important;
     }
     input[type="range"] {
       width: 100%;
       padding: 0;
       accent-color: #4bb4ff;
+      height: 56px;
+      appearance: none;
+      -webkit-appearance: none;
+      border: 0;
+      background: transparent;
+      touch-action: pan-y;
+    }
+    input[type="range"]::-webkit-slider-runnable-track {
+      height: 8px;
+      background: #345265;
+      border-radius: 8px;
+    }
+    input[type="range"]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      width: 30px;
+      height: 30px;
+      margin-top: -11px;
+      border-radius: 50%;
+      background: #4bb4ff;
+      border: 3px solid #e9f4ff;
+    }
+    input[type="range"]::-moz-range-track {
+      height: 8px;
+      background: #345265;
+      border-radius: 8px;
+    }
+    input[type="range"]::-moz-range-thumb {
+      width: 26px;
+      height: 26px;
+      border-radius: 50%;
+      background: #4bb4ff;
+      border: 3px solid #e9f4ff;
+    }
+    #save {
+      position: sticky;
+      bottom: 8px;
+      margin: 10px 0;
+      box-shadow: 0 0 0 8px #081623;
+    }
+    details summary {
+      min-height: 44px;
+      padding: 10px 0;
+      cursor: pointer;
     }
     input[type="radio"] {
       min-height: 24px;
@@ -115,10 +162,7 @@
   </style>
   <main>
     <h1>Local shot review</h1>
-    <p class="muted">
-      Proof only · Recorded test footage · Video stays on this Wi-Fi. No
-      broadcast controls or report changes.
-    </p>
+    <p class="muted">Test footage · Local Wi-Fi proof</p>
     <form id="pair" class="card">
       <label for="code">Pairing code from your laptop</label>
       <div class="row">
@@ -134,9 +178,7 @@
       </div>
     </form>
     <section id="review" hidden>
-      <button id="capture" class="primary" type="button" hidden>
-        Capture recent video
-      </button>
+      <button id="capture" type="button" hidden>Capture recent video</button>
       <video id="video" playsinline muted preload="metadata" hidden></video>
       <p id="loading" role="status">Loading local video…</p>
       <div class="card">
@@ -174,16 +216,15 @@
             ><input type="radio" name="audience" value="team" />Team</label
           >
         </div>
-        <p class="muted">
-          Player will use the current shooter in Shot Tracker. This standalone
-          proof is not connected to a game.
-        </p>
-        <label for="notes">Notes</label
-        ><textarea
-          id="notes"
-          maxlength="2000"
-          placeholder="What should they look at?"
-        ></textarea>
+        <details>
+          <summary>Add notes</summary>
+          <label for="notes">Notes</label
+          ><textarea
+            id="notes"
+            maxlength="2000"
+            placeholder="What should they look at?"
+          ></textarea>
+        </details>
       </div>
       <button id="save" class="primary" style="width: 100%" disabled>
         Use this start
@@ -265,7 +306,7 @@
       }
       $("capture").onclick = captureRecent;
       video.onloadedmetadata = () => {
-        video.controls = true;
+        video.controls = false;
         limit = Math.min(limit, video.duration);
         scrub.max = String(limit);
         video.currentTime = Math.max(0, limit - 30);
@@ -320,7 +361,7 @@
           try {
             await video.play();
           } catch {
-            $("status").textContent = "Tap the video play button to preview.";
+            $("status").textContent = "Tap Preview again to play the clip.";
           }
         } else video.pause();
       };

@@ -1,5 +1,8 @@
 "use client";
-import { difficultySummary } from "@/lib/curlcoach/difficulty";
+import {
+  difficultySummary,
+  formatEasyShotIndex,
+} from "@/lib/curlcoach/difficulty";
 import { useState } from "react";
 import {
   report,
@@ -121,9 +124,9 @@ export default function AnalysisPanels({
               <strong>{shooting(rows)}</strong>
             </div>
           ))}
-          <div aria-label="Difficulty-adjusted shooting">
-            <span>Difficulty-adjusted shooting</span>
-            <strong>{pct(difficultySummary(shots).adjusted)}</strong>
+          <div aria-label="Easy-shot equivalent index">
+            <span>Easy-shot equivalent index</span>
+            <strong>{formatEasyShotIndex(difficultySummary(shots))}</strong>
           </div>
         </div>
       )}
@@ -341,8 +344,8 @@ export default function AnalysisPanels({
       </section>
       {compare && seasonReady && mode !== "misses" && (
         <section className="event-card">
-          <h3>Season difficulty-adjusted shooting</h3>
-          <strong>{pct(difficultySummary(seasonShots).adjusted)}</strong>
+          <h3>Season easy-shot equivalent index</h3>
+          <strong>{formatEasyShotIndex(difficultySummary(seasonShots))}</strong>
         </section>
       )}
       {mode === "performance" && (

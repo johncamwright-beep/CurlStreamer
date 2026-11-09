@@ -24,7 +24,7 @@ const benchmarkSchema = z.object({
 export type DifficultyBenchmarks = z.infer<typeof benchmarkSchema>;
 export const difficultyBenchmarks = benchmarkSchema.parse(configured);
 export const difficultyCaveat =
-  "Provisional illustrative benchmarks, not official Curling Canada averages. The adjusted percentage is a comparison index, not a probability; it may fall below 0% or exceed 100%.";
+  "Provisional illustrative benchmarks. The easy-shot equivalent is an uncapped comparison index and can exceed 100.";
 export type DifficultyShot = Shot & {
   difficulty?: DifficultyLevel;
   difficultyUnavailable?: boolean;
@@ -161,6 +161,16 @@ export function difficultySummary(
   };
 }
 export type DifficultySummary = ReturnType<typeof difficultySummary>;
+export function easyShotIndex(s: DifficultySummary) {
+  // Apply the easy reference to old saved snapshots as well as current scores.
+  return s.pae === null ? null : s.benchmarks.expected.A + s.pae;
+}
+export function formatEasyShotIndex(s: DifficultySummary) {
+  const value = easyShotIndex(s);
+  return value === null
+    ? "N/A"
+    : (Math.abs(value) < 0.05 ? 0 : value).toFixed(1);
+}
 export const difficultyPercent = (n: number | null) =>
   n === null ? "N/A" : `${(Math.abs(n) < 0.05 ? 0 : n).toFixed(1)}%`;
 export const difficultyPAE = (n: number | null) =>
@@ -168,5 +178,5 @@ export const difficultyPAE = (n: number | null) =>
     ? "N/A"
     : `${n >= 0 ? "+" : ""}${(Math.abs(n) < 0.05 ? 0 : n).toFixed(1)} pp`;
 export function difficultyDescription(s: DifficultySummary) {
-  return `Difficulty adjusted: ${difficultyPercent(s.adjusted)} · Above expected: ${difficultyPAE(s.pae)}. Coverage: ${s.classified} of ${s.eligible} eligible graded shots (${difficultyPercent(s.coverage)}).${s.classified < s.eligible ? " Classified subset only; traditional shooting includes all eligible graded shots." : ""}${s.unavailable ? " Some difficulty data is unavailable; refresh to retry." : ""}${s.classified > 0 && s.classified < 10 ? " Small sample." : s.classified > 0 && s.classified < 20 ? " Tentative sample." : ""}`;
+  return `Easy-shot equivalent: ${formatEasyShotIndex(s)} · Above expected: ${difficultyPAE(s.pae)}. Coverage: ${s.classified} of ${s.eligible} eligible graded shots (${difficultyPercent(s.coverage)}).${s.classified < s.eligible ? " Classified subset only; traditional shooting includes all eligible graded shots." : ""}${s.unavailable ? " Some difficulty data is unavailable; refresh to retry." : ""}${s.classified > 0 && s.classified < 10 ? " Small sample." : s.classified > 0 && s.classified < 20 ? " Tentative sample." : ""}`;
 }

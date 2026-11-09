@@ -1,5 +1,14 @@
 import type { SavedReport } from "./reports";
 import { evidenceBasis } from "./report-counts";
+import { formatEasyShotIndex } from "./difficulty";
+
+/** Older evidence strings contain a redundant index on the moderate reference. */
+export function reportDifficultyEvidenceText(value: string) {
+  return value
+    .replace(/^Difficulty adjusted: (?:-?\d+(?:\.\d+)?%|N\/A) \u00b7 /, "")
+    .replace(/; reference baseline \d+(?:\.\d+)?%\./, ".")
+    .replace(/; adjusted -?\d+(?:\.\d+)?%(?=;)/, "");
+}
 
 /** Keep source counts for validation, but show only useful shooting percentages. */
 export function reportPercentages(report: SavedReport) {
@@ -17,16 +26,12 @@ export function reportPercentages(report: SavedReport) {
         ]
       : [];
   });
-  if (
-    report.highlights &&
-    report.difficulty?.adjusted !== null &&
-    report.difficulty?.adjusted !== undefined
-  )
+  if (report.difficulty && report.difficulty.pae !== null)
     values.push({
       id: "adjusted",
-      label: "Difficulty-adjusted shooting",
-      value: `${report.difficulty.adjusted.toFixed(1)}%`,
-      basis: `${report.difficulty.classified} classified shots; provisional comparison index`,
+      label: "Easy-shot equivalent index",
+      value: formatEasyShotIndex(report.difficulty),
+      basis: `${report.difficulty.classified} of ${report.difficulty.eligible} graded shots with difficulty`,
     });
   return values;
 }
@@ -77,7 +82,9 @@ export function reportSections(report: SavedReport) {
                 ? [
                     {
                       label: e.label,
-                      value: e.value.split("Provisional illustrative")[0],
+                      value: reportDifficultyEvidenceText(
+                        e.value.split("Provisional illustrative")[0],
+                      ),
                     },
                   ]
                 : [];

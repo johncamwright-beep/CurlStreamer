@@ -13,6 +13,31 @@ vi.mock("@supabase/ssr", () => ({
 import { middleware } from "./middleware";
 
 describe("middleware configuration boundary", () => {
+  it("requires a pilot password change for pages and APIs", async () => {
+    mocks.getUser.mockResolvedValue({
+      data: { user: { app_metadata: { pilot_password_required: true } } },
+    });
+    const page = await middleware(
+      new NextRequest("https://www.curlstreamer.app/dashboard"),
+    );
+    expect(page.headers.get("location")).toBe(
+      "https://www.curlstreamer.app/pilot-password",
+    );
+    expect(
+      (
+        await middleware(
+          new NextRequest("https://www.curlstreamer.app/api/account/team"),
+        )
+      ).status,
+    ).toBe(403);
+    expect(
+      (
+        await middleware(
+          new NextRequest("https://www.curlstreamer.app/pilot-password"),
+        )
+      ).status,
+    ).toBe(200);
+  });
   it.each(["", "/exchange", "/target", "/output-intent", "/observe"])(
     "native desktop %s skips cookie refresh; bearer validation belongs to the route",
     async (suffix) => {
@@ -163,6 +188,7 @@ describe("middleware configuration boundary", () => {
                 options: { httpOnly: true, sameSite: "lax", path: "/" },
               },
             ]);
+            return { data: { user: null } };
           },
         },
       };

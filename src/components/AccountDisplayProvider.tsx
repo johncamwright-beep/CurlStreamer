@@ -10,6 +10,7 @@ import {
 } from "react";
 import { usePathname } from "next/navigation";
 import { createBrowserSupabaseClient } from "@/lib/supabase/browser";
+import { synchronizeDeviceAccount } from "@/lib/account-device-scope";
 
 type Display = {
   logo: string | null;
@@ -47,6 +48,7 @@ export function AccountDisplayProvider({
   }, []);
   useEffect(() => {
     if (pathname === "/login" || pathname === "/signup") {
+      synchronizeDeviceAccount(localStorage, sessionStorage, null, true);
       reset();
       setSignedIn(false);
     }
@@ -120,6 +122,7 @@ export function AccountDisplayProvider({
         .then(({ data }) => {
           if (!active) return;
           const next = data.session?.user.id ?? null;
+          synchronizeDeviceAccount(localStorage, sessionStorage, next);
           if (identity.current !== undefined && identity.current !== next)
             reset();
           identity.current = next;
@@ -140,6 +143,7 @@ export function AccountDisplayProvider({
       const client = createBrowserSupabaseClient();
       const { data } = client.auth.onAuthStateChange((event, session) => {
         const next = session?.user.id ?? null;
+        synchronizeDeviceAccount(localStorage, sessionStorage, next);
         if (
           (identity.current !== undefined && identity.current !== next) ||
           event === "SIGNED_OUT"

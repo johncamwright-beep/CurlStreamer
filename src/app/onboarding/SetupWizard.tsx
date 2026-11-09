@@ -66,6 +66,7 @@ export function SetupWizard({
   const next = (extra: Partial<SetupProgress> = {}) =>
     void save({
       ...progress,
+      skipped: progress.skipped?.filter((step) => step !== progress.step),
       ...(extra.seasonId && extra.seasonId !== progress.seasonId
         ? { eventId: undefined }
         : {}),
@@ -156,6 +157,17 @@ export function SetupWizard({
         )}
         {progress.step === 5 && (
           <>
+            <p>
+              Add your own sponsors when ready. New games start with an empty
+              sponsor library.
+            </p>
+            <Link
+              className="btn-secondary justify-self-start"
+              href="/sponsors"
+              target="_blank"
+            >
+              Manage sponsors (opens a new tab)
+            </Link>
             <h2 className="text-xl font-bold">What you need at the rink</h2>
             <p className="rounded-xl border border-cyan-700 bg-cyan-950 p-4">
               You can manage your account, public team page, sponsors, and game
@@ -228,8 +240,20 @@ export function SetupWizard({
           disabled={busy}
           onClick={() =>
             progress.step === 6
-              ? void save({ ...progress, complete: true })
-              : next()
+              ? void save({
+                  ...progress,
+                  complete: true,
+                  skipped: [
+                    ...new Set([...(progress.skipped ?? []), progress.step]),
+                  ],
+                })
+              : void save({
+                  ...progress,
+                  step: progress.step + 1,
+                  skipped: [
+                    ...new Set([...(progress.skipped ?? []), progress.step]),
+                  ],
+                })
           }
         >
           Skip for now

@@ -1,5 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 const save = vi.hoisted(() => vi.fn());
+const notify = vi.hoisted(() => vi.fn());
+const scheduled = vi.hoisted(() => [] as (() => Promise<void>)[]);
+vi.mock("next/server", async (original) => ({
+  ...(await original<typeof import("next/server")>()),
+  after: (fn: () => Promise<void>) => scheduled.push(fn),
+}));
+vi.mock("@/lib/providers/waitlist-notification", () => ({
+  notifyWaitlistSignup: notify,
+}));
 vi.mock("@/lib/providers/pilot-waitlist", () => ({ savePilotInterest: save }));
 import { POST } from "./route";
 const body = {
@@ -22,6 +31,8 @@ describe("pilot waitlist", () => {
   beforeEach(() => {
     save.mockReset();
     save.mockResolvedValue("saved");
+    scheduled.length = 0;
+    notify.mockReset();
   });
   it("normalizes email and saves only opted-in interest", async () => {
     expect((await POST(request())).status).toBe(200);
@@ -64,5 +75,19 @@ describe("pilot waitlist", () => {
       (await POST(request({ ...body, team: "x".repeat(5000) }))).status,
     ).toBe(413);
     expect(save).not.toHaveBeenCalled();
+  });
+  it("schedules email after persistence and keeps signup success if notification fails", async () => {
+    notify.mockRejectedValue(new Error("mail unavailable"));
+    expect((await POST(request())).status).toBe(200);
+    expect(notify).not.toHaveBeenCalled();
+    expect(scheduled).toHaveLength(1);
+    await expect(scheduled[0]()).resolves.toBeUndefined();
+    expect(notify).toHaveBeenCalledWith("test@example.com");
+  });
+  it("does not schedule notifications for spam or rate-limited submissions", async () => {
+    await POST(request({ ...body, website: "spam" }));
+    save.mockResolvedValue("limited");
+    await POST(request());
+    expect(scheduled).toHaveLength(0);
   });
 });

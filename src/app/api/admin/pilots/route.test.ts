@@ -10,6 +10,7 @@ vi.mock("@/lib/supabase/admin", () => ({
 }));
 vi.mock("@/lib/providers/pilot-accounts", () => ({
   sendPilotCredentials: m.send,
+  sendPilotApproval: m.send,
 }));
 import { GET, POST } from "./route";
 const req = (body: unknown, origin = "https://test") =>
@@ -27,6 +28,19 @@ const input = {
   expiresAt: "2027-03-01T00:00:00Z",
   coachSeats: 1,
 };
+it("approves the selected existing identity without accepting a replacement email", async () => {
+  m.auth.mockResolvedValue({ id: "admin" });
+  const userId = "11111111-1111-4111-8111-111111111111";
+  const r = await POST(
+    req({ ...input, action: "approve", userId, email: "forged@example.test" }),
+  );
+  expect(r.status).toBe(200);
+  expect(m.rpc).toHaveBeenCalledWith(
+    "approve_existing_pilot",
+    expect.objectContaining({ p_user: userId, p_actor: "admin" }),
+  );
+  expect(m.rpc.mock.calls[0][1]).not.toHaveProperty("p_email");
+});
 beforeEach(() => {
   vi.clearAllMocks();
   m.auth.mockResolvedValue(null);

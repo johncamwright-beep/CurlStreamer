@@ -22,8 +22,111 @@ beforeAll(async () => {
   await db.exec(
     readFileSync(new URL("./0093_pilot_accounts.sql", import.meta.url), "utf8"),
   );
+  await db.exec(
+    "alter table auth.users add column email_confirmed_at timestamptz, add column encrypted_password text;",
+  );
+  await db.exec(
+    readFileSync(
+      new URL("./0094_approve_existing_pilots.sql", import.meta.url),
+      "utf8",
+    ),
+  );
 });
 afterAll(() => db.close());
+it("approves only an eligible existing login into a blank team, preserving its password and preventing duplicates", async () => {
+  const u = randomUUID();
+  await db.query(
+    "insert into auth.users(id,email,email_confirmed_at,encrypted_password) values($1,'existing@example.test',now(),'unchanged-hash')",
+    [u],
+  );
+  await db.query(
+    "insert into user_profiles values($1,'Existing Owner','active')",
+    [u],
+  );
+  const approve = (actor = admin) =>
+    db.query<{ r: { id: string; organization_id: string } }>(
+      "select approve_existing_pilot($1,$2,'Owner','5551234567','New Team',now()+interval '30 days',2) r",
+      [actor, u],
+    );
+  await expect(approve(other)).rejects.toThrow();
+  const r = (await approve()).rows[0].r;
+  expect(
+    (
+      await db.query("select * from games where organization_id=$1", [
+        r.organization_id,
+      ])
+    ).rows,
+  ).toHaveLength(0);
+  expect(
+    (
+      await db.query<{ encrypted_password: string }>(
+        "select encrypted_password from auth.users where id=$1",
+        [u],
+      )
+    ).rows[0].encrypted_password,
+  ).toBe("unchanged-hash");
+  expect(
+    (
+      await db.query(
+        "select * from curlcoach_coach_access where organization_id=$1 and user_id=$2",
+        [r.organization_id, u],
+      )
+    ).rows,
+  ).toHaveLength(1);
+  await expect(approve()).rejects.toThrow();
+  expect(
+    (await db.query("select * from claim_pilot_email($1,$2)", [admin, r.id]))
+      .rows,
+  ).toHaveLength(0);
+  expect(
+    (
+      await db.query("select * from claim_pilot_approval_email($1,$2)", [
+        admin,
+        r.id,
+      ])
+    ).rows,
+  ).toHaveLength(1);
+  expect(
+    (
+      await db.query("select * from claim_pilot_approval_email($1,$2)", [
+        admin,
+        r.id,
+      ])
+    ).rows,
+  ).toHaveLength(0);
+});
+it("refuses unverified, suspended, and already attached accounts without creating an organization", async () => {
+  for (const scenario of ["unverified", "suspended", "member"]) {
+    const u = randomUUID();
+    await db.query(
+      "insert into auth.users(id,email,email_confirmed_at) values($1,$2,$3)",
+      [
+        u,
+        scenario + "@example.test",
+        scenario === "unverified" ? null : new Date().toISOString(),
+      ],
+    );
+    await db.query("insert into user_profiles values($1,'Owner',$2)", [
+      u,
+      scenario === "suspended" ? "suspended" : "active",
+    ]);
+    if (scenario === "member")
+      await db.query(
+        "insert into team_memberships values($1,$2,'owner','active')",
+        [randomUUID(), u],
+      );
+    await expect(
+      db.query(
+        "select approve_existing_pilot($1,$2,'Owner','5551234567','New Team',now()+interval '30 days',1)",
+        [admin, u],
+      ),
+    ).rejects.toThrow();
+    expect(
+      (await db.query("select * from pilot_accounts where user_id=$1", [u]))
+        .rows,
+    ).toHaveLength(0);
+  }
+});
 async function prepare(email: string, actor = admin) {
   return (
     await db.query<{ id: string }>(

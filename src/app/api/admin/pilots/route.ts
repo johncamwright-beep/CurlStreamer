@@ -6,7 +6,10 @@ import {
 } from "@/lib/providers/platform-admin";
 import { createAdminSupabaseClient } from "@/lib/supabase/admin";
 import { pilotInput } from "@/lib/pilot";
-import { sendPilotCredentials } from "@/lib/providers/pilot-accounts";
+import {
+  sendPilotCredentials,
+  sendPilotApproval,
+} from "@/lib/providers/pilot-accounts";
 export const maxDuration = 60;
 const reply = (body: unknown, status = 200) =>
   NextResponse.json(body, {
@@ -25,6 +28,10 @@ export async function GET() {
 }
 const actionSchema = z.discriminatedUnion("action", [
   pilotInput.extend({ action: z.literal("create") }),
+  pilotInput
+    .omit({ email: true })
+    .extend({ action: z.literal("approve"), userId: z.uuid() }),
+  z.object({ action: z.literal("resendApproval"), id: z.uuid() }),
   z.object({ action: z.literal("resend"), id: z.uuid() }),
   z.object({
     action: z.literal("access"),
@@ -55,6 +62,41 @@ export async function POST(request: Request) {
       : reply({ saved: true });
   }
   let id: string;
+  if (b.action === "approve" || b.action === "resendApproval") {
+    if (b.action === "approve") {
+      const { data, error } = await db.rpc("approve_existing_pilot", {
+        p_actor: user.id,
+        p_user: b.userId,
+        p_name: b.name,
+        p_phone: b.phone,
+        p_team: b.team,
+        p_expires: b.expiresAt,
+        p_seats: b.coachSeats,
+      });
+      if (error || !data)
+        return reply(
+          {
+            error:
+              "Account could not be approved. It must be verified and active, with no existing team or pilot. Refresh Accounts to check its status.",
+          },
+          409,
+        );
+      id = data.id;
+    } else id = b.id;
+    try {
+      return reply({ saved: true, ...(await sendPilotApproval(user.id, id)) });
+    } catch {
+      return reply(
+        {
+          saved: true,
+          emailStatus: "unknown",
+          error:
+            "Pilot access is approved, but the email could not be confirmed. Use Pilot teams to resend the approval email.",
+        },
+        503,
+      );
+    }
+  }
   if (b.action === "create") {
     const { data, error } = await db.rpc("prepare_pilot_account", {
       p_actor: user.id,

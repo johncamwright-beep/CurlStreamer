@@ -4,9 +4,19 @@ import { useEffect, useState } from "react";
 import { TeamSettings } from "./TeamSettings";
 import { TeamMembers } from "./TeamMembers";
 import { PilotAdmin } from "./PilotAdmin";
+import { ApprovePilotForm } from "./ApprovePilotForm";
 import { CurlCoachAdminPanel } from "./CurlCoachAdminPanel";
 import { localDateTimeToUtc } from "@/lib/team-hierarchy";
-type Account = { id: string; email: string; status: string; createdAt: string };
+type Account = {
+  id: string;
+  email: string;
+  status: string;
+  createdAt: string;
+  name?: string;
+  emailVerified?: boolean;
+  pilotId?: string | null;
+  pilotExpiresAt?: string | null;
+};
 type Team = {
   id: string;
   name: string;
@@ -34,6 +44,7 @@ function expires(date: string) {
   return new Date(Date.parse(value) + 60000).toISOString();
 }
 export function PlatformAdmin() {
+  const [approving, setApproving] = useState<string | null>(null);
   const [data, setData] = useState<Overview | null>(null),
     [error, setError] = useState(""),
     [busy, setBusy] = useState(false),
@@ -300,8 +311,44 @@ export function PlatformAdmin() {
                       >
                         <div>
                           <strong className="break-all">{a.email}</strong>
-                          <p>{a.status ?? "Profile not completed"}</p>
+                          <p>
+                            {a.status === "active"
+                              ? "Login active"
+                              : (a.status ?? "Profile not completed")}
+                          </p>
+                          <p>
+                            {a.pilotId
+                              ? `Pilot ${a.pilotExpiresAt && Date.parse(a.pilotExpiresAt) > Date.now() ? "approved" : "expired"}`
+                              : data.teams.some((t) =>
+                                    t.members.some((m) => m.userId === a.id),
+                                  )
+                                ? "Team member · manage access under Teams"
+                                : "No pilot access granted"}
+                          </p>
                         </div>
+                        {a.pilotId ? (
+                          <button
+                            className="btn-secondary"
+                            onClick={() => setTab("pilots")}
+                          >
+                            Manage pilot
+                          </button>
+                        ) : (
+                          a.status === "active" &&
+                          !data.teams.some((t) =>
+                            t.members.some((m) => m.userId === a.id),
+                          ) && (
+                            <button
+                              className="btn"
+                              disabled={busy || !a.emailVerified}
+                              onClick={() => setApproving(a.id)}
+                            >
+                              {a.emailVerified
+                                ? "Approve for pilot"
+                                : "Awaiting email verification"}
+                            </button>
+                          )
+                        )}
                         <button
                           className="btn-secondary"
                           disabled={busy || !a.status}
@@ -324,6 +371,17 @@ export function PlatformAdmin() {
                             ? "Suspend account"
                             : "Reactivate account"}
                         </button>
+                        {approving === a.id && (
+                          <ApprovePilotForm
+                            account={a}
+                            onCancel={() => setApproving(null)}
+                            onApproved={(message) => {
+                              setApproving(null);
+                              setMessage(message);
+                              void load();
+                            }}
+                          />
+                        )}
                       </article>
                     ))}
                 </div>

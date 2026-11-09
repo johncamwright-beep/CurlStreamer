@@ -8,6 +8,69 @@ test.skip(
 const organizationId = "22222222-2222-4222-8222-222222222222";
 const invitationId = "44444444-4444-4444-8444-444444444444";
 
+test("approves an existing account from Accounts without replacing its login", async ({
+  page,
+}) => {
+  let approved = false;
+  await page.route("**/api/admin/pilots", (route) =>
+    route.fulfill({ json: { pilots: [] } }),
+  );
+  await page.route("**/api/admin", (route) =>
+    route.fulfill({
+      json: {
+        teams: [],
+        codes: [],
+        accounts: [
+          {
+            id: invitationId,
+            email: "existing@example.test",
+            name: "Existing Owner",
+            status: "active",
+            emailVerified: true,
+            pilotId: approved ? organizationId : null,
+            pilotExpiresAt: approved ? "2027-03-01T00:00:00Z" : null,
+          },
+        ],
+      },
+    }),
+  );
+  await signIn(page, "/admin");
+  await page.getByRole("button", { name: "Accounts", exact: true }).click();
+  await page
+    .getByRole("button", { name: "Approve for pilot", exact: true })
+    .click();
+  const form = page.getByRole("form", {
+    name: "Approve existing@example.test for pilot",
+  });
+  await expect(form.getByLabel("Administrator name")).toHaveValue(
+    "Existing Owner",
+  );
+  await form.getByLabel("Phone number").fill("5551234567");
+  await form.getByLabel("Team name", { exact: true }).fill("Independent team");
+  await form.getByLabel("Pilot access through (Toronto)").fill("2027-03-01");
+  await page.route("**/api/admin/pilots", async (route) => {
+    expect(route.request().postDataJSON()).toMatchObject({
+      action: "approve",
+      userId: invitationId,
+      team: "Independent team",
+      coachSeats: 1,
+    });
+    expect(route.request().postDataJSON()).not.toHaveProperty("password");
+    approved = true;
+    await route.fulfill({ json: { saved: true, emailStatus: "accepted" } });
+  });
+  await form.getByRole("button", { name: "Approve pilot and email" }).click();
+  await expect(
+    page.getByRole("button", { name: "Manage pilot" }),
+  ).toBeVisible();
+  await expect(form).toHaveCount(0);
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth,
+    ),
+  ).toBe(true);
+});
+
 test("pilot administration collects contacts and sends credentials without displaying a password", async ({
   page,
 }) => {

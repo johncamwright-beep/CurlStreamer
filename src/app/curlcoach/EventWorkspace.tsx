@@ -334,7 +334,8 @@ function WorkspaceContent({
   useEffect(() => {
     if (open) void reloadMetrics();
   }, [open, reloadMetrics]);
-  const chooseScheduledOnOpen = useRef(mode === "streamer");
+  const chooseScheduledOnOpen = useRef(false);
+  const preserveLinkedGame = useRef(false);
   const [scheduleNow, setScheduleNow] = useState(() => Date.now());
   useEffect(() => {
     const timer = setInterval(() => setScheduleNow(Date.now()), 30000);
@@ -342,6 +343,9 @@ function WorkspaceContent({
   }, []);
   useEffect(() => {
     const query = new URLSearchParams(location.search);
+    const requestedGame = query.get("game");
+    chooseScheduledOnOpen.current = mode === "streamer" && !requestedGame;
+    preserveLinkedGame.current = mode === "streamer" && !!requestedGame;
     drafts.current.clear();
     savedStates.current.clear();
     setData(null);
@@ -359,7 +363,7 @@ function WorkspaceContent({
     if (mode !== "streamer" && query.get("source") === "streamer")
       setSource("streamer");
     if (!initialEventId && query.get("event")) setEventId(query.get("event")!);
-    if (query.get("game")) setGameId(query.get("game")!);
+    if (requestedGame) setGameId(requestedGame);
     else if (
       !query.get("event") &&
       !initialEventId &&
@@ -559,13 +563,14 @@ function WorkspaceContent({
             ? recommended.id
             : undefined;
         chooseScheduledOnOpen.current = false;
-        setGameId(
-          (current) =>
-            scheduledDefault ??
-            (result.event.games.some((g: CoachGame) => g.id === current)
-              ? current
-              : (preferredGame<CoachGame>(result.event.games)?.id ?? "")),
-        );
+        if (!preserveLinkedGame.current)
+          setGameId(
+            (current) =>
+              scheduledDefault ??
+              (result.event.games.some((g: CoachGame) => g.id === current)
+                ? current
+                : (preferredGame<CoachGame>(result.event.games)?.id ?? "")),
+          );
       } catch (e) {
         if (!signal?.aborted && sequence === refreshSequence.current) {
           setError(e instanceof Error ? e.message : "Event unavailable");
@@ -656,6 +661,7 @@ function WorkspaceContent({
     );
   }
   function remember(source: string, event: string, game = "") {
+    preserveLinkedGame.current = false;
     history.replaceState(
       null,
       "",
@@ -732,13 +738,18 @@ function WorkspaceContent({
         <label>
           Game
           <select
-            value={gameId}
-            disabled={busy}
+            value={game?.id ?? ""}
+            disabled={busy || !event?.games.length}
             onChange={(e) => {
               setGameId(e.target.value);
               remember(source, event!.id, e.target.value);
             }}
           >
+            {!game && (
+              <option value="" disabled>
+                Choose a game
+              </option>
+            )}
             {event?.games.map((g) => (
               <option key={g.id} value={g.id}>
                 {g.label} · {g.teamName} vs {g.opponent}
@@ -1103,6 +1114,17 @@ function WorkspaceContent({
                     ? "The selected Streamer game is unavailable to this coach."
                     : "Use Local examples to explore the seven-game Shorty Jenkins workspace."}
                 </p>
+                {mode === "streamer" &&
+                  view === "Charting" &&
+                  gameId &&
+                  !data && (
+                    <a
+                      className="inline-flex min-h-11 items-center underline"
+                      href="/shot-tracker#charting"
+                    >
+                      Choose another game
+                    </a>
+                  )}
               </>
             )}
           </section>
@@ -1166,7 +1188,14 @@ function WorkspaceContent({
                 />
               ) : (
                 <section className="event-card">
-                  <p>No games in this event.</p>
+                  {gameId ? (
+                    <>
+                      <h2>Linked game unavailable</h2>
+                      <p>Choose another game to continue.</p>
+                    </>
+                  ) : (
+                    <p>No games in this event.</p>
+                  )}
                   {gamePicker}
                 </section>
               )}

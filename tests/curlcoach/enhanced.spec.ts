@@ -1,4 +1,5 @@
 import { openEntryTab } from "./entry-tabs";
+import { chooseWeight, openWeight, weightField } from "./weight-roller";
 import { weightLabels } from "../../src/lib/curlcoach/shot-subtypes";
 import { expect, test, type Page } from "@playwright/test";
 
@@ -84,19 +85,18 @@ test("workbook selections, corrections, clearing, Standard mode and historical p
   await page
     .getByRole("combobox", { name: "Shot subtype", exact: true })
     .selectOption("guard");
-  expect(
-    await page
-      .getByRole("combobox", { name: "Called weight", exact: true })
-      .locator("option")
-      .allTextContents(),
-  ).toEqual(["Not recorded", "Guard 1", "Guard 2", "Guard 3"]);
+  const called = await openWeight(page, "Called weight");
+  await expect(called.wheel.getByRole("option")).toHaveText(
+    Object.values(weightLabels),
+  );
+  await called.wheel.press("Escape");
+  await chooseWeight(page, "Called weight", "board");
   await openEntryTab(page, "Execution");
-  expect(
-    await page
-      .getByRole("combobox", { name: "Observed weight", exact: true })
-      .locator("option")
-      .allTextContents(),
-  ).toEqual(["Not assessed", ...Object.values(weightLabels)]);
+  const observed = await openWeight(page, "Observed weight");
+  await expect(
+    observed.wheel.getByRole("option", { selected: true }),
+  ).toHaveText("Board");
+  await observed.wheel.press("Escape");
   expect(
     await page
       .getByRole("combobox", { name: "Result observations", exact: true })
@@ -119,9 +119,7 @@ test("workbook selections, corrections, clearing, Standard mode and historical p
     .getByRole("combobox", { name: "Shot subtype", exact: true })
     .selectOption("hit_and_roll_under");
   await openEntryTab(page, "Shot");
-  await page
-    .getByRole("combobox", { name: "Called weight", exact: true })
-    .selectOption("control_weight_takeout");
+  await chooseWeight(page, "Called weight", "control_weight_takeout");
   await openEntryTab(page, "Shot");
   await page
     .getByRole("combobox", { name: "Shot difficulty", exact: true })
@@ -139,13 +137,10 @@ test("workbook selections, corrections, clearing, Standard mode and historical p
     page.getByRole("combobox", { name: "Result observations", exact: true }),
   ).toHaveValue("");
   await openEntryTab(page, "Execution");
-  await expect(
-    page.getByRole("combobox", { name: "Observed weight", exact: true }),
-  ).toHaveValue("");
-  await openEntryTab(page, "Execution");
-  await page
-    .getByRole("combobox", { name: "Observed weight", exact: true })
-    .selectOption("button");
+  await expect(weightField(page, "Observed weight")).toHaveText(
+    "Control (called)",
+  );
+  await chooseWeight(page, "Observed weight", "button");
   await openEntryTab(page, "Execution");
   await page
     .getByRole("combobox", { name: "Result observations", exact: true })
@@ -272,9 +267,8 @@ test("workbook selections, corrections, clearing, Standard mode and historical p
     .getByRole("combobox", { name: "Result observations", exact: true })
     .selectOption("");
   await openEntryTab(page, "Execution");
-  await page
-    .getByRole("combobox", { name: "Observed weight", exact: true })
-    .selectOption("");
+  await chooseWeight(page, "Observed weight", "");
+  await expect(weightField(page, "Observed weight")).toHaveText("Not assessed");
   await page
     .getByRole("button", { name: "Save correction", exact: true })
     .click();
@@ -299,15 +293,11 @@ test("workbook selections, corrections, clearing, Standard mode and historical p
     .click();
   await attempt.getByRole("button", { name: "Edit", exact: true }).click();
   await openEntryTab(page, "Shot");
-  await expect(
-    page.getByRole("combobox", { name: "Called weight", exact: true }),
-  ).toBeVisible();
-  expect(
-    await page
-      .getByRole("combobox", { name: "Called weight", exact: true })
-      .locator("option")
-      .allTextContents(),
-  ).toContain("Guard 1");
+  const standard = await openWeight(page, "Called weight");
+  await expect(standard.wheel.getByRole("option")).toHaveText(
+    Object.values(weightLabels),
+  );
+  await standard.wheel.press("Escape");
   await openEntryTab(page, "Execution");
   await page
     .getByRole("combobox", { name: "Numeric grade", exact: true })
@@ -326,9 +316,7 @@ test("workbook selections, corrections, clearing, Standard mode and historical p
     .click();
   await attempt.getByRole("button", { name: "Edit", exact: true }).click();
   await openEntryTab(page, "Shot");
-  await page
-    .getByRole("combobox", { name: "Called weight", exact: true })
-    .selectOption("hack");
+  await chooseWeight(page, "Called weight", "hack");
   await page
     .getByRole("button", { name: "Save correction", exact: true })
     .click();

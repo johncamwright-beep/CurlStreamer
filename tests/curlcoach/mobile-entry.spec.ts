@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { chooseWeight, openWeight, weightField } from "./weight-roller";
 
 test.use({ actionTimeout: 10000 });
 
@@ -55,23 +56,58 @@ test("phone and desktop tabs preserve the whole shot, static context and fixed a
   await page
     .getByLabel("Throwing position", { exact: true })
     .selectOption("Lead");
-  await page.getByRole("button", { name: "Close Change", exact: true }).click();
+  await page
+    .getByRole("dialog", { name: "Change", exact: true })
+    .getByRole("button", { name: "Done", exact: true })
+    .click();
   await page
     .getByLabel("Shot type", { exact: true })
     .selectOption("Guard/Front Stone");
   await page.getByLabel("Shot subtype", { exact: true }).selectOption("guard");
-  await page
-    .getByLabel("Called weight", { exact: true })
-    .selectOption({ label: "Guard 2" });
+  await chooseWeight(page, "Called weight", "board");
   await page
     .getByLabel("Shot difficulty", { exact: true })
     .selectOption("routine");
   await page.getByRole("tab", { name: "Execution", exact: true }).click();
   await expect(page.getByLabel("Shot type", { exact: true })).toBeHidden();
   await page.getByLabel("Numeric grade").selectOption("4");
-  await page
-    .getByLabel("Observed weight", { exact: true })
-    .selectOption("button");
+  await expect(weightField(page, "Observed weight")).toHaveText(
+    "Board (called)",
+  );
+  const observed = await openWeight(page, "Observed weight");
+  const visibleChoices = await observed.wheel.evaluate((wheel) => {
+    const box = wheel.getBoundingClientRect();
+    return [...wheel.querySelectorAll('[role="option"]')].filter((option) => {
+      const row = option.getBoundingClientRect();
+      return row.top >= box.top - 1 && row.bottom <= box.bottom + 1;
+    }).length;
+  });
+  expect(visibleChoices).toBe(7);
+  const wheelBox = (await observed.wheel.boundingBox())!;
+  const touch = await page.context().newCDPSession(page);
+  const x = wheelBox.x + wheelBox.width / 2;
+  const y = wheelBox.y + wheelBox.height / 2;
+  await touch.send("Input.dispatchTouchEvent", {
+    type: "touchStart",
+    touchPoints: [{ x, y }],
+  });
+  await touch.send("Input.dispatchTouchEvent", {
+    type: "touchMove",
+    touchPoints: [{ x, y: y + 30 }],
+  });
+  await expect(
+    observed.wheel.getByRole("option", { selected: true }),
+  ).toHaveText("Hack");
+  await expect(page.locator('button[aria-label="Observed weight"]')).toHaveText(
+    "Board (called)",
+  );
+  await touch.send("Input.dispatchTouchEvent", {
+    type: "touchEnd",
+    touchPoints: [],
+  });
+  await touch.detach();
+  await expect(observed.dialog).toBeHidden();
+  await expect(weightField(page, "Observed weight")).toHaveText("Hack");
   await page.getByRole("tab", { name: "Technical", exact: true }).click();
   await page.getByLabel("Line", { exact: true }).selectOption("Wide");
   await page.getByRole("tab", { name: "Notes", exact: true }).click();
@@ -149,9 +185,7 @@ test("phone and desktop tabs preserve the whole shot, static context and fixed a
   ).toContainText(`End ${end}`);
   await page.getByRole("tab", { name: "Execution", exact: true }).click();
   await expect(page.getByLabel("Numeric grade")).toHaveValue("4");
-  await expect(page.getByLabel("Observed weight", { exact: true })).toHaveValue(
-    "button",
-  );
+  await expect(weightField(page, "Observed weight")).toHaveText("Hack");
   await page.getByRole("tab", { name: "Technical", exact: true }).click();
   await expect(page.getByLabel("Line", { exact: true })).toHaveValue("Wide");
   await page.getByRole("tab", { name: "Notes", exact: true }).click();

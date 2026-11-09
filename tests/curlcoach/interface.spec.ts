@@ -1,4 +1,5 @@
 import { openEntryTab } from "./entry-tabs";
+import { chooseWeight } from "./weight-roller";
 import { expect, test } from "@playwright/test";
 
 // Shared tabbed entry regression coverage; phone and desktop layout is exercised in mobile-entry.spec.ts.
@@ -47,9 +48,7 @@ test("entry overlays preserve draft, keep the page stable and restore focus", as
     .getByRole("combobox", { name: "Shot type", exact: true })
     .selectOption("Draw");
   await openEntryTab(page, "Shot");
-  await page
-    .getByRole("combobox", { name: "Called weight", exact: true })
-    .selectOption("button");
+  await chooseWeight(page, "Called weight", "button");
   const trigger = page.getByRole("button", {
     name: "Change",
     exact: true,
@@ -63,9 +62,12 @@ test("entry overlays preserve draft, keep the page stable and restore focus", as
     exact: true,
   });
   await expect(dialog).toBeVisible();
-  await page
-    .getByRole("combobox", { name: "Throwing position", exact: true })
-    .selectOption("Second");
+  const position = dialog.getByRole("combobox", {
+    name: "Throwing position",
+    exact: true,
+  });
+  const initialPosition = await position.inputValue();
+  await position.selectOption(initialPosition === "Second" ? "Lead" : "Second");
   expect(await page.evaluate(() => document.documentElement.scrollHeight)).toBe(
     height,
   );
@@ -76,9 +78,7 @@ test("entry overlays preserve draft, keep the page stable and restore focus", as
   await expect(dialog).not.toBeVisible();
   await expect(trigger).toBeFocused();
   await trigger.click();
-  await expect(
-    page.getByRole("combobox", { name: "Throwing position", exact: true }),
-  ).toHaveValue("Second");
+  await expect(position).toHaveValue(initialPosition);
   await dialog.getByRole("button", { name: "Done", exact: true }).click();
   await openEntryTab(page, "Shot");
   await expect(

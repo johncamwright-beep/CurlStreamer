@@ -15,6 +15,7 @@ import {
   weightLabels,
   resultLabels,
 } from "@/lib/curlcoach/shot-subtypes";
+import WeightRoller from "./WeightRoller";
 
 type Props = {
   shot: Shot;
@@ -102,25 +103,32 @@ export function ShotTypeEntry({
 }
 
 export function WeightEntry({
-  shot,
   value,
-  enhanced,
   onChange,
   observed = false,
-}: Props & { observed?: boolean }) {
+}: Pick<Props, "value" | "onChange"> & { observed?: boolean }) {
   const key = observed ? "observedDestination" : "intendedWeight";
+  const current = value.values[key];
+  const called = value.values.intendedWeight;
+  // Use the call as a starting point without creating a measured observation.
+  // An explicit clear, an assessment, or a saved weight takes precedence.
+  const initialValue =
+    observed &&
+    current === undefined &&
+    value.assessments.destination === undefined &&
+    typeof called === "string" &&
+    allWeights.includes(called)
+      ? called
+      : undefined;
   return (
-    <Choice
-      title={observed ? "Observed weight" : "Called weight"}
+    <WeightRoller
+      label={observed ? "Observed weight" : "Called weight"}
       blank={observed ? "Not assessed" : "Not recorded"}
-      value={String(value.values[key] ?? "")}
-      choices={
-        observed
-          ? allWeights
-          : entryChoices(shot.type, value.values.shotSubtype, enhanced).weights
-      }
+      value={typeof current === "string" ? current : undefined}
+      initialValue={initialValue}
+      weights={allWeights}
       labels={weightLabels}
-      onChange={(choice) =>
+      onCommit={(choice) =>
         onChange(changeObservation(value, key, choice || undefined))
       }
     />

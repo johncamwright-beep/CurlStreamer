@@ -1224,23 +1224,12 @@ export function EnhancedReview({ event }: { event: CoachEvent }) {
                 )
               }
             />
-            <WeightEntry
-              shot={selected}
-              value={draft}
-              enhanced
-              onChange={setDraft}
-            />
+            <WeightEntry value={draft} onChange={setDraft} />
             <DifficultyEntry value={draft} onChange={setDraft} />
           </section>
           <section className="coach-entry-section">
             <h3>Execution observations</h3>
-            <WeightEntry
-              observed
-              shot={selected}
-              value={draft}
-              enhanced
-              onChange={setDraft}
-            />
+            <WeightEntry observed value={draft} onChange={setDraft} />
             <ResultsEntry
               shot={selected}
               value={draft}

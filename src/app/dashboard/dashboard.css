@@ -347,6 +347,18 @@
   border-color: #62cbd8;
   color: #c7f7fc;
 }
+.dashboard-media-actions {
+  display: flex;
+  gap: 8px;
+}
+.dashboard-media-actions a {
+  min-height: 44px;
+}
+.dashboard-actions .dashboard-shot-tracker-link {
+  min-width: 44px;
+  gap: 5px;
+  padding-inline: 9px;
+}
 .dashboard-youtube-link svg {
   width: 20px;
   height: 15px;

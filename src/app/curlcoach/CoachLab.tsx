@@ -1195,9 +1195,8 @@ export default function CoachLab({
                               enhancedData.ready && (
                                 <>
                                   <WeightEntry
-                                    shot={draft}
+                                    key={enhancedKey}
                                     value={enhanced}
-                                    enhanced={enhancedMode}
                                     onChange={changeEnhanced}
                                   />
                                   <DifficultyEntry
@@ -1240,9 +1239,8 @@ export default function CoachLab({
                                 <>
                                   <WeightEntry
                                     observed
-                                    shot={draft}
+                                    key={enhancedKey}
                                     value={enhanced}
-                                    enhanced={enhancedMode}
                                     onChange={changeEnhanced}
                                   />
                                   <ResultsEntry

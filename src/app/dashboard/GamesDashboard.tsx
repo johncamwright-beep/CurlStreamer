@@ -17,6 +17,7 @@ import { GameEventFilter } from "@/components/GameEventFilter";
 import { OpponentEditControl } from "@/components/OpponentEditControl";
 import { DashboardRefresh } from "@/components/DashboardRefresh";
 import { YouTubeThumbnailUpdate } from "@/components/YouTubeThumbnailUpdate";
+import { ShotTrackerIcon } from "@/app/curlcoach/ShotTrackerBrand";
 
 export function GamesDashboard({
   account,
@@ -331,6 +332,11 @@ function GameCard({
     broadcast?.watchUrl,
     game.scheduledYouTubeWatchUrl,
   );
+  const shotTrackerQuery = new URLSearchParams({
+    source: "streamer",
+    event: game.eventId ?? "standalone",
+    game: game.id,
+  });
   const label = completed
     ? game.completionResult?.outcome === "no_result"
       ? "Completed"
@@ -439,25 +445,37 @@ function GameCard({
             opponentTbd={!game.opponentId}
           />
         )}
-        {watchUrl &&
-          (completed ||
-            (!closed &&
-              (broadcast?.status === "live" ||
-                game.scheduledYouTubeStatus === "ready"))) && (
-            <a
-              className="dashboard-youtube-link"
-              href={watchUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              <svg aria-hidden="true" viewBox="0 0 24 18">
-                <rect width="24" height="18" rx="5" fill="#ff0033" />
-                <path d="m10 5 7 4-7 4Z" fill="white" />
-              </svg>
-              {completed ? "Watch replay" : "Watch on YouTube"}
-              <span className="sr-only"> (opens in a new tab)</span>
-            </a>
-          )}
+        <div className="dashboard-media-actions">
+          {watchUrl &&
+            (completed ||
+              (!closed &&
+                (broadcast?.status === "live" ||
+                  game.scheduledYouTubeStatus === "ready"))) && (
+              <a
+                className="dashboard-youtube-link"
+                href={watchUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                <svg aria-hidden="true" viewBox="0 0 24 18">
+                  <rect width="24" height="18" rx="5" fill="#ff0033" />
+                  <path d="m10 5 7 4-7 4Z" fill="white" />
+                </svg>
+                {completed ? "Watch replay" : "Watch on YouTube"}
+                <span className="sr-only"> (opens in a new tab)</span>
+              </a>
+            )}
+          <Link
+            className="dashboard-shot-tracker-link"
+            href={`/shot-tracker?${shotTrackerQuery}#charting`}
+            prefetch={false}
+            aria-label={`Shot Tracker: ${title}`}
+            title="Shot Tracker"
+          >
+            <ShotTrackerIcon size={20} />
+            <span aria-hidden="true">ST</span>
+          </Link>
+        </div>
       </div>
       {administrator && (
         <details className="dashboard-more">

@@ -86,6 +86,8 @@ async function fixture(
     loseFirstLineupResponse?: boolean;
     lineupRequests?: string[];
     enhancedFailure?: "preferences" | "game";
+    scheduleAnotherGame?: boolean;
+    missingLinkedGame?: boolean;
   } = {},
 ) {
   const games = new Map<string, CoachGame>();
@@ -95,6 +97,7 @@ async function fixture(
     [gameTwo, eventOne, "Game two"],
     [gameThree, eventTwo, "Game three"],
   ]) {
+    if (options.missingLinkedGame && id === gameOne) continue;
     const state: State = {
       ...emptyState(),
       organizationId,
@@ -108,6 +111,10 @@ async function fixture(
       opponent: "Fixture opponent",
       teamName: "Fixture team",
       scheduledEnds: 8,
+      scheduledStart:
+        options.scheduleAnotherGame && id === gameTwo
+          ? "2099-01-01T00:00:00Z"
+          : undefined,
       status: "active",
       side: "home",
       initialHammer: "home",
@@ -228,7 +235,7 @@ async function fixture(
       exact: true,
       includeHidden: true,
     }),
-  ).toHaveValue(gameOne);
+  ).toHaveValue(options.missingLinkedGame ? "" : gameOne);
   return games;
 }
 
@@ -242,6 +249,41 @@ async function start(page: Page) {
   await openEntryTab(page, "Execution");
   await expect(page.getByLabel("Numeric grade")).toBeVisible();
 }
+test("a game deep link takes precedence over another scheduled game", async ({
+  page,
+}) => {
+  await fixture(page, { scheduleAnotherGame: true });
+  await expect(
+    page.getByRole("button", { name: "Start Charting" }),
+  ).toBeVisible();
+});
+
+test("an unavailable deep link waits for the coach to choose another game", async ({
+  page,
+}) => {
+  await fixture(page, { missingLinkedGame: true, scheduleAnotherGame: true });
+  await expect(
+    page.getByRole("heading", { name: "Linked game unavailable" }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Start Charting" }),
+  ).toBeHidden();
+  await page.getByRole("button", { name: "Refresh event" }).click();
+  await expect(
+    page.getByRole("button", { name: "Refresh event" }),
+  ).toBeEnabled();
+  await expect(
+    page.getByRole("heading", { name: "Linked game unavailable" }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "Change game", exact: true }).click();
+  await page
+    .getByRole("combobox", { name: "Game", exact: true })
+    .selectOption(gameTwo);
+  await expect(
+    page.getByRole("button", { name: "Start Charting" }),
+  ).toBeVisible();
+});
+
 test("refresh removes a deleted selected game and its cached charting controls", async ({
   page,
 }) => {

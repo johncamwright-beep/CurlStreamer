@@ -17,7 +17,7 @@ export function entryChoices(
 ) {
   const subtype = enhanced ? subtypeFor(type, id) : undefined;
   return {
-    weights: subtype?.weights ?? allWeights,
+    weights: allWeights,
     results: subtype?.results ?? allResults,
   };
 }

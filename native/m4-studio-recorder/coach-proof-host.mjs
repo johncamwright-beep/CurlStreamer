@@ -37,10 +37,9 @@ export async function startNativeCoachProof(
       return;
     }
     res.setHeader("content-type", "text/html");
-    res.end(`<!doctype html><style>body{margin:0;background:#00c040;color:white;font:64px system-ui;text-align:center}img{height:240px;object-fit:contain}#marker{position:fixed;bottom:0;right:0;width:12px;height:12px}</style><img src="/logo"><h1 id="label">LOCAL COACH PROOF</h1><div id="marker"></div><script>
-  const audio=new AudioContext({sampleRate:48000}),osc=audio.createOscillator(),gain=audio.createGain();osc.frequency.value=440;gain.gain.value=.12;osc.connect(gain);gain.connect(audio.destination);osc.start();audio.resume();
-  setInterval(async()=>{const mode=await(await fetch('/mode')).text();osc.frequency.value=mode==='live'?440:880;document.body.style.background=mode==='live'?'#00c040':mode==='hold'?'#071320':'#241436';document.getElementById('label').textContent=mode==='live'?'Original program':mode==='hold'?'Stream temporarily off':'Game over — Home 5 – 3 Away';},100);
-  let bright=false;setInterval(()=>{bright=!bright;document.getElementById('marker').style.background=bright?'#282828':'#080808'},500);
+    res.end(`<!doctype html><style>body{margin:0;background:#081623;color:white;font:60px system-ui;text-align:center}#clock{font:120px monospace}#stone{position:absolute;top:60%;width:150px;height:150px;border-radius:50%;background:#ef4848;border:12px solid white}small{font-size:32px}</style><h1>LOCAL COACH PROOF</h1><div id="clock"></div><small>Simulated motion — not a camera feed</small><div id="stone"></div><script>
+  const started=performance.now();
+  function frame(){const seconds=(performance.now()-started)/1000;document.getElementById('clock').textContent=seconds.toFixed(1)+' s';document.getElementById('stone').style.left=(10+65*(.5+.5*Math.sin(seconds/4)))+'%';requestAnimationFrame(frame)}frame();
   </script>`);
   });
   await new Promise((resolveListen) =>

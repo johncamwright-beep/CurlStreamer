@@ -1,0 +1,315 @@
+<!doctype html>
+<html lang="en">
+  <meta charset="utf-8" /><meta
+    name="viewport"
+    content="width=device-width,initial-scale=1"
+  /><title>Local shot review proof</title>
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+    body {
+      margin: 0;
+      background: #081623;
+      color: #e9f4ff;
+      font: 17px system-ui;
+    }
+    main {
+      max-width: 760px;
+      margin: auto;
+      padding: 16px;
+    }
+    h1 {
+      font-size: 24px;
+      margin: 6px 0;
+    }
+    p {
+      line-height: 1.4;
+    }
+    .muted {
+      color: #afc5d9;
+      font-size: 14px;
+    }
+    .card {
+      background: #102738;
+      border: 1px solid #345265;
+      border-radius: 14px;
+      padding: 14px;
+      margin: 14px 0;
+    }
+    button,
+    input,
+    textarea {
+      font: inherit;
+      min-height: 48px;
+      border: 1px solid #547388;
+      border-radius: 9px;
+      background: #142e42;
+      color: white;
+      padding: 10px;
+    }
+    button {
+      cursor: pointer;
+    }
+    button:disabled {
+      opacity: 0.5;
+    }
+    .row {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+    .row button {
+      flex: 1;
+    }
+    .primary {
+      background: #4bb4ff;
+      color: #04131f;
+      font-weight: 700;
+    }
+    video {
+      display: block;
+      width: 100%;
+      max-height: 45vh;
+      object-fit: contain;
+      background: #000;
+      border-radius: 10px;
+    }
+    input[type="range"] {
+      width: 100%;
+      padding: 0;
+      accent-color: #4bb4ff;
+    }
+    input[type="radio"] {
+      min-height: 24px;
+      width: 24px;
+      vertical-align: middle;
+    }
+    .choice {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      min-height: 48px;
+      margin-right: 16px;
+    }
+    textarea {
+      width: 100%;
+      min-height: 76px;
+    }
+    output {
+      font-variant-numeric: tabular-nums;
+    }
+    #status {
+      min-height: 24px;
+    }
+    button:focus-visible,
+    input:focus-visible,
+    textarea:focus-visible {
+      outline: 3px solid #4bb4ff;
+      outline-offset: 3px;
+    }
+    [hidden] {
+      display: none !important;
+    }
+  </style>
+  <main>
+    <h1>Local shot review</h1>
+    <p class="muted">
+      Proof only · Recorded test footage · Video stays on this Wi-Fi. No
+      broadcast controls or report changes.
+    </p>
+    <form id="pair" class="card">
+      <label for="code">Pairing code from your laptop</label>
+      <div class="row">
+        <input
+          id="code"
+          inputmode="numeric"
+          pattern="[0-9]{6}"
+          maxlength="6"
+          required
+          autocomplete="off"
+          style="width: 150px"
+        /><button class="primary">Connect</button>
+      </div>
+    </form>
+    <section id="review" hidden>
+      <video id="video" playsinline muted preload="metadata" controls></video>
+      <p id="loading" role="status">Loading local video…</p>
+      <div class="card">
+        <div class="row">
+          <strong>Choose shot start</strong><output id="time">0:00</output>
+        </div>
+        <label for="scrub" class="muted"
+          >Drag to the beginning of the shot</label
+        ><input
+          id="scrub"
+          type="range"
+          min="0"
+          max="120"
+          step="0.1"
+          value="0"
+          disabled
+        />
+        <div class="row">
+          <button id="back" disabled>−1 second</button
+          ><button id="play" disabled>Preview</button
+          ><button id="forward" disabled>+1 second</button>
+        </div>
+      </div>
+      <div class="card">
+        <strong>Who should review this?</strong>
+        <div>
+          <label class="choice"
+            ><input
+              type="radio"
+              name="audience"
+              value="player"
+              checked
+            />Player</label
+          ><label class="choice"
+            ><input type="radio" name="audience" value="team" />Team</label
+          >
+        </div>
+        <p class="muted">
+          Player will use the current shooter in Shot Tracker. This standalone
+          proof is not connected to a game.
+        </p>
+        <label for="notes">Notes</label
+        ><textarea
+          id="notes"
+          maxlength="2000"
+          placeholder="What should they look at?"
+        ></textarea>
+      </div>
+      <button id="save" class="primary" style="width: 100%" disabled>
+        Use this start
+      </button>
+    </section>
+    <p id="status" role="status"></p>
+    <script>
+      const $ = (id) => document.getElementById(id),
+        video = $("video"),
+        scrub = $("scrub");
+      let limit = 120,
+        dragging = false;
+      const format = (s) =>
+        Math.floor(s / 60) +
+        ":" +
+        String(Math.floor(s % 60)).padStart(2, "0") +
+        "." +
+        Math.floor((s % 1) * 10);
+      function render() {
+        scrub.value = String(video.currentTime);
+        $("time").textContent = format(video.currentTime);
+      }
+      async function post(path, value) {
+        const r = await fetch(path, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(value),
+        });
+        const b = await r.json();
+        if (!r.ok) throw Error(b.error);
+        return b;
+      }
+      $("pair").onsubmit = async (e) => {
+        e.preventDefault();
+        $("status").textContent = "Connecting…";
+        try {
+          const b = await post("/pair", { code: $("code").value });
+          limit = b.duration;
+          $("code").value = "";
+          $("pair").hidden = true;
+          $("review").hidden = false;
+          video.src = "/video";
+          video.load();
+          $("status").textContent = "Connected directly to the laptop.";
+        } catch (e) {
+          $("status").textContent = e.message;
+        }
+      };
+      video.onloadedmetadata = () => {
+        limit = Math.min(limit, video.duration);
+        scrub.max = String(limit);
+        video.currentTime = Math.max(0, limit - 30);
+        ["scrub", "back", "play", "forward", "save"].forEach(
+          (id) => ($(id).disabled = false),
+        );
+        $("loading").textContent =
+          "Ready · " + Math.round(limit) + " seconds of local footage";
+        render();
+      };
+      video.onerror = () => {
+        $("loading").textContent =
+          "Video could not load. Check Wi-Fi and keep the laptop running.";
+      };
+      video.onwaiting = () => {
+        $("loading").textContent = "Loading video from laptop…";
+      };
+      video.oncanplay = () => {
+        $("loading").textContent = "Ready · local recording";
+      };
+      video.ontimeupdate = () => {
+        if (!dragging) render();
+      };
+      video.onplay = () => {
+        $("play").textContent = "Pause";
+      };
+      video.onpause = () => {
+        $("play").textContent = "Preview";
+      };
+      scrub.oninput = () => {
+        dragging = true;
+        video.pause();
+        video.currentTime = Number(scrub.value);
+        $("time").textContent = format(Number(scrub.value));
+      };
+      scrub.onchange = () => {
+        dragging = false;
+        render();
+      };
+      $("back").onclick = () => {
+        video.pause();
+        video.currentTime = Math.max(0, video.currentTime - 1);
+        render();
+      };
+      $("forward").onclick = () => {
+        video.pause();
+        video.currentTime = Math.min(limit, video.currentTime + 1);
+        render();
+      };
+      $("play").onclick = async () => {
+        if (video.paused) {
+          try {
+            await video.play();
+          } catch {
+            $("status").textContent = "Tap the video play button to preview.";
+          }
+        } else video.pause();
+      };
+      $("save").onclick = async () => {
+        video.pause();
+        $("save").disabled = true;
+        try {
+          const b = await post("/selection", {
+            startSeconds: Math.min(limit, video.currentTime),
+            audience: document.querySelector("input[name=audience]:checked")
+              .value,
+            notes: $("notes").value,
+          });
+          $("status").textContent =
+            "Selected " +
+            format(b.selection.startSeconds) +
+            " for " +
+            b.selection.audience +
+            " review. Saved on this laptop for the proof only.";
+        } catch (e) {
+          $("status").textContent = e.message;
+        } finally {
+          $("save").disabled = false;
+        }
+      };
+    </script>
+  </main>
+</html>

@@ -5,7 +5,7 @@ import { formatEasyShotIndex } from "./difficulty";
 /** Older evidence strings contain a redundant index on the moderate reference. */
 export function reportDifficultyEvidenceText(value: string) {
   return value
-    .replace(/^Difficulty adjusted: (?:-?\d+(?:\.\d+)?%|N\/A) · /, "")
+    .replace(/^Difficulty adjusted: (?:-?\d+(?:\.\d+)?%|N\/A) \u00b7 /, "")
     .replace(/; reference baseline \d+(?:\.\d+)?%\./, ".")
     .replace(/; adjusted -?\d+(?:\.\d+)?%(?=;)/, "");
 }

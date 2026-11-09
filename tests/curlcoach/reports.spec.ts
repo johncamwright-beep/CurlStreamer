@@ -570,12 +570,13 @@ test("report navigation is read-only, generation is explicit, and PDFs contain o
       exact: true,
     }),
   ).toBeVisible();
-  await expect(page.getByText("80.0%", { exact: true })).toBeVisible();
   await expect(
     page.getByRole("row", { name: "Shot types: Peel -" }),
   ).toBeVisible();
   await expect(
-    page.getByRole("cell", { name: "80.0%", exact: true }),
+    page
+      .getByRole("row", { name: /^Shot types: Draw/ })
+      .getByRole("cell", { name: "80.0%", exact: true }),
   ).toHaveCSS("color", "rgb(23, 44, 62)");
   await expect(
     page.getByText("Called Guard 1; observed Guard 2", { exact: true }),

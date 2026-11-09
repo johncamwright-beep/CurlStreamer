@@ -10,6 +10,7 @@ import { shotSubtypes, weightLabels, resultLabels } from "./shot-subtypes";
 import {
   difficultyIdentity,
   difficultySummary,
+  formatEasyShotIndex,
   type DifficultyShot,
 } from "./difficulty";
 import { resultRelevant } from "./result-entry";
@@ -288,7 +289,7 @@ export function advancedReport(
       subtypes.push({
         id: `${prefix}-difficulty-${subtype.id}`,
         label: `${subtype.name}: difficulty context`,
-        value: `Actual ${d.actual!.toFixed(1)}%; expected ${d.expected!.toFixed(1)}%; adjusted ${d.adjusted!.toFixed(1)}%; ${d.classified} classified of ${d.eligible} graded; mix ${d.mix.map((m) => `${m.level}: ${m.count}`).join(", ")}. Provisional illustrative expectations.`,
+        value: `Actual ${d.actual!.toFixed(1)}%; expected ${d.expected!.toFixed(1)}%; easy-shot equivalent ${formatEasyShotIndex(d)}; ${d.classified} classified of ${d.eligible} graded; mix ${d.mix.map((m) => `${m.level}: ${m.count}`).join(", ")}. Provisional illustrative expectations.`,
         sample: d.classified,
         confidence:
           d.classified < 10

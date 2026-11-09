@@ -237,11 +237,11 @@ test("workbook selections, corrections, clearing, Standard mode and historical p
   await expect(
     page.getByRole("region", { name: "Current shot context" }),
   ).toContainText("Team (W)");
-  await expect(page.getByLabel("Difficulty-adjusted shooting")).toHaveCount(0);
+  await expect(page.getByLabel("Easy-shot equivalent index")).toHaveCount(0);
   await expect(
     page.getByRole("region", { name: "Current shot context" }),
   ).toContainText("Team (W)");
-  await expect(page.getByLabel("Difficulty-adjusted shooting")).toHaveCount(0);
+  await expect(page.getByLabel("Easy-shot equivalent index")).toHaveCount(0);
   const url = `/api/curlcoach/enhanced?gameId=${game.id}&eventId=practice`;
   const read = async () =>
     (await (await page.request.get(url)).json()).documents.find(
@@ -310,7 +310,7 @@ test("workbook selections, corrections, clearing, Standard mode and historical p
   await expect(
     page.getByRole("region", { name: "Current shot context" }),
   ).toContainText("Team (W)");
-  await expect(page.getByLabel("Difficulty-adjusted shooting")).toHaveCount(0);
+  await expect(page.getByLabel("Easy-shot equivalent index")).toHaveCount(0);
   await page
     .getByRole("button", { name: "Recorded shots", exact: true })
     .click();

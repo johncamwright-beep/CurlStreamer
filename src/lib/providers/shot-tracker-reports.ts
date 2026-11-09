@@ -65,7 +65,15 @@ export function reportFingerprint(
       JSON.stringify({
         policy,
         ...(Number(policy.match(/-v(\d+)$/)?.[1]) >= 7
-          ? { difficultyBenchmarks }
+          ? {
+              // Keep the saved snapshot identity when only the index reference
+              // changes. Actual expectations still contribute to the hash.
+              difficultyBenchmarks: {
+                ...difficultyBenchmarks,
+                version: "illustrative-v1",
+                baseline: 70,
+              },
+            }
           : {}),
         model: process.env.SHOT_TRACKER_AI_MODEL ?? "",
         audience,

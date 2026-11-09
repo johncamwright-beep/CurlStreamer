@@ -74,12 +74,15 @@ test("persisted difficulty follows analytics filters without changing primary sh
     name: "Difficulty",
     exact: true,
   });
-  await difficulty.getByText("Weighted score details", { exact: true }).click();
+  await difficulty
+    .getByText("Easy-shot index details", { exact: true })
+    .click();
   await expect(
     difficulty.locator("dl > div").filter({
-      has: page.getByText("Difficulty-adjusted index", { exact: true }),
+      has: page.getByText("Easy-shot equivalent index", { exact: true }),
     }),
-  ).toContainText("95.0");
+  ).toContainText("110.0");
+  await expect(difficulty.getByText("+30.0 pp", { exact: true })).toBeVisible();
   await expect(
     page.getByText("Difficulty-adjusted detail", { exact: true }),
   ).toHaveCount(0);

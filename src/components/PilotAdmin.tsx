@@ -14,6 +14,7 @@ type Pilot = {
   games: number;
   chartedGames: number;
   members: number;
+  existing_account?: boolean;
   setup?: { step: number; complete: boolean; skipped?: number[] };
 };
 const field =
@@ -46,7 +47,7 @@ export function PilotAdmin() {
       setMessage(
         b.emailStatus
           ? b.emailStatus === "accepted"
-            ? "Credentials accepted by the email provider."
+            ? "Email accepted by the email provider."
             : "Pilot saved. Email delivery is uncertain or failed; check the recipient before resending."
           : "Pilot access updated.",
       );
@@ -191,6 +192,19 @@ export function PilotAdmin() {
               Send replacement credentials
             </button>
           )}
+          {p.existing_account &&
+            !p.revoked_at &&
+            Date.parse(p.expires_at) > Date.now() && (
+              <button
+                className="btn-secondary justify-self-start"
+                disabled={busy}
+                onClick={() =>
+                  void action({ action: "resendApproval", id: p.id })
+                }
+              >
+                Resend approval email
+              </button>
+            )}
           <form
             className="flex flex-wrap items-end gap-3"
             onSubmit={(e) => {

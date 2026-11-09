@@ -4,6 +4,56 @@ import nodemailer from "nodemailer";
 import { createAdminSupabaseClient } from "@/lib/supabase/admin";
 import { reportMailConfig } from "./report-email-transport";
 
+// Approval of an existing login never touches credentials or Auth metadata.
+export async function sendPilotApproval(actor: string, id: string) {
+  const db = createAdminSupabaseClient(),
+    config = reportMailConfig();
+  if (!config.success) throw Error("Email unavailable");
+  const claimed = await db.rpc("claim_pilot_approval_email", {
+    p_actor: actor,
+    p_id: id,
+  });
+  if (claimed.error || !claimed.data?.length)
+    throw Error("Approval email unavailable");
+  const row = claimed.data[0],
+    c = config.data;
+  let status = "unknown";
+  const transport = nodemailer.createTransport({
+    host: c.host,
+    port: Number(c.port),
+    secure: c.port === "465",
+    requireTLS: true,
+    auth: { user: c.user, pass: c.password },
+    connectionTimeout: 8000,
+    greetingTimeout: 8000,
+    socketTimeout: 10000,
+    logger: false,
+    debug: false,
+    disableFileAccess: true,
+    disableUrlAccess: true,
+  });
+  try {
+    const result = await transport.sendMail({
+      from: { name: "CurlStreamer", address: c.from },
+      to: { name: row.administrator_name, address: row.email },
+      subject: "Your CurlStreamer pilot access is approved",
+      text: `Hello ${row.administrator_name},\n\nYour pilot access for ${row.team_name} is approved. Sign in with your existing email and password:\nhttps://www.curlstreamer.app/onboarding\n\nYour separate team workspace is ready. The setup guide will help you add your logo, players, public page, and first game. Broadcasting is included, with ${row.coach_seats} Shot Tracker coaching seats. Access runs through ${new Date(row.expires_at).toLocaleDateString("en-CA", { timeZone: "America/Toronto" })}.\n\nYour password has not changed. Questions? Reply to hello@curlstreamer.app.`,
+    });
+    status = result.accepted.length ? "accepted" : "failed";
+  } catch {
+    status = "unknown";
+  } finally {
+    transport.close();
+    const finished = await db.rpc("finish_pilot_email", {
+      p_id: id,
+      p_attempt: row.email_attempt,
+      p_status: status,
+    });
+    if (finished.error) throw Error("Email status uncertain");
+  }
+  return { emailStatus: status };
+}
+
 // A resend rotates the temporary credential. It never resets an activated account.
 export async function sendPilotCredentials(actor: string, id: string) {
   const db = createAdminSupabaseClient();

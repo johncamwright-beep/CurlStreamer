@@ -28,7 +28,7 @@ vi.mock("./report-email-transport", () => ({
 vi.mock("nodemailer", () => ({
   default: { createTransport: () => ({ sendMail: m.send, close: m.close }) },
 }));
-import { sendPilotCredentials } from "./pilot-accounts";
+import { sendPilotCredentials, sendPilotApproval } from "./pilot-accounts";
 const row = {
   id: "pilot",
   email: "owner@example.test",
@@ -67,6 +67,19 @@ it("only emails the saved recipient, rotates temporary credentials, and never re
     p_attempt: "attempt",
     p_status: "accepted",
   });
+});
+it("sends approval without creating users or changing existing passwords", async () => {
+  m.rpc.mockResolvedValueOnce({
+    data: [{ ...row, coach_seats: 1 }],
+    error: null,
+  });
+  expect(await sendPilotApproval("admin", "pilot")).toEqual({
+    emailStatus: "accepted",
+  });
+  expect(m.create).not.toHaveBeenCalled();
+  expect(m.update).not.toHaveBeenCalled();
+  expect(m.send.mock.calls[0][0].text).toContain("existing email and password");
+  expect(m.send.mock.calls[0][0].to.address).toBe(row.email);
 });
 it("cannot reset activated accounts when the database refuses the claim", async () => {
   m.rpc.mockResolvedValueOnce({ data: [], error: null });

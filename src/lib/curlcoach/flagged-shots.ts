@@ -21,6 +21,7 @@ export type ReportFlag = {
   gameId: string;
   shotId: string;
   game: string;
+  shooter?: string;
   end: number;
   stone: number;
   type: string;
@@ -35,19 +36,34 @@ export function parseReviewTime(value: string): number | null {
   const seconds = parts.reduce((total, part) => total * 60 + part, 0);
   return seconds <= 604800 ? seconds : null;
 }
-export function playerReportFlags(
+function reportFlags(
   event: CoachEvent,
-  playerId: string,
+  audience: { playerId: string } | "team",
 ): ReportFlag[] {
   return event.games.flatMap((game) =>
     gameShots(game)
       .filter(
-        (shot) => shot.playerId === playerId && (shot.flagged ?? !!shot.review),
+        (shot) =>
+          (shot.flagged ?? !!shot.review) &&
+          (audience === "team"
+            ? shot.flagAudience === "team"
+            : shot.flagAudience !== "team" &&
+              shot.playerId === audience.playerId),
       )
       .map((shot) => ({
         gameId: game.id,
         shotId: shot.id,
         game: `${game.label} · vs ${game.opponent}`,
+        ...(audience === "team"
+          ? {
+              shooter:
+                game.state.roster?.find((player) => player.id === shot.playerId)
+                  ?.name ??
+                game.roster?.find((player) => player.id === shot.playerId)
+                  ?.name ??
+                shot.position,
+            }
+          : {}),
         end: shot.end,
         stone: shot.stone,
         type: shot.type ?? "Shot",
@@ -61,10 +77,15 @@ export function playerReportFlags(
       })),
   );
 }
+export function playerReportFlags(event: CoachEvent, playerId: string) {
+  return reportFlags(event, { playerId });
+}
 export function withReportFlags(
   packet: ReportPacket,
   event: CoachEvent,
 ): ReportPacket {
+  const teamFlags =
+    packet.audience === "team" ? reportFlags(event, "team") : undefined;
   return {
     ...packet,
     reports: packet.reports.map((report) => ({
@@ -72,7 +93,9 @@ export function withReportFlags(
       flags:
         packet.audience === "players" && report.playerId
           ? playerReportFlags(event, report.playerId)
-          : undefined,
+          : teamFlags?.length
+            ? teamFlags
+            : undefined,
     })),
   };
 }

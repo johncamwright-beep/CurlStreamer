@@ -1,11 +1,6 @@
 "use client";
-import AdvancedReport from "./AdvancedReport";
-import DifficultySummary from "./DifficultySummary";
+import ReportDocument from "./ReportDocument";
 import { ReportEmail } from "./ReportEmail";
-import { MissReport } from "./MissReport";
-import { reportLegend } from "@/lib/curlcoach/report-legend";
-import TechnicalReview from "./TechnicalReview";
-import { basisText, evidenceBasis } from "@/lib/curlcoach/report-counts";
 import {
   useCallback,
   useEffect,
@@ -13,16 +8,11 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import {
-  reportPercentages,
-  reportSections,
-} from "@/lib/curlcoach/report-presentation";
 import { downloadReportPDF } from "@/lib/curlcoach/report-pdf";
 import type {
   ReportAudience,
   ReportPacket,
   ReportStatus,
-  SavedReport,
 } from "@/lib/curlcoach/reports";
 const audiences = [
   {
@@ -418,11 +408,7 @@ export default function EventReports({
       <div className="min-w-0">
         {current && packet ? (
           <>
-            <div className="mb-5 flex flex-wrap items-start justify-between gap-3">
-              <div>
-                <h3 className="text-2xl font-bold">{current.title}</h3>
-                <p className="mt-1 text-sm">{packet.eventName}</p>
-              </div>
+            <div className="mb-4 flex flex-wrap items-center justify-end gap-3">
               <button
                 className="btn min-h-11"
                 onClick={() => void download()}
@@ -439,7 +425,7 @@ export default function EventReports({
                 reportKey={current.key}
               />
             )}
-            <ReportBody report={current} />
+            <ReportDocument report={current} eventName={packet.eventName} />
           </>
         ) : (
           <div className="rounded border border-slate-500 p-6">
@@ -465,170 +451,5 @@ export default function EventReports({
       </div>
       {content}
     </div>
-  );
-}
-function ReportBody({ report }: { report: SavedReport }) {
-  const percentages = reportPercentages(report).filter(
-    (m) => m.id === "overall",
-  );
-  return (
-    <article className="report-document space-y-7">
-      <div
-        className="grid grid-cols-2 gap-3 lg:grid-cols-3"
-        aria-label="Shooting percentages"
-      >
-        {percentages.map((m) => (
-          <div className="rounded-lg bg-slate-500/10 p-4" key={m.id}>
-            <p className="text-sm">{m.label}</p>
-            <p
-              className={
-                "mt-1 font-bold " +
-                (m.id === "overall" ? "text-3xl" : "text-2xl")
-              }
-            >
-              {m.value}
-            </p>
-            <p className="mt-1 text-sm text-slate-300">{m.basis}</p>
-          </div>
-        ))}
-      </div>
-      {reportSections(report).map((s) => (
-        <section key={s.title}>
-          <h4 className="mb-3 text-lg font-bold">{s.title}</h4>
-          <div className="space-y-3">
-            {s.findings.map((f, i) => (
-              <div key={i} className="space-y-2">
-                <p className="max-w-prose leading-relaxed">{f.text}</p>
-                {!!f.statistics.length && (
-                  <p className="text-sm text-cyan-300">
-                    {f.statistics
-                      .map((m) => `${m.label}: ${m.value}`)
-                      .join(" · ")}
-                  </p>
-                )}
-              </div>
-            ))}
-          </div>
-        </section>
-      ))}
-      <details>
-        <summary className="min-h-11 cursor-pointer py-3 font-semibold">
-          Supporting statistics
-        </summary>
-        {report.misses && <MissReport misses={report.misses} />}
-        {report.technical?.some((g) => g.recorded > 0) && (
-          <TechnicalReview groups={report.technical} compact />
-        )}
-        {report.difficulty && <DifficultySummary value={report.difficulty} />}
-        <AdvancedReport summary={report.advanced} />
-      </details>
-      {!!report.games?.length && (
-        <section className="space-y-4" aria-label="Game by game">
-          <h4 className="text-xl font-bold">Game by game</h4>
-          <p className="text-sm">
-            Open a game’s statistics to see every recorded measurement. — means
-            not measured.
-          </p>
-          {report.games.map((game) => (
-            <section
-              key={game.key}
-              className="rounded-lg border border-slate-500/40 p-4 space-y-3"
-            >
-              <div className="flex flex-wrap justify-between gap-2">
-                <h5 className="font-bold">{game.title}</h5>
-                <span className="font-bold">
-                  {game.groups[0]?.metrics[0]?.value} shooting
-                  {game.groups[0]?.metrics[0]?.basis && (
-                    <small className="block font-normal">
-                      {basisText(game.groups[0].metrics[0].basis)}
-                    </small>
-                  )}
-                </span>
-              </div>
-              <p className="max-w-prose leading-relaxed">
-                {report.narrative.games?.find((g) => g.key === game.key)?.text}
-              </p>
-              <details>
-                <summary className="min-h-11 cursor-pointer py-3 font-semibold">
-                  Game statistics
-                </summary>
-                <div className="grid gap-4 lg:grid-cols-2">
-                  {game.groups.slice(1).map((group) => (
-                    <div key={group.title}>
-                      <h6 className="mb-2 text-sm font-semibold">
-                        {group.title}
-                      </h6>
-                      <dl className="grid grid-cols-[1fr_auto] gap-x-3 gap-y-1 text-sm">
-                        {group.metrics.map((metric) => (
-                          <div className="contents" key={metric.id}>
-                            <dt>{metric.label}</dt>
-                            <dd className="text-right tabular-nums">
-                              <span>{metric.value}</span>
-                              {metric.value !== "—" && (
-                                <small className="block text-slate-300">
-                                  {metric.basis
-                                    ? basisText(metric.basis)
-                                    : report.evidence.find(
-                                          (e) => e.id === metric.id,
-                                        )
-                                      ? evidenceBasis(
-                                          report.evidence.find(
-                                            (e) => e.id === metric.id,
-                                          )!,
-                                        )
-                                      : "Sample unavailable"}
-                                </small>
-                              )}
-                            </dd>
-                          </div>
-                        ))}
-                      </dl>
-                    </div>
-                  ))}
-                </div>
-              </details>
-              <AdvancedReport summary={game.advanced} />
-            </section>
-          ))}
-        </section>
-      )}
-      {!!report.flags?.length && (
-        <section aria-label="Your flagged shots" className="event-card">
-          <h4 className="mb-3 text-lg font-bold">Your flagged shots</h4>
-          {report.flags.map((flag) => (
-            <article
-              className="coach-review-item"
-              key={`${flag.gameId}:${flag.shotId}`}
-            >
-              <h5>
-                {flag.game} · End {flag.end} · Stone {flag.stone} · {flag.type}
-              </h5>
-              <p>{flag.note || "No coach’s note added."}</p>
-              {flag.url ? (
-                <a href={flag.url} target="_blank" rel="noopener noreferrer">
-                  Review video{flag.estimated ? " (approximate timing)" : ""} ↗
-                </a>
-              ) : (
-                <p>Recording unavailable.</p>
-              )}
-            </article>
-          ))}
-        </section>
-      )}
-      <details aria-label="Report legend">
-        <summary className="min-h-11 cursor-pointer py-3">
-          Report legend
-        </summary>
-        <h4 className="mb-3 text-lg font-bold">Report legend</h4>
-        <dl className="space-y-3">
-          {reportLegend.map(([code, meaning]) => (
-            <div key={code}>
-              <dt className="font-semibold">{code}</dt>
-              <dd className="text-sm text-slate-300">{meaning}</dd>
-            </div>
-          ))}
-        </dl>
-      </details>
-    </article>
   );
 }

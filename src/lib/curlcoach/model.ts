@@ -78,6 +78,7 @@ export const shotSchema = z
     excluded: z.enum(exclusions).nullable(),
     note: z.string().trim().max(1000),
     flagged: z.boolean().optional(),
+    flagAudience: z.enum(["player", "team"]).optional(),
     flaggedAt: z.string().datetime().optional(),
     videoReview: videoReviewSchema.optional(),
   })

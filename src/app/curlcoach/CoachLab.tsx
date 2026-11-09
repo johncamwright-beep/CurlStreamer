@@ -657,6 +657,7 @@ export default function CoachLab({
               ...(field === "review" && e.target.value
                 ? {
                     flagged: true,
+                    flagAudience: draft.flagAudience ?? "player",
                     flaggedAt: draft.flaggedAt ?? new Date().toISOString(),
                   }
                 : {}),
@@ -1317,6 +1318,10 @@ export default function CoachLab({
                               setDraft({
                                 ...draft,
                                 flagged: e.target.value === "yes",
+                                flagAudience:
+                                  e.target.value === "yes"
+                                    ? "player"
+                                    : undefined,
                                 flaggedAt:
                                   e.target.value === "yes"
                                     ? new Date().toISOString()
@@ -1328,6 +1333,35 @@ export default function CoachLab({
                             <option value="yes">Yes</option>
                           </select>
                         </label>
+                        {(draft.flagged ?? !!draft.review) && (
+                          <label>
+                            Flag audience
+                            <select
+                              value={draft.flagAudience ?? "player"}
+                              onChange={(e) =>
+                                setDraft({
+                                  ...draft,
+                                  flagAudience:
+                                    e.target.value === "team"
+                                      ? "team"
+                                      : "player",
+                                })
+                              }
+                            >
+                              <option value="player">
+                                Player ·{" "}
+                                {players.find(
+                                  (player) => player.id === draft.playerId,
+                                )?.name ?? draft.position}
+                              </option>
+                              <option value="team">Team</option>
+                            </select>
+                            <small>
+                              The selected report includes the note and any
+                              available video link.
+                            </small>
+                          </label>
+                        )}
                         {(draft.flagged ?? !!draft.review) && (
                           <div className="coach-video-fields">
                             <div
@@ -1393,7 +1427,10 @@ export default function CoachLab({
                           </div>
                         )}
                         <label>
-                          Private coaching note
+                          {(draft.flagged ?? !!draft.review) &&
+                          draft.flagAudience === "team"
+                            ? "Note for team report"
+                            : "Private coaching note"}
                           <textarea
                             rows={4}
                             maxLength={1000}

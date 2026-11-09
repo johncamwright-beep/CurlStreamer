@@ -3,6 +3,12 @@ import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { expect, test } from "@playwright/test";
 import { technicalSummary } from "../../src/lib/curlcoach/technical";
+import { sampleEvent } from "../../src/lib/curlcoach/event";
+import { reportAnalysis } from "../../src/lib/curlcoach/report-analysis";
+import type {
+  ReportPacket,
+  SavedReport,
+} from "../../src/lib/curlcoach/reports";
 test.skip(!process.env.CURLCOACH_E2E, "Use the Shot Tracker config");
 let js = "";
 let libraryJs = "";
@@ -311,9 +317,9 @@ test("report navigation is read-only, generation is explicit, and PDFs contain o
     audience: string;
     status: string;
     stale: boolean;
-    packet: unknown;
+    packet: ReportPacket;
   }[] = [];
-  const report = (key: string, title: string) => ({
+  const report = (key: string, title: string): SavedReport => ({
     key,
     title,
     ...(key.startsWith("p")
@@ -438,7 +444,7 @@ test("report navigation is read-only, generation is explicit, and PDFs contain o
       reserved = true;
       used = 1;
       const { audience } = route.request().postDataJSON();
-      const packet = {
+      const packet: ReportPacket = {
         audience,
         eventName: "Synthetic event",
         policy: "fixture",
@@ -523,19 +529,23 @@ test("report navigation is read-only, generation is explicit, and PDFs contain o
   await expect(page.getByRole("article")).toContainText("76.3%");
   await expect(page.getByRole("article")).toContainText("85.6%");
   await expect(page.getByRole("article")).toContainText("301 graded shots");
-  await page.getByText("Report legend", { exact: true }).first().click();
   await expect(
     page.getByRole("heading", { name: "Report legend", exact: true }),
   ).toBeVisible();
   await expect(page.getByRole("article")).not.toContainText("PRIVATE");
   await expect(
-    page.getByRole("heading", { name: "Opening game", exact: true }),
+    page.getByRole("heading", {
+      name: "Game-by-game review: Opening game",
+      exact: true,
+    }),
   ).toBeVisible();
-  await page.getByText("Game statistics", { exact: true }).click();
   await expect(page.getByText("80.0%", { exact: true })).toBeVisible();
-  await expect(page.getByText("—", { exact: true })).toBeVisible();
-  await page.getByText("Supporting statistics", { exact: true }).click();
-  await page.getByText("Called and observed weight", { exact: true }).click();
+  await expect(
+    page.getByRole("row", { name: "Shot types: Peel -" }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("cell", { name: "80.0%", exact: true }),
+  ).toHaveCSS("color", "rgb(23, 44, 62)");
   await expect(
     page.getByText("Called Guard 1; observed Guard 2", { exact: true }),
   ).toBeVisible();
@@ -560,6 +570,57 @@ test("report navigation is read-only, generation is explicit, and PDFs contain o
   expect(pdf).not.toContain("/BaseFont /Helvetica");
   expect(pdf.length).toBeLessThan(500000);
   await download.saveAs("test-results/report-" + info.project.name + ".pdf");
+  const charted = sampleEvent("shorty-example");
+  charted.games = charted.games.slice(0, 3);
+  const player = entries.find((entry) => entry.audience === "players")!.packet
+    .reports[0];
+  player.analysis = reportAnalysis(charted, "lead");
+  const flagUrl = "https://www.youtube.com/watch?v=abcdefghijk&t=132s";
+  player.flags = [
+    {
+      gameId: "game-1",
+      shotId: "flag-1",
+      game: "Opening game",
+      end: 2,
+      stone: 1,
+      type: "Draw",
+      note: "Watch the release before changing the line call.",
+      url: flagUrl,
+      estimated: false,
+    },
+  ];
+  await page.reload();
+  await nav
+    .getByRole("button", { name: "Alex Greenwood", exact: true })
+    .click();
+  const article = page.getByRole("article", { name: "Alex Greenwood" });
+  for (const name of [
+    "Performance overview",
+    "Performance over time",
+    "Performance by shot",
+    "Performance by turn",
+    "Miss diagnosis",
+    "Technical review",
+    "Your flagged shots",
+  ]) {
+    await expect(
+      article.getByRole("heading", { name, exact: true }),
+    ).toBeVisible();
+  }
+  await expect(
+    article.getByRole("img", { name: /^Shooting percentage by game/ }),
+  ).toBeVisible();
+  await expect(article.getByText(player.flags[0].note)).toBeVisible();
+  await expect(
+    article.getByRole("link", { name: "Review video" }),
+  ).toHaveAttribute("href", flagUrl);
+  const appendixDownload = page.waitForEvent("download");
+  await page.getByRole("button", { name: "Download PDF", exact: true }).click();
+  const appendix = await appendixDownload;
+  expect(readFileSync((await appendix.path())!, "latin1")).toContain(flagUrl);
+  await appendix.saveAs(
+    "test-results/report-analysis-" + info.project.name + ".pdf",
+  );
   await page.screenshot({
     path: "test-results/report-redesign-" + info.project.name + ".png",
     fullPage: true,
@@ -689,6 +750,21 @@ test("report email requires recipient review and explicit send; coach reports ha
   };
   const saved = {
     ...input,
+    analysis: reportAnalysis(event),
+    flags: [
+      {
+        gameId: "fixture-game",
+        shotId: "team-flag",
+        game: "Opening game",
+        shooter: "Alex",
+        end: 1,
+        stone: 1,
+        type: "Draw",
+        note: "Team practice review",
+        url: "https://www.youtube.com/watch?v=abcdefghijk&t=90s",
+        estimated: false,
+      },
+    ],
     narrative: {
       summary: f,
       strengths: [f],
@@ -789,11 +865,16 @@ test("report email requires recipient review and explicit send; coach reports ha
   ).toHaveCount(0);
   await page.getByRole("button", { name: "Team report", exact: true }).click();
   await expect(
-    page.getByRole("region", { name: "Miss diagnosis" }),
-  ).toBeHidden();
-  await page.getByText("Supporting statistics", { exact: true }).click();
+    page.getByRole("heading", { name: "Miss diagnosis", exact: true }),
+  ).toBeVisible();
   await expect(
-    page.getByRole("region", { name: "Miss diagnosis" }),
+    page.getByRole("heading", { name: "Team flagged shots", exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("heading", {
+      name: "Alex · Opening game · End 1 · Stone 1",
+      exact: true,
+    }),
   ).toBeVisible();
   await page
     .getByRole("button", { name: "Email team report", exact: true })

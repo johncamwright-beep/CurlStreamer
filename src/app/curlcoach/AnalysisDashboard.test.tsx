@@ -6,7 +6,7 @@ import type { AnalysisShot } from "@/lib/curlcoach/advanced-analysis";
 import type { CoachGame } from "@/lib/curlcoach/event";
 import AnalysisDashboard, {
   AnalysisNavigation,
-  type AnalysisTab,
+  type DashboardTab,
 } from "./AnalysisDashboard";
 
 vi.stubGlobal("React", React);
@@ -53,7 +53,7 @@ const game: CoachGame = {
   scoreboardAvailable: false,
   state: emptyState(),
 };
-function render(tab: AnalysisTab, shots: AnalysisShot[]) {
+function render(tab: DashboardTab, shots: AnalysisShot[]) {
   return renderToStaticMarkup(
     <AnalysisDashboard
       tab={tab}
@@ -79,13 +79,14 @@ describe("Analysis dashboard", () => {
     expect(panel).toContain("Performance by shot order");
     expect(panel).toContain("Weakest first");
   });
-  it("renders four labelled, keyboard-addressable report tabs", () => {
+  it("renders five labelled, keyboard-addressable analysis tabs", () => {
     const html = renderToStaticMarkup(
       <AnalysisNavigation tab="performance" onTabChange={vi.fn()} />,
     );
-    expect(html.match(/role="tab"/g)).toHaveLength(4);
+    expect(html.match(/role="tab"/g)).toHaveLength(5);
     expect(html).toContain('aria-selected="true" tabindex="0"');
     expect(html).toContain("Advanced Analysis");
+    expect(html).toContain("Flagged shots");
   });
   it("counts zero grades and omits excluded attempts from shooting", () => {
     const html = render("performance", [

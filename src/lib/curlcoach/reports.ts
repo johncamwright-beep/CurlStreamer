@@ -14,6 +14,7 @@ import {
 import { difficultyEvidence } from "./difficulty-evidence";
 import { z } from "zod";
 import type { ReportFlag } from "./flagged-shots";
+import type { ReportAnalysis } from "./report-analysis";
 import { reportMisses, type MissAnalysis } from "./report-misses";
 import { currentShots, report, shotTypes, type Shot } from "./model";
 import type { CoachEvent } from "./event";
@@ -78,6 +79,7 @@ export type ReportInput = {
   difficulty?: DifficultySummary;
 };
 export type SavedReport = ReportInput & {
+  analysis?: ReportAnalysis;
   flags?: ReportFlag[];
   narrative: Narrative;
   playerId?: string;

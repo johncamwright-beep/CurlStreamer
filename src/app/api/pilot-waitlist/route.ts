@@ -1,6 +1,7 @@
-import { NextResponse } from "next/server";
+import { after, NextResponse } from "next/server";
 import { z } from "zod";
 import { savePilotInterest } from "@/lib/providers/pilot-waitlist";
+import { notifyWaitlistSignup } from "@/lib/providers/waitlist-notification";
 
 const schema = z.object({
   email: z
@@ -73,6 +74,14 @@ export async function POST(request: Request) {
         { error: "Too many requests. Please try again in an hour." },
         { status: 429 },
       );
+    after(async () => {
+      try {
+        await notifyWaitlistSignup(body.data.email);
+      } catch {
+        // The durable pending/sending status remains visible to administrators.
+        // Never expose signup details or mail credentials in logs.
+      }
+    });
     return NextResponse.json({ ok: true });
   } catch {
     return NextResponse.json(

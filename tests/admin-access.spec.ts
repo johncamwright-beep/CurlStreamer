@@ -46,6 +46,51 @@ async function signIn(page: Page, next: string) {
   await page.waitForURL((url) => url.pathname + url.search === next);
 }
 
+test("waitlist shows signup details and retries pending notifications on desktop and mobile", async ({
+  page,
+}) => {
+  let sent = false;
+  await page.route("**/api/admin/waitlist**", async (route) => {
+    if (route.request().method() === "POST") {
+      sent = true;
+      return route.fulfill({ json: { ok: true } });
+    }
+    return route.fulfill({
+      json: {
+        total: 1,
+        recipient: "hello@curlstreamer.app",
+        emailConfigured: true,
+        entries: [
+          {
+            id: invitationId,
+            email: "waitlist@example.test",
+            team: "Fixture team",
+            created_at: "2026-11-09T12:00:00Z",
+            consent_version: "pilot-2026-09-11",
+            notification_status: sent ? "accepted" : "pending",
+            notification_sent_at: sent ? "2026-11-09T12:01:00Z" : null,
+          },
+        ],
+      },
+    });
+  });
+  await signIn(page, "/admin/waitlist");
+  await expect(
+    page.getByRole("heading", { name: "Waitlist (1)" }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("link", { name: "waitlist@example.test" }),
+  ).toBeVisible();
+  await expect(page.getByText("Fixture team")).toBeVisible();
+  await page.getByRole("button", { name: "Send notification" }).click();
+  await expect(page.getByText(/Accepted by email provider/)).toBeVisible();
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= window.innerWidth,
+    ),
+  ).toBe(true);
+});
+
 test("team owners can create, share, and revoke a teammate invitation", async ({
   page,
 }) => {

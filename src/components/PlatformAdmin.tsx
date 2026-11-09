@@ -92,6 +92,9 @@ export function PlatformAdmin() {
     <main className="mx-auto min-h-screen max-w-6xl p-5">
       <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-3xl font-black">Platform administration</h1>
+        <Link className="btn-secondary" href="/admin/waitlist">
+          Waitlist
+        </Link>
         <Link className="btn-secondary" href="/account">
           Back to my account
         </Link>

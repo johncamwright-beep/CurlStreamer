@@ -33,6 +33,8 @@ Keep the phone connectivity proof isolated until those steps are validated. The 
 
 ## Rolling native proof
 
+Set `COACH_PROOF_CAMERAS=1` for the real-camera variant. It uses the existing IP camera manager and installed receiver, with saved DPAPI-protected settings read through a private child-process pipe. Credentials never reach the HTML or command line. Both JPEG feeds are rendered with `object-fit: contain` inside the loopback-only OBS source. Only the paired snapshot server binds to the LAN. No YouTube broadcast starts, no saved camera configuration changes, and no production shot is written. This proof opens separate camera connections; production integration should reuse Studio's existing live source. Both Tapos and the exported two-feed clip were verified on November 9. Phone usability confirmation remains pending.
+
 Build the recorder with `coach.c`; the feature is opt-in through the private `--coach-control` argument. Installed Studio does not request it. `CCS1` reads buffer state; `CCC1` captures without changing the program. The independent 960×540/15 fps encoder follows the live browser source, not the replay scene. OBS requires a mux audio track; the phone export removes it without touching broadcast audio.
 
 ```text

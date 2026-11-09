@@ -3,6 +3,7 @@ export function startNativeCoachProof(
   runtime: string,
   ffmpeg: string,
   evidenceRoot: string,
+  cameraFrame?: (role: "camera-home" | "camera-away") => Buffer | undefined,
 ): Promise<{
   capture(): Promise<{ video: string; duration: number; capturedAt: string }>;
   close(): void;

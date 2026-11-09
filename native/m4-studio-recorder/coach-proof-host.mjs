@@ -14,6 +14,7 @@ export async function startNativeCoachProof(
   inputRuntime,
   ffmpeg,
   evidenceRoot,
+  cameraFrame,
 ) {
   assert(inputHost && inputRuntime && ffmpeg && evidenceRoot);
   const host = resolve(inputHost),
@@ -27,6 +28,21 @@ export async function startNativeCoachProof(
   );
   const server = createServer((req, res) => {
     res.setHeader("cache-control", "no-store");
+    const role = req.url?.split("?")[0]?.slice(1);
+    if (cameraFrame && (role === "camera-home" || role === "camera-away")) {
+      const frame = cameraFrame(role);
+      res.writeHead(frame ? 200 : 503, { "Content-Type": "image/jpeg" });
+      res.end(frame);
+      return;
+    }
+    if (cameraFrame) {
+      res.setHeader("content-type", "text/html");
+      res.end(`<!doctype html><meta charset="utf-8"><style>body{margin:0;background:#081623;color:white;font:32px system-ui}header{height:60px;text-align:center}main{display:flex;height:calc(100vh - 60px)}img{width:50%;height:100%;object-fit:contain}</style><header>LOCAL CAMERA PROOF · <span id="clock"></span></header><main><img id="camera-home" alt="Camera 1 unavailable"><img id="camera-away" alt="Camera 2 unavailable"></main><script>
+      for(const role of ['camera-home','camera-away']){const img=document.getElementById(role);const next=()=>setTimeout(()=>{img.src='/'+role+'?t='+Date.now()},100);img.onload=next;img.onerror=next;next()}
+      setInterval(()=>document.getElementById('clock').textContent=new Date().toLocaleTimeString(),100);
+      </script>`);
+      return;
+    }
     if (req.url === "/mode") {
       res.end(mode);
       return;
@@ -37,7 +53,7 @@ export async function startNativeCoachProof(
       return;
     }
     res.setHeader("content-type", "text/html");
-    res.end(`<!doctype html><style>body{margin:0;background:#081623;color:white;font:60px system-ui;text-align:center}#clock{font:120px monospace}#stone{position:absolute;top:60%;width:150px;height:150px;border-radius:50%;background:#ef4848;border:12px solid white}small{font-size:32px}</style><h1>LOCAL COACH PROOF</h1><div id="clock"></div><small>Simulated motion — not a camera feed</small><div id="stone"></div><script>
+    res.end(`<!doctype html><meta charset="utf-8"><style>body{margin:0;background:#081623;color:white;font:60px system-ui;text-align:center}#clock{font:120px monospace}#stone{position:absolute;top:60%;width:150px;height:150px;border-radius:50%;background:#ef4848;border:12px solid white}small{font-size:32px}</style><h1>LOCAL COACH PROOF</h1><div id="clock"></div><small>Simulated motion — not a camera feed</small><div id="stone"></div><script>
   const started=performance.now();
   function frame(){const seconds=(performance.now()-started)/1000;document.getElementById('clock').textContent=seconds.toFixed(1)+' s';document.getElementById('stone').style.left=(10+65*(.5+.5*Math.sin(seconds/4)))+'%';requestAnimationFrame(frame)}frame();
   </script>`);

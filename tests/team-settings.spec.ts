@@ -188,6 +188,7 @@ test("support uploads update the selected team's preview without changing the ad
     .getByRole("link", { name: "Platform administration", exact: true })
     .click();
   await page.waitForURL("**/admin");
+  await page.getByRole("button", { name: "Teams", exact: true }).click();
   await page.getByRole("button", { name: "View as / support" }).click();
   await page.getByRole("button", { name: "Team info", exact: true }).click();
   await page.getByRole("button", { name: "Enable support edits" }).click();

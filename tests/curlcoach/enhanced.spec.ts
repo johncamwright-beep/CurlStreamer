@@ -344,7 +344,13 @@ test("workbook selections, corrections, clearing, Standard mode and historical p
     page.locator(".coach-scoring [role=status]").first(),
   ).toContainText("saved");
   expect((await read()).values.resultObservations).toEqual([]);
-  await navigate(page, "Enhanced review");
+  await navigate(page, "Analysis");
+  await page
+    .getByRole("tab", { name: "Advanced Analysis", exact: true })
+    .click();
+  await page
+    .getByRole("link", { name: "Enhanced review", exact: true })
+    .click();
   await page
     .getByRole("combobox", { name: "Review shot", exact: true })
     .selectOption(saved.shotId);

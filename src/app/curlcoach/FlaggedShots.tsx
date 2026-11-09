@@ -67,6 +67,7 @@ function Flag({
         vs {game?.opponent} · {shot.type ?? "Shot type not recorded"} ·{" "}
         {shot.grade ?? "—"}/5
       </p>
+      <p>{shot.flagAudience === "team" ? "Team report" : "Player report"}</p>
       <ReviewVideo video={shot.videoReview} />
       <div className="coach-review-edit">
         <label>

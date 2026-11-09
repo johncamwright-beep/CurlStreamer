@@ -1513,9 +1513,6 @@
     margin-left: 0;
   }
   .event-sidebar .tracker-primary-nav a {
-    display: none;
-  }
-  .event-sidebar .tracker-primary-nav a[data-primary="true"] {
     display: flex;
     align-items: center;
     justify-content: center;

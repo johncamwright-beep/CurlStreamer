@@ -1,7 +1,7 @@
 import { loadEventDifficulty } from "./shot-tracker-difficulty";
 import { difficultyBenchmarks } from "@/lib/curlcoach/difficulty";
 import "server-only";
-import { withReportFlags } from "@/lib/curlcoach/flagged-shots";
+import { withReportAnalysis } from "@/lib/curlcoach/report-analysis";
 import { reportMisses } from "@/lib/curlcoach/report-misses";
 import { createHash, randomUUID } from "node:crypto";
 import { z } from "zod";
@@ -167,7 +167,7 @@ export async function getEventReports(
       stale: r.fingerprint !== reportFingerprint(event, r.audience),
       packet:
         r.status === "ready"
-          ? withReportFlags(
+          ? withReportAnalysis(
               resolveReportPlayerIds(
                 r.packet as ReportPacket,
                 event,
@@ -182,7 +182,7 @@ export async function getEventReports(
             )
           : r.fingerprint === reportFingerprint(event, r.audience) &&
               Object.keys(r.progress ?? {}).length
-            ? withReportFlags(
+            ? withReportAnalysis(
                 {
                   eventName: event.name,
                   audience: r.audience,
@@ -297,7 +297,7 @@ export async function generateEventReports(
     event.id,
     { ...args, p_upgrade: upgrade },
   )) as { status: string; packet?: ReportPacket };
-  if (claim.status === "ready") return withReportFlags(claim.packet!, event);
+  if (claim.status === "ready") return withReportAnalysis(claim.packet!, event);
   if (claim.status !== "claimed")
     throw new ReportError(
       claim.status === "locked"
@@ -394,7 +394,7 @@ export async function generateEventReports(
           ))
         )
           throw new Error("Report lease expired");
-        return withReportFlags({ ...packet, complete: false }, fresh);
+        return withReportAnalysis({ ...packet, complete: false }, fresh);
       }
     }
     // Refuse to publish if results, grades, roster, membership or completion changed mid-generation.
@@ -420,7 +420,7 @@ export async function generateEventReports(
       }))
     )
       throw new Error("Report lease expired");
-    return withReportFlags(packet, fresh);
+    return withReportAnalysis(packet, fresh);
   } catch (error) {
     abort.abort();
     const reasons = [

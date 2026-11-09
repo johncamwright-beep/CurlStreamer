@@ -176,7 +176,7 @@ test("broadcast flags open the same timed link in scoring, game review and miss 
     await page
       .getByRole("dialog")
       .getByRole("link", {
-        name: name === "Miss Analysis" ? "Analysis" : name,
+        name: "Analysis",
         exact: true,
       })
       .click();
@@ -191,6 +191,10 @@ test("broadcast flags open the same timed link in scoring, game review and miss 
         page.getByRole("region", { name: "Review shots", exact: true }),
       ).toBeVisible();
     } else {
+      await page
+        .getByRole("tab", { name: "Shot Performance", exact: true })
+        .click();
+      await page.getByRole("link", { name, exact: true }).click();
       await page
         .locator("summary")
         .filter({ hasText: /^Shot review/ })

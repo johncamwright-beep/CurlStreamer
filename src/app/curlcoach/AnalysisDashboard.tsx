@@ -41,8 +41,10 @@ export const ANALYSIS_TABS = {
   misses: "Miss Analysis",
   technical: "Technical Review",
   advanced: "Advanced Analysis",
+  flagged: "Flagged shots",
 } as const;
 export type AnalysisTab = keyof typeof ANALYSIS_TABS;
+export type DashboardTab = Exclude<AnalysisTab, "flagged">;
 type NavigationProps = {
   tab: AnalysisTab;
   onTabChange: (tab: AnalysisTab) => void;
@@ -269,7 +271,7 @@ function Trend({
     </div>
   );
 }
-type Review = { label: string; ids: string[]; tab: AnalysisTab };
+type Review = { label: string; ids: string[]; tab: DashboardTab };
 export default function AnalysisDashboard({
   shots: input,
   games,
@@ -277,6 +279,7 @@ export default function AnalysisDashboard({
   tab,
   onTabChange,
 }: NavigationProps & {
+  tab: DashboardTab;
   shots: AnalysisShot[];
   games: CoachGame[];
   players: RosterEntry[];

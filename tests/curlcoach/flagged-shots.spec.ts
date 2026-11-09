@@ -36,7 +36,17 @@ test("flagged-shot menu retains filters and exposes review links and editable ti
   await page
     .getByRole("button", { name: "Shot Tracker menu", exact: true })
     .click();
-  await page.getByRole("link", { name: "Flagged shots", exact: true }).click();
+  const menu = page.getByRole("navigation", { name: "Shot Tracker pages" });
+  await expect(menu.getByRole("link")).toHaveText([
+    "Charting",
+    "Analysis",
+    "Reports",
+  ]);
+  await menu.getByRole("link", { name: "Analysis", exact: true }).click();
+  const flagged = page.getByRole("tab", { name: "Flagged shots", exact: true });
+  await flagged.click();
+  await expect(flagged).toHaveAttribute("aria-selected", "true");
+  await expect(page).toHaveURL(/#analysis\/flagged$/);
   await expect(
     page.getByRole("heading", { name: "Flagged shots", exact: true }),
   ).toBeVisible();

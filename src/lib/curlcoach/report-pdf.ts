@@ -1,25 +1,19 @@
-import {
-  difficultyDescription,
-  difficultyCaveat,
-  difficultyPercent,
-  type DifficultySummary,
-} from "./difficulty";
 import type { SavedReport } from "./reports";
 import { reportPDFFilename, reportPDFTitle } from "./report-filename";
 export { reportPDFFilename } from "./report-filename";
-import { reportPercentages, reportSections } from "./report-presentation";
+import {
+  reportContent,
+  reportSummaryCards,
+  reportTrendPoints,
+} from "./report-content";
 import { reportLogo } from "./report-logo";
 import { reportFontRegular, reportFontBold } from "./report-fonts";
-import { reportLegend } from "./report-legend";
-import { basisText, evidenceBasis, countPercent } from "./report-counts";
 const clean = (s: string) =>
   s
     .normalize("NFKC")
     .replace(/[–—]/g, "-")
     .replace(/[‘’]/g, "'")
     .replace(/[“”]/g, '"');
-const percentage = (v: number | null) =>
-  v === null ? "Not measured" : `${v.toFixed(1)}%`;
 /** Shared browser/server layout. All assets are local; no remote uploads or fetches. */
 export async function buildReportPDF(report: SavedReport, eventName: string) {
   const { jsPDF } = await import("jspdf");
@@ -98,6 +92,7 @@ export async function buildReportPDF(report: SavedReport, eventName: string) {
     rows: string[][],
     widths: number[],
     compact = true,
+    shooting = false,
   ) {
     const lineHeight = compact ? 3.6 : 4.1,
       size = compact ? 8 : 8.5;
@@ -121,6 +116,19 @@ export async function buildReportPDF(report: SavedReport, eventName: string) {
         parts.forEach((part, j) =>
           pdf.text(part, x + 3, y + (compact ? 4 : 5) + j * lineHeight),
         );
+        const percent = Number.parseFloat(values[i]);
+        if (shooting && !head && i === 1 && Number.isFinite(percent)) {
+          pdf.setFillColor("#CBD8DE");
+          pdf.rect(x + 3, y + height - 2, widths[i] - 6, 0.7, "F");
+          pdf.setFillColor("#087D90");
+          pdf.rect(
+            x + 3,
+            y + height - 2,
+            ((widths[i] - 6) * percent) / 100,
+            0.7,
+            "F",
+          );
+        }
         x += widths[i];
       });
       y += height;
@@ -137,21 +145,7 @@ export async function buildReportPDF(report: SavedReport, eventName: string) {
   text(report.title, 24, true);
   text(eventName, 12, false, muted);
   y += 3;
-  const stats = reportPercentages(report);
-  const cards = [
-    ...stats
-      .filter((m) => m.id === "overall" || m.id === "adjusted")
-      .map((m) => ({ label: m.label, value: m.value, basis: m.basis })),
-    ...(report.misses
-      ? [
-          {
-            label: "Partial / limited / miss",
-            value: percentage(report.misses.rate),
-            basis: `${report.misses.misses} of ${report.misses.classified} shots`,
-          },
-        ]
-      : []),
-  ];
+  const cards = reportSummaryCards(report);
   if (cards.length) {
     ensure(39);
     const cw = (width - 5 * (cards.length - 1)) / cards.length;
@@ -173,245 +167,110 @@ export async function buildReportPDF(report: SavedReport, eventName: string) {
     });
     y += 42;
   }
-  const sections = reportSections(report);
-  const difficultyBlock = (d: DifficultySummary) => {
-    heading("Difficulty context - secondary metric");
-    text(difficultyDescription(d));
-    text(
-      `Classified subset actual ${difficultyPercent(d.actual)}; expected ${difficultyPercent(d.expected)}. Reference baseline ${difficultyPercent(d.benchmarks.baseline)}. Benchmark set ${d.benchmarks.version}.`,
-    );
-    table(
-      ["Difficulty", "Shots / mix", "Actual", "Expected"],
-      d.mix.map((r) => [
-        r.level,
-        `${r.count} / ${difficultyPercent(r.share)}`,
-        difficultyPercent(r.actual),
-        difficultyPercent(r.expected),
-      ]),
-      [35, 63, 40, 40],
-    );
-    text(difficultyCaveat);
-  };
-  if (!report.highlights && report.difficulty)
-    difficultyBlock(report.difficulty);
-  heading("Overall assessment");
-  sections[0].findings.forEach((f) => text(f.text));
-  const shots = stats.filter((m) => m.id !== "overall");
-  if (!report.highlights && shots.length) {
-    heading("Shot execution");
-    table(
-      ["Shot type", "Shooting %", "Sample / points"],
-      shots.map((m) => [m.label, m.value, m.basis]),
-      [65, 33, 80],
-    );
-  }
-  if (!report.highlights && report.misses) {
-    const m = report.misses;
-    heading("Miss diagnosis");
-    text(m.focus);
-    text(m.definition, 8, false, muted);
-    table(
-      ["Recorded miss category", "Share of miss outcomes"],
-      [
-        ...m.categories
-          .filter((c) => c.count)
-          .map((c) => [c.tag, countPercent(c.percent, c.count, m.misses)]),
-        ...(m.untaggedPercent
-          ? [
-              [
-                "Not tagged",
-                countPercent(m.untaggedPercent, m.misses - m.tagged, m.misses),
-              ],
-            ]
-          : []),
-      ],
-      [113, 65],
-    );
-    if (m.byShot.length) {
-      heading("Where misses concentrate");
-      table(
-        ["Shot type", "Miss rate", "Most frequent tag / share"],
-        m.byShot.map((r) => [
-          r.label + (r.smallSample ? " *" : ""),
-          countPercent(r.rate, r.misses, r.attempts),
-          r.topTag +
-            (r.topTag !== "Not tagged"
-              ? ` (${r.topCount === undefined ? percentage(r.topPercent) : countPercent(r.topPercent, r.topCount, r.misses)})`
-              : ""),
-        ]),
-        [66, 30, 82],
-      );
-      text(
-        "Miss rate uses classified outcomes for that shot type; tag share uses its miss outcomes. Tied tags are shown together. * Fewer than ten classified outcomes: review cautiously.",
-        8,
-        false,
-        muted,
-      );
-    }
-    if (m.byTurn?.length) {
-      heading("Miss rate by turn");
-      const rows: string[][] = [];
-      for (let i = 0; i < m.byTurn.length; i += 2) {
-        const a = m.byTurn[i],
-          b = m.byTurn[i + 1];
-        rows.push([
-          a.label + (a.smallSample ? " *" : ""),
-          countPercent(a.rate, a.misses, a.attempts),
-          b ? b.label + (b.smallSample ? " *" : "") : "",
-          b ? countPercent(b.rate, b.misses, b.attempts) : "",
-        ]);
+  for (const block of reportContent(report)) {
+    switch (block.kind) {
+      case "heading":
+        if (block.startPage) {
+          pdf.addPage();
+          header();
+        }
+        heading(block.title);
+        break;
+      case "text":
+        text(block.value, block.size, false, block.muted ? muted : ink);
+        break;
+      case "table":
+        if (block.layout === "paired") {
+          const paired: string[][] = [];
+          for (let i = 0; i < block.rows.length; i += 2) {
+            paired.push([...block.rows[i], ...(block.rows[i + 1] ?? ["", ""])]);
+          }
+          table([...block.headers, ...block.headers], paired, [
+            ...block.widths,
+            ...block.widths,
+          ]);
+        } else {
+          table(
+            block.headers,
+            block.rows,
+            block.widths,
+            true,
+            block.layout === "shooting",
+          );
+        }
+        break;
+      case "trend": {
+        ensure(51);
+        const plotX = margin + 12;
+        const plotWidth = width - 22;
+        const at = (value: number) => y + 40 - value * 0.36;
+        pdf.setFont("ReportSans", "normal");
+        pdf.setFontSize(8);
+        pdf.setTextColor(muted);
+        pdf.setDrawColor("#CBD8DE");
+        pdf.setLineWidth(0.25);
+        for (const value of [100, 50, 0]) {
+          pdf.line(plotX, at(value), plotX + plotWidth, at(value));
+          pdf.text(String(value) + "%", plotX - 2, at(value) + 1, {
+            align: "right",
+          });
+        }
+        const points = reportTrendPoints(block.games);
+        pdf.setDrawColor("#087D90");
+        pdf.setFillColor("#087D90");
+        pdf.setLineWidth(0.7);
+        points.forEach((point, index) => {
+          const x = plotX + plotWidth * point.x;
+          pdf.text(`Game ${block.firstGame + index}`, x, y + 46, {
+            align: "center",
+          });
+          if (point.value === null) return;
+          const previous = points[index - 1];
+          if (previous && previous.value !== null)
+            pdf.line(
+              plotX + plotWidth * previous.x,
+              at(previous.value),
+              x,
+              at(point.value),
+            );
+          pdf.circle(x, at(point.value), 1.3, "F");
+        });
+        pdf.setLineWidth(0.2);
+        y += 51;
+        break;
       }
-      table(
-        ["Turn", "Miss rate", "Turn", "Miss rate"],
-        rows,
-        [55, 34, 55, 34],
-        true,
-      );
-    }
-    if (m.byGame.length && !report.games?.length) {
-      heading("Miss rate across games");
-      table(
-        ["Game", "Miss rate", "Most frequent tag"],
-        m.byGame.map((r) => [
-          r.label + (r.smallSample ? " *" : ""),
-          countPercent(r.rate, r.misses, r.attempts),
-          r.topTag,
-        ]),
-        [55, 40, 83],
-      );
-    }
-  }
-  if (!report.highlights && report.technical?.some((g) => g.recorded > 0)) {
-    heading("Technical review");
-    text(
-      "Each share uses observations recorded for that field. Miss rates use classified execution outcomes with that observation. Missing labels are not successful deliveries.",
-      8,
-      false,
-      muted,
-    );
-    table(
-      ["Observation", "Share of recorded", "Miss rate"],
-      report.technical.flatMap((group) =>
-        group.rows
-          .filter((r) => r.count > 0)
-          .map((r) => [
-            `${group.title}: ${r.label}`,
-            countPercent(r.percent, r.count, group.recorded),
-            countPercent(r.missPercent, r.misses, r.classified),
-          ]),
-      ),
-      [54, 62, 62],
-    );
-  }
-  const advancedTables = (
-    summary?: import("./advanced-report").AdvancedReport,
-  ) => {
-    if (!summary) return;
-    heading("Advanced analytics");
-    text(
-      `${summary.recorded} of ${summary.included} included shots have validated Enhanced records. ${summary.unavailable} unavailable; ${summary.needsReview} need review. Shares use assessed observations; multiple tags may overlap.`,
-      8,
-      false,
-      muted,
-    );
-    for (const group of summary.groups) {
-      heading(group.title);
-      table(
-        ["Measurement", "Result / basis"],
-        group.metrics.map((m) => [
-          m.label,
-          m.value +
-            (m.sample < 10
-              ? " * Small sample"
-              : m.sample < 20
-                ? " * Tentative"
-                : ""),
-        ]),
-        [90, 88],
-      );
-    }
-  };
-  for (const section of sections.slice(1)) {
-    heading(section.title);
-    section.findings.forEach((f, i) => {
-      if (section.title === "Next practice") {
-        ensure(lines(f.text, 10).length * 4.6 + 14);
-        text(`Practice ${i + 1}`, 10, true);
-      }
-      text(f.text);
-      if (f.statistics.length)
+      case "practice":
+        ensure(lines(block.text, 10).length * 4.6 + 14);
+        text(`Practice ${block.number}`, 10, true);
+        text(block.text);
+        break;
+      case "flag": {
+        const { flag } = block;
+        ensure(32);
+        const shooter = flag.shooter ? `${flag.shooter} | ` : "";
         text(
-          f.statistics.map((m) => `${m.label}: ${m.value}`).join(" | "),
-          8,
-          false,
-          muted,
+          `${shooter}${flag.game} | End ${flag.end} | Stone ${flag.stone}`,
+          10,
+          true,
         );
-    });
-  }
-  if (!report.highlights) advancedTables(report.advanced);
-  if (!report.highlights && report.games?.length) {
-    for (const game of report.games) {
-      pdf.addPage();
-      header();
-      heading(`Game-by-game review: ${game.title}`);
-      const summary = report.narrative.games?.find((g) => g.key === game.key);
-      if (summary) text(summary.text);
-      if (game.difficulty) text(difficultyDescription(game.difficulty));
-      advancedTables(game.advanced);
-      const metrics = game.groups.flatMap((group) =>
-        group.metrics.map((m) => [
-          `${group.title}: ${m.label}${m.value === "—" ? "" : "\n" + (m.basis ? basisText(m.basis) : report.evidence.find((e) => e.id === m.id) ? evidenceBasis(report.evidence.find((e) => e.id === m.id)!) : "Sample unavailable")}`,
-          m.value === "—" ? "-" : m.value,
-        ]),
-      );
-      const rows: string[][] = [];
-      for (let i = 0; i < metrics.length; i += 2)
-        rows.push([...metrics[i], ...(metrics[i + 1] ?? ["", ""])]);
-      table(
-        ["Measurement", "Result", "Measurement", "Result"],
-        rows,
-        [70, 19, 70, 19],
-        true,
-      );
+        text(flag.type, 9, false, muted);
+        text(flag.note || "No coach's note added.");
+        if (flag.url) {
+          ensure(8);
+          pdf.setFontSize(10);
+          pdf.setTextColor("#087D90");
+          pdf.textWithLink(
+            `Review video${flag.estimated ? " (approximate timing)" : ""}`,
+            margin,
+            y,
+            { url: flag.url },
+          );
+          y += 8;
+        } else text("Recording unavailable.", 9, false, muted);
+        break;
+      }
     }
   }
-  if (report.flags?.length) {
-    heading("Your flagged shots");
-    for (const flag of report.flags) {
-      ensure(32);
-      text(`${flag.game} | End ${flag.end} | Stone ${flag.stone}`, 10, true);
-      text(flag.type, 9, false, muted);
-      text(flag.note || "No coach's note added.");
-      if (flag.url) {
-        ensure(8);
-        pdf.setFontSize(10);
-        pdf.setTextColor("#087D90");
-        pdf.textWithLink(
-          `Review video${flag.estimated ? " (approximate timing)" : ""}`,
-          margin,
-          y,
-          { url: flag.url },
-        );
-        y += 8;
-      } else text("Recording unavailable.", 9, false, muted);
-    }
-  }
-  if (!report.highlights) {
-    heading("Report legend");
-    table(
-      ["Code / measure", "Meaning"],
-      reportLegend.map(([code, meaning]) => [code, meaning]),
-      [44, 134],
-      true,
-    );
-  }
-  heading("How to use this report");
-  text(
-    "These are observations from charted shots. Shot difficulty, ice and tactical intent can affect results. Review video and coaching observations before attributing a miss to a technical cause. Shooting percentages use the recorded scoring scale; they are not Curling Canada benchmarks.",
-    8,
-    false,
-    muted,
-  );
   for (let p = 1; p <= pdf.getNumberOfPages(); p++) {
     pdf.setPage(p);
     pdf.setDrawColor("#CBD8DE");

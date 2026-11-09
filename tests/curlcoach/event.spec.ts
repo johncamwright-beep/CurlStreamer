@@ -20,6 +20,7 @@ async function navigate(page: Page, name: string) {
     "Miss Analysis",
     "Technical Review",
     "Advanced Analysis",
+    "Game analysis",
   ].includes(name);
   await page
     .getByRole("button", { name: "Shot Tracker menu", exact: true })
@@ -28,7 +29,16 @@ async function navigate(page: Page, name: string) {
     .getByRole("dialog", { name: "Shot Tracker menu", exact: true })
     .getByRole("link", { name: analysisTab ? "Analysis" : name, exact: true })
     .click();
-  if (analysisTab) await page.getByRole("tab", { name, exact: true }).click();
+  if (analysisTab) {
+    await page
+      .getByRole("tab", {
+        name: name === "Game analysis" ? "Shot Performance" : name,
+        exact: true,
+      })
+      .click();
+    if (name === "Game analysis")
+      await page.getByRole("link", { name, exact: true }).click();
+  }
   await expect(page.getByRole("heading", { name, exact: true })).toBeVisible();
 }
 test("analysis reports preserve scope, show percentages and fit mobile", async ({
@@ -42,7 +52,7 @@ test("analysis reports preserve scope, show percentages and fit mobile", async (
         includeHidden: true,
       })
       .getByRole("link", { includeHidden: true }),
-  ).toHaveCount(5);
+  ).toHaveCount(3);
   await navigate(page, "Shot Performance");
   await expect(
     page.getByRole("heading", { name: "Performance by shot" }),

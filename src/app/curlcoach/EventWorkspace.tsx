@@ -67,12 +67,16 @@ const pages = [
   "Charting",
   "Analysis",
   "Game analysis",
-  "Flagged shots",
   "Event reports",
   "Enhanced review",
   "Options",
 ] as const;
 type Page = (typeof pages)[number];
+const primaryPages = [
+  { view: "Charting", label: "Charting" },
+  { view: "Analysis", label: "Analysis" },
+  { view: "Event reports", label: "Reports" },
+] as const;
 const slug = (page: string) => page.toLowerCase().replaceAll(" ", "-");
 const pct = (value: number | null) =>
   value === null ? "—" : `${value.toFixed(1)}%`;
@@ -389,6 +393,7 @@ function WorkspaceContent({
         "team-statistics": "performance",
         "miss-analysis": "misses",
         "technical-review": "technical",
+        "flagged-shots": "flagged",
       };
       if (
         hash === "analysis" ||
@@ -441,9 +446,10 @@ function WorkspaceContent({
   // while the rest of the season loads for the All events selector.
   const analysisData = seasonReady ? statsData : eventReady ? data : null;
   const statsReady = !!analysisData;
+  const flagged = view === "Analysis" && analysisTab === "flagged";
   const flagDefaultApplied = useRef(false);
   useEffect(() => {
-    if (view !== "Flagged shots") {
+    if (!flagged) {
       flagDefaultApplied.current = false;
       return;
     }
@@ -477,7 +483,7 @@ function WorkspaceContent({
       setStatsEventId(recent.eventId);
       setAnalysisGame("all");
     }
-  }, [view, seasonReady, statsData, data]);
+  }, [flagged, seasonReady, statsData, data]);
   const hasData = !!data;
   useEffect(() => {
     if (!statistics) setStatsData(null);
@@ -706,11 +712,17 @@ function WorkspaceContent({
     }
   }
 
-  const navigationPages = pages.filter(
-    (page) =>
-      page !== "Options" &&
-      (page !== "Enhanced review" || metrics.preferences.mode === "enhanced"),
-  );
+  const primaryView =
+    view === "Game analysis" || view === "Enhanced review" ? "Analysis" : view;
+  const primaryLinks = primaryPages.map((page) => (
+    <a
+      key={page.view}
+      href={`#${slug(page.view)}`}
+      aria-current={primaryView === page.view ? "page" : undefined}
+    >
+      {page.label}
+    </a>
+  ));
   const gamePicker = (
     <EntryOverlay title="Change game">
       <div className="coach-entry-grid">
@@ -770,20 +782,7 @@ function WorkspaceContent({
             className="tracker-primary-nav"
             aria-label="Shot Tracker shortcuts"
           >
-            {navigationPages.map((page) => (
-              <a
-                key={page}
-                data-primary={
-                  page === "Charting" || page === "Analysis"
-                    ? "true"
-                    : undefined
-                }
-                href={`#${slug(page)}`}
-                aria-current={view === page ? "page" : undefined}
-              >
-                {page}
-              </a>
-            ))}
+            {primaryLinks}
           </nav>
           <EntryOverlay
             title="Shot Tracker menu"
@@ -796,17 +795,7 @@ function WorkspaceContent({
                   e.currentTarget.closest("dialog")?.close();
               }}
             >
-              <nav aria-label="Shot Tracker pages">
-                {navigationPages.map((page) => (
-                  <a
-                    href={`#${slug(page)}`}
-                    aria-current={view === page ? "page" : undefined}
-                    key={page}
-                  >
-                    {page}
-                  </a>
-                ))}
-              </nav>
+              <nav aria-label="Shot Tracker pages">{primaryLinks}</nav>
               <div className="event-sidebar-footer">
                 {mode === "streamer" ? (
                   <nav aria-label="Account">
@@ -831,8 +820,42 @@ function WorkspaceContent({
           />
         )}
         <header className="event-header">
-          <div>
+          <div className="flex flex-wrap items-center gap-x-4">
             <h1>{view === "Analysis" ? ANALYSIS_TABS[analysisTab] : view}</h1>
+            {view === "Analysis" && analysisTab === "performance" && (
+              <a
+                className="inline-flex min-h-11 items-center underline"
+                href="#game-analysis"
+              >
+                Game analysis
+              </a>
+            )}
+            {view === "Analysis" &&
+              analysisTab === "advanced" &&
+              metrics.preferences.mode === "enhanced" && (
+                <a
+                  className="inline-flex min-h-11 items-center underline"
+                  href="#enhanced-review"
+                >
+                  Enhanced review
+                </a>
+              )}
+            {view === "Game analysis" && (
+              <a
+                className="inline-flex min-h-11 items-center underline"
+                href="#analysis/performance"
+              >
+                Back to Shot Performance
+              </a>
+            )}
+            {view === "Enhanced review" && (
+              <a
+                className="inline-flex min-h-11 items-center underline"
+                href="#analysis/advanced"
+              >
+                Back to Advanced Analysis
+              </a>
+            )}
           </div>
           {open && (
             <button
@@ -1208,39 +1231,47 @@ function WorkspaceContent({
             ) : (
               statistics && (
                 <>
-                  {view === "Flagged shots" ? (
-                    <FlaggedShots
-                      shots={selected}
-                      games={analysisGames}
-                      players={analysisPlayers}
-                      canSave={mode === "streamer"}
-                      onSaved={() => refresh()}
-                    />
-                  ) : view === "Analysis" ? (
-                    <>
-                      {analysisTab === "advanced" &&
-                        !seasonReady &&
-                        !statsError && (
-                          <section className="event-card" role="status">
-                            Loading advanced analysis…
-                          </section>
-                        )}
+                  {view === "Analysis" ? (
+                    analysisTab === "flagged" ? (
                       <div
-                        hidden={
-                          analysisTab === "advanced" &&
-                          !seasonReady &&
-                          !statsError
-                        }
+                        id="analysis-report"
+                        role="tabpanel"
+                        aria-labelledby="analysis-tab-flagged"
                       >
-                        <AnalysisDashboard
+                        <FlaggedShots
                           shots={selected}
                           games={analysisGames}
                           players={analysisPlayers}
-                          tab={analysisTab}
-                          onTabChange={changeAnalysisTab}
+                          canSave={mode === "streamer"}
+                          onSaved={() => refresh()}
                         />
                       </div>
-                    </>
+                    ) : (
+                      <>
+                        {analysisTab === "advanced" &&
+                          !seasonReady &&
+                          !statsError && (
+                            <section className="event-card" role="status">
+                              Loading advanced analysis…
+                            </section>
+                          )}
+                        <div
+                          hidden={
+                            analysisTab === "advanced" &&
+                            !seasonReady &&
+                            !statsError
+                          }
+                        >
+                          <AnalysisDashboard
+                            shots={selected}
+                            games={analysisGames}
+                            players={analysisPlayers}
+                            tab={analysisTab}
+                            onTabChange={changeAnalysisTab}
+                          />
+                        </div>
+                      </>
+                    )
                   ) : (
                     <AnalysisPanels
                       key={view}

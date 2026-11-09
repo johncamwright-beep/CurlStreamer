@@ -16,6 +16,7 @@ test("legacy analysis links select the matching submenu", async ({ page }) => {
     ["miss-analysis", "Miss Analysis"],
     ["technical-review", "Technical Review"],
     ["shot-performance", "Shot Performance"],
+    ["flagged-shots", "Flagged shots"],
     ["analysis/advanced", "Advanced Analysis"],
   ]) {
     await page.goto(`/curlcoach?event=practice#${hash}`);
@@ -42,17 +43,16 @@ test("legacy analysis links select the matching submenu", async ({ page }) => {
   const shortcuts = page.getByRole("navigation", {
     name: "Shot Tracker shortcuts",
   });
-  await expect(
-    shortcuts.getByRole("link", { name: "Analysis", exact: true }),
-  ).toBeVisible();
-  for (const name of [
-    "Shot Performance",
-    "Miss Analysis",
-    "Technical Review",
-  ]) {
+  for (const width of [390, 1440]) {
+    await page.setViewportSize({ width, height: 1000 });
+    await expect(shortcuts.getByRole("link")).toHaveText([
+      "Charting",
+      "Analysis",
+      "Reports",
+    ]);
     await expect(
-      shortcuts.getByRole("link", { name, exact: true }),
-    ).toHaveCount(0);
+      shortcuts.getByRole("link", { name: "Reports", exact: true }),
+    ).toBeVisible();
   }
 });
 

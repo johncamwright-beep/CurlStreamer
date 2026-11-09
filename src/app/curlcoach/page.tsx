@@ -1,5 +1,4 @@
 import { cookies } from "next/headers";
-import { notFound } from "next/navigation";
 import Link from "next/link";
 import { authorized, labEnabled, sessionCookie } from "@/lib/curlcoach/access";
 import { requireCoachAccount } from "@/lib/curlcoach/production-access";
@@ -13,23 +12,30 @@ export default async function CoachPage() {
         unlocked={await authorized((await cookies()).get(sessionCookie)?.value)}
       />
     );
-  if (process.env.CURLCOACH_ENABLED !== "true") notFound();
-  const account = await requireCoachAccount();
+  const enabled = process.env.CURLCOACH_ENABLED === "true";
+  const account = enabled ? await requireCoachAccount() : null;
   if (!account)
     return (
       <main className="mx-auto max-w-3xl p-6">
         <AppNavigation />
-        <h1 className="text-2xl font-bold">Private coaching</h1>
+        <h1 className="text-2xl font-bold">Shot Tracker</h1>
         <p>
-          Shot Tracker requires an enabled team subscription and coach access
-          for your account.
+          Shot Tracker requires a CurlStreamer add-on subscription. Your team
+          needs an active Shot Tracker licence, and your team owner must assign
+          you a coaching seat.
         </p>
-        <Link
-          className="inline-flex min-h-11 items-center underline"
-          href="/account"
-        >
-          Return to Account &amp; Settings
-        </Link>
+        {!enabled && <p>Charting is currently unavailable.</p>}
+        <div className="mt-4 flex flex-wrap gap-3">
+          <Link className="btn min-h-11" href="/account?section=subscription">
+            View trial &amp; subscription
+          </Link>
+          <Link
+            className="btn-secondary min-h-11"
+            href="/account?section=members"
+          >
+            View team access
+          </Link>
+        </div>
       </main>
     );
   return (

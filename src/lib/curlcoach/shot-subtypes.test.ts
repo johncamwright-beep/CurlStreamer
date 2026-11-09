@@ -38,11 +38,17 @@ describe("workbook shot entries", () => {
         "Hit & Roll",
       );
   });
-  it("filters both weight pickers and result observations, and falls back to all in Standard or without a compatible subtype", () => {
+  it("offers every called weight while keeping the selected subtype's result choices", () => {
     expect(entryChoices("Guard/Front Stone", "guard", true)).toEqual({
-      weights: ["1_guard", "2_guard", "3_guard"],
+      weights: allWeights,
       results: ["light", "heavy", "hog", "in_house"],
     });
+    expect(
+      supplementSchema.safeParse({
+        ...emptySupplement(),
+        values: { shotSubtype: "guard", intendedWeight: "board" },
+      }).success,
+    ).toBe(true);
     for (const args of [
       ["Draw", "", true],
       ["Draw", "guard", true],

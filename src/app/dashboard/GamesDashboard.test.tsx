@@ -202,4 +202,28 @@ describe("dashboard role controls", () => {
       'href="https://www.youtube.com/watch?v=abcdefghijk"',
     );
   });
+  it("pairs YouTube and Shot Tracker links for the same game", () => {
+    const html = render("viewer", [
+      {
+        ...game,
+        eventId: "event-one",
+        scheduledYouTubeWatchUrl: "https://www.youtube.com/watch?v=abcdefghijk",
+        scheduledYouTubeStatus: "ready",
+      },
+    ]);
+    expect(html).toMatch(
+      /class="dashboard-media-actions"><a class="dashboard-youtube-link".*?<\/a><a class="dashboard-shot-tracker-link"/,
+    );
+    expect(html).toContain(
+      'href="/shot-tracker?source=streamer&amp;event=event-one&amp;game=one#charting"',
+    );
+  });
+  it("offers Shot Tracker for a standalone game without a YouTube link", () => {
+    const html = render("viewer");
+    expect(html).not.toContain("dashboard-youtube-link");
+    expect(html).toContain('aria-label="Shot Tracker: ');
+    expect(html).toContain(
+      'href="/shot-tracker?source=streamer&amp;event=standalone&amp;game=one#charting"',
+    );
+  });
 });

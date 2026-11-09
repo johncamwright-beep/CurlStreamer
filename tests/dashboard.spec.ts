@@ -29,6 +29,15 @@ test("dashboard separates reported broadcasts, upcoming games and unfinished gam
   await expect(
     page.getByRole("link", { name: /Watch on YouTube/ }),
   ).toHaveAttribute("href", "https://www.youtube.com/watch?v=liveabcdefgh");
+  await expect(
+    page
+      .locator(".dashboard-media-actions")
+      .filter({ has: page.getByRole("link", { name: /Watch on YouTube/ }) })
+      .getByRole("link", { name: /^Shot Tracker:/ }),
+  ).toHaveAttribute(
+    "href",
+    "/shot-tracker?source=streamer&event=standalone&game=66666666-6666-4666-8666-000000000008#charting",
+  );
   await expect(page.getByRole("link", { name: /^Unfinished/ })).toBeVisible();
   await expect(
     page.getByRole("link", { name: /^Open Game:.*Team Benning/ }),
@@ -83,6 +92,9 @@ test("dashboard fits narrow phones and preserves reachable controls", async ({
   await page.setViewportSize({ width: 320, height: 800 });
   const cards = page.locator(".dashboard-game-card");
   await expect(cards.first()).toBeVisible();
+  const trackerLinks = cards.getByRole("link", { name: /^Shot Tracker:/ });
+  await expect(trackerLinks).toHaveCount(await cards.count());
+  await expect(trackerLinks.first()).toBeVisible();
   expect(
     await cards.evaluateAll((items) =>
       items.some((el) => el.getBoundingClientRect().right > innerWidth),
@@ -105,6 +117,20 @@ test("dashboard fits narrow phones and preserves reachable controls", async ({
     path: info.outputPath(`dashboard-narrow-${info.project.name}.png`),
     fullPage: true,
   });
+  await trackerLinks.first().click();
+  await expect(page).toHaveURL(/\/shot-tracker\?source=streamer/);
+  await expect(
+    page.getByText(/Shot Tracker requires a CurlStreamer add-on subscription/),
+  ).toBeVisible();
+  const subscription = page.getByRole("link", {
+    name: "View trial & subscription",
+  });
+  await expect(subscription).toHaveAttribute(
+    "href",
+    "/account?section=subscription",
+  );
+  await subscription.click();
+  await expect(page).toHaveURL(/\/account\?section=subscription$/);
 });
 
 test("event filter follows the selected event across game views and resets", async ({

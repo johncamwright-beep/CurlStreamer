@@ -14,7 +14,8 @@ const native = await startNativeCoachProof(
   "work/ffmpeg/ffmpeg.exe",
   "work/coach-rolling-evidence",
 );
-const code = String(randomInt(100000, 1000000));
+const code =
+  process.env.COACH_PROOF_PAIR_CODE ?? String(randomInt(100000, 1000000));
 try {
   const proof = await startCoachLocalProof({
     host,

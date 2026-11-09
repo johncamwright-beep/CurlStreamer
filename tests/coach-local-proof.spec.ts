@@ -25,10 +25,6 @@ for (const rolling of [false, true])
       await page.goto(proof.address);
       await page.getByLabel("Pairing code from your laptop").fill("123456");
       await page.getByRole("button", { name: "Connect", exact: true }).click();
-      if (rolling)
-        await page
-          .getByRole("button", { name: "Capture recent video" })
-          .click();
       await expect(
         page.getByRole("button", { name: "Use this start" }),
       ).toBeEnabled();

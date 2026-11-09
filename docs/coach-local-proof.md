@@ -1,6 +1,6 @@
 # Phone review over the local network — proof
 
-This is an opt-in development proof, not a shipped Studio feature. It serves one fixed H.264 MP4 directly from the laptop to a paired phone. It never calls Supabase, YouTube, or a media relay and cannot control the broadcast. The current rehearsal uses a generated, visibly labelled `LOCAL SCRUB TEST` video (120 seconds).
+This is an opt-in development proof, not a shipped Studio feature. The fixed-file rehearsal was successfully tested on the user's iPhone. The second mode captures an independent rolling OBS view, exports a silent H.264 MP4, and serves it directly to a paired phone. Neither mode calls Supabase, YouTube, or a media relay. The native fixture is visibly labelled `LOCAL COACH PROOF` with a moving clock; it is not a camera feed.
 
 Run with the repository's Node runtime:
 
@@ -26,8 +26,21 @@ The proof intentionally opens as a top-level local HTTP page to test LAN video w
 
 - Continuous two-minute capture from live Studio while broadcasting.
 - CPU, memory and Wi-Fi load during a real broadcast.
-- Independent coaching buffer retention across on-air replays.
 - Production shooter identity, flag persistence and report routing (coordinated with Shot Tracker work).
 - Mapping a locally selected point into the eventual recording/YouTube timeline across pauses and restarts.
 
 Keep the phone connectivity proof isolated until those steps are validated. The existing native replay buffer and its 60-second behaviour are unchanged.
+
+## Rolling native proof
+
+Build the recorder with `coach.c`; the feature is opt-in through the private `--coach-control` argument. Installed Studio does not request it. `CCS1` reads buffer state; `CCC1` captures without changing the program. The independent 960×540/15 fps encoder follows the live browser source, not the replay scene. OBS requires a mux audio track; the phone export removes it without touching broadcast audio.
+
+```text
+node node_modules/vite-node/vite-node.mjs scripts/coach-rolling-proof.ts <private LAN IPv4> <OBS runtime bin directory> <private status file>
+```
+
+The development runner expects the recorder in `work/coach-native-build/Release`, FFmpeg under `work/ffmpeg`, and its bundled ffprobe. It binds port 3189. On the phone, pair and tap **Capture recent video**. The snapshot stays frozen while the live buffer continues. Captures are session-private, immutable, limited to 32 per run and at most two minutes each. Proof files stay under `work/coach-rolling-evidence`; the runner closes after two hours. The full local test recording also remains there for inspection.
+
+`coach-validation.mjs` verifies real native capture, H.264 decoding, capture of the current live source during an on-air replay, and continued main recording. Provider tests verify snapshot ownership and selection bounds; browser checks cover fixed and rolling modes at desktop/phone sizes. Actual camera/broadcast load, iPhone rolling-mode verification, durable flag persistence and exact recording timeline mapping remain separate integration gates. `capturedAt` is the capture request time, not yet a frame-accurate recording timestamp.
+
+Validation on November 9: native build and independent/concurrent-replay capture checks passed; the running LAN exporter produced a 120-second, 960×540/15 fps video-only MP4. Formatting, typecheck, production build, 2,873 unit tests, and four focused browser cases passed. The standard application E2E command could not start because `npm` is unavailable in this shell (build was run directly through Next). A separate legacy replay-validation process timed out at startup while the phone proof was already running; it has not been counted as passing regression coverage. No installed Studio binaries or production deployment were changed.

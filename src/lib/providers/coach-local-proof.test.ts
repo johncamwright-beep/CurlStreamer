@@ -8,6 +8,66 @@ afterEach(async () => {
   proof?.close();
   if (dir) await rm(dir, { recursive: true, force: true });
 });
+it("freezes private rolling snapshots and bounds selection to captured footage", async () => {
+  dir = await mkdtemp(join(tmpdir(), "coach-proof-"));
+  const video = join(dir, "clip.mp4");
+  await writeFile(video, "snapshot");
+  proof = await startCoachLocalProof({
+    host: "127.0.0.1",
+    port: 0,
+    code: "123456",
+    duration: 120,
+    capture: async () => ({
+      video,
+      duration: 12,
+      capturedAt: "2026-11-09T20:00:00Z",
+    }),
+  });
+  const post = (path: string, value: unknown, cookie = "") =>
+    fetch(proof.address + path, {
+      method: "POST",
+      headers: {
+        Origin: proof.address,
+        "Content-Type": "application/json",
+        cookie,
+      },
+      body: JSON.stringify(value),
+    });
+  expect((await post("/capture", {})).status).toBe(401);
+  const first = await post("/pair", { code: "123456" });
+  const owner = first.headers.get("set-cookie")!.split(";")[0];
+  const second = await post("/pair", { code: "123456" });
+  const other = second.headers.get("set-cookie")!.split(";")[0];
+  const clip = await (await post("/capture", {}, owner)).json();
+  expect(clip.duration).toBe(12);
+  expect(
+    await (
+      await fetch(proof.address + clip.url, { headers: { cookie: owner } })
+    ).text(),
+  ).toBe("snapshot");
+  expect(
+    (await fetch(proof.address + clip.url, { headers: { cookie: other } }))
+      .status,
+  ).toBe(404);
+  expect(
+    (
+      await post(
+        "/selection",
+        { startSeconds: 13, audience: "player", notes: "" },
+        owner,
+      )
+    ).status,
+  ).toBe(400);
+  expect(
+    (
+      await post(
+        "/selection",
+        { startSeconds: 5, audience: "team", notes: "Review together" },
+        owner,
+      )
+    ).status,
+  ).toBe(200);
+});
 it("requires local pairing, supports seek ranges, and stores only a bounded selection", async () => {
   dir = await mkdtemp(join(tmpdir(), "coach-proof-"));
   const video = join(dir, "clip.mp4");

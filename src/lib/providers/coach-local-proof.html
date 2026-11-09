@@ -186,6 +186,7 @@
         Use this start
       </button>
     </section>
+    <button id="capture" type="button" hidden>Capture recent video</button>
     <p id="status" role="status"></p>
     <script>
       const $ = (id) => document.getElementById(id),
@@ -222,11 +223,36 @@
           $("code").value = "";
           $("pair").hidden = true;
           $("review").hidden = false;
-          video.src = "/video";
-          video.load();
+          if (b.rolling) {
+            $("capture").hidden = false;
+            $("loading").textContent =
+              "Tap Capture recent video to freeze the current window.";
+          } else {
+            video.src = "/video";
+            video.load();
+          }
           $("status").textContent = "Connected directly to the laptop.";
         } catch (e) {
           $("status").textContent = e.message;
+        }
+      };
+      $("capture").onclick = async () => {
+        video.pause();
+        $("capture").disabled = true;
+        ["scrub", "back", "play", "forward", "save"].forEach(
+          (id) => ($(id).disabled = true),
+        );
+        $("status").textContent = "Capturing recent video…";
+        try {
+          const b = await post("/capture", {});
+          limit = b.duration;
+          video.src = b.url;
+          video.load();
+          $("status").textContent = "Window frozen. Scrub to the shot start.";
+        } catch (e) {
+          $("status").textContent = e.message;
+        } finally {
+          $("capture").disabled = false;
         }
       };
       video.onloadedmetadata = () => {

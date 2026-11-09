@@ -10,7 +10,12 @@ import { replayRange } from "./studio-replay-range";
 export async function startCoachLocalProof(options: {
   host: string;
   port: number;
-  video: string;
+  video?: string;
+  capture?: () => Promise<{
+    video: string;
+    duration: number;
+    capturedAt: string;
+  }>;
   code: string;
   duration: number;
   lifetimeMs?: number;
@@ -19,7 +24,7 @@ export async function startCoachLocalProof(options: {
     .object({
       host: z.ipv4(),
       port: z.number().int().min(0).max(65535),
-      video: z.string().min(1),
+      video: z.string().min(1).optional(),
       code: z.string().regex(/^\d{6}$/),
       duration: z.number().positive().max(120),
       lifetimeMs: z.number().positive().optional(),
@@ -27,7 +32,14 @@ export async function startCoachLocalProof(options: {
     .parse(options);
   if (!/^(127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/.test(config.host))
     throw Error("Choose a private LAN address");
-  const size = (await stat(config.video)).size;
+  if (!config.video && !options.capture)
+    throw Error("A recording source is required");
+  const snapshots = new Map<
+    string,
+    { video: string; duration: number; capturedAt: string; owner: string }
+  >();
+  const current = new Map<string, string>();
+  let capturing = false;
   const html = await readFile(
     resolve("src/lib/providers/coach-local-proof.html"),
     "utf8",
@@ -106,7 +118,10 @@ export async function startCoachLocalProof(options: {
           "Set-Cookie",
           `coach_proof=${session}; HttpOnly; SameSite=Strict; Path=/; Max-Age=7200`,
         );
-        reply(200, { duration: config.duration });
+        reply(200, {
+          duration: config.duration,
+          rolling: Boolean(options.capture),
+        });
         return;
       }
       const cookie = req.headers.cookie
@@ -118,10 +133,54 @@ export async function startCoachLocalProof(options: {
         reply(401, { error: "Pair this phone first" });
         return;
       }
+      if (req.method === "POST" && req.url === "/capture" && options.capture) {
+        if (capturing || snapshots.size >= 32) {
+          reply(429, {
+            error: capturing
+              ? "Another capture is finishing. Try again shortly."
+              : "Proof capture limit reached. Restart the proof.",
+          });
+          return;
+        }
+        capturing = true;
+        try {
+          const clip = await options.capture();
+          if (
+            !Number.isFinite(clip.duration) ||
+            clip.duration <= 0 ||
+            clip.duration > 120.1
+          )
+            throw Error("Invalid clip");
+          const id = randomBytes(16).toString("hex");
+          snapshots.set(id, { ...clip, owner: cookie });
+          current.set(cookie, id);
+          reply(200, {
+            duration: clip.duration,
+            url: "/video?id=" + id,
+            capturedAt: clip.capturedAt,
+          });
+        } finally {
+          capturing = false;
+        }
+        return;
+      }
+      const requestedId = new URL(req.url ?? "/", address).searchParams.get(
+        "id",
+      );
+      const clip = requestedId ? snapshots.get(requestedId) : undefined;
       if (
         (req.method === "GET" || req.method === "HEAD") &&
-        req.url === "/video"
+        (req.url === "/video" || req.url?.startsWith("/video?"))
       ) {
+        if (
+          (options.capture && (!clip || clip.owner !== cookie)) ||
+          (!clip && !config.video)
+        ) {
+          reply(404, { error: "Capture recent video first" });
+          return;
+        }
+        const videoPath = clip?.video ?? config.video!;
+        const size = (await stat(videoPath)).size;
         const range = replayRange(req.headers.range, size);
         if (!range) {
           res.writeHead(416, { "Content-Range": `bytes */${size}` });
@@ -142,7 +201,7 @@ export async function startCoachLocalProof(options: {
           return;
         }
         mediaRequests++;
-        const stream = createReadStream(config.video, {
+        const stream = createReadStream(videoPath, {
           start: range.start,
           end: range.end,
         });
@@ -155,15 +214,28 @@ export async function startCoachLocalProof(options: {
         return;
       }
       if (req.method === "POST" && req.url === "/selection") {
+        const selectedClip = snapshots.get(current.get(cookie) ?? "");
+        if (options.capture && !selectedClip) {
+          reply(400, { error: "Capture recent video first" });
+          return;
+        }
         selection = z
           .object({
-            startSeconds: z.number().min(0).max(config.duration),
+            startSeconds: z
+              .number()
+              .min(0)
+              .max(selectedClip?.duration ?? config.duration),
             audience: z.enum(["player", "team"]),
             notes: z.string().max(2000),
           })
           .strict()
           .parse(await body(req));
-        reply(200, { saved: true, selection, proofOnly: true });
+        reply(200, {
+          saved: true,
+          selection,
+          capturedAt: selectedClip?.capturedAt,
+          proofOnly: true,
+        });
         return;
       }
       reply(404, { error: "Not found" });

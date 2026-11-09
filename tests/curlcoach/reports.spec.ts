@@ -544,6 +544,9 @@ test("report navigation is read-only, generation is explicit, and PDFs contain o
     page.getByRole("row", { name: "Shot types: Peel -" }),
   ).toBeVisible();
   await expect(
+    page.getByRole("cell", { name: "80.0%", exact: true }),
+  ).toHaveCSS("color", "rgb(23, 44, 62)");
+  await expect(
     page.getByText("Called Guard 1; observed Guard 2", { exact: true }),
   ).toBeVisible();
   await expect(
@@ -747,6 +750,21 @@ test("report email requires recipient review and explicit send; coach reports ha
   };
   const saved = {
     ...input,
+    analysis: reportAnalysis(event),
+    flags: [
+      {
+        gameId: "fixture-game",
+        shotId: "team-flag",
+        game: "Opening game",
+        shooter: "Alex",
+        end: 1,
+        stone: 1,
+        type: "Draw",
+        note: "Team practice review",
+        url: "https://www.youtube.com/watch?v=abcdefghijk&t=90s",
+        estimated: false,
+      },
+    ],
     narrative: {
       summary: f,
       strengths: [f],
@@ -848,6 +866,15 @@ test("report email requires recipient review and explicit send; coach reports ha
   await page.getByRole("button", { name: "Team report", exact: true }).click();
   await expect(
     page.getByRole("heading", { name: "Miss diagnosis", exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "Team flagged shots", exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("heading", {
+      name: "Alex · Opening game · End 1 · Stone 1",
+      exact: true,
+    }),
   ).toBeVisible();
   await page
     .getByRole("button", { name: "Email team report", exact: true })

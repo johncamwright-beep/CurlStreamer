@@ -97,6 +97,7 @@
 }
 .report-sheet table {
   width: 100%;
+  color: #172c3e;
   table-layout: fixed;
   border-collapse: collapse;
   font-size: 0.83rem;

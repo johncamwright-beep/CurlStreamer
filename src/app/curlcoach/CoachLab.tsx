@@ -4,6 +4,7 @@ import {
   withDifficulty,
   difficultySummary,
   difficultyDescription,
+  formatEasyShotIndex,
 } from "@/lib/curlcoach/difficulty";
 import {
   withBroadcastReview,
@@ -702,6 +703,7 @@ export default function CoachLab({
   const shooterWeighted = difficultySummary(
     classifiedShots.filter((s) => s.playerId === draft.playerId),
   );
+  const teamWeighted = difficultySummary(classifiedShots);
   const percentage = (value: number | null) =>
     value === null ? "—" : value.toFixed(1) + "%";
   const lastRevision = new Map(
@@ -987,29 +989,25 @@ export default function CoachLab({
                           <dt>{tabbedEntry ? "Player" : "Player shooting"}</dt>
                           <dd>{percentage(shooter.percent)}</dd>
                         </div>
-                        <div>
+                        <div title={difficultyDescription(shooterWeighted)}>
                           <dt>
                             {tabbedEntry
-                              ? "Player (W)"
-                              : "Player weighted shooting"}
+                              ? "Player index"
+                              : "Player easy-shot equivalent"}
                           </dt>
-                          <dd>{percentage(shooterWeighted.adjusted)}</dd>
+                          <dd>{formatEasyShotIndex(shooterWeighted)}</dd>
                         </div>
                         <div>
                           <dt>{tabbedEntry ? "Team" : "Team shooting"}</dt>
                           <dd>{percentage(team.percent)}</dd>
                         </div>
-                        <div>
+                        <div title={difficultyDescription(teamWeighted)}>
                           <dt>
                             {tabbedEntry
-                              ? "Team (W)"
-                              : "Team weighted shooting"}
+                              ? "Team index"
+                              : "Team easy-shot equivalent"}
                           </dt>
-                          <dd>
-                            {percentage(
-                              difficultySummary(classifiedShots).adjusted,
-                            )}
-                          </dd>
+                          <dd>{formatEasyShotIndex(teamWeighted)}</dd>
                         </div>
                       </dl>
                       <EntryOverlay

@@ -3,8 +3,12 @@ import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { expect, test } from "@playwright/test";
 import { technicalSummary } from "../../src/lib/curlcoach/technical";
-import { sampleEvent } from "../../src/lib/curlcoach/event";
+import { gameShots, sampleEvent } from "../../src/lib/curlcoach/event";
 import { reportAnalysis } from "../../src/lib/curlcoach/report-analysis";
+import {
+  difficultyBenchmarks,
+  difficultySummary,
+} from "../../src/lib/curlcoach/difficulty";
 import type {
   ReportPacket,
   SavedReport,
@@ -319,11 +323,20 @@ test("report navigation is read-only, generation is explicit, and PDFs contain o
     stale: boolean;
     packet: ReportPacket;
   }[] = [];
+  const exampleShot = gameShots(sampleEvent("shorty-example").games[0])[0];
+  const legacyDifficulty = difficultySummary(
+    [
+      { ...exampleShot, grade: 4, difficulty: "C", excluded: null },
+      { ...exampleShot, grade: 5, excluded: null },
+    ],
+    { ...difficultyBenchmarks, version: "illustrative-v1", baseline: 70 },
+  );
   const report = (key: string, title: string): SavedReport => ({
     key,
     title,
     ...(key.startsWith("p")
       ? {
+          difficulty: legacyDifficulty,
           technical: technicalSummary([
             {
               playerId: "fixture",
@@ -403,6 +416,14 @@ test("report navigation is read-only, generation is explicit, and PDFs contain o
         sample: 32,
         confidence: "event",
       },
+      {
+        id: "difficulty",
+        label: "Difficulty context",
+        value:
+          "Difficulty adjusted: 95.0% · Above expected: +25.0 pp. Coverage: 1 of 2 eligible graded shots (50.0%). Classified subset actual 80.0%, expected 55.0%; reference baseline 70.0%.",
+        sample: 1,
+        confidence: "small",
+      },
     ],
     narrative: {
       ...(key.startsWith("p")
@@ -427,7 +448,10 @@ test("report navigation is read-only, generation is explicit, and PDFs contain o
         },
       ],
       priorities: [
-        { text: "Work on finishing behind the guard.", evidence: ["overall"] },
+        {
+          text: "Work on finishing behind the guard.",
+          evidence: ["difficulty", "overall"],
+        },
       ],
       practice: [
         {
@@ -529,6 +553,13 @@ test("report navigation is read-only, generation is explicit, and PDFs contain o
   await expect(page.getByRole("article")).toContainText("76.3%");
   await expect(page.getByRole("article")).toContainText("85.6%");
   await expect(page.getByRole("article")).toContainText("301 graded shots");
+  const summary = page.getByLabel("Report summary", { exact: true });
+  await expect(summary).toContainText("Easy-shot equivalent index");
+  await expect(summary.getByText("110.0", { exact: true })).toBeVisible();
+  await expect(summary).toContainText("1 of 2 graded shots with difficulty");
+  await expect(page.getByRole("article")).not.toContainText(
+    "Difficulty adjusted: 95.0%",
+  );
   await expect(
     page.getByRole("heading", { name: "Report legend", exact: true }),
   ).toBeVisible();
@@ -539,12 +570,13 @@ test("report navigation is read-only, generation is explicit, and PDFs contain o
       exact: true,
     }),
   ).toBeVisible();
-  await expect(page.getByText("80.0%", { exact: true })).toBeVisible();
   await expect(
     page.getByRole("row", { name: "Shot types: Peel -" }),
   ).toBeVisible();
   await expect(
-    page.getByRole("cell", { name: "80.0%", exact: true }),
+    page
+      .getByRole("row", { name: /^Shot types: Draw/ })
+      .getByRole("cell", { name: "80.0%", exact: true }),
   ).toHaveCSS("color", "rgb(23, 44, 62)");
   await expect(
     page.getByText("Called Guard 1; observed Guard 2", { exact: true }),

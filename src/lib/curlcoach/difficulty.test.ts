@@ -8,6 +8,7 @@ import {
   difficultyPAE,
   difficultyBenchmarks,
   difficultyIdentity,
+  formatEasyShotIndex,
   type DifficultyShot,
 } from "./difficulty";
 import { emptySupplement } from "./enhanced-catalog";
@@ -44,21 +45,21 @@ describe("difficulty adjusted shooting", () => {
         level: "A" as const,
         makes: 19,
         actual: 95,
-        adjusted: 80,
+        adjusted: 95,
       },
       {
         player: "second",
         level: "B" as const,
         makes: 17,
         actual: 85,
-        adjusted: 85,
+        adjusted: 100,
       },
       {
         player: "third",
         level: "C" as const,
         makes: 16,
         actual: 80,
-        adjusted: 95,
+        adjusted: 110,
       },
     ];
     const rows = profiles.flatMap((p) =>
@@ -72,12 +73,12 @@ describe("difficulty adjusted shooting", () => {
       expect(report(pool).percent).toBeCloseTo(p.actual);
       expect(difficultySummary(pool).adjusted).toBeCloseTo(p.adjusted);
     }
-    expect(difficultySummary(rows).adjusted).toBeCloseTo((80 + 85 + 95) / 3);
+    expect(difficultySummary(rows).adjusted).toBeCloseTo((95 + 100 + 110) / 3);
   });
   it.each([
-    ["A", 85, 85],
-    ["B", 70, 100],
-    ["C", 55, 115],
+    ["A", 85, 100],
+    ["B", 70, 115],
+    ["C", 55, 130],
   ] as const)(
     "calculates a perfect %s shot against its benchmark",
     (level, expected, adjusted) => {
@@ -106,7 +107,7 @@ describe("difficulty adjusted shooting", () => {
     expect(d.actual).toBeCloseTo(55);
     expect(d.expected).toBeCloseTo(66.25);
     expect(d.pae).toBeCloseTo(-11.25);
-    expect(d.adjusted).toBeCloseTo(58.75);
+    expect(d.adjusted).toBeCloseTo(73.75);
     expect(d.mix.map((r) => r.count)).toEqual([1, 1, 2]);
     expect(report(rows)).toEqual(traditional);
     expect(traditional.percent).toBe(64);
@@ -128,11 +129,11 @@ describe("difficulty adjusted shooting", () => {
     expect(difficultyPercent(d.adjusted)).toBe("N/A");
   });
   it("never clamps, rounds only presentation, and supports a common configurable model", () => {
-    expect(difficultySummary([s(0, "A")]).adjusted).toBe(-15);
-    expect(difficultySummary([s(5, "C")]).adjusted).toBe(115);
+    expect(difficultySummary([s(0, "A")]).adjusted).toBe(0);
+    expect(difficultySummary([s(5, "C")]).adjusted).toBe(130);
     const d = difficultySummary([s(1, "A"), s(4, "B"), s(5, "B")]);
-    expect(d.adjusted).toBeCloseTo(61.66666667);
-    expect(difficultyPercent(d.adjusted)).toBe("61.7%");
+    expect(d.adjusted).toBeCloseTo(76.66666667);
+    expect(formatEasyShotIndex(d)).toBe("76.7");
     expect(difficultyPAE(d.pae)).toBe("-8.3 pp");
     expect(
       difficultySummary([s(5, "C")], {
@@ -168,7 +169,7 @@ describe("difficulty adjusted shooting", () => {
           withDifficulty(s, difficultyRecords(state, [doc]), true),
         ),
       );
-    expect(calculate().adjusted).toBe(115);
+    expect(calculate().adjusted).toBe(130);
     const change = (next: Shot | null) => {
       state = append(
         state,
@@ -182,17 +183,17 @@ describe("difficulty adjusted shooting", () => {
       );
     };
     change({ ...shot, grade: 0 });
-    expect(calculate().adjusted).toBeCloseTo(15);
+    expect(calculate().adjusted).toBeCloseTo(30);
     value.values.difficulty = "routine";
     doc.revision++;
-    expect(calculate().adjusted).toBe(-15);
+    expect(calculate().adjusted).toBe(0);
     delete value.values.difficulty;
     expect(calculate().adjusted).toBeNull();
     value.values.difficulty = "routine";
     change(null);
     expect(calculate().eligible).toBe(0);
     change(shot);
-    expect(calculate().adjusted).toBe(85);
+    expect(calculate().adjusted).toBe(100);
     change({ ...shot, playerId: "other" });
     expect(calculate().adjusted).toBeNull();
     expect(state.events[0].shot).toEqual(shot);
@@ -301,7 +302,7 @@ describe("difficulty adjusted shooting", () => {
       `${report(rows).percent!.toFixed(1)}%`,
     );
     expect(team.evidence.find((e) => e.id === "difficulty")?.value).toContain(
-      "not official Curling Canada",
+      "Provisional illustrative benchmarks",
     );
     expect(team.evidence.some((e) => e.id === "game-1-difficulty-C")).toBe(
       true,

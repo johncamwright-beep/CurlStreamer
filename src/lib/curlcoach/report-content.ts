@@ -6,7 +6,11 @@ import {
 } from "./difficulty";
 import type { SavedReport } from "./reports";
 import type { ReportFlag } from "./flagged-shots";
-import { reportPercentages, reportSections } from "./report-presentation";
+import {
+  reportDifficultyEvidenceText,
+  reportPercentages,
+  reportSections,
+} from "./report-presentation";
 import { reportLegend } from "./report-legend";
 import { basisText, countPercent, evidenceBasis } from "./report-counts";
 import type { ShootingRow } from "./report-analysis";
@@ -75,7 +79,7 @@ export function reportContent(report: SavedReport) {
     heading("Difficulty context - secondary metric");
     text(difficultyDescription(d));
     text(
-      `Classified subset actual ${difficultyPercent(d.actual)}; expected ${difficultyPercent(d.expected)}. Reference baseline ${difficultyPercent(d.benchmarks.baseline)}. Benchmark set ${d.benchmarks.version}.`,
+      `Classified subset actual ${difficultyPercent(d.actual)}; expected ${difficultyPercent(d.expected)}. Easy benchmark ${difficultyPercent(d.benchmarks.expected.A)}.`,
     );
     table(
       ["Difficulty", "Shots / mix", "Actual", "Expected"],
@@ -115,7 +119,7 @@ export function reportContent(report: SavedReport) {
       });
     }
   }
-  const shots = stats.filter((m) => m.id !== "overall");
+  const shots = stats.filter((m) => m.id.startsWith("type-"));
   const analysis = report.analysis;
   if (analysis) {
     findings();
@@ -324,7 +328,7 @@ export function reportContent(report: SavedReport) {
         ["Measurement", "Result / basis"],
         group.metrics.map((m) => [
           m.label,
-          m.value +
+          reportDifficultyEvidenceText(m.value) +
             (m.sample < 10
               ? " * Small sample"
               : m.sample < 20

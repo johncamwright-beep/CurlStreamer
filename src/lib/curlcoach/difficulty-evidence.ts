@@ -25,7 +25,7 @@ export function difficultyEvidence(
     {
       id: prefix,
       label,
-      value: `${difficultyDescription(s)} Classified subset actual ${difficultyPercent(s.actual)}, expected ${difficultyPercent(s.expected)}; reference baseline ${difficultyPercent(s.benchmarks.baseline)}. ${difficultyCaveat} Benchmark ${s.benchmarks.version}.`,
+      value: `${difficultyDescription(s)} Classified subset actual ${difficultyPercent(s.actual)}, expected ${difficultyPercent(s.expected)}; easy benchmark ${difficultyPercent(s.benchmarks.expected.A)}. ${difficultyCaveat} Benchmark ${s.benchmarks.version}.`,
       sample: s.classified,
       confidence: confidence(s.classified),
     },

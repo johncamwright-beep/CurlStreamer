@@ -17,6 +17,7 @@ import {
   difficultySummary,
   difficultyLabels,
   difficultyPAE,
+  formatEasyShotIndex,
 } from "@/lib/curlcoach/difficulty";
 import {
   shotSubtypes,
@@ -1028,23 +1029,30 @@ export default function AnalysisDashboard({
               )}
             </div>
             <details className="analysis-index">
-              <summary>Weighted score details</summary>
+              <summary>Easy-shot index details</summary>
               <dl className="analysis-coverage-list">
                 <div>
-                  <dt>Difficulty-adjusted index</dt>
-                  <dd>
-                    {difficulty.adjusted === null
-                      ? "—"
-                      : difficulty.adjusted.toFixed(1)}
-                  </dd>
+                  <dt>Easy-shot equivalent index</dt>
+                  <dd>{formatEasyShotIndex(difficulty)}</dd>
                 </div>
                 <div>
-                  <dt>Actual</dt>
+                  <dt>Classified shooting</dt>
                   <dd>{percent(difficulty.actual)}</dd>
                 </div>
                 <div>
                   <dt>Expected</dt>
                   <dd>{percent(difficulty.expected)}</dd>
+                </div>
+                <div>
+                  <dt>Difficulty credit</dt>
+                  <dd>
+                    {difficultyPAE(
+                      difficulty.expected === null
+                        ? null
+                        : difficulty.benchmarks.expected.A -
+                            difficulty.expected,
+                    )}
+                  </dd>
                 </div>
                 <div>
                   <dt>Benchmark version</dt>

@@ -1,4 +1,4 @@
-# Difficulty-adjusted shooting
+# Easy-shot equivalent index
 
 Traditional shooting remains the primary statistic. `model.report`, Standard Curl Canada categories, workbook calculations, CSV exports and append-only shot events are unchanged.
 
@@ -16,13 +16,13 @@ Difficulty describes the intended call, not its outcome. Nothing is inferred fro
 
 ## Calculation and configuration
 
-`src/lib/curlcoach/difficulty.ts` is the shared calculation and formatting utility. `difficulty-benchmarks.json` defines one versioned set for every player and a reference baseline of 70. Changing benchmarks is a reviewed application configuration change, not a per-player setting. Future competition-derived sets can use the same validated configuration contract; update the version when assumptions change.
+`src/lib/curlcoach/difficulty.ts` is the shared calculation and formatting utility. `difficulty-benchmarks.json` defines one versioned set for every player, using the 85% easy-shot expectation as the reference. Future competition-derived sets can use the same validated configuration contract.
 
 - Eligible: nonexcluded shots with a valid recorded 0–5 grade.
 - Classified: eligible shots with a valid current A/B/C call observation.
 - Expected points: sum of each classified shot's expected percentage × 5.
 - Above expected (pp): `(actual points − expected points) / (5 × classified shots) × 100`.
-- Adjusted index: reference baseline + above expected.
+- Easy-shot equivalent: 85 + above expected. This is the classified shooting percentage plus 0 points for each easy shot, 15 for each moderate shot, and 30 for each difficult shot, averaged over the classified shots.
 - No cap; rounding to one decimal occurs only for display. No classified shots means N/A.
 - Coverage uses classified / eligible graded shots. Missing or unavailable difficulty never becomes a success, failure or A classification.
 
@@ -37,7 +37,7 @@ Counts, mix, classified-subset actual and expected percentages accompany detaile
 - Source identity and reconciliation conflicts prevent stale observations being attributed to a different player or shot. Grade edits, exclusions and deletion use current append-only state. Leaving an editing view or saving a shot invalidates cached analytics.
 - Event coach, team and individual AI inputs include aggregate difficulty evidence, including per-level performance and game context. Player inputs include game-by-game snapshots. No raw notes, shot IDs or private identities are added to AI evidence.
 - Traditional shooting remains first in AI instructions, report UI and PDF cards. Provisional status, sample size, coverage and the same-subset comparison rule constrain interpretation. A separate season AI generator does not exist; season coverage is provided through existing analytics.
-- Newly generated reports save their calculated snapshot and benchmark set. Fingerprints include difficulty revisions and benchmark configuration. Legacy saved reports remain readable and their legacy fingerprint behavior is retained. Existing reports must be regenerated to include the new section; generation and sending are never automatic.
+- Newly generated reports save their calculated snapshot and benchmark set. Saved reports with a difficulty snapshot use its easy-shot expectation and above-expected result to display the revised index on reopen and export. The reference change preserves the report fingerprint. Charting changes and changes to expected rates still affect it.
 
 No deployment, production report generation, report email, or production team-data mutation is part of this change.
 

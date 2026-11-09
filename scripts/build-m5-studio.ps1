@@ -8,6 +8,7 @@ param(
   [string]$NoiseReductionDll,
   [switch]$PresentationControl,
   [switch]$ReplayControl,
+  [switch]$CoachReview,
   [string]$BaselineStudio,
   [string]$BaselineManifestSha256
 )
@@ -18,7 +19,7 @@ if (-not $IpCameraHelper) {
 }
 if (-not (Test-Path -LiteralPath $IpCameraHelper -PathType Leaf)) { throw "Build the IP camera receiver before packaging Studio." }
 if ($StudioRecorder -and -not (Test-Path -LiteralPath $StudioRecorder -PathType Leaf)) { throw "Build the program recorder before packaging Studio." }
-if (($PresentationControl -or $ReplayControl) -and -not $StudioRecorder) { throw "Presentation support requires an explicitly rebuilt recorder." }
+if (($PresentationControl -or $ReplayControl -or $CoachReview) -and -not $StudioRecorder) { throw "Presentation support requires an explicitly rebuilt recorder." }
 $destinationPath = [IO.Path]::GetFullPath($Destination)
 if (Test-Path -LiteralPath $destinationPath) { throw "Use a new staging directory; existing installs are never overwritten." }
 if (-not $NoiseReductionDll) {
@@ -75,6 +76,7 @@ try {
   if ($LASTEXITCODE -ne 0) { throw "Stylesheet build failed." }
   New-Item -ItemType Directory -Path "$destinationPath/renderer/branding" -Force | Out-Null
   Copy-Item -LiteralPath (Join-Path $repository 'public/branding/curlstreamer-logo.png') -Destination "$destinationPath/renderer/branding/curlstreamer-logo.png"
+  if ($CoachReview) { Copy-Item -LiteralPath (Join-Path $repository 'src/lib/providers/coach-local-proof.html') -Destination "$destinationPath/renderer/coach-review.html" }
   Copy-Item -LiteralPath (Join-Path $repository "public/branding/team-benning.png") -Destination "$destinationPath/renderer/branding/team-benning.png"
   & (Join-Path $PSScriptRoot 'stage-studio-celebrations.ps1') -SourceRoot (Join-Path $repository 'public') -StudioSource $destinationPath | Out-Null
   & (Join-Path $PSScriptRoot 'stage-studio-shell-icon.ps1') -SourceIcon (Join-Path $repository 'public/branding/curlstreamer.ico') -StudioSource $destinationPath | Out-Null
@@ -135,6 +137,7 @@ try {
   $manifest.capabilities = @()
   if ($PresentationControl) { $manifest.capabilities += "program-presentation-v1" }
   if ($ReplayControl) { $manifest.capabilities += "program-replay-v1" }
+  if ($CoachReview) { $manifest.capabilities += "coach-review-v1" }
   $manifest |
     ConvertTo-Json -Depth 5 | Set-Content -LiteralPath (Join-Path $destinationPath "manifest.json") -Encoding utf8NoBOM
   Write-Output "Studio preview assembled. This is private staging, pending distribution notices and installer verification."

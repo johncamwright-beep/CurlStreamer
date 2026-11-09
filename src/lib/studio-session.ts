@@ -9,6 +9,17 @@ export const studioReplayStateSchema = z
   })
   .strict();
 
+export const studioCoachReviewStateSchema = z
+  .object({
+    addresses: z.array(z.ipv4()).max(32),
+    address: z.url().nullable(),
+    code: z
+      .string()
+      .regex(/^\d{6}$/)
+      .nullable(),
+  })
+  .strict();
+
 export const studioSessionSchema = z
   .object({
     gameId: z.uuid().nullable(),
@@ -23,6 +34,7 @@ export const studioSessionSchema = z
     canHoldStream: z.boolean(),
     canLeaveGame: z.boolean().optional(),
     replay: studioReplayStateSchema.nullable().optional(),
+    coachReview: studioCoachReviewStateSchema.nullable().optional(),
   })
   .strict();
 export type StudioSession = z.infer<typeof studioSessionSchema>;

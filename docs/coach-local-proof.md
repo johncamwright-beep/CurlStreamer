@@ -33,6 +33,14 @@ Keep the phone connectivity proof isolated until those steps are validated. The 
 
 ## Rolling native proof
 
+## Studio integration pilot
+
+The optional `coach-review-v1` package capability enables the same buffer in the existing program recorder. The score page exposes **Phone review** only when the running native session reports it. The owner chooses one of the laptop's private LAN addresses; the operator rejects other bind addresses. Closing the game/controller closes phone access. This path does not create extra camera receivers or send scrub traffic to Supabase.
+
+Selecting a start first saves a local JSON recovery record, then returns metadata in the URL fragment to `/shot-tracker/review-import`. No video or credentials are sent to the website. The signed-in account's scoped game read supplies recorded shots; a recent matching charting draft on that phone may preselect one. Otherwise the coach chooses the shot. Save uses an append-only revision-checked command, preserving shooter and scoring fields, and sets the existing Player/Team report routing. Existing review time/audience/notes replacement is shown before confirmation. An unrecorded shot must be charted first.
+
+The recording-link estimate uses the laptop capture-request time minus distance from the end of the captured clip. It remains explicitly estimated because encoder delay and broadcast pauses/restarts have not been calibrated. Game/organization authorization is repeated on the server, and retries use the same request ID. Scrubbing itself performs no database calls. The local pilot retains its bounded capture limit and expiry; it is not an internet video server.
+
 Set `COACH_PROOF_CAMERAS=1` for the real-camera variant. It uses the existing IP camera manager and installed receiver, with saved DPAPI-protected settings read through a private child-process pipe. Credentials never reach the HTML or command line. Both JPEG feeds are rendered with `object-fit: contain` inside the loopback-only OBS source. Only the paired snapshot server binds to the LAN. No YouTube broadcast starts, no saved camera configuration changes, and no production shot is written. This proof opens separate camera connections; production integration should reuse Studio's existing live source. Both Tapos and the exported two-feed clip were verified on November 9. Phone usability confirmation remains pending.
 
 Build the recorder with `coach.c`; the feature is opt-in through the private `--coach-control` argument. Installed Studio does not request it. `CCS1` reads buffer state; `CCC1` captures without changing the program. The independent 960×540/15 fps encoder follows the live browser source, not the replay scene. OBS requires a mux audio track; the phone export removes it without touching broadcast audio.

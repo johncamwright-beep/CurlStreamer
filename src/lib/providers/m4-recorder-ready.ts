@@ -9,10 +9,14 @@ export async function readM4RecorderReady(
   keepOpen = false,
   presentation = false,
   replay = false,
+  coach = false,
 ) {
   const fail = () => new Error("m4_recording_unavailable");
   const frame = Buffer.alloc(
-    (streaming ? 302 : 6) + (presentation ? 8 : 0) + (replay ? 8 : 0),
+    (streaming ? 302 : 6) +
+      (presentation ? 8 : 0) +
+      (replay ? 8 : 0) +
+      (coach ? 8 : 0),
   );
   let received = 0;
   try {
@@ -84,9 +88,17 @@ export async function readM4RecorderReady(
         .equals(Buffer.from([82, 80, 86, 49, 1, 0, 0, 0]))
     )
       throw fail();
+    const coachOffset = offset + (replay ? 8 : 0);
+    if (
+      coach &&
+      !frame
+        .subarray(coachOffset, coachOffset + 8)
+        .equals(Buffer.from([67, 79, 86, 49, 1, 0, 0, 0]))
+    )
+      throw fail();
     return streaming
       ? await readM4StudioBootstrap(
-          Readable.from([frame.subarray(offset + (replay ? 8 : 0))]),
+          Readable.from([frame.subarray(coachOffset + (coach ? 8 : 0))]),
         )
       : undefined;
   } catch {

@@ -324,6 +324,19 @@ internal sealed class Workspace : Form
             if (raw.Length > 8192) return;
             var value = json.Deserialize<Dictionary<string, object>>(raw);
             if (WorkspacePolicy.ForceCloseRequest(value, selectedGame, runningGame) && WorkspacePolicy.Game(args.Source, origin) == selectedGame) { await ConfirmForceClose(); return; }
+            if (TextValue(value, "type") == "studio-coach-review") {
+                var action = TextValue(value, "action"); Guid nonce;
+                if (selectedGame == null || selectedGame != runningGame || TextValue(value, "gameId") != runningGame ||
+                    WorkspacePolicy.Game(args.Source, origin) != runningGame || !Guid.TryParseExact(TextValue(value, "nonce"), "D", out nonce) ||
+                    busy || closing || !recording || (action != "start" && action != "stop") ||
+                    (action == "start" ? value.Count != 5 || !CameraInputs.PrivateIPv4(TextValue(value,"host")) : value.Count != 4)) return;
+                var game = runningGame; var ok = false; busy = true; PublishSessionStatus();
+                try { ApplyState(await Command(action == "start" ? (object)new {action="start-coach-review",host=TextValue(value,"host")} : new {action="stop-coach-review"})); ok = true; }
+                catch { } finally {busy = false; PublishSessionStatus();}
+                if (WorkspacePolicy.Game(web.CoreWebView2.Source, origin) == game)
+                    await web.ExecuteScriptAsync("window.dispatchEvent(new CustomEvent('studio-coach-review-result',{detail:" + json.Serialize(new {gameId=game, nonce=nonce.ToString(), ok=ok}) + "}));");
+                return;
+            }
             if (TextValue(value, "type") == "studio-replay") {
                 var action = TextValue(value, "action"); Guid nonce, clip;
                 if (selectedGame == null || selectedGame != runningGame || TextValue(value, "gameId") != runningGame ||
@@ -793,12 +806,14 @@ internal sealed class Workspace : Form
         if (web.CoreWebView2 == null || !WorkspacePolicy.SameOrigin(web.CoreWebView2.Source, origin)) return;
         web.CoreWebView2.ExecuteScriptAsync("window.dispatchEvent(new CustomEvent('studio-recovery-status',{detail:" + json.Serialize(new { gameId = selectedGame, canForceClose = true }) + "}));");
         var active = recording && runningGame != null && child != null && !child.HasExited;
-        object presentationValue, outputValue, replayValue;
+        object presentationValue, outputValue, replayValue, coachValue;
+        var coachReview = lastState != null && lastState.TryGetValue("coachReview",out coachValue) ? coachValue : null;
         var replay = lastState != null && lastState.TryGetValue("replay", out replayValue) ? replayValue : null;
         var presentation = lastState != null && lastState.TryGetValue("presentation", out presentationValue) ? presentationValue as Dictionary<string, object> : null;
         var output = lastState != null && lastState.TryGetValue("localOutput", out outputValue) ? outputValue as Dictionary<string, object> : null;
         web.CoreWebView2.ExecuteScriptAsync("window.dispatchEvent(new CustomEvent('studio-session-status',{detail:" + json.Serialize(new {
             replay = active ? replay : null,
+            coachReview = active ? coachReview : null,
             gameId = active ? runningGame : null, title = active ? sessionTitle ?? "Current game" : "", active = active, busy = busy || closing,
             presentation = active && presentation != null ? TextValue(presentation, "mode") ?? "live" : "live",
             streaming = active ? TextValue(lastState, "streaming") ?? "idle" : "idle",

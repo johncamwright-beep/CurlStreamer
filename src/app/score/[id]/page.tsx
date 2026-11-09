@@ -1,5 +1,6 @@
 "use client";
 import { StudioReplay } from "@/components/StudioReplay";
+import { StudioCoachReview } from "@/components/StudioCoachReview";
 import { StudioCelebrations } from "@/components/StudioCelebrations";
 import { StudioToolsRow } from "@/components/StudioToolsRow";
 import { StudioOverlay } from "@/components/StudioOverlay";
@@ -783,7 +784,12 @@ function ScorerGame({ id }: { id: string }) {
                         Camera Settings
                       </button>
                     }
-                    replay={<StudioReplay gameId={id} />}
+                    replay={
+                      <>
+                        <StudioReplay gameId={id} />
+                        <StudioCoachReview gameId={id} />
+                      </>
+                    }
                     celebrations={
                       <StudioCelebrations
                         game={game}

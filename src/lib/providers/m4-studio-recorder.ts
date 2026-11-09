@@ -10,18 +10,38 @@ import type { StudioDiagnostic } from "./m5-studio-diagnostics";
 
 /** A valid negative refresh acknowledgment leaves the inherited channel usable. */
 export function readM4ProgramControlAck(
-  tag: "RFR1" | "RFS1" | "RFM1" | "RFU1" | "RPS1" | "RPC1" | "RPP1" | "RPX1",
+  tag:
+    | "RFR1"
+    | "RFS1"
+    | "RFM1"
+    | "RFU1"
+    | "RPS1"
+    | "RPC1"
+    | "RPP1"
+    | "RPX1"
+    | "CCS1"
+    | "CCC1",
   id: number,
   ack: Buffer,
 ): "accepted" | "rejected" {
   if (
-    ack.length !== (tag === "RFS1" || tag === "RPS1" ? 24 : 8) ||
+    ack.length !==
+      (tag === "RFS1" || tag === "RPS1" || tag === "CCS1" ? 24 : 8) ||
     ack.readUInt32LE(4) !== id
   )
     throw new Error("m4_recording_unavailable");
   const response = ack.subarray(0, 4).toString("ascii");
   if (tag !== "RFS1" && response === "RFF1") return "rejected";
-  if (response !== (tag === "RFS1" ? "RFP1" : tag === "RPS1" ? "RPT1" : "RFA1"))
+  if (
+    response !==
+    (tag === "RFS1"
+      ? "RFP1"
+      : tag === "RPS1"
+        ? "RPT1"
+        : tag === "CCS1"
+          ? "CCT1"
+          : "RFA1")
+  )
     throw new Error("m4_recording_unavailable");
   return "accepted";
 }
@@ -76,6 +96,7 @@ export async function startM4StudioRecorder(paths: {
   previewOnly?: boolean;
   presentationControl?: boolean;
   replayControl?: boolean;
+  coachControl?: boolean;
   streamPlugin?: string;
   program?: { url: string; cacheDirectory: string };
   diagnostic?: StudioDiagnostic;
@@ -121,6 +142,7 @@ export async function startM4StudioRecorder(paths: {
         ? ["--presentation-control"]
         : []),
       ...(source && paths.replayControl ? ["--replay-control"] : []),
+      ...(source && paths.coachControl ? ["--coach-control"] : []),
     ],
     {
       cwd: dirname(paths.executable),
@@ -186,6 +208,7 @@ export async function startM4StudioRecorder(paths: {
       Boolean(source),
       Boolean(source && paths.presentationControl),
       Boolean(source && paths.replayControl),
+      Boolean(source && paths.coachControl),
     );
     if (bootstrap) {
       try {
@@ -210,7 +233,16 @@ export async function startM4StudioRecorder(paths: {
     let controlQueue: Promise<unknown> = Promise.resolve();
     const commandNow = async (
       tag:
-        "RFR1" | "RFS1" | "RFM1" | "RFU1" | "RPS1" | "RPC1" | "RPP1" | "RPX1",
+        | "RFR1"
+        | "RFS1"
+        | "RFM1"
+        | "RFU1"
+        | "RPS1"
+        | "RPC1"
+        | "RPP1"
+        | "RPX1"
+        | "CCS1"
+        | "CCC1",
       start?: number,
     ) => {
       if (!source || exited || stopPromise || controlFlight || controlFailed)
@@ -223,7 +255,9 @@ export async function startM4StudioRecorder(paths: {
       }
       try {
         return await new Promise<Buffer>((resolve, reject) => {
-          const ack = Buffer.alloc(tag === "RFS1" || tag === "RPS1" ? 24 : 8);
+          const ack = Buffer.alloc(
+            tag === "RFS1" || tag === "RPS1" || tag === "CCS1" ? 24 : 8,
+          );
           let received = 0;
           let settled = false;
           const cleanup = () => {
@@ -277,7 +311,16 @@ export async function startM4StudioRecorder(paths: {
     };
     const command = (
       tag:
-        "RFR1" | "RFS1" | "RFM1" | "RFU1" | "RPS1" | "RPC1" | "RPP1" | "RPX1",
+        | "RFR1"
+        | "RFS1"
+        | "RFM1"
+        | "RFU1"
+        | "RPS1"
+        | "RPC1"
+        | "RPP1"
+        | "RPX1"
+        | "CCS1"
+        | "CCC1",
       start?: number,
     ) => {
       const next = controlQueue.then(() => commandNow(tag, start));
@@ -395,7 +438,42 @@ export async function startM4StudioRecorder(paths: {
             },
           }
         : undefined;
+    const coach =
+      paths.coachControl && source
+        ? {
+            async status() {
+              const ack = await command("CCS1");
+              try {
+                const state = ack.readUInt32LE(8),
+                  availableMs = ack.readUInt32LE(16);
+                if (![0, 1, 2, 3, 7].includes(state) || availableMs > 120000)
+                  throw fail();
+                return { state, availableMs };
+              } finally {
+                ack.fill(0);
+              }
+            },
+            async capture() {
+              const ack = await command("CCC1");
+              try {
+                if (ack.subarray(0, 4).toString("ascii") !== "RFA1")
+                  throw fail();
+              } finally {
+                ack.fill(0);
+              }
+            },
+            async snapshot() {
+              const bytes = await readFile(
+                join(source.cacheDirectory, "coach.mp4"),
+              );
+              if (!bytes.length || bytes.length > 40 * 1024 * 1024)
+                throw fail();
+              return bytes;
+            },
+          }
+        : undefined;
     return {
+      coach,
       replay,
       stop,
       closed,

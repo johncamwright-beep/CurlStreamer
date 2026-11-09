@@ -16,9 +16,18 @@ export async function startCoachLocalProof(options: {
     duration: number;
     capturedAt: string;
   }>;
+  saveSelection?: (
+    selection: {
+      startSeconds: number;
+      audience: "player" | "team";
+      notes: string;
+    },
+    clip?: { duration: number; capturedAt: string },
+  ) => Promise<void | { handoffUrl: string }>;
   code: string;
   duration: number;
   lifetimeMs?: number;
+  htmlPath?: string;
 }) {
   const config = z
     .object({
@@ -41,7 +50,7 @@ export async function startCoachLocalProof(options: {
   const current = new Map<string, string>();
   let capturing = false;
   const html = await readFile(
-    resolve("src/lib/providers/coach-local-proof.html"),
+    resolve(options.htmlPath ?? "src/lib/providers/coach-local-proof.html"),
     "utf8",
   );
   const sessions = new Set<string>(),
@@ -148,7 +157,7 @@ export async function startCoachLocalProof(options: {
           if (
             !Number.isFinite(clip.duration) ||
             clip.duration <= 0 ||
-            clip.duration > 120.1
+            clip.duration > 125
           )
             throw Error("Invalid clip");
           const id = randomBytes(16).toString("hex");
@@ -156,6 +165,7 @@ export async function startCoachLocalProof(options: {
           current.set(cookie, id);
           reply(200, {
             duration: clip.duration,
+            minimum: Math.max(0, clip.duration - 120),
             url: "/video?id=" + id,
             capturedAt: clip.capturedAt,
           });
@@ -219,22 +229,28 @@ export async function startCoachLocalProof(options: {
           reply(400, { error: "Capture recent video first" });
           return;
         }
-        selection = z
+        const nextSelection = z
           .object({
             startSeconds: z
               .number()
-              .min(0)
+              .min(Math.max(0, (selectedClip?.duration ?? 120) - 120))
               .max(selectedClip?.duration ?? config.duration),
             audience: z.enum(["player", "team"]),
             notes: z.string().max(2000),
           })
           .strict()
           .parse(await body(req));
+        const handoff = await options.saveSelection?.(
+          nextSelection,
+          selectedClip,
+        );
+        selection = nextSelection;
         reply(200, {
           saved: true,
           selection,
           capturedAt: selectedClip?.capturedAt,
           proofOnly: true,
+          handoffUrl: handoff?.handoffUrl,
         });
         return;
       }

@@ -29,6 +29,7 @@ const optionsSchema = z
     previewOnly: z.boolean().optional(),
     presentationControl: z.boolean().optional(),
     replayControl: z.boolean().optional(),
+    coachControl: z.boolean().optional(),
     cacheRoot: z.string().min(1),
     rendererRoot: z.string().min(1),
     streamPlugin: z.string().min(1).optional(),
@@ -124,6 +125,7 @@ export async function startM4ProgramHost(
       previewOnly: options.previewOnly,
       presentationControl: options.presentationControl,
       replayControl: options.replayControl,
+      coachControl: options.coachControl,
       program: { url: bridge.rendererUrl, cacheDirectory },
       streamPlugin: options.streamPlugin,
       diagnostic,
@@ -180,6 +182,7 @@ export async function startM4ProgramHost(
     return cameraCleanup ? result : { ...result, finalized: false };
   });
   return {
+    coach: recorder.coach,
     replay: recorder.replay,
     stop,
     closed,

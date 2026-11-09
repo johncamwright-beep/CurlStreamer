@@ -235,7 +235,8 @@
       const $ = (id) => document.getElementById(id),
         video = $("video"),
         scrub = $("scrub");
-      let limit = 120,
+      let minimum = 0,
+        limit = 120,
         dragging = false;
       const format = (s) =>
         Math.floor(s / 60) +
@@ -292,6 +293,8 @@
         try {
           const b = await post("/capture", {});
           limit = b.duration;
+          minimum = b.minimum ?? 0;
+          scrub.min = String(minimum);
           video.hidden = false;
           video.src = b.url;
           video.load();
@@ -309,7 +312,7 @@
         video.controls = false;
         limit = Math.min(limit, video.duration);
         scrub.max = String(limit);
-        video.currentTime = Math.max(0, limit - 30);
+        video.currentTime = Math.max(minimum, limit - 30);
         ["scrub", "back", "play", "forward", "save"].forEach(
           (id) => ($(id).disabled = false),
         );
@@ -348,7 +351,7 @@
       };
       $("back").onclick = () => {
         video.pause();
-        video.currentTime = Math.max(0, video.currentTime - 1);
+        video.currentTime = Math.max(minimum, video.currentTime - 1);
         render();
       };
       $("forward").onclick = () => {
@@ -375,6 +378,16 @@
               .value,
             notes: $("notes").value,
           });
+          if (b.handoffUrl) {
+            const target = new URL(b.handoffUrl);
+            if (
+              target.protocol !== "https:" ||
+              target.pathname !== "/shot-tracker/review-import"
+            )
+              throw Error("Invalid Shot Tracker handoff");
+            location.assign(target.href);
+            return;
+          }
           $("status").textContent =
             "Selected " +
             format(b.selection.startSeconds) +

@@ -1,6 +1,7 @@
 /* Owned program recording and optional, independently authorized RTMP output. */
 #include "m4-studio-media.h"
 #include "replay.h"
+#include "coach.h"
 #include <windows.h>
 #include <obs.h>
 #include <stdio.h>
@@ -14,6 +15,7 @@ typedef bool (*bind_fn)(obs_service_t *, obs_output_t *);
 typedef bool (*start_fn)(obs_service_t *);
 
 struct m4_media {
+    studio_coach *coach;
     studio_replay *replay;
     obs_output_t *record;
     obs_output_t *stream;
@@ -198,6 +200,7 @@ bool m4_media_release(m4_media **reference)
     if (!reference || !*reference) return true;
     m4_media *m = *reference;
     if (m->record && (obs_output_active(m->record) || (m->started && WaitForSingleObject(m->stopped, 0) != WAIT_OBJECT_0))) return false;
+    studio_coach_destroy(m->coach); m->coach = NULL;
     studio_replay_destroy(m->replay); m->replay = NULL;
     if (m->initialized) obs_wait_for_destroy_queue();
     if (m->preview_attached) obs_remove_raw_video_callback(preview_frame, m);
@@ -336,7 +339,7 @@ bool m4_media_prepare_stream(m4_media *m, const wchar_t *runtime_bin, const wcha
 bool m4_media_attach_stream(m4_media *m, HANDLE pipe, const unsigned char capability[32], uint32_t parent_pid)
 { return m && m->attach && m->service && m->attach(m->service, pipe, capability, parent_pid); }
 void m4_media_poll_stream(m4_media *m)
-{ if (m) { studio_replay_tick(m->replay); if (m->start_stream && m->service) m->start_stream(m->service); } }
+{ if (m) { studio_coach_tick(m->coach); studio_replay_tick(m->replay); if (m->start_stream && m->service) m->start_stream(m->service); } }
 void m4_media_program_health(const m4_media *m, uint32_t *sequence, uint32_t *paint_changes, uint32_t *age_ms, uint32_t *status)
 {
     *sequence = 0; *paint_changes = 0; *age_ms = UINT32_MAX; *status = 0;
@@ -394,6 +397,10 @@ bool m4_media_enable_replay(m4_media *m, const wchar_t *runtime_bin, const wchar
     m->replay = studio_replay_create(m->program, m->video, m->audio, cache);
     return m->replay != NULL;
 }
+bool m4_media_enable_coach(m4_media *m, const wchar_t *cache)
+{ if (!m || !m->program || m->coach || !local_path(cache)) return false; m->coach = studio_coach_create(m->program, cache); return m->coach != NULL; }
+bool m4_media_coach_capture(m4_media *m) { return m && studio_coach_capture(m->coach); }
+void m4_media_coach_status(m4_media *m, uint32_t *state, uint32_t *available) { studio_coach_status(m ? m->coach : NULL, state, available); }
 bool m4_media_replay_capture(m4_media *m) { return m && studio_replay_capture(m->replay); }
 bool m4_media_replay_play(m4_media *m, uint32_t start) { return m && studio_replay_play(m->replay, start); }
 void m4_media_replay_cancel(m4_media *m) { if (m) studio_replay_return(m->replay); }

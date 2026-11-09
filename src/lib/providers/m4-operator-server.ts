@@ -14,8 +14,14 @@ import type { ConnectionDiagnostic } from "./connection-diagnostics";
 import { cameraRoleSchema } from "../m2-studio-protocol";
 import { m4CameraInputSchema, m4CameraZoomSchema } from "../m4-camera-input";
 import { createM4IpCameraManager } from "./m4-ip-camera";
+import { networkInterfaces } from "node:os";
+import { startStudioCoachReview } from "./studio-coach-review";
 
 const command = z.discriminatedUnion("action", [
+  z
+    .object({ action: z.literal("start-coach-review"), host: z.ipv4() })
+    .strict(),
+  z.object({ action: z.literal("stop-coach-review") }).strict(),
   z.object({ action: z.literal("capture-replay") }).strict(),
   z.object({ action: z.literal("cancel-replay") }).strict(),
   z
@@ -135,7 +141,9 @@ type ProgramHandle = Omit<
   | "stopPhone"
   | "presentation"
   | "replay"
+  | "coach"
 > & {
+  coach?: Awaited<ReturnType<typeof startM4ProgramHost>>["coach"];
   replay?: Awaited<ReturnType<typeof startM4ProgramHost>>["replay"];
   presentation?: NonNullable<
     Awaited<ReturnType<typeof startM4ProgramHost>>["presentation"]
@@ -264,6 +272,7 @@ export async function createM4OperatorServer(options: {
     streamPlugin?: string;
     presentationControl?: boolean;
     replayControl?: boolean;
+    coachControl?: boolean;
     start?: (invitation: string, recording: string) => Promise<ProgramHandle>;
   };
 }) {
@@ -271,6 +280,18 @@ export async function createM4OperatorServer(options: {
     ...options.ipCamera,
     diagnostic: options.connectionDiagnostic,
   });
+  let coachReview:
+    Awaited<ReturnType<typeof startStudioCoachReview>> | undefined;
+  const coachAddresses = () =>
+    Object.values(networkInterfaces())
+      .flatMap((entries) => entries ?? [])
+      .filter(
+        (entry) =>
+          !entry.internal &&
+          entry.family === "IPv4" &&
+          /^(10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/.test(entry.address),
+      )
+      .map((entry) => entry.address);
   const desktop =
     options.desktop ??
     new M4DesktopClient(options.gameId, options.origin, {
@@ -387,6 +408,13 @@ export async function createM4OperatorServer(options: {
         Boolean(programHandle?.stream),
       streaming,
       replay: programHandle?.replay ? replayState : null,
+      coachReview: programHandle?.coach
+        ? {
+            addresses: coachAddresses(),
+            address: coachReview?.address ?? null,
+            code: coachReview?.code ?? null,
+          }
+        : null,
       canHoldStream: programHandle?.presentation?.supported === true,
       canGracefulEnd: programHandle?.presentation?.supported === true,
       presentation: programHandle?.presentation?.snapshot(),
@@ -583,6 +611,51 @@ export async function createM4OperatorServer(options: {
     }
     try {
       const input = await body(request);
+      if (
+        input.action === "start-coach-review" ||
+        input.action === "stop-coach-review"
+      ) {
+        const handle = programHandle;
+        if (
+          busy ||
+          program !== "recording" ||
+          !handle?.coach ||
+          !options.program ||
+          (input.action === "start-coach-review" &&
+            !coachAddresses().includes(input.host))
+        ) {
+          reply(409, { error: "Local phone review is unavailable" });
+          return;
+        }
+        ++busy;
+        try {
+          coachReview?.close();
+          coachReview = undefined;
+          if (input.action === "start-coach-review") {
+            const opened = await startStudioCoachReview({
+              host: input.host,
+              gameId: options.gameId,
+              directory: options.program.recordingRoot,
+              appOrigin: options.origin,
+              htmlPath: join(options.program.rendererRoot, "coach-review.html"),
+              coach: handle.coach,
+            });
+            if (programHandle !== handle || closing) {
+              opened.close();
+              throw Error("Game changed");
+            }
+            coachReview = opened;
+            void handle.closed.finally(() => {
+              opened.close();
+              if (coachReview === opened) coachReview = undefined;
+            });
+          }
+        } finally {
+          --busy;
+        }
+        reply(200, snapshot());
+        return;
+      }
       if (
         input.action === "capture-replay" ||
         input.action === "play-replay" ||
@@ -850,6 +923,7 @@ export async function createM4OperatorServer(options: {
                   streamPlugin: configuration.streamPlugin,
                   presentationControl: configuration.presentationControl,
                   replayControl: configuration.replayControl,
+                  coachControl: configuration.coachControl,
                 },
                 options.diagnostic,
                 options.connectionDiagnostic,
@@ -1087,6 +1161,8 @@ export async function createM4OperatorServer(options: {
       if (closePromise) return closePromise;
       clearInterval(heartbeat);
       closing = true;
+      coachReview?.close();
+      coachReview = undefined;
       ++epoch;
       ++streamEpoch;
       closePromise = (async () => {

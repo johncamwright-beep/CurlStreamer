@@ -112,6 +112,7 @@ try {
         cacheRoot: join(dataRoot, "Cache"),
         rendererRoot: join(root, "renderer"),
         replayControl: manifest.capabilities.includes("program-replay-v1"),
+        coachControl: manifest.capabilities.includes("coach-review-v1"),
         presentationControl: manifest.capabilities.includes(
           "program-presentation-v1",
         ),

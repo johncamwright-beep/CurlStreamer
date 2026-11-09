@@ -16,6 +16,9 @@ bool m4_media_initialize(const wchar_t *runtime_bin, const wchar_t *absolute_mkv
 bool m4_media_initialize_program(const wchar_t *runtime_bin, const wchar_t *absolute_mkv, const wchar_t *fresh_cache_root, const char *public_loopback_url, m4_media **out);
 bool m4_media_start(m4_media *media);
 bool m4_media_enable_replay(m4_media *media, const wchar_t *runtime, const wchar_t *cache);
+bool m4_media_enable_coach(m4_media *media, const wchar_t *cache);
+bool m4_media_coach_capture(m4_media *media);
+void m4_media_coach_status(m4_media *media, uint32_t *state, uint32_t *available);
 bool m4_media_replay_capture(m4_media *media);
 bool m4_media_replay_play(m4_media *media, uint32_t start_ms);
 void m4_media_replay_cancel(m4_media *media);

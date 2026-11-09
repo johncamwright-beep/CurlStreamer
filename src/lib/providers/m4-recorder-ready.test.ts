@@ -12,6 +12,36 @@ function frame() {
   return result;
 }
 describe("recorder private readiness channel", () => {
+  it("requires the coach capability frame and preserves the following stream bootstrap", async () => {
+    const legacy = frame();
+    const coach = Buffer.from([67, 79, 86, 49, 1, 0, 0, 0]);
+    const input = Buffer.concat([
+      legacy.subarray(0, 6),
+      coach,
+      legacy.subarray(6),
+    ]);
+    const boot = await readM4RecorderReady(
+      Readable.from([input]),
+      true,
+      1000,
+      false,
+      false,
+      false,
+      true,
+    );
+    expect(boot?.pipe).toContain("curlstreamer-m4-recorder-test");
+    await expect(
+      readM4RecorderReady(
+        Readable.from([frame()]),
+        true,
+        1000,
+        false,
+        false,
+        false,
+        true,
+      ),
+    ).rejects.toThrow("m4_recording_unavailable");
+  });
   it("requires positively negotiated presentation readiness, never treating an old native frame as support", async () => {
     const legacy = frame();
     await expect(

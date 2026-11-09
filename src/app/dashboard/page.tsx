@@ -1,4 +1,5 @@
-import { readTeamLogo } from "@/lib/providers/team-settings";
+import { readTeamSettings } from "@/lib/providers/team-settings";
+import { TeamSetupChecklist } from "@/components/TeamSetupChecklist";
 import { teamLogoSource } from "@/components/TeamLogo";
 import { redirect } from "next/navigation";
 import { getAccountContext } from "@/lib/auth/account";
@@ -34,9 +35,9 @@ export default async function GamesPage({
     );
   const membership = result.account.membership;
   if (!membership) redirect("/onboarding");
-  const logoPromise = readTeamLogo(membership.organization_id)
-    .then((logo) => logo || teamLogoSource(membership.teamName))
-    .catch(() => undefined);
+  const settingsPromise = readTeamSettings(membership.organization_id).catch(
+    () => null,
+  );
   const hierarchy = await loadTeamHierarchyData(user);
   if (!hierarchy.ok) return <AccountServiceUnavailable />;
   const {
@@ -59,8 +60,17 @@ export default async function GamesPage({
     result.account,
     games.filter((g) => g.status !== "closed").map((g) => g.id),
   );
+  const teamSettings = await settingsPromise;
   return (
     <>
+      {membership.role === "owner" && teamSettings && (
+        <TeamSetupChecklist
+          settings={teamSettings.settings}
+          logo={teamSettings.logo}
+          seasons={hierarchy.seasons.length}
+          games={hierarchy.games.length}
+        />
+      )}
       {membership.role === "owner" &&
         (() => {
           const setup = readSetupProgress(
@@ -81,7 +91,7 @@ export default async function GamesPage({
         })()}
       <GamesDashboard
         account={result.account}
-        accountLogo={await logoPromise}
+        accountLogo={teamSettings?.logo || teamLogoSource(membership.teamName)}
         games={games}
         events={events}
         seasons={hierarchy.seasons}

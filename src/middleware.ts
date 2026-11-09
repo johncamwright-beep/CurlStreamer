@@ -2,6 +2,7 @@ import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 import { publicSupabaseConfig } from "@/lib/supabase/config";
 import { indexNowKeyPath } from "@/lib/indexnow";
+import { pilotPasswordRequired } from "@/lib/pilot";
 
 export async function middleware(request: NextRequest) {
   const host = (request.headers.get("host") ?? "").toLowerCase().split(":")[0];
@@ -68,7 +69,22 @@ export async function middleware(request: NextRequest) {
     },
   });
   // getUser verifies identity with Auth; getSession must not authorize requests.
-  await supabase.auth.getUser();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (
+    pilotPasswordRequired(user) &&
+    !["/pilot-password", "/login"].includes(request.nextUrl.pathname)
+  ) {
+    const gate = request.nextUrl.pathname.startsWith("/api/")
+      ? NextResponse.json(
+          { error: "Choose your own password before continuing." },
+          { status: 403 },
+        )
+      : NextResponse.redirect(new URL("/pilot-password", request.url));
+    response.cookies.getAll().forEach((cookie) => gate.cookies.set(cookie));
+    return gate;
+  }
   return response;
 }
 export const config = {

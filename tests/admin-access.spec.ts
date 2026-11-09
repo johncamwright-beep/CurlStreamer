@@ -8,6 +8,69 @@ test.skip(
 const organizationId = "22222222-2222-4222-8222-222222222222";
 const invitationId = "44444444-4444-4444-8444-444444444444";
 
+test("pilot administration collects contacts and sends credentials without displaying a password", async ({
+  page,
+}) => {
+  let created = false;
+  await page.route("**/api/admin/pilots", async (route) => {
+    if (route.request().method() === "POST") {
+      expect(route.request().postDataJSON()).toMatchObject({
+        action: "create",
+        name: "Pilot Owner",
+        phone: "+1 555 123 4567",
+        team: "Independent Team",
+        coachSeats: 1,
+      });
+      created = true;
+      return route.fulfill({ json: { saved: true, emailStatus: "accepted" } });
+    }
+    return route.fulfill({
+      json: {
+        pilots: created
+          ? [
+              {
+                id: invitationId,
+                administrator_name: "Pilot Owner",
+                email: "owner@example.test",
+                phone: "+1 555 123 4567",
+                team_name: "Independent Team",
+                expires_at: "2027-03-01T00:00:00Z",
+                activated_at: null,
+                revoked_at: null,
+                email_status: "accepted",
+                coach_seats: 1,
+                members: 1,
+                games: 0,
+                chartedGames: 0,
+              },
+            ]
+          : [],
+      },
+    });
+  });
+  await signIn(page, "/admin");
+  await expect(
+    page.getByRole("button", { name: "Trial codes", exact: true }),
+  ).toHaveCount(0);
+  await page.getByLabel("Administrator name").fill("Pilot Owner");
+  await page.getByLabel("Email", { exact: true }).fill("owner@example.test");
+  await page.getByLabel("Phone number").fill("+1 555 123 4567");
+  await page.getByLabel("Team name", { exact: true }).fill("Independent Team");
+  await page.getByLabel("Pilot access through").fill("2027-03-01");
+  await page
+    .getByRole("button", { name: "Create pilot and email credentials" })
+    .click();
+  await expect(
+    page.getByRole("heading", { name: "Independent Team" }),
+  ).toBeVisible();
+  await expect(page.getByText(/Awaiting first password change/)).toBeVisible();
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth,
+    ),
+  ).toBe(true);
+});
+
 test("main menu shows platform administration above sign out only while authorized", async ({
   page,
 }) => {
@@ -244,6 +307,7 @@ test("platform administrators keep team access read-only until support edits are
   await expect(
     page.getByRole("heading", { name: "Platform administration" }),
   ).toBeVisible();
+  await page.getByRole("button", { name: "Teams", exact: true }).click();
   await page.getByRole("button", { name: "View as / support" }).click();
   await page.getByRole("button", { name: "Team access", exact: true }).click();
 

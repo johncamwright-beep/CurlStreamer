@@ -3,6 +3,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { TeamSettings } from "./TeamSettings";
 import { TeamMembers } from "./TeamMembers";
+import { PilotAdmin } from "./PilotAdmin";
 import { CurlCoachAdminPanel } from "./CurlCoachAdminPanel";
 import { localDateTimeToUtc } from "@/lib/team-hierarchy";
 type Account = { id: string; email: string; status: string; createdAt: string };
@@ -37,20 +38,13 @@ export function PlatformAdmin() {
     [error, setError] = useState(""),
     [busy, setBusy] = useState(false),
     [search, setSearch] = useState("");
-  const [tab, setTab] = useState<"teams" | "accounts" | "codes">("teams"),
+  const [tab, setTab] = useState<"teams" | "accounts" | "pilots">("pilots"),
     [selected, setSelected] = useState<Team | null>(null),
     [edit, setEdit] = useState(false),
     [section, setSection] = useState<
       "team" | "public" | "social" | "photos" | "members"
     >("team");
-  const [count, setCount] = useState(10),
-    [until, setUntil] = useState(
-      new Intl.DateTimeFormat("en", {
-        year: "numeric",
-        timeZone: "America/Toronto",
-      }).format(new Date()) + "-12-31",
-    ),
-    [codes, setCodes] = useState<string[]>([]),
+  const [until, setUntil] = useState(new Date().getFullYear() + "-12-31"),
     [message, setMessage] = useState("");
   async function load() {
     try {
@@ -63,8 +57,8 @@ export function PlatformAdmin() {
     }
   }
   useEffect(() => {
-    void load();
-  }, []);
+    if (tab !== "pilots") void load();
+  }, [tab]);
   async function action(body: unknown) {
     setBusy(true);
     setError("");
@@ -77,7 +71,6 @@ export function PlatformAdmin() {
       });
       const b = await r.json();
       if (!r.ok) throw Error(b.error);
-      if (b.codes) setCodes(b.codes);
       setMessage("Saved.");
       await load();
       return true;
@@ -103,7 +96,14 @@ export function PlatformAdmin() {
         You are working as the platform administrator. Support changes are
         recorded with your identity.
       </p>
-      <CurlCoachAdminPanel />
+      {tab === "teams" && (
+        <details className="panel mb-4">
+          <summary className="min-h-11 cursor-pointer">
+            Advanced Shot Tracker access
+          </summary>
+          <CurlCoachAdminPanel />
+        </details>
+      )}
       {error && (
         <p role="alert" className="mb-4 text-red-300">
           {error}
@@ -189,7 +189,7 @@ export function PlatformAdmin() {
               }}
             >
               <label>
-                Trial access through (Toronto)
+                Pilot access through (Toronto)
                 <input
                   type="date"
                   className={field + " mt-1 block"}
@@ -199,7 +199,7 @@ export function PlatformAdmin() {
                 />
               </label>
               <button className="btn" disabled={busy}>
-                Update trial expiry
+                Update pilot expiry
               </button>
             </form>
           )}
@@ -210,7 +210,7 @@ export function PlatformAdmin() {
             className="mb-5 flex flex-wrap gap-3"
             aria-label="Platform administration sections"
           >
-            {(["teams", "accounts", "codes"] as const).map((value) => (
+            {(["pilots", "teams", "accounts"] as const).map((value) => (
               <button
                 key={value}
                 className={tab === value ? "btn" : "btn-secondary"}
@@ -220,19 +220,21 @@ export function PlatformAdmin() {
                   {
                     teams: "Teams",
                     accounts: "Accounts",
-                    codes: "Trial codes",
+                    pilots: "Pilot teams",
                   }[value]
                 }
               </button>
             ))}
           </nav>
-          {!data ? (
+          {tab === "pilots" ? (
+            <PilotAdmin />
+          ) : !data ? (
             <button className="btn-secondary" onClick={load}>
               Load administration
             </button>
           ) : (
             <>
-              {tab !== "codes" && (
+              {
                 <label className="mb-5 block">
                   Search
                   <input
@@ -241,7 +243,7 @@ export function PlatformAdmin() {
                     onChange={(e) => setSearch(e.target.value)}
                   />
                 </label>
-              )}
+              }
               {tab === "teams" && (
                 <div className="grid gap-3">
                   {data.teams
@@ -324,118 +326,6 @@ export function PlatformAdmin() {
                         </button>
                       </article>
                     ))}
-                </div>
-              )}
-              {tab === "codes" && (
-                <div className="grid gap-4">
-                  <form
-                    className="panel flex flex-wrap items-end gap-3"
-                    onSubmit={(e) => {
-                      e.preventDefault();
-                      void action({
-                        action: "codes",
-                        count,
-                        expiresAt: expires(until),
-                      });
-                    }}
-                  >
-                    <label>
-                      Number of codes
-                      <input
-                        type="number"
-                        min={1}
-                        max={100}
-                        className={field + " mt-1 block"}
-                        value={count}
-                        onChange={(e) => setCount(Number(e.target.value))}
-                        required
-                      />
-                    </label>
-                    <label>
-                      Valid through (Toronto)
-                      <input
-                        type="date"
-                        className={field + " mt-1 block"}
-                        value={until}
-                        onChange={(e) => setUntil(e.target.value)}
-                        required
-                      />
-                    </label>
-                    <button className="btn" disabled={busy}>
-                      Generate trial codes
-                    </button>
-                  </form>
-                  {codes.length > 0 && (
-                    <div className="panel">
-                      <h2 className="font-bold">Copy these codes now</h2>
-                      <p className="mb-3">
-                        Raw codes are shown only for this batch. Give each code
-                        to one team.
-                      </p>
-                      <textarea
-                        className={field + " w-full"}
-                        rows={Math.min(12, codes.length + 1)}
-                        readOnly
-                        value={codes.join("\n")}
-                        aria-label="Generated trial codes"
-                      />
-                      <button
-                        className="btn-secondary mt-3"
-                        onClick={async () => {
-                          try {
-                            await navigator.clipboard.writeText(
-                              codes.join("\n"),
-                            );
-                            setMessage("Codes copied.");
-                          } catch {
-                            setMessage("Select and copy the codes above.");
-                          }
-                        }}
-                      >
-                        Copy codes
-                      </button>
-                    </div>
-                  )}
-                  {data.codes.map((c) => (
-                    <article
-                      key={c.id}
-                      className="panel flex flex-wrap justify-between gap-3"
-                    >
-                      <div>
-                        <p>
-                          {c.revokedAt
-                            ? "Revoked"
-                            : c.redeemedAt
-                              ? "Redeemed by " + c.teamName
-                              : "Available"}
-                        </p>
-                        <p className="text-sm text-slate-300">
-                          Expires{" "}
-                          {new Date(c.expiresAt).toLocaleString("en-CA", {
-                            timeZone: "America/Toronto",
-                          })}
-                        </p>
-                        <p className="text-xs text-slate-400">{c.id}</p>
-                      </div>
-                      {!c.revokedAt && !c.redeemedAt && (
-                        <button
-                          className="btn-secondary"
-                          disabled={busy}
-                          onClick={() => {
-                            if (
-                              window.confirm("Revoke this unused trial code?")
-                            )
-                              void action({
-                                action: "revokeCode",
-                                target: c.id,
-                              });
-                          }}
-                        >
-                          Revoke code
-                        </button>
-                      )}
-                    </article>
-                  ))}
                 </div>
               )}
             </>

@@ -5,6 +5,7 @@ export const setupProgressSchema = z.object({
   organizationId: z.string().uuid(),
   step: z.number().int().min(1).max(6),
   complete: z.boolean().default(false),
+  skipped: z.array(z.number().int().min(1).max(6)).optional(),
   seasonId: z.string().uuid().optional(),
   eventId: z.string().uuid().optional(),
   gameId: z.string().uuid().optional(),

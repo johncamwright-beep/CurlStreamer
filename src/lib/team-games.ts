@@ -97,22 +97,7 @@ export function initialGameState(id: string, config: GameConfig): GameState {
     audioMuted: false,
     connections: { "camera-home": false, "camera-away": false, scorer: false },
     claims: {},
-    sponsors: [
-      {
-        id: "sample-ice",
-        name: "Community Ice",
-        dataUrl: "/sponsors/community.svg",
-        enabled: true,
-        rotation: 0,
-      },
-      {
-        id: "sample-rock",
-        name: "Rock Solid",
-        dataUrl: "/sponsors/rock.svg",
-        enabled: true,
-        rotation: 0,
-      },
-    ],
+    sponsors: [],
     sponsorMode: {
       active: false,
       style: "fullscreen",

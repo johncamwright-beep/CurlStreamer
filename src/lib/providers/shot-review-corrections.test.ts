@@ -12,6 +12,7 @@ let query: {
   select: ReturnType<typeof vi.fn>;
   eq: ReturnType<typeof vi.fn>;
   in: ReturnType<typeof vi.fn>;
+  not: ReturnType<typeof vi.fn>;
   order: ReturnType<typeof vi.fn>;
 };
 beforeEach(() => {
@@ -19,6 +20,7 @@ beforeEach(() => {
     select: vi.fn(() => query),
     eq: vi.fn(() => query),
     in: vi.fn(() => query),
+    not: vi.fn(() => query),
     order: vi.fn(),
   };
   mock.from.mockReturnValue(query);
@@ -54,6 +56,7 @@ it("reads only this coach's authorized games and overlays the latest correction"
     ["actor_user_id", "coach"],
   ]);
   expect(query.in).toHaveBeenCalledWith("game_id", [game]);
+  expect(query.not).toHaveBeenCalledWith("shot_id", "is", null);
   expect(query.order).toHaveBeenCalledWith("sequence", { ascending: false });
 });
 it("tolerates an unapplied additive migration but does not hide other read failures", async () => {

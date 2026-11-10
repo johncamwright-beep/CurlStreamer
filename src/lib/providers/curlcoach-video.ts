@@ -19,7 +19,8 @@ function recordingTime(recording: ReviewRecording) {
 }
 
 /** Private broadcast tables are not directly readable, even by the application
- * server. The RPC authorizes every game and exposes only recording metadata. */
+ * server. The RPC authorizes every game and prefers YouTube's reported start
+ * when available. This remains an estimate of where frames appear in video. */
 export async function loadCoachBroadcastReviews(
   organizationId: string,
   gameIds: string[],

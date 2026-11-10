@@ -23,6 +23,7 @@ export async function loadReviewCorrections(
     .eq("organization_id", account.organizationId)
     .eq("actor_user_id", account.userId)
     .in("game_id", gameIds)
+    .not("shot_id", "is", null)
     .order("sequence", { ascending: false });
   // Permit staged deployment before the additive migration is applied.
   if (error?.code === "42P01" || error?.code === "PGRST205") return result;

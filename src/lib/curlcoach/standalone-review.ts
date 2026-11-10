@@ -1,13 +1,18 @@
 import { z } from "zod";
-import { withBroadcastReview, type BroadcastReview } from "./review";
+import {
+  videoReviewSchema,
+  withBroadcastReview,
+  type BroadcastReview,
+} from "./review";
 
 export const standaloneReviewSchema = z.object({
   id: z.uuid(),
   audience: z.enum(["player", "team"]),
   playerId: z.string().nullable(),
   playerName: z.string().nullable(),
-  note: z.string().max(2000),
+  note: z.string().max(4000),
   selectedAt: z.iso.datetime(),
+  videoReview: videoReviewSchema.optional(),
 });
 export type StandaloneReview = z.infer<typeof standaloneReviewSchema>;
 export function standaloneReviewVideo(
@@ -17,7 +22,7 @@ export function standaloneReviewVideo(
   return withBroadcastReview(
     {
       flaggedAt: review.selectedAt,
-      videoReview: {
+      videoReview: review.videoReview ?? {
         url: "",
         positionSeconds: null,
         lookBackSeconds: 0,

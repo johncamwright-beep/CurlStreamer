@@ -44,8 +44,31 @@ it("routes standalone reviews without adding any scored attempts", () => {
       stone: null,
       note: "Sweep discussion",
       url: "https://www.youtube.com/watch?v=abcdefghijk&t=30s",
+      estimated: true,
     }),
   ]);
+
+  game.standaloneReviews[0] = {
+    ...game.standaloneReviews[0],
+    note: "Start at the release",
+    videoReview: {
+      url: "https://youtu.be/abcdefghijk",
+      positionSeconds: 42,
+      lookBackSeconds: 0,
+    },
+  };
+  game.broadcastReview = {
+    url: "https://youtu.be/SecondVideo",
+    startedAt: "2026-11-10T15:00:00Z",
+  };
+  expect(withReportFlags(packet, event).reports[0].flags).toEqual([
+    expect.objectContaining({
+      note: "Start at the release",
+      url: "https://www.youtube.com/watch?v=abcdefghijk&t=42s",
+      estimated: false,
+    }),
+  ]);
+  expect(gameShots(game)).toEqual([]);
 });
 
 it("parses exact video times without applying look-back twice", () => {

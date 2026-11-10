@@ -16,6 +16,13 @@ const streamStatus = z.enum([
   "ready",
 ]);
 const healthStatus = z.enum(["good", "ok", "bad", "noData"]);
+const providerStartTime = z.iso
+  .datetime({ offset: true })
+  .refine(
+    (value) => !value.startsWith("0000") && Number.isFinite(Date.parse(value)),
+  )
+  .optional()
+  .catch(undefined);
 const broadcastStatus = z.enum([
   "complete",
   "created",
@@ -53,7 +60,10 @@ const broadcastSchema = listEnvelope.extend({
     .array(
       z.object({
         id,
-        snippet: z.object({ channelId: id }),
+        snippet: z.object({
+          channelId: id,
+          actualStartTime: providerStartTime,
+        }),
         status: z.object({
           lifeCycleStatus: broadcastStatus,
           privacyStatus: z.enum(["private", "unlisted", "public"]),
@@ -85,7 +95,9 @@ export const m4ProviderObservationSchema = z
   .refine(
     (value) => value.broadcastLive === (value.broadcastStatus === "live"),
   );
-export type M4ProviderObservation = z.infer<typeof m4ProviderObservationSchema>;
+export type M4ProviderObservation = z.infer<
+  typeof m4ProviderObservationSchema
+> & { actualStartTime?: string };
 
 function get(path: string, accessToken: string, fetcher: typeof fetch) {
   return youtubeGoogleRequest(
@@ -287,7 +299,7 @@ export async function observeM4YouTubeProvider(
     )
       throw new Error();
 
-    return m4ProviderObservationSchema.parse({
+    const observation = m4ProviderObservationSchema.parse({
       streamStatus: stream.status.streamStatus,
       healthStatus: stream.status.healthStatus?.status ?? null,
       broadcastStatus: broadcast.status.lifeCycleStatus,
@@ -303,6 +315,10 @@ export async function observeM4YouTubeProvider(
           }
         : {}),
     });
+    const { actualStartTime } = broadcast.snippet;
+    return observation.broadcastLive && actualStartTime
+      ? { ...observation, actualStartTime }
+      : observation;
   } catch (error) {
     const reason = m4YouTubeFailureCode.safeParse(
       error instanceof Error ? error.message : undefined,

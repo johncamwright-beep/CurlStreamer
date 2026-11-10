@@ -4,6 +4,8 @@ vi.mock("@/lib/supabase/admin", () => ({
   createAdminSupabaseClient: () => ({ rpc: m.rpc }),
 }));
 import { loadCoachBroadcastReviews } from "./curlcoach-video";
+import { reviewLink, withBroadcastReview } from "@/lib/curlcoach/review";
+import { standaloneReviewVideo } from "@/lib/curlcoach/standalone-review";
 const gid = "00000000-0000-4000-8000-000000000002";
 beforeEach(() => vi.clearAllMocks());
 it("uses the actor-scoped metadata RPC without reading private tables or credentials", async () => {
@@ -49,6 +51,47 @@ it("retains known recording links without inventing timing and ignores invalid o
   expect(await loadCoachBroadcastReviews("team", [gid], "coach")).toEqual({
     [gid]: { url: "https://www.youtube.com/watch?v=abcdefghijk" },
   });
+});
+it("uses the earlier recording start for phone seeks without adding another lead-in", async () => {
+  m.rpc.mockResolvedValue({
+    data: [
+      {
+        game_id: gid,
+        youtube_broadcast_id: "abcdefghijk",
+        started_at: "2026-11-10T14:59:50Z",
+        is_current: true,
+      },
+    ],
+    error: null,
+  });
+  const broadcast = (await loadCoachBroadcastReviews("team", [gid], "coach"))[
+    gid
+  ];
+  const selectedAt = "2026-11-10T15:00:30Z";
+  const standalone = standaloneReviewVideo(
+    {
+      id: gid,
+      audience: "team",
+      playerId: null,
+      playerName: null,
+      note: "",
+      selectedAt,
+    },
+    broadcast,
+  );
+  const shot = withBroadcastReview(
+    {
+      flaggedAt: selectedAt,
+      videoReview: { url: "", positionSeconds: null, lookBackSeconds: 0 },
+    },
+    broadcast,
+  ).videoReview;
+  for (const video of [standalone, shot]) {
+    expect(reviewLink(video)).toBe(
+      "https://www.youtube.com/watch?v=abcdefghijk&t=40s",
+    );
+    expect(video).toMatchObject({ estimated: true, lookBackSeconds: 0 });
+  }
 });
 it("retains earlier broadcast cycles newest first when the current broadcast is replaced", async () => {
   const older = {

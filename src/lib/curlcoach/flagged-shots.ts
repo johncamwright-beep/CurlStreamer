@@ -4,15 +4,16 @@ import { gameShots, type CoachEvent } from "./event";
 import { recordingLink, reviewLink, type VideoReview } from "./review";
 import type { ReportPacket } from "./reports";
 
-export const reviewCorrectionSchema = z
-  .object({
-    gameId: z.uuid(),
-    shotId: z.uuid(),
-    requestId: z.uuid(),
-    startSeconds: z.number().int().min(0).max(604800),
-    note: z.string().max(4000),
-  })
-  .strict();
+const correctionFields = {
+  gameId: z.uuid(),
+  requestId: z.uuid(),
+  startSeconds: z.number().int().min(0).max(604800),
+  note: z.string().max(4000),
+};
+export const reviewCorrectionSchema = z.union([
+  z.strictObject({ ...correctionFields, shotId: z.uuid() }),
+  z.strictObject({ ...correctionFields, reviewId: z.uuid() }),
+]);
 export type ReviewCorrection = {
   shotId: string;
   video: VideoReview;
@@ -91,7 +92,7 @@ function reportFlags(
           type: "Video review",
           note: review.note,
           url: reviewLink(video) ?? recordingLink(video),
-          estimated: true,
+          estimated: !!video?.estimated,
         };
       }),
   ]);

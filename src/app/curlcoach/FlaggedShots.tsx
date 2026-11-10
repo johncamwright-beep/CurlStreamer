@@ -1,33 +1,41 @@
 "use client";
-import { standaloneReviewVideo } from "@/lib/curlcoach/standalone-review";
 import { useState } from "react";
 import type { AnalysisShot } from "@/lib/curlcoach/analysis";
 import type { CoachGame } from "@/lib/curlcoach/event";
 import type { RosterEntry } from "@/lib/curlcoach/model";
 import { parseReviewTime } from "@/lib/curlcoach/flagged-shots";
-import { reviewStart, videoTime } from "@/lib/curlcoach/review";
+import {
+  reviewStart,
+  videoTime,
+  type VideoReview,
+} from "@/lib/curlcoach/review";
+import { standaloneReviewVideo } from "@/lib/curlcoach/standalone-review";
 import ReviewVideo from "./ReviewVideo";
 
-function Flag({
-  shot,
-  game,
-  name,
+function ReviewEditor({
+  gameId,
+  target,
+  video,
+  initialNote,
   canSave,
   onSaved,
 }: {
-  shot: AnalysisShot;
-  game?: CoachGame;
-  name: string;
+  gameId: string;
+  target: { shotId: string } | { reviewId: string };
+  video?: VideoReview;
+  initialNote: string;
   canSave: boolean;
   onSaved: () => Promise<void>;
 }) {
-  const start = reviewStart(shot.videoReview);
+  const start = reviewStart(video);
   const [time, setTime] = useState(start === null ? "" : videoTime(start));
-  const [note, setNote] = useState(shot.note);
+  const [note, setNote] = useState(initialNote);
+  const [savedStart, setSavedStart] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
+  const seconds = parseReviewTime(time);
   async function save() {
-    const seconds = parseReviewTime(time);
+    if (busy || !canSave || !video?.url) return;
     if (seconds === null) {
       setMessage("Use m:ss or h:mm:ss, for example 2:12 or 1:02:12.");
       return;
@@ -39,16 +47,19 @@ function Flag({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          gameId: shot.gameId,
-          shotId: shot.id,
+          gameId,
+          ...target,
           requestId: crypto.randomUUID(),
           startSeconds: seconds,
           note,
         }),
       });
-      const result = await response.json();
-      if (!response.ok)
-        throw new Error(result.error || "Unable to save review.");
+      if (!response.ok) {
+        const result = await response.json().catch(() => null);
+        throw new Error(result?.error || "Unable to save review.");
+      }
+      setSavedStart(seconds);
+      setTime(videoTime(seconds));
       await onSaved();
       setMessage("Review saved.");
     } catch (error) {
@@ -60,17 +71,25 @@ function Flag({
     }
   }
   return (
-    <article className="event-card">
-      <h2>
-        {name} · {game?.label} · End {shot.end} · Stone {shot.stone}
-      </h2>
-      <p>
-        vs {game?.opponent} · {shot.type ?? "Shot type not recorded"} ·{" "}
-        {shot.grade ?? "—"}/5
-      </p>
-      <p>{shot.flagAudience === "team" ? "Team report" : "Player report"}</p>
-      <ReviewVideo video={shot.videoReview} />
-      <div className="coach-review-edit">
+    <>
+      <ReviewVideo
+        video={
+          video && savedStart !== null
+            ? {
+                url: video.url,
+                positionSeconds: savedStart,
+                lookBackSeconds: 0,
+              }
+            : video
+        }
+      />
+      <form
+        className="coach-review-edit"
+        onSubmit={(event) => {
+          event.preventDefault();
+          void save();
+        }}
+      >
         <label>
           Video start time
           <input
@@ -80,6 +99,25 @@ function Flag({
             disabled={busy}
           />
         </label>
+        <div className="flex flex-wrap gap-2">
+          {[-1, 1].map((offset) => {
+            const next = seconds === null ? null : seconds + offset;
+            return (
+              <button
+                key={offset}
+                className="btn min-w-11"
+                type="button"
+                aria-label={
+                  offset < 0 ? "One second earlier" : "One second later"
+                }
+                disabled={busy || next === null || next < 0 || next > 604800}
+                onClick={() => next !== null && setTime(videoTime(next))}
+              >
+                {offset < 0 ? "−1 sec" : "+1 sec"}
+              </button>
+            );
+          })}
+        </div>
         <label>
           Coach’s notes
           <textarea
@@ -91,26 +129,31 @@ function Flag({
         </label>
         <button
           className="btn"
-          onClick={() => void save()}
-          disabled={busy || !canSave || !shot.videoReview?.url}
+          type="submit"
+          disabled={busy || !canSave || !video?.url}
         >
           {busy ? "Saving…" : "Save review"}
         </button>
-      </div>
+      </form>
       {message && <p role="status">{message}</p>}
-    </article>
+    </>
   );
 }
+
 export default function FlaggedShots({
   shots,
   games,
   players,
+  playerId,
+  includeStandalone,
   canSave,
   onSaved,
 }: {
   shots: AnalysisShot[];
   games: CoachGame[];
   players: RosterEntry[];
+  playerId: string;
+  includeStandalone: boolean;
   canSave: boolean;
   onSaved: () => Promise<void>;
 }) {
@@ -126,19 +169,28 @@ export default function FlaggedShots({
         a.end - b.end ||
         a.stone - b.stone,
     );
+  const standalone = includeStandalone
+    ? games.flatMap((game) =>
+        (game.standaloneReviews ?? [])
+          .filter(
+            (review) => playerId === "all" || review.playerId === playerId,
+          )
+          .map((review) => ({ game, review })),
+      )
+    : [];
   return (
     <section aria-label="Flagged shots">
       <p>
         Review the recording, then save the exact video start time and your
-        notes. The saved time is used directly, without subtracting the go-back
-        setting.
+        notes. The review link opens at the saved time.
       </p>
-      {!flagged.length && !games.some((g) => g.standaloneReviews?.length) && (
+      {!flagged.length && !standalone.length && (
         <p>No flagged shots match these filters.</p>
       )}
-      {games.flatMap((game) =>
-        (game.standaloneReviews ?? []).map((review) => (
-          <article className="event-card" key={review.id}>
+      {standalone.map(({ game, review }) => {
+        const video = standaloneReviewVideo(review, game.broadcastReview);
+        return (
+          <article className="event-card" key={`${game.id}:${review.id}`}>
             <h2>
               {review.audience === "team" ? "Team" : review.playerName} ·{" "}
               {game.label} · Video review
@@ -147,25 +199,47 @@ export default function FlaggedShots({
               vs {game.opponent} ·{" "}
               {review.audience === "team" ? "Team report" : "Player report"}
             </p>
-            <p>{review.note}</p>
-            <ReviewVideo
-              video={standaloneReviewVideo(review, game.broadcastReview)}
+            <ReviewEditor
+              key={`${video?.url}:${reviewStart(video)}:${video?.estimated}:${review.note}`}
+              gameId={game.id}
+              target={{ reviewId: review.id }}
+              video={video}
+              initialNote={review.note}
+              canSave={canSave}
+              onSaved={onSaved}
             />
           </article>
-        )),
-      )}
-      {flagged.map((shot) => (
-        <Flag
-          key={`${shot.gameId}:${shot.id}:${shot.videoReview?.positionSeconds}:${shot.note}`}
-          shot={shot}
-          game={games.find((g) => g.id === shot.gameId)}
-          name={
-            players.find((p) => p.id === shot.playerId)?.name ?? shot.position
-          }
-          canSave={canSave}
-          onSaved={onSaved}
-        />
-      ))}
+        );
+      })}
+      {flagged.map((shot) => {
+        const game = games.find((g) => g.id === shot.gameId);
+        const name =
+          players.find((p) => p.id === shot.playerId)?.name ?? shot.position;
+        const video = shot.videoReview;
+        return (
+          <article className="event-card" key={`${shot.gameId}:${shot.id}`}>
+            <h2>
+              {name} · {game?.label} · End {shot.end} · Stone {shot.stone}
+            </h2>
+            <p>
+              vs {game?.opponent} · {shot.type ?? "Shot type not recorded"} ·{" "}
+              {shot.grade ?? "—"}/5
+            </p>
+            <p>
+              {shot.flagAudience === "team" ? "Team report" : "Player report"}
+            </p>
+            <ReviewEditor
+              key={`${video?.url}:${reviewStart(video)}:${video?.estimated}:${shot.note}`}
+              gameId={shot.gameId}
+              target={{ shotId: shot.id }}
+              video={video}
+              initialNote={shot.note}
+              canSave={canSave}
+              onSaved={onSaved}
+            />
+          </article>
+        );
+      })}
     </section>
   );
 }

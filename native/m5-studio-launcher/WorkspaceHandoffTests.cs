@@ -88,13 +88,9 @@ internal static class WorkspaceHandoffTests
                     if (!await scoringLoaded.Task) throw new Exception("Fixture scoring navigation failed.");
                     core.NavigationCompleted -= scoringNavigation;
                     await CheckCameraSettings(form, core, id, fixtureProfile);
-                    await core.ExecuteScriptAsync("window.endRequested=false;window.addEventListener('studio-end-game-request',e=>{window.endRequested=e.detail.gameId==='" + id + "';window.chrome.webview.postMessage({type:'studio-end-game-opened',gameId:e.detail.gameId});});");
-                    await (Task)typeof(Workspace).GetMethod("RequestEndGame", BindingFlags.Instance | BindingFlags.NonPublic).Invoke(form, new object[] { id });
-                    for (int i=0;i<20 && await core.ExecuteScriptAsync("window.endRequested")!="true";i++) await Task.Delay(100);
-                    if (await core.ExecuteScriptAsync("window.endRequested")!="true") throw new Exception("Close did not request final-score review.");
-                    await core.ExecuteScriptAsync("window.chrome.webview.postMessage({type:'studio-end-game-cancelled',gameId:'" + id + "'});");
-                    await Task.Delay(100);
-                    if (typeof(Workspace).GetField("closeAfterGame", BindingFlags.Instance | BindingFlags.NonPublic).GetValue(form) != null) throw new Exception("Cancelled review retained close intent.");
+                    await core.ExecuteScriptAsync("window.closeSupported=false;window.addEventListener('studio-session-status',e=>window.closeSupported=e.detail.canCloseWorkspace===true);window.chrome.webview.postMessage({type:'studio-session-observe'});");
+                    for (int i=0;i<20 && await core.ExecuteScriptAsync("window.closeSupported")!="true";i++) await Task.Delay(100);
+                    if (await core.ExecuteScriptAsync("window.closeSupported")!="true") throw new Exception("The game did not receive the native close capability.");
                     var mappingName = "Local\\CurlStreamerPreview-" + Guid.NewGuid().ToString("N");
                     byte[] picture;
                     using (var bitmap = new System.Drawing.Bitmap(1280, 720, System.Drawing.Imaging.PixelFormat.Format32bppRgb))
@@ -166,6 +162,30 @@ internal static class WorkspaceHandoffTests
                         typeof(Workspace).GetField("local",flags).SetValue(form,null);
                         typeof(Workspace).GetField("localAddress",flags).SetValue(form,null);
                     }
+                    var leaveHold = new DelayedHold();
+                    using (var fakeLocal = new System.Net.Http.HttpClient(leaveHold)) {
+                        typeof(Workspace).GetField("local",flags).SetValue(form,fakeLocal);
+                        typeof(Workspace).GetField("localAddress",flags).SetValue(form,"http://127.0.0.1:12345");
+                        typeof(Workspace).GetField("lastState",flags).SetValue(form,readyState);
+                        var holdNonce = "88888888-8888-4888-8888-888888888888";
+                        await core.ExecuteScriptAsync("window.leaveHold=null;window.addEventListener('studio-game-leave-result',e=>{window.leaveHold=e.detail;if(e.detail.ok&&e.detail.nonce==='" + holdNonce + "')location.assign('/dashboard');});window.chrome.webview.postMessage({type:'studio-game-leave',gameId:'" + id + "',nonce:'" + holdNonce + "'});");
+                        for (int i=0;i<20 && leaveHold.RequestBody==null;i++) await Task.Delay(50);
+                        if (leaveHold.RequestBody == null || !leaveHold.RequestBody.Contains("hold-stream") || core.Source != origin + "/score/" + id)
+                            throw new Exception("Pause and leave did not wait for the native hold acknowledgement.");
+                        leaveHold.Complete();
+                        for (int i=0;i<40 && core.Source!=origin+"/dashboard";i++) await Task.Delay(50);
+                        if (core.Source != origin + "/dashboard" ||
+                            (string)typeof(Workspace).GetField("runningGame",flags).GetValue(form) != id ||
+                            (string)typeof(Workspace).GetField("usbGame",flags).GetValue(form) != id ||
+                            typeof(Workspace).GetField("leaveDashboardGame",flags).GetValue(form) != null)
+                            throw new Exception("Pause and leave interrupted the program or failed to consume a single Dashboard navigation.");
+                        typeof(Workspace).GetField("local",flags).SetValue(form,null);
+                        typeof(Workspace).GetField("localAddress",flags).SetValue(form,null);
+                    }
+                    core.Navigate(origin+"/score/"+id);
+                    for (int i=0;i<40 && core.Source!=origin+"/score/"+id;i++) await Task.Delay(50);
+                    await Task.Delay(150);
+                    await core.ExecuteScriptAsync("window.navRequest=null;window.addEventListener('studio-navigation-request',e=>window.navRequest=e.detail);");
                     core.Navigate(origin+"/account"); await Task.Delay(100);
                     await core.ExecuteScriptAsync("window.chrome.webview.postMessage({type:'studio-navigation-resolve',gameId:window.navRequest.gameId,nonce:window.navRequest.nonce,decision:'continue'});");
                     for (int i=0;i<40&&core.Source!=origin+"/account";i++) await Task.Delay(50);
@@ -252,7 +272,7 @@ internal static class WorkspaceHandoffTests
                             for(int i=0;i<30&&await core.ExecuteScriptAsync("window.leaveReceipts.length")=="0";i++) await Task.Delay(50);
                             if(await core.ExecuteScriptAsync("window.leaveReceipts.length===1&&!window.leaveReceipts[0].ok")!="true" || preview.HasExited)
                                 throw new Exception("Preview-only leave interrupted live output.");
-                            typeof(Workspace).GetField("lastState",flags).SetValue(form,new System.Collections.Generic.Dictionary<string,object> { { "streaming", "idle" }, { "pairing", "unpaired" } });
+                            typeof(Workspace).GetField("lastState",flags).SetValue(form,new System.Collections.Generic.Dictionary<string,object> { { "streaming", "idle" }, { "pairing", "unpaired" }, { "broadcast", "live" } });
                             await core.ExecuteScriptAsync("window.leaveReceipts=[];"+leave+"66666666-6666-4666-8666-666666666666'});");
                             for(int i=0;i<240&&await core.ExecuteScriptAsync("window.leaveReceipts.length")=="0";i++) await Task.Delay(50);
                             if(await core.ExecuteScriptAsync("window.leaveReceipts.length===1&&window.leaveReceipts[0].ok")!="true" ||
@@ -262,10 +282,55 @@ internal static class WorkspaceHandoffTests
                             try { if (!preview.HasExited) { preview.Kill(); preview.WaitForExit(5000); } } catch (InvalidOperationException) { }
                         }
                     }
-                    File.WriteAllText(output, "PASS: native WebView2 handoff/preview boundaries, scoped offline camera settings drawer, global account session, correlated navigation fallback, USB retention, cross-game replacement refusal, completed/failed session cleanup, resumable leave without completion; no real media or accounts.");
-                    result = 0;
+                    // A paused and busy sender must close without the hosted final-card flow.
+                    // Simulate an owned controller whose only successful operation is stdin close.
+                    var pausedChild = new System.Diagnostics.Process {
+                        StartInfo = new System.Diagnostics.ProcessStartInfo(testNode, "-e \"process.stdin.on('data',x=>{if(String(x).trim()==='close')process.stdout.write('CLOSED\\n',()=>process.exit(0));});\"") {
+                            UseShellExecute = false, CreateNoWindow = true, RedirectStandardInput = true, RedirectStandardOutput = true
+                        }
+                    };
+                    bool cleanupConfirmed = false;
+                    pausedChild.OutputDataReceived += (sender3, args3) => { if (args3.Data == "CLOSED") cleanupConfirmed = true; };
+                    pausedChild.Start(); pausedChild.BeginOutputReadLine();
+                    var pausedExit = new TaskCompletionSource<bool>();
+                    typeof(Workspace).GetField("child",flags).SetValue(form, pausedChild);
+                    typeof(Workspace).GetField("exited",flags).SetValue(form, pausedExit);
+                    typeof(Workspace).GetField("runningGame",flags).SetValue(form, id);
+                    typeof(Workspace).GetField("recording",flags).SetValue(form, true);
+                    typeof(Workspace).GetField("busy",flags).SetValue(form, true);
+                    typeof(Workspace).GetField("lastState",flags).SetValue(form, new Dictionary<string,object> {
+                        { "streaming", "paused" }, { "broadcast", "live" }, { "pairing", "paired" }, { "programAuthorityEnded", true }
+                    });
+                    typeof(Workspace).GetMethod("ObserveExit",flags).Invoke(form, new object[] {
+                        pausedChild, new TaskCompletionSource<string>(), pausedExit, new Func<bool>(() => cleanupConfirmed)
+                    });
+                    var closeNonce = "77777777-7777-4777-8777-777777777777";
+                    var postClose = "window.chrome.webview.postMessage({type:'studio-close-workspace',nonce:'" + closeNonce + "',gameId:'";
+                    try {
+                        await core.ExecuteScriptAsync(postClose + otherId + "'});");
+                        await Task.Delay(100);
+                        if (pausedChild.HasExited || (bool)typeof(Workspace).GetField("closing",flags).GetValue(form))
+                            throw new Exception("Cross-game Studio close was accepted.");
+                        form.FormClosed += (sender3, args3) => {
+                            try {
+                                if (!pausedExit.Task.IsCompleted || !pausedExit.Task.Result ||
+                                    typeof(Workspace).GetField("child",flags).GetValue(form) != null ||
+                                    (string)remembered.Invoke(form,null) != id ||
+                                    (bool)typeof(Workspace).GetField("gameEnded",flags).GetValue(form) || requests != requestsBeforeLeave)
+                                    throw new Exception("Workspace close did not cleanly stop the paused sender or leave the game resumable.");
+                                File.WriteAllText(output, "PASS: native WebView2 handoff, preview and camera boundaries; scoped recovery closed a busy, expired paused sender without finishing its game.");
+                                result = 0;
+                            } catch (Exception error) { File.WriteAllText(output, "FAIL: " + error.Message); }
+                            finally { timeout.Stop(); }
+                        };
+                        await core.ExecuteScriptAsync(postClose + id + "'});");
+                    } catch {
+                        if (!pausedChild.HasExited) { pausedChild.Kill(); pausedChild.WaitForExit(5000); }
+                        throw;
+                    }
+                    return; // Let the native close command drive FormClosed.
                 } catch (Exception error) { File.WriteAllText(output, "FAIL: " + error.GetType().Name + " " + error.Message); }
-                finally { timeout.Stop(); typeof(Workspace).GetField("mayClose", BindingFlags.Instance | BindingFlags.NonPublic).SetValue(form, true); form.Close(); }
+                timeout.Stop(); typeof(Workspace).GetField("mayClose", BindingFlags.Instance | BindingFlags.NonPublic).SetValue(form, true); form.Close();
             };
         };
         Application.Run(form);
@@ -358,7 +423,11 @@ internal static class WorkspaceHandoffTests
     }
     private sealed class DelayedHold : System.Net.Http.HttpMessageHandler {
         private readonly TaskCompletionSource<System.Net.Http.HttpResponseMessage> response = new TaskCompletionSource<System.Net.Http.HttpResponseMessage>();
-        protected override Task<System.Net.Http.HttpResponseMessage> SendAsync(System.Net.Http.HttpRequestMessage request, System.Threading.CancellationToken cancellationToken) { return response.Task; }
+        internal string RequestBody { get; private set; }
+        protected override Task<System.Net.Http.HttpResponseMessage> SendAsync(System.Net.Http.HttpRequestMessage request, System.Threading.CancellationToken cancellationToken) {
+            if (request.Content != null) RequestBody = request.Content.ReadAsStringAsync().GetAwaiter().GetResult();
+            return response.Task;
+        }
         internal void Complete() {
             response.SetResult(new System.Net.Http.HttpResponseMessage(System.Net.HttpStatusCode.OK) { Content = new System.Net.Http.StringContent("{\"program\":\"recording\",\"streaming\":\"armed\",\"broadcast\":\"live\",\"presentation\":{\"mode\":\"hold\"},\"localOutput\":{\"state\":\"active\"}}") });
         }

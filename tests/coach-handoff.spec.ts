@@ -110,8 +110,19 @@ test("empty games allow a standalone team flag and require a real player for pla
     }),
   );
   let saved: unknown = null;
+  let catalogUnavailable = true;
   await page.route("**/api/curlcoach/local-review**", (route) => {
-    if (route.request().method() === "GET")
+    if (route.request().method() === "GET") {
+      if (catalogUnavailable) {
+        catalogUnavailable = false;
+        return route.fulfill({
+          status: 503,
+          json: {
+            error:
+              "Could not load the game's event. Tap Reload shots to retry.",
+          },
+        });
+      }
       return route.fulfill({
         json: {
           revision: 3,
@@ -119,6 +130,7 @@ test("empty games allow a standalone team flag and require a real player for pla
           players: [{ id: "lead", name: "Alex" }],
         },
       });
+    }
     saved = route.request().postDataJSON();
     return route.fulfill({ json: { saved: true } });
   });
@@ -126,6 +138,12 @@ test("empty games allow a standalone team flag and require a real player for pla
     "http://127.0.0.1:3189/coach-handoff-fixture#" +
       encodeURIComponent(JSON.stringify(review)),
   );
+  await expect(page.getByRole("alert")).toContainText(
+    "Could not load the game's event",
+  );
+  await expect(page.getByRole("button", { name: "Save flag" })).toBeDisabled();
+  await page.getByRole("button", { name: "Reload shots" }).click();
+  await expect(page.getByLabel("Notes")).toHaveValue(review.notes);
   await expect(
     page.getByRole("button", { name: "Save flag", exact: true }),
   ).toBeEnabled();

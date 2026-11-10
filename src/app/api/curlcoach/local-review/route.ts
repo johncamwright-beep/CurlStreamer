@@ -1,6 +1,7 @@
 import { createAdminSupabaseClient } from "@/lib/supabase/admin";
 import { readTeamSettings } from "@/lib/providers/team-settings";
 import { rosterPlayers } from "@/lib/providers/player-contacts";
+import { listTeamHierarchyGames } from "@/lib/team-hierarchy-service";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { labEnabled, sameOrigin } from "@/lib/curlcoach/access";
@@ -15,6 +16,10 @@ import {
   saveCoachState,
 } from "@/lib/providers/curlcoach-store";
 const headers = { "Cache-Control": "private, no-store" };
+const gameEventSchema = z.object({
+  id: z.uuid(),
+  event_id: z.uuid().nullable(),
+});
 async function context(gameId: string) {
   const account = await requireCoachAccount();
   if (!account) return null;
@@ -29,7 +34,7 @@ async function context(gameId: string) {
     gameId,
     roster: [],
   });
-  return { scope, state };
+  return { account, scope, state };
 }
 const enabled = () => process.env.CURLCOACH_ENABLED === "true" && !labEnabled();
 async function players(
@@ -48,16 +53,31 @@ export async function GET(request: Request) {
   try {
     const current = await context(parsed.data);
     if (!current) return new NextResponse(null, { status: 403, headers });
-    const { data: game, error: gameError } = await createAdminSupabaseClient()
-      .from("games")
-      .select("event_id")
-      .eq("id", parsed.data)
-      .eq("organization_id", current.scope.organizationId)
-      .maybeSingle();
-    if (gameError || !game) throw Error("Game unavailable");
+    // API roles cannot query games directly. The catalog RPC verifies the
+    // actor's active team and excludes deleted games.
+    const catalog = await listTeamHierarchyGames(current.account.user);
+    if (!catalog.ok) {
+      if (catalog.kind === "authorization") throw Error("Game unavailable");
+      return NextResponse.json(
+        {
+          error: "Could not load the game's event. Tap Reload shots to retry.",
+        },
+        { status: 503, headers },
+      );
+    }
+    const game = gameEventSchema.safeParse(
+      catalog.value.find(
+        (row) =>
+          typeof row === "object" &&
+          row !== null &&
+          "id" in row &&
+          row.id === parsed.data,
+      ),
+    );
+    if (!game.success) throw Error("Game unavailable");
     return NextResponse.json(
       {
-        eventId: game.event_id ?? "standalone",
+        eventId: game.data.event_id ?? "standalone",
         revision: current.state.revision,
         players: await players(current),
         accountScope: {

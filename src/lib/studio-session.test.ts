@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  canCloseStudioGameDirectly,
   resolveStudioNavigation,
   sessionGamePath,
   shouldGuardStudioNavigation,
@@ -30,6 +31,40 @@ const session: StudioSession = {
 const request = { gameId, nonce, href: "https://curlstreamer.test/dashboard" };
 
 describe("Studio session status and navigation boundaries", () => {
+  it("permits direct close only for a supported idle preview on the current game", () => {
+    const idle = studioSessionSchema.parse({
+      ...session,
+      streaming: "idle",
+      outputActive: false,
+      live: false,
+      canLeaveGame: true,
+      canCloseGameDirectly: true,
+    });
+    expect(canCloseStudioGameDirectly(idle, gameId)).toBe(true);
+    expect(
+      canCloseStudioGameDirectly(
+        { ...idle, gameId: null, active: false },
+        gameId,
+      ),
+    ).toBe(true);
+    expect(canCloseStudioGameDirectly(idle, otherGameId)).toBe(false);
+    expect(canCloseStudioGameDirectly(null, gameId)).toBe(false);
+    for (const state of [
+      { canCloseGameDirectly: undefined },
+      { busy: true },
+      { live: true },
+      { outputActive: true },
+      { presentation: "hold" },
+      { streaming: "paused" },
+      { streaming: "starting" },
+      { streaming: "unknown" },
+    ] satisfies Partial<StudioSession>[]) {
+      expect(canCloseStudioGameDirectly({ ...idle, ...state }, gameId)).toBe(
+        false,
+      );
+    }
+  });
+
   it("accepts replay-enabled native status without losing confirmed live state", () => {
     for (const replay of [
       null,
@@ -262,7 +297,11 @@ describe("native navigation receipts", () => {
 
   it("leaves only after a matching confirmed shutdown, never a foreign receipt", async () => {
     const result = leaveStudioGame(gameId);
-    expect(sent[0]).toMatchObject({ type: "studio-game-leave", gameId });
+    expect(sent[0]).toEqual({
+      type: "studio-game-leave",
+      gameId,
+      nonce: expect.any(String),
+    });
     let done = false;
     void result.then(() => {
       done = true;
@@ -280,6 +319,27 @@ describe("native navigation receipts", () => {
       }),
     );
     await expect(result).resolves.toBeUndefined();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("sends a preview-only request and releases the UI within 15 seconds if Studio never confirms it", async () => {
+    const result = leaveStudioGame(gameId, { previewOnly: true });
+    const expired = expect(result).rejects.toThrow(
+      "camera preview is taking longer",
+    );
+    expect(sent[0]).toEqual({
+      type: "studio-game-leave",
+      gameId,
+      nonce: expect.any(String),
+      previewOnly: true,
+    });
+    events.dispatchEvent(
+      new CustomEvent("studio-game-leave-result", {
+        detail: { gameId, nonce: otherNonce, ok: true },
+      }),
+    );
+    await vi.advanceTimersByTimeAsync(15000);
+    await expired;
     expect(vi.getTimerCount()).toBe(0);
   });
   it("keeps the game open when shutdown fails or never responds", async () => {

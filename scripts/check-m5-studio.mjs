@@ -5,7 +5,7 @@ import { readFile, mkdtemp } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { createInterface } from "node:readline";
-const [directory] = process.argv.slice(2);
+const [directory, fixture] = process.argv.slice(2);
 assert.ok(directory, "Supply the assembled Studio directory.");
 const root = resolve(directory);
 const configuration = JSON.parse(
@@ -15,6 +15,10 @@ const profile = await mkdtemp(join(tmpdir(), "studio-clean-profile-"));
 const child = spawn(
   join(root, "node/node.exe"),
   [
+    // Mimic an idle library timer that survives successful operator cleanup.
+    ...(fixture === "--keepalive-fixture"
+      ? ["--import", "data:text/javascript,setInterval(()=>{},60000)"]
+      : []),
     join(root, "app/studio.mjs"),
     `${configuration.website}/games/11111111-1111-4111-8111-111111111111`,
   ],
@@ -83,7 +87,12 @@ try {
   assert.equal(state.program, "idle");
   assert.equal(state.broadcast, "unknown");
   child.stdin.end("close\n");
-  assert.equal(await complete, 0);
+  const deadline = setTimeout(() => child.kill(), 10000);
+  try {
+    assert.equal(await complete, 0);
+  } finally {
+    clearTimeout(deadline);
+  }
   assert.equal(closed, true);
   console.log(
     "PASS: relocated bundle, empty profile, unarmed native PC check, graceful controller exit.",

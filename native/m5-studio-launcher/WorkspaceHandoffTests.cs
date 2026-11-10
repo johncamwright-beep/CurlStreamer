@@ -236,6 +236,32 @@ internal static class WorkspaceHandoffTests
                     for(int i=0;i<30&&await core.ExecuteScriptAsync("window.leaveReceipts.length")=="0";i++) await Task.Delay(50);
                     if(await core.ExecuteScriptAsync("window.leaveReceipts.length===1&&window.leaveReceipts[0].ok&&window.leaveReceipts[0].nonce==='44444444-4444-4444-8444-444444444444'")!="true") throw new Exception("Clean leave did not acknowledge matching request.");
                     if((string)remembered.Invoke(form,null)!=id || (bool)typeof(Workspace).GetField("gameEnded",flags).GetValue(form) || requests!=requestsBeforeLeave) throw new Exception("Leave finalized the game or lost its resume target.");
+                    // A wedged, unarmed preview may be stopped without waiting for
+                    // the broadcast cleanup deadline. A live sender must never take that route.
+                    using (var preview = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(testNode, "-e \"setInterval(()=>{},60000)\"") { UseShellExecute = false, CreateNoWindow = true, RedirectStandardInput = true })) {
+                        try {
+                            typeof(Workspace).GetField("child",flags).SetValue(form,preview);
+                            typeof(Workspace).GetField("runningGame",flags).SetValue(form,id);
+                            typeof(Workspace).GetField("recording",flags).SetValue(form,true);
+                            typeof(Workspace).GetField("lastState",flags).SetValue(form,readyState);
+                            var previewExit = new TaskCompletionSource<bool>();
+                            typeof(Workspace).GetField("exited",flags).SetValue(form,previewExit);
+                            typeof(Workspace).GetMethod("ObserveExit",flags).Invoke(form,new object[] { preview, new TaskCompletionSource<string>(), previewExit, new Func<bool>(() => false) });
+                            var leave = "window.chrome.webview.postMessage({type:'studio-game-leave',gameId:'"+id+"',previewOnly:true,nonce:'";
+                            await core.ExecuteScriptAsync("window.leaveReceipts=[];"+leave+"55555555-5555-4555-8555-555555555555'});");
+                            for(int i=0;i<30&&await core.ExecuteScriptAsync("window.leaveReceipts.length")=="0";i++) await Task.Delay(50);
+                            if(await core.ExecuteScriptAsync("window.leaveReceipts.length===1&&!window.leaveReceipts[0].ok")!="true" || preview.HasExited)
+                                throw new Exception("Preview-only leave interrupted live output.");
+                            typeof(Workspace).GetField("lastState",flags).SetValue(form,new System.Collections.Generic.Dictionary<string,object> { { "streaming", "idle" }, { "pairing", "unpaired" } });
+                            await core.ExecuteScriptAsync("window.leaveReceipts=[];"+leave+"66666666-6666-4666-8666-666666666666'});");
+                            for(int i=0;i<240&&await core.ExecuteScriptAsync("window.leaveReceipts.length")=="0";i++) await Task.Delay(50);
+                            if(await core.ExecuteScriptAsync("window.leaveReceipts.length===1&&window.leaveReceipts[0].ok")!="true" ||
+                                typeof(Workspace).GetField("child",flags).GetValue(form)!=null || (string)remembered.Invoke(form,null)!=id || requests!=requestsBeforeLeave)
+                                throw new Exception("Unarmed preview did not close promptly or left a changed game.");
+                        } finally {
+                            try { if (!preview.HasExited) { preview.Kill(); preview.WaitForExit(5000); } } catch (InvalidOperationException) { }
+                        }
+                    }
                     File.WriteAllText(output, "PASS: native WebView2 handoff/preview boundaries, scoped offline camera settings drawer, global account session, correlated navigation fallback, USB retention, cross-game replacement refusal, completed/failed session cleanup, resumable leave without completion; no real media or accounts.");
                     result = 0;
                 } catch (Exception error) { File.WriteAllText(output, "FAIL: " + error.GetType().Name + " " + error.Message); }

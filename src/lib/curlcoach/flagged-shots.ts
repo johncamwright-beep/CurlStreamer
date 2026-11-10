@@ -1,7 +1,7 @@
 import { standaloneReviewVideo } from "./standalone-review";
 import { z } from "zod";
 import { gameShots, type CoachEvent } from "./event";
-import { reviewLink, supportedVideo, type VideoReview } from "./review";
+import { recordingLink, reviewLink, type VideoReview } from "./review";
 import type { ReportPacket } from "./reports";
 
 export const reviewCorrectionSchema = z
@@ -69,11 +69,7 @@ function reportFlags(
         stone: shot.stone,
         type: shot.type ?? "Shot",
         note: shot.note,
-        url:
-          reviewLink(shot.videoReview) ??
-          (shot.videoReview && supportedVideo(shot.videoReview.url)
-            ? shot.videoReview.url
-            : null),
+        url: reviewLink(shot.videoReview) ?? recordingLink(shot.videoReview),
         estimated: !!shot.videoReview?.estimated,
       })),
     ...(game.standaloneReviews ?? [])
@@ -83,18 +79,21 @@ function reportFlags(
           : review.audience === "player" &&
             review.playerId === audience.playerId,
       )
-      .map((review) => ({
-        gameId: game.id,
-        shotId: review.id,
-        game: game.label + " · vs " + game.opponent,
-        shooter: review.playerName ?? undefined,
-        end: null,
-        stone: null,
-        type: "Video review",
-        note: review.note,
-        url: reviewLink(standaloneReviewVideo(review, game.broadcastReview)),
-        estimated: true,
-      })),
+      .map((review) => {
+        const video = standaloneReviewVideo(review, game.broadcastReview);
+        return {
+          gameId: game.id,
+          shotId: review.id,
+          game: game.label + " · vs " + game.opponent,
+          shooter: review.playerName ?? undefined,
+          end: null,
+          stone: null,
+          type: "Video review",
+          note: review.note,
+          url: reviewLink(video) ?? recordingLink(video),
+          estimated: true,
+        };
+      }),
   ]);
 }
 export function playerReportFlags(event: CoachEvent, playerId: string) {

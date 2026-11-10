@@ -3,9 +3,14 @@ import { labEnabled, sameOrigin } from "@/lib/curlcoach/access";
 import { requireCoachAccount } from "@/lib/curlcoach/production-access";
 import { reviewCorrectionSchema } from "@/lib/curlcoach/flagged-shots";
 import { currentShots, emptyState } from "@/lib/curlcoach/model";
-import { youtubeId } from "@/lib/curlcoach/review";
+import {
+  withBroadcastReview,
+  withRecordedReviewTime,
+  youtubeId,
+} from "@/lib/curlcoach/review";
 import { loadCoachState } from "@/lib/providers/curlcoach-store";
 import { loadCoachBroadcastReviews } from "@/lib/providers/curlcoach-video";
+import { loadReviewCorrections } from "@/lib/providers/shot-review-corrections";
 import { createAdminSupabaseClient } from "@/lib/supabase/admin";
 const headers = { "Cache-Control": "private, no-store" };
 export async function POST(request: Request) {
@@ -42,12 +47,24 @@ export async function POST(request: Request) {
     const shot = currentShots(state.events).find((s) => s.id === input.shotId);
     if (!shot || !(shot.flagged ?? !!shot.review))
       return new NextResponse(null, { status: 404, headers });
-    const broadcasts = await loadCoachBroadcastReviews(
-      account.organizationId,
-      [input.gameId],
-      account.userId,
+    const [broadcasts, corrections] = await Promise.all([
+      loadCoachBroadcastReviews(
+        account.organizationId,
+        [input.gameId],
+        account.userId,
+      ),
+      loadReviewCorrections(account, [input.gameId]),
+    ]);
+    const correction = corrections[input.gameId]?.find(
+      (candidate) => candidate.shotId === shot.id,
     );
-    const url = shot.videoReview?.url || broadcasts[input.gameId]?.url;
+    const url = (
+      correction?.video ??
+      withBroadcastReview(
+        withRecordedReviewTime(shot, state.events),
+        broadcasts[input.gameId],
+      ).videoReview
+    )?.url;
     const id = url ? youtubeId(new URL(url)) : null;
     if (!id)
       return NextResponse.json(

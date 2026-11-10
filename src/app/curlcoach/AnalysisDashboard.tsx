@@ -24,12 +24,7 @@ import {
   weightLabels,
   resultLabels,
 } from "@/lib/curlcoach/shot-subtypes";
-import {
-  reviewLink,
-  reviewStart,
-  videoTime,
-  supportedVideo,
-} from "@/lib/curlcoach/review";
+import ReviewVideo from "./ReviewVideo";
 import "./analysis-dashboard.css";
 import AnalysisOrder from "./AnalysisOrder";
 import {
@@ -345,11 +340,7 @@ export default function AnalysisDashboard({
         <p className="analysis-empty">No matching shots</p>
       ) : (
         reviewed.map((shot) => {
-          const game = games.find((game) => game.id === shot.gameId),
-            video = shot.videoReview;
-          const link =
-            reviewLink(video) ??
-            (video && supportedVideo(video.url) ? video.url : null);
+          const game = games.find((game) => game.id === shot.gameId);
           return (
             <article
               key={`${shot.gameId}-${shot.id}`}
@@ -366,16 +357,7 @@ export default function AnalysisDashboard({
                 {shot.grade === null ? "Not graded" : `${shot.grade}/5`}
               </div>
               {shot.note && <p>{shot.note}</p>}
-              {link ? (
-                <a href={link} target="_blank" rel="noopener noreferrer">
-                  {reviewStart(video) === null
-                    ? "Open game recording"
-                    : `Review video from ${videoTime(reviewStart(video)!)}`}
-                  {video?.estimated ? " (approximate)" : ""} ↗
-                </a>
-              ) : (
-                <span className="analysis-muted">No linked recording</span>
-              )}
+              <ReviewVideo video={shot.videoReview} />
             </article>
           );
         })

@@ -9,6 +9,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
+import { studioSessionBridge } from "@/lib/studio-session";
 
 const StatusContext = createContext<
   ((key: string, message?: string) => void) | null
@@ -68,11 +69,27 @@ export function StudioStatusMessage({
   return !update && message ? <p role={role}>{message}</p> : null;
 }
 
-export function StudioStatusArea() {
+export function StudioStatusArea({ gameId }: { gameId: string }) {
   const messages = useContext(MessagesContext);
   const dialog = useRef<HTMLDialogElement>(null);
   const [visible, setVisible] = useState(false);
+  const [forceCloseGame, setForceCloseGame] = useState<string>();
   const latestMessage = messages[0];
+  useEffect(() => {
+    const bridge = studioSessionBridge();
+    if (!bridge) return;
+    const receive = (event: Event) => {
+      const detail = (event as CustomEvent).detail;
+      setForceCloseGame(
+        detail?.gameId === gameId && detail.canForceClose === true
+          ? gameId
+          : undefined,
+      );
+    };
+    window.addEventListener("studio-recovery-status", receive);
+    bridge.postMessage({ type: "studio-session-observe" });
+    return () => window.removeEventListener("studio-recovery-status", receive);
+  }, [gameId]);
   useEffect(() => {
     if (!latestMessage) return;
     setVisible(true);
@@ -119,6 +136,20 @@ export function StudioStatusArea() {
             <p>No status messages yet.</p>
           )}
         </div>
+        {forceCloseGame === gameId && (
+          <button
+            type="button"
+            className="btn-secondary mt-3 min-h-11 border-red-700 text-red-200"
+            onClick={() =>
+              studioSessionBridge()?.postMessage({
+                type: "studio-force-close",
+                gameId,
+              })
+            }
+          >
+            Force close Studio
+          </button>
+        )}
       </dialog>
     </>
   );

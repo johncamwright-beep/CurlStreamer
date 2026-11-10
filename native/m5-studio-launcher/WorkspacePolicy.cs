@@ -24,13 +24,31 @@ internal static class WorkspacePolicy
             request.TryGetValue("type", out type) && Object.Equals(type, "studio-force-close") &&
             request.TryGetValue("gameId", out game) && Object.Equals(game, selectedGame);
     }
+    internal static bool CloseWorkspaceRequest(Dictionary<string, object> request, string selectedGame, string runningGame, out string nonce)
+    {
+        nonce = null;
+        object type, game, requestNonce; Guid parsed;
+        if (request == null || request.Count != 3 || selectedGame == null ||
+            (runningGame != null && runningGame != selectedGame) ||
+            !request.TryGetValue("type", out type) || !Object.Equals(type, "studio-close-workspace") ||
+            !request.TryGetValue("gameId", out game) || !Object.Equals(game, selectedGame) ||
+            !request.TryGetValue("nonce", out requestNonce) || !(requestNonce is string) ||
+            !Guid.TryParseExact((string)requestNonce, "D", out parsed)) return false;
+        nonce = (string)requestNonce;
+        return true;
+    }
     internal static bool KeepAwake(string streaming)
     {
         return streaming == "starting" || streaming == "armed" || streaming == "paused";
     }
     internal static bool CanClosePreview(bool hasController, string streaming, string pairing, bool outputActive)
     {
-        return !outputActive && (!hasController || (streaming == "idle" && pairing == "unpaired"));
+        return !hasController || (!outputActive && streaming == "idle" && pairing == "unpaired");
+    }
+    internal static bool ConfirmedInactiveOutput(string streaming, string localOutput)
+    {
+        return (streaming == "idle" || streaming == "paused" || streaming == "stopped" || streaming == "failed") &&
+            (localOutput == "idle" || localOutput == "stopped" || localOutput == "failed");
     }
     internal static bool SessionMessage(string source, string page, string origin)
     {

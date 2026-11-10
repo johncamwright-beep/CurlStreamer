@@ -496,7 +496,7 @@ function ScorerGame({ id }: { id: string }) {
           </div>
           {canEndGame && (
             <div className="scoring-page-actions">
-              {desktop && <StudioStatusArea />}
+              {desktop && <StudioStatusArea gameId={id} />}
               {microphoneSyncError && <p role="alert">{microphoneSyncError}</p>}
               {desktop && (
                 <div
@@ -841,15 +841,6 @@ function ScorerGame({ id }: { id: string }) {
               )}
               {!desktop && canEndGame && (
                 <div className="scoring-card scoring-finish">
-                  {!desktop && (
-                    <>
-                      <h2 className="font-bold">Finish the game</h2>
-                      <p className="mb-3 mt-2 text-sm text-slate-300">
-                        Review and confirm the saved final score before ending
-                        the game.
-                      </p>
-                    </>
-                  )}
                   <EndGameControl
                     gameId={id}
                     homeName={game.config.homeName}

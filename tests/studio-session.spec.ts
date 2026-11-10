@@ -185,9 +185,9 @@ test("replay-enabled status updates preview to LIVE and yields the badge during 
     canLeaveGame: true,
     replay: { state: 1, durationMs: 0, availableMs: 60000, clipId: null },
   });
-  await page.getByRole("button", { name: "Game options", exact: true }).click();
+  await page.getByRole("button", { name: "Close Game", exact: true }).click();
   await expect(
-    page.getByRole("button", { name: "Leave game and pause stream" }),
+    page.getByRole("button", { name: "Pause and leave" }),
   ).toBeEnabled();
 });
 

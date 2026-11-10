@@ -243,25 +243,25 @@ async function dashboardCounts(
 }
 
 async function endFixtureGame(page: Page) {
-  await page.getByRole("button", { name: "Game options", exact: true }).click();
-  await page
-    .getByRole("button", { name: "End game and stream", exact: true })
-    .click();
-  await page
-    .getByRole("button", { name: "Review final score", exact: true })
-    .click();
-  await expect(
-    page.getByRole("button", { name: "Confirm End Game", exact: true }),
-  ).toBeVisible();
+  await page.getByRole("button", { name: "Close Game", exact: true }).click();
+  await page.getByRole("button", { name: "Yes", exact: true }).click();
+  const scoreDialog = page.getByRole("dialog", { name: "Final score" });
+  await expect(scoreDialog.getByRole("spinbutton").first()).toBeVisible();
   const committed = page.waitForResponse(
     (response) =>
       response.url().endsWith("/completion") &&
       response.request().method() === "POST" &&
       response.request().postDataJSON()?.action === "complete",
   );
-  await page
-    .getByRole("button", { name: "Confirm End Game", exact: true })
-    .click();
+  const finish = scoreDialog.getByRole("button", {
+    name: "End Game",
+    exact: true,
+  });
+  if (await finish.isEnabled()) await finish.click();
+  else
+    await scoreDialog
+      .getByRole("button", { name: "End without score" })
+      .click();
   expect((await committed).ok()).toBe(true);
   await expect(
     page.getByRole("link", { name: "Back to Games", exact: true }),

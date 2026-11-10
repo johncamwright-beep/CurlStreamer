@@ -34,6 +34,7 @@ export const studioSessionSchema = z
     canHoldStream: z.boolean(),
     canLeaveGame: z.boolean().optional(),
     canCloseGameDirectly: z.boolean().optional(),
+    canCloseWorkspace: z.boolean().optional(),
     replay: studioReplayStateSchema.nullable().optional(),
     coachReview: studioCoachReviewStateSchema.nullable().optional(),
   })
@@ -282,12 +283,12 @@ export function leaveStudioGame(
         reject(
           Error(
             previewOnly
-              ? "The camera preview is taking longer to close. Check Studio and try again."
+              ? "Studio is taking longer to close the game. Try again."
               : "Studio has not confirmed shutdown. Keep it open and check its status.",
           ),
         );
       },
-      previewOnly ? 15000 : 130000,
+      previewOnly ? 40_000 : 130_000,
     );
     window.addEventListener("studio-game-leave-result", receive);
     try {

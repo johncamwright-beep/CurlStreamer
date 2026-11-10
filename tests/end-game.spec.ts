@@ -26,6 +26,15 @@ test("Studio close opens a scoped review and Cancel leaves the game active", asy
     }),
   );
   await page.route(`**/api/games/${testGameId}/completion`, (route) => {
+    if (route.request().postDataJSON()?.action === "review")
+      return route.fulfill({
+        json: {
+          reviewId: "22222222-2222-4222-8222-222222222222",
+          inputRevision: 7,
+          result: completedFixture().result,
+          youtubeWatchUrl: null,
+        },
+      });
     completionWrites++;
     return route.fulfill({
       status: 500,
@@ -34,7 +43,7 @@ test("Studio close opens a scoped review and Cancel leaves the game active", asy
   });
   await page.goto(`/score/${testGameId}`);
   await expect(
-    page.getByRole("button", { name: "Game options", exact: true }),
+    page.getByRole("button", { name: "Close Game", exact: true }),
   ).toBeVisible();
   await page.evaluate(() =>
     window.dispatchEvent(
@@ -43,9 +52,7 @@ test("Studio close opens a scoped review and Cancel leaves the game active", asy
       }),
     ),
   );
-  await expect(
-    page.getByRole("button", { name: "Review final score" }),
-  ).toHaveCount(0);
+  await expect(page.getByRole("dialog")).toHaveCount(0);
   await page.evaluate(
     (id) =>
       window.dispatchEvent(
@@ -53,17 +60,13 @@ test("Studio close opens a scoped review and Cancel leaves the game active", asy
       ),
     testGameId,
   );
-  await page
-    .getByRole("button", { name: "End game and stream", exact: true })
-    .click();
-  await expect(
-    page.getByRole("button", { name: "Review final score" }),
-  ).toBeVisible();
+  await expect(page.getByRole("dialog", { name: "Final score" })).toBeVisible();
+  await expect(page.getByRole("spinbutton", { name: "Rocks" })).toHaveValue(
+    "3",
+  );
   expect(completionWrites).toBe(0);
-  await page.getByRole("button", { name: "Cancel", exact: true }).click();
-  await expect(
-    page.getByRole("button", { name: "Review final score" }),
-  ).toHaveCount(0);
+  await page.getByRole("button", { name: "Close", exact: true }).click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
   const messages = await page.evaluate(
     () =>
       (window as unknown as Window & { studioMessages?: unknown[] })
@@ -101,6 +104,7 @@ test("End Game reviews the score and replaces controls with the saved result", a
   page,
 }, testInfo) => {
   const game = gameFixture();
+  game.config.sharedYoutubeWatchUrl = "https://youtu.be/abcdefghijk";
   let cleanupRetries = 0;
   await page.route(`**/api/games/${testGameId}`, async (route) => {
     await route.fulfill({
@@ -156,40 +160,25 @@ test("End Game reviews the score and replaces controls with the saved result", a
   });
 
   await page.goto(`/games/${testGameId}`);
-  await page.getByRole("button", { name: "Game options" }).click();
-  await page
-    .getByRole("button", { name: "End game and stream", exact: true })
-    .click();
+  await page.getByRole("button", { name: "Close Game", exact: true }).click();
   await expect(
-    page.getByText("Visible to viewers on the completed-game page."),
+    page.getByRole("dialog", { name: "Is the game done?" }),
   ).toBeVisible();
-  await page.getByRole("button", { name: "Cancel" }).click();
-  await expect(
-    page.getByRole("button", { name: "Review final score" }),
-  ).toHaveCount(0);
-  await page.getByRole("button", { name: "Game options" }).click();
-  await page
-    .getByRole("button", { name: "End game and stream", exact: true })
-    .click();
-  await page
-    .getByLabel("YouTube watch link (optional)")
-    .fill("https://youtu.be/abcdefghijk");
-  await page.getByRole("button", { name: "Review final score" }).click();
-  await expect(page.getByText("Rocks 3 – 2 Stones")).toBeVisible();
-  await expect(
-    page.getByText("YouTube: https://youtu.be/abcdefghijk"),
-  ).toBeVisible();
-  await expect(
-    page.getByText(
-      "This ends scoring. Your team owner or administrator can correct the saved result later from Edit game.",
-      { exact: false },
-    ),
-  ).toBeVisible();
+  await page.getByRole("button", { name: "Cancel", exact: true }).click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await page.getByRole("button", { name: "Close Game", exact: true }).click();
+  await page.getByRole("button", { name: "Yes", exact: true }).click();
+  await expect(page.getByRole("spinbutton", { name: "Rocks" })).toHaveValue(
+    "3",
+  );
+  await expect(page.getByRole("spinbutton", { name: "Stones" })).toHaveValue(
+    "2",
+  );
   await page.screenshot({
     path: testInfo.outputPath("score-confirmation.png"),
     fullPage: true,
   });
-  await page.getByRole("button", { name: "Confirm End Game" }).click();
+  await page.getByRole("button", { name: "End Game", exact: true }).click();
   await expect(
     page.getByRole("heading", { name: "Home 3 – 2 Visitors" }),
   ).toBeVisible();
@@ -200,9 +189,7 @@ test("End Game reviews the score and replaces controls with the saved result", a
   await expect(
     page.getByRole("link", { name: "Watch on YouTube" }),
   ).toHaveAttribute("href", "https://youtu.be/abcdefghijk");
-  await expect(page.getByRole("button", { name: "Game options" })).toHaveCount(
-    0,
-  );
+  await expect(page.getByRole("button", { name: "Close Game" })).toHaveCount(0);
   await expect.poll(() => cleanupRetries).toBe(1);
   await expect(
     page.getByText("Live video shutdown has not been confirmed."),
@@ -217,74 +204,107 @@ test("End Game reviews the score and replaces controls with the saved result", a
   });
 });
 
-test("authorized scoring page reviews and confirms End Game", async ({
-  page,
-}, testInfo) => {
-  const game = gameFixture();
-  await page.route(`**/api/games/${testGameId}`, (route) =>
-    route.fulfill({
-      json: game,
-      headers: {
-        "x-curlcast-operator": "true",
-        "x-curlcast-account-role": "owner",
-      },
-    }),
-  );
-  await page.route(`**/api/games/${testGameId}/completion`, async (route) => {
-    if (route.request().method() === "GET") {
-      await route.fulfill({
-        json: { status: "complete", attempts: 1, lastError: null },
-      });
-      return;
-    }
-    const body = route.request().postDataJSON();
-    if (body.action === "review") {
+for (const noScore of [false, true])
+  test(`authorized scoring page can end with ${noScore ? "no score" : "entered totals"}`, async ({
+    page,
+  }, testInfo) => {
+    const game = gameFixture();
+    const recordedId = "22222222-2222-4222-8222-222222222222";
+    const replacementId = "33333333-3333-4333-8333-333333333333";
+    const expectedScore = noScore ? null : { home: 0, away: 5 };
+    const finalResult = noScore
+      ? {
+          outcome: "no_result",
+          label: "No result recorded",
+          totals: null,
+          ends: [],
+        }
+      : {
+          outcome: "away_win",
+          label: "Away win",
+          totals: expectedScore,
+          ends: [],
+        };
+    await page.route(`**/api/games/${testGameId}`, (route) =>
+      route.fulfill({
+        json: game,
+        headers: {
+          "x-curlcast-operator": "true",
+          "x-curlcast-account-role": "owner",
+        },
+      }),
+    );
+    await page.route(`**/api/games/${testGameId}/completion`, async (route) => {
+      if (route.request().method() === "GET") {
+        await route.fulfill({
+          json: { status: "complete", attempts: 1, lastError: null },
+        });
+        return;
+      }
+      const body = route.request().postDataJSON();
+      if (body.action === "review") {
+        const replacement = body.finalScore !== undefined;
+        if (replacement) expect(body.finalScore).toEqual(expectedScore);
+        await route.fulfill({
+          json: {
+            reviewId: replacement ? replacementId : recordedId,
+            inputRevision: 7,
+            result: replacement
+              ? finalResult
+              : {
+                  outcome: "home_win",
+                  label: "Home win",
+                  totals: { home: 2, away: 0 },
+                  ends: [],
+                },
+            youtubeWatchUrl: null,
+          },
+        });
+        return;
+      }
+      expect(body).toEqual({ action: "complete", reviewId: replacementId });
       await route.fulfill({
         json: {
-          reviewId: "22222222-2222-4222-8222-222222222222",
-          inputRevision: 7,
-          result: {
-            outcome: "home_win",
-            label: "Home win",
-            totals: { home: 2, away: 0 },
-            ends: [],
-          },
-          youtubeWatchUrl: null,
+          completion: { ...completedFixture(), result: finalResult },
+          cleanup: { status: "complete", attempts: 1, lastError: null },
         },
       });
-      return;
-    }
-    await route.fulfill({
-      json: {
-        completion: completedFixture(),
-        cleanup: { status: "complete", attempts: 1, lastError: null },
-      },
     });
-  });
 
-  await page.goto(`/score/${testGameId}`);
-  await expect(
-    page.getByRole("button", { name: "Game options" }),
-  ).toBeVisible();
-  await page.screenshot({
-    path: testInfo.outputPath("scoring-end-game-access.png"),
-    fullPage: true,
+    await page.goto(`/score/${testGameId}`);
+    await expect(
+      page.getByRole("button", { name: "Close Game" }),
+    ).toBeVisible();
+    await page.screenshot({
+      path: testInfo.outputPath("scoring-end-game-access.png"),
+      fullPage: true,
+    });
+    await page.getByRole("button", { name: "Close Game", exact: true }).click();
+    await page.getByRole("button", { name: "Yes", exact: true }).click();
+    const home = page.getByRole("spinbutton", { name: "Rocks" });
+    const away = page.getByRole("spinbutton", { name: "Stones" });
+    await expect(home).toHaveValue("2");
+    await expect(away).toHaveValue("0");
+    await page.screenshot({
+      path: testInfo.outputPath("scoring-end-game-confirmation.png"),
+      fullPage: true,
+    });
+    if (noScore) {
+      await page.getByRole("button", { name: "End without score" }).click();
+    } else {
+      await home.fill("-1");
+      const end = page.getByRole("button", { name: "End Game", exact: true });
+      await expect(end).toBeDisabled();
+      await home.fill("0");
+      await away.fill("5");
+      await end.click();
+    }
+    await expect(
+      page.getByRole("heading", {
+        name: noScore ? "No result recorded" : "Home 0 – 5 Visitors",
+      }),
+    ).toBeVisible();
   });
-  await page.getByRole("button", { name: "Game options" }).click();
-  await page
-    .getByRole("button", { name: "End game and stream", exact: true })
-    .click();
-  await page.getByRole("button", { name: "Review final score" }).click();
-  await expect(page.getByText("Rocks 2 – 0 Stones")).toBeVisible();
-  await page.screenshot({
-    path: testInfo.outputPath("scoring-end-game-confirmation.png"),
-    fullPage: true,
-  });
-  await page.getByRole("button", { name: "Confirm End Game" }).click();
-  await expect(
-    page.getByRole("heading", { name: "Home 3 – 2 Visitors" }),
-  ).toBeVisible();
-});
 
 test("scorer-only scoring access cannot End Game", async ({ page }) => {
   await page.route(`**/api/games/${testGameId}`, (route) =>
@@ -298,9 +318,7 @@ test("scorer-only scoring access cannot End Game", async ({ page }) => {
   );
 
   await page.goto(`/score/${testGameId}`);
-  await expect(page.getByRole("button", { name: "Game options" })).toHaveCount(
-    0,
-  );
+  await expect(page.getByRole("button", { name: "Close Game" })).toHaveCount(0);
   await expect(page.getByText("Game lifecycle")).toHaveCount(0);
 });
 

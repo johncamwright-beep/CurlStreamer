@@ -19,11 +19,20 @@ internal static class WorkspacePolicyTests
         foreach (var phase in new[] { "starting", "armed", "paused" }) Assert(WorkspacePolicy.KeepAwake(phase));
         foreach (var phase in new[] { null, "idle", "stopped", "failed", "stopping" }) Assert(!WorkspacePolicy.KeepAwake(phase));
         Assert(WorkspacePolicy.CanClosePreview(false, null, null, false));
+        Assert(WorkspacePolicy.CanClosePreview(false, "armed", "paired", true)); // Stale observation without an owned controller.
         Assert(WorkspacePolicy.CanClosePreview(true, "idle", "unpaired", false));
         Assert(!WorkspacePolicy.CanClosePreview(true, "idle", "unpaired", true));
         Assert(!WorkspacePolicy.CanClosePreview(true, "idle", "paired", false));
         foreach (var phase in new[] { null, "starting", "armed", "paused", "failed", "stopping" })
             Assert(!WorkspacePolicy.CanClosePreview(true, phase, "unpaired", false));
+        foreach (var phase in new[] { "idle", "paused", "stopped", "failed" }) {
+            foreach (var output in new[] { "idle", "stopped", "failed" })
+                Assert(WorkspacePolicy.ConfirmedInactiveOutput(phase, output));
+            foreach (var output in new[] { null, "active", "connecting", "unknown" })
+                Assert(!WorkspacePolicy.ConfirmedInactiveOutput(phase, output));
+        }
+        foreach (var phase in new[] { null, "starting", "armed", "stopping", "unknown" })
+            Assert(!WorkspacePolicy.ConfirmedInactiveOutput(phase, "stopped"));
         var recoverySteps = new List<string>();
         var stoppedSender = new System.Threading.Tasks.TaskCompletionSource<bool>();
         var reconnect = WorkspacePolicy.RecoverYouTube(
@@ -58,6 +67,23 @@ internal static class WorkspacePolicyTests
         Assert(!WorkspacePolicy.ForceCloseRequest(forceClose, null, null));
         forceClose["pid"] = 1;
         Assert(!WorkspacePolicy.ForceCloseRequest(forceClose, id, id));
+        const string closeNonce = "33333333-3333-4333-8333-333333333333";
+        var closeWorkspace = new Dictionary<string, object> {
+            { "type", "studio-close-workspace" }, { "gameId", id }, { "nonce", closeNonce }
+        };
+        string receivedNonce;
+        Assert(WorkspacePolicy.CloseWorkspaceRequest(closeWorkspace, id, null, out receivedNonce) && receivedNonce == closeNonce);
+        Assert(WorkspacePolicy.CloseWorkspaceRequest(closeWorkspace, id, id, out receivedNonce));
+        Assert(!WorkspacePolicy.CloseWorkspaceRequest(closeWorkspace, null, id, out receivedNonce));
+        Assert(!WorkspacePolicy.CloseWorkspaceRequest(closeWorkspace, otherId, otherId, out receivedNonce));
+        Assert(!WorkspacePolicy.CloseWorkspaceRequest(closeWorkspace, id, otherId, out receivedNonce));
+        closeWorkspace["pid"] = 1;
+        Assert(!WorkspacePolicy.CloseWorkspaceRequest(closeWorkspace, id, id, out receivedNonce));
+        closeWorkspace.Remove("pid");
+        closeWorkspace["nonce"] = 1;
+        Assert(!WorkspacePolicy.CloseWorkspaceRequest(closeWorkspace, id, id, out receivedNonce));
+        closeWorkspace["nonce"] = Guid.NewGuid().ToString("N");
+        Assert(!WorkspacePolicy.CloseWorkspaceRequest(closeWorkspace, id, id, out receivedNonce));
         foreach (var path in new[] { "/dashboard", "/account", "/score/" + id }) {
             Assert(WorkspacePolicy.SessionMessage(origin + path, origin + path, origin));
             Assert(!WorkspacePolicy.SessionMessage("https://attacker.example" + path, origin + path, origin));

@@ -340,7 +340,14 @@ test("desktop game day keeps scoring primary and settings available on demand", 
   await page.addInitScript(() => {
     Object.defineProperty(window, "chrome", {
       configurable: true,
-      value: { webview: { postMessage() {} } },
+      value: {
+        webview: {
+          postMessage(message: unknown) {
+            if ((message as { type?: string })?.type === "studio-force-close")
+              document.body.dataset.forceClose = JSON.stringify(message);
+          },
+        },
+      },
     });
   });
   await page.route("**/__studio-preview/**", (route) =>
@@ -512,6 +519,20 @@ test("desktop game day keeps scoring primary and settings available on demand", 
   await page.getByRole("button", { name: "Status Log", exact: true }).click();
   const log = page.getByRole("dialog", { name: "Status Log", exact: true });
   await expect(log).toContainText("YouTube status delayed test message");
+  const forceClose = log.getByRole("button", { name: "Force close Studio" });
+  await expect(forceClose).toHaveCount(0);
+  await page.evaluate((gameId) => {
+    window.dispatchEvent(
+      new CustomEvent("studio-recovery-status", {
+        detail: { gameId, canForceClose: true },
+      }),
+    );
+  }, testGameId);
+  await forceClose.click();
+  await expect(page.locator("body")).toHaveAttribute(
+    "data-force-close",
+    JSON.stringify({ type: "studio-force-close", gameId: testGameId }),
+  );
   await log.getByRole("button", { name: "Close", exact: true }).click();
   expect(await position()).toEqual(before);
   await expect(
@@ -630,7 +651,7 @@ test("remote scorer only sees scoreboard controls", async ({ page }) => {
     page.getByText("Broadcast controls ↓", { exact: true }),
   ).toHaveCount(0);
   await expect(
-    page.getByRole("button", { name: "Game options", exact: true }),
+    page.getByRole("button", { name: "Close Game", exact: true }),
   ).toHaveCount(0);
 });
 

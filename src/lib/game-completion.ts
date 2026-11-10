@@ -34,6 +34,15 @@ export type CompletionReview = {
   youtubeWatchUrl: string | null;
 };
 
+export const completionFinalScoreSchema = z
+  .object({
+    home: z.number().int().nonnegative(),
+    away: z.number().int().nonnegative(),
+  })
+  .strict()
+  .nullable();
+type CompletionFinalScore = z.infer<typeof completionFinalScoreSchema>;
+
 export const completionClosingRequestSchema = z
   .object({
     sessionId: z.string().uuid(),
@@ -144,25 +153,32 @@ function reviewRow(value: Record<string, unknown>): CompletionReview {
   };
 }
 
-/** Internal foundation only. Deliberately not exported from the store or a route. */
 export async function reviewGameCompletion(
   gameId: string,
   credential: CompletionCredential,
   youtubeWatchUrl: string | null = null,
+  finalScore?: CompletionFinalScore,
 ): Promise<Result<CompletionReview>> {
   try {
     const id = idSchema.parse(gameId);
     const actor = await completionActorParameters(id, credential);
     const watchUrl = youtubeWatchUrlSchema.parse(youtubeWatchUrl ?? "");
-    const { data, error } = await createAdminSupabaseClient().rpc(
-      "review_game_completion_with_link",
-      {
-        p_game_id: id,
-        p_review_id: randomUUID(),
-        p_youtube_watch_url: watchUrl,
-        ...actor,
-      },
-    );
+    const args = {
+      p_game_id: id,
+      p_review_id: randomUUID(),
+      p_youtube_watch_url: watchUrl,
+      ...actor,
+    };
+    const admin = createAdminSupabaseClient();
+    const { data, error } =
+      finalScore === undefined
+        ? await admin.rpc("review_game_completion_with_link", args)
+        : await admin.rpc("review_game_completion_with_final_score", {
+            ...args,
+            p_selection: {
+              finalScore: completionFinalScoreSchema.parse(finalScore),
+            },
+          });
     if (error) return failure(error);
     const row = (data as Record<string, unknown>[] | null)?.[0];
     return row

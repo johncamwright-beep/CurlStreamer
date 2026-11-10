@@ -7,7 +7,7 @@ afterEach(() => {
   vi.restoreAllMocks();
   vi.useRealTimers();
 });
-it("requires fresh independent native and provider evidence and invalidates it on Stop", async () => {
+it("requires fresh live evidence and retains confirmed stopped output after Stop", async () => {
   vi.useFakeTimers();
   let clock = 0;
   vi.spyOn(performance, "now").mockImplementation(() => clock);
@@ -101,7 +101,7 @@ it("requires fresh independent native and provider evidence and invalidates it o
   clock += 6000;
   expect(stream.snapshot()).toMatchObject({
     state: "stopped",
-    localOutput: { state: "unknown" },
+    localOutput: { state: "stopped" },
     liveConfirmed: false,
   });
 });

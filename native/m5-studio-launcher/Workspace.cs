@@ -707,7 +707,7 @@ internal sealed class Workspace : Form
         } finally { busy = false; PublishYouTubeStatus(lastState); UpdateButtons(); }
     }
     private async Task StartRecording() {
-        if (busy || closing || recording || cameraSettings != null || !WorkspacePolicy.CanStartSession(runningGame, selectedGame)) return;
+        if (busy || closing || recording || !WorkspacePolicy.CanStartSession(runningGame, selectedGame)) return;
         busy = true; UpdateButtons(); var gameId = selectedGame;
         try {
             await ConnectProgram(gameId);
@@ -969,8 +969,9 @@ internal sealed class Workspace : Form
             : initial == null ? "Choose which device to use for this camera."
             : TextValue(initial, "kind") == "phone" ? "Phone cameras join through the game’s camera QR code." : CameraInputStatus(role);
         cameraSettings = new CameraInputPanel(role, initial, initialMessage, async source => {
-            if (closing || busy || selectedGame != game || !WorkspacePolicy.CanConfigureSession(game, runningGame))
+            if (closing || selectedGame != game || !WorkspacePolicy.CanConfigureSession(game, runningGame))
                 return "Return to the active game before saving camera settings.";
+            if (busy) return "Studio is preparing this game. Wait a moment, then choose Save settings again.";
             busy = true;
             UpdateButtons();
             try {

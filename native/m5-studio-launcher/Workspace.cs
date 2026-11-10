@@ -18,6 +18,7 @@ using Microsoft.Web.WebView2.WinForms;
 // requests a correlated, game-scoped grant; account credentials remain in WebView.
 internal sealed class Workspace : Form
 {
+    private const int ControllerCloseDeadlineMs = 35000;
     private readonly WebView2 web = new WebView2();
     private readonly Label status = new Label();
     private readonly Button record = new Button(), finish = new Button(), devices = new Button(), gameDay = new Button();
@@ -185,7 +186,7 @@ internal sealed class Workspace : Form
         var confirmed = false;
         try {
             var cleanup = CloseControllerWithin(previewOnly);
-            if (await Task.WhenAny(cleanup, Task.Delay(35000)) == cleanup) {
+            if (await Task.WhenAny(cleanup, Task.Delay(ControllerCloseDeadlineMs)) == cleanup) {
                 await cleanup;
                 confirmed = child == null;
             }
@@ -247,20 +248,28 @@ internal sealed class Workspace : Form
     }
     private async Task LeaveGame(string game, string nonce, bool previewOnly) {
         var ok = false;
-        var idle = CanClosePreview();
-        var error = idle ? "Studio couldn’t close the camera preview. Try closing the game again."
+        var fastPreview = CanClosePreview();
+        var streaming = TextValue(lastState, "streaming");
+        var localOutput = LocalOutputState();
+        var closeWithoutPause = fastPreview || (previewOnly && WorkspacePolicy.ConfirmedInactiveOutput(streaming, localOutput));
+        var error = fastPreview ? "Studio couldn’t close the camera preview. Try closing the game again."
+            : closeWithoutPause ? "Studio couldn’t finish saving the recording. Try closing the game again."
             : "Studio couldn’t confirm the pause screen. Stay here and try again.";
-        if (previewOnly && !idle) {
+        if (previewOnly && !closeWithoutPause) {
             error = "The broadcast state changed. Open Close Game again to leave or end it.";
         } else if (!busy && !closing && !gameEnded && selectedGame == game && (runningGame == null || runningGame == game)) {
             busy = true; UpdateButtons();
             try {
                 RememberGame(game);
-                if (idle) {
-                    await CloseControllerWithin(true);
-                    ok = child == null && !recording;
-                } else if (recording && runningGame == game && TextValue(lastState, "streaming") == "armed" &&
-                    LocalOutputState() == "active" && StateFlag("canHoldStream")) {
+                if (closeWithoutPause) {
+                    // A sender that has stopped may still have a recording to finalize.
+                    var cleanup = CloseControllerWithin(fastPreview);
+                    if (await Task.WhenAny(cleanup, Task.Delay(ControllerCloseDeadlineMs)) == cleanup) {
+                        await cleanup;
+                        ok = child == null && !recording;
+                    }
+                } else if (recording && runningGame == game && streaming == "armed" &&
+                    localOutput == "active" && StateFlag("canHoldStream")) {
                     // Pause the picture while the sender, recording, and game stay open.
                     ok = await HoldBroadcast() && !closing && !gameEnded && runningGame == game && selectedGame == game;
                     if (ok) {

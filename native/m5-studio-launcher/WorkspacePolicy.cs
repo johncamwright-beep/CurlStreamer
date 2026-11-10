@@ -45,6 +45,11 @@ internal static class WorkspacePolicy
     {
         return !hasController || (!outputActive && streaming == "idle" && pairing == "unpaired");
     }
+    internal static bool ConfirmedInactiveOutput(string streaming, string localOutput)
+    {
+        return (streaming == "idle" || streaming == "paused" || streaming == "stopped" || streaming == "failed") &&
+            (localOutput == "idle" || localOutput == "stopped" || localOutput == "failed");
+    }
     internal static bool SessionMessage(string source, string page, string origin)
     {
         // Reject stale documents as well as external origins. Account/dashboard

@@ -282,28 +282,32 @@ internal static class WorkspaceHandoffTests
                             try { if (!preview.HasExited) { preview.Kill(); preview.WaitForExit(5000); } } catch (InvalidOperationException) { }
                         }
                     }
+                    // The paired sender is stopped but its recording still needs more
+                    // than the preview deadline to close cleanly.
+                    var inactiveChild = NewShutdownFixture(testNode, 6500);
+                    var inactiveExit = AttachShutdownFixture(form, inactiveChild, id, new Dictionary<string,object> {
+                        { "streaming", "stopped" }, { "broadcast", "live" }, { "pairing", "paired" },
+                        { "localOutput", new Dictionary<string,object> { { "state", "stopped" } } }
+                    });
+                    try {
+                        const string inactiveNonce = "99999999-9999-4999-8999-999999999999";
+                        await core.ExecuteScriptAsync("window.leaveReceipts=[];window.chrome.webview.postMessage({type:'studio-game-leave',gameId:'"+id+"',previewOnly:true,nonce:'"+inactiveNonce+"'});");
+                        for (int i=0;i<240 && await core.ExecuteScriptAsync("window.leaveReceipts.length")=="0";i++) await Task.Delay(50);
+                        if (await core.ExecuteScriptAsync("window.leaveReceipts.length===1&&window.leaveReceipts[0].ok&&window.leaveReceipts[0].nonce==='"+inactiveNonce+"'")!="true" ||
+                            !inactiveExit.Task.IsCompleted || !inactiveExit.Task.Result ||
+                            typeof(Workspace).GetField("child",flags).GetValue(form)!=null || (string)remembered.Invoke(form,null)!=id ||
+                            (bool)typeof(Workspace).GetField("gameEnded",flags).GetValue(form) || requests!=requestsBeforeLeave)
+                            throw new Exception("Leaving a stopped paired sender did not let its recording finish cleanly.");
+                    } finally {
+                        try { if (!inactiveChild.HasExited) { inactiveChild.Kill(); inactiveChild.WaitForExit(5000); } } catch (InvalidOperationException) { }
+                    }
                     // A paused and busy sender must close without the hosted final-card flow.
                     // Simulate an owned controller whose only successful operation is stdin close.
-                    var pausedChild = new System.Diagnostics.Process {
-                        StartInfo = new System.Diagnostics.ProcessStartInfo(testNode, "-e \"process.stdin.on('data',x=>{if(String(x).trim()==='close')process.stdout.write('CLOSED\\n',()=>process.exit(0));});\"") {
-                            UseShellExecute = false, CreateNoWindow = true, RedirectStandardInput = true, RedirectStandardOutput = true
-                        }
-                    };
-                    bool cleanupConfirmed = false;
-                    pausedChild.OutputDataReceived += (sender3, args3) => { if (args3.Data == "CLOSED") cleanupConfirmed = true; };
-                    pausedChild.Start(); pausedChild.BeginOutputReadLine();
-                    var pausedExit = new TaskCompletionSource<bool>();
-                    typeof(Workspace).GetField("child",flags).SetValue(form, pausedChild);
-                    typeof(Workspace).GetField("exited",flags).SetValue(form, pausedExit);
-                    typeof(Workspace).GetField("runningGame",flags).SetValue(form, id);
-                    typeof(Workspace).GetField("recording",flags).SetValue(form, true);
-                    typeof(Workspace).GetField("busy",flags).SetValue(form, true);
-                    typeof(Workspace).GetField("lastState",flags).SetValue(form, new Dictionary<string,object> {
+                    var pausedChild = NewShutdownFixture(testNode, 0);
+                    var pausedExit = AttachShutdownFixture(form, pausedChild, id, new Dictionary<string,object> {
                         { "streaming", "paused" }, { "broadcast", "live" }, { "pairing", "paired" }, { "programAuthorityEnded", true }
                     });
-                    typeof(Workspace).GetMethod("ObserveExit",flags).Invoke(form, new object[] {
-                        pausedChild, new TaskCompletionSource<string>(), pausedExit, new Func<bool>(() => cleanupConfirmed)
-                    });
+                    typeof(Workspace).GetField("busy",flags).SetValue(form, true);
                     var closeNonce = "77777777-7777-4777-8777-777777777777";
                     var postClose = "window.chrome.webview.postMessage({type:'studio-close-workspace',nonce:'" + closeNonce + "',gameId:'";
                     try {
@@ -318,7 +322,7 @@ internal static class WorkspaceHandoffTests
                                     (string)remembered.Invoke(form,null) != id ||
                                     (bool)typeof(Workspace).GetField("gameEnded",flags).GetValue(form) || requests != requestsBeforeLeave)
                                     throw new Exception("Workspace close did not cleanly stop the paused sender or leave the game resumable.");
-                                File.WriteAllText(output, "PASS: native WebView2 handoff, preview and camera boundaries; scoped recovery closed a busy, expired paused sender without finishing its game.");
+                                File.WriteAllText(output, "PASS: native WebView2 handoff, preview and camera boundaries. Paired recording finalized and busy expired sender closed while their games stayed open.");
                                 result = 0;
                             } catch (Exception error) { File.WriteAllText(output, "FAIL: " + error.Message); }
                             finally { timeout.Stop(); }
@@ -335,6 +339,30 @@ internal static class WorkspaceHandoffTests
         };
         Application.Run(form);
         return result;
+    }
+    private static System.Diagnostics.Process NewShutdownFixture(string node, int closeDelayMs) {
+        var script = "process.stdin.on('data',x=>{if(String(x).trim()==='close')setTimeout(()=>process.stdout.write('CLOSED\\n',()=>process.exit(0))," + closeDelayMs + ");});";
+        return new System.Diagnostics.Process {
+            StartInfo = new System.Diagnostics.ProcessStartInfo(node, "-e \"" + script + "\"") {
+                UseShellExecute = false, CreateNoWindow = true, RedirectStandardInput = true, RedirectStandardOutput = true
+            }
+        };
+    }
+    private static TaskCompletionSource<bool> AttachShutdownFixture(Workspace form, System.Diagnostics.Process process, string game, Dictionary<string,object> state) {
+        var flags = BindingFlags.Instance | BindingFlags.NonPublic;
+        var exited = new TaskCompletionSource<bool>();
+        bool cleanupConfirmed = false;
+        process.OutputDataReceived += (sender, args) => { if (args.Data == "CLOSED") cleanupConfirmed = true; };
+        process.Start(); process.BeginOutputReadLine();
+        typeof(Workspace).GetField("child",flags).SetValue(form, process);
+        typeof(Workspace).GetField("exited",flags).SetValue(form, exited);
+        typeof(Workspace).GetField("runningGame",flags).SetValue(form, game);
+        typeof(Workspace).GetField("recording",flags).SetValue(form, true);
+        typeof(Workspace).GetField("lastState",flags).SetValue(form, state);
+        typeof(Workspace).GetMethod("ObserveExit",flags).Invoke(form, new object[] {
+            process, new TaskCompletionSource<string>(), exited, new Func<bool>(() => cleanupConfirmed)
+        });
+        return exited;
     }
     private static Control CameraSettings(Workspace form) {
         return (Control)typeof(Workspace).GetField("cameraSettings", BindingFlags.Instance | BindingFlags.NonPublic).GetValue(form);

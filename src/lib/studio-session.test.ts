@@ -322,10 +322,10 @@ describe("native navigation receipts", () => {
     expect(vi.getTimerCount()).toBe(0);
   });
 
-  it("sends a preview-only request and releases the UI within 15 seconds if Studio never confirms it", async () => {
+  it("bounds a request to leave without pausing even if Studio never confirms it", async () => {
     const result = leaveStudioGame(gameId, { previewOnly: true });
     const expired = expect(result).rejects.toThrow(
-      "camera preview is taking longer",
+      "Studio is taking longer to close the game",
     );
     expect(sent[0]).toEqual({
       type: "studio-game-leave",
@@ -338,7 +338,7 @@ describe("native navigation receipts", () => {
         detail: { gameId, nonce: otherNonce, ok: true },
       }),
     );
-    await vi.advanceTimersByTimeAsync(15000);
+    await vi.advanceTimersByTimeAsync(40_000);
     await expired;
     expect(vi.getTimerCount()).toBe(0);
   });

@@ -25,6 +25,14 @@ internal static class WorkspacePolicyTests
         Assert(!WorkspacePolicy.CanClosePreview(true, "idle", "paired", false));
         foreach (var phase in new[] { null, "starting", "armed", "paused", "failed", "stopping" })
             Assert(!WorkspacePolicy.CanClosePreview(true, phase, "unpaired", false));
+        foreach (var phase in new[] { "idle", "paused", "stopped", "failed" }) {
+            foreach (var output in new[] { "idle", "stopped", "failed" })
+                Assert(WorkspacePolicy.ConfirmedInactiveOutput(phase, output));
+            foreach (var output in new[] { null, "active", "connecting", "unknown" })
+                Assert(!WorkspacePolicy.ConfirmedInactiveOutput(phase, output));
+        }
+        foreach (var phase in new[] { null, "starting", "armed", "stopping", "unknown" })
+            Assert(!WorkspacePolicy.ConfirmedInactiveOutput(phase, "stopped"));
         var recoverySteps = new List<string>();
         var stoppedSender = new System.Threading.Tasks.TaskCompletionSource<bool>();
         var reconnect = WorkspacePolicy.RecoverYouTube(

@@ -20,7 +20,8 @@ export const localReviewSchema = z
 export const localReviewSaveSchema = z
   .object({
     review: localReviewSchema,
-    shotId: z.uuid(),
+    shotId: z.uuid().nullable(),
+    playerId: z.string().min(1).max(100).optional(),
     expectedRevision: z.number().int().nonnegative(),
   })
   .strict();
@@ -29,6 +30,7 @@ export function localReviewCommand(
   state: State,
   input: z.infer<typeof localReviewSaveSchema>,
 ) {
+  if (!input.shotId) throw Error("Select a recorded shot");
   const previous = state.events.find(
     (event) => event.requestId === input.review.id,
   );

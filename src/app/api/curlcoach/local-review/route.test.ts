@@ -3,6 +3,7 @@ const m = vi.hoisted(() => ({
   account: vi.fn(),
   load: vi.fn(),
   save: vi.fn(),
+  rpc: vi.fn(),
 }));
 vi.mock("@/lib/curlcoach/access", () => ({
   labEnabled: () => false,
@@ -15,6 +16,13 @@ vi.mock("@/lib/providers/curlcoach-store", () => ({
   loadCoachState: m.load,
   saveCoachState: m.save,
 }));
+vi.mock("@/lib/supabase/admin", () => ({
+  createAdminSupabaseClient: () => ({ rpc: m.rpc }),
+}));
+vi.mock("@/lib/providers/team-settings", () => ({
+  readTeamSettings: async () => ({ settings: {} }),
+}));
+vi.mock("@/lib/providers/player-contacts", () => ({ rosterPlayers: () => [] }));
 import { GET, POST } from "./route";
 const gameId = "00000000-0000-4000-8000-000000000001",
   shotId = "00000000-0000-4000-8000-000000000002";
@@ -40,6 +48,7 @@ const request = (origin = "http://localhost") =>
   });
 beforeEach(() => {
   vi.clearAllMocks();
+  m.rpc.mockResolvedValue({ error: null });
   vi.stubEnv("CURLCOACH_ENABLED", "true");
   m.account.mockResolvedValue({ organizationId: "org", userId: "actor" });
   m.load.mockResolvedValue({
@@ -82,4 +91,45 @@ it("rejects cross-origin writes, unavailable accounts and game authorization fai
   expect(await result.text()).not.toContain("private diagnostic");
   expect((await POST(request())).status).toBe(409);
   expect(m.save).not.toHaveBeenCalled();
+});
+
+it("saves standalone team flags without creating attempts and rejects unknown players", async () => {
+  m.load.mockResolvedValue({
+    revision: 0,
+    status: "open",
+    events: [],
+    roster: [{ id: "lead", name: "Alex" }],
+  });
+  const req = (audience: string, playerId?: string) =>
+    new Request("http://localhost/api/curlcoach/local-review", {
+      method: "POST",
+      headers: {
+        origin: "http://localhost",
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        ...body,
+        shotId: null,
+        expectedRevision: 0,
+        playerId,
+        review: { ...body.review, audience },
+      }),
+    });
+  expect((await POST(req("team"))).status).toBe(200);
+  expect(m.save).not.toHaveBeenCalled();
+  expect(m.rpc).toHaveBeenCalledWith(
+    "save_standalone_review",
+    expect.objectContaining({
+      p_actor: "actor",
+      p_org: "org",
+      p_game: gameId,
+      p_player: null,
+    }),
+  );
+  expect((await POST(req("player", "intruder"))).status).toBe(400);
+  expect((await POST(req("player", "lead"))).status).toBe(200);
+  expect(m.rpc).toHaveBeenLastCalledWith(
+    "save_standalone_review",
+    expect.objectContaining({ p_player: "lead", p_name: "Alex" }),
+  );
 });

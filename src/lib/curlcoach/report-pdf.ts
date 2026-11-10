@@ -249,7 +249,7 @@ export async function buildReportPDF(report: SavedReport, eventName: string) {
         ensure(32);
         const shooter = flag.shooter ? `${flag.shooter} | ` : "";
         text(
-          `${shooter}${flag.game} | End ${flag.end} | Stone ${flag.stone}`,
+          `${shooter}${flag.game}${flag.end !== null ? ` | End ${flag.end} | Stone ${flag.stone}` : " | Video review"}`,
           10,
           true,
         );

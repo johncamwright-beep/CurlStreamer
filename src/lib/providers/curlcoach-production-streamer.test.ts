@@ -1,3 +1,6 @@
+vi.mock("./standalone-reviews", () => ({
+  loadStandaloneReviews: async () => ({}),
+}));
 vi.mock("./curlcoach-video", () => ({ loadCoachBroadcastReviews: m.videos }));
 vi.mock("./shot-review-corrections", () => ({
   loadReviewCorrections: async () => ({}),

@@ -1,4 +1,5 @@
 "use client";
+import { standaloneReviewVideo } from "@/lib/curlcoach/standalone-review";
 import { useState } from "react";
 import type { AnalysisShot } from "@/lib/curlcoach/analysis";
 import type { CoachGame } from "@/lib/curlcoach/event";
@@ -132,7 +133,27 @@ export default function FlaggedShots({
         notes. The saved time is used directly, without subtracting the go-back
         setting.
       </p>
-      {!flagged.length && <p>No flagged shots match these filters.</p>}
+      {!flagged.length && !games.some((g) => g.standaloneReviews?.length) && (
+        <p>No flagged shots match these filters.</p>
+      )}
+      {games.flatMap((game) =>
+        (game.standaloneReviews ?? []).map((review) => (
+          <article className="event-card" key={review.id}>
+            <h2>
+              {review.audience === "team" ? "Team" : review.playerName} ·{" "}
+              {game.label} · Video review
+            </h2>
+            <p>
+              vs {game.opponent} ·{" "}
+              {review.audience === "team" ? "Team report" : "Player report"}
+            </p>
+            <p>{review.note}</p>
+            <ReviewVideo
+              video={standaloneReviewVideo(review, game.broadcastReview)}
+            />
+          </article>
+        )),
+      )}
       {flagged.map((shot) => (
         <Flag
           key={`${shot.gameId}:${shot.id}:${shot.videoReview?.positionSeconds}:${shot.note}`}

@@ -3,7 +3,6 @@ import { report, shotTypes } from "./model";
 import type { CoachEvent, Workspace } from "./event";
 import type { Evidence } from "./reports";
 
-export const BASELINE_EVENTS = 5;
 export const MIN_BASELINE_SHOTS = 5;
 export type PerformanceMeasure = {
   percent: number | null;
@@ -161,21 +160,19 @@ export function eventPerformance(
     currentEventId,
     points: ordered.map(({ event, date }) => {
       const previous = date
-        ? ordered
-            .filter(
-              (past) =>
-                past.date &&
-                past.date < date &&
-                past.event.organizationId === event.organizationId &&
-                past.event.seasonId === event.seasonId &&
-                past.event.games.length > 0 &&
-                past.event.games.every(
-                  (g) =>
-                    g.status === "completed" &&
-                    (g.scheduledStart?.slice(0, 10) ?? past.date!) < date,
-                ),
-            )
-            .slice(-BASELINE_EVENTS)
+        ? ordered.filter(
+            (past) =>
+              past.date &&
+              past.date < date &&
+              past.event.organizationId === event.organizationId &&
+              past.event.seasonId === event.seasonId &&
+              past.event.games.length > 0 &&
+              past.event.games.every(
+                (g) =>
+                  g.status === "completed" &&
+                  (g.scheduledStart?.slice(0, 10) ?? past.date!) < date,
+              ),
+          )
         : [];
       const select = (e: CoachEvent) =>
         analysisEventShots(e).filter(

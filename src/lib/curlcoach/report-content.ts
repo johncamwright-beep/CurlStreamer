@@ -64,6 +64,11 @@ export function reportSummaryCards(report: SavedReport) {
     ...(current
       ? [
           {
+            label: "Routine shooting",
+            value: percentage(current.routinePercent),
+            basis: `${current.routineShots} routine graded shots`,
+          },
+          {
             label: "Routine baseline gap",
             value:
               current.baselineGap === null
@@ -154,7 +159,7 @@ export function reportContent(report: SavedReport) {
   }
   const progression = report.eventPerformance;
   if (progression?.points.length) {
-    heading("Event performance over time");
+    heading("This event versus prior events");
     text(
       "Latest charted season history through this event. Shooting percentages pool eligible graded points, not game percentages. Picks and ungraded shots are excluded. Missing values are gaps. Earlier saved narrative is not regenerated.",
       8,
@@ -170,7 +175,26 @@ export function reportContent(report: SavedReport) {
       `Shot-mix difficulty index ${current.difficultyIndex?.toFixed(0) ?? "not measured"}; mean ${current.averageDifficulty?.toFixed(2) ?? "not measured"} versus historical ${current.baselineDifficulty?.toFixed(2) ?? "not measured"}. Rated ${current.ratedShots}/${current.gradedShots} graded shots; difficult share ${percentage(current.difficultShare)} versus ${percentage(current.baselineDifficultShare)} historically.`,
     );
     text(
-      "Baselines use up to five earlier completed events in the same season. Routine expectations match each player's subtype, requiring five historical routine shots per match; only matched shots enter the gap. Difficulty weights A=1, B=2, C=3; index 100 is usual difficulty, not a percentage harder or opponent strength. Sparse samples are tentative.",
+      "Baselines use all earlier completed events in the same season. Routine expectations match each player's subtype, requiring five historical routine shots per match; only matched shots enter the gap. Difficulty weights A=1, B=2, C=3; index 100 is usual difficulty, not a percentage harder or opponent strength. Sparse samples are tentative.",
+      8,
+      true,
+    );
+    heading("Game difficulty and routine baseline");
+    table(
+      ["Game", "Routine gap", "Difficulty index", "Matched / rated shots"],
+      current.games.map((g) => [
+        g.name,
+        g.baselineGap === null
+          ? "Not measured"
+          : `${g.baselineGap.toFixed(1)} pp`,
+        g.difficultyIndex?.toFixed(0) ?? "Not measured",
+        `${g.matchedRoutineShots} / ${g.ratedShots}`,
+      ]),
+      [62, 38, 38, 40],
+    );
+    heading("Event performance over time");
+    text(
+      "Full-season trends through this event, with one point per event.",
       8,
       true,
     );
@@ -258,19 +282,6 @@ export function reportContent(report: SavedReport) {
         (p) => p.byType[type]?.percent ?? null,
         (p) => p.byType[type]?.graded ?? 0,
       );
-    heading("Game difficulty and routine baseline");
-    table(
-      ["Game", "Routine gap", "Difficulty index", "Matched / rated shots"],
-      current.games.map((g) => [
-        g.name,
-        g.baselineGap === null
-          ? "Not measured"
-          : `${g.baselineGap.toFixed(1)} pp`,
-        g.difficultyIndex?.toFixed(0) ?? "Not measured",
-        `${g.matchedRoutineShots} / ${g.ratedShots}`,
-      ]),
-      [62, 38, 38, 40],
-    );
   }
   const shots = stats.filter((m) => m.id.startsWith("type-"));
   const analysis = report.analysis;

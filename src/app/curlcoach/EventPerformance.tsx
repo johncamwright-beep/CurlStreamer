@@ -15,13 +15,9 @@ const format = (value: number | null, suffix = "%") =>
 export default function EventPerformance({
   workspace,
   playerId,
-  eventId,
-  gameId,
 }: {
   workspace: Workspace;
   playerId?: string;
-  eventId: string;
-  gameId: string;
 }) {
   const [series, setSeries] = useState("overall");
   const performance = useMemo(
@@ -33,10 +29,6 @@ export default function EventPerformance({
     [workspace, playerId],
   );
   const points = performance.points;
-  const current =
-    points.find((p) => p.id === eventId) ??
-    (eventId === "all" ? points.at(-1) : undefined);
-  const metrics = current?.games.find((g) => g.id === gameId) ?? current;
   const value = (p: EventPerformancePoint) =>
     series === "overall"
       ? p.percent
@@ -109,54 +101,9 @@ export default function EventPerformance({
         </label>
       </div>
       <p>
-        Season history for the selected team or player. Event and game
-        selections set the comparison cards; the chart keeps the full season.
-        Other shot filters do not apply here.
+        Full-season history for the selected team or player. Each point
+        represents one event.
       </p>
-      {metrics && (
-        <>
-          <p>
-            <strong>
-              {current?.name}
-              {gameId !== "all" && metrics !== current
-                ? ` · ${current?.games.find((g) => g.id === gameId)?.name}`
-                : ""}
-            </strong>
-          </p>
-          <dl className="event-performance-metrics">
-            <div>
-              <dt>Routine shooting</dt>
-              <dd>{format(metrics.routinePercent)}</dd>
-            </div>
-            <div>
-              <dt>Routine baseline gap</dt>
-              <dd>{format(metrics.baselineGap, " pp")}</dd>
-            </div>
-            <div>
-              <dt>Game / event difficulty index</dt>
-              <dd>{format(metrics.difficultyIndex, "")}</dd>
-            </div>
-            <div>
-              <dt>Routine full-make rate</dt>
-              <dd>{format(metrics.routineMakeRate)}</dd>
-            </div>
-          </dl>
-          <p>
-            Routine comparison: {metrics.matchedRoutineShots} of{" "}
-            {metrics.routineShots} routine shots matched;{" "}
-            {format(metrics.matchedRoutinePercent)} actual versus{" "}
-            {format(metrics.expectedRoutinePercent)} expected.{" "}
-            {metrics.matchedRoutineShots < 5 ? "Limited comparable data." : ""}
-          </p>
-          <p>
-            Difficulty rated on {metrics.ratedShots} of {metrics.gradedShots}{" "}
-            graded shots. Average {format(metrics.averageDifficulty, "")} versus{" "}
-            {format(metrics.baselineDifficulty, "")} historically; difficult
-            shots {format(metrics.difficultShare)} versus{" "}
-            {format(metrics.baselineDifficultShare)}.
-          </p>
-        </>
-      )}
       {!points.length ? (
         <p>No event history available.</p>
       ) : (
@@ -270,10 +217,10 @@ export default function EventPerformance({
         <p>
           Shooting = total graded points / total possible points. Picks and
           ungraded shots are excluded. Missing values are gaps, not zero.
-          Baselines use up to five earlier completed events in this season,
-          excluding the current event and overlapping events. Routine
-          expectations match the same player and subtype, with at least five
-          historical routine shots per match. The gap uses only matched shots.
+          Baselines use all earlier completed events in this season, excluding
+          the current event and overlapping events. Routine expectations match
+          the same player and subtype, with at least five historical routine
+          shots per match. The gap uses only matched shots.
         </p>
         <p>
           Difficulty weights: Easy 1, Moderate 2, Difficult 3. Index = current

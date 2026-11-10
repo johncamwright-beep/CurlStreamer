@@ -39,13 +39,14 @@ import {
 
 export const ANALYSIS_TABS = {
   performance: "Shot Performance",
+  events: "Event Performance Over Time",
   misses: "Miss Analysis",
   technical: "Technical Review",
   advanced: "Advanced Analysis",
   flagged: "Flagged shots",
 } as const;
 export type AnalysisTab = keyof typeof ANALYSIS_TABS;
-export type DashboardTab = Exclude<AnalysisTab, "flagged">;
+export type DashboardTab = Exclude<AnalysisTab, "flagged" | "events">;
 type NavigationProps = {
   tab: AnalysisTab;
   onTabChange: (tab: AnalysisTab) => void;
@@ -279,8 +280,10 @@ export default function AnalysisDashboard({
   players,
   tab,
   onTabChange,
+  baselineMetrics,
 }: NavigationProps & {
   tab: DashboardTab;
+  baselineMetrics?: ReactNode;
   shots: AnalysisShot[];
   games: CoachGame[];
   players: RosterEntry[];
@@ -421,6 +424,7 @@ export default function AnalysisDashboard({
               detail={`${shots.length - classified.length} not recorded`}
             />
           </div>
+          {baselineMetrics}
           <Execution shots={shots} />
         </section>
         <div className="analysis-grid">

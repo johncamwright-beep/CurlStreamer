@@ -34,6 +34,17 @@ test("season trends select types and subtypes without further database requests"
     name: "Event performance over time",
     exact: true,
   });
+  await expect(page.getByLabel("Event baseline comparison")).toBeVisible();
+  await expect(panel).toHaveCount(0);
+  await page
+    .getByRole("tab", { name: "Event Performance Over Time", exact: true })
+    .click();
+  await expect(
+    page.getByRole("combobox", { name: "Event", exact: true }),
+  ).toHaveCount(0);
+  await expect(
+    page.getByRole("combobox", { name: "Game", exact: true }),
+  ).toHaveCount(0);
   await expect(panel).toBeVisible();
   await expect(panel.getByRole("table")).toBeVisible();
   const reads = seasonReads;

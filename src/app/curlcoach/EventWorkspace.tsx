@@ -47,6 +47,7 @@ import { EnhancedReview, MetricsProvider, useMetrics } from "./EnhancedMetrics";
 
 import AnalysisPanels from "./AnalysisPanels";
 import EventPerformance from "./EventPerformance";
+import BaselineMetrics from "./BaselineMetrics";
 import AnalysisDashboard, {
   AnalysisNavigation,
   ANALYSIS_TABS,
@@ -614,7 +615,10 @@ function WorkspaceContent({
     ),
     analysisPlayers = [
       ...new Map(
-        analysisGames
+        (view === "Analysis" && analysisTab === "events"
+          ? (statsData?.event.games ?? [])
+          : analysisGames
+        )
           .flatMap<RosterEntry>((g) => g.roster ?? g.state.roster ?? roster)
           .map((p) => [p.id, p]),
       ).values(),
@@ -885,31 +889,33 @@ function WorkspaceContent({
                       ))}
                     </select>
                   </label>
-                  <label>
-                    Event
-                    <select
-                      value={selectedEvent}
-                      disabled={!data}
-                      onChange={(e) => {
-                        setStatsEventId(e.target.value);
-                        setAnalysisGame("all");
-                        setPlayer("all");
-                      }}
-                    >
-                      <option value="all">All events</option>
-                      {(statsData?.catalog ?? data?.catalog ?? [])
-                        .filter(
-                          (e) =>
-                            e.seasonId === selectedSeason ||
-                            e.id === "standalone",
-                        )
-                        .map((e) => (
-                          <option key={e.id} value={e.id}>
-                            {e.name}
-                          </option>
-                        ))}
-                    </select>
-                  </label>
+                  {(view !== "Analysis" || analysisTab !== "events") && (
+                    <label>
+                      Event
+                      <select
+                        value={selectedEvent}
+                        disabled={!data}
+                        onChange={(e) => {
+                          setStatsEventId(e.target.value);
+                          setAnalysisGame("all");
+                          setPlayer("all");
+                        }}
+                      >
+                        <option value="all">All events</option>
+                        {(statsData?.catalog ?? data?.catalog ?? [])
+                          .filter(
+                            (e) =>
+                              e.seasonId === selectedSeason ||
+                              e.id === "standalone",
+                          )
+                          .map((e) => (
+                            <option key={e.id} value={e.id}>
+                              {e.name}
+                            </option>
+                          ))}
+                      </select>
+                    </label>
+                  )}
                 </>
               ) : (
                 <label>
@@ -936,23 +942,25 @@ function WorkspaceContent({
               )}
               {view !== "Event reports" && (
                 <>
-                  <label>
-                    Game
-                    <select
-                      value={analysisGame}
-                      onChange={(e) => {
-                        setAnalysisGame(e.target.value);
-                        setPlayer("all");
-                      }}
-                    >
-                      <option value="all">All games</option>
-                      {statsGames.map((g) => (
-                        <option key={g.id} value={g.id}>
-                          {g.label} · vs {g.opponent}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
+                  {(view !== "Analysis" || analysisTab !== "events") && (
+                    <label>
+                      Game
+                      <select
+                        value={analysisGame}
+                        onChange={(e) => {
+                          setAnalysisGame(e.target.value);
+                          setPlayer("all");
+                        }}
+                      >
+                        <option value="all">All games</option>
+                        {statsGames.map((g) => (
+                          <option key={g.id} value={g.id}>
+                            {g.label} · vs {g.opponent}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  )}
                   {
                     <label>
                       Team / player
@@ -973,7 +981,7 @@ function WorkspaceContent({
               )}
             </div>
           )}
-          {statistics && (
+          {statistics && (view !== "Analysis" || analysisTab !== "events") && (
             <details className="event-card analysis-more">
               <summary>More filters</summary>
               <div className="event-filter-bar">
@@ -1216,6 +1224,23 @@ function WorkspaceContent({
                           onSaved={() => refresh()}
                         />
                       </div>
+                    ) : analysisTab === "events" ? (
+                      <div
+                        id="analysis-report"
+                        role="tabpanel"
+                        aria-labelledby="analysis-tab-events"
+                      >
+                        {seasonReady && statsData ? (
+                          <EventPerformance
+                            workspace={statsData}
+                            playerId={player === "all" ? undefined : player}
+                          />
+                        ) : (
+                          <p role="status">
+                            {statsError || "Loading season trends…"}
+                          </p>
+                        )}
+                      </div>
                     ) : (
                       <>
                         {analysisTab === "advanced" &&
@@ -1232,17 +1257,19 @@ function WorkspaceContent({
                             !statsError
                           }
                         >
-                          {analysisTab === "performance" &&
-                            seasonReady &&
-                            statsData && (
-                              <EventPerformance
-                                workspace={statsData}
-                                playerId={player === "all" ? undefined : player}
-                                eventId={selectedEvent}
-                                gameId={analysisGame}
-                              />
-                            )}
                           <AnalysisDashboard
+                            baselineMetrics={
+                              seasonReady && statsData ? (
+                                <BaselineMetrics
+                                  workspace={statsData}
+                                  playerId={
+                                    player === "all" ? undefined : player
+                                  }
+                                  eventId={selectedEvent}
+                                  gameId={analysisGame}
+                                />
+                              ) : undefined
+                            }
                             shots={selected}
                             games={analysisGames}
                             players={analysisPlayers}

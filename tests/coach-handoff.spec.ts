@@ -67,6 +67,12 @@ test("phone handoff confirms the recorded shot and audience before saving", asyn
   await expect(page.getByText(/Flag saved for the team/)).toBeVisible();
   expect(saved).toEqual({ review, shotId, expectedRevision: 3 });
   expect(new URL(page.url()).hash).toBe("");
+  await expect(
+    page.getByRole("link", { name: "View saved flags" }),
+  ).toHaveAttribute(
+    "href",
+    `/shot-tracker?source=streamer&event=standalone&game=${gameId}#analysis/flagged`,
+  );
 });
 
 test("empty games allow a standalone team flag and require a real player for player flags", async ({
@@ -136,4 +142,10 @@ test("empty games allow a standalone team flag and require a real player for pla
   await expect(page.getByText(/Flag saved for the team/)).toBeVisible();
   expect(saved).toEqual({ review, shotId: null, expectedRevision: 3 });
   expect(new URL(page.url()).hash).toBe("");
+  await expect(
+    page.getByRole("link", { name: "View saved flags" }),
+  ).toHaveAttribute(
+    "href",
+    `/shot-tracker?source=streamer&event=standalone&game=${gameId}#analysis/flagged`,
+  );
 });

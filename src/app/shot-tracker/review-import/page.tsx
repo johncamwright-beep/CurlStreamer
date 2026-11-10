@@ -5,6 +5,7 @@ import { localReviewSchema } from "@/lib/curlcoach/local-review";
 import { readResumeStore } from "@/lib/curlcoach/resume-storage";
 const shotsSchema = z.object({
   revision: z.number().int(),
+  eventId: z.string().optional(),
   players: z.array(z.object({ id: z.string(), name: z.string() })).default([]),
   accountScope: z
     .object({ actorId: z.string(), organizationId: z.string() })
@@ -115,8 +116,11 @@ export default function LocalReviewImport() {
             . It will appear with the available recording link in the
             appropriate report.
           </p>
-          <a className="btn min-h-11" href="/shot-tracker#charting">
-            Return to Shot Tracker
+          <a
+            className="btn min-h-11"
+            href={`/shot-tracker?${new URLSearchParams({ source: "streamer", event: data?.eventId ?? "standalone", game: review!.gameId })}#analysis/flagged`}
+          >
+            View saved flags
           </a>
         </>
       ) : (

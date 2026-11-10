@@ -74,7 +74,7 @@ export async function startCoachLocalProof(options: {
     res.setHeader("X-Content-Type-Options", "nosniff");
     res.setHeader(
       "Content-Security-Policy",
-      "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; media-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'",
+      "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; media-src 'self' blob:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'",
     );
     const reply = (status: number, value: unknown) => {
       res.writeHead(status, { "Content-Type": "application/json" });
@@ -130,6 +130,7 @@ export async function startCoachLocalProof(options: {
         reply(200, {
           duration: config.duration,
           rolling: Boolean(options.capture),
+          ...(options.saveSelection ? { shotTracker: true } : {}),
         });
         return;
       }
@@ -224,22 +225,40 @@ export async function startCoachLocalProof(options: {
         return;
       }
       if (req.method === "POST" && req.url === "/selection") {
-        const selectedClip = snapshots.get(current.get(cookie) ?? "");
-        if (options.capture && !selectedClip) {
-          reply(400, { error: "Capture recent video first" });
-          return;
-        }
-        const nextSelection = z
+        const input = z
           .object({
-            startSeconds: z
-              .number()
-              .min(Math.max(0, (selectedClip?.duration ?? 120) - 120))
-              .max(selectedClip?.duration ?? config.duration),
+            clipId: z
+              .string()
+              .regex(/^[a-f0-9]{32}$/)
+              .optional(),
+            startSeconds: z.number().nonnegative(),
             audience: z.enum(["player", "team"]),
             notes: z.string().max(2000),
           })
           .strict()
           .parse(await body(req));
+        const id = current.get(cookie);
+        const selectedClip = snapshots.get(id ?? "");
+        if (options.capture && !selectedClip) {
+          reply(400, { error: "Capture recent video first" });
+          return;
+        }
+        const { clipId, ...nextSelection } = input;
+        if (clipId && clipId !== id) {
+          reply(409, {
+            error: "This clip changed. Capture recent video again.",
+          });
+          return;
+        }
+        if (
+          nextSelection.startSeconds <
+            Math.max(0, (selectedClip?.duration ?? 120) - 120) ||
+          nextSelection.startSeconds >
+            (selectedClip?.duration ?? config.duration)
+        ) {
+          reply(400, { error: "Choose a time inside this clip" });
+          return;
+        }
         const handoff = await options.saveSelection?.(
           nextSelection,
           selectedClip,
@@ -249,7 +268,7 @@ export async function startCoachLocalProof(options: {
           saved: true,
           selection,
           capturedAt: selectedClip?.capturedAt,
-          proofOnly: true,
+          proofOnly: !handoff?.handoffUrl,
           handoffUrl: handoff?.handoffUrl,
         });
         return;

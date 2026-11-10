@@ -74,6 +74,10 @@ describe("Studio installation", () => {
       expect(
         (await readStudioInstallation(root)).configuration.streamingEnabled,
       ).toBe(false);
+      await save({ ...manifest, capabilities: ["coach-review-v1"] });
+      await expect(readStudioInstallation(root)).rejects.toThrow(
+        "phone review page",
+      );
       await save({ ...manifest, files: files.slice(1) });
       await expect(readStudioInstallation(root)).rejects.toThrow("incomplete");
       await save({ ...manifest, files: [...files, files[0]] });

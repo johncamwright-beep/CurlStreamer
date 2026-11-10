@@ -29,31 +29,51 @@ for (const rolling of [false, true])
         page.getByRole("button", { name: "Use this start" }),
       ).toBeEnabled();
       await expect(page.locator("video")).toHaveJSProperty("controls", false);
-      await page
-        .getByRole("slider", { name: "Drag to the beginning of the shot" })
-        .fill("2");
+      await expect(page.locator("video")).toHaveAttribute("src", /^blob:/);
+      const mediaRequestsAfterLoad = proof.stats().mediaRequests;
+      expect(mediaRequestsAfterLoad).toBeGreaterThan(0);
+      const slider = page.getByRole("slider", {
+        name: "Drag to the beginning of the shot",
+      });
+      expect(
+        await slider.evaluate((element: HTMLInputElement) => {
+          for (const time of ["1.2", "3.1", "1.7", "2.2"]) {
+            element.value = time;
+            element.dispatchEvent(new Event("input", { bubbles: true }));
+          }
+          const disabled = (
+            document.getElementById("save") as HTMLButtonElement
+          ).disabled;
+          element.dispatchEvent(new Event("change", { bubbles: true }));
+          return disabled;
+        }),
+      ).toBe(true);
+      const save = page.getByRole("button", { name: "Use this start" });
+      await expect(save).toBeEnabled();
+      await expect(page.locator("video")).toHaveJSProperty("currentTime", 2.2);
       await page
         .getByRole("button", { name: "+1 second", exact: true })
         .click();
-      await expect(page.locator("video")).toHaveJSProperty("currentTime", 3);
+      await expect(page.locator("video")).toHaveJSProperty("currentTime", 3.2);
       await page
         .getByRole("button", { name: "−1 second", exact: true })
         .click();
-      await expect(page.locator("video")).toHaveJSProperty("currentTime", 2);
+      await expect(page.locator("video")).toHaveJSProperty("currentTime", 2.2);
       await page.getByRole("radio", { name: "Team", exact: true }).check();
       await page.getByText("Add notes", { exact: true }).click();
       await page
         .getByLabel("Notes", { exact: true })
         .fill("Watch this together");
-      await page.getByRole("button", { name: "Use this start" }).click();
+      await save.click();
       await expect(
-        page.getByText(/Selected 0:02.0 for team review/),
+        page.getByText(/Selected 0:02.2 for team review/),
       ).toBeVisible();
       expect(proof.stats().selection).toEqual({
-        startSeconds: 2,
+        startSeconds: 2.2,
         audience: "team",
         notes: "Watch this together",
       });
+      expect(proof.stats().mediaRequests).toBe(mediaRequestsAfterLoad);
       expect(
         await page.evaluate(
           () => document.documentElement.scrollWidth <= innerWidth,

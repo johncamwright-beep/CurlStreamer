@@ -1220,6 +1220,10 @@ function WorkspaceContent({
                           shots={selected}
                           games={analysisGames}
                           players={analysisPlayers}
+                          playerId={player}
+                          includeStandalone={Object.values(shotFilters).every(
+                            (filter) => filter === "all",
+                          )}
                           canSave={mode === "streamer"}
                           onSaved={() => refresh()}
                         />

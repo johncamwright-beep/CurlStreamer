@@ -55,6 +55,29 @@ function providerValues(overrides: Record<string, unknown> = {}) {
 }
 
 describe("M4 provider observation", () => {
+  it("returns YouTube's actual start from the existing owned live broadcast read", async () => {
+    const actualStartTime = "2026-11-10T14:59:50.375Z";
+    const read = fetcher(
+      providerValues({ snippet: { channelId: "channel", actualStartTime } }),
+    );
+    await expect(
+      observeM4YouTubeProvider(token, expected, read),
+    ).resolves.toMatchObject({ broadcastLive: true, actualStartTime });
+    expect(read).toHaveBeenCalledTimes(3);
+  });
+
+  it.each([undefined, null, "not-a-timestamp", "0000-11-10T14:59:50Z"])(
+    "keeps live health available with missing or invalid YouTube start %s",
+    async (actualStartTime) => {
+      const read = fetcher(
+        providerValues({ snippet: { channelId: "channel", actualStartTime } }),
+      );
+      const observation = await observeM4YouTubeProvider(token, expected, read);
+      expect(observation.broadcastLive).toBe(true);
+      expect(observation).not.toHaveProperty("actualStartTime");
+    },
+  );
+
   it("reuses only verified channel identity for five minutes without renewing its age on a hit", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-10-10T12:00:00Z"));

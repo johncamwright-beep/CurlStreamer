@@ -3,6 +3,9 @@ import { useEffect, useState } from "react";
 import { z } from "zod";
 import { localReviewSchema } from "@/lib/curlcoach/local-review";
 import { readResumeStore } from "@/lib/curlcoach/resume-storage";
+
+const importPath = "/shot-tracker/review-import";
+const storageKey = (id: string) => `curlcoach-review-import:${id}`;
 const shotsSchema = z.object({
   revision: z.number().int(),
   eventId: z.string().optional(),
@@ -32,24 +35,31 @@ export default function LocalReviewImport() {
   const [shotId, setShotId] = useState("");
   const [playerId, setPlayerId] = useState("");
   const [error, setError] = useState("");
+  const [needsSignIn, setNeedsSignIn] = useState(false);
   const [busy, setBusy] = useState(false);
   const [saved, setSaved] = useState(false);
+  async function responseError(response: Response, fallback: string) {
+    const problem = problemSchema.safeParse(
+      await response.json().catch(() => null),
+    );
+    if (response.status === 403 && !problem.success) {
+      setData(null);
+      setNeedsSignIn(true);
+      return Error("Sign in with access to this game to continue.");
+    }
+    return Error(problem.success ? problem.data.error : fallback);
+  }
   async function load(gameId: string) {
+    setNeedsSignIn(false);
     const response = await fetch(
       `/api/curlcoach/local-review?game=${encodeURIComponent(gameId)}`,
       { cache: "no-store" },
     );
     if (!response.ok) {
       setData(null);
-      const problem = problemSchema.safeParse(
-        await response.json().catch(() => null),
-      );
-      throw Error(
-        problem.success
-          ? problem.data.error
-          : response.status === 403
-            ? "Sign in with access to this game, then tap Reload shots."
-            : "Could not load this game's shots. Tap Reload shots to retry.",
+      throw await responseError(
+        response,
+        "Could not load this game's shots. Tap Reload shots to retry.",
       );
     }
     const loaded = shotsSchema.parse(await response.json());
@@ -75,9 +85,13 @@ export default function LocalReviewImport() {
   useEffect(() => {
     try {
       if (location.hash.length > 16000) throw Error();
-      const parsed = localReviewSchema.parse(
-        JSON.parse(decodeURIComponent(location.hash.slice(1))),
-      );
+      const resume = new URLSearchParams(location.search).get("resume");
+      const raw = location.hash
+        ? decodeURIComponent(location.hash.slice(1))
+        : sessionStorage.getItem(storageKey(z.uuid().parse(resume)));
+      if (!raw || raw.length > 16000) throw Error();
+      const parsed = localReviewSchema.parse(JSON.parse(raw));
+      if (!location.hash && parsed.id !== resume) throw Error();
       setReview(parsed);
       void load(parsed.gameId).catch((e) => setError(e.message));
     } catch {
@@ -105,10 +119,15 @@ export default function LocalReviewImport() {
           expectedRevision: data.revision,
         }),
       });
-      const result = await response.json();
-      if (!response.ok) throw Error(result.error);
+      if (!response.ok)
+        throw await responseError(response, "Could not save flag.");
       setSaved(true);
       history.replaceState(null, "", location.pathname);
+      try {
+        sessionStorage.removeItem(storageKey(review.id));
+      } catch {
+        // Browser storage may be unavailable when saving directly from the link.
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : "Could not save flag.");
     } finally {
@@ -144,6 +163,27 @@ export default function LocalReviewImport() {
                 {new Date(review.selectedAt).toLocaleTimeString()}.
                 Recording-link timing is estimated.
               </p>
+              {needsSignIn && (
+                <a
+                  className="btn min-h-11"
+                  href={`/login?${new URLSearchParams({ next: `${importPath}?resume=${review.id}` })}`}
+                  onClick={(event) => {
+                    try {
+                      sessionStorage.setItem(
+                        storageKey(review.id),
+                        JSON.stringify(review),
+                      );
+                    } catch {
+                      event.preventDefault();
+                      setError(
+                        "Sign in in another tab, then return here and tap Reload shots.",
+                      );
+                    }
+                  }}
+                >
+                  Sign in to continue
+                </a>
+              )}
               <label className="block">
                 Recorded shot
                 <select

@@ -67,6 +67,23 @@ it("freezes private rolling snapshots and bounds selection to captured footage",
       )
     ).status,
   ).toBe(200);
+  const replacement = await (await post("/capture", {}, owner)).json();
+  expect(replacement.url).not.toBe(clip.url);
+  const staleId = new URL(clip.url, proof.address).searchParams.get("id");
+  expect(
+    (
+      await post(
+        "/selection",
+        { clipId: staleId, startSeconds: 5, audience: "team", notes: "Stale" },
+        owner,
+      )
+    ).status,
+  ).toBe(409);
+  expect(proof.stats().selection).toEqual({
+    startSeconds: 5,
+    audience: "team",
+    notes: "Review together",
+  });
 });
 it("requires local pairing, supports seek ranges, and stores only a bounded selection", async () => {
   dir = await mkdtemp(join(tmpdir(), "coach-proof-"));

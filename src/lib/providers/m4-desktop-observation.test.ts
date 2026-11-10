@@ -293,6 +293,40 @@ describe("M4 desktop output observation", () => {
       credential.bearer,
     );
   });
+  it.each([false, true])(
+    "stores provider start server-side and preserves the desktop response (old schema: %s)",
+    async (oldSchema) => {
+      const actualStartTime = "2026-09-08T09:59:50Z";
+      mocks.observe.mockResolvedValue({ ...observation, actualStartTime });
+      if (oldSchema)
+        mocks.rpc.mockImplementation(async (_name, args) =>
+          args.p_youtube_actual_started_at
+            ? { data: null, error: { code: "PGRST202" } }
+            : { data: [row], error: null },
+        );
+      await expect(
+        observeM4DesktopOutput(game, credential, intentId),
+      ).resolves.toEqual({
+        intentId,
+        sessionId,
+        generation: 1,
+        ...observation,
+      });
+      const evidence = {
+        p_game_id: game,
+        p_generation: row.broadcast_generation,
+        p_broadcast_id: row.youtube_broadcast_id,
+        p_stream_id: row.youtube_stream_id,
+      };
+      expect(mocks.rpc.mock.calls.slice(2)).toEqual([
+        [
+          "record_m4_live_evidence",
+          { ...evidence, p_youtube_actual_started_at: actualStartTime },
+        ],
+        ...(oldSchema ? [["record_m4_live_evidence", evidence]] : []),
+      ]);
+    },
+  );
   it.each([
     { organization_id: sessionId },
     { youtube_channel_id: "other" },

@@ -91,9 +91,14 @@ test("flagged-shot menu retains filters and exposes review links and editable ti
   const standalone = page
     .getByRole("region", { name: "Flagged shots", exact: true })
     .getByRole("article")
-    .filter({ hasText: "Standalone sweep review" })
+    .filter({
+      has: page.getByRole("heading", { name: /Team · .*Video review/ }),
+    })
     .first();
   await expect(standalone).toBeVisible();
+  await expect(standalone.getByLabel("Coach’s notes")).toHaveValue(
+    "Standalone sweep review",
+  );
   await expect(
     standalone.getByRole("link", { name: /Review video from 0:02:00/ }),
   ).toHaveAttribute(
@@ -119,6 +124,7 @@ test("flagged-shot menu retains filters and exposes review links and editable ti
   await expect(
     page.getByRole("combobox", { name: "Team / player", exact: true }),
   ).toHaveValue("lead");
+  await expect(standalone).toHaveCount(0);
   await page
     .getByRole("link", { name: "Charting", exact: true })
     .first()

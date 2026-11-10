@@ -5,6 +5,7 @@ import { localReviewSchema } from "@/lib/curlcoach/local-review";
 import { readResumeStore } from "@/lib/curlcoach/resume-storage";
 const shotsSchema = z.object({
   revision: z.number().int(),
+  players: z.array(z.object({ id: z.string(), name: z.string() })).default([]),
   accountScope: z
     .object({ actorId: z.string(), organizationId: z.string() })
     .optional(),
@@ -27,6 +28,7 @@ export default function LocalReviewImport() {
   > | null>(null);
   const [data, setData] = useState<z.infer<typeof shotsSchema> | null>(null);
   const [shotId, setShotId] = useState("");
+  const [playerId, setPlayerId] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -72,8 +74,11 @@ export default function LocalReviewImport() {
     }
   }, []);
   const shot = data?.shots.find((shot) => shot.id === shotId);
+  const player = data?.players.find((p) => p.id === playerId);
+  const canSave =
+    !!data && (shotId ? !!shot : review?.audience === "team" || !!player);
   async function save() {
-    if (!review || !data || !shot) return;
+    if (!review || !data || !canSave) return;
     setBusy(true);
     setError("");
     try {
@@ -82,7 +87,8 @@ export default function LocalReviewImport() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           review,
-          shotId,
+          shotId: shotId || null,
+          ...(!shotId && review.audience === "player" ? { playerId } : {}),
           expectedRevision: data.revision,
         }),
       });
@@ -103,8 +109,11 @@ export default function LocalReviewImport() {
         <>
           <p>
             Flag saved for the{" "}
-            {review?.audience === "team" ? "team" : shot?.player}. It will
-            appear with the available recording link in the appropriate report.
+            {review?.audience === "team"
+              ? "team"
+              : (shot?.player ?? player?.name)}
+            . It will appear with the available recording link in the
+            appropriate report.
           </p>
           <a className="btn min-h-11" href="/shot-tracker#charting">
             Return to Shot Tracker
@@ -126,7 +135,9 @@ export default function LocalReviewImport() {
                   value={shotId}
                   onChange={(e) => setShotId(e.target.value)}
                 >
-                  <option value="">Choose the shot you reviewed</option>
+                  <option value="">
+                    Standalone video flag (no charted shot)
+                  </option>
                   {data?.shots.map((shot) => (
                     <option key={shot.id} value={shot.id}>
                       {shot.player} · End {shot.end} · Rock {shot.stone}
@@ -136,7 +147,8 @@ export default function LocalReviewImport() {
               </label>
               {data && !data.shots.length && (
                 <p>
-                  Chart this shot in Shot Tracker first, then reload this list.
+                  No shots have been charted. You can still save a Team flag or
+                  choose a player below.
                 </p>
               )}
               <label className="block">
@@ -155,6 +167,35 @@ export default function LocalReviewImport() {
                   <option value="team">Team</option>
                 </select>
               </label>
+              {!shotId && review.audience === "player" && (
+                <label className="block">
+                  Player
+                  <select
+                    className="block w-full min-h-11"
+                    value={playerId}
+                    aria-label="Player"
+                    onChange={(e) => setPlayerId(e.target.value)}
+                  >
+                    <option value="">Choose player</option>
+                    {data?.players.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.name}
+                      </option>
+                    ))}
+                  </select>
+                  {data && !data.players.length && (
+                    <p>
+                      No players are configured. Choose Team, or add your roster
+                      in Account &amp; Settings.
+                    </p>
+                  )}
+                </label>
+              )}
+              {!canSave && data && !shotId && review.audience === "player" && (
+                <p role="status">
+                  Choose a player, or switch Review for to Team, to save.
+                </p>
+              )}
               <label className="block">
                 Notes
                 <textarea
@@ -175,7 +216,7 @@ export default function LocalReviewImport() {
               )}
               <button
                 className="btn min-h-11"
-                disabled={busy || !shot}
+                disabled={busy || !canSave}
                 onClick={save}
               >
                 {busy ? "Saving…" : "Save flag"}

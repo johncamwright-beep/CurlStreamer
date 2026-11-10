@@ -48,6 +48,7 @@ export type CoachGame = {
   scoreboardAvailable: boolean;
   broadcastReview?: BroadcastReview;
   reviewCorrections?: ReviewCorrection[];
+  standaloneReviews?: import("./standalone-review").StandaloneReview[];
   roster?: RosterEntry[];
   state: State;
   difficultyRecords?: DifficultyRecord[];

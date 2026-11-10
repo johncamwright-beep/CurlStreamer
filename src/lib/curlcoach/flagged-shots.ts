@@ -1,3 +1,4 @@
+import { standaloneReviewVideo } from "./standalone-review";
 import { z } from "zod";
 import { gameShots, type CoachEvent } from "./event";
 import { reviewLink, supportedVideo, type VideoReview } from "./review";
@@ -22,8 +23,8 @@ export type ReportFlag = {
   shotId: string;
   game: string;
   shooter?: string;
-  end: number;
-  stone: number;
+  end: number | null;
+  stone: number | null;
   type: string;
   note: string;
   url: string | null;
@@ -40,8 +41,8 @@ function reportFlags(
   event: CoachEvent,
   audience: { playerId: string } | "team",
 ): ReportFlag[] {
-  return event.games.flatMap((game) =>
-    gameShots(game)
+  return event.games.flatMap((game) => [
+    ...gameShots(game)
       .filter(
         (shot) =>
           (shot.flagged ?? !!shot.review) &&
@@ -75,7 +76,26 @@ function reportFlags(
             : null),
         estimated: !!shot.videoReview?.estimated,
       })),
-  );
+    ...(game.standaloneReviews ?? [])
+      .filter((review) =>
+        audience === "team"
+          ? review.audience === "team"
+          : review.audience === "player" &&
+            review.playerId === audience.playerId,
+      )
+      .map((review) => ({
+        gameId: game.id,
+        shotId: review.id,
+        game: game.label + " · vs " + game.opponent,
+        shooter: review.playerName ?? undefined,
+        end: null,
+        stone: null,
+        type: "Video review",
+        note: review.note,
+        url: reviewLink(standaloneReviewVideo(review, game.broadcastReview)),
+        estimated: true,
+      })),
+  ]);
 }
 export function playerReportFlags(event: CoachEvent, playerId: string) {
   return reportFlags(event, { playerId });

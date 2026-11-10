@@ -154,7 +154,13 @@ export default function ReportDocument({
                 >
                   <h5>
                     {flag.shooter && `${flag.shooter} · `}
-                    {flag.game} · End {flag.end} · Stone {flag.stone}
+                    {flag.game}
+                    {flag.end !== null && (
+                      <>
+                        {" "}
+                        · End {flag.end} · Stone {flag.stone}
+                      </>
+                    )}
                   </h5>
                   <p className="report-note">{flag.type}</p>
                   <p>{flag.note || "No coach’s note added."}</p>

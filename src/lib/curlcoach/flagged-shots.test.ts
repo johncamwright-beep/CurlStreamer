@@ -8,6 +8,46 @@ import { gameShots, sampleEvent } from "./event";
 import { withRecordedReviewTime } from "./review";
 import type { ReportPacket } from "./reports";
 
+it("routes standalone reviews without adding any scored attempts", () => {
+  const event = sampleEvent("shorty-example");
+  event.games = [event.games[0]];
+  const game = event.games[0];
+  game.state.events = [];
+  game.broadcastReview = {
+    url: "https://www.youtube.com/watch?v=abcdefghijk",
+    startedAt: "2026-11-10T15:00:00Z",
+  };
+  const base = {
+    id: crypto.randomUUID(),
+    playerId: null,
+    playerName: null,
+    note: "Sweep discussion",
+    selectedAt: "2026-11-10T15:00:30Z",
+  };
+  game.standaloneReviews = [
+    { ...base, audience: "team" },
+    {
+      ...base,
+      id: crypto.randomUUID(),
+      audience: "player",
+      playerId: "lead",
+      playerName: "Alex",
+    },
+  ];
+  expect(gameShots(game)).toEqual([]);
+  expect(playerReportFlags(event, "lead")).toHaveLength(1);
+  expect(playerReportFlags(event, "other")).toEqual([]);
+  const packet = { audience: "team", reports: [{}] } as ReportPacket;
+  expect(withReportFlags(packet, event).reports[0].flags).toEqual([
+    expect.objectContaining({
+      end: null,
+      stone: null,
+      note: "Sweep discussion",
+      url: "https://www.youtube.com/watch?v=abcdefghijk&t=30s",
+    }),
+  ]);
+});
+
 it("parses exact video times without applying look-back twice", () => {
   expect(parseReviewTime("2:12")).toBe(132);
   expect(parseReviewTime("1:02:12")).toBe(3732);

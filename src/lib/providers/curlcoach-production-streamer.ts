@@ -1,3 +1,4 @@
+import { loadStandaloneReviews } from "./standalone-reviews";
 import { opponentSeasonSchema } from "@/lib/opponent-seasons";
 import { readGameCompletionSummary } from "@/lib/game-completion";
 import { loadCoachBroadcastReviews } from "./curlcoach-video";
@@ -242,6 +243,12 @@ export async function loadProductionStreamerEvent(
           rows.map((row) => row.id),
           account.userId,
         );
+  const standaloneReviews = details
+    ? await loadStandaloneReviews(
+        account,
+        rows.map((row) => row.id),
+      )
+    : {};
   const reviewCorrections = details
     ? await loadReviewCorrections(
         account,
@@ -344,6 +351,7 @@ export async function loadProductionStreamerEvent(
         scoreboardAvailable: available,
         broadcastReview: (await broadcastReviews)[row.id],
         reviewCorrections: reviewCorrections[row.id],
+        standaloneReviews: standaloneReviews[row.id],
         ends: scoreboard(row.config as GameConfig, scoreEvents, "home"),
         state: {
           ...emptyState(),

@@ -1,3 +1,6 @@
+import { createAdminSupabaseClient } from "@/lib/supabase/admin";
+import { readTeamSettings } from "@/lib/providers/team-settings";
+import { rosterPlayers } from "@/lib/providers/player-contacts";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { labEnabled, sameOrigin } from "@/lib/curlcoach/access";
@@ -29,6 +32,13 @@ async function context(gameId: string) {
   return { scope, state };
 }
 const enabled = () => process.env.CURLCOACH_ENABLED === "true" && !labEnabled();
+async function players(
+  current: NonNullable<Awaited<ReturnType<typeof context>>>,
+) {
+  if (current.state.roster?.length) return current.state.roster;
+  const { settings } = await readTeamSettings(current.scope.organizationId);
+  return rosterPlayers(current.scope.organizationId, settings);
+}
 export async function GET(request: Request) {
   if (!enabled()) return new NextResponse(null, { status: 404, headers });
   const parsed = z
@@ -41,6 +51,7 @@ export async function GET(request: Request) {
     return NextResponse.json(
       {
         revision: current.state.revision,
+        players: await players(current),
         accountScope: {
           actorId: current.scope.actorUserId,
           organizationId: current.scope.organizationId,
@@ -82,6 +93,34 @@ export async function POST(request: Request) {
   try {
     const current = await context(input.data.review.gameId);
     if (!current) return new NextResponse(null, { status: 403, headers });
+    if (input.data.shotId === null) {
+      const review = input.data.review;
+      const player =
+        review.audience === "player"
+          ? (await players(current)).find((p) => p.id === input.data.playerId)
+          : undefined;
+      if (review.audience === "player" && !player)
+        return NextResponse.json(
+          { error: "Choose a player from this team's roster." },
+          { status: 400, headers },
+        );
+      const { error } = await createAdminSupabaseClient().rpc(
+        "save_standalone_review",
+        {
+          p_actor: current.scope.actorUserId,
+          p_org: current.scope.organizationId,
+          p_game: current.scope.gameId,
+          p_request: review.id,
+          p_audience: review.audience,
+          p_player: player?.id ?? null,
+          p_name: player?.name ?? null,
+          p_note: review.notes,
+          p_selected: review.selectedAt,
+        },
+      );
+      if (error) throw Error("Review storage unavailable");
+      return NextResponse.json({ saved: true }, { headers });
+    }
     const command = localReviewCommand(current.state, input.data);
     await saveCoachState(current.scope, current.state, command);
     return NextResponse.json({ saved: true }, { headers });
@@ -89,7 +128,7 @@ export async function POST(request: Request) {
     return NextResponse.json(
       {
         error:
-          "Could not save this flag. Reload the shots; the game may have changed or need reopening.",
+          "Could not save this flag. Reload and try again; your selection and notes are still here.",
       },
       { status: 409, headers },
     );

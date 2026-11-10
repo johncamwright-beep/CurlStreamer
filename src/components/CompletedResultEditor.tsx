@@ -26,7 +26,8 @@ export function CompletedResultEditor({
     initialSnapshot?.completion.result.ends ?? [],
   );
   const [noResult, setNoResult] = useState(
-    !initialSnapshot?.completion.result.ends.length,
+    !initialSnapshot ||
+      initialSnapshot.completion.result.outcome === "no_result",
   );
   const [reason, setReason] = useState("");
   const [busy, setBusy] = useState(false);
@@ -54,7 +55,7 @@ export function CompletedResultEditor({
         if (cancelled) return;
         setSnapshot(value);
         setEnds(value.completion.result.ends);
-        setNoResult(!value.completion.result.ends.length);
+        setNoResult(value.completion.result.outcome === "no_result");
       })
       .catch((cause: unknown) => {
         if (cancelled) return;
@@ -86,7 +87,7 @@ export function CompletedResultEditor({
       const value = await requestCompletedResult(gameId);
       if (!snapshot) {
         setEnds(value.completion.result.ends);
-        setNoResult(!value.completion.result.ends.length);
+        setNoResult(value.completion.result.outcome === "no_result");
       }
       setSnapshot(value);
       pending.current = null;
@@ -142,7 +143,7 @@ export function CompletedResultEditor({
       );
       setSnapshot(confirmed);
       setEnds(confirmed.completion.result.ends);
-      setNoResult(!confirmed.completion.result.ends.length);
+      setNoResult(confirmed.completion.result.outcome === "no_result");
       setReason("");
       pending.current = null;
       setUncertain(false);

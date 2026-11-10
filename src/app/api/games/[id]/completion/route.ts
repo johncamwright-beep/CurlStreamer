@@ -5,6 +5,7 @@ import {
   completeReviewedGame,
   completionClosingRequestSchema,
   completionCleanupReady,
+  completionFinalScoreSchema,
   getCompletionCleanup,
   readGameCompletionSummary,
   recordCompletionCleanup,
@@ -25,6 +26,7 @@ const bodySchema = z.discriminatedUnion("action", [
   z.object({
     action: z.literal("review"),
     youtubeWatchUrl: z.string().max(500),
+    finalScore: completionFinalScoreSchema.optional(),
   }),
   z
     .object({
@@ -145,7 +147,12 @@ export async function POST(
         { error: "Enter a valid YouTube watch or live link." },
         400,
       );
-    const reviewed = await reviewGameCompletion(gameId, authority, watch.data);
+    const reviewed = await reviewGameCompletion(
+      gameId,
+      authority,
+      watch.data,
+      body.data.finalScore,
+    );
     return reviewed.ok ? response(reviewed.value) : failure(reviewed.kind);
   }
 

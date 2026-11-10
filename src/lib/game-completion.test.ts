@@ -133,6 +133,25 @@ describe("internal game completion boundary", () => {
     );
   });
 
+  it.each([null, { home: 0, away: 4 }])(
+    "records an explicit final score choice %j with the verified review",
+    async (finalScore) => {
+      mocks.rpc.mockResolvedValue({ data: [], error: null });
+      await reviewGameCompletion(gameId, await account(), null, finalScore);
+
+      expect(mocks.rpc).toHaveBeenCalledWith(
+        "review_game_completion_with_final_score",
+        expect.objectContaining({
+          p_game_id: gameId,
+          p_actor_user_id: "33333333-3333-4333-8333-333333333333",
+          p_verified_organizer: false,
+          p_youtube_watch_url: null,
+          p_selection: { finalScore },
+        }),
+      );
+    },
+  );
+
   it("does not send an invalid shared watch link to the completion RPC", async () => {
     expect(
       await reviewGameCompletion(

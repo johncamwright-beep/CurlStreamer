@@ -27,6 +27,7 @@ async function fixture(
   page: Page,
   outcome: "saved" | "conflict" | "lost" | "malformed",
   capable = true,
+  prepare: "success" | "fail" | "wait" = "success",
 ) {
   const bundle = await build({
     bundle: true,
@@ -36,7 +37,38 @@ async function fixture(
     jsx: "automatic",
     tsconfig: "tsconfig.json",
     stdin: {
-      contents: `import React from 'react';import {createRoot} from 'react-dom/client';import {EndGameControl} from './src/components/EndGameControl';window.order=[];window.pending={};window.chrome={webview:{postMessage(v){window.order.push(v.type);window.pending[v.type]=v; if(v.type==='studio-ending-prepare'||v.type==='studio-ending-cancel')window.dispatchEvent(new CustomEvent('studio-presentation-result',{detail:{gameId:v.gameId,nonce:v.nonce,ok:true,closing:${JSON.stringify(closing)},error:null}}));}}};window.addEventListener('curlcast:game-completed',()=>window.order.push('announced'));createRoot(document.getElementById('root')).render(<EndGameControl gameId="${gameId}" homeName="Team Benning" awayName="Away" enabled onCompleted={()=>window.order.push('completed')}/>);`,
+      contents: `
+        import React from 'react';
+        import {createRoot} from 'react-dom/client';
+        import {EndGameControl} from './src/components/EndGameControl';
+        import {StudioSessionContext} from './src/components/StudioSessionContext';
+        const gameId = "${gameId}";
+        const prepare = "${prepare}";
+        const session = { gameId, active: true, busy: false, outputActive: true, canLeaveGame: true, canCloseWorkspace: true };
+        window.order = [];
+        window.pending = {};
+        window.chrome = {webview: {postMessage(v) {
+          if (v.type === 'studio-session-observe') {
+            window.dispatchEvent(new CustomEvent('studio-recovery-status', {detail: {gameId, canForceClose: true}}));
+            return;
+          }
+          window.order.push(v.type);
+          window.pending[v.type] = v;
+          if (v.type === 'studio-ending-cancel' || (v.type === 'studio-ending-prepare' && prepare !== 'wait')) {
+            const ok = v.type === 'studio-ending-cancel' || prepare === 'success';
+            window.dispatchEvent(new CustomEvent('studio-presentation-result', {detail: {
+              gameId: v.gameId, nonce: v.nonce, ok, closing: ok ? ${JSON.stringify(closing)} : null,
+              error: ok ? null : 'Studio could not confirm this presentation change.',
+            }}));
+          }
+        }}};
+        window.addEventListener('curlcast:game-completed', () => window.order.push('announced'));
+        createRoot(document.getElementById('root')).render(
+          <StudioSessionContext.Provider value={${capable ? "session" : "null"}}>
+            <EndGameControl gameId={gameId} homeName="Team Benning" awayName="Away" enabled onCompleted={() => window.order.push('completed')}/>
+          </StudioSessionContext.Provider>
+        );
+      `,
       loader: "tsx",
       resolveDir: process.cwd(),
     },
@@ -85,7 +117,7 @@ async function fixture(
       json: {
         completion,
         cleanup: { status: "pending", attempts: 0, lastError: null },
-        closing: capable
+        closing: body.closing
           ? {
               sessionId: closing.sessionId,
               generation: closing.generation,
@@ -107,17 +139,15 @@ async function fixture(
         ),
       gameId,
     );
-  await page.getByRole("button", { name: "Game options", exact: true }).click();
+  await page.getByRole("button", { name: "Close Game", exact: true }).click();
   await page
-    .getByRole("button", { name: "End game and stream", exact: true })
+    .getByRole("button", { name: capable ? "End Game" : "Yes", exact: true })
     .click();
-  await page
-    .getByRole("button", { name: "Review final score", exact: true })
-    .click();
-  await expect(page.getByText("Team Benning 6 – 4 Away")).toBeVisible();
-  await page
-    .getByRole("button", { name: "Confirm End Game", exact: true })
-    .click();
+  await expect(
+    page.getByRole("spinbutton", { name: "Team Benning" }),
+  ).toHaveValue("6");
+  await expect(page.getByRole("spinbutton", { name: "Away" })).toHaveValue("4");
+  await page.getByRole("button", { name: "End Game", exact: true }).click();
   return requests;
 }
 async function order(page: Page) {
@@ -193,7 +223,13 @@ for (const outcome of ["lost", "malformed"] as const)
     await fixture(page, outcome);
     await expect.poll(() => order(page)).toContain("studio-ending-finish");
     await acknowledge(page, "studio-ending-finish");
-    await expect(page.getByRole("alert")).toBeVisible();
+    await expect(page.getByRole("alert")).toContainText("Reopen this game");
+    await expect(
+      page.getByRole("button", { name: "End game without final screen" }),
+    ).toHaveCount(0);
+    await expect(
+      page.getByRole("button", { name: "End Game", exact: true }),
+    ).toHaveCount(0);
     expect(await order(page)).not.toContain("studio-ending-cancel");
     expect(await order(page)).not.toContain("studio-ending-show");
   });
@@ -209,4 +245,78 @@ test("older Studio completes immediately without new native commands", async ({
     "announced",
     "completed",
   ]);
+});
+
+test("failed final screen leaves the game open until the operator confirms ending without it", async ({
+  page,
+}) => {
+  const requests = await fixture(page, "saved", true, "fail");
+  await expect(page.getByRole("alert")).toContainText(
+    "Your game is still open",
+  );
+  expect(requests).toHaveLength(1);
+  await expect(page.getByText("Team Benning 6 – 4 Away")).toBeVisible();
+  await page
+    .getByRole("button", { name: "End game without final screen" })
+    .click();
+  await expect.poll(() => order(page)).toContain("completed");
+  expect(requests[1]).toEqual({ action: "complete", reviewId });
+  expect(await order(page)).toEqual([
+    "review",
+    "studio-ending-prepare",
+    "complete",
+    "announced",
+    "completed",
+  ]);
+});
+
+test("missing final screen receipt offers close without mutating the game; Force close remains available while waiting", async ({
+  page,
+}) => {
+  await page.clock.install();
+  const requests = await fixture(page, "saved", true, "wait");
+  await expect(page.getByRole("button", { name: "Ending…" })).toBeDisabled();
+  const force = page.getByRole("button", { name: "Force close Studio" });
+  await force.click();
+  expect(await order(page)).toContain("studio-force-close");
+  await page.clock.fastForward(12001);
+  await expect(
+    page.getByRole("button", { name: "End game without final screen" }),
+  ).toBeEnabled();
+  await page
+    .getByRole("button", { name: "Close Studio without ending game" })
+    .click();
+  const command = await page.evaluate(
+    () =>
+      (window as unknown as { pending: Record<string, unknown> }).pending[
+        "studio-close-workspace"
+      ],
+  );
+  expect(command).toEqual({
+    type: "studio-close-workspace",
+    gameId,
+    nonce: expect.any(String),
+  });
+  expect(requests).toHaveLength(1);
+  await expect(force).toBeEnabled();
+  await page.evaluate(
+    ({ gameId, nonce }) => {
+      window.dispatchEvent(
+        new CustomEvent("studio-close-workspace-result", {
+          detail: { gameId, nonce: crypto.randomUUID(), ok: false },
+        }),
+      );
+      window.dispatchEvent(
+        new CustomEvent("studio-close-workspace-result", {
+          detail: { gameId, nonce, ok: false, error: "Studio stayed open." },
+        }),
+      );
+    },
+    command as { gameId: string; nonce: string },
+  );
+  await expect(page.getByRole("alert")).toContainText("Studio stayed open.");
+  await expect(
+    page.getByRole("button", { name: "Close Studio without ending game" }),
+  ).toBeEnabled();
+  expect(requests).toHaveLength(1);
 });

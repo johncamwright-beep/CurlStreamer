@@ -34,6 +34,7 @@ export const studioSessionSchema = z
     canHoldStream: z.boolean(),
     canLeaveGame: z.boolean().optional(),
     canCloseGameDirectly: z.boolean().optional(),
+    canCloseWorkspace: z.boolean().optional(),
     replay: studioReplayStateSchema.nullable().optional(),
     coachReview: studioCoachReviewStateSchema.nullable().optional(),
   })

@@ -2,9 +2,11 @@ import { test, expect, type Page } from "@playwright/test";
 import { build } from "esbuild";
 
 const gameId = "11111111-1111-4111-8111-111111111111";
-const legacy = { gameId, active: true, busy: false, canLeaveGame: true };
 const idlePreview = {
-  ...legacy,
+  gameId,
+  active: true,
+  busy: false,
+  canLeaveGame: true,
   title: "Club final",
   presentation: "live",
   streaming: "idle",
@@ -14,7 +16,10 @@ const idlePreview = {
   canCloseGameDirectly: true,
 };
 
-async function loadLeaveFixture(page: Page, session = legacy) {
+async function loadLeaveFixture(
+  page: Page,
+  session: typeof idlePreview | null = idlePreview,
+) {
   const bundle = await build({
     bundle: true,
     write: false,
@@ -57,21 +62,27 @@ async function loadLeaveFixture(page: Page, session = legacy) {
   return () => completions;
 }
 
-test("legacy leave pauses without finalizing, waits for acknowledgement, and retains errors", async ({
+test("live sender offers pause and leave, waits for acknowledgement, and retains errors", async ({
   page,
 }) => {
-  const completions = await loadLeaveFixture(page);
-  await page.getByRole("button", { name: "Game options", exact: true }).click();
+  const completions = await loadLeaveFixture(page, {
+    ...idlePreview,
+    streaming: "armed",
+    outputActive: true,
+    canCloseGameDirectly: false,
+  });
+  await page.getByRole("button", { name: "Close Game", exact: true }).click();
+  await expect(
+    page.getByRole("dialog", { name: "Broadcast is running" }),
+  ).toBeVisible();
   await page
-    .getByRole("button", { name: "Leave game and pause stream", exact: true })
+    .getByRole("button", { name: "Pause and leave", exact: true })
     .click();
   await expect(page.getByRole("status")).toBeVisible();
-  await expect(page.getByRole("status")).toHaveText(
-    "Pausing the broadcast and closing cameras…",
-  );
+  await expect(page.getByRole("status")).toHaveText("Pausing the broadcast…");
   await expect(page.locator('[role="status"] svg')).toHaveClass(/animate-spin/);
   await expect(
-    page.getByRole("button", { name: "End game and stream", exact: true }),
+    page.getByRole("button", { name: "End Game", exact: true }),
   ).toHaveCount(0);
   await expect(page.getByText(/Use the updated Windows Studio/)).toHaveCount(0);
   await page.keyboard.press("Escape");
@@ -99,7 +110,7 @@ test("legacy leave pauses without finalizing, waits for acknowledgement, and ret
   await expect(page.getByRole("alert")).toHaveText("Recording still closing");
   await expect(page).toHaveURL(/leave-fixture$/);
   await page
-    .getByRole("button", { name: "Leave game and pause stream", exact: true })
+    .getByRole("button", { name: "Pause and leave", exact: true })
     .click();
   await page.evaluate(() => {
     const request = (window as any).sent
@@ -115,21 +126,32 @@ test("legacy leave pauses without finalizing, waits for acknowledgement, and ret
   expect(completions()).toBe(0);
 });
 
-test("X closes an idle Studio preview while End game stays available", async ({
+test("idle preview ignores stale YouTube live; No leaves without ending or pausing", async ({
   page,
 }) => {
-  const completions = await loadLeaveFixture(page, idlePreview);
-  await page.getByRole("button", { name: "End game", exact: true }).click();
-  await expect(
-    page.getByRole("button", { name: "Review final score" }),
-  ).toBeVisible();
-  await page.getByRole("button", { name: "Cancel", exact: true }).click();
-
-  const close = page.getByRole("button", { name: "Close game", exact: true });
+  const completions = await loadLeaveFixture(page, {
+    ...idlePreview,
+    live: true,
+  });
+  const close = page.getByRole("button", { name: "Close Game", exact: true });
   await close.click();
+  await expect(
+    page.getByRole("dialog", { name: "Is the game done?" }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Pause and leave" }),
+  ).toHaveCount(0);
+  await expect(
+    page.getByRole("button", { name: "Yes", exact: true }),
+  ).toBeEnabled();
+  await page.getByRole("button", { name: "Cancel", exact: true }).click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+
+  await close.click();
+  await page.getByRole("button", { name: "No", exact: true }).click();
   await expect(page.getByRole("status")).toHaveText("Closing camera preview…");
   await expect(close).toBeDisabled();
-  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(page.getByRole("dialog")).toBeVisible();
   await expect(page).toHaveURL(/leave-fixture$/);
 
   const sent = await page.evaluate(() =>
@@ -159,7 +181,8 @@ test("a refused preview close stays in the game and offers the live options", as
   page,
 }) => {
   const completions = await loadLeaveFixture(page, idlePreview);
-  await page.getByRole("button", { name: "Close game", exact: true }).click();
+  await page.getByRole("button", { name: "Close Game", exact: true }).click();
+  await page.getByRole("button", { name: "No", exact: true }).click();
   await page.evaluate(
     (liveSession) => {
       const request = (window as any).sent.find(
@@ -172,7 +195,7 @@ test("a refused preview close stays in the game and offers the live options", as
             gameId: request.gameId,
             nonce: request.nonce,
             ok: false,
-            error: "Broadcast started. Use Game options to leave.",
+            error: "Broadcast started.",
           },
         }),
       );
@@ -185,16 +208,23 @@ test("a refused preview close stays in the game and offers the live options", as
       canCloseGameDirectly: false,
     },
   );
-  await expect(page.getByRole("alert")).toHaveText(
-    "Broadcast started. Use Game options to leave.",
-  );
+  await expect(page.getByRole("alert")).toHaveText("Broadcast started.");
   await expect(page).toHaveURL(/leave-fixture$/);
-  await page.getByRole("button", { name: "Game options", exact: true }).click();
   await expect(
     page.getByRole("button", {
-      name: "Leave game and pause stream",
+      name: "Pause and leave",
       exact: true,
     }),
   ).toBeEnabled();
+  expect(completions()).toBe(0);
+});
+
+test("No returns to Games without a Studio session or a completion request", async ({
+  page,
+}) => {
+  const completions = await loadLeaveFixture(page, null);
+  await page.getByRole("button", { name: "Close Game", exact: true }).click();
+  await page.getByRole("button", { name: "No", exact: true }).click();
+  await expect(page).toHaveURL(/dashboard$/);
   expect(completions()).toBe(0);
 });

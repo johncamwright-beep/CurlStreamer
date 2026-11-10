@@ -1,4 +1,3 @@
-import { z } from "zod";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const gameId = "11111111-1111-4111-8111-111111111111";
@@ -39,19 +38,12 @@ vi.mock("next/server", async (original) => ({
   after: mocks.after,
 }));
 vi.mock("next/cache", () => ({ revalidatePath: mocks.revalidatePath }));
-vi.mock("@/lib/game-completion", () => ({
+vi.mock("@/lib/game-completion", async (original) => ({
+  ...(await original<typeof import("@/lib/game-completion")>()),
   verifiedCompletionAccount: mocks.verified,
   reviewGameCompletion: mocks.review,
   completeReviewedGame: mocks.complete,
   completionCleanupReady: mocks.cleanupReady,
-  completionClosingRequestSchema: z
-    .object({
-      sessionId: z.uuid(),
-      generation: z.number().int().positive(),
-      intentId: z.uuid(),
-      capability: z.literal("final-card-v1"),
-    })
-    .strict(),
   getCompletionCleanup: mocks.getCleanup,
   recordCompletionCleanup: mocks.recordCleanup,
   readGameCompletionSummary: mocks.readSummary,
@@ -130,7 +122,7 @@ describe("End Game route", () => {
       { params: Promise.resolve({ id: gameId }) },
     );
     expect(response.status).toBe(200);
-    expect(mocks.review).toHaveBeenCalledWith(gameId, account, null);
+    expect(mocks.review).toHaveBeenCalledWith(gameId, account, null, undefined);
     expect(mocks.revalidatePath).not.toHaveBeenCalled();
   });
 
@@ -142,8 +134,46 @@ describe("End Game route", () => {
         params: Promise.resolve({ id: gameId }),
       },
     );
-    expect(mocks.review).toHaveBeenCalledWith(gameId, organizer, null);
+    expect(mocks.review).toHaveBeenCalledWith(
+      gameId,
+      organizer,
+      null,
+      undefined,
+    );
     expect(mocks.verified).not.toHaveBeenCalled();
+  });
+
+  it.each([null, { home: 0, away: 0 }, { home: 3, away: 6 }])(
+    "passes the explicit final score choice %j to review",
+    async (finalScore) => {
+      const response = await POST(
+        request({ action: "review", youtubeWatchUrl: "", finalScore }),
+        { params: Promise.resolve({ id: gameId }) },
+      );
+      expect(response.status).toBe(200);
+      expect(mocks.review).toHaveBeenCalledWith(
+        gameId,
+        account,
+        null,
+        finalScore,
+      );
+    },
+  );
+
+  it.each([
+    { home: 1 },
+    { home: -1, away: 0 },
+    { home: 1, away: 2.5 },
+    { home: 1, away: "2" },
+    { home: Number.MAX_SAFE_INTEGER + 1, away: 0 },
+    { home: 1, away: 2, outcome: "home_win" },
+  ])("rejects invalid final scores %j before review", async (finalScore) => {
+    const response = await POST(
+      request({ action: "review", youtubeWatchUrl: "", finalScore }),
+      { params: Promise.resolve({ id: gameId }) },
+    );
+    expect(response.status).toBe(400);
+    expect(mocks.review).not.toHaveBeenCalled();
   });
 
   it("returns the saved result while recording an honest cleanup failure", async () => {

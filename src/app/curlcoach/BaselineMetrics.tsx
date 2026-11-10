@@ -29,8 +29,11 @@ export default function BaselineMetrics({
     [workspace, playerId],
   );
   const event =
+    (gameId !== "all"
+      ? points.find((p) => p.games.some((g) => g.id === gameId))
+      : undefined) ??
     points.find((p) => p.id === eventId) ??
-    (eventId === "all" ? points.at(-1) : undefined);
+    (eventId === "all" ? points.filter((p) => p.graded > 0).at(-1) : undefined);
   const game = event?.games.find((g) => g.id === gameId);
   const metrics = game ?? event;
   if (!metrics || !event) return null;

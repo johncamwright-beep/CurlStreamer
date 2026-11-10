@@ -938,9 +938,9 @@ export function GameCreationForm({
                   className="mt-1 w-full rounded-lg bg-slate-800 p-3"
                 />
                 <span className="setup-help">
-                  Use an opponent or event organizer’s YouTube watch link. It
-                  appears on the game and team pages; CurlStreamer will not
-                  create a YouTube event.
+                  Use an opponent or event organizer’s YouTube watch link on the
+                  game. The public team page only shows links created in
+                  CurlStreamer with Public visibility.
                 </span>
               </label>
               {youtubeEnabled && (

@@ -121,6 +121,35 @@ function delivered(visibility: string) {
   return { ...a, args, intent };
 }
 
+const scheduledWatchUrl = "https://youtu.be/scheduledvideo";
+const pastedWatchUrl = "https://youtu.be/externalvideo";
+function publishGame(a: ReturnType<typeof fixture>, scheduled: boolean) {
+  checked(
+    `insert into public.team_public_profiles(organization_id,slug,settings)
+      values('${a.org}','t-${a.org}','{"published":true,"upcoming":true,"results":true}');
+    update public.games set scheduled_start=now()+interval '1 day',
+      config=config || '{"sharedYoutubeWatchUrl":"${pastedWatchUrl}"}'::jsonb
+      ${scheduled ? `,youtube_scheduled_status='ready',youtube_scheduled_watch_url='${scheduledWatchUrl}',youtube_scheduled_broadcast_id='scheduledvideo'` : ""}
+      where id='${a.id}';`,
+    false,
+  );
+}
+function publicGame(a: ReturnType<typeof fixture>) {
+  const games = JSON.parse(
+    checked(`select public.read_public_team_games('${a.org}')`),
+  );
+  expect(games).toHaveLength(1);
+  expect(games[0].id).toBe(a.id);
+  return games[0];
+}
+function complete(a: ReturnType<typeof fixture>, watchUrl: string) {
+  const review = randomUUID();
+  checked(
+    `select * from public.review_game_completion_with_link('${a.id}','${review}','${a.owner}',false,'${watchUrl}');
+    select * from public.complete_reviewed_game('${a.id}','${review}','${randomUUID()}','${a.owner}',false);`,
+  );
+}
+
 describe.skipIf(!enabled)(
   "saved YouTube visibility PostgreSQL authority",
   () => {
@@ -286,5 +315,55 @@ describe.skipIf(!enabled)(
         ).toBe(false);
       },
     );
+    it.each(["public", "private", "unlisted", "unknown"])(
+      "exposes only known public scheduled and completed links on team pages (%s)",
+      (visibility) => {
+        const a = fixture(visibility);
+        publishGame(a, true);
+        if (visibility === "unknown")
+          checked(
+            `update public.games set config=config-'youtubeVisibility' where id='${a.id}'`,
+            false,
+          );
+        const expected = visibility === "public" ? scheduledWatchUrl : null;
+        expect(publicGame(a)).toMatchObject({
+          completed: null,
+          youtube: expected,
+        });
+        complete(a, scheduledWatchUrl);
+        expect(publicGame(a)).toMatchObject({
+          completed: expect.any(String),
+          youtube: expected,
+        });
+        expect(
+          checked(
+            `select public.read_game_completion_summary('${a.id}')->>'youtubeWatchUrl'`,
+          ),
+        ).toBe(scheduledWatchUrl);
+      },
+    );
+    it("keeps manual links off the public projection and retains proven public Studio replays", () => {
+      const manual = fixture("public");
+      publishGame(manual, true);
+      complete(manual, pastedWatchUrl);
+      expect(publicGame(manual).youtube).toBeNull();
+      const studio = fixture("public");
+      publishGame(studio, false);
+      expect(publicGame(studio).youtube).toBeNull();
+      const studioUrl = "https://youtu.be/studiovideo";
+      checked(
+        `insert into public.broadcast_sessions(game_id,organization_id,provider,status,transport,watch_url,started_at)
+          values('${studio.id}','${studio.org}','youtube','stopped','local-obs','${studioUrl}',now()-interval '1 hour')`,
+        false,
+      );
+      complete(studio, pastedWatchUrl);
+      expect(publicGame(studio).youtube).toBe(studioUrl);
+      expect(
+        sql(
+          `set role anon;select public.read_public_team_games('${studio.org}')`,
+          false,
+        ).ok,
+      ).toBe(false);
+    });
   },
 );

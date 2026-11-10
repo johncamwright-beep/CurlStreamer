@@ -106,7 +106,7 @@ async function credential(
 function failure(error: unknown) {
   const providerMessages: Record<string, string> = {
     youtube_reconnect_required:
-      "Reconnect your YouTube account in YouTube settings, then try Go live again.",
+      "Reconnect your YouTube account in YouTube settings, then try starting the broadcast again.",
     youtube_scope_missing:
       "YouTube has not granted permission to start broadcasts. Reconnect your YouTube account and approve the requested permissions.",
     youtube_quota_exceeded:

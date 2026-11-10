@@ -28,6 +28,10 @@ internal static class WorkspacePolicy
     {
         return streaming == "starting" || streaming == "armed" || streaming == "paused";
     }
+    internal static bool CanClosePreview(bool hasController, string streaming, string pairing, bool outputActive)
+    {
+        return !outputActive && (!hasController || (streaming == "idle" && pairing == "unpaired"));
+    }
     internal static bool SessionMessage(string source, string page, string origin)
     {
         // Reject stale documents as well as external origins. Account/dashboard

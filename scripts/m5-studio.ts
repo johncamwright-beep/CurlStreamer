@@ -29,6 +29,13 @@ process.on("uncaughtExceptionMonitor", (cause, origin) => {
   );
 });
 const input = createInterface({ input: process.stdin, terminal: false });
+function finish(exitCode: number, receipt: string) {
+  input.close();
+  process.stdin.destroy();
+  // Cleanup is already complete. Flush the launcher receipt before exiting,
+  // even if an idle socket or library timer would keep Node alive.
+  process.stdout.write(receipt, () => process.exit(exitCode));
+}
 const close = (
   reason:
     "operator_close" | "stdin_closed" | "sigint" | "sigterm" | "startup_failed",
@@ -41,12 +48,10 @@ const close = (
     diagnostic(
       outcome.cleanupConfirmed ? "shutdown_confirmed" : "shutdown_unconfirmed",
     );
-    process.stdout.write(
+    finish(
+      outcome.cleanupConfirmed ? 0 : 2,
       outcome.cleanupConfirmed ? "CLOSED\n" : "CLEANUP_UNCONFIRMED\n",
     );
-    if (!outcome.cleanupConfirmed) process.exitCode = 2;
-    input.close();
-    process.stdin.destroy();
   })();
 };
 input.on("line", (line) => {
@@ -82,9 +87,7 @@ try {
   const recordingRoot = join(dataRoot, "Recordings");
   await mkdir(recordingRoot, { recursive: true });
   if (requestedClose) {
-    process.stdout.write("CLOSED\n");
-    input.close();
-    process.stdin.destroy();
+    finish(0, "CLOSED\n");
   } else {
     const runtime = join(root, "obs", "bin", "64bit");
     operator = await createM4OperatorServer({

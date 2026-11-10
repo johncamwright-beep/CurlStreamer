@@ -1,11 +1,23 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Security.Cryptography;
 using System.Text;
+using System.Threading;
+using System.Threading.Tasks;
+using System.Web.Script.Serialization;
 
 internal static class CameraInputsTests
 {
     private static void Reject(Action action) { bool rejected = false; try { action(); } catch { rejected = true; } if (!rejected) throw new Exception("Invalid camera settings accepted."); }
+    private static void WriteLegacy(string directory, Dictionary<string, Dictionary<string, object>> sources) {
+        Directory.CreateDirectory(directory);
+        var bytes = Encoding.UTF8.GetBytes(new JavaScriptSerializer().Serialize(sources));
+        try {
+            var entropy = Encoding.UTF8.GetBytes("CurlStreamer.Studio.CameraInputs.v1");
+            File.WriteAllBytes(Path.Combine(directory, "CameraInputs.dat"), ProtectedData.Protect(bytes, entropy, DataProtectionScope.CurrentUser));
+        } finally { Array.Clear(bytes, 0, bytes.Length); }
+    }
     private static int Main() {
         CameraInputs.Rtsp("192.168.1.20", 554, "user", "p@ss#:%", "/live", 0);
         CameraInputs.Rtsp("192.168.1.20", 554, "user", "short-é", "/live", 0);
@@ -36,24 +48,41 @@ internal static class CameraInputsTests
         foreach (var host in new[] { "10.0.0.1", "172.16.0.1", "172.31.255.254", "192.168.1.20" }) if (!CameraInputs.PrivateIPv4(host)) throw new Exception("Private IPv4 rejected.");
         foreach (var host in new[] { "127.0.0.1", "8.8.8.8", "169.254.1.1", "172.32.0.1", "192.168.001.1", "192.168.1.1/path", "192.168.1.1\n", "::1" }) if (CameraInputs.PrivateIPv4(host)) throw new Exception("Invalid destination accepted.");
         var directory = Path.Combine(Path.GetTempPath(), "CurlStreamer-CameraInputs-" + Guid.NewGuid().ToString("N"));
+        var legacy = Path.Combine(directory, "legacy");
+        var stable = Path.Combine(directory, "stable");
+        var stableFile = Path.Combine(stable, "CameraInputs.dat");
         try {
             const string secret = "test-camera-local-secret";
             var sources = new Dictionary<string, Dictionary<string, object>> { { "camera-home", CameraInputs.Tapo("192.168.1.20", "local-user", secret, "stream1", 90) }, { "camera-away", CameraInputs.Phone() } };
-            CameraInputs.Save(directory, sources);
-            if (Encoding.UTF8.GetString(File.ReadAllBytes(Path.Combine(directory, "CameraInputs.dat"))).Contains(secret)) throw new Exception("Password persisted as plaintext.");
-            var loaded = CameraInputs.Load(directory);
-            if ((string)loaded["camera-home"]["password"] != secret || (string)loaded["camera-away"]["kind"] != "phone") throw new Exception("Encrypted settings did not round trip.");
-            sources["camera-home"] = pasted; sources["camera-away"] = anonymous; CameraInputs.Save(directory, sources);
-            var rtspLoaded = CameraInputs.Load(directory);
+            if (CameraInputs.LoadProfile(stable, legacy).Count != 0 || Directory.Exists(stable)) throw new Exception("Fresh profile unexpectedly wrote camera settings.");
+            WriteLegacy(legacy, sources);
+            var loaded = CameraInputs.LoadProfile(stable, legacy);
+            if ((string)loaded["camera-home"]["password"] != secret || (string)loaded["camera-away"]["kind"] != "phone") throw new Exception("Legacy settings did not migrate.");
+            if ((string)CameraInputs.Load(legacy)["camera-home"]["password"] != secret) throw new Exception("The legacy profile changed during migration.");
+            if (Encoding.UTF8.GetString(File.ReadAllBytes(stableFile)).Contains(secret)) throw new Exception("Password persisted as plaintext.");
+            using (var start = new ManualResetEventSlim(false)) {
+                var first = Task.Run(() => { start.Wait(); CameraInputs.SaveSlot(stable, legacy, "camera-home", pasted); });
+                var second = Task.Run(() => { start.Wait(); CameraInputs.SaveSlot(stable, legacy, "camera-away", anonymous); });
+                start.Set();
+                Task.WaitAll(first, second);
+            }
+            var rtspLoaded = CameraInputs.LoadProfile(stable, Path.Combine(directory, "different-launch-context"));
             if ((string)rtspLoaded["camera-home"]["password"] != "private:secret" || (int)rtspLoaded["camera-away"]["port"] != 8554) throw new Exception("Generic RTSP settings did not round trip.");
-            if (Encoding.UTF8.GetString(File.ReadAllBytes(Path.Combine(directory, "CameraInputs.dat"))).Contains("private:secret")) throw new Exception("RTSP password persisted as plaintext.");
-            sources["camera-home"] = CameraInputs.Phone(); CameraInputs.Save(directory, sources);
-            if ((string)CameraInputs.Load(directory)["camera-home"]["kind"] != "phone") throw new Exception("Explicit source switch did not persist.");
-            File.WriteAllBytes(Path.Combine(directory, "CameraInputs.dat"), new byte[] { 1, 2, 3 });
-            bool rejected = false; try { CameraInputs.Load(directory); } catch { rejected = true; }
-            if (!rejected) throw new Exception("Corrupt encrypted settings accepted.");
+            CameraInputs.SaveSlot(stable, legacy, "camera-home", CameraInputs.Phone());
+            var phone = CameraInputs.LoadProfile(stable, legacy)["camera-home"];
+            var active = CameraInputs.ActiveSource(phone);
+            if (active.Count != 1 || (string)active["kind"] != "phone") throw new Exception("Explicit source switch or controller payload is incorrect.");
+            var previousIp = CameraInputs.RememberedIp(phone);
+            if ((string)previousIp["password"] != "private:secret" || (int)previousIp["rotation"] != 270) throw new Exception("Switching to Phone lost the previous IP source.");
+            if (Encoding.UTF8.GetString(File.ReadAllBytes(stableFile)).Contains("private:secret")) throw new Exception("Remembered RTSP password persisted as plaintext.");
+            CameraInputs.SaveSlot(stable, legacy, "camera-home", previousIp);
+            if ((string)CameraInputs.LoadProfile(stable, legacy)["camera-home"]["kind"] != "rtsp") throw new Exception("Returning to the previous IP source failed.");
+            File.WriteAllBytes(stableFile, new byte[] { 1, 2, 3 });
+            Reject(() => CameraInputs.LoadProfile(stable, legacy));
+            Reject(() => CameraInputs.SaveSlot(stable, legacy, "camera-home", pasted));
+            if (new FileInfo(stableFile).Length != 3) throw new Exception("A failed save replaced unreadable settings.");
         } finally { if (Directory.Exists(directory)) Directory.Delete(directory, true); }
-        Console.WriteLine("PASS: private camera hosts, DPAPI encrypted round trip, explicit source switch and corrupt settings rejection.");
+        Console.WriteLine("PASS: camera validation, encrypted legacy migration, concurrent slot updates, Phone/IP round trip and corrupt settings rejection.");
         return 0;
     }
 }

@@ -22,9 +22,14 @@ export type StudioClosingPreparation = z.infer<typeof closingPreparationSchema>;
  * the completion endpoint independently validates the desktop/output authority. */
 export function requestStudioPresentation(
   gameId: string,
-  action: "prepare" | "show" | "cancel" | "finish" | "hold" | "resume",
+  action:
+    "prepare" | "show" | "cancel" | "finish" | "hold" | "resume" | "restart",
   payload: Record<string, unknown> = {},
-  timeoutMs = 12000,
+  timeoutMs = action === "restart"
+    ? 180000
+    : action === "resume"
+      ? 30000
+      : 12000,
 ): Promise<z.infer<typeof receiptSchema>> {
   const bridge = (
     window as Window & {
@@ -58,14 +63,20 @@ export function requestStudioPresentation(
     };
     const timer = window.setTimeout(() => {
       clean();
-      reject(new Error("Studio did not confirm the broadcast card in time."));
+      reject(
+        new Error(
+          action === "restart"
+            ? "Studio has not confirmed the restart. Check the status before retrying."
+            : "Studio did not confirm the broadcast card in time.",
+        ),
+      );
     }, timeoutMs);
     window.addEventListener("studio-presentation-result", receive);
     try {
       bridge.postMessage({
         ...payload,
         type:
-          action === "hold" || action === "resume"
+          action === "hold" || action === "resume" || action === "restart"
             ? `studio-youtube-${action}`
             : `studio-ending-${action}`,
         gameId,

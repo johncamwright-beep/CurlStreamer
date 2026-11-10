@@ -93,6 +93,14 @@ describe("Studio presentation receipts", () => {
     receipt({ gameId, nonce, ok: true, presentation: null, error: null });
     await expect(result).resolves.toMatchObject({ presentation: null });
   });
+  it("waits for a scoped restart receipt without requiring a new presentation generation", async () => {
+    const result = requestStudioPresentation(gameId, "restart");
+    const nonce = sent[0].nonce;
+    expect(sent[0]).toEqual({ gameId, nonce, type: "studio-youtube-restart" });
+    await vi.advanceTimersByTimeAsync(100000);
+    receipt({ gameId, nonce, ok: true });
+    await expect(result).resolves.toMatchObject({ ok: true });
+  });
   it("rejects a failed hold receipt even when Studio returns a null error", async () => {
     const result = requestStudioPresentation(gameId, "hold");
     const rejected = expect(result).rejects.toThrow(

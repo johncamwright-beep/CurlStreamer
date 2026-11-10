@@ -239,6 +239,7 @@ export async function startM4ProgramHost(
         }
       : {}),
     rendererAddress: bridge.address,
+    programAuthorityEnded: () => !bridge.rendererHealth().active,
     cameraStatus: bridge.cameraStatus,
     stopPhone: bridge.stopPhone,
     audioStatus: bridge.audioStatus,

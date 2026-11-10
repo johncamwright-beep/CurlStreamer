@@ -23,6 +23,7 @@ async function fixture(
     streamStop?: (setState: (state: StreamState) => void) => Promise<void>;
     observation?: object;
     presentation?: ReturnType<typeof createM4ProgramPresentation>;
+    programAuthorityEnded?: () => boolean;
   } = {},
 ) {
   const directory = await mkdtemp(join(tmpdir(), "m4-operator-stream-"));
@@ -48,6 +49,9 @@ async function fixture(
         ? { presentation: { ...input.presentation, supported: true as const } }
         : {}),
       rendererAddress: "http://127.0.0.1:4000",
+      ...(input.programAuthorityEnded
+        ? { programAuthorityEnded: input.programAuthorityEnded }
+        : {}),
       stream: {
         start: streamStart,
         stop: streamStop,
@@ -125,6 +129,69 @@ async function fixture(
 }
 
 describe("M4 operator streaming races", () => {
+  it("exposes an expired held program while the authorized YouTube sender stays live", async () => {
+    const presentation = createM4ProgramPresentation(() => true);
+    const held = presentation.set("hold");
+    presentation.acknowledge("current", 1);
+    await held;
+    const set = vi.spyOn(presentation, "set");
+    let expired = false;
+    const f = await fixture({
+      presentation,
+      programAuthorityEnded: () => expired,
+      observation: {
+        localOutput: { state: "active", bytes: 20 },
+        provider: {
+          streamStatus: "active",
+          healthStatus: "good",
+          broadcastStatus: "live",
+          broadcastLive: true,
+        },
+        liveConfirmed: true,
+      },
+    });
+    try {
+      await f.ready();
+      await f.command({
+        action: "start-stream",
+        intentId: crypto.randomUUID(),
+      });
+      expect(await f.state()).toMatchObject({
+        programAuthorityEnded: false,
+        canHoldStream: true,
+        canGracefulEnd: true,
+      });
+
+      // Losing the program grant does not revoke the separate desktop lease.
+      expired = true;
+      presentation.close();
+      expect(await f.state()).toMatchObject({
+        programAuthorityEnded: true,
+        canHoldStream: false,
+        canGracefulEnd: false,
+        presentation: { mode: "hold" },
+        streaming: "armed",
+        broadcast: "live",
+      });
+      const resume = await f.command({ action: "release-hold" });
+      expect(resume.status).toBe(409);
+      expect(await resume.json()).toMatchObject({
+        code: "program_authority_ended",
+      });
+      expect(set).not.toHaveBeenCalled();
+      expect(f.streamStop).not.toHaveBeenCalled();
+
+      // Deliberate disconnect does not need another paint from a closed bridge.
+      expect((await f.command({ action: "pause-stream" })).status).toBe(200);
+      expect(await f.state()).toMatchObject({ streaming: "paused" });
+      expect((await f.command({ action: "resume-stream" })).status).toBe(409);
+      expect(set).not.toHaveBeenCalled();
+      expect(f.recordingStop).not.toHaveBeenCalled();
+    } finally {
+      await f.app.close();
+      await rm(f.directory, { recursive: true, force: true });
+    }
+  });
   it("keeps output running until the pause card has dwelled, then restores live on resume", async () => {
     const presentation = createM4ProgramPresentation(() => true);
     let mode = "live";

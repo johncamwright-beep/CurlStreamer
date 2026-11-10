@@ -140,6 +140,7 @@ type ProgramHandle = Omit<
   | "pushUsbAudio"
   | "stopPhone"
   | "presentation"
+  | "programAuthorityEnded"
   | "replay"
   | "coach"
 > & {
@@ -148,6 +149,7 @@ type ProgramHandle = Omit<
   presentation?: NonNullable<
     Awaited<ReturnType<typeof startM4ProgramHost>>["presentation"]
   >;
+  programAuthorityEnded?: () => boolean;
   pushUsbAudio?: (pcm: Buffer) => void;
   stopPhone?: (role: "camera-home" | "camera-away") => Promise<void>;
   previewMapping?: string;
@@ -323,6 +325,11 @@ export async function createM4OperatorServer(options: {
   let cleanupFailed = false;
   let closePromise: Promise<{ cleanupConfirmed: boolean }> | undefined;
   let pendingProgram: Promise<void> | undefined;
+  const programAuthorityEnded = () =>
+    program === "recording" &&
+    programHandle?.programAuthorityEnded?.() === true;
+  const expiredProgramMessage =
+    "Studio’s camera authorization ended. Restart the connection to use the saved YouTube link.";
   const observation = z
     .object({
       localOutput: z
@@ -396,6 +403,7 @@ export async function createM4OperatorServer(options: {
       streaming === "armed" &&
       desktop.snapshot().authorized,
     );
+    const programEnded = programAuthorityEnded();
     return {
       pc,
       pairing,
@@ -415,8 +423,11 @@ export async function createM4OperatorServer(options: {
             code: coachReview?.code ?? null,
           }
         : null,
-      canHoldStream: programHandle?.presentation?.supported === true,
-      canGracefulEnd: programHandle?.presentation?.supported === true,
+      programAuthorityEnded: programEnded,
+      canHoldStream:
+        !programEnded && programHandle?.presentation?.supported === true,
+      canGracefulEnd:
+        !programEnded && programHandle?.presentation?.supported === true,
       presentation: programHandle?.presentation?.snapshot(),
       closing: programHandle?.stream?.closingIdentity?.(desktop) ?? null,
       canReconnect: Boolean(
@@ -449,7 +460,7 @@ export async function createM4OperatorServer(options: {
       pairingAvailable: options.pairingEnabled === true,
       programAvailable: Boolean(options.program),
       program,
-      programMessage,
+      programMessage: programEnded ? expiredProgramMessage : programMessage,
       previewMapping:
         program === "recording" ? programHandle?.previewMapping : undefined,
       cameraStatus:
@@ -746,6 +757,21 @@ export async function createM4OperatorServer(options: {
         return;
       }
       if (
+        programAuthorityEnded() &&
+        [
+          "start-stream",
+          "resume-stream",
+          "hold-stream",
+          "release-hold",
+        ].includes(input.action)
+      ) {
+        reply(409, {
+          code: "program_authority_ended",
+          error: expiredProgramMessage,
+        });
+        return;
+      }
+      if (
         input.action === "pair" &&
         (options.pairingEnabled !== true ||
           pc !== "ready" ||
@@ -977,7 +1003,9 @@ export async function createM4OperatorServer(options: {
           const handle = programHandle!;
           const streamAttempt = ++streamEpoch;
           if (input.action === "pause-stream") {
-            if (handle.presentation) {
+            // A fenced renderer cannot paint a new card. Let the operator
+            // disconnect the local sender without waiting on that renderer.
+            if (handle.presentation && !programAuthorityEnded()) {
               try {
                 await handle.presentation.set("hold");
                 // Keep sending the acknowledged card before disconnecting RTMP.

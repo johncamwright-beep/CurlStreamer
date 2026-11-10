@@ -1,6 +1,7 @@
 "use client";
 import { createPortal } from "react-dom";
 import { StudioStatusMessage } from "./StudioStatusArea";
+import { StudioOverlay } from "./StudioOverlay";
 import { useEffect, useRef, useState } from "react";
 import { z } from "zod";
 import { requestStudioPresentation } from "@/lib/studio-presentation-client";
@@ -29,6 +30,8 @@ const stateSchema = z.object({
   needsRecovery: z.boolean().optional().default(false),
   outputActive: z.boolean().optional().default(false),
   canHoldStream: z.boolean().optional().default(false),
+  canRestartBroadcast: z.boolean().optional().default(false),
+  programAuthorityEnded: z.boolean().optional().default(false),
   presentation: z
     .object({
       mode: z.enum(["live", "hold", "preparing-end", "ended"]),
@@ -55,6 +58,8 @@ export function StudioYouTube({
   const [goingLive, setGoingLive] = useState(false);
   const [error, setError] = useState("");
   const [presentationError, setPresentationError] = useState("");
+  const [restartOpen, setRestartOpen] = useState(false);
+  const [restarting, setRestarting] = useState(false);
   const [watchUrl, setWatchUrl] = useState("");
   const [copied, setCopied] = useState(false);
   const [copyError, setCopyError] = useState("");
@@ -168,6 +173,7 @@ export function StudioYouTube({
       state.streaming === "armed" &&
       (state.receiving || state.outputActive) &&
       state.available &&
+      !state.programAuthorityEnded &&
       !state.live &&
       !state.busy &&
       !pending &&
@@ -236,6 +242,8 @@ export function StudioYouTube({
     presentationFlight.current = undefined;
     presentationConfirmedUntil.current = 0;
     setPending(false);
+    setRestartOpen(false);
+    setRestarting(false);
     setPresentationError("");
     setState(undefined);
     const receive = (event: Event) => {
@@ -285,7 +293,9 @@ export function StudioYouTube({
       window.removeEventListener("studio-youtube-status", receive);
     };
   }, [id]);
-  async function send(action: "start" | "stop" | "hold" | "resume") {
+  async function send(
+    action: "start" | "stop" | "hold" | "resume" | "restart",
+  ) {
     const bridge = (
       window as unknown as {
         chrome?: { webview?: { postMessage(value: unknown): void } };
@@ -297,16 +307,17 @@ export function StudioYouTube({
       presentationFlight.current ||
       !state ||
       state.busy ||
+      (action === "restart" && !state.canRestartBroadcast) ||
       (action === "stop" && !state.canReconnect) ||
       (["hold", "resume"].includes(action) && !state.canHoldStream)
     )
       return;
-    if (action === "start" || action === "stop") {
+    if (action === "start" || action === "stop" || action === "restart") {
       flight.current?.abort();
       flight.current = undefined;
       setGoingLive(false);
       setTerminal(false);
-      setAutoGoLive(action === "start");
+      setAutoGoLive(action !== "stop");
       halted.current = action === "stop";
       nextCheck.current = 0;
       failures.current = 0;
@@ -315,9 +326,10 @@ export function StudioYouTube({
     setError("");
     setPresentationError("");
     setPending(true);
-    if (action === "hold" || action === "resume") {
+    if (action === "hold" || action === "resume" || action === "restart") {
       const attempt = {};
       presentationFlight.current = attempt;
+      setRestarting(action === "restart");
       try {
         const receipt = await requestStudioPresentation(id, action);
         if (
@@ -325,6 +337,7 @@ export function StudioYouTube({
           presentationFlight.current !== attempt
         )
           return;
+        if (action === "restart") return;
         const presentation = receipt.presentation;
         if (!presentation)
           throw new Error("Studio did not confirm the broadcast picture.");
@@ -355,6 +368,7 @@ export function StudioYouTube({
           presentationFlight.current === attempt
         ) {
           presentationFlight.current = undefined;
+          setRestarting(false);
           setPending(false);
         }
       }
@@ -372,6 +386,13 @@ export function StudioYouTube({
   const ending = ["preparing-end", "ended"].includes(
     state?.presentation?.mode ?? "",
   );
+  const restartRequired = Boolean(
+    state?.programAuthorityEnded && state.canRestartBroadcast,
+  );
+  const offerRestart =
+    state?.canRestartBroadcast &&
+    !ending &&
+    (restartRequired || held || Boolean(presentationError));
   const viewerCount = state?.concurrentViewers ?? lastViewers.current;
   const showViewers =
     state &&
@@ -387,58 +408,75 @@ export function StudioYouTube({
       : undefined;
   const broadcastControls = (
     <div className="studio-youtube-actions flex flex-wrap gap-2">
-      <button
-        className="btn"
-        title={
-          held
-            ? "Return from the temporary pause card to live video on the same watch link."
-            : active && state?.canHoldStream
-              ? "Show a temporary pause card while keeping the stream connected."
-              : active && state?.canReconnect
-                ? "Disconnect video temporarily. Update Windows Studio to show a pause card while keeping the stream connected."
-                : undefined
-        }
-        disabled={
-          !state?.available ||
-          state.busy ||
-          pending ||
-          ending ||
-          Boolean(needsRecovery && !state.canRecover) ||
-          Boolean(active && !state.canHoldStream && !state.canReconnect)
-        }
-        onClick={() =>
-          send(
+      {(!restartRequired || restarting) && (
+        <button
+          className="btn"
+          title={
             held
-              ? "resume"
-              : active
-                ? state?.canHoldStream
-                  ? "hold"
-                  : "stop"
-                : "start",
-          )
-        }
-      >
-        {pending || state?.busy
-          ? "Please wait…"
-          : held
-            ? "Resume broadcast"
-            : active
-              ? state?.canHoldStream
-                ? "Pause broadcast"
-                : "Disconnect"
-              : state?.streaming === "paused"
-                ? "Reconnect"
-                : needsRecovery
-                  ? state?.canRecover
-                    ? "Reconnect broadcast"
-                    : "Restart Studio to reconnect"
-                  : "Broadcast to YouTube"}
-      </button>
+              ? "Return from the temporary pause card to live video on the same watch link."
+              : active && state?.canHoldStream
+                ? "Show a temporary pause card while keeping the stream connected."
+                : active && state?.canReconnect
+                  ? "Disconnect video temporarily. Update Windows Studio to show a pause card while keeping the stream connected."
+                  : undefined
+          }
+          disabled={
+            !state?.available ||
+            state.busy ||
+            pending ||
+            ending ||
+            Boolean(needsRecovery && !state.canRecover) ||
+            Boolean(active && !state.canHoldStream && !state.canReconnect)
+          }
+          onClick={() =>
+            send(
+              held
+                ? "resume"
+                : active
+                  ? state?.canHoldStream
+                    ? "hold"
+                    : "stop"
+                  : "start",
+            )
+          }
+        >
+          {restarting
+            ? "Restarting connection…"
+            : pending || state?.busy
+              ? "Please wait…"
+              : held
+                ? "Resume broadcast"
+                : active
+                  ? state?.canHoldStream
+                    ? "Pause broadcast"
+                    : "Disconnect"
+                  : state?.streaming === "paused"
+                    ? "Reconnect"
+                    : needsRecovery
+                      ? state?.canRecover
+                        ? "Reconnect broadcast"
+                        : "Restart Studio to reconnect"
+                      : "Broadcast to YouTube"}
+        </button>
+      )}
+      {offerRestart && !restarting && (
+        <button
+          type="button"
+          className={
+            restartRequired ? "btn min-h-11" : "btn-secondary min-h-11"
+          }
+          disabled={pending || state.busy}
+          onClick={() => setRestartOpen(true)}
+        >
+          Restart broadcast connection
+        </button>
+      )}
       {state?.gameId === id &&
         state.streaming === "armed" &&
         (state.receiving || state.outputActive) &&
         !state.live &&
         !confirmedLive.current &&
+        !restartRequired &&
         !terminal && (
           <button
             className="btn-secondary min-h-11"
@@ -485,7 +523,7 @@ export function StudioYouTube({
               ? "Status unavailable"
               : held
                 ? state.live
-                  ? "● LIVE · Paused"
+                  ? "Paused · YouTube still live"
                   : "Paused · Sending card"
                 : state.live
                   ? "● LIVE"
@@ -519,6 +557,37 @@ export function StudioYouTube({
       {controlsHost
         ? createPortal(broadcastControls, controlsHost)
         : broadcastControls}
+      <StudioOverlay
+        title="Restart broadcast connection"
+        open={restartOpen}
+        onClose={() => setRestartOpen(false)}
+      >
+        <p>
+          Studio will disconnect and reconnect to the saved YouTube broadcast.
+          Waiting for the previous connection can take about 90 seconds. Your
+          game and scores stay open.
+        </p>
+        <button
+          type="button"
+          className="btn min-h-11"
+          disabled={!offerRestart || pending || state?.busy}
+          onClick={() => {
+            setRestartOpen(false);
+            void send("restart");
+          }}
+        >
+          Restart connection
+        </button>
+      </StudioOverlay>
+      <StudioStatusMessage
+        message={
+          restartRequired
+            ? "The Studio video session expired. Restart the broadcast connection to return to game video."
+            : presentationError && !state?.canRestartBroadcast
+              ? "If Resume keeps failing, press Ctrl+Shift+Q to close Studio. Reopen the same game and reconnect to its saved broadcast."
+              : null
+        }
+      />
       <a className="btn-secondary" href="/settings/youtube">
         YouTube settings
       </a>

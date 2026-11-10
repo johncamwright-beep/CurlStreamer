@@ -821,19 +821,12 @@
   padding: 6px 10px;
   font-size: 12px;
 }
-.scoring-desktop .studio-youtube-actions {
-  display: grid;
-  grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr);
-  gap: 6px;
-}
-.scoring-desktop .studio-youtube-actions :is(button, a),
 .scoring-desktop .studio-youtube-watch button {
   min-height: 44px;
   padding: 6px 8px;
   font-size: 12px;
   text-align: center;
 }
-.scoring-desktop .studio-youtube-actions a,
 .scoring-desktop .studio-youtube-watch a {
   display: flex;
   align-items: center;
@@ -1300,14 +1293,6 @@
   max-height: 85vh;
   overflow-y: auto;
 }
-.studio-header-broadcast .studio-youtube-actions {
-  display: flex;
-  gap: 8px;
-}
-.studio-header-broadcast button {
-  min-height: 48px;
-  max-width: 180px;
-}
 @media (max-width: 600px) {
   .scoring-desktop .scoring-device-dock .studio-device-grid {
     grid-template-columns: 1fr;
@@ -1433,19 +1418,11 @@
 .scoring-desktop .studio-device-grid {
   align-items: stretch;
 }
-.scoring-desktop .studio-header-broadcast .studio-youtube-actions {
-  display: grid;
-  grid-template-columns: 160px 104px;
-  gap: 8px;
+.scoring-desktop .studio-header-broadcast > button {
+  width: 140px;
   min-height: 48px;
-}
-.scoring-desktop .studio-header-broadcast .studio-youtube-actions > button {
-  height: 48px;
-}
-@media (max-width: 600px) {
-  .scoring-desktop .studio-header-broadcast .studio-youtube-actions {
-    grid-template-columns: 140px 96px;
-  }
+  padding: 6px 8px;
+  font-size: 12px;
 }
 
 /* Keep the operating controls alongside the content instead of above it. */
@@ -1601,9 +1578,6 @@
   }
   .scoring-desktop .studio-status-preview {
     width: clamp(180px, 23vw, 360px);
-  }
-  .scoring-desktop .studio-header-broadcast .studio-youtube-actions {
-    grid-template-columns: 140px 80px;
   }
   .scoring-desktop .scoring-columns {
     gap: 10px;

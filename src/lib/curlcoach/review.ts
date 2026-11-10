@@ -1,6 +1,13 @@
 import { z } from "zod";
 import type { ShotEvent } from "./model";
 
+const youtubeHosts = [
+  "youtube.com",
+  "www.youtube.com",
+  "m.youtube.com",
+  "youtu.be",
+];
+
 export function supportedVideo(value: string) {
   try {
     const url = new URL(value);
@@ -10,12 +17,7 @@ export function supportedVideo(value: string) {
       url.password
     )
       return false;
-    return [
-      "youtube.com",
-      "www.youtube.com",
-      "m.youtube.com",
-      "youtu.be",
-    ].includes(url.hostname)
+    return youtubeHosts.includes(url.hostname)
       ? !!youtubeId(url)
       : /\.(mp4|webm|ogg)$/i.test(url.pathname);
   } catch {
@@ -23,6 +25,7 @@ export function supportedVideo(value: string) {
   }
 }
 export function youtubeId(url: URL) {
+  if (!youtubeHosts.includes(url.hostname)) return null;
   const id =
     url.hostname === "youtu.be"
       ? url.pathname.slice(1)
@@ -46,18 +49,19 @@ export const videoReviewSchema = z
   })
   .strict();
 export type VideoReview = z.infer<typeof videoReviewSchema>;
+export function recordingLink(video?: VideoReview) {
+  if (!video || !supportedVideo(video.url)) return null;
+  const id = youtubeId(new URL(video.url));
+  return id ? `https://www.youtube.com/watch?v=${id}` : video.url;
+}
+
 export function reviewLink(video?: VideoReview) {
-  if (!video || video.positionSeconds === null || !supportedVideo(video.url))
-    return null;
-  const start = reviewStart(video)!;
-  const url = new URL(video.url);
-  if (
-    ["youtube.com", "www.youtube.com", "m.youtube.com", "youtu.be"].includes(
-      url.hostname,
-    )
-  )
-    return `https://www.youtube.com/watch?v=${youtubeId(url)}&t=${start}s`;
-  url.hash = `t=${start}`;
+  const start = reviewStart(video);
+  const link = recordingLink(video);
+  if (start === null || !link) return null;
+  const url = new URL(link);
+  if (youtubeId(url)) url.searchParams.set("t", `${start}s`);
+  else url.hash = `t=${start}`;
   return url.toString();
 }
 export function videoTime(seconds: number) {
@@ -74,11 +78,14 @@ export function reviewStart(video?: VideoReview) {
       );
 }
 
-export type BroadcastReview = {
+export type ReviewRecording = {
   url: string;
   startedAt?: string;
   endedAt?: string;
   estimated?: boolean;
+};
+export type BroadcastReview = ReviewRecording & {
+  previous?: ReviewRecording[];
 };
 /** Older category-only flags did not capture flaggedAt. Use their first review
  * save as an explicitly approximate display timestamp; never mutate the audit. */
@@ -115,44 +122,41 @@ export function withRecordedReviewTime<
 export function withBroadcastReview<
   T extends { flaggedAt?: string; videoReview?: VideoReview },
 >(shot: T, broadcast?: BroadcastReview): T {
-  if (
-    reviewLink(shot.videoReview) ||
-    !broadcast ||
-    !supportedVideo(broadcast.url)
-  )
-    return shot;
+  if (reviewLink(shot.videoReview) || !broadcast) return shot;
+  const at = Date.parse(shot.flaggedAt ?? "");
+  const matching = [broadcast, ...(broadcast.previous ?? [])].find((video) => {
+    const start = Date.parse(video.startedAt ?? "");
+    const end = video.endedAt ? Date.parse(video.endedAt) : Infinity;
+    return at >= start && at <= end && supportedVideo(video.url);
+  });
+  // If we know a game has multiple recordings, an unplaced flag must not
+  // open the replacement video as if it held the selected moment.
+  const video =
+    matching ??
+    (broadcast.previous?.length && Number.isFinite(at) ? null : broadcast);
+  if (!video || !supportedVideo(video.url)) return shot;
   const recording = {
     ...shot,
     videoReview: {
       ...shot.videoReview,
-      url: broadcast.url,
+      url: video.url,
       positionSeconds: null,
       lookBackSeconds: shot.videoReview?.lookBackSeconds ?? 30,
     },
   };
-  if (!shot.flaggedAt || !broadcast.startedAt) return recording;
-  const at = Date.parse(shot.flaggedAt),
-    start = Date.parse(broadcast.startedAt);
-  const end = broadcast.endedAt ? Date.parse(broadcast.endedAt) : Infinity;
-  if (
-    !supportedVideo(broadcast.url) ||
-    !Number.isFinite(at) ||
-    !Number.isFinite(start) ||
-    Number.isNaN(end) ||
-    at < start ||
-    at > end
-  )
-    return recording;
-  const positionSeconds = Math.floor((at - start) / 1000);
+  if (!matching?.startedAt) return recording;
+  const positionSeconds = Math.floor(
+    (at - Date.parse(matching.startedAt)) / 1000,
+  );
   if (positionSeconds > 604800) return recording;
   return {
     ...shot,
     videoReview: {
-      url: broadcast.url,
+      url: video.url,
       positionSeconds,
       lookBackSeconds: shot.videoReview?.lookBackSeconds ?? 30,
       delaySeconds: shot.videoReview?.delaySeconds ?? 0,
-      ...(broadcast.estimated || shot.videoReview?.estimated
+      ...(video.estimated || shot.videoReview?.estimated
         ? { estimated: true }
         : {}),
     },

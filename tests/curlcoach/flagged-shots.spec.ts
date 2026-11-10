@@ -24,6 +24,18 @@ test("flagged-shot menu retains filters and exposes review links and editable ti
           selectedAt: "2026-11-10T15:00:00Z",
         },
       ];
+      game.broadcastReview = {
+        url: "https://youtu.be/Replacement",
+        startedAt: "2026-11-10T16:00:00Z",
+        previous: [
+          {
+            url: "https://youtu.be/EarlierFilm",
+            startedAt: "2026-11-10T14:58:00Z",
+            endedAt: "2026-11-10T15:30:00Z",
+            estimated: true,
+          },
+        ],
+      };
       const entry = game.state.events.find((e: { shot?: unknown }) => e.shot);
       if (entry)
         entry.shot = {
@@ -76,15 +88,24 @@ test("flagged-shot menu retains filters and exposes review links and editable ti
   await expect(
     page.getByRole("region", { name: "Flagged shots", exact: true }),
   ).toBeVisible();
+  const standalone = page
+    .getByRole("region", { name: "Flagged shots", exact: true })
+    .getByRole("article")
+    .filter({ hasText: "Standalone sweep review" })
+    .first();
+  await expect(standalone).toBeVisible();
   await expect(
-    page
-      .getByRole("region", { name: "Flagged shots", exact: true })
-      .getByText("Standalone sweep review", { exact: true })
-      .first(),
-  ).toBeVisible();
+    standalone.getByRole("link", { name: /Review video from 0:02:00/ }),
+  ).toHaveAttribute(
+    "href",
+    "https://www.youtube.com/watch?v=EarlierFilm&t=120s",
+  );
+  await expect(
+    standalone.getByRole("link", { name: /Open YouTube without timestamp/ }),
+  ).toHaveAttribute("href", "https://www.youtube.com/watch?v=EarlierFilm");
   await expect(page.getByLabel("Video start time").first()).toBeVisible();
   await expect(
-    page.getByRole("link", { name: /Review video from/ }).first(),
+    page.getByRole("link", { name: /Review video from 0:02:12/ }).first(),
   ).toHaveAttribute(
     "href",
     "https://www.youtube.com/watch?v=abcdefghijk&t=132s",

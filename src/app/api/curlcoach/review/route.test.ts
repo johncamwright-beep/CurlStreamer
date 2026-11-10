@@ -3,6 +3,7 @@ const m = vi.hoisted(() => ({
   account: vi.fn(),
   state: vi.fn(),
   videos: vi.fn(),
+  corrections: vi.fn(),
   rpc: vi.fn(),
 }));
 vi.mock("@/lib/curlcoach/access", () => ({
@@ -15,6 +16,9 @@ vi.mock("@/lib/curlcoach/production-access", () => ({
 vi.mock("@/lib/providers/curlcoach-store", () => ({ loadCoachState: m.state }));
 vi.mock("@/lib/providers/curlcoach-video", () => ({
   loadCoachBroadcastReviews: m.videos,
+}));
+vi.mock("@/lib/providers/shot-review-corrections", () => ({
+  loadReviewCorrections: m.corrections,
 }));
 vi.mock("@/lib/supabase/admin", () => ({
   createAdminSupabaseClient: () => ({ rpc: m.rpc }),
@@ -47,6 +51,33 @@ beforeEach(() => {
     [gameId]: { url: "https://www.youtube.com/watch?v=abcdefghijk" },
   });
   m.rpc.mockResolvedValue({ error: null });
+  m.corrections.mockResolvedValue({});
+});
+it("keeps a manually corrected timestamp on the original recording after replacement", async () => {
+  m.videos.mockResolvedValue({
+    [gameId]: { url: "https://www.youtube.com/watch?v=SecondVideo" },
+  });
+  m.corrections.mockResolvedValue({
+    [gameId]: [
+      {
+        shotId,
+        video: {
+          url: "https://youtu.be/abcdefghijk",
+          positionSeconds: 65,
+          lookBackSeconds: 0,
+        },
+        note: "Earlier correction",
+      },
+    ],
+  });
+  expect((await POST(request())).status).toBe(200);
+  expect(m.rpc).toHaveBeenCalledWith(
+    "save_shot_tracker_review_correction",
+    expect.objectContaining({
+      p_url: "https://www.youtube.com/watch?v=abcdefghijk",
+      p_start: 132,
+    }),
+  );
 });
 afterEach(() => vi.unstubAllEnvs());
 it("saves exact timing separately for a closed game using server-owned identity and recording", async () => {

@@ -78,9 +78,9 @@ for (const restored of [false, true])
     await expect(
       page.getByText("Starting this broadcast now.", { exact: false }),
     ).toHaveCount(0);
-    await expect(page.getByRole("button", { name: "Go live now" })).toHaveCount(
-      0,
-    );
+    await expect(
+      page.getByRole("button", { name: "Stop broadcast" }),
+    ).toBeEnabled();
     await page.clock.fastForward(11000);
     await report({ lastLiveAgeMs: 56000 });
     await expect(page.getByRole("status")).toHaveText("Sending video");
@@ -90,10 +90,13 @@ for (const restored of [false, true])
     expect(starts).toBe(0);
     await report({ streaming: "starting", outputActive: false });
     await report();
-    await expect.poll(() => starts).toBe(1);
     await expect(
       page.getByText("Starting this broadcast now.", { exact: false }),
-    ).toBeVisible();
+    ).toHaveCount(0);
+    await expect(
+      page.getByRole("button", { name: "Stop broadcast", exact: true }),
+    ).toBeEnabled();
+    expect(starts).toBe(0);
   });
 
 test("Studio distinguishes delayed YouTube checks from stopped output and missing native status", async ({
@@ -120,9 +123,9 @@ test("Studio distinguishes delayed YouTube checks from stopped output and missin
     /Last confirmed live 3m ago.*fresh YouTube confirmation is unavailable/,
   );
   await expect(page.getByText("27 last reported")).toBeVisible();
-  await expect(page.getByRole("button", { name: "Go live now" })).toHaveCount(
-    0,
-  );
+  await expect(
+    page.getByRole("button", { name: "Stop broadcast" }),
+  ).toBeEnabled();
   expect(starts).toBe(0);
 
   // A fresh explicit non-live result removes historical live evidence even
@@ -132,7 +135,7 @@ test("Studio distinguishes delayed YouTube checks from stopped output and missin
   await expect(page.getByRole("status")).not.toHaveAttribute("title");
   await expect(page.getByText("27 last reported")).toBeVisible();
   await expect(
-    page.getByText("YouTube has not confirmed the broadcast is live.", {
+    page.getByText("Waiting for a fresh YouTube status.", {
       exact: false,
     }),
   ).toBeVisible();
@@ -147,12 +150,12 @@ test("Studio distinguishes delayed YouTube checks from stopped output and missin
   await expect(page.getByRole("status")).toHaveText("Status unavailable");
   await expect(page.getByText("27 last reported")).toHaveCount(0);
   await expect(
-    page.getByRole("button", { name: "Broadcast to YouTube" }),
-  ).toBeDisabled();
+    page.getByRole("button", { name: "Stop broadcast" }),
+  ).toBeEnabled();
   expect(starts).toBe(0);
 });
 
-test("Studio authorizes Go live with the current game's organizer token without an account cookie", async ({
+test("Studio authorizes the YouTube transition with the current game's organizer token without an account cookie", async ({
   page,
 }) => {
   const report = await startupFixture(page);
@@ -172,13 +175,32 @@ test("Studio authorizes Go live with the current game's organizer token without 
   const headers: Array<string | undefined> = [];
   await page.route("**/api/games/fixture-game/studio-m4", (r) => {
     headers.push(r.request().headers().authorization);
+    const action =
+      r.request().method() === "POST"
+        ? r.request().postDataJSON().action
+        : undefined;
     return r.fulfill({
-      json: r.request().method() === "POST" ? { phase: "starting" } : {},
+      json:
+        action === "stop"
+          ? { desiredState: "stopped", status: "stopped" }
+          : action === "go-live"
+            ? { phase: "live" }
+            : {},
     });
   });
   await page.goto("/startup-fixture");
   await report();
-  await expect.poll(() => headers.length).toBeGreaterThanOrEqual(2);
+  await page
+    .getByRole("button", { name: "Stop broadcast", exact: true })
+    .click();
+  await page
+    .getByRole("dialog", { name: "Stop broadcast?" })
+    .getByRole("button", { name: "Stop broadcast", exact: true })
+    .click();
+  await expect(
+    page.getByRole("button", { name: "Broadcast ended" }),
+  ).toBeDisabled();
+  await expect.poll(() => headers.length).toBeGreaterThanOrEqual(3);
   expect(headers.every((value) => value?.startsWith("Bearer fixture."))).toBe(
     true,
   );
@@ -213,11 +235,18 @@ test("Studio starts now despite delayed reception telemetry and retries without 
   });
   await page.clock.install();
   await page.goto("/startup-fixture");
+  const broadcast = page.getByRole("button", {
+    name: "Broadcast to YouTube",
+    exact: true,
+  });
   await report({ outputActive: false });
   expect(requests).toHaveLength(0);
-  await expect(page.getByRole("button", { name: "Go live now" })).toHaveCount(
-    0,
-  );
+  await expect(
+    page.getByRole("button", { name: "Starting broadcast…" }),
+  ).toBeDisabled();
+  await expect(
+    page.getByRole("button", { name: "Pause broadcast" }),
+  ).toHaveCount(0);
   // An active encoder is sufficient to check; the server independently
   // verifies YouTube reception before it requests a live transition.
   await report();
@@ -225,13 +254,13 @@ test("Studio starts now despite delayed reception telemetry and retries without 
   await page.clock.fastForward(11000);
   await report();
   await expect.poll(() => requests.length).toBe(2);
-  await expect(page.getByRole("button", { name: "Go live now" })).toBeEnabled();
-  await page.getByRole("button", { name: "Go live now" }).click();
+  await expect(broadcast).toBeEnabled();
+  await broadcast.click();
   await expect(page.getByRole("alert")).toContainText("needs attention");
   await page.clock.fastForward(60000);
   await report();
   expect(requests).toHaveLength(3);
-  await page.getByRole("button", { name: "Go live now" }).click();
+  await broadcast.click();
   await expect.poll(() => requests.length).toBe(4);
   await expect(page.getByRole("alert")).toHaveCount(0);
   await expect(
@@ -240,9 +269,10 @@ test("Studio starts now despite delayed reception telemetry and retries without 
   await expect(page.getByRole("status")).not.toHaveText("● LIVE");
   await report({ live: true, receiving: true });
   await expect(page.getByRole("status")).toHaveText("● LIVE");
-  await expect(page.getByRole("button", { name: "Go live now" })).toHaveCount(
-    0,
-  );
+  await expect(
+    page.getByRole("button", { name: "Stop broadcast" }),
+  ).toBeEnabled();
+  await expect(broadcast).toHaveCount(0);
   await expect(
     page.getByRole("link", { name: "Watch on YouTube" }),
   ).toHaveAttribute("href", watchUrl);
@@ -272,15 +302,25 @@ test("Late go-live failures cannot overwrite confirmed live status or a differen
   await page.goto("/startup-fixture");
   await report();
   await expect.poll(() => requests).toBe(1);
+  await expect(
+    page.getByRole("button", { name: "Starting broadcast…" }),
+  ).toBeDisabled();
+  await expect(
+    page.getByRole("button", { name: "Pause broadcast" }),
+  ).toHaveCount(0);
   await report({ live: true });
   release();
-  await expect(page.getByRole("button", { name: "Going live…" })).toHaveCount(
-    0,
-  );
+  await expect(
+    page.getByRole("button", { name: "Stop broadcast" }),
+  ).toBeEnabled();
   await expect(page.getByRole("alert")).toHaveCount(0);
-  await report({ streaming: "idle", outputActive: false });
-  await page.clock.fastForward(11000);
-  await report();
+  await page.evaluate(() =>
+    (window as unknown as { renderGame(id: string): void }).renderGame(
+      "second-game",
+    ),
+  );
+  await expect(page.getByRole("status")).toHaveText("Status unavailable");
+  await report({ gameId: "second-game" });
   await expect.poll(() => requests).toBe(2);
   await page.evaluate(() =>
     (window as unknown as { renderGame(id: string): void }).renderGame(
@@ -296,6 +336,82 @@ test("Late go-live failures cannot overwrite confirmed live status or a differen
   await expect(page.getByRole("alert")).toContainText("needs attention");
 });
 
+test("Stop broadcast confirms provider shutdown, retries with the sender offline, and preserves the watch link", async ({
+  page,
+}) => {
+  const report = await startupFixture(page);
+  const watchUrl = "https://www.youtube.com/watch?v=abcdefghijk";
+  const requests: unknown[] = [];
+  let status = "prepared";
+  await page.route("**/api/games/fixture-game/studio-m4", (route) => {
+    if (route.request().method() === "POST") {
+      requests.push(route.request().postDataJSON());
+      status = requests.length === 1 ? "failed" : "stopped";
+    }
+    return route.fulfill({
+      json: {
+        desiredState: status === "prepared" ? "live" : "stopped",
+        status,
+        watchUrl,
+      },
+    });
+  });
+  await page.clock.install();
+  await page.goto("/startup-fixture");
+  await expect(
+    page.getByRole("link", { name: "Watch on YouTube" }),
+  ).toHaveAttribute("href", watchUrl);
+  await report({ live: true, receiving: true });
+  await report({
+    live: false,
+    streaming: "failed",
+    outputActive: false,
+    canRestartBroadcast: true,
+    canRecover: true,
+  });
+  const stop = page.getByRole("button", {
+    name: "Stop broadcast",
+    exact: true,
+  });
+  await expect(
+    page.getByRole("button", { name: "Restart broadcast connection" }),
+  ).toBeEnabled();
+  const confirmation = page.getByRole("dialog", { name: "Stop broadcast?" });
+  await stop.click();
+  await expect(confirmation).toContainText("Your game and scores stay open.");
+  await confirmation
+    .getByRole("button", { name: "Close", exact: true })
+    .click();
+  expect(requests).toEqual([]);
+  await page.clock.fastForward(7000);
+  await expect(page.getByRole("status")).toHaveText("Status unavailable");
+  await stop.click();
+  await confirmation
+    .getByRole("button", { name: "Stop broadcast", exact: true })
+    .click();
+  await expect(page.getByRole("alert")).toContainText("could not confirm");
+  await report({ streaming: "stopped", outputActive: false, available: false });
+  await page.getByRole("button", { name: "Retry stop", exact: true }).click();
+  await confirmation
+    .getByRole("button", { name: "Stop broadcast", exact: true })
+    .click();
+  await expect(
+    page.getByRole("button", { name: "Broadcast ended" }),
+  ).toBeDisabled();
+  await expect(page.getByRole("status")).toHaveText("Broadcast ended");
+  expect(requests).toEqual([{ action: "stop" }, { action: "stop" }]);
+  expect(
+    await page.evaluate(() => (window as unknown as { sent: unknown[] }).sent),
+  ).toEqual([]);
+  await page.reload();
+  await expect(
+    page.getByRole("button", { name: "Broadcast ended" }),
+  ).toBeDisabled();
+  await expect(
+    page.getByRole("link", { name: "Watch on YouTube" }),
+  ).toHaveAttribute("href", watchUrl);
+});
+
 for (const phase of ["ended", "removed"]) {
   test(`Studio cannot retry a ${phase} broadcast`, async ({ page }) => {
     const report = await startupFixture(page);
@@ -308,9 +424,9 @@ for (const phase of ["ended", "removed"]) {
     await page.goto("/startup-fixture");
     await report();
     await expect(page.getByRole("alert")).toBeVisible();
-    await expect(page.getByRole("button", { name: "Go live now" })).toHaveCount(
-      0,
-    );
+    await expect(
+      page.getByRole("button", { name: "Broadcast ended" }),
+    ).toBeDisabled();
     await page.clock.fastForward(60000);
     await report();
     expect(requests).toBe(1);
@@ -403,9 +519,10 @@ test("Studio YouTube sends game-scoped commands and expires live status", async 
   await report("fixture-game", false, true);
   await expect.poll(() => requests.length).toBe(1);
   expect(requests).toEqual([{ action: "go-live" }]);
+  await expect(start).toBeEnabled();
   await expect(
-    page.getByRole("button", { name: "Go live now", exact: true }),
-  ).toBeEnabled();
+    page.getByRole("button", { name: "Disconnect", exact: true }),
+  ).toHaveCount(0);
   // YouTube may acknowledge the request before it finishes going live.
   await page.clock.fastForward(11000);
   await report("fixture-game", false, true);
@@ -525,15 +642,17 @@ test("Studio YouTube sends game-scoped commands and expires live status", async 
   await report("fixture-game", true);
   await page.clock.fastForward(7000);
   await expect(page.getByRole("status")).toHaveText("Status unavailable");
-  await expect(start).toBeDisabled();
+  await expect(
+    page.getByRole("button", { name: "Stop broadcast" }),
+  ).toBeEnabled();
   await expect(
     page.getByRole("link", { name: "Watch on YouTube" }),
   ).toHaveAttribute("href", watchUrl);
   await report("fixture-game", false, false, "stopped");
   await expect(page.getByRole("status")).toHaveText("Not live");
   await expect(
-    page.getByRole("button", { name: "Restart Studio to reconnect" }),
-  ).toBeDisabled();
+    page.getByRole("button", { name: "Stop broadcast", exact: true }),
+  ).toBeEnabled();
   await page.evaluate(() =>
     window.dispatchEvent(
       new CustomEvent("studio-youtube-status", {

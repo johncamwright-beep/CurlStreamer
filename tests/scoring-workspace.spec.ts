@@ -357,6 +357,21 @@ test("desktop game day keeps scoring primary and settings available on demand", 
     }),
   );
   const { game, actions } = await setup(page, true);
+  const closeGame = page.getByRole("button", {
+    name: "Close Game",
+    exact: true,
+  });
+  const headerBroadcast = page.getByRole("button", {
+    name: "Broadcast to YouTube",
+    exact: true,
+  });
+  await expect(headerBroadcast).toBeVisible();
+  if (info.project.name !== "mobile") {
+    const broadcastBox = (await headerBroadcast.boundingBox())!;
+    const closeBox = (await closeGame.boundingBox())!;
+    expect(closeBox.y).toBe(broadcastBox.y);
+    expect(closeBox.x - broadcastBox.x - broadcastBox.width).toBe(8);
+  }
   await page.evaluate((gameId) => {
     window.dispatchEvent(
       new CustomEvent("studio-youtube-status", {
@@ -369,6 +384,7 @@ test("desktop game day keeps scoring primary and settings available on demand", 
           receiving: true,
           message: "",
           canReconnect: true,
+          canHoldStream: true,
           outputActive: true,
         },
       }),
@@ -381,6 +397,17 @@ test("desktop game day keeps scoring primary and settings available on demand", 
     name: "Studio program preview",
     exact: true,
   });
+  await expect(
+    page.locator(".scoring-page-actions").getByRole("button", {
+      name: "Stop broadcast",
+      exact: true,
+    }),
+  ).toBeEnabled();
+  await expect(
+    page
+      .getByRole("region", { name: "Stream preview and camera settings" })
+      .getByRole("button", { name: "Pause broadcast", exact: true }),
+  ).toBeEnabled();
   await expect(
     preview.getByRole("img", { name: "Actual Studio program output" }),
   ).toBeVisible();

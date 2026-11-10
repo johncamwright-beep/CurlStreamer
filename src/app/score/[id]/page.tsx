@@ -498,12 +498,6 @@ function ScorerGame({ id }: { id: string }) {
             <div className="scoring-page-actions">
               {desktop && <StudioStatusArea gameId={id} />}
               {microphoneSyncError && <p role="alert">{microphoneSyncError}</p>}
-              {desktop && (
-                <div
-                  id="studio-broadcast-actions"
-                  className="studio-header-broadcast"
-                />
-              )}
               {!desktop && (
                 <Link
                   className="btn-secondary"
@@ -513,20 +507,26 @@ function ScorerGame({ id }: { id: string }) {
                   Show broadcast
                 </Link>
               )}
-              {desktop && canEndGame && (
-                <div className="scoring-header-finish">
-                  <EndGameControl
-                    gameId={id}
-                    homeName={game.config.homeName}
-                    awayName={game.config.awayName}
-                    sharedYoutubeWatchUrl={game.config.sharedYoutubeWatchUrl}
-                    enabled
-                    disabled={scoringLocked}
-                    onCompleted={(value, cleanup) => {
-                      setFinished(value);
-                      setFinishedCleanup(cleanup);
-                    }}
+              {desktop && (
+                <div className="flex flex-wrap items-start gap-2">
+                  <div
+                    id="studio-broadcast-actions"
+                    className="studio-header-broadcast"
                   />
+                  <div className="scoring-header-finish">
+                    <EndGameControl
+                      gameId={id}
+                      homeName={game.config.homeName}
+                      awayName={game.config.awayName}
+                      sharedYoutubeWatchUrl={game.config.sharedYoutubeWatchUrl}
+                      enabled
+                      disabled={scoringLocked}
+                      onCompleted={(value, cleanup) => {
+                        setFinished(value);
+                        setFinishedCleanup(cleanup);
+                      }}
+                    />
+                  </div>
                 </div>
               )}
               {!desktop && (
@@ -798,6 +798,10 @@ function ScorerGame({ id }: { id: string }) {
                       />
                     }
                   />
+                  <div
+                    id="studio-presentation-actions"
+                    className="empty:hidden"
+                  />
                   <StudioOverlay
                     title="Camera Settings"
                     open={cameraSettingsOpen}
@@ -836,6 +840,7 @@ function ScorerGame({ id }: { id: string }) {
                   <StudioYouTube
                     id={id}
                     controlsTarget="studio-broadcast-actions"
+                    presentationControlsTarget="studio-presentation-actions"
                   />
                 </div>
               )}

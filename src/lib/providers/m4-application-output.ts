@@ -20,6 +20,7 @@ export class M4ApplicationOutput {
       "arm" | "renew" | "stop" | "snapshot"
     > &
       Partial<Pick<M4NativePipeClient, "observe" | "supportsObservations">>,
+    private readonly stopping?: () => void,
   ) {}
   snapshot() {
     return { desktop: this.desktop.snapshot(), native: this.native.snapshot() };
@@ -87,7 +88,10 @@ export class M4ApplicationOutput {
   stop() {
     this.#stopping = true;
     this.#running = false;
-    this.#stop ??= this.#cleanup();
+    if (!this.#stop) {
+      this.stopping?.();
+      this.#stop = this.#cleanup();
+    }
     return this.#stop;
   }
   async #cleanup() {

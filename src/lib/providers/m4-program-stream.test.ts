@@ -58,6 +58,74 @@ function fixture() {
 }
 afterEach(() => vi.useRealTimers());
 describe("independent managed program stream", () => {
+  it("fences local authority observations while a server-requested stop releases the desktop", async () => {
+    vi.useFakeTimers({
+      toFake: ["setTimeout", "clearTimeout", "Date", "performance"],
+    });
+    const f = fixture();
+    const diagnostic = vi.fn();
+    f.heartbeat.mockResolvedValueOnce({
+      state: "stopping",
+      authorized: false,
+      desiredAction: "stop",
+      leaseRenewed: false,
+    });
+    let finishRelease!: () => void;
+    f.release.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finishRelease = () => {
+            vi.mocked(f.desktop.snapshot).mockReturnValue({
+              state: "stopped",
+              authorized: false,
+            });
+            resolve({ state: "stopped", authorized: false });
+          };
+        }),
+    );
+    const native = {
+      ...f.native,
+      supportsObservations: true,
+      observe: vi.fn(async () => ({
+        state:
+          f.native.snapshot().state === "stopped"
+            ? ("stopped" as const)
+            : ("active" as const),
+        authority: f.native.snapshot().state === "stopped" ? 2 : 1,
+        failure: "none" as const,
+        bytes: 1234,
+      })),
+    };
+    vi.spyOn(f.desktop, "observeOutput").mockRejectedValue(
+      new Error("offline"),
+    );
+    const stream = new M4ProgramStream(native, diagnostic);
+    await stream.start(f.desktop, "intent");
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(f.release).toHaveBeenCalledOnce();
+    expect(stream.snapshot().state).toBe("stopping");
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(diagnostic).not.toHaveBeenCalledWith(
+      "stream_failed",
+      expect.anything(),
+    );
+    finishRelease();
+    await vi.advanceTimersByTimeAsync(0);
+    await expect(stream.stop()).resolves.toBeUndefined();
+    expect(stream.snapshot()).toMatchObject({
+      state: "stopped",
+      localOutput: { state: "stopped" },
+      liveConfirmed: false,
+    });
+    await vi.advanceTimersByTimeAsync(60001);
+    expect(stream.snapshot()).toMatchObject({
+      state: "stopped",
+      localOutput: { state: "stopped" },
+      liveConfirmed: false,
+    });
+    expect(native.stop).toHaveBeenCalledOnce();
+    expect(vi.getTimerCount()).toBe(0);
+  });
   it("backs off failed provider reads while renewing output authority and resets after recovery", async () => {
     vi.useFakeTimers();
     const f = fixture();
@@ -495,6 +563,11 @@ describe("independent managed program stream", () => {
     expect(JSON.stringify(diagnostic.mock.calls)).not.toContain("private");
     expect(f.native.stop).toHaveBeenCalledOnce();
     expect(f.release).toHaveBeenCalledOnce();
+    await vi.advanceTimersByTimeAsync(6001);
+    expect(stream.snapshot()).toMatchObject({
+      state: "failed",
+      localOutput: { state: "unknown" },
+    });
     expect(vi.getTimerCount()).toBe(0);
   });
 });

@@ -135,6 +135,21 @@ internal static class WorkspaceHandoffTests
                     typeof(Workspace).GetField("recording", flags).SetValue(form, true);
                     typeof(Workspace).GetField("usbGame", flags).SetValue(form, id);
                     typeof(Workspace).GetField("lastState", flags).SetValue(form, readyState);
+                    var stalePoll = new DelayedHold();
+                    using (var fakeLocal = new System.Net.Http.HttpClient(stalePoll)) {
+                        typeof(Workspace).GetField("local",flags).SetValue(form,fakeLocal);
+                        typeof(Workspace).GetField("localAddress",flags).SetValue(form,"http://127.0.0.1:12345");
+                        var pendingPoll = (Task)typeof(Workspace).GetMethod("Poll",flags).Invoke(form,null);
+                        var pausedState = new Dictionary<string,object>(readyState);
+                        pausedState["program"] = "recording"; pausedState["streaming"] = "paused";
+                        typeof(Workspace).GetMethod("ApplyState",flags).Invoke(form,new object[]{pausedState});
+                        stalePoll.Complete(); await pendingPoll;
+                        var observed = (Dictionary<string,object>)typeof(Workspace).GetField("lastState",flags).GetValue(form);
+                        if (!Object.Equals(observed["streaming"],"paused")) throw new Exception("An older poll restored live state after Stop broadcast.");
+                        typeof(Workspace).GetField("local",flags).SetValue(form,null);
+                        typeof(Workspace).GetField("localAddress",flags).SetValue(form,null);
+                        typeof(Workspace).GetField("lastState",flags).SetValue(form,readyState);
+                    }
                     await core.ExecuteScriptAsync("window.chrome.webview.postMessage({type:'studio-game-ready',gameId:'"+id+"'});window.chrome.webview.postMessage({type:'studio-session-title',gameId:'"+id+"',title:'Fixture current game'});");
                     await Task.Delay(100);
                     if((string)typeof(Workspace).GetField("sessionTitle",flags).GetValue(form)!="Fixture current game") throw new Exception("Backward-compatible Ready plus separate title did not update the current session.");
@@ -289,6 +304,12 @@ internal static class WorkspaceHandoffTests
                         { "streaming", "stopped" }, { "broadcast", "live" }, { "pairing", "paired" },
                         { "localOutput", new Dictionary<string,object> { { "state", "stopped" } } }
                     });
+                    // Stop broadcast may have finished while the last poll still
+                    // describes the old live sender. Close Game must recheck it.
+                    var stoppedState = new FixedState("{\"program\":\"recording\",\"streaming\":\"stopped\",\"pairing\":\"paired\",\"broadcast\":\"live\",\"localOutput\":{\"state\":\"stopped\"}}");
+                    typeof(Workspace).GetField("lastState",flags).SetValue(form,readyState);
+                    typeof(Workspace).GetField("local",flags).SetValue(form,new System.Net.Http.HttpClient(stoppedState));
+                    typeof(Workspace).GetField("localAddress",flags).SetValue(form,"http://127.0.0.1:12345");
                     try {
                         const string inactiveNonce = "99999999-9999-4999-8999-999999999999";
                         await core.ExecuteScriptAsync("window.leaveReceipts=[];window.chrome.webview.postMessage({type:'studio-game-leave',gameId:'"+id+"',previewOnly:true,nonce:'"+inactiveNonce+"'});");
@@ -296,7 +317,7 @@ internal static class WorkspaceHandoffTests
                         if (await core.ExecuteScriptAsync("window.leaveReceipts.length===1&&window.leaveReceipts[0].ok&&window.leaveReceipts[0].nonce==='"+inactiveNonce+"'")!="true" ||
                             !inactiveExit.Task.IsCompleted || !inactiveExit.Task.Result ||
                             typeof(Workspace).GetField("child",flags).GetValue(form)!=null || (string)remembered.Invoke(form,null)!=id ||
-                            (bool)typeof(Workspace).GetField("gameEnded",flags).GetValue(form) || requests!=requestsBeforeLeave)
+                            (bool)typeof(Workspace).GetField("gameEnded",flags).GetValue(form) || requests!=requestsBeforeLeave || stoppedState.Requests == 0)
                             throw new Exception("Leaving a stopped paired sender did not let its recording finish cleanly.");
                     } finally {
                         try { if (!inactiveChild.HasExited) { inactiveChild.Kill(); inactiveChild.WaitForExit(5000); } } catch (InvalidOperationException) { }
@@ -458,6 +479,17 @@ internal static class WorkspaceHandoffTests
         }
         internal void Complete() {
             response.SetResult(new System.Net.Http.HttpResponseMessage(System.Net.HttpStatusCode.OK) { Content = new System.Net.Http.StringContent("{\"program\":\"recording\",\"streaming\":\"armed\",\"broadcast\":\"live\",\"presentation\":{\"mode\":\"hold\"},\"localOutput\":{\"state\":\"active\"}}") });
+        }
+    }
+    private sealed class FixedState : System.Net.Http.HttpMessageHandler {
+        private readonly string state;
+        internal int Requests;
+        internal FixedState(string state) { this.state = state; }
+        protected override Task<System.Net.Http.HttpResponseMessage> SendAsync(System.Net.Http.HttpRequestMessage request, System.Threading.CancellationToken cancellationToken) {
+            if (request.Method != System.Net.Http.HttpMethod.Get || request.RequestUri.AbsolutePath != "/state")
+                throw new Exception("Unexpected controller command while leaving stopped output.");
+            Requests++;
+            return Task.FromResult(new System.Net.Http.HttpResponseMessage(System.Net.HttpStatusCode.OK) { Content = new System.Net.Http.StringContent(state) });
         }
     }
 }

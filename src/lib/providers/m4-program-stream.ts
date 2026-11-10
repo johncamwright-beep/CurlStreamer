@@ -79,8 +79,16 @@ export class M4ProgramStream {
 
   snapshot(): M4StreamSnapshot {
     const native = this.native.snapshot();
+    // This one-shot stream disconnects after final observation. A confirmed
+    // terminal stop cannot become active again and remains useful for Close.
+    const confirmedTerminalStop =
+      this.#state === "stopped" &&
+      this.#local?.value.state === "stopped" &&
+      this.#local.value.failure === "none" &&
+      this.#local.value.authority === 2;
     const local =
-      this.#local && performance.now() - this.#local.at < 6000
+      this.#local &&
+      (confirmedTerminalStop || performance.now() - this.#local.at < 6000)
         ? this.#local.value
         : undefined;
     const provider =
@@ -132,7 +140,12 @@ export class M4ProgramStream {
     this.#intentId = intentId;
     this.#abort = new AbortController();
     const runtime = new M4StudioRuntime(
-      new M4ApplicationOutput(desktop, this.native),
+      new M4ApplicationOutput(desktop, this.native, () => {
+        // A server-requested stop begins inside heartbeat. Fence status reads
+        // before STOP revokes native authority, just as operator Stop does.
+        if (this.#authorized()) this.#state = "stopping";
+        this.#clearPolling();
+      }),
     );
     let ready!: () => void;
     let rejectReady!: (error: Error) => void;

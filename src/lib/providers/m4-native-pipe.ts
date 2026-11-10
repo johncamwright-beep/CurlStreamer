@@ -221,10 +221,12 @@ export class M4NativePipeClient {
     this.#attempted = true;
     const deadline = this.#clock() + remainingLeaseMs;
     return this.#serialize(async () => {
+      // Stop owns the queued terminal command. Cancellation must not destroy
+      // the transport it still needs to acknowledge that command.
+      if (this.#stopping) throw unavailable();
       const payload = Buffer.alloc(516);
       try {
         if (
-          this.#stopping ||
           this.#state !== "connected" ||
           !target ||
           !(
@@ -241,7 +243,6 @@ export class M4NativePipeClient {
         if (
           (await this.#frame(1, payload)) !== 1 ||
           this.#state !== "connected" ||
-          this.#stopping ||
           this.#clock() >= deadline
         )
           throw unavailable();
@@ -252,19 +253,20 @@ export class M4NativePipeClient {
       } finally {
         payload.fill(0);
       }
+      if (this.#stopping) throw unavailable();
     });
   }
   renew(remainingLeaseMs: number) {
     const deadline = this.#clock() + remainingLeaseMs;
     return this.#serialize(async () => {
+      if (this.#stopping) throw unavailable();
       const payload = Buffer.alloc(4);
       try {
-        if (this.#stopping || this.#state !== "armed") throw unavailable();
+        if (this.#state !== "armed") throw unavailable();
         payload.writeUInt32LE(this.#remaining(deadline), 0);
         if (
           (await this.#frame(2, payload)) !== 1 ||
           this.#state !== "armed" ||
-          this.#stopping ||
           this.#clock() >= deadline
         )
           throw unavailable();
@@ -274,6 +276,7 @@ export class M4NativePipeClient {
       } finally {
         payload.fill(0);
       }
+      if (this.#stopping) throw unavailable();
     });
   }
   stop() {

@@ -120,6 +120,11 @@ export async function readStudioInstallation(directory: string) {
   for (const path of [...Object.values(studioFiles), "obs/bin/64bit/obs.dll"])
     if (!seen.has(path.toLowerCase()))
       throw new Error("Studio installation is incomplete.");
+  if (
+    manifest.capabilities.includes("coach-review-v1") &&
+    !seen.has("renderer/coach-review.html")
+  )
+    throw new Error("Studio installation is missing its phone review page.");
   const configuration = studioConfiguration.parse(
     JSON.parse(
       await readFile(resolve(root, studioFiles.configuration), "utf8"),

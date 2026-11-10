@@ -3,7 +3,7 @@
   <meta charset="utf-8" /><meta
     name="viewport"
     content="width=device-width,initial-scale=1"
-  /><title>Local shot review proof</title>
+  /><title>Phone shot review</title>
   <style>
     * {
       box-sizing: border-box;
@@ -162,7 +162,7 @@
   </style>
   <main>
     <h1>Local shot review</h1>
-    <p class="muted">Test footage · Local Wi-Fi proof</p>
+    <p class="muted" id="mode">Test footage · Local Wi-Fi proof</p>
     <form id="pair" class="card">
       <label for="code">Pairing code from your laptop</label>
       <div class="row">
@@ -198,7 +198,7 @@
         />
         <div class="row">
           <button id="back" disabled>−1 second</button
-          ><button id="play" disabled>Preview</button
+          ><button id="play" disabled>Play</button
           ><button id="forward" disabled>+1 second</button>
         </div>
       </div>
@@ -235,18 +235,56 @@
       const $ = (id) => document.getElementById(id),
         video = $("video"),
         scrub = $("scrub");
-      let minimum = 0,
-        limit = 120,
-        dragging = false;
-      const format = (s) =>
-        Math.floor(s / 60) +
-        ":" +
-        String(Math.floor(s % 60)).padStart(2, "0") +
-        "." +
-        Math.floor((s % 1) * 10);
+      let minimum = 0;
+      let limit = 120;
+      let dragging = false;
+      let loading = false;
+      let ready = false;
+      let saving = false;
+      let nextSeek = null;
+      let clipId = null;
+      let objectUrl = null;
+      const format = (seconds) => {
+        const tenths = Math.round(seconds * 10);
+        return (
+          Math.floor(tenths / 600) +
+          ":" +
+          String(Math.floor(tenths / 10) % 60).padStart(2, "0") +
+          "." +
+          (tenths % 10)
+        );
+      };
+      function controls() {
+        const unavailable = !ready || loading || saving || Boolean(video.error);
+        const unsettled = dragging || video.seeking || nextSeek !== null;
+        scrub.disabled = unavailable;
+        $("back").disabled = unavailable;
+        $("forward").disabled = unavailable;
+        $("play").disabled = unavailable || unsettled;
+        $("save").disabled =
+          unavailable || unsettled || !video.paused || video.readyState < 2;
+        $("capture").disabled = loading || saving;
+      }
       function render() {
+        if (dragging || video.seeking || nextSeek !== null) return;
         scrub.value = String(video.currentTime);
         $("time").textContent = format(video.currentTime);
+      }
+      function seekLatest() {
+        if (nextSeek !== null && !video.seeking) {
+          const target = nextSeek;
+          nextSeek = null;
+          if (Math.abs(target - video.currentTime) > 0.001)
+            video.currentTime = target;
+        }
+        controls();
+      }
+      function choose(seconds) {
+        video.pause();
+        nextSeek = Math.max(minimum, Math.min(limit, seconds));
+        scrub.value = String(nextSeek);
+        $("time").textContent = format(nextSeek);
+        seekLatest();
       }
       async function post(path, value) {
         const r = await fetch(path, {
@@ -267,44 +305,74 @@
           $("code").value = "";
           $("pair").hidden = true;
           $("review").hidden = false;
+          if (b.shotTracker)
+            $("mode").textContent = "Studio replay over local Wi-Fi";
+          $("status").textContent = "Connected directly to the laptop.";
           if (b.rolling) {
             $("capture").hidden = false;
             await captureRecent();
           } else {
-            video.hidden = false;
-            video.src = "/video";
-            video.load();
+            await loadVideo("/video");
           }
-          $("status").textContent = "Connected directly to the laptop.";
         } catch (e) {
           $("status").textContent = e.message;
         }
       };
+      async function loadVideo(path) {
+        loading = true;
+        ready = false;
+        dragging = false;
+        nextSeek = null;
+        controls();
+        video.pause();
+        video.removeAttribute("src");
+        video.load();
+        if (objectUrl) URL.revokeObjectURL(objectUrl);
+        objectUrl = null;
+        $("loading").textContent = "Loading the clip onto your phone…";
+        const download = new AbortController();
+        const timeout = setTimeout(() => download.abort(), 8000);
+        try {
+          const response = await fetch(path, { signal: download.signal });
+          const bytes = Number(response.headers.get("Content-Length"));
+          if (!response.ok || bytes <= 0 || bytes > 40 * 1024 * 1024)
+            throw Error("Clip unavailable");
+          objectUrl = URL.createObjectURL(await response.blob());
+        } catch {
+          // Slow Wi-Fi can still use the range-streaming player.
+          download.abort();
+        } finally {
+          clearTimeout(timeout);
+        }
+        video.hidden = false;
+        video.src = objectUrl ?? path;
+        video.load();
+      }
       async function captureRecent() {
+        if (loading || saving) return;
+        loading = true;
+        ready = false;
+        controls();
         video.pause();
         video.controls = false;
         video.hidden = true;
         $("loading").textContent = "Capturing recent video from laptop…";
-        $("capture").disabled = true;
-        ["scrub", "back", "play", "forward", "save"].forEach(
-          (id) => ($(id).disabled = true),
-        );
         $("status").textContent = "Capturing recent video…";
         try {
           const b = await post("/capture", {});
           limit = b.duration;
           minimum = b.minimum ?? 0;
           scrub.min = String(minimum);
-          video.hidden = false;
-          video.src = b.url;
-          video.load();
-          $("status").textContent = "Window frozen. Scrub to the shot start.";
+          clipId = new URL(b.url, location.href).searchParams.get("id");
+          $("status").textContent =
+            "Scrub to the shot start. Use the one-second buttons to fine-tune.";
+          await loadVideo(b.url);
         } catch (e) {
+          loading = false;
+          controls();
           $("status").textContent = e.message;
           $("loading").textContent =
             "Capture did not finish. Tap Capture recent video to retry.";
-        } finally {
-          $("capture").disabled = false;
         }
       }
       $("capture").onclick = captureRecent;
@@ -312,15 +380,17 @@
         video.controls = false;
         limit = Math.min(limit, video.duration);
         scrub.max = String(limit);
-        video.currentTime = Math.max(minimum, limit - 30);
-        ["scrub", "back", "play", "forward", "save"].forEach(
-          (id) => ($(id).disabled = false),
-        );
+        loading = false;
+        ready = true;
+        choose(limit - 30);
         $("loading").textContent =
           "Ready · " + Math.round(limit) + " seconds of local footage";
         render();
       };
       video.onerror = () => {
+        loading = false;
+        ready = false;
+        controls();
         $("loading").textContent =
           "Video could not load. Check Wi-Fi and keep the laptop running.";
       };
@@ -329,50 +399,58 @@
       };
       video.oncanplay = () => {
         $("loading").textContent = "Ready · local recording";
+        controls();
       };
-      video.ontimeupdate = () => {
-        if (!dragging) render();
+      video.onloadeddata = controls;
+      video.onseeking = controls;
+      video.onseeked = () => {
+        seekLatest();
+        render();
       };
+      video.ontimeupdate = render;
       video.onplay = () => {
         $("play").textContent = "Pause";
+        controls();
       };
       video.onpause = () => {
-        $("play").textContent = "Preview";
+        $("play").textContent = "Play";
+        render();
+        controls();
       };
       scrub.oninput = () => {
         dragging = true;
-        video.pause();
-        video.currentTime = Number(scrub.value);
-        $("time").textContent = format(Number(scrub.value));
+        choose(Number(scrub.value));
       };
-      scrub.onchange = () => {
+      function finishDrag() {
         dragging = false;
-        render();
-      };
+        seekLatest();
+      }
+      scrub.onchange = finishDrag;
+      scrub.onpointerup = finishDrag;
+      scrub.onpointercancel = finishDrag;
       $("back").onclick = () => {
-        video.pause();
-        video.currentTime = Math.max(minimum, video.currentTime - 1);
-        render();
+        choose((nextSeek ?? video.currentTime) - 1);
       };
       $("forward").onclick = () => {
-        video.pause();
-        video.currentTime = Math.min(limit, video.currentTime + 1);
-        render();
+        choose((nextSeek ?? video.currentTime) + 1);
       };
       $("play").onclick = async () => {
         if (video.paused) {
           try {
             await video.play();
           } catch {
-            $("status").textContent = "Tap Preview again to play the clip.";
+            $("status").textContent = "Tap Play again to play the clip.";
           }
         } else video.pause();
       };
       $("save").onclick = async () => {
-        video.pause();
-        $("save").disabled = true;
+        controls();
+        if ($("save").disabled) return;
+        saving = true;
+        controls();
         try {
           const b = await post("/selection", {
+            ...(clipId ? { clipId } : {}),
             startSeconds: Math.min(limit, video.currentTime),
             audience: document.querySelector("input[name=audience]:checked")
               .value,
@@ -397,7 +475,8 @@
         } catch (e) {
           $("status").textContent = e.message;
         } finally {
-          $("save").disabled = false;
+          saving = false;
+          controls();
         }
       };
     </script>

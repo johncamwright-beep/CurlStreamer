@@ -1,3 +1,4 @@
+import { reportEventPerformance } from "@/lib/curlcoach/event-performance";
 import { loadEventDifficulty } from "./shot-tracker-difficulty";
 import { difficultyBenchmarks } from "@/lib/curlcoach/difficulty";
 import "server-only";
@@ -22,7 +23,7 @@ import {
 } from "@/lib/curlcoach/reports";
 import { createAdminSupabaseClient } from "@/lib/supabase/admin";
 import { loadProductionStreamerEvent } from "./curlcoach-production-streamer";
-import { loadCoachState } from "./curlcoach-store";
+import { loadCoachStates } from "./curlcoach-store";
 import {
   generateShotTrackerNarrative,
   reportAIConfig,
@@ -35,6 +36,7 @@ export async function loadReportEvent(account: CoachAccount, eventId: string) {
     undefined,
     undefined,
     account,
+    { includeHistory: true },
   );
   if (event.id !== eventId || event.organizationId !== account.organizationId)
     throw new Error("Event unavailable");
@@ -43,16 +45,19 @@ export async function loadReportEvent(account: CoachAccount, eventId: string) {
       (a.scheduledStart ?? "").localeCompare(b.scheduledStart ?? "") ||
       a.id.localeCompare(b.id),
   );
-  for (const game of event.games)
-    game.state = await loadCoachState(
-      {
-        organizationId: account.organizationId,
-        actorUserId: account.userId,
-        gameId: game.id,
-      },
-      game.state,
-    );
-  await loadEventDifficulty(event, account.userId, false, true);
+  const games = [
+    ...event.games,
+    ...(event.performanceHistory ?? []).flatMap((past) => past.games),
+  ];
+  const states = await loadCoachStates(
+    account.organizationId,
+    account.userId,
+    games.map((game) => game.state),
+  );
+  games.forEach((game, index) => {
+    game.state = states[index];
+  });
+  await loadEventDifficulty({ ...event, games }, account.userId, false, true);
   return event;
 }
 export function reportFingerprint(
@@ -77,6 +82,15 @@ export function reportFingerprint(
           : {}),
         model: process.env.SHOT_TRACKER_AI_MODEL ?? "",
         audience,
+        ...(Number(policy.match(/-v(\d+)$/)?.[1]) >= 10
+          ? {
+              eventPerformance: reportEventPerformance(event),
+              playerEventPerformance: reportPlayers(event).map((p) => ({
+                playerId: p.id,
+                performance: reportEventPerformance(event, p.id),
+              })),
+            }
+          : {}),
         event: {
           id: event.id,
           name: event.name,

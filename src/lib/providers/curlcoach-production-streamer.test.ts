@@ -505,3 +505,50 @@ it("shot writes skip analytical reads but still enforce event and game membershi
     }),
   ).rejects.toThrow("organization");
 });
+
+it("loads prior same-season report history in the existing authorized hierarchy read", async () => {
+  const season = "00000000-0000-4000-8000-000000000010";
+  const prior = "00000000-0000-4000-8000-000000000011";
+  const future = "00000000-0000-4000-8000-000000000012";
+  const other = "00000000-0000-4000-8000-000000000013";
+  const base = (await m.games()).value[0];
+  m.games.mockClear();
+  m.events.mockResolvedValue({
+    ok: true,
+    value: [
+      { id: eid, name: "Current", season_id: season, start_date: "2026-02-01" },
+      { id: prior, name: "Prior", season_id: season, start_date: "2026-01-01" },
+      {
+        id: future,
+        name: "Future",
+        season_id: season,
+        start_date: "2026-03-01",
+      },
+      {
+        id: other,
+        name: "Other season",
+        season_id: null,
+        start_date: "2026-01-01",
+      },
+    ],
+  });
+  m.games.mockResolvedValue({
+    ok: true,
+    value: [
+      base,
+      ...[prior, future, other].map((id) => ({ ...base, id, event_id: id })),
+    ],
+  });
+  const result = await loadProductionStreamerEvent(
+    eid,
+    undefined,
+    undefined,
+    account,
+    { includeHistory: true },
+  );
+  expect(result.event.games.map((g) => g.id)).toEqual([gid]);
+  expect(result.event.performanceHistory?.map((e) => e.id)).toEqual([prior]);
+  expect(m.games).toHaveBeenCalledTimes(1);
+  expect(m.events).toHaveBeenCalledTimes(1);
+  expect(m.videos.mock.calls[0][1]).toEqual([gid, prior]);
+});

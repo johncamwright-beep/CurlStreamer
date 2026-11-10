@@ -94,20 +94,28 @@ export default function ReportDocument({
             case "trend": {
               const points = reportTrendPoints(block.games);
               const x = (relative: number) => 58 + 490 * relative;
-              const y = (value: number) => 144 - 1.18 * value;
+              const min = block.minimum ?? 0,
+                max = block.maximum ?? 100;
+              const y = (value: number) =>
+                144 - (118 * (value - min)) / (max - min);
               return (
                 <svg
                   key={index}
                   className="report-trend"
                   viewBox="0 0 600 180"
                   role="img"
-                  aria-label={`Shooting percentage by game, games ${block.firstGame} to ${block.firstGame + points.length - 1}`}
+                  aria-label={
+                    block.eventLabels
+                      ? "Performance across events in chronological order"
+                      : `Shooting percentage by game, games ${block.firstGame} to ${block.firstGame + points.length - 1}`
+                  }
                 >
-                  {[100, 50, 0].map((value) => (
+                  {[max, (min + max) / 2, min].map((value) => (
                     <g key={value}>
                       <line x1={x(0)} x2={x(1)} y1={y(value)} y2={y(value)} />
                       <text x={x(0) - 7} y={y(value) + 5} textAnchor="end">
-                        {value}%
+                        {value.toFixed(0)}
+                        {block.unit ?? "%"}
                       </text>
                     </g>
                   ))}
@@ -116,7 +124,8 @@ export default function ReportDocument({
                     return (
                       <g key={index}>
                         <text x={x(point.x)} y="169" textAnchor="middle">
-                          Game {block.firstGame + index}
+                          {block.eventLabels?.[index] ??
+                            `Game ${block.firstGame + index}`}
                         </text>
                         {point.value !== null && (
                           <>

@@ -46,6 +46,7 @@ import CoachLab from "./CoachLab";
 import { EnhancedReview, MetricsProvider, useMetrics } from "./EnhancedMetrics";
 
 import AnalysisPanels from "./AnalysisPanels";
+import EventPerformance from "./EventPerformance";
 import AnalysisDashboard, {
   AnalysisNavigation,
   ANALYSIS_TABS,
@@ -1231,6 +1232,16 @@ function WorkspaceContent({
                             !statsError
                           }
                         >
+                          {analysisTab === "performance" &&
+                            seasonReady &&
+                            statsData && (
+                              <EventPerformance
+                                workspace={statsData}
+                                playerId={player === "all" ? undefined : player}
+                                eventId={selectedEvent}
+                                gameId={analysisGame}
+                              />
+                            )}
                           <AnalysisDashboard
                             shots={selected}
                             games={analysisGames}

@@ -173,12 +173,18 @@ test("same-tab sign-in resumes a phone flag without putting its notes in the ret
   };
   await mountFixture(page, pathname, importFixture);
   let signedIn = false;
-  await page.route("**/login?**", (route) => {
-    const next = new URL(route.request().url()).searchParams.get("next");
-    expect(next).toBe(`${pathname}?resume=${review.id}`);
-    signedIn = true;
-    return route.fulfill({ status: 302, headers: { location: next! } });
-  });
+  await page.route(
+    (url) => url.pathname === "/login",
+    (route) => {
+      const next = new URL(route.request().url()).searchParams.get("next");
+      expect(next).toBe(`${pathname}?resume=${review.id}`);
+      signedIn = true;
+      return route.fulfill({
+        contentType: "text/html",
+        body: `<a href="${next}">Continue to saved review</a>`,
+      });
+    },
+  );
   let saved: unknown;
   await page.route("**/api/curlcoach/local-review**", (route) => {
     if (!signedIn) return route.fulfill({ status: 403 });
@@ -193,6 +199,7 @@ test("same-tab sign-in resumes a phone flag without putting its notes in the ret
   await expect(page.getByRole("alert")).toContainText("Sign in with access");
   await page.getByLabel("Notes").fill("Updated before signing in");
   await page.getByRole("link", { name: "Sign in to continue" }).click();
+  await page.getByRole("link", { name: "Continue to saved review" }).click();
   await expect(page.getByLabel("Notes")).toHaveValue(
     "Updated before signing in",
   );

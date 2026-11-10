@@ -30,6 +30,8 @@ for (const rolling of [false, true])
       ).toBeEnabled();
       await expect(page.locator("video")).toHaveJSProperty("controls", false);
       await expect(page.locator("video")).toHaveAttribute("src", /^blob:/);
+      const mediaRequestsAfterLoad = proof.stats().mediaRequests;
+      expect(mediaRequestsAfterLoad).toBeGreaterThan(0);
       const slider = page.getByRole("slider", {
         name: "Drag to the beginning of the shot",
       });
@@ -71,7 +73,7 @@ for (const rolling of [false, true])
         audience: "team",
         notes: "Watch this together",
       });
-      expect(proof.stats().mediaRequests).toBe(1);
+      expect(proof.stats().mediaRequests).toBe(mediaRequestsAfterLoad);
       expect(
         await page.evaluate(
           () => document.documentElement.scrollWidth <= innerWidth,

@@ -33,11 +33,29 @@ export const studioSessionSchema = z
     lastLiveAgeMs: z.number().nonnegative().nullable().optional(),
     canHoldStream: z.boolean(),
     canLeaveGame: z.boolean().optional(),
+    canCloseGameDirectly: z.boolean().optional(),
     replay: studioReplayStateSchema.nullable().optional(),
     coachReview: studioCoachReviewStateSchema.nullable().optional(),
   })
   .strict();
 export type StudioSession = z.infer<typeof studioSessionSchema>;
+
+export function canCloseStudioGameDirectly(
+  session: StudioSession | null,
+  gameId: string,
+) {
+  return (
+    session?.canCloseGameDirectly === true &&
+    session.canLeaveGame === true &&
+    !session.busy &&
+    (session.gameId === gameId ||
+      (!session.active && session.gameId === null)) &&
+    session.streaming === "idle" &&
+    session.presentation === "live" &&
+    !session.outputActive &&
+    !session.live
+  );
+}
 
 export function studioLastLiveLabel(ageMs: number) {
   const seconds = Math.floor(ageMs / 1000);
@@ -217,11 +235,18 @@ export function stopStudioSession(gameId: string) {
 }
 
 /** A correlated native acknowledgement is required before leaving the game. */
-export function leaveStudioGame(gameId: string) {
+export function leaveStudioGame(
+  gameId: string,
+  { previewOnly = false }: { previewOnly?: boolean } = {},
+) {
   const bridge = studioSessionBridge();
   if (!bridge)
     return Promise.reject(
-      Error("Open this game in Windows Studio to pause its stream."),
+      Error(
+        previewOnly
+          ? "Windows Studio is unavailable."
+          : "Open this game in Windows Studio to pause its stream.",
+      ),
     );
   const nonce = crypto.randomUUID();
   return new Promise<void>((resolve, reject) => {
@@ -245,21 +270,33 @@ export function leaveStudioGame(gameId: string) {
         reject(
           Error(
             parsed.data.error ||
-              "Studio could not confirm the pause. Stay here and retry.",
+              (previewOnly
+                ? "Studio could not close the preview. Try again."
+                : "Studio could not confirm the pause. Stay here and retry."),
           ),
         );
     };
-    const timer = window.setTimeout(() => {
-      clean();
-      reject(
-        Error(
-          "Studio has not confirmed shutdown. Keep it open and check its status.",
-        ),
-      );
-    }, 130000);
+    const timer = window.setTimeout(
+      () => {
+        clean();
+        reject(
+          Error(
+            previewOnly
+              ? "The camera preview is taking longer to close. Check Studio and try again."
+              : "Studio has not confirmed shutdown. Keep it open and check its status.",
+          ),
+        );
+      },
+      previewOnly ? 15000 : 130000,
+    );
     window.addEventListener("studio-game-leave-result", receive);
     try {
-      bridge.postMessage({ type: "studio-game-leave", gameId, nonce });
+      bridge.postMessage({
+        type: "studio-game-leave",
+        gameId,
+        nonce,
+        ...(previewOnly ? { previewOnly: true } : {}),
+      });
     } catch {
       clean();
       reject(Error("Windows Studio is unavailable."));

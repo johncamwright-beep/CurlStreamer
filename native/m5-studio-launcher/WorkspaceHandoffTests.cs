@@ -1,7 +1,9 @@
 // Real WebView2 test with intercepted fixture resources and a fresh profile.
 // No account, hosted game, controller, recording or broadcast is touched.
 using System;
+using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Reflection;
 using System.Security.Cryptography;
 using System.Text;
@@ -21,7 +23,10 @@ internal static class WorkspaceHandoffTests
         string hash;
         using (var sha = SHA256.Create()) hash = BitConverter.ToString(sha.ComputeHash(File.ReadAllBytes(config))).Replace("-", "").ToLowerInvariant();
         Application.EnableVisualStyles();
-        var form = new Workspace(origin + "/games/" + id, "", "", hash, Path.Combine(root, "FixtureProfile"));
+        var fixtureProfile = Path.Combine(root, "FixtureProfile");
+        CameraInputs.SaveSlot(fixtureProfile, null, "camera-home",
+            CameraInputs.Tapo("192.168.1.20", "fixture-local-camera-user", "fixture-local-camera-password", "stream2", 90));
+        var form = new Workspace(origin + "/games/" + id, "", "", hash, fixtureProfile);
         form.ShowInTaskbar = false; form.Opacity = 0;
         var web = (WebView2)typeof(Workspace).GetField("web", BindingFlags.Instance | BindingFlags.NonPublic).GetValue(form);
         var prepare = typeof(Workspace).GetMethod("PrepareGrant", BindingFlags.Instance | BindingFlags.NonPublic);
@@ -82,6 +87,7 @@ internal static class WorkspaceHandoffTests
                     core.Navigate(origin + "/score/" + id);
                     if (!await scoringLoaded.Task) throw new Exception("Fixture scoring navigation failed.");
                     core.NavigationCompleted -= scoringNavigation;
+                    await CheckCameraSettings(form, core, id, fixtureProfile);
                     await core.ExecuteScriptAsync("window.endRequested=false;window.addEventListener('studio-end-game-request',e=>{window.endRequested=e.detail.gameId==='" + id + "';window.chrome.webview.postMessage({type:'studio-end-game-opened',gameId:e.detail.gameId});});");
                     await (Task)typeof(Workspace).GetMethod("RequestEndGame", BindingFlags.Instance | BindingFlags.NonPublic).Invoke(form, new object[] { id });
                     for (int i=0;i<20 && await core.ExecuteScriptAsync("window.endRequested")!="true";i++) await Task.Delay(100);
@@ -182,8 +188,8 @@ internal static class WorkspaceHandoffTests
                     if(!(bool)typeof(Workspace).GetField("gameEnded",flags).GetValue(form) || (string)typeof(Workspace).GetField("lastGame",flags).GetValue(form)!=id || (string)remembered.Invoke(form,null)!=id) throw new Exception("Foreign game navigation or readiness changed active ending/recovery state.");
                     await core.ExecuteScriptAsync("window.chrome.webview.postMessage({type:'studio-session-title',gameId:'"+otherId+"',title:'Wrong session title'});"); await Task.Delay(100);
                     if((string)typeof(Workspace).GetField("sessionTitle",flags).GetValue(form)!="Fixture current game") throw new Exception("Another game's title overwrote the retained session.");
-                    typeof(Workspace).GetMethod("OpenCameraSettings",flags).Invoke(form,new object[]{"camera-home"});
-                    if((bool)typeof(Workspace).GetField("cameraSettingsOpen",flags).GetValue(form)) throw new Exception("Another game's settings mutated the retained session.");
+                    await PostCameraSettings(core, otherId, "camera-home");
+                    if(CameraSettings(form) != null) throw new Exception("Another game's settings opened over the retained session.");
                     typeof(Workspace).GetField("lastState",flags).SetValue(form,new System.Collections.Generic.Dictionary<string,object> {
                         {"cameraInputs",new System.Collections.Generic.Dictionary<string,object>{{"camera-home",new System.Collections.Generic.Dictionary<string,object>{{"connectionEnabled",false},{"phase","idle"}}}}},
                         {"cameraStatus",new System.Collections.Generic.Dictionary<string,object>{{"camera-home",true}}}
@@ -230,7 +236,33 @@ internal static class WorkspaceHandoffTests
                     for(int i=0;i<30&&await core.ExecuteScriptAsync("window.leaveReceipts.length")=="0";i++) await Task.Delay(50);
                     if(await core.ExecuteScriptAsync("window.leaveReceipts.length===1&&window.leaveReceipts[0].ok&&window.leaveReceipts[0].nonce==='44444444-4444-4444-8444-444444444444'")!="true") throw new Exception("Clean leave did not acknowledge matching request.");
                     if((string)remembered.Invoke(form,null)!=id || (bool)typeof(Workspace).GetField("gameEnded",flags).GetValue(form) || requests!=requestsBeforeLeave) throw new Exception("Leave finalized the game or lost its resume target.");
-                    File.WriteAllText(output, "PASS: native WebView2 handoff/preview boundaries, global account session, correlated navigation fallback, USB retention, cross-game replacement refusal, completed/failed session cleanup, resumable leave without completion; no real media or accounts.");
+                    // A wedged, unarmed preview may be stopped without waiting for
+                    // the broadcast cleanup deadline. A live sender must never take that route.
+                    using (var preview = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(testNode, "-e \"setInterval(()=>{},60000)\"") { UseShellExecute = false, CreateNoWindow = true, RedirectStandardInput = true })) {
+                        try {
+                            typeof(Workspace).GetField("child",flags).SetValue(form,preview);
+                            typeof(Workspace).GetField("runningGame",flags).SetValue(form,id);
+                            typeof(Workspace).GetField("recording",flags).SetValue(form,true);
+                            typeof(Workspace).GetField("lastState",flags).SetValue(form,readyState);
+                            var previewExit = new TaskCompletionSource<bool>();
+                            typeof(Workspace).GetField("exited",flags).SetValue(form,previewExit);
+                            typeof(Workspace).GetMethod("ObserveExit",flags).Invoke(form,new object[] { preview, new TaskCompletionSource<string>(), previewExit, new Func<bool>(() => false) });
+                            var leave = "window.chrome.webview.postMessage({type:'studio-game-leave',gameId:'"+id+"',previewOnly:true,nonce:'";
+                            await core.ExecuteScriptAsync("window.leaveReceipts=[];"+leave+"55555555-5555-4555-8555-555555555555'});");
+                            for(int i=0;i<30&&await core.ExecuteScriptAsync("window.leaveReceipts.length")=="0";i++) await Task.Delay(50);
+                            if(await core.ExecuteScriptAsync("window.leaveReceipts.length===1&&!window.leaveReceipts[0].ok")!="true" || preview.HasExited)
+                                throw new Exception("Preview-only leave interrupted live output.");
+                            typeof(Workspace).GetField("lastState",flags).SetValue(form,new System.Collections.Generic.Dictionary<string,object> { { "streaming", "idle" }, { "pairing", "unpaired" } });
+                            await core.ExecuteScriptAsync("window.leaveReceipts=[];"+leave+"66666666-6666-4666-8666-666666666666'});");
+                            for(int i=0;i<240&&await core.ExecuteScriptAsync("window.leaveReceipts.length")=="0";i++) await Task.Delay(50);
+                            if(await core.ExecuteScriptAsync("window.leaveReceipts.length===1&&window.leaveReceipts[0].ok")!="true" ||
+                                typeof(Workspace).GetField("child",flags).GetValue(form)!=null || (string)remembered.Invoke(form,null)!=id || requests!=requestsBeforeLeave)
+                                throw new Exception("Unarmed preview did not close promptly or left a changed game.");
+                        } finally {
+                            try { if (!preview.HasExited) { preview.Kill(); preview.WaitForExit(5000); } } catch (InvalidOperationException) { }
+                        }
+                    }
+                    File.WriteAllText(output, "PASS: native WebView2 handoff/preview boundaries, scoped offline camera settings drawer, global account session, correlated navigation fallback, USB retention, cross-game replacement refusal, completed/failed session cleanup, resumable leave without completion; no real media or accounts.");
                     result = 0;
                 } catch (Exception error) { File.WriteAllText(output, "FAIL: " + error.GetType().Name + " " + error.Message); }
                 finally { timeout.Stop(); typeof(Workspace).GetField("mayClose", BindingFlags.Instance | BindingFlags.NonPublic).SetValue(form, true); form.Close(); }
@@ -238,6 +270,85 @@ internal static class WorkspaceHandoffTests
         };
         Application.Run(form);
         return result;
+    }
+    private static Control CameraSettings(Workspace form) {
+        return (Control)typeof(Workspace).GetField("cameraSettings", BindingFlags.Instance | BindingFlags.NonPublic).GetValue(form);
+    }
+    private static async Task PostCameraSettings(CoreWebView2 core, string game, string role) {
+        await core.ExecuteScriptAsync("window.chrome.webview.postMessage({action:'configure-camera',gameId:'" + game + "',cameraRole:'" + role + "'});");
+        await Task.Delay(100);
+    }
+    private static IEnumerable<Control> Descendants(Control parent) {
+        foreach (Control child in parent.Controls) {
+            yield return child;
+            foreach (var descendant in Descendants(child)) yield return descendant;
+        }
+    }
+    private static async Task CheckCameraSettings(Workspace form, CoreWebView2 core, string game, string fixtureProfile) {
+        const string password = "fixture-local-camera-password";
+        await core.ExecuteScriptAsync("window.cameraSetupEvents=[];window.addEventListener('studio-camera-inputs',e=>window.cameraSetupEvents.push(e.detail));window.chrome.webview.addEventListener('message',e=>window.cameraSetupEvents.push(e.data));");
+        await PostCameraSettings(core, "22222222-2222-4222-8222-222222222222", "camera-home");
+        await PostCameraSettings(core, game, "scorer");
+        if (CameraSettings(form) != null) throw new Exception("Invalid camera settings request opened the drawer.");
+        await PostCameraSettings(core, game, "camera-away");
+        var unconfigured = CameraSettings(form);
+        if (unconfigured == null || unconfigured.AccessibleName != "Camera 2 settings" ||
+            !Object.Equals(Descendants(unconfigured).OfType<ComboBox>().Single(box => box.AccessibleName == "Camera source").SelectedItem, "Phone (QR code)") ||
+            Descendants(unconfigured).OfType<TextBox>().Any(box => box.Visible))
+            throw new Exception("A new camera slot did not default to Phone without IP fields.");
+        Descendants(unconfigured).OfType<Button>().Single(button => button.Text == "Cancel").PerformClick();
+        await PostCameraSettings(core, game, "camera-home");
+        var drawer = CameraSettings(form);
+        if (drawer == null || !drawer.Visible || drawer.FindForm() != form || drawer.AccessibleName != "Camera 1 settings")
+            throw new Exception("The selected game's camera settings did not open inside Studio while offline.");
+        var source = Descendants(drawer).OfType<ComboBox>().Single(box => box.AccessibleName == "Camera source");
+        var secretInput = Descendants(drawer).OfType<TextBox>().Single(box => box.AccessibleName == "Camera password");
+        if (!Object.Equals(source.SelectedItem, "Tapo IP camera") || secretInput.Text != password || !secretInput.Visible ||
+            (!secretInput.UseSystemPasswordChar && secretInput.PasswordChar == '\0'))
+            throw new Exception("The saved camera login was not loaded into a masked native input.");
+        var cancel = Descendants(drawer).OfType<Button>().Single(button => button.Text == "Cancel");
+        cancel.PerformClick();
+        if (CameraSettings(form) != null) throw new Exception("Cancel did not close the camera settings drawer.");
+        await PostCameraSettings(core, game, "camera-home");
+        var processKey = typeof(Workspace).GetMethod("ProcessCmdKey", BindingFlags.Instance | BindingFlags.NonPublic);
+        if (!(bool)processKey.Invoke(form, new object[] { new Message(), Keys.Escape }) || CameraSettings(form) != null)
+            throw new Exception("Escape did not close the camera settings drawer.");
+        await PostCameraSettings(core, game, "camera-home");
+        drawer = CameraSettings(form);
+        var address = Descendants(drawer).OfType<TextBox>().Single(box => box.AccessibleName == "Private IP or RTSP address");
+        var save = Descendants(drawer).OfType<Button>().Single(button => button.Text == "Save settings");
+        address.Text = "invalid host";
+        save.PerformClick();
+        var errorShown = Descendants(drawer).OfType<Label>().Any(label => label.Visible && label.Text.Contains("private IPv4 address"));
+        if (CameraSettings(form) != drawer || !save.Enabled || !errorShown ||
+            (string)CameraInputs.Load(fixtureProfile)["camera-home"]["host"] != "192.168.1.20")
+            throw new Exception("Invalid camera settings were committed or did not leave a fixable field error.");
+        address.Text = "192.168.1.21";
+        save.PerformClick();
+        for (int i = 0; i < 30 && CameraSettings(form) != null; i++) await Task.Delay(50);
+        var saved = CameraInputs.Load(fixtureProfile)["camera-home"];
+        if (CameraSettings(form) != null || (string)saved["host"] != "192.168.1.21" || (string)saved["password"] != password ||
+            (string)saved["stream"] != "stream2" || (int)saved["rotation"] != 90)
+            throw new Exception("Offline saving did not persist the edit and untouched camera preferences.");
+        if (await core.ExecuteScriptAsync("!(document.documentElement.outerHTML+JSON.stringify(window.cameraSetupEvents)).includes('" + password + "')") != "true")
+            throw new Exception("A camera credential crossed into the WebView.");
+        await PostCameraSettings(core, game, "camera-home");
+        drawer = CameraSettings(form);
+        address = Descendants(drawer).OfType<TextBox>().Single(box => box.AccessibleName == "Private IP or RTSP address");
+        if (address.Text != "192.168.1.21") throw new Exception("Reopening the drawer did not restore the saved camera address.");
+        var scoringUrl = core.Source;
+        await NavigateCameraFixture(core, new Uri(scoringUrl).GetLeftPart(UriPartial.Authority) + "/account");
+        if (CameraSettings(form) != null) throw new Exception("Leaving the game retained its camera settings drawer.");
+        await NavigateCameraFixture(core, scoringUrl);
+    }
+    private static async Task NavigateCameraFixture(CoreWebView2 core, string url) {
+        var loaded = new TaskCompletionSource<bool>();
+        EventHandler<CoreWebView2NavigationCompletedEventArgs> complete = (sender, e) => loaded.TrySetResult(e.IsSuccess);
+        core.NavigationCompleted += complete;
+        try {
+            core.Navigate(url);
+            if (!await loaded.Task) throw new Exception("Camera fixture navigation failed.");
+        } finally { core.NavigationCompleted -= complete; }
     }
     private static async Task CheckPreview(CoreWebView2 core, string url, bool expected) {
         await core.ExecuteScriptAsync("window.previewResult=null;var image=new Image();image.onload=()=>window.previewResult=image.naturalWidth===1280&&image.naturalHeight===720;image.onerror=()=>window.previewResult=false;image.src='" + url + "';document.body.appendChild(image);");

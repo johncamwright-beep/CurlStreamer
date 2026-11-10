@@ -10,7 +10,10 @@ import { organizerAccessToken } from "@/lib/access-session";
 import { announceGameCompletion } from "@/lib/dashboard-refresh";
 import { requestStudioPresentation } from "@/lib/studio-presentation-client";
 import type { StudioClosingPreparation } from "@/lib/studio-presentation-client";
-import { leaveStudioGame } from "@/lib/studio-session";
+import {
+  canCloseStudioGameDirectly,
+  leaveStudioGame,
+} from "@/lib/studio-session";
 import { useStudioSession } from "./StudioSessionContext";
 import { StudioOverlay } from "./StudioOverlay";
 
@@ -81,10 +84,12 @@ export function EndGameControl({
   const [watchUrl, setWatchUrl] = useState(sharedYoutubeWatchUrl ?? "");
   const [review, setReview] = useState<CompletionReview>();
   const [busy, setBusy] = useState(false);
+  const [leavingPreview, setLeavingPreview] = useState(false);
   const [error, setError] = useState("");
   const [completionSaved, setCompletionSaved] = useState(false);
   const [canGracefulEnd, setCanGracefulEnd] = useState(false);
   const completionFlight = useRef(false);
+  const leaveFlight = useRef(false);
 
   useEffect(() => {
     function status(event: Event) {
@@ -250,6 +255,25 @@ export function EndGameControl({
     }
   }
 
+  async function leaveGame(previewOnly: boolean) {
+    if (leaveFlight.current) return;
+    leaveFlight.current = true;
+    setBusy(true);
+    setLeavingPreview(previewOnly);
+    setError("");
+    try {
+      await leaveStudioGame(gameId, { previewOnly });
+      window.location.assign("/dashboard");
+    } catch (cause) {
+      setError(
+        cause instanceof Error ? cause.message : "Could not leave this game.",
+      );
+      setLeavingPreview(false);
+      setBusy(false);
+      leaveFlight.current = false;
+    }
+  }
+
   if (!enabled && !session?.canLeaveGame) return null;
   const close = () => {
     if (busy) return;
@@ -263,17 +287,49 @@ export function EndGameControl({
     session?.canLeaveGame &&
     (!session.active || session.gameId === gameId) &&
     !session.busy;
+  const directClose = canCloseStudioGameDirectly(session, gameId);
+  const previewClose = directClose || leavingPreview;
+  const buttonLabel = previewClose ? "Close game" : "Game options";
   return (
     <div>
-      <button
-        className="btn-secondary min-h-11 min-w-11 border-red-700 text-red-200"
-        aria-label="Game options"
-        title="Leave or end game"
-        disabled={disabled}
-        onClick={() => setOpen(true)}
-      >
-        ×
-      </button>
+      <div className="flex flex-wrap justify-end gap-2">
+        {previewClose && enabled && (
+          <button
+            className="btn-secondary min-h-11"
+            disabled={busy || disabled}
+            onClick={() => {
+              setError("");
+              setEndChosen(true);
+              setOpen(true);
+            }}
+          >
+            End game
+          </button>
+        )}
+        <button
+          className="btn-secondary min-h-11 min-w-11 border-red-700 text-red-200"
+          aria-label={buttonLabel}
+          title={previewClose ? "Close game" : "Leave or end game"}
+          disabled={busy || disabled}
+          onClick={() => {
+            setError("");
+            if (directClose) void leaveGame(true);
+            else setOpen(true);
+          }}
+        >
+          ×
+        </button>
+      </div>
+      {leavingPreview && (
+        <p role="status" className="mt-2 text-sm text-slate-300">
+          Closing camera preview…
+        </p>
+      )}
+      {!open && error && (
+        <p role="alert" className="mt-2 text-sm text-red-300">
+          {error}
+        </p>
+      )}
       {open && (
         <StudioOverlay
           title={endChosen ? "End game and stream" : "Leave or end game"}
@@ -310,7 +366,7 @@ export function EndGameControl({
                     strokeLinecap="round"
                   />
                 </svg>
-                <span>Please wait…</span>
+                <span>Pausing the broadcast and closing cameras…</span>
               </div>
             ) : (
               <>
@@ -318,21 +374,7 @@ export function EndGameControl({
                   <button
                     className="btn-secondary min-h-11"
                     disabled={busy || disabled || !canLeave}
-                    onClick={async () => {
-                      setBusy(true);
-                      setError("");
-                      try {
-                        await leaveStudioGame(gameId);
-                        window.location.assign("/dashboard");
-                      } catch (cause) {
-                        setError(
-                          cause instanceof Error
-                            ? cause.message
-                            : "Could not leave this game.",
-                        );
-                        setBusy(false);
-                      }
-                    }}
+                    onClick={() => void leaveGame(false)}
                   >
                     Leave game and pause stream
                   </button>

@@ -79,8 +79,8 @@ export async function buildReportPDF(report: SavedReport, eventName: string) {
     }
     y += 3;
   }
-  function heading(title: string) {
-    ensure(55);
+  function heading(title: string, minimum = 55) {
+    ensure(minimum);
     y += 3;
     pdf.setFillColor(cyan);
     pdf.rect(margin, y - 4, 2, 6, "F");
@@ -146,26 +146,27 @@ export async function buildReportPDF(report: SavedReport, eventName: string) {
   text(eventName, 12, false, muted);
   y += 3;
   const cards = reportSummaryCards(report);
-  if (cards.length) {
-    ensure(39);
-    const cw = (width - 5 * (cards.length - 1)) / cards.length;
-    cards.forEach((c, i) => {
+  for (let offset = 0; offset < cards.length; offset += 2) {
+    const row = cards.slice(offset, offset + 2);
+    ensure(43);
+    const cw = (width - 5) / 2;
+    row.forEach((c, i) => {
       const x = margin + i * (cw + 5);
       pdf.setFillColor(pale);
-      pdf.roundedRect(x, y, cw, 35, 2, 2, "F");
+      pdf.roundedRect(x, y, cw, 39, 2, 2, "F");
       pdf.setFont("ReportSans", "normal");
       pdf.setFontSize(9);
       pdf.setTextColor(muted);
-      pdf.text(c.label, x + 4, y + 7);
+      pdf.text(pdf.splitTextToSize(c.label, cw - 8), x + 4, y + 7);
       pdf.setFont("ReportSans", "bold");
-      pdf.setFontSize(20);
+      pdf.setFontSize(18);
       pdf.setTextColor(ink);
-      pdf.text(c.value, x + 4, y + 19);
+      pdf.text(c.value, x + 4, y + 21);
       pdf.setFont("ReportSans", "normal");
       pdf.setFontSize(8);
-      pdf.text(pdf.splitTextToSize(c.basis, cw - 8), x + 4, y + 26);
+      pdf.text(pdf.splitTextToSize(c.basis, cw - 8), x + 4, y + 29);
     });
-    y += 42;
+    y += 43;
   }
   for (const block of reportContent(report)) {
     switch (block.kind) {
@@ -174,7 +175,7 @@ export async function buildReportPDF(report: SavedReport, eventName: string) {
           pdf.addPage();
           header();
         }
-        heading(block.title);
+        heading(block.title, block.keepWithChart ? 75 : 55);
         break;
       case "text":
         text(block.value, block.size, false, block.muted ? muted : ink);
@@ -203,17 +204,25 @@ export async function buildReportPDF(report: SavedReport, eventName: string) {
         ensure(51);
         const plotX = margin + 12;
         const plotWidth = width - 22;
-        const at = (value: number) => y + 40 - value * 0.36;
+        const min = block.minimum ?? 0,
+          max = block.maximum ?? 100;
+        const at = (value: number) =>
+          y + 40 - (36 * (value - min)) / (max - min);
         pdf.setFont("ReportSans", "normal");
         pdf.setFontSize(8);
         pdf.setTextColor(muted);
         pdf.setDrawColor("#CBD8DE");
         pdf.setLineWidth(0.25);
-        for (const value of [100, 50, 0]) {
+        for (const value of [max, (min + max) / 2, min]) {
           pdf.line(plotX, at(value), plotX + plotWidth, at(value));
-          pdf.text(String(value) + "%", plotX - 2, at(value) + 1, {
-            align: "right",
-          });
+          pdf.text(
+            value.toFixed(0) + (block.unit ?? "%"),
+            plotX - 2,
+            at(value) + 1,
+            {
+              align: "right",
+            },
+          );
         }
         const points = reportTrendPoints(block.games);
         pdf.setDrawColor("#087D90");
@@ -221,9 +230,14 @@ export async function buildReportPDF(report: SavedReport, eventName: string) {
         pdf.setLineWidth(0.7);
         points.forEach((point, index) => {
           const x = plotX + plotWidth * point.x;
-          pdf.text(`Game ${block.firstGame + index}`, x, y + 46, {
-            align: "center",
-          });
+          pdf.text(
+            block.eventLabels?.[index] ?? `Game ${block.firstGame + index}`,
+            x,
+            y + 46,
+            {
+              align: "center",
+            },
+          );
           if (point.value === null) return;
           const previous = points[index - 1];
           if (previous && previous.value !== null)

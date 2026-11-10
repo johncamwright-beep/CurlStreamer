@@ -227,6 +227,7 @@ async function requestReport(init: RequestInit): Promise<Response> {
 export function selectPromptEvidence(input: ReportInput) {
   if (!input.highlights) return input.evidence;
   const selected = [
+    ...input.evidence.filter((e) => e.id.startsWith("event-trend-")),
     ...Object.values(input.highlights).flat(),
     ...input.evidence.filter(
       (e) =>

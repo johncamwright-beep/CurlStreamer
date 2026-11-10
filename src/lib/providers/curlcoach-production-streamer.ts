@@ -55,7 +55,7 @@ export async function loadProductionStreamerEvent(
   gameId?: string,
   seasonId?: string,
   requestAccount?: CoachAccount,
-  options: { details?: boolean } = {},
+  options: { details?: boolean; includeHistory?: boolean } = {},
 ) {
   // The route may pass an account it just authorized. Direct callers establish
   // the same request-local scope here; this is never cached across requests.
@@ -181,6 +181,21 @@ export async function loadProductionStreamerEvent(
     ? { id: "all", name: "All events", seasonId }
     : catalog.find((event) => event.id === (eventId || defaultEvent));
   if (!selected) throw new Error("Event unavailable for this organization.");
+  const selectedDate = catalog.find(
+    (entry) => entry.id === selected.id,
+  )?.startDate;
+  const historicalIds = new Set(
+    options.includeHistory && selectedDate && selected.seasonId !== "unassigned"
+      ? catalog
+          .filter(
+            (entry) =>
+              entry.seasonId === selected.seasonId &&
+              entry.startDate &&
+              entry.startDate < selectedDate,
+          )
+          .map((entry) => entry.id)
+      : [],
+  );
   const rows = z
     .array(
       z.object({
@@ -214,7 +229,8 @@ export async function loadProductionStreamerEvent(
               catalog.find((event) => event.id === game.event_id)?.seasonId ??
               "unassigned") === seasonId
           : game.event_id ===
-            (selected.id === "standalone" ? null : selected.id)) &&
+              (selected.id === "standalone" ? null : selected.id) ||
+            historicalIds.has(game.event_id ?? "")) &&
         game.game_status !== "deleted" &&
         (!gameId || game.id === gameId),
     );
@@ -231,6 +247,7 @@ export async function loadProductionStreamerEvent(
     source: "streamer",
     organizationId: account.organizationId,
     seasonId: selected.seasonId,
+    startDate: catalog.find((entry) => entry.id === selected.id)?.startDate,
     games: [],
   };
   const broadcastReviews =
@@ -364,5 +381,19 @@ export async function loadProductionStreamerEvent(
       };
     },
   );
+  if (options.includeHistory) {
+    event.performanceHistory = catalog
+      .filter((entry) => historicalIds.has(entry.id))
+      .map((entry) => ({
+        ...event,
+        id: entry.id,
+        name: entry.name,
+        startDate: entry.startDate,
+        performanceHistory: undefined,
+        games: event.games.filter((game) => game.eventId === entry.id),
+      }))
+      .filter((past) => past.games.length > 0);
+    event.games = event.games.filter((game) => game.eventId === selected.id);
+  }
   return { event, catalog, seasons, actor: account.userId };
 }

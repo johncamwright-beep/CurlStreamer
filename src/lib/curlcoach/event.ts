@@ -57,6 +57,8 @@ export type CoachGame = {
   analysisReady?: boolean;
 };
 export type CoachEvent = {
+  startDate?: string;
+  performanceHistory?: CoachEvent[];
   id: string;
   name: string;
   source: "sample" | "streamer";

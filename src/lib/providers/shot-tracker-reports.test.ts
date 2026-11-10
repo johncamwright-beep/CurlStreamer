@@ -19,7 +19,11 @@ vi.mock("@/lib/supabase/admin", () => ({
 vi.mock("./curlcoach-production-streamer", () => ({
   loadProductionStreamerEvent: m.source,
 }));
-vi.mock("./curlcoach-store", () => ({ loadCoachState: m.load }));
+vi.mock("./curlcoach-store", () => ({
+  loadCoachState: m.load,
+  loadCoachStates: async (_org: string, _actor: string, states: unknown[]) =>
+    Promise.all(states.map((state) => m.load({}, state))),
+}));
 vi.mock("./shot-tracker-ai", async (importOriginal) => ({
   ...(await importOriginal<typeof import("./shot-tracker-ai")>()),
   reportAIConfig: () => ({ model: "test" }),

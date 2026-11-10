@@ -1,3 +1,4 @@
+import { reportEventPerformance } from "./event-performance";
 import { family, type CoachEvent } from "./event";
 import { withReportFlags } from "./flagged-shots";
 import {
@@ -103,6 +104,10 @@ export function withReportAnalysis(
     ...reports,
     reports: reports.reports.map((saved) => ({
       ...saved,
+      eventPerformance:
+        packet.audience !== "players" || saved.playerId
+          ? reportEventPerformance(event, saved.playerId)
+          : undefined,
       analysis:
         packet.audience === "players"
           ? saved.playerId

@@ -367,8 +367,14 @@ function WorkspaceContent({
     if (mode !== "streamer" && query.get("source") === "streamer")
       setSource("streamer");
     if (!initialEventId && query.get("event")) setEventId(query.get("event")!);
-    if (requestedGame) setGameId(requestedGame);
-    else if (
+    if (requestedGame) {
+      setGameId(requestedGame);
+      if (
+        location.hash === "#analysis/flagged" ||
+        location.hash === "#flagged-shots"
+      )
+        setAnalysisGame(requestedGame);
+    } else if (
       !query.get("event") &&
       !initialEventId &&
       stored?.active &&
@@ -446,44 +452,6 @@ function WorkspaceContent({
   // while the rest of the season loads for the All events selector.
   const analysisData = seasonReady ? statsData : eventReady ? data : null;
   const statsReady = !!analysisData;
-  const flagged = view === "Analysis" && analysisTab === "flagged";
-  const flagDefaultApplied = useRef(false);
-  useEffect(() => {
-    if (!flagged) {
-      flagDefaultApplied.current = false;
-      return;
-    }
-    if (flagDefaultApplied.current) return;
-    const today = new Intl.DateTimeFormat("en-CA", {
-      timeZone: "America/Toronto",
-    }).format(new Date());
-    const recentEvent = data?.catalog
-      .filter((e) => e.startDate && e.startDate <= today)
-      .sort((a, b) => b.startDate!.localeCompare(a.startDate!))[0];
-    if (recentEvent) {
-      flagDefaultApplied.current = true;
-      setSeasonId(recentEvent.seasonId ?? "unassigned");
-      setStatsEventId(recentEvent.id);
-      setAnalysisGame("all");
-      return;
-    }
-    if (!seasonReady || !statsData) return;
-    flagDefaultApplied.current = true;
-    const recent = statsData.event.games
-      .filter(
-        (g) =>
-          g.eventId !== "standalone" &&
-          g.scheduledStart &&
-          Date.parse(g.scheduledStart) <= Date.now(),
-      )
-      .sort((a, b) =>
-        (b.scheduledStart ?? "").localeCompare(a.scheduledStart ?? ""),
-      )[0];
-    if (recent) {
-      setStatsEventId(recent.eventId);
-      setAnalysisGame("all");
-    }
-  }, [flagged, seasonReady, statsData, data]);
   const hasData = !!data;
   useEffect(() => {
     if (!statistics) setStatsData(null);
@@ -1206,6 +1174,7 @@ function WorkspaceContent({
                     initialState: game.state,
                     broadcastReview: game.broadcastReview,
                     reviewCorrections: game.reviewCorrections,
+                    standaloneReviews: game.standaloneReviews,
                     onSaved: saved,
                   }}
                 />

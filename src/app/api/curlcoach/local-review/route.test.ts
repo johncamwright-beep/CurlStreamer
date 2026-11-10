@@ -4,6 +4,8 @@ const m = vi.hoisted(() => ({
   load: vi.fn(),
   save: vi.fn(),
   rpc: vi.fn(),
+  game: vi.fn(),
+  eq: vi.fn(),
 }));
 vi.mock("@/lib/curlcoach/access", () => ({
   labEnabled: () => false,
@@ -17,7 +19,10 @@ vi.mock("@/lib/providers/curlcoach-store", () => ({
   saveCoachState: m.save,
 }));
 vi.mock("@/lib/supabase/admin", () => ({
-  createAdminSupabaseClient: () => ({ rpc: m.rpc }),
+  createAdminSupabaseClient: () => ({
+    rpc: m.rpc,
+    from: () => ({ select: () => ({ eq: m.eq }) }),
+  }),
 }));
 vi.mock("@/lib/providers/team-settings", () => ({
   readTeamSettings: async () => ({ settings: {} }),
@@ -49,6 +54,8 @@ const request = (origin = "http://localhost") =>
 beforeEach(() => {
   vi.clearAllMocks();
   m.rpc.mockResolvedValue({ error: null });
+  m.eq.mockReturnValue({ eq: m.eq, maybeSingle: m.game });
+  m.game.mockResolvedValue({ data: { event_id: null }, error: null });
   vi.stubEnv("CURLCOACH_ENABLED", "true");
   m.account.mockResolvedValue({ organizationId: "org", userId: "actor" });
   m.load.mockResolvedValue({
@@ -132,4 +139,25 @@ it("saves standalone team flags without creating attempts and rejects unknown pl
     "save_standalone_review",
     expect.objectContaining({ p_player: "lead", p_name: "Alex" }),
   );
+});
+
+it("returns the authorized game event for an exact post-save link", async () => {
+  const res = await GET(
+    new Request("http://localhost/api/curlcoach/local-review?game=" + gameId),
+  );
+  expect(res.status).toBe(200);
+  expect((await res.json()).eventId).toBe("standalone");
+  expect(m.eq).toHaveBeenCalledWith("organization_id", "org");
+  m.game.mockResolvedValue({ data: { event_id: shotId }, error: null });
+  expect(
+    (
+      await (
+        await GET(
+          new Request(
+            "http://localhost/api/curlcoach/local-review?game=" + gameId,
+          ),
+        )
+      ).json()
+    ).eventId,
+  ).toBe(shotId);
 });

@@ -134,6 +134,7 @@ export default function CoachLab({
     initialState: State;
     broadcastReview?: BroadcastReview;
     reviewCorrections?: ReviewCorrection[];
+    standaloneReviews?: import("@/lib/curlcoach/standalone-review").StandaloneReview[];
     onSaved: (state: State) => void;
   };
 }) {
@@ -785,6 +786,8 @@ export default function CoachLab({
       </EntryOverlay>
       <EntryOverlay title="Flagged shots">
         <ReviewSummary
+          standaloneReviews={context?.standaloneReviews}
+          broadcast={context?.broadcastReview}
           shots={shots.map((shot) => {
             const correction = context?.reviewCorrections?.find(
               (c) => c.shotId === shot.id,

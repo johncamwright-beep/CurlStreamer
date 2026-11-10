@@ -48,8 +48,16 @@ export async function GET(request: Request) {
   try {
     const current = await context(parsed.data);
     if (!current) return new NextResponse(null, { status: 403, headers });
+    const { data: game, error: gameError } = await createAdminSupabaseClient()
+      .from("games")
+      .select("event_id")
+      .eq("id", parsed.data)
+      .eq("organization_id", current.scope.organizationId)
+      .maybeSingle();
+    if (gameError || !game) throw Error("Game unavailable");
     return NextResponse.json(
       {
+        eventId: game.event_id ?? "standalone",
         revision: current.state.revision,
         players: await players(current),
         accountScope: {

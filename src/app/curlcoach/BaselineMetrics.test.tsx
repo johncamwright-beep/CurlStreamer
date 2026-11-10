@@ -21,7 +21,7 @@ it("uses a selected game's event and ignores uncharted future events for the lat
       id: game.eventId!,
       name: `Event scope ${i}`,
       seasonId: event.seasonId,
-      startDate: game.scheduledStart,
+      startDate: game.scheduledStart ?? undefined,
     })),
   };
   const selected = renderToStaticMarkup(

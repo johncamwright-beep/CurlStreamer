@@ -632,9 +632,13 @@ test("Studio pause waits for a correlated native receipt and reports failures wh
   });
   await page.clock.install();
   await page.goto("/youtube-hold-fixture");
-  const report = async (mode: "live" | "hold", generation: number) =>
+  const report = async (
+    mode: "live" | "hold",
+    generation: number,
+    expired = false,
+  ) =>
     page.evaluate(
-      ({ mode, generation, gameId }) =>
+      ({ mode, generation, gameId, expired }) =>
         window.dispatchEvent(
           new CustomEvent("studio-youtube-status", {
             detail: {
@@ -647,12 +651,14 @@ test("Studio pause waits for a correlated native receipt and reports failures wh
               outputActive: true,
               message: "",
               canReconnect: true,
-              canHoldStream: true,
+              canHoldStream: !expired,
+              canRestartBroadcast: expired,
+              programAuthorityEnded: expired,
               presentation: { mode, generation },
             },
           }),
         ),
-      { mode, generation, gameId },
+      { mode, generation, gameId, expired },
     );
   const sent = () =>
     page.evaluate(
@@ -714,7 +720,9 @@ test("Studio pause waits for a correlated native receipt and reports failures wh
     presentation: { mode: "hold", generation: 1 },
   });
   await expect(resume).toBeEnabled();
-  await expect(page.getByRole("status")).toHaveText("● LIVE · Paused");
+  await expect(page.getByRole("status")).toHaveText(
+    "Paused · YouTube still live",
+  );
   // A delayed pre-command poll cannot overwrite the acknowledged picture.
   await report("live", 0);
   await expect(resume).toBeEnabled();
@@ -765,11 +773,27 @@ test("Studio pause waits for a correlated native receipt and reports failures wh
   await expect(
     page.getByRole("link", { name: "Watch on YouTube" }),
   ).toHaveAttribute("href", watchUrl);
+  await report("hold", 3, true);
+  await expect(resume).toHaveCount(0);
+  await page
+    .getByRole("button", { name: "Restart broadcast connection" })
+    .click();
+  await page
+    .getByRole("dialog")
+    .getByRole("button", { name: "Restart connection", exact: true })
+    .click();
+  const restart = (await sent())[4];
+  expect(restart).toMatchObject({ type: "studio-youtube-restart", gameId });
+  await expect(
+    page.getByRole("button", { name: "Restarting connection…" }),
+  ).toBeDisabled();
+  await receipt({ ...restart, ok: true });
+  expect(mutations).toHaveLength(0);
   // A restarted program has a new generation sequence; the receipt fence is
   // bounded, so it cannot permanently retain the previous program's picture.
   await report("live", 0);
   await pause.click();
-  const previousGameRequest = (await sent())[4];
+  const previousGameRequest = (await sent())[5];
   const nextGame = "44444444-4444-4444-8444-444444444444";
   await page.route(`**/api/games/${nextGame}/studio-m4`, (r) =>
     r.fulfill({ json: {} }),
@@ -805,7 +829,7 @@ test("Studio pause waits for a correlated native receipt and reports failures wh
     nextGame,
   );
   await pause.click();
-  const nextGameRequest = (await sent())[5];
+  const nextGameRequest = (await sent())[6];
   expect(nextGameRequest.gameId).toBe(nextGame);
   await receipt({ ...previousGameRequest, ok: false, error: "Old game error" });
   await expect(waiting).toBeDisabled();

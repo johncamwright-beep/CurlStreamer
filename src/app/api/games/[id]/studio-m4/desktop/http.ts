@@ -33,7 +33,7 @@ export function failure(error: unknown) {
     return reply(
       {
         error:
-          "The previous Studio connection is still expiring. Wait up to 35 seconds and reconnect to this game's saved YouTube link.",
+          "The previous Studio connection is still expiring. Allow about 90 seconds before reconnecting to this game's saved YouTube link.",
         code: "studio_recovery_pending",
       },
       409,

@@ -411,10 +411,21 @@ internal sealed class Workspace : Form
             }
             if (TextValue(value, "action") == "zoom-camera") { await CameraZoomCommand(value); return; }
             var presentationType = TextValue(value, "type");
-            if (presentationType == "studio-youtube-hold" || presentationType == "studio-youtube-resume" || presentationType == "studio-ending-prepare" || presentationType == "studio-ending-show" || presentationType == "studio-ending-cancel" || presentationType == "studio-ending-finish") {
-                if (!WorkspacePolicy.SessionPresentation(value, selectedGame, runningGame) || busy || closing || !recording) return;
+            if (presentationType == "studio-youtube-hold" || presentationType == "studio-youtube-resume" || presentationType == "studio-youtube-restart" || presentationType == "studio-ending-prepare" || presentationType == "studio-ending-show" || presentationType == "studio-ending-cancel" || presentationType == "studio-ending-finish") {
+                if (!WorkspacePolicy.SessionPresentation(value, selectedGame, runningGame)) return;
                 var requestNonce = TextValue(value, "nonce");
-                Guid parsedNonce; if (!Guid.TryParse(requestNonce, out parsedNonce)) return;
+                if (busy || closing || !recording) {
+                    await PublishPresentationResult(runningGame, requestNonce, false, null, null, "Studio is changing the broadcast connection. Check its status before trying again.");
+                    return;
+                }
+                if (presentationType == "studio-youtube-restart") {
+                    if (WorkspacePolicy.Game(args.Source, origin) != runningGame) return;
+                    var game = runningGame;
+                    var restarted = await YouTube(true, true);
+                    await PublishPresentationResult(game, requestNonce, restarted, null, null,
+                        restarted ? null : (String.IsNullOrEmpty(youtubeError) ? "Studio could not restart this broadcast connection." : youtubeError));
+                    return;
+                }
                 await PresentationCommand(presentationType, requestNonce, value); return;
             }
             if (WorkspacePolicy.Game(args.Source, origin) != selectedGame) return;
@@ -607,6 +618,10 @@ internal sealed class Workspace : Form
     }
     private async Task PresentationCommand(string type, string nonce, Dictionary<string, object> value) {
         var gameId = runningGame; object presentation = null, closeReceipt = null; bool ok = false;
+        if (type == "studio-youtube-resume" && StateFlag("programAuthorityEnded")) {
+            await PublishPresentationResult(gameId, nonce, false, null, null, "The Studio video session expired. Restart the broadcast connection to use your saved YouTube link.");
+            return;
+        }
         if (!StateFlag(type.StartsWith("studio-ending-") ? "canGracefulEnd" : "canHoldStream")) {
             await PublishPresentationResult(gameId, nonce, false, null, null); return;
         }
@@ -628,17 +643,18 @@ internal sealed class Workspace : Form
                 result = await Command(new { action = "finish-ending" }); endingUntil = DateTime.MinValue;
             } else {
                 var action = type == "studio-youtube-hold" ? "hold-stream" : type == "studio-youtube-resume" ? "release-hold" : "cancel-ending";
-                result = await Command(new { action = action });
+                result = await Command(new { action = action }, type == "studio-youtube-resume" ? 25000 : 120000);
                 if (type == "studio-ending-cancel") endingUntil = DateTime.MinValue;
             }
             ApplyState(result); result.TryGetValue("presentation", out presentation); ok = true;
         } catch { if (type == "studio-ending-prepare" || type == "studio-ending-cancel") endingUntil = DateTime.MinValue; }
         finally { busy = false; PublishYouTubeStatus(lastState); UpdateButtons(); }
-        await PublishPresentationResult(gameId, nonce, ok, presentation, closeReceipt);
+        await PublishPresentationResult(gameId, nonce, ok, presentation, closeReceipt,
+            !ok && type == "studio-youtube-resume" ? "Studio could not restore the live picture. Retry Resume or restart the broadcast connection." : null);
     }
-    private Task PublishPresentationResult(string gameId, string nonce, bool ok, object presentation, object closeReceipt) {
+    private Task PublishPresentationResult(string gameId, string nonce, bool ok, object presentation, object closeReceipt, string error = null) {
         if (web.CoreWebView2 == null || !WorkspacePolicy.SameOrigin(web.CoreWebView2.Source, origin)) return Task.FromResult(true);
-        return web.ExecuteScriptAsync("window.dispatchEvent(new CustomEvent('studio-presentation-result',{detail:" + json.Serialize(new { gameId = gameId, nonce = nonce, ok = ok, presentation = presentation, closing = closeReceipt, error = ok ? null : "Studio could not confirm this presentation change." }) + "}));");
+        return web.ExecuteScriptAsync("window.dispatchEvent(new CustomEvent('studio-presentation-result',{detail:" + json.Serialize(new { gameId = gameId, nonce = nonce, ok = ok, presentation = presentation, closing = closeReceipt, error = ok ? null : error ?? "Studio could not confirm this presentation change." }) + "}));");
     }
     private async Task<string> PrepareGrant(string gameId) {
         if (!WorkspacePolicy.SameOrigin(web.CoreWebView2.Source, origin) || WorkspacePolicy.Game(web.CoreWebView2.Source, origin) != gameId) throw new InvalidDataException();
@@ -669,41 +685,51 @@ internal sealed class Workspace : Form
     }
     private string youtubeError = "";
     private async Task<string> PrepareYouTube(string gameId) {
-        for (int attempt = 0; ; attempt++) {
+        // A previously issued desktop lease can live for 90 seconds plus
+        // the server's three-second fence after the local sender exits.
+        var recoveryWait = Stopwatch.StartNew();
+        for (;;) {
             try { return await WebsiteYouTube(gameId, "", new { action = "prepare" }); }
             catch (WorkspaceFailure failure) {
-                if (failure.Code != "studio_recovery_pending" || attempt >= 7) throw;
-                status.Text = "Waiting for the previous Studio connection to expire. Keeping the same YouTube link…";
+                if (failure.Code != "studio_recovery_pending" || recoveryWait.Elapsed.TotalSeconds >= 100) throw;
+                youtubeError = "Waiting for the previous Studio connection to expire. This can take about 90 seconds. Your YouTube link is kept.";
+                PublishYouTubeStatus(lastState);
             }
             await Task.Delay(5000);
         }
     }
-    private async Task YouTube(bool start) {
-        if (busy || closing || !recording || selectedGame != runningGame) return;
+    private async Task<bool> YouTube(bool start, bool restart = false) {
+        if (busy || closing || !recording || gameEnded || selectedGame != runningGame) return false;
         var gameId = runningGame; busy = true; youtubeError = "";
         try {
             if (start) {
-                Dictionary<string, object> previous;
-                using (var response = await local.GetAsync(localAddress + "/state")) { response.EnsureSuccessStatusCode(); previous = json.Deserialize<Dictionary<string, object>>(await response.Content.ReadAsStringAsync()); }
-                if (WorkspacePolicy.RestartYouTube(TextValue(previous, "pairing"), TextValue(previous, "streaming"))) {
-                    youtubeError = "Reconnecting Studio cameras and checking the saved YouTube broadcast…";
+                var previous = await ReadYouTubeControllerState();
+                object authorityEnded;
+                var expired = previous.TryGetValue("programAuthorityEnded", out authorityEnded) && Object.Equals(authorityEnded, true);
+                if (restart || expired || WorkspacePolicy.RestartYouTube(TextValue(previous, "pairing"), TextValue(previous, "streaming"))) {
+                    if (restart && !CanRestartBroadcast(previous)) throw new WorkspaceFailure("The broadcast is ending or changing connection. Check its status before restarting.");
+                    var enabledCameras = EnabledIpCameras(previous);
+                    youtubeError = "Restarting local video and reconnecting to the saved YouTube link…";
                     PublishYouTubeStatus(previous);
                     await WorkspacePolicy.RecoverYouTube(
                         CloseController,
                         () => !closing && !gameEnded && selectedGame == gameId && WorkspacePolicy.Game(web.CoreWebView2.Source, origin) == gameId,
                         () => ConnectProgram(gameId));
+                    foreach (var role in enabledCameras) {
+                        try { ApplyState(await Command(new { action = "connect-camera-input", cameraRole = role }, 4000)); }
+                        catch { /* Camera controls remain available independently of the broadcast. */ }
+                    }
                     previous = lastState;
                     if (previous == null) throw new InvalidDataException();
                 }
                 if (TextValue(previous, "streaming") == "paused") {
                     ApplyState(await Command(new { action = "resume-stream" }));
-                    return;
+                    return true;
                 }
                 if (TextValue(previous, "streaming") != "idle") throw new WorkspaceFailure("This YouTube output is already connecting. Wait for its status before reconnecting.");
                 var prepared = await PrepareYouTube(gameId);
                 if (prepared != "prepared") throw new WorkspaceFailure(WorkspacePolicy.YouTubeFailure(prepared));
-                Dictionary<string, object> state;
-                using (var response = await local.GetAsync(localAddress + "/state")) { response.EnsureSuccessStatusCode(); state = json.Deserialize<Dictionary<string, object>>(await response.Content.ReadAsStringAsync()); }
+                var state = await ReadYouTubeControllerState();
                 if (TextValue(state, "pairing") == "unpaired") {
                     var challenge = TextValue(state, "challenge");
                     if (challenge == null || !System.Text.RegularExpressions.Regex.IsMatch(challenge, "^[a-f0-9]{64}$")) throw new InvalidDataException();
@@ -716,9 +742,40 @@ internal sealed class Workspace : Form
             } else {
                 ApplyState(await Command(new { action = "pause-stream" }));
             }
+            return true;
         } catch (Exception error) {
-            youtubeError = error is WorkspaceFailure ? error.Message : "Reconnection did not finish. Your game and watch link are retained. Try Reconnect broadcast again; if cameras are disconnected, use Connect cameras first.";
+            youtubeError = error is WorkspaceFailure ? error.Message : "Studio could not reconnect. Your game and watch link are saved. Reopen the same game and reconnect, or use Ctrl+Shift+Q if Studio is stuck.";
+            return false;
         } finally { busy = false; PublishYouTubeStatus(lastState); UpdateButtons(); }
+    }
+    private async Task<Dictionary<string, object>> ReadYouTubeControllerState() {
+        using (var timeout = new System.Threading.CancellationTokenSource(5000))
+        using (var response = await local.GetAsync(localAddress + "/state", timeout.Token)) {
+            response.EnsureSuccessStatusCode();
+            return json.Deserialize<Dictionary<string, object>>(await response.Content.ReadAsStringAsync());
+        }
+    }
+    private bool CanRestartBroadcast(Dictionary<string, object> state) {
+        object available, presentation;
+        var mode = state != null && state.TryGetValue("presentation", out presentation) ? TextValue(presentation as Dictionary<string, object>, "mode") : null;
+        var streaming = TextValue(state, "streaming");
+        return state != null && state.TryGetValue("streamingAvailable", out available) && Object.Equals(available, true) &&
+            endingUntil <= DateTime.UtcNow && !gameEnded && mode != "preparing-end" && mode != "ended" &&
+            (streaming == "armed" || streaming == "paused" || streaming == "stopped" || streaming == "failed");
+    }
+    private List<string> EnabledIpCameras(Dictionary<string, object> state) {
+        object inputs;
+        var cameras = state.TryGetValue("cameraInputs", out inputs) ? inputs as Dictionary<string, object> : null;
+        var roles = new List<string>();
+        if (cameras == null) return roles;
+        foreach (var entry in cameras) {
+            var source = entry.Value as Dictionary<string, object>;
+            var kind = TextValue(source, "kind");
+            object enabled;
+            if (CameraInputs.Role(entry.Key) && (kind == "tapo" || kind == "rtsp") &&
+                source.TryGetValue("connectionEnabled", out enabled) && Object.Equals(enabled, true)) roles.Add(entry.Key);
+        }
+        return roles;
     }
     private async Task StartRecording() {
         if (busy || closing || recording || !WorkspacePolicy.CanStartSession(runningGame, selectedGame)) return;
@@ -866,7 +923,7 @@ internal sealed class Workspace : Form
             if (!offline && String.IsNullOrEmpty(broadcastMessage) && TextValue(state, "streaming") == "failed")
                 broadcastMessage = TextValue(state, "streamingMessage") ?? "Studio could not start this output. Your game and watch link are kept.";
             object output; var localOutput = !offline && state.TryGetValue("localOutput", out output) ? output as Dictionary<string, object> : null;
-            web.CoreWebView2.ExecuteScriptAsync("window.dispatchEvent(new CustomEvent('studio-youtube-status',{detail:" + json.Serialize(new { gameId = runningGame, available = !offline && enabled, busy = !offline && busy, canReconnect = canReconnect, canRecover = true, needsRecovery = WorkspacePolicy.RestartYouTube(TextValue(state, "pairing"), TextValue(state, "streaming")), canHoldStream = !offline && StateFlag("canHoldStream"), canGracefulEnd = !offline && StateFlag("canGracefulEnd"), presentation = presentation, streaming = offline ? "failed" : TextValue(state, "streaming") ?? "idle", outputActive = localOutput != null && TextValue(localOutput, "state") == "active", live = !offline && TextValue(state, "broadcast") == "live", lastLiveAgeMs = !offline && state.ContainsKey("lastLiveAgeMs") ? state["lastLiveAgeMs"] : null, concurrentViewers = !offline && state.ContainsKey("concurrentViewers") ? state["concurrentViewers"] : null, receiving = !offline && TextValue(state, "youtubeReception") == "confirmed", message = offline || enabled ? broadcastMessage : "YouTube streaming is not enabled in this Studio installation." }) + "}));");
+            web.CoreWebView2.ExecuteScriptAsync("window.dispatchEvent(new CustomEvent('studio-youtube-status',{detail:" + json.Serialize(new { gameId = runningGame, available = !offline && enabled, busy = !offline && busy, canReconnect = canReconnect, canRecover = true, canRestartBroadcast = CanRestartBroadcast(state), programAuthorityEnded = !offline && StateFlag("programAuthorityEnded"), needsRecovery = WorkspacePolicy.RestartYouTube(TextValue(state, "pairing"), TextValue(state, "streaming")), canHoldStream = !offline && StateFlag("canHoldStream"), canGracefulEnd = !offline && StateFlag("canGracefulEnd"), presentation = presentation, streaming = offline ? "failed" : TextValue(state, "streaming") ?? "idle", outputActive = localOutput != null && TextValue(localOutput, "state") == "active", live = !offline && TextValue(state, "broadcast") == "live", lastLiveAgeMs = !offline && state.ContainsKey("lastLiveAgeMs") ? state["lastLiveAgeMs"] : null, concurrentViewers = !offline && state.ContainsKey("concurrentViewers") ? state["concurrentViewers"] : null, receiving = !offline && TextValue(state, "youtubeReception") == "confirmed", message = offline || enabled ? broadcastMessage : "YouTube streaming is not enabled in this Studio installation." }) + "}));");
         }
     }
     private void PublishSessionStatus() {

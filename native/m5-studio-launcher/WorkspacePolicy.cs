@@ -48,7 +48,7 @@ internal static class WorkspacePolicy
         if (Object.Equals(type, "studio-youtube-hold") || Object.Equals(type, "studio-youtube-resume")) return request.Count == 3;
         return selectedGame == runningGame &&
             ((Object.Equals(type, "studio-ending-show") && request.Count == 5) ||
-             (request.Count == 3 && (Object.Equals(type, "studio-ending-prepare") || Object.Equals(type, "studio-ending-cancel") || Object.Equals(type, "studio-ending-finish"))));
+             (request.Count == 3 && (Object.Equals(type, "studio-youtube-restart") || Object.Equals(type, "studio-ending-prepare") || Object.Equals(type, "studio-ending-cancel") || Object.Equals(type, "studio-ending-finish"))));
     }
     internal static bool KeepUsbSession(string usbGame, string runningGame, bool active)
     {
@@ -151,7 +151,7 @@ internal static class WorkspacePolicy
             case "stopped":
                 return "YouTube has ended this broadcast and cannot resume its saved link. Open YouTube settings to review it. A new broadcast needs a new game; this game's score and recording are kept.";
             case "studio_recovery_pending":
-                return "The previous Studio connection is still expiring. Wait up to 35 seconds, then reconnect to this game's saved YouTube link.";
+                return "The previous Studio connection is still expiring. Allow about 90 seconds before reconnecting to this game's saved YouTube link.";
             case "youtube_reconnect_required":
                 return "Reconnect your existing YouTube channel in Account & Settings > YouTube Settings using your regular browser, then try again.";
             case "youtube_scope_missing":

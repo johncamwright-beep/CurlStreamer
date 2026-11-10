@@ -72,6 +72,10 @@ internal static class WorkspacePolicyTests
         Assert(WorkspacePolicy.SessionPresentation(sessionCommand, id, id));
         Assert(!WorkspacePolicy.SessionPresentation(sessionCommand, null, id));
         Assert(!WorkspacePolicy.SessionPresentation(sessionCommand, otherId, id));
+        sessionCommand["type"] = "studio-youtube-restart";
+        Assert(WorkspacePolicy.SessionPresentation(sessionCommand, id, id));
+        Assert(!WorkspacePolicy.SessionPresentation(sessionCommand, otherId, id));
+        Assert(!WorkspacePolicy.SessionPresentation(sessionCommand, null, id));
         sessionCommand["type"] = "studio-youtube-resume"; sessionCommand["nonce"] = "invalid";
         Assert(!WorkspacePolicy.SessionPresentation(sessionCommand, id, id));
         sessionCommand["nonce"] = Guid.NewGuid().ToString("D"); sessionCommand["url"] = "http://attacker.example";

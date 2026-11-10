@@ -155,7 +155,10 @@ it("uses five earlier completed same-season events and excludes future, overlap 
   expect(result.baselineEvents).toBe(5);
   expect(result.expectedRoutinePercent).toBe(100);
   expect(result.baselineGap).toBe(-20);
-  current.performanceHistory = [...history, future, foreign];
+  current.performanceHistory = [...history, future, foreign, overlap];
+  expect(reportEventPerformance(current).points.map((p) => p.id)).not.toContain(
+    "overlap",
+  );
   expect(reportEventPerformance(current).points.map((p) => p.id)).not.toContain(
     "future",
   );

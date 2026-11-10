@@ -227,7 +227,10 @@ export function reportEventPerformance(event: CoachEvent, playerId?: string) {
       past.seasonId === event.seasonId &&
       date &&
       pastDate &&
-      pastDate < date
+      pastDate < date &&
+      past.games.every(
+        (game) => (game.scheduledStart?.slice(0, 10) ?? pastDate) < date,
+      )
     );
   });
   return eventPerformance([...history, event], playerId, event.id);

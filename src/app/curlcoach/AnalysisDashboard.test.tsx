@@ -79,11 +79,11 @@ describe("Analysis dashboard", () => {
     expect(panel).toContain("Performance by shot order");
     expect(panel).toContain("Weakest first");
   });
-  it("renders five labelled, keyboard-addressable analysis tabs", () => {
+  it("renders six labelled, keyboard-addressable analysis tabs", () => {
     const html = renderToStaticMarkup(
       <AnalysisNavigation tab="performance" onTabChange={vi.fn()} />,
     );
-    expect(html.match(/role="tab"/g)).toHaveLength(5);
+    expect(html.match(/role="tab"/g)).toHaveLength(6);
     expect(html).toContain('aria-selected="true" tabindex="0"');
     expect(html).toContain("Advanced Analysis");
     expect(html).toContain("Flagged shots");

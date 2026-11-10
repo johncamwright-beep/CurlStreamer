@@ -132,7 +132,7 @@ it("excludes picks, ungraded and unrated shots; retains grade zero", () => {
   expect(m.difficultShare).toBe(50);
   expect(baselineMetrics([s(5)], copies(4, s(5))).baselineGap).toBeNull();
 });
-it("uses five earlier completed same-season events and excludes future, overlap and foreign history", () => {
+it("uses all earlier completed same-season events and excludes future, overlap and foreign history", () => {
   const history = Array.from({ length: 7 }, (_, i) =>
     event(`e${i}`, `2026-01-0${i + 1}`, copies(5, s(i === 0 ? 0 : 5))),
   );
@@ -152,9 +152,9 @@ it("uses five earlier completed same-season events and excludes future, overlap 
     overlap,
     open,
   ]).points.find((p) => p.id === "current")!;
-  expect(result.baselineEvents).toBe(5);
-  expect(result.expectedRoutinePercent).toBe(100);
-  expect(result.baselineGap).toBe(-20);
+  expect(result.baselineEvents).toBe(7);
+  expect(result.expectedRoutinePercent).toBeCloseTo(600 / 7);
+  expect(result.baselineGap).toBeCloseTo(80 - 600 / 7);
   current.performanceHistory = [...history, future, foreign, overlap];
   expect(reportEventPerformance(current).points.map((p) => p.id)).not.toContain(
     "overlap",

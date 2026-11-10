@@ -4,8 +4,7 @@ const m = vi.hoisted(() => ({
   load: vi.fn(),
   save: vi.fn(),
   rpc: vi.fn(),
-  game: vi.fn(),
-  eq: vi.fn(),
+  catalog: vi.fn(),
 }));
 vi.mock("@/lib/curlcoach/access", () => ({
   labEnabled: () => false,
@@ -21,7 +20,6 @@ vi.mock("@/lib/providers/curlcoach-store", () => ({
 vi.mock("@/lib/supabase/admin", () => ({
   createAdminSupabaseClient: () => ({
     rpc: m.rpc,
-    from: () => ({ select: () => ({ eq: m.eq }) }),
   }),
 }));
 vi.mock("@/lib/providers/team-settings", () => ({
@@ -53,11 +51,19 @@ const request = (origin = "http://localhost") =>
   });
 beforeEach(() => {
   vi.clearAllMocks();
-  m.rpc.mockResolvedValue({ error: null });
-  m.eq.mockReturnValue({ eq: m.eq, maybeSingle: m.game });
-  m.game.mockResolvedValue({ data: { event_id: null }, error: null });
+  m.rpc.mockImplementation(async (name: string) =>
+    name === "list_team_hierarchy_games" ? m.catalog() : { error: null },
+  );
+  m.catalog.mockResolvedValue({
+    data: [{ id: gameId, event_id: null }],
+    error: null,
+  });
   vi.stubEnv("CURLCOACH_ENABLED", "true");
-  m.account.mockResolvedValue({ organizationId: "org", userId: "actor" });
+  m.account.mockResolvedValue({
+    organizationId: "org",
+    userId: "actor",
+    user: { id: "actor" },
+  });
   m.load.mockResolvedValue({
     revision: 1,
     status: "open",
@@ -89,13 +95,18 @@ it("rejects cross-origin writes, unavailable accounts and game authorization fai
   expect(m.load).not.toHaveBeenCalled();
   m.account.mockResolvedValue(null);
   expect((await POST(request())).status).toBe(403);
-  m.account.mockResolvedValue({ organizationId: "org", userId: "actor" });
+  m.account.mockResolvedValue({
+    organizationId: "org",
+    userId: "actor",
+    user: { id: "actor" },
+  });
   m.load.mockRejectedValue(Error("private diagnostic"));
   const result = await GET(
     new Request(`http://localhost/api/curlcoach/local-review?game=${gameId}`),
   );
   expect(result.status).toBe(403);
   expect(await result.text()).not.toContain("private diagnostic");
+  expect(m.catalog).not.toHaveBeenCalled();
   expect((await POST(request())).status).toBe(409);
   expect(m.save).not.toHaveBeenCalled();
 });
@@ -141,23 +152,37 @@ it("saves standalone team flags without creating attempts and rejects unknown pl
   );
 });
 
-it("returns the authorized game event for an exact post-save link", async () => {
-  const res = await GET(
-    new Request("http://localhost/api/curlcoach/local-review?game=" + gameId),
-  );
+const loadRequest = () =>
+  new Request("http://localhost/api/curlcoach/local-review?game=" + gameId);
+
+it("returns the matching game event through the authorized team catalog", async () => {
+  const res = await GET(loadRequest());
   expect(res.status).toBe(200);
   expect((await res.json()).eventId).toBe("standalone");
-  expect(m.eq).toHaveBeenCalledWith("organization_id", "org");
-  m.game.mockResolvedValue({ data: { event_id: shotId }, error: null });
-  expect(
-    (
-      await (
-        await GET(
-          new Request(
-            "http://localhost/api/curlcoach/local-review?game=" + gameId,
-          ),
-        )
-      ).json()
-    ).eventId,
-  ).toBe(shotId);
+  expect(m.rpc).toHaveBeenCalledWith("list_team_hierarchy_games", {
+    p_user_id: "actor",
+  });
+  m.catalog.mockResolvedValue({
+    data: [
+      { id: shotId, event_id: null },
+      { id: gameId, event_id: shotId },
+    ],
+    error: null,
+  });
+  expect((await (await GET(loadRequest())).json()).eventId).toBe(shotId);
+});
+
+it("keeps the game scoped and makes a catalog outage retryable", async () => {
+  m.catalog.mockResolvedValueOnce({
+    data: [{ id: shotId, event_id: null }],
+    error: null,
+  });
+  expect((await GET(loadRequest())).status).toBe(403);
+  m.catalog.mockResolvedValueOnce({
+    data: null,
+    error: { code: "XX000", message: "private catalog diagnostic" },
+  });
+  const result = await GET(loadRequest());
+  expect(result.status).toBe(503);
+  expect((await result.json()).error).toContain("Reload shots");
 });

@@ -23,6 +23,7 @@ const shotsSchema = z.object({
     }),
   ),
 });
+const problemSchema = z.object({ error: z.string().min(1).max(300) });
 export default function LocalReviewImport() {
   const [review, setReview] = useState<z.infer<
     typeof localReviewSchema
@@ -38,8 +39,19 @@ export default function LocalReviewImport() {
       `/api/curlcoach/local-review?game=${encodeURIComponent(gameId)}`,
       { cache: "no-store" },
     );
-    if (!response.ok)
-      throw Error("Sign in with access to this game, then reload its shots.");
+    if (!response.ok) {
+      setData(null);
+      const problem = problemSchema.safeParse(
+        await response.json().catch(() => null),
+      );
+      throw Error(
+        problem.success
+          ? problem.data.error
+          : response.status === 403
+            ? "Sign in with access to this game, then tap Reload shots."
+            : "Could not load this game's shots. Tap Reload shots to retry.",
+      );
+    }
     const loaded = shotsSchema.parse(await response.json());
     setData(loaded);
     if (loaded.accountScope) {

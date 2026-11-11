@@ -1185,6 +1185,9 @@ function WorkspaceContent({
                     reviewCorrections: game.reviewCorrections,
                     standaloneReviews: game.standaloneReviews,
                     onSaved: saved,
+                    onReviewSaved: () => {
+                      void refresh(undefined, false);
+                    },
                   }}
                 />
               ) : (

@@ -10,6 +10,7 @@ import { replayRange } from "./studio-replay-range";
 export async function startCoachLocalProof(options: {
   host: string;
   port: number;
+  bridge?: { appOrigin: string; gameId: string };
   video?: string;
   capture?: () => Promise<{
     video: string;
@@ -49,9 +50,29 @@ export async function startCoachLocalProof(options: {
   >();
   const current = new Map<string, string>();
   let capturing = false;
-  const html = await readFile(
-    resolve(options.htmlPath ?? "src/lib/providers/coach-local-proof.html"),
-    "utf8",
+  const bridge = options.bridge
+    ? z
+        .object({
+          appOrigin: z
+            .url()
+            .refine(
+              (value) =>
+                new URL(value).origin === value &&
+                new URL(value).protocol === "https:",
+            ),
+          gameId: z.uuid(),
+        })
+        .strict()
+        .parse(options.bridge)
+    : null;
+  const html = (
+    await readFile(
+      resolve(options.htmlPath ?? "src/lib/providers/coach-local-proof.html"),
+      "utf8",
+    )
+  ).replace(
+    "/*STUDIO_BRIDGE_CONFIG*/ null",
+    JSON.stringify(bridge).replaceAll("<", "\\u003c"),
   );
   const sessions = new Set<string>(),
     attempts = new Map<string, number>();
@@ -143,6 +164,13 @@ export async function startCoachLocalProof(options: {
         reply(401, { error: "Pair this phone first" });
         return;
       }
+      if (req.method === "GET" && req.url === "/session") {
+        reply(200, {
+          gameId: bridge?.gameId ?? null,
+          rolling: Boolean(options.capture),
+        });
+        return;
+      }
       if (req.method === "POST" && req.url === "/capture" && options.capture) {
         if (capturing || snapshots.size >= 32) {
           reply(429, {
@@ -169,6 +197,7 @@ export async function startCoachLocalProof(options: {
             minimum: Math.max(0, clip.duration - 120),
             url: "/video?id=" + id,
             capturedAt: clip.capturedAt,
+            gameId: bridge?.gameId ?? null,
           });
         } finally {
           capturing = false;

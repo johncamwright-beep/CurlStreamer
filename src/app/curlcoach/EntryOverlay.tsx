@@ -11,6 +11,8 @@ export default function EntryOverlay({
   inline = false,
   onOpen,
   onDone,
+  onClose,
+  footer,
 }: {
   title: string;
   description?: string;
@@ -19,6 +21,8 @@ export default function EntryOverlay({
   inline?: boolean;
   onOpen?: () => void;
   onDone?: () => void;
+  onClose?: () => void;
+  footer?: ReactNode;
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
   const trigger = useRef<HTMLButtonElement>(null);
@@ -55,6 +59,7 @@ export default function EntryOverlay({
         aria-labelledby={titleId}
         onClose={() => {
           setOpen(false);
+          onClose?.();
           trigger.current?.focus();
         }}
         onClick={(event) => {
@@ -77,15 +82,17 @@ export default function EntryOverlay({
         </header>
         <div className="entry-dialog-content">{children}</div>
         <footer>
-          <button
-            type="button"
-            onClick={() => {
-              onDone?.();
-              close();
-            }}
-          >
-            Done
-          </button>
+          {footer ?? (
+            <button
+              type="button"
+              onClick={() => {
+                onDone?.();
+                close();
+              }}
+            >
+              Done
+            </button>
+          )}
         </footer>
       </dialog>
     </div>

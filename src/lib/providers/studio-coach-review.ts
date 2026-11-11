@@ -10,6 +10,7 @@ import type { startM4StudioRecorder } from "./m4-studio-recorder";
 /** Opt-in Studio integration. Local selections are durable; this does not write production shots. */
 export async function startStudioCoachReview(options: {
   host: string;
+  port?: number;
   gameId: string;
   directory: string;
   htmlPath?: string;
@@ -35,7 +36,9 @@ export async function startStudioCoachReview(options: {
   let closed = false;
   const server = await startCoachLocalProof({
     host: options.host,
-    port: 0,
+    port: options.port ?? 0,
+    lifetimeMs: 12 * 60 * 60 * 1000,
+    ...(appOrigin ? { bridge: { appOrigin, gameId } } : {}),
     code,
     duration: 120,
     htmlPath: options.htmlPath,

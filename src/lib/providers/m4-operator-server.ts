@@ -282,6 +282,7 @@ export async function createM4OperatorServer(options: {
     ...options.ipCamera,
     diagnostic: options.connectionDiagnostic,
   });
+  let coachReviewEpoch = 0;
   let coachReview:
     Awaited<ReturnType<typeof startStudioCoachReview>> | undefined;
   const coachAddresses = () =>
@@ -640,6 +641,7 @@ export async function createM4OperatorServer(options: {
         }
         ++busy;
         try {
+          ++coachReviewEpoch;
           coachReview?.close();
           coachReview = undefined;
           if (input.action === "start-coach-review") {
@@ -969,6 +971,53 @@ export async function createM4OperatorServer(options: {
           programHandle = handle;
           program = "recording";
           programMessage = "Program connected. Local recording is active.";
+          // Start the paired LAN buffer in the background; coaches initiate captures.
+          // A failed LAN listener must never stop recording or broadcasting.
+          if (
+            options.program?.coachControl &&
+            handle.coach &&
+            options.origin.startsWith("https://")
+          ) {
+            const epoch = ++coachReviewEpoch;
+            const host = coachAddresses().sort(
+              (a, b) =>
+                Number(b.startsWith("192.168.")) -
+                Number(a.startsWith("192.168.")),
+            )[0];
+            if (host)
+              void startStudioCoachReview({
+                host,
+                port: 3189,
+                gameId: options.gameId,
+                directory: options.program.recordingRoot,
+                appOrigin: options.origin,
+                htmlPath: join(
+                  options.program.rendererRoot,
+                  "coach-review.html",
+                ),
+                coach: handle.coach,
+              })
+                .then((opened) => {
+                  if (
+                    programHandle !== handle ||
+                    closing ||
+                    coachReview ||
+                    epoch !== coachReviewEpoch
+                  ) {
+                    opened.close();
+                    return;
+                  }
+                  coachReview = opened;
+                  void handle.closed.finally(() => {
+                    opened.close();
+                    if (coachReview === opened) coachReview = undefined;
+                  });
+                })
+                .catch(() => {
+                  /* Phone review settings allow another LAN address. */
+                });
+          }
+
           void handle.closed.then((result) => {
             if (!result.finalized) cleanupFailed = true;
             if (programHandle !== handle) return;

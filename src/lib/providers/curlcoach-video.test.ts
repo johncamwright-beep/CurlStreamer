@@ -29,11 +29,97 @@ it("uses the actor-scoped metadata RPC without reading private tables or credent
       estimated: true,
     },
   });
-  expect(m.rpc).toHaveBeenCalledWith("read_shot_tracker_recording_history", {
+  expect(m.rpc).toHaveBeenCalledWith("read_shot_tracker_recording_history_v2", {
     p_actor: "coach",
     p_org: "team",
     p_games: [gid],
   });
+});
+it("uses the older authorized read while the recording history upgrade propagates", async () => {
+  m.rpc
+    .mockResolvedValueOnce({ data: null, error: { code: "PGRST202" } })
+    .mockResolvedValueOnce({
+      data: [
+        { game_id: gid, youtube_broadcast_id: "abcdefghijk", is_current: true },
+      ],
+      error: null,
+    });
+  expect(await loadCoachBroadcastReviews("team", [gid], "coach")).toEqual({
+    [gid]: { url: "https://www.youtube.com/watch?v=abcdefghijk" },
+  });
+  expect(m.rpc).toHaveBeenLastCalledWith(
+    "read_shot_tracker_recording_history",
+    {
+      p_actor: "coach",
+      p_org: "team",
+      p_games: [gid],
+    },
+  );
+});
+it("accounts for the off-air gap between two starts on the same YouTube video", async () => {
+  m.rpc.mockResolvedValue({
+    data: [
+      {
+        game_id: gid,
+        youtube_broadcast_id: "abcdefghijk",
+        started_at: "2026-11-11T13:23:23Z",
+        is_current: true,
+        delivery_gaps: [
+          {
+            stopped_at: "2026-11-11T13:50:43.535995Z",
+            resumed_at: "2026-11-11T14:53:50.502711Z",
+          },
+        ],
+      },
+    ],
+    error: null,
+  });
+  const broadcast = (await loadCoachBroadcastReviews("team", [gid], "coach"))[
+    gid
+  ];
+  const flag = {
+    id: gid,
+    audience: "team" as const,
+    playerId: null,
+    playerName: null,
+    note: "",
+    selectedAt: "2026-11-11T14:54:59.294Z",
+  };
+  expect(reviewLink(standaloneReviewVideo(flag, broadcast))).toContain(
+    "t=1709s",
+  );
+  expect(
+    reviewLink(
+      standaloneReviewVideo(
+        { ...flag, selectedAt: "2026-11-11T13:40:00Z" },
+        broadcast,
+      ),
+    ),
+  ).toContain("t=997s");
+  expect(
+    standaloneReviewVideo(
+      { ...flag, selectedAt: "2026-11-11T14:40:00Z" },
+      broadcast,
+    ),
+  ).toMatchObject({
+    positionSeconds: null,
+    url: expect.stringContaining("abcdefghijk"),
+  });
+  expect(
+    reviewLink(
+      standaloneReviewVideo(
+        {
+          ...flag,
+          videoReview: {
+            url: "https://www.youtube.com/watch?v=abcdefghijk",
+            positionSeconds: 1701,
+            lookBackSeconds: 0,
+          },
+        },
+        broadcast,
+      ),
+    ),
+  ).toContain("t=1701s");
 });
 it("retains known recording links without inventing timing and ignores invalid or unrequested neighbors", async () => {
   m.rpc.mockResolvedValue({

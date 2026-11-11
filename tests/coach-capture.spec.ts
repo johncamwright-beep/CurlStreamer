@@ -46,7 +46,7 @@ test("chooses a local flag start and retries only the same flag metadata", async
             () => ({
               contents: `export async function captureShotFlagClip(gameId, signal) {
           const response = await fetch('/fixture-clip', { signal });
-          return { video: await response.blob(), duration: 5, minimum: 0, capturedAt: "${capturedAt}" };
+          return { video: await response.blob(), duration: 12, minimum: 0, capturedAt: "${capturedAt}" };
         }`,
             }),
           );
@@ -109,12 +109,23 @@ test("chooses a local flag start and retries only the same flag metadata", async
   const video = picker.locator("video");
   await expect(video).toHaveAttribute("src", /^blob:/, { timeout: 15000 });
   await expect(choose).toBeEnabled();
+  const slider = picker.getByRole("slider", { name: "Shot start" });
+  const duration = await video.evaluate(
+    (element: HTMLVideoElement) => element.duration,
+  );
+  const latest = Number(await slider.getAttribute("max"));
+  expect(duration).toBeLessThan(12);
+  expect(duration - latest).toBeCloseTo(0.05, 3);
+  expect(Number(await slider.inputValue())).toBeCloseTo(latest, 3);
+  await expect(slider).toHaveAttribute("aria-valuetext", "Newest frame");
   await picker.getByRole("button", { name: "Close Select Flag Start" }).click();
   await expect(page.locator(".shot-flag-video")).toHaveCount(0);
   await select.click();
   await expect(choose).toBeEnabled();
   expect(mediaRequests).toBe(2);
-  await picker.getByRole("button", { name: "+1 second", exact: true }).click();
+  await picker.getByRole("button", { name: "−1 second", exact: true }).click();
+  await expect(slider).toHaveAttribute("aria-valuetext", "1.0 seconds back");
+  await slider.fill("1");
   await expect(video).toHaveJSProperty("currentTime", 1);
   await expect(choose).toBeEnabled();
   await page.screenshot({
@@ -160,7 +171,9 @@ test("chooses a local flag start and retries only the same flag metadata", async
       gameId,
       audience: "player",
       notes: "Good line through the port",
-      selectedAt: "2026-11-10T14:59:56.000Z",
+      selectedAt: new Date(
+        Date.parse(capturedAt) - (duration - 1) * 1000,
+      ).toISOString(),
     },
   });
   expect(writes[1].length).toBeLessThan(1000);

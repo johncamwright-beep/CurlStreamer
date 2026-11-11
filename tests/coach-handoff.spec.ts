@@ -216,7 +216,7 @@ test("same-tab sign-in resumes a phone flag without putting its notes in the ret
   expect(new URL(page.url()).search).toBe("");
 });
 
-test("a standalone flag saves an exact timestamp and updated notes", async ({
+test("a standalone flag adjusts the timestamp and preserves its notes", async ({
   page,
 }) => {
   const gameId = "11111111-1111-4111-8111-111111111111";
@@ -282,22 +282,30 @@ test("a standalone flag saves an exact timestamp and updated notes", async ({
       reviewId,
       requestId: expect.stringMatching(/^[\da-f-]{36}$/),
       startSeconds: 121,
-      note: "Confirm weight call",
+      note: "Discuss sweep call",
     });
     return route.fulfill({ json: { saved: true } });
   });
   await page.goto("http://127.0.0.1:3189/coach-flags-fixture");
-  const link = page.getByRole("link", { name: /Review video from/ });
-  await expect(link).toHaveText(/0:02:00 \(approximate\)/);
-  await page.getByRole("button", { name: "One second later" }).click();
-  await expect(page.getByLabel("Video start time")).toHaveValue("0:02:01");
+  const link = page.getByRole("link", { name: "Link to video", exact: true });
+  const adjust = page.getByRole("button", { name: "Adjust timestamp" });
+  const timestamp = page.getByLabel("Timestamp", { exact: true });
+  await expect(page.getByRole("link")).toHaveCount(1);
+  await expect(timestamp).toHaveCount(0);
   await expect(link).toHaveAttribute("href", `${recording}&t=120s`);
-  await page.getByLabel("Coach’s notes").fill("Confirm weight call");
-  await page.getByRole("button", { name: "Save review" }).click();
+  await adjust.click();
+  await expect(timestamp).toHaveValue("0:02:00");
+  await timestamp.fill("2:01");
+  await page.getByRole("button", { name: "Cancel", exact: true }).click();
+  await expect(link).toHaveAttribute("href", `${recording}&t=120s`);
+  await adjust.click();
+  await expect(timestamp).toHaveValue("0:02:00");
+  await timestamp.fill("2:01");
+  await page.getByRole("button", { name: "Save timestamp" }).click();
   await expect(link).toHaveAttribute("href", `${recording}&t=121s`);
   await page.reload();
-  await expect(link).toHaveText("Review video from 0:02:01 ↗");
-  await expect(page.getByLabel("Coach’s notes")).toHaveValue(
-    "Confirm weight call",
-  );
+  await expect(link).toHaveAttribute("href", `${recording}&t=121s`);
+  await expect(
+    page.getByText("Discuss sweep call", { exact: true }),
+  ).toBeVisible();
 });

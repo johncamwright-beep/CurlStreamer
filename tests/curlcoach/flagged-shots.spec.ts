@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 test.skip(!process.env.CURLCOACH_E2E, "Use the Shot Tracker config");
-test("flagged-shot menu retains filters and exposes review links and editable times", async ({
+test("flagged-shot menu retains filters and shows one timestamped link per flag", async ({
   page,
 }) => {
   let latestEvent = "";
@@ -92,32 +92,30 @@ test("flagged-shot menu retains filters and exposes review links and editable ti
     .getByRole("region", { name: "Flagged shots", exact: true })
     .getByRole("article")
     .filter({
-      has: page.getByRole("heading", { name: /Team · .*Video review/ }),
+      has: page.getByText("Standalone sweep review", { exact: true }),
     })
     .first();
   await expect(standalone).toBeVisible();
-  await expect(standalone.getByLabel("Coach’s notes")).toHaveValue(
-    "Standalone sweep review",
-  );
+  await expect(standalone.getByRole("heading", { name: "Team" })).toBeVisible();
+  await expect(standalone.getByRole("link")).toHaveCount(1);
   await expect(
-    standalone.getByRole("link", { name: /Review video from 0:02:00/ }),
+    standalone.getByRole("link", { name: "Link to video", exact: true }),
   ).toHaveAttribute(
     "href",
     "https://www.youtube.com/watch?v=EarlierFilm&t=120s",
   );
   await expect(
-    standalone.getByRole("link", { name: /Open YouTube without timestamp/ }),
-  ).toHaveAttribute("href", "https://www.youtube.com/watch?v=EarlierFilm");
-  await expect(page.getByLabel("Video start time").first()).toBeVisible();
-  await expect(
-    page.getByRole("link", { name: /Review video from 0:02:12/ }).first(),
-  ).toHaveAttribute(
-    "href",
-    "https://www.youtube.com/watch?v=abcdefghijk&t=132s",
-  );
-  await page.getByLabel("Video start time").first().fill("2:12");
-  await expect(page.getByLabel("Video start time").first()).toHaveValue("2:12");
-  await expect(page.getByLabel("Coach’s notes").first()).toBeVisible();
+    page
+      .getByRole("region", { name: "Flagged shots", exact: true })
+      .getByRole("link", { name: "Link to video", exact: true })
+      .and(
+        page.locator(
+          '[href="https://www.youtube.com/watch?v=abcdefghijk&t=132s"]',
+        ),
+      )
+      .first(),
+  ).toBeVisible();
+  await expect(page.getByLabel("Timestamp", { exact: true })).toHaveCount(0);
   await page
     .getByRole("combobox", { name: "Team / player", exact: true })
     .selectOption("lead");

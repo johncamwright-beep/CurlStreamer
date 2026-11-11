@@ -7,6 +7,7 @@ import EntryOverlay from "./EntryOverlay";
 type Audience = "" | "team" | "player";
 type Clip = Awaited<ReturnType<typeof captureShotFlagClip>> & { url: string };
 type StartPoint = { time: number; selectedAt: string; capturedAt: string };
+type SeekWindow = { first: number; last: number; duration: number };
 
 export default function LocalFlagCapture({
   gameId,
@@ -26,7 +27,7 @@ export default function LocalFlagCapture({
   const [clip, setClip] = useState<Clip | null>(null);
   const [start, setStart] = useState<StartPoint | null>(null);
   const [time, setTime] = useState(0);
-  const [ready, setReady] = useState(false);
+  const [seekWindow, setSeekWindow] = useState<SeekWindow | null>(null);
   const [settled, setSettled] = useState(false);
   const [playing, setPlaying] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -43,6 +44,11 @@ export default function LocalFlagCapture({
   const player = players.find((member) => member.id === playerId);
   const canPick = audience === "team" || (audience === "player" && !!player);
   const canSave = locked || canPick;
+  const secondsBack = seekWindow ? Math.max(0, seekWindow.last - time) : 0;
+  const seekLabel =
+    secondsBack < 0.05
+      ? "Newest frame"
+      : `${secondsBack.toFixed(1)} seconds back`;
 
   useEffect(
     () => () => {
@@ -72,9 +78,9 @@ export default function LocalFlagCapture({
     setSettled(element.readyState >= 2 && !element.seeking);
   }
 
-  function seek(seconds: number) {
-    if (!clip || !video.current) return;
-    const target = Math.max(clip.minimum, Math.min(clip.duration, seconds));
+  function seek(seconds: number, available = seekWindow) {
+    if (!available || !video.current) return;
+    const target = Math.max(available.first, Math.min(available.last, seconds));
     video.current.pause();
     setTime(target);
     setSettled(false);
@@ -83,7 +89,7 @@ export default function LocalFlagCapture({
   }
 
   function clearClip() {
-    setReady(false);
+    setSeekWindow(null);
     setSettled(false);
     setPlaying(false);
     pendingSeek.current = null;
@@ -128,6 +134,7 @@ export default function LocalFlagCapture({
     const element = video.current;
     if (
       !clip ||
+      !seekWindow ||
       !element ||
       !settled ||
       element.readyState < 2 ||
@@ -137,14 +144,14 @@ export default function LocalFlagCapture({
     )
       return false;
     const selected = Math.max(
-      clip.minimum,
-      Math.min(clip.duration, element.currentTime),
+      seekWindow.first,
+      Math.min(seekWindow.last, element.currentTime),
     );
     selectedClipUrl.current = clip.url;
     setStart({
       time: selected,
       selectedAt: new Date(
-        Date.parse(clip.capturedAt) - (clip.duration - selected) * 1000,
+        Date.parse(clip.capturedAt) - (seekWindow.duration - selected) * 1000,
       ).toISOString(),
       capturedAt: clip.capturedAt,
     });
@@ -281,7 +288,7 @@ export default function LocalFlagCapture({
             <EntryOverlay
               title="Select Flag Start"
               doneLabel="Choose Start Point"
-              doneDisabled={!ready || !settled || playing || !!clipError}
+              doneDisabled={!seekWindow || !settled || playing || !!clipError}
               onOpen={() => {
                 if (!clip || clipError) void capture();
                 else if (start && selectedClipUrl.current === clip.url)
@@ -308,12 +315,22 @@ export default function LocalFlagCapture({
                     playsInline
                     muted
                     preload="auto"
-                    onLoadedMetadata={() => {
-                      setReady(true);
+                    onLoadedMetadata={({ currentTarget }) => {
+                      const mediaDuration = currentTarget.duration;
+                      const duration =
+                        Number.isFinite(mediaDuration) && mediaDuration > 0
+                          ? Math.min(mediaDuration, clip.duration)
+                          : clip.duration;
+                      // Seek just before EOF so the browser can show a frame.
+                      const last = Math.max(0, duration - 0.05);
+                      const first = Math.min(clip.minimum, last);
+                      const available = { first, last, duration };
+                      setSeekWindow(available);
                       seek(
                         start && selectedClipUrl.current === clip.url
                           ? start.time
-                          : Math.max(clip.minimum, clip.duration - 30),
+                          : last,
+                        available,
                       );
                     }}
                     onLoadedData={flushSeek}
@@ -329,43 +346,53 @@ export default function LocalFlagCapture({
                       if (
                         pendingSeek.current === null &&
                         video.current &&
-                        !video.current.seeking
-                      )
-                        setTime(video.current.currentTime);
+                        !video.current.seeking &&
+                        seekWindow
+                      ) {
+                        const current = video.current.currentTime;
+                        if (current > seekWindow.last && !video.current.paused)
+                          seek(seekWindow.last);
+                        else setTime(Math.min(seekWindow.last, current));
+                      }
                     }}
                     onError={() => {
-                      setReady(false);
+                      setSeekWindow(null);
                       setSettled(false);
                       setClipError(
                         "Video could not play. Reload recent video to try again.",
                       );
                     }}
                   />
-                  <label>
-                    Shot start · {Math.max(0, clip.duration - time).toFixed(1)}{" "}
-                    seconds before capture
-                    <input
-                      aria-label="Shot start"
-                      type="range"
-                      min={clip.minimum}
-                      max={clip.duration}
-                      step="0.1"
-                      value={time}
-                      disabled={!ready}
-                      onChange={(event) => seek(Number(event.target.value))}
-                    />
-                  </label>
+                  {seekWindow && (
+                    <label>
+                      Shot start · {seekLabel}
+                      <input
+                        aria-label="Shot start"
+                        aria-valuetext={seekLabel}
+                        type="range"
+                        min={seekWindow.first}
+                        max={seekWindow.last}
+                        step="any"
+                        value={time}
+                        onChange={(event) => seek(Number(event.target.value))}
+                      />
+                      <small>
+                        Drag left to go back through the last{" "}
+                        {Math.ceil(seekWindow.last - seekWindow.first)} seconds.
+                      </small>
+                    </label>
+                  )}
                   <div className="shot-flag-playback">
                     <button
                       type="button"
-                      disabled={!ready}
+                      disabled={!seekWindow}
                       onClick={() => seek(time - 1)}
                     >
                       −1 second
                     </button>
                     <button
                       type="button"
-                      disabled={!ready || (!playing && !settled)}
+                      disabled={!seekWindow || (!playing && !settled)}
                       onClick={() => {
                         if (playing) video.current?.pause();
                         else
@@ -382,7 +409,7 @@ export default function LocalFlagCapture({
                     </button>
                     <button
                       type="button"
-                      disabled={!ready}
+                      disabled={!seekWindow}
                       onClick={() => seek(time + 1)}
                     >
                       +1 second

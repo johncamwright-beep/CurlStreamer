@@ -12,6 +12,9 @@ const sessionSchema = z.object({
   started_at: z.string().nullable().optional(),
   stopped_at: z.string().nullable().optional(),
   is_current: z.boolean(),
+  delivery_gaps: z
+    .array(z.object({ stopped_at: z.string(), resumed_at: z.string() }))
+    .optional(),
 });
 
 function recordingTime(recording: ReviewRecording) {
@@ -29,10 +32,22 @@ export async function loadCoachBroadcastReviews(
   const result: Record<string, BroadcastReview> = {};
   if (!gameIds.length) return result;
   try {
-    const { data, error } = await createAdminSupabaseClient().rpc(
-      "read_shot_tracker_recording_history",
-      { p_actor: actorUserId, p_org: organizationId, p_games: gameIds },
+    const admin = createAdminSupabaseClient();
+    const parameters = {
+      p_actor: actorUserId,
+      p_org: organizationId,
+      p_games: gameIds,
+    };
+    let { data, error } = await admin.rpc(
+      "read_shot_tracker_recording_history_v2",
+      parameters,
     );
+    if (error?.code === "PGRST202") {
+      ({ data, error } = await admin.rpc(
+        "read_shot_tracker_recording_history",
+        parameters,
+      ));
+    }
     if (error) return result;
     const previousByGame = new Map<string, ReviewRecording[]>();
     for (const row of Array.isArray(data) ? data : []) {
@@ -46,6 +61,14 @@ export async function loadCoachBroadcastReviews(
           ? { startedAt: session.started_at, estimated: true }
           : {}),
         ...(session.stopped_at ? { endedAt: session.stopped_at } : {}),
+        ...(session.delivery_gaps?.length
+          ? {
+              deliveryGaps: session.delivery_gaps.map((gap) => ({
+                stoppedAt: gap.stopped_at,
+                resumedAt: gap.resumed_at,
+              })),
+            }
+          : {}),
       };
       if (session.is_current) {
         result[session.game_id] = recording;

@@ -83,10 +83,31 @@ export type ReviewRecording = {
   startedAt?: string;
   endedAt?: string;
   estimated?: boolean;
+  deliveryGaps?: { stoppedAt: string; resumedAt: string }[];
 };
 export type BroadcastReview = ReviewRecording & {
   previous?: ReviewRecording[];
 };
+
+function recordingPosition(recording: ReviewRecording, at: number) {
+  const start = Date.parse(recording.startedAt ?? "");
+  let elapsed = at - start;
+  let coveredUntil = start;
+  const gaps = (recording.deliveryGaps ?? [])
+    .map(({ stoppedAt, resumedAt }) => ({
+      stop: Date.parse(stoppedAt),
+      resume: Date.parse(resumedAt),
+    }))
+    .filter(({ stop, resume }) => Number.isFinite(stop) && resume > stop)
+    .sort((a, b) => a.stop - b.stop);
+  for (const { stop, resume } of gaps) {
+    if (at < stop) break;
+    if (at < resume) return null;
+    elapsed -= Math.max(0, resume - Math.max(coveredUntil, stop));
+    coveredUntil = Math.max(coveredUntil, resume);
+  }
+  return Math.floor(elapsed / 1000);
+}
 /** Older category-only flags did not capture flaggedAt. Use their first review
  * save as an explicitly approximate display timestamp; never mutate the audit. */
 export function withRecordedReviewTime<
@@ -145,10 +166,8 @@ export function withBroadcastReview<
     },
   };
   if (!matching?.startedAt) return recording;
-  const positionSeconds = Math.floor(
-    (at - Date.parse(matching.startedAt)) / 1000,
-  );
-  if (positionSeconds > 604800) return recording;
+  const positionSeconds = recordingPosition(matching, at);
+  if (positionSeconds === null || positionSeconds > 604800) return recording;
   return {
     ...shot,
     videoReview: {
@@ -156,7 +175,9 @@ export function withBroadcastReview<
       positionSeconds,
       lookBackSeconds: shot.videoReview?.lookBackSeconds ?? 30,
       delaySeconds: shot.videoReview?.delaySeconds ?? 0,
-      ...(video.estimated || shot.videoReview?.estimated
+      ...(video.estimated ||
+      video.deliveryGaps?.length ||
+      shot.videoReview?.estimated
         ? { estimated: true }
         : {}),
     },

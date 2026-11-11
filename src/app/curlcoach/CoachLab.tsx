@@ -299,7 +299,7 @@ export default function CoachLab({
   }, []);
   const [entryTab, setEntryTab] = useState("Shot");
   const entryId = useId();
-  const entryTabs = ["Shot", "Execution", "Technical", "Notes"];
+  const entryTabs = ["Shot", "Execution", "Technical", "Shot Flags"];
   const [message, setStatusMessage] = useState("");
   const [messageIsError, setMessageIsError] = useState(false);
   function setMessage(value: string) {
@@ -914,19 +914,6 @@ export default function CoachLab({
           </EntryOverlay>
         </header>
       )}
-      {open && started && !closed && context?.source === "streamer" && (
-        <LocalFlagCapture
-          key={context.gameId}
-          gameId={context.gameId}
-          playerId={draft.playerId}
-          playerName={
-            players.find((p) => p.id === draft.playerId)?.name ??
-            "Current player"
-          }
-          scopeKey={metrics.scopeKey}
-          onSaved={() => context.onReviewSaved?.()}
-        />
-      )}
       {!open ? (
         <form action={unlock} className="coach-panel">
           <h2>Unlock your local session</h2>
@@ -972,7 +959,12 @@ export default function CoachLab({
               {editing && <h2>Correct attempt</h2>}
               <form
                 className="tracker-entry-form"
-                onChangeCapture={() => {
+                onChangeCapture={(event) => {
+                  if (
+                    event.target instanceof Element &&
+                    event.target.closest("[data-standalone-flag]")
+                  )
+                    return;
                   deliberateDraftChange.current = true;
                 }}
                 onSubmit={(e) => {
@@ -1151,8 +1143,8 @@ export default function CoachLab({
                             key={tab}
                             type="button"
                             role="tab"
-                            id={`${entryId}-${tab}-tab`}
-                            aria-controls={`${entryId}-${tab}-panel`}
+                            id={`${entryId}-${tab.replaceAll(" ", "-")}-tab`}
+                            aria-controls={`${entryId}-${tab.replaceAll(" ", "-")}-panel`}
                             aria-selected={entryTab === tab}
                             tabIndex={entryTab === tab ? 0 : -1}
                             onClick={() => setEntryTab(tab)}
@@ -1172,7 +1164,7 @@ export default function CoachLab({
                               setEntryTab(entryTabs[next]);
                               document
                                 .getElementById(
-                                  `${entryId}-${entryTabs[next]}-tab`,
+                                  `${entryId}-${entryTabs[next].replaceAll(" ", "-")}-tab`,
                                 )
                                 ?.focus();
                             }}
@@ -1184,7 +1176,7 @@ export default function CoachLab({
                     )}
                     <div
                       className="tracker-quick-entry"
-                      hidden={tabbedEntry && entryTab === "Notes"}
+                      hidden={tabbedEntry && entryTab === "Shot Flags"}
                     >
                       <div className="coach-fields">
                         {" "}
@@ -1284,14 +1276,26 @@ export default function CoachLab({
                     <div
                       className="tracker-entry-notes"
                       role={tabbedEntry ? "tabpanel" : undefined}
-                      id={`${entryId}-Notes-panel`}
+                      id={`${entryId}-Shot-Flags-panel`}
                       aria-labelledby={
-                        tabbedEntry ? `${entryId}-Notes-tab` : undefined
+                        tabbedEntry ? `${entryId}-Shot-Flags-tab` : undefined
                       }
-                      hidden={tabbedEntry && entryTab !== "Notes"}
+                      hidden={tabbedEntry && entryTab !== "Shot Flags"}
                     >
+                      {context?.source === "streamer" && (
+                        <>
+                          <LocalFlagCapture
+                            key={`${metrics.scopeKey}:${context.gameId}`}
+                            gameId={context.gameId}
+                            players={players}
+                            defaultPlayerId={draft.playerId}
+                            onSaved={() => context.onReviewSaved?.()}
+                          />
+                          <h3>Shot notes</h3>
+                        </>
+                      )}
                       <EntryOverlay
-                        title="Notes & review"
+                        title="Shot notes"
                         inline={tabbedEntry}
                         description={
                           draft.note
@@ -1324,124 +1328,63 @@ export default function CoachLab({
                             </select>
                           </label>
                         </div>
-                        <label>
-                          Flag shot for review
-                          <select
-                            value={
-                              (draft.flagged ?? !!draft.review) ? "yes" : "no"
-                            }
-                            onChange={(e) =>
-                              setDraft({
-                                ...draft,
-                                flagged: e.target.value === "yes",
-                                flagAudience:
-                                  e.target.value === "yes"
-                                    ? "player"
-                                    : undefined,
-                                flaggedAt:
-                                  e.target.value === "yes"
-                                    ? new Date().toISOString()
-                                    : draft.flaggedAt,
-                              })
-                            }
-                          >
-                            <option value="no">No</option>
-                            <option value="yes">Yes</option>
-                          </select>
-                        </label>
-                        {(draft.flagged ?? !!draft.review) && (
+                        {context?.source !== "streamer" && (
                           <label>
-                            Flag audience
+                            Flag shot for review
                             <select
-                              value={draft.flagAudience ?? "player"}
+                              value={
+                                (draft.flagged ?? !!draft.review) ? "yes" : "no"
+                              }
                               onChange={(e) =>
                                 setDraft({
                                   ...draft,
+                                  flagged: e.target.value === "yes",
                                   flagAudience:
-                                    e.target.value === "team"
-                                      ? "team"
-                                      : "player",
+                                    e.target.value === "yes"
+                                      ? "player"
+                                      : undefined,
+                                  flaggedAt:
+                                    e.target.value === "yes"
+                                      ? new Date().toISOString()
+                                      : draft.flaggedAt,
                                 })
                               }
                             >
-                              <option value="player">
-                                Player ·{" "}
-                                {players.find(
-                                  (player) => player.id === draft.playerId,
-                                )?.name ?? draft.position}
-                              </option>
-                              <option value="team">Team</option>
+                              <option value="no">No</option>
+                              <option value="yes">Yes</option>
                             </select>
-                            <small>
-                              The selected report includes the note and any
-                              available video link.
-                            </small>
                           </label>
                         )}
-                        {(draft.flagged ?? !!draft.review) && (
-                          <div className="coach-video-fields">
-                            <div
-                              className="coach-time-presets"
-                              role="group"
-                              aria-label="Go back presets"
-                            >
-                              {[30, 45, 60, 90, 120, 180, 240].map(
-                                (seconds) => (
-                                  <button
-                                    key={seconds}
-                                    type="button"
-                                    aria-pressed={
-                                      (draft.videoReview?.lookBackSeconds ??
-                                        30) === seconds
-                                    }
-                                    onClick={() =>
-                                      setDraft({
-                                        ...draft,
-                                        videoReview: {
-                                          url: "",
-                                          positionSeconds: null,
-                                          ...draft.videoReview,
-                                          lookBackSeconds: seconds,
-                                        },
-                                      })
-                                    }
-                                  >
-                                    {seconds < 120
-                                      ? `${seconds}s`
-                                      : `${seconds / 60}m`}
-                                  </button>
-                                ),
-                              )}
-                            </div>
+                        {context?.source !== "streamer" &&
+                          (draft.flagged ?? !!draft.review) && (
                             <label>
-                              Go back (seconds)
-                              <input
-                                type="number"
-                                min="0"
-                                max="3600"
-                                step="1"
-                                value={draft.videoReview?.lookBackSeconds ?? 30}
+                              Flag audience
+                              <select
+                                value={draft.flagAudience ?? "player"}
                                 onChange={(e) =>
                                   setDraft({
                                     ...draft,
-                                    videoReview: {
-                                      url: "",
-                                      positionSeconds: null,
-                                      ...draft.videoReview,
-                                      lookBackSeconds: Number(e.target.value),
-                                    },
+                                    flagAudience:
+                                      e.target.value === "team"
+                                        ? "team"
+                                        : "player",
                                   })
                                 }
-                              />
+                              >
+                                <option value="player">
+                                  Player ·{" "}
+                                  {players.find(
+                                    (player) => player.id === draft.playerId,
+                                  )?.name ?? draft.position}
+                                </option>
+                                <option value="team">Team</option>
+                              </select>
+                              <small>
+                                The selected report includes the note and any
+                                available video link.
+                              </small>
                             </label>
-                            <p>
-                              Flag time saved automatically. Review links use
-                              the game’s CurlStreamer broadcast when video
-                              timing is available. Refresh the event after the
-                              broadcast starts.
-                            </p>
-                          </div>
-                        )}
+                          )}
                         <label>
                           {(draft.flagged ?? !!draft.review) &&
                           draft.flagAudience === "team"

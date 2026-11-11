@@ -88,6 +88,21 @@ describe("production CoachLab session state", () => {
     expect(html).toContain("Finish private coaching session");
   });
 
+  it("mounts the video flag inside the fourth tab and keeps coaching notes separate", () => {
+    const html = render("open", players, true);
+    expect(html).toMatch(/role="tab"[^>]*>Shot Flags<\/button>/);
+    expect(html).toMatch(
+      /role="tabpanel"[^>]*Shot-Flags-panel[^>]*><section[^>]*data-standalone-flag="true"/,
+    );
+    expect(html).toContain("Private coaching note");
+    for (const removed of [
+      "Flag recent video",
+      "Laptop address",
+      "Go back presets",
+    ])
+      expect(html).not.toContain(removed);
+  });
+
   it("shows only a closed panel and explicit reopen control for finished games", () => {
     const closed = render("closed", players, true);
     expect(closed).toContain("Game closed");

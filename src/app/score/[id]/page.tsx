@@ -1,12 +1,13 @@
 "use client";
 import { StudioReplay } from "@/components/StudioReplay";
-import { StudioCoachReview } from "@/components/StudioCoachReview";
+import { StudioShotFlagRelay } from "@/components/StudioShotFlagRelay";
 import { StudioCelebrations } from "@/components/StudioCelebrations";
 import { StudioToolsRow } from "@/components/StudioToolsRow";
 import { StudioOverlay } from "@/components/StudioOverlay";
 import { StudioPreviewStatus } from "@/components/StudioPreviewStatus";
 import { TeamLogo } from "@/components/TeamLogo";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { use, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useGame, GameUpdateError } from "@/components/GameSync";
 import { ScoringSummary } from "@/components/ScoringSummary";
@@ -47,6 +48,7 @@ export default function Scorer({
 }
 
 function ScorerGame({ id }: { id: string }) {
+  const router = useRouter();
   const cameraInputs = useStudioCameraInputs(id);
   const {
     game,
@@ -496,7 +498,7 @@ function ScorerGame({ id }: { id: string }) {
                       sharedYoutubeWatchUrl={game.config.sharedYoutubeWatchUrl}
                       enabled
                       disabled={scoringLocked}
-                      onCompleted={() => window.location.assign("/dashboard")}
+                      onCompleted={() => router.replace("/dashboard")}
                     />
                   </div>
                 </div>
@@ -747,6 +749,7 @@ function ScorerGame({ id }: { id: string }) {
                   <h2 className="scoring-eyebrow">Program preview</h2>
                   <StudioProgramPreview key={id} gameId={id} embedded />
                   <StudioPreviewStatus gameId={id} />
+                  <StudioShotFlagRelay gameId={id} />
                   <StudioToolsRow
                     cameraSettings={
                       <button
@@ -756,12 +759,7 @@ function ScorerGame({ id }: { id: string }) {
                         Camera Settings
                       </button>
                     }
-                    replay={
-                      <>
-                        <StudioReplay gameId={id} />
-                        <StudioCoachReview gameId={id} />
-                      </>
-                    }
+                    replay={<StudioReplay gameId={id} />}
                     celebrations={
                       <StudioCelebrations
                         game={game}
@@ -823,7 +821,7 @@ function ScorerGame({ id }: { id: string }) {
                     sharedYoutubeWatchUrl={game.config.sharedYoutubeWatchUrl}
                     enabled
                     disabled={scoringLocked}
-                    onCompleted={() => window.location.assign("/dashboard")}
+                    onCompleted={() => router.replace("/dashboard")}
                   />
                 </div>
               )}

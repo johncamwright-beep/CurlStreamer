@@ -12,7 +12,8 @@ export default function EntryOverlay({
   onOpen,
   onDone,
   onClose,
-  footer,
+  doneLabel = "Done",
+  doneDisabled = false,
 }: {
   title: string;
   description?: string;
@@ -20,9 +21,10 @@ export default function EntryOverlay({
   className?: string;
   inline?: boolean;
   onOpen?: () => void;
-  onDone?: () => void;
+  onDone?: () => void | false;
   onClose?: () => void;
-  footer?: ReactNode;
+  doneLabel?: string;
+  doneDisabled?: boolean;
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
   const trigger = useRef<HTMLButtonElement>(null);
@@ -82,17 +84,15 @@ export default function EntryOverlay({
         </header>
         <div className="entry-dialog-content">{children}</div>
         <footer>
-          {footer ?? (
-            <button
-              type="button"
-              onClick={() => {
-                onDone?.();
-                close();
-              }}
-            >
-              Done
-            </button>
-          )}
+          <button
+            type="button"
+            disabled={doneDisabled}
+            onClick={() => {
+              if (onDone?.() !== false) close();
+            }}
+          >
+            {doneLabel}
+          </button>
         </footer>
       </dialog>
     </div>

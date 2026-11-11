@@ -117,6 +117,11 @@ test.beforeAll(async () => {
               "export function GameSetupNavigation() { return null; }",
             ],
             [
+              "next/navigation",
+              `export function useRouter() { return { replace() {}, push() {} }; }
+               export function usePathname() { return window.location.pathname; }`,
+            ],
+            [
               "@/components/AppNavigation",
               "export function AppNavigation() { return null; }",
             ],

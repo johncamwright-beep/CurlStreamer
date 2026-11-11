@@ -1,3 +1,5 @@
+export const maxCoachClipBytes = 40 * 1024 * 1024;
+
 /** Read the bounded OBS MP4 movie header without loading a decoder or polling a service. */
 export function coachMp4Duration(bytes: Buffer): number {
   function boxes(
@@ -37,7 +39,8 @@ export function coachMp4Duration(bytes: Buffer): number {
     }
     return undefined;
   }
-  if (bytes.length > 40 * 1024 * 1024) throw Error("Coach recording too large");
+  if (bytes.length > maxCoachClipBytes)
+    throw Error("Coach recording too large");
   const duration = boxes(0, bytes.length);
   if (!duration) throw Error("Coach recording has no duration");
   return duration;

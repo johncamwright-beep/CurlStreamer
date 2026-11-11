@@ -208,3 +208,181 @@ it("requires exact retirement and archives the old recording under the same game
   ).rejects.toMatchObject({ code: "55000" });
   await db.exec("reset role");
 });
+
+it("accepts idempotent native pauses only for the authorized delivered intent", async () => {
+  const pauseGame = randomUUID();
+  const session = randomUUID();
+  const intent = randomUUID();
+  const bearerHash = "a".repeat(64);
+  const start = Date.now() - 30 * 60_000;
+  const at = (seconds: number) =>
+    new Date(start + seconds * 1000).toISOString();
+  const pauseId = randomUUID();
+  const openPauseId = randomUUID();
+  await db.exec(`
+    insert into games (id,organization_id,config,status,created_by) values
+      ('${pauseGame}','${org}','{"youtubeVisibility":"unlisted","youtubeTitle":"Pause game"}','active','${owner}');
+    insert into game_states (game_id,state) values ('${pauseGame}','{"status":"active"}');
+    insert into curlcoach_module_entitlements (organization_id,seat_count) values ('${org}',1);
+    insert into curlcoach_coach_access (organization_id,user_id) values ('${org}','${owner}');
+    insert into broadcast_sessions (game_id,organization_id,provider,status,desired_state,transport,
+      operation_generation,youtube_broadcast_id,youtube_stream_id,youtube_channel_id,
+      youtube_broadcast_create_state,youtube_stream_create_state,started_at)
+      values ('${pauseGame}','${org}','youtube','prepared','live','local-obs',
+        1,'${video}','${stream}','${channel}','ready','ready','${at(0)}');
+    insert into m4_desktop_sessions (session_id,game_id,organization_id,generation,status,
+      code_hash,challenge_hash,bearer_hash,approved_by,expires_at,lease_expires_at)
+      values ('${session}','${pauseGame}','${org}',1,'active',repeat('b',64),repeat('c',64),
+        '${bearerHash}','${owner}',now()+interval '1 hour',now()+interval '5 minutes');
+    insert into m4_output_intents (intent_id,game_id,organization_id,session_id,
+      generation,broadcast_generation,youtube_broadcast_id,youtube_stream_id,phase,
+      delivery_recorded_at,delivery_channel_id,delivery_connection_version)
+      values ('${intent}','${pauseGame}','${org}','${session}',1,1,'${video}',
+        '${stream}','quarantined','${at(0)}','${channel}',1);
+  `);
+  const recordPause = (
+    id: string,
+    stoppedAt: string,
+    resumedAt: string | null,
+    options: { intentId?: string; bearer?: string } = {},
+  ) =>
+    db.query("select record_m4_output_pause($1,$2,1,$3,$4,$5,$6,$7)", [
+      pauseGame,
+      session,
+      options.bearer ?? bearerHash,
+      options.intentId ?? intent,
+      id,
+      stoppedAt,
+      resumedAt,
+    ]);
+  const gaps = async (videoId = video) => {
+    const { rows } = await db.query<{
+      delivery_gaps: { stopped_at: string; resumed_at: string | null }[];
+    }>(
+      "select delivery_gaps from read_shot_tracker_recording_history_v2($1,$2,$3) where youtube_broadcast_id=$4",
+      [owner, org, [pauseGame], videoId],
+    );
+    return rows[0].delivery_gaps.map(({ stopped_at, resumed_at }) => [
+      new Date(stopped_at).toISOString(),
+      resumed_at ? new Date(resumed_at).toISOString() : null,
+    ]);
+  };
+  for (const role of ["anon", "authenticated"]) {
+    await db.exec(`set role ${role}`);
+    await expect(recordPause(pauseId, at(100), null)).rejects.toMatchObject({
+      code: "42501",
+    });
+    await db.exec("reset role");
+  }
+  await db.exec("set role service_role");
+  try {
+    await expect(
+      db.query("select * from m4_output_pauses"),
+    ).rejects.toMatchObject({
+      code: "42501",
+    });
+    for (const options of [
+      { bearer: "f".repeat(64) },
+      { intentId: randomUUID() },
+    ]) {
+      await expect(
+        recordPause(pauseId, at(100), null, options),
+      ).rejects.toMatchObject({
+        code: "42501",
+      });
+    }
+    for (const [stop, resume] of [
+      [at(-6), null],
+      [at(100), at(100)],
+      ["infinity", null],
+      [at(1900), null],
+    ]) {
+      await expect(recordPause(pauseId, stop!, resume)).rejects.toMatchObject({
+        code: "22023",
+      });
+    }
+    await recordPause(pauseId, at(100), null);
+    await recordPause(pauseId, at(100), null);
+    await expect(recordPause(openPauseId, at(500), null)).rejects.toMatchObject(
+      {
+        code: "55000",
+      },
+    );
+    expect(await gaps()).toEqual([[at(100), null]]);
+    await recordPause(pauseId, at(100), at(200));
+    await recordPause(pauseId, at(100), at(200));
+    await recordPause(pauseId, at(100), null);
+    await expect(recordPause(pauseId, at(100), at(300))).rejects.toMatchObject({
+      code: "55000",
+    });
+    await expect(
+      recordPause(randomUUID(), at(150), at(250)),
+    ).rejects.toMatchObject({
+      code: "55000",
+    });
+    await recordPause(openPauseId, at(500), null);
+    expect(await gaps()).toEqual([
+      [at(100), at(200)],
+      [at(500), null],
+    ]);
+  } finally {
+    await db.exec("reset role");
+  }
+
+  await db.exec(`
+    update m4_desktop_sessions set status='stopped',revoked_at='${at(1300)}',
+      lease_expires_at='${at(1390)}' where session_id='${session}';
+    with desktop as (
+      insert into m4_desktop_sessions (game_id,organization_id,generation,status,
+        code_hash,challenge_hash,expires_at,lease_expires_at)
+        values ('${pauseGame}','${org}',2,'active',repeat('d',64),repeat('e',64),
+          now()+interval '1 hour',now()+interval '5 minutes') returning session_id
+    )
+    insert into m4_output_intents (intent_id,game_id,organization_id,session_id,
+      generation,broadcast_generation,youtube_broadcast_id,youtube_stream_id,phase,
+      delivery_recorded_at,delivery_channel_id,delivery_connection_version)
+      select gen_random_uuid(),'${pauseGame}','${org}',session_id,2,1,'${video}',
+        '${stream}','quarantined','${at(1400)}','${channel}',1 from desktop;
+    set role service_role;
+  `);
+  try {
+    await expect(
+      recordPause(openPauseId, at(500), at(1500)),
+    ).rejects.toMatchObject({
+      code: "42501",
+    });
+    expect(await gaps()).toEqual([
+      [at(100), at(200)],
+      [at(500), at(1400)],
+      [at(1300), at(1400)],
+    ]);
+  } finally {
+    await db.exec("reset role");
+  }
+
+  const nextVideo = "nextvideo12";
+  await db.exec(`
+    insert into m4_provider_retirements (game_id,organization_id,broadcast_generation,
+      operation_token,youtube_broadcast_id,youtube_channel_id,confirmed_at)
+      values ('${pauseGame}','${org}',1,gen_random_uuid(),'${video}','${channel}','${at(1300)}');
+    insert into m4_broadcast_cycle_history (game_id,organization_id,session_key,retirement_id,metadata)
+      select b.game_id,b.organization_id,b.session_key,r.retirement_id,to_jsonb(b)
+      from broadcast_sessions b join m4_provider_retirements r
+        on r.game_id=b.game_id and r.youtube_broadcast_id=b.youtube_broadcast_id
+      where b.game_id='${pauseGame}';
+    update broadcast_sessions set session_key=gen_random_uuid(),operation_generation=2,
+      youtube_broadcast_id='${nextVideo}',started_at='${at(1400)}' where game_id='${pauseGame}';
+    update m4_output_intents set youtube_broadcast_id='${nextVideo}',broadcast_generation=2
+      where game_id='${pauseGame}' and generation=2;
+    set role service_role;
+  `);
+  try {
+    expect(await gaps()).toEqual([
+      [at(100), at(200)],
+      [at(500), null],
+    ]);
+    expect(await gaps(nextVideo)).toEqual([]);
+  } finally {
+    await db.exec("reset role");
+  }
+});

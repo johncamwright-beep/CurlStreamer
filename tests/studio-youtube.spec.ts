@@ -10,7 +10,7 @@ async function startupFixture(page: Page) {
     jsx: "automatic",
     tsconfig: "tsconfig.json",
     stdin: {
-      contents: `import React from 'react';import {createRoot} from 'react-dom/client';import {StudioYouTube} from './src/components/StudioYouTube';window.sent=[];window.chrome={webview:{postMessage(v){window.sent.push(v)}}};const root=createRoot(document.getElementById('root'));window.renderGame=id=>root.render(<StudioYouTube id={id}/>);window.renderGame('fixture-game');`,
+      contents: `import React from 'react';import {createRoot} from 'react-dom/client';import {StudioYouTube} from './src/components/StudioYouTube';window.sent=[];window.chrome={webview:{postMessage(v){window.sent.push(v)}}};const root=createRoot(document.getElementById('root'));window.renderGame=id=>root.render(<StudioYouTube id={id} controlsTarget="studio-broadcast-actions"/>);window.renderGame('fixture-game');`,
       loader: "tsx",
       resolveDir: process.cwd(),
     },
@@ -18,7 +18,7 @@ async function startupFixture(page: Page) {
   await page.route("**/startup-fixture", (r) =>
     r.fulfill({
       contentType: "text/html",
-      body: '<div id="root"></div><script src="/startup-fixture.js"></script>',
+      body: '<div id="studio-broadcast-actions"></div><div id="root"></div><script src="/startup-fixture.js"></script>',
     }),
   );
   await page.route("**/startup-fixture.js", (r) =>
@@ -323,7 +323,7 @@ test("Late go-live failures cannot overwrite confirmed live status or a differen
   await expect(page.getByRole("alert")).toContainText("needs attention");
 });
 
-test("Stop broadcast disconnects only Studio and can restart on the same watch link", async ({
+test("Stop broadcast disconnects a paused broadcast and can restart on the same watch link", async ({
   page,
 }) => {
   const report = await startupFixture(page);
@@ -345,11 +345,17 @@ test("Stop broadcast disconnects only Studio and can restart on the same watch l
   await expect(
     page.getByRole("link", { name: "Watch on YouTube" }),
   ).toHaveAttribute("href", watchUrl);
-  await report({ live: true, receiving: true });
-  const stop = page.getByRole("button", {
+  // The first native update can already be held before YouTube confirms live.
+  await report({ presentation: { mode: "hold" } });
+  const controls = page.locator("#studio-broadcast-actions");
+  const stop = controls.getByRole("button", {
     name: "Stop broadcast",
     exact: true,
   });
+  await expect(
+    controls.getByRole("button", { name: "Resume broadcast", exact: true }),
+  ).toBeEnabled();
+  await expect(stop).toBeEnabled();
   const confirmation = page.getByRole("dialog", { name: "Stop broadcast?" });
   await stop.click();
   await confirmation
@@ -770,7 +776,7 @@ test("Studio pause waits for a correlated native receipt and reports failures wh
     jsx: "automatic",
     tsconfig: "tsconfig.json",
     stdin: {
-      contents: `import React from 'react';import {createRoot} from 'react-dom/client';import {StudioYouTube} from './src/components/StudioYouTube';window.sent=[];window.chrome={webview:{postMessage(v){window.sent.push(v)}}};const root=createRoot(document.getElementById('root'));window.renderGame=id=>root.render(<StudioYouTube id={id}/>);window.renderGame('${gameId}');`,
+      contents: `import React from 'react';import {createRoot} from 'react-dom/client';import {StudioYouTube} from './src/components/StudioYouTube';window.sent=[];window.chrome={webview:{postMessage(v){window.sent.push(v)}}};const root=createRoot(document.getElementById('root'));window.renderGame=id=>root.render(<StudioYouTube id={id} controlsTarget="studio-broadcast-actions"/>);window.renderGame('${gameId}');`,
       loader: "tsx",
       resolveDir: process.cwd(),
     },
@@ -778,7 +784,7 @@ test("Studio pause waits for a correlated native receipt and reports failures wh
   await page.route("**/youtube-hold-fixture", (r) =>
     r.fulfill({
       contentType: "text/html",
-      body: '<div id="root"></div><script src="/youtube-hold-fixture.js"></script>',
+      body: '<div id="studio-broadcast-actions"></div><div id="root"></div><script src="/youtube-hold-fixture.js"></script>',
     }),
   );
   await page.route("**/youtube-hold-fixture.js", (r) =>
@@ -845,18 +851,22 @@ test("Studio pause waits for a correlated native receipt and reports failures wh
     name: "Please wait…",
     exact: true,
   });
-  const pause = page.getByRole("button", {
+  const controls = page.locator("#studio-broadcast-actions");
+  const pause = controls.getByRole("button", {
     name: "Pause broadcast",
     exact: true,
   });
-  const resume = page.getByRole("button", {
+  const resume = controls.getByRole("button", {
     name: "Resume broadcast",
     exact: true,
   });
+  const stop = controls.getByRole("button", {
+    name: "Stop broadcast",
+    exact: true,
+  });
   await report("live", 0);
-  await page
-    .getByRole("button", { name: "Pause broadcast", exact: true })
-    .click();
+  await expect(stop).toBeEnabled();
+  await pause.click();
   const hold = (await sent())[0];
   expect(hold).toMatchObject({ type: "studio-youtube-hold", gameId });
   expect(hold.nonce).toMatch(
@@ -884,6 +894,7 @@ test("Studio pause waits for a correlated native receipt and reports failures wh
     presentation: { mode: "hold", generation: 1 },
   });
   await expect(resume).toBeEnabled();
+  await expect(stop).toBeEnabled();
   await expect(page.getByRole("status")).toHaveText(
     "Paused · YouTube still live",
   );

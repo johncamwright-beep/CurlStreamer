@@ -83,7 +83,7 @@ export type ReviewRecording = {
   startedAt?: string;
   endedAt?: string;
   estimated?: boolean;
-  deliveryGaps?: { stoppedAt: string; resumedAt: string }[];
+  deliveryGaps?: { stoppedAt: string; resumedAt: string | null }[];
 };
 export type BroadcastReview = ReviewRecording & {
   previous?: ReviewRecording[];
@@ -96,7 +96,7 @@ function recordingPosition(recording: ReviewRecording, at: number) {
   const gaps = (recording.deliveryGaps ?? [])
     .map(({ stoppedAt, resumedAt }) => ({
       stop: Date.parse(stoppedAt),
-      resume: Date.parse(resumedAt),
+      resume: resumedAt === null ? Infinity : Date.parse(resumedAt),
     }))
     .filter(({ stop, resume }) => Number.isFinite(stop) && resume > stop)
     .sort((a, b) => a.stop - b.stop);

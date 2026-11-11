@@ -368,6 +368,73 @@ describe("in-memory M4 desktop capability client", () => {
     await expect(client.heartbeat()).rejects.toThrow();
     expect(client.snapshot().authorized).toBe(false);
   });
+  it("records a pause only for the handed-off intent and leaves heartbeat independent", async () => {
+    const { client, fetcher, advance } = setup();
+    const intentId = "33333333-3333-4333-8333-333333333333";
+    const pause = {
+      id: "44444444-4444-4444-8444-444444444444",
+      stoppedAt: new Date(epoch).toISOString(),
+      resumedAt: new Date(epoch + 1000).toISOString(),
+    };
+    await client.exchange(code);
+    await expect(client.recordOutputPause(intentId, pause)).rejects.toThrow();
+    fetcher
+      .mockResolvedValueOnce(
+        response({
+          intentId,
+          sessionId,
+          generation: 1,
+          phase: "reserved",
+          deliveryRecorded: false,
+        }),
+      )
+      .mockResolvedValueOnce(
+        response({
+          ...row,
+          intentId,
+          target: {
+            serverUrl: "rtmps://a.rtmps.youtube.com:443/live2",
+            streamKey: "test-key",
+          },
+        }),
+      );
+    await client.handoffOutput(intentId, async () => {});
+    await expect(client.recordOutputPause(game, pause)).rejects.toThrow();
+    const pending = deferred<Response>();
+    advance(10_000);
+    fetcher.mockReturnValueOnce(pending.promise).mockResolvedValueOnce(
+      response(
+        {
+          ...row,
+          leaseExpiresAt: new Date(epoch + 40_000).toISOString(),
+          desiredAction: "wait",
+        },
+        epoch + 10_000,
+      ),
+    );
+    const recording = client.recordOutputPause(intentId, pause);
+    const [endpoint, request] = fetcher.mock.calls[3];
+    expect(String(endpoint)).toMatch(/\/output-pause$/);
+    expect(request?.headers).toMatchObject({
+      authorization: `Bearer ${bearer}`,
+    });
+    expect(JSON.parse(String(request?.body))).toEqual({
+      sessionId,
+      generation: 1,
+      intentId,
+      pauseId: pause.id,
+      stoppedAt: pause.stoppedAt,
+      resumedAt: pause.resumedAt,
+    });
+    await expect(client.heartbeat()).resolves.toMatchObject({
+      leaseRenewed: true,
+    });
+    const renewed = client.remainingLeaseMs();
+    pending.resolve(response({ recorded: true }));
+    await expect(recording).resolves.toBeUndefined();
+    expect(client.remainingLeaseMs()).toBe(renewed);
+    expect(fetcher).toHaveBeenCalledTimes(5);
+  });
   it("bounds a stalled fetch even if the transport ignores abort", async () => {
     vi.useFakeTimers();
     const { client, fetcher } = setup();

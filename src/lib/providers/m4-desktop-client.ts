@@ -92,6 +92,7 @@ const observationResponse = z
       .optional(),
   })
   .strict();
+const pauseResponse = z.object({ recorded: z.literal(true) }).strict();
 export type M4ProviderObservation = Pick<
   z.infer<typeof observationResponse>,
   | "streamStatus"
@@ -369,6 +370,47 @@ export class M4DesktopClient {
     this.#observation = observation;
     return observation;
   }
+  /** Record an output interval independently of desktop lease renewal. */
+  async recordOutputPause(
+    intentId: string,
+    pause: { id: string; stoppedAt: string; resumedAt?: string },
+  ): Promise<void> {
+    this.#expire();
+    const authority = this.#session;
+    const bearer = this.#bearer;
+    const fence = this.#fence;
+    if (
+      this.#state !== "active" ||
+      !authority ||
+      !bearer ||
+      this.#activeIntent !== intentId
+    )
+      throw fail();
+    try {
+      const response = await this.#request(
+        "/output-pause",
+        {
+          sessionId: authority.sessionId,
+          generation: authority.generation,
+          intentId,
+          pauseId: pause.id,
+          stoppedAt: pause.stoppedAt,
+          ...(pause.resumedAt ? { resumedAt: pause.resumedAt } : {}),
+        },
+        bearer,
+      );
+      this.#expire();
+      if (
+        !pauseResponse.safeParse(response.value).success ||
+        this.#state !== "active" ||
+        this.#session !== authority ||
+        fence !== this.#fence
+      )
+        throw fail();
+    } catch {
+      throw fail();
+    }
+  }
   #expire() {
     const now = this.#clock();
     if (this.#session && now >= this.#absolute) {
@@ -399,6 +441,7 @@ export class M4DesktopClient {
       "/output-intent": "output_intent",
       "/target": "target",
       "/observe": "observe",
+      "/output-pause": "output_pause",
     };
     const action = actions[path] ?? "heartbeat";
     const log = (code: ConnectionDiagnosticInput["code"]) => {

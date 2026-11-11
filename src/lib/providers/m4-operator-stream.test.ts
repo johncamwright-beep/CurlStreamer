@@ -232,8 +232,8 @@ describe("M4 operator streaming races", () => {
       vi.mocked(presentation.set).mockRejectedValueOnce(
         new Error("paint timeout"),
       );
-      expect((await f.command({ action: "pause-stream" })).status).toBe(409);
-      expect((await f.state()).streaming).toBe("armed");
+      expect((await f.command({ action: "pause-stream" })).status).toBe(200);
+      expect((await f.state()).streaming).toBe("paused");
     } finally {
       await f.app.close();
       await rm(f.directory, { recursive: true, force: true });

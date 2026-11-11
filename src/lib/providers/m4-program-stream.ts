@@ -15,6 +15,7 @@ type Native = Pick<
   Partial<Pick<M4NativePipeClient, "observe" | "pause" | "resume">>;
 type State =
   "idle" | "starting" | "armed" | "paused" | "stopping" | "stopped" | "failed";
+type OutputPause = { id: string; stoppedAt: string; resumedAt?: string };
 const unavailable = () => new Error("m4_program_stream_unavailable");
 const startupProviderPollMs = 5000;
 const liveProviderPollMs = 30000;
@@ -38,6 +39,7 @@ export type M4StreamSnapshot = {
  * never evidence that an encoder sent packets or that YouTube received them. */
 export class M4ProgramStream {
   #state: State = "idle";
+  #desktop?: M4DesktopClient;
   #intentId?: string;
   #abort?: AbortController;
   #closed?: Promise<void>;
@@ -52,6 +54,10 @@ export class M4ProgramStream {
   #failureReported = false;
   #controlFlight = false;
   #outputGeneration = 0;
+  #openPause?: OutputPause;
+  #pendingPauses = new Map<string, OutputPause>();
+  #pauseReport?: Promise<void>;
+  #retryPauseAfter = 0;
   #authorized() {
     return this.#state === "armed" || this.#state === "paused";
   }
@@ -137,6 +143,7 @@ export class M4ProgramStream {
     if (this.snapshot().state !== "idle" || !desktop.snapshot().authorized)
       throw unavailable();
     this.#state = "starting";
+    this.#desktop = desktop;
     this.#intentId = intentId;
     this.#abort = new AbortController();
     const runtime = new M4StudioRuntime(
@@ -202,9 +209,14 @@ export class M4ProgramStream {
   }
   async #observeLocal(signal: AbortSignal) {
     const at = performance.now();
+    const generation = this.#outputGeneration;
     try {
       const value = await this.native.observe!();
-      if (!signal.aborted && this.#authorized()) {
+      if (
+        !signal.aborted &&
+        this.#authorized() &&
+        generation === this.#outputGeneration
+      ) {
         this.#local = { value, at };
         if (value.authority !== 1 || value.state === "failed") {
           this.#failed(
@@ -213,23 +225,67 @@ export class M4ProgramStream {
               : "native_authority_lost",
           );
           this.#abort!.abort();
+        } else if (
+          this.#state === "armed" &&
+          this.#openPause &&
+          value.state === "active" &&
+          value.failure === "none" &&
+          value.bytes > 0
+        ) {
+          const pause = this.#openPause;
+          this.#openPause = undefined;
+          this.#pendingPauses.set(pause.id, {
+            ...pause,
+            resumedAt: new Date().toISOString(),
+          });
         }
       }
     } catch {
-      this.#local = undefined;
+      if (generation === this.#outputGeneration) this.#local = undefined;
       if (
         !signal.aborted &&
         this.#authorized() &&
+        generation === this.#outputGeneration &&
         this.native.snapshot().state === "failed"
       ) {
         this.#failed("native_pipe_unavailable");
         this.#abort!.abort();
       }
     }
-    if (!signal.aborted && this.#authorized())
+    if (!signal.aborted && this.#authorized()) {
+      this.#reportPauses();
       this.#localTimer = setTimeout(() => {
         void this.#observeLocal(signal);
       }, 1000);
+    }
+  }
+
+  #reportPauses() {
+    const desktop = this.#desktop;
+    const intentId = this.#intentId;
+    const pause = this.#pendingPauses.values().next().value;
+    if (
+      !desktop ||
+      !intentId ||
+      !pause ||
+      this.#pauseReport ||
+      performance.now() < this.#retryPauseAfter
+    )
+      return;
+    // Report independently of encoder control and authority renewal. A failed
+    // request can retry with the same pause ID and both observed timestamps.
+    this.#pauseReport = Promise.resolve()
+      .then(() => desktop.recordOutputPause(intentId, pause))
+      .then(() => {
+        if (this.#pendingPauses.get(pause.id) === pause)
+          this.#pendingPauses.delete(pause.id);
+      })
+      .catch(() => {
+        this.#retryPauseAfter = performance.now() + 5000;
+      })
+      .finally(() => {
+        this.#pauseReport = undefined;
+      });
   }
   async #observeProvider(
     desktop: M4DesktopClient,
@@ -349,6 +405,15 @@ export class M4ProgramStream {
           this.#state = "paused";
           this.#provider = undefined;
           this.#lastLiveAt = undefined;
+          if (!this.#openPause) {
+            const pause = {
+              id: crypto.randomUUID(),
+              stoppedAt: new Date().toISOString(),
+            };
+            this.#openPause = pause;
+            this.#pendingPauses.set(pause.id, pause);
+          }
+          this.#reportPauses();
           return;
         }
         if (performance.now() >= until) throw unavailable();

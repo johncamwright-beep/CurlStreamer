@@ -1099,10 +1099,7 @@ export async function createM4OperatorServer(options: {
                 // Keep sending the acknowledged card before disconnecting RTMP.
                 await handle.presentation.dwell(5000);
               } catch {
-                reply(409, {
-                  error: "Pause card was not confirmed. Please retry.",
-                });
-                return;
+                // A failed card must not leave an explicitly stopped stream live.
               }
             }
             await handle.stream!.pause!();
@@ -1115,7 +1112,7 @@ export async function createM4OperatorServer(options: {
             streaming = handle.stream!.snapshot().state;
             streamingMessage =
               input.action === "pause-stream"
-                ? "YouTube disconnected. Watch link, cameras and microphone retained."
+                ? "Broadcast stopped. Restart when you are ready."
                 : "Reconnecting video to the same YouTube broadcast…";
           }
         } else if (input.action === "stop-stream") {

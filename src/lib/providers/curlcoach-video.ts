@@ -13,7 +13,9 @@ const sessionSchema = z.object({
   stopped_at: z.string().nullable().optional(),
   is_current: z.boolean(),
   delivery_gaps: z
-    .array(z.object({ stopped_at: z.string(), resumed_at: z.string() }))
+    .array(
+      z.object({ stopped_at: z.string(), resumed_at: z.string().nullable() }),
+    )
     .optional(),
 });
 

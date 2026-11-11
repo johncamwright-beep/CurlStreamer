@@ -160,3 +160,47 @@ it("requires local pairing, supports seek ranges, and stores only a bounded sele
     (await fetch(base + "/../../package.json", { headers: { cookie } })).status,
   ).toBe(404);
 });
+it("binds the coaching bridge to its configured origin and game without granting cross-origin HTTP access", async () => {
+  proof = await startCoachLocalProof({
+    host: "127.0.0.1",
+    port: 0,
+    code: "123456",
+    duration: 120,
+    video: "public/celebrations/cat-dance.mp4",
+    bridge: {
+      appOrigin: "https://coach.example.test",
+      gameId: "11111111-1111-4111-8111-111111111111",
+    },
+  });
+  const page = await fetch(proof.address);
+  const html = await page.text();
+  expect(html).toContain('"appOrigin":"https://coach.example.test"');
+  expect(html).not.toContain("/*STUDIO_BRIDGE_CONFIG*/ null");
+  expect(page.headers.get("content-security-policy")).toContain(
+    "frame-ancestors 'none'",
+  );
+  expect((await fetch(proof.address + "/session")).status).toBe(401);
+  const denied = await fetch(proof.address + "/pair", {
+    method: "POST",
+    headers: {
+      Origin: "https://coach.example.test",
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ code: "123456" }),
+  });
+  expect(denied.status).toBe(403);
+  const paired = await fetch(proof.address + "/pair", {
+    method: "POST",
+    headers: { Origin: proof.address, "Content-Type": "application/json" },
+    body: JSON.stringify({ code: "123456" }),
+  });
+  expect(paired.headers.get("set-cookie")).toContain(
+    "HttpOnly; SameSite=Strict",
+  );
+  const session = await fetch(proof.address + "/session", {
+    headers: { cookie: paired.headers.get("set-cookie")!.split(";")[0] },
+  });
+  expect(await session.json()).toMatchObject({
+    gameId: "11111111-1111-4111-8111-111111111111",
+  });
+});

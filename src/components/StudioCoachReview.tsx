@@ -93,12 +93,13 @@ export function StudioCoachReview({ gameId }: { gameId: string }) {
         title="Phone review"
       >
         <p>
-          Scrub locally on your phone, then return to Shot Tracker to choose the
-          recorded shot and save its flag.
+          On your phone, open Shot Tracker and choose Flag recent video. Enter
+          this laptop connection once, then scrub and save flags in Shot
+          Tracker.
         </p>
         {state.address ? (
           <>
-            <p>Open this address on your phone using the same Wi-Fi:</p>
+            <p>Use this laptop address in Shot Tracker on the same Wi-Fi:</p>
             <p className="break-all">{state.address}</p>
             <p>
               Pairing code: <strong>{state.code}</strong>

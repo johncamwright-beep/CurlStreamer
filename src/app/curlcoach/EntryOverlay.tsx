@@ -11,6 +11,7 @@ export default function EntryOverlay({
   inline = false,
   onOpen,
   onDone,
+  onClose,
 }: {
   title: string;
   description?: string;
@@ -19,6 +20,7 @@ export default function EntryOverlay({
   inline?: boolean;
   onOpen?: () => void;
   onDone?: () => void;
+  onClose?: () => void;
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
   const trigger = useRef<HTMLButtonElement>(null);
@@ -55,6 +57,7 @@ export default function EntryOverlay({
         aria-labelledby={titleId}
         onClose={() => {
           setOpen(false);
+          onClose?.();
           trigger.current?.focus();
         }}
         onClick={(event) => {

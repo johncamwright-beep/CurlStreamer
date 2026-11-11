@@ -60,6 +60,7 @@ import {
   ResultsEntry,
 } from "./SubtypeEntry";
 import EntryOverlay from "./EntryOverlay";
+import LocalFlagCapture from "./LocalFlagCapture";
 import {
   EnhancedFields,
   GameContext,
@@ -136,6 +137,7 @@ export default function CoachLab({
     reviewCorrections?: ReviewCorrection[];
     standaloneReviews?: import("@/lib/curlcoach/standalone-review").StandaloneReview[];
     onSaved: (state: State) => void;
+    onReviewSaved?: () => void;
   };
 }) {
   const [open, setOpen] = useState(unlocked);
@@ -911,6 +913,19 @@ export default function CoachLab({
             )}
           </EntryOverlay>
         </header>
+      )}
+      {open && started && !closed && context?.source === "streamer" && (
+        <LocalFlagCapture
+          key={context.gameId}
+          gameId={context.gameId}
+          playerId={draft.playerId}
+          playerName={
+            players.find((p) => p.id === draft.playerId)?.name ??
+            "Current player"
+          }
+          scopeKey={metrics.scopeKey}
+          onSaved={() => context.onReviewSaved?.()}
+        />
       )}
       {!open ? (
         <form action={unlock} className="coach-panel">

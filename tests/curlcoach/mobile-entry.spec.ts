@@ -110,7 +110,7 @@ test("phone and desktop tabs preserve the whole shot, static context and fixed a
   await expect(weightField(page, "Observed weight")).toHaveText("Hack");
   await page.getByRole("tab", { name: "Technical", exact: true }).click();
   await page.getByLabel("Line", { exact: true }).selectOption("Wide");
-  await page.getByRole("tab", { name: "Notes", exact: true }).click();
+  await page.getByRole("tab", { name: "Shot Flags", exact: true }).click();
   await page
     .getByLabel("Private coaching note")
     .fill("Mobile tab preservation");
@@ -118,7 +118,9 @@ test("phone and desktop tabs preserve the whole shot, static context and fixed a
   const flagAudience = page.getByLabel("Flag audience");
   await expect(flagAudience).toHaveValue("player");
   await flagAudience.selectOption("team");
-  await page.getByRole("tab", { name: "Notes", exact: true }).press("Home");
+  await page
+    .getByRole("tab", { name: "Shot Flags", exact: true })
+    .press("Home");
   await expect(
     page.getByRole("tab", { name: "Shot", exact: true }),
   ).toBeFocused();
@@ -191,7 +193,7 @@ test("phone and desktop tabs preserve the whole shot, static context and fixed a
   await expect(weightField(page, "Observed weight")).toHaveText("Hack");
   await page.getByRole("tab", { name: "Technical", exact: true }).click();
   await expect(page.getByLabel("Line", { exact: true })).toHaveValue("Wide");
-  await page.getByRole("tab", { name: "Notes", exact: true }).click();
+  await page.getByRole("tab", { name: "Shot Flags", exact: true }).click();
   await expect(flagAudience).toHaveValue("team");
   await expect(page.getByLabel("Note for team report")).toHaveValue(
     "Mobile tab preservation",

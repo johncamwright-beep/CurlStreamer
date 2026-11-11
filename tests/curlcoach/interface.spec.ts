@@ -84,14 +84,14 @@ test("entry overlays preserve draft, keep the page stable and restore focus", as
   await expect(
     page.getByRole("combobox", { name: "Shot type", exact: true }),
   ).toHaveValue("Draw");
-  await page.getByRole("tab", { name: "Notes", exact: true }).click();
-  await openEntryTab(page, "Notes");
+  await page.getByRole("tab", { name: "Shot Flags", exact: true }).click();
+  await openEntryTab(page, "Shot Flags");
   await page
     .getByLabel("Private coaching note")
     .fill("Synthetic overlay draft");
   await openEntryTab(page, "Shot");
-  await page.getByRole("tab", { name: "Notes", exact: true }).click();
-  await openEntryTab(page, "Notes");
+  await page.getByRole("tab", { name: "Shot Flags", exact: true }).click();
+  await openEntryTab(page, "Shot Flags");
   await expect(page.getByLabel("Private coaching note")).toHaveValue(
     "Synthetic overlay draft",
   );

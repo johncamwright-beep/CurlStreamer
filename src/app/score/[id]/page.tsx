@@ -1,6 +1,6 @@
 "use client";
 import { StudioReplay } from "@/components/StudioReplay";
-import { StudioCoachReview } from "@/components/StudioCoachReview";
+import { StudioShotFlagRelay } from "@/components/StudioShotFlagRelay";
 import { StudioCelebrations } from "@/components/StudioCelebrations";
 import { StudioToolsRow } from "@/components/StudioToolsRow";
 import { StudioOverlay } from "@/components/StudioOverlay";
@@ -747,6 +747,7 @@ function ScorerGame({ id }: { id: string }) {
                   <h2 className="scoring-eyebrow">Program preview</h2>
                   <StudioProgramPreview key={id} gameId={id} embedded />
                   <StudioPreviewStatus gameId={id} />
+                  <StudioShotFlagRelay gameId={id} />
                   <StudioToolsRow
                     cameraSettings={
                       <button
@@ -756,12 +757,7 @@ function ScorerGame({ id }: { id: string }) {
                         Camera Settings
                       </button>
                     }
-                    replay={
-                      <>
-                        <StudioReplay gameId={id} />
-                        <StudioCoachReview gameId={id} />
-                      </>
-                    }
+                    replay={<StudioReplay gameId={id} />}
                     celebrations={
                       <StudioCelebrations
                         game={game}

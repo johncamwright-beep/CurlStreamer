@@ -183,7 +183,7 @@ test("workbook selections, corrections, clearing, Standard mode and historical p
     .filter({ hasText: `End ${end}` })
     .getByRole("button", { name: "Edit", exact: true })
     .click();
-  await openEntryTab(page, "Notes");
+  await openEntryTab(page, "Shot Flags");
   // Set historical details explicitly, then ensure ordinary corrections retain them.
   await page
     .getByRole("button", { name: /^Saved observation details/ })

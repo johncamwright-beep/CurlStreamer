@@ -1,4 +1,4 @@
-import { readFile } from "node:fs/promises";
+import { open, readFile } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import { spawn } from "node:child_process";
 import { dirname, join } from "node:path";
@@ -7,6 +7,7 @@ import { readM4RecorderReady } from "./m4-recorder-ready";
 import { M4NativePipeClient } from "./m4-native-pipe";
 import { M4ProgramStream } from "./m4-program-stream";
 import type { StudioDiagnostic } from "./m5-studio-diagnostics";
+import { maxCoachClipBytes } from "./coach-mp4-duration";
 
 /** A valid negative refresh acknowledgment leaves the inherited channel usable. */
 export function readM4ProgramControlAck(
@@ -463,12 +464,29 @@ export async function startM4StudioRecorder(paths: {
               }
             },
             async snapshot() {
-              const bytes = await readFile(
+              const file = await open(
                 join(source.cacheDirectory, "coach.mp4"),
+                "r",
               );
-              if (!bytes.length || bytes.length > 40 * 1024 * 1024)
-                throw fail();
-              return bytes;
+              try {
+                const { size } = await file.stat();
+                if (size <= 0 || size > maxCoachClipBytes) throw fail();
+                const bytes = Buffer.alloc(size);
+                for (let offset = 0; offset < size;) {
+                  const { bytesRead } = await file.read(
+                    bytes,
+                    offset,
+                    size - offset,
+                    offset,
+                  );
+                  if (!bytesRead) throw fail();
+                  offset += bytesRead;
+                }
+                if ((await file.stat()).size !== size) throw fail();
+                return bytes;
+              } finally {
+                await file.close();
+              }
             },
           }
         : undefined;

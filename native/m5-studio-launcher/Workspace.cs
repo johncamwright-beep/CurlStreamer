@@ -19,6 +19,7 @@ using Microsoft.Web.WebView2.WinForms;
 internal sealed class Workspace : Form
 {
     private const int ControllerCloseDeadlineMs = 35000;
+    private const int MaxCoachClipBytes = 40 * 1024 * 1024;
     private readonly WebView2 web = new WebView2();
     private readonly Label status = new Label();
     private readonly Button record = new Button(), finish = new Button(), devices = new Button(), gameDay = new Button();
@@ -45,6 +46,9 @@ internal sealed class Workspace : Form
     private bool cameraPreferencesUnavailable;
     private int cameraZoomRevision;
     private int stateRevision;
+    private int coachPageRevision;
+    private Guid? coachClipId;
+    private bool coachCapturePending, coachDownloadPending;
     private string workspaceCloseGame, workspaceCloseNonce;
     private bool gameEnded, finishingCompletedGame;
     private DateTime endingUntil = DateTime.MinValue;
@@ -340,6 +344,8 @@ internal sealed class Workspace : Form
             core.Settings.UserAgent += " StudioNativeAudio/1 StudioReplay/1";
             core.AddWebResourceRequestedFilter(origin + "/__studio-replay/*", CoreWebView2WebResourceContext.All);
             core.WebResourceRequested += ReplayResource;
+            core.AddWebResourceRequestedFilter(origin + "/__studio-coach-clip/*", CoreWebView2WebResourceContext.All);
+            core.WebResourceRequested += CoachClipResource;
             core.AddWebResourceRequestedFilter(origin + "/__studio-preview/*", CoreWebView2WebResourceContext.Image);
             core.WebResourceRequested += (s, e) => {
                 if (e.ResourceContext != CoreWebView2WebResourceContext.Image || !e.Request.Uri.StartsWith(origin + "/__studio-preview/")) return;
@@ -385,9 +391,11 @@ internal sealed class Workspace : Form
                     return;
                 }
                 CloseCameraSettings();
+                coachPageRevision++; coachClipId = null;
                 selectedGame = null; UpdateButtons();
             };
             core.SourceChanged += (s, e) => {
+                coachPageRevision++; coachClipId = null;
                 pendingNavigation = pendingNavigationNonce = pendingNavigationGame = null;
                 var nextGame = WorkspacePolicy.Game(core.Source, origin);
                 if (nextGame != selectedGame) CloseCameraSettings();
@@ -443,6 +451,13 @@ internal sealed class Workspace : Form
                 return;
             }
             if (closing) return;
+            if (TextValue(value, "type") == "studio-coach-capture") {
+                Guid nonce;
+                if (value.Count == 3 && Guid.TryParseExact(TextValue(value, "nonce"), "D", out nonce) &&
+                    CoachGamePage(source, TextValue(value, "gameId")))
+                    await CaptureCoachClip(source, nonce.ToString());
+                return;
+            }
             if (TextValue(value, "type") == "studio-coach-review") {
                 var action = TextValue(value, "action"); Guid nonce;
                 if (selectedGame == null || selectedGame != runningGame || TextValue(value, "gameId") != runningGame ||
@@ -543,7 +558,7 @@ internal sealed class Workspace : Form
                     var path = new Uri(source).AbsolutePath;
                     if ((path != "/score/" + selectedGame && path != "/games/" + selectedGame) ||
                         (runningGame != null && runningGame != selectedGame)) return;
-                    gameEnded = true; ForgetGame(); lastGame = null;
+                    gameEnded = true; coachClipId = null; ForgetGame(); lastGame = null;
                     try {
                         var ignored = web.CoreWebView2.ExecuteScriptAsync("window.dispatchEvent(new CustomEvent('studio-game-ended-ack',{detail:" +
                             json.Serialize(new { gameId = selectedGame }) + "}));");
@@ -1059,6 +1074,7 @@ internal sealed class Workspace : Form
         web.CoreWebView2.ExecuteScriptAsync("window.dispatchEvent(new CustomEvent('studio-session-status',{detail:" + json.Serialize(new {
             replay = active ? replay : null,
             coachReview = active ? coachReview : null,
+            canCaptureCoachClip = active && !gameEnded && StateFlag("canCaptureCoachClip"),
             gameId = active ? runningGame : null, title = active ? sessionTitle ?? "Current game" : "", active = active, busy = busy || closing || finishingCompletedGame,
             presentation = active && presentation != null ? TextValue(presentation, "mode") ?? "live" : "live",
             streaming = active ? TextValue(lastState, "streaming") ?? "idle" : "idle",
@@ -1067,6 +1083,99 @@ internal sealed class Workspace : Form
             canCloseWorkspace = selectedGame != null && (runningGame == null || selectedGame == runningGame),
             canCloseGameDirectly = !gameEnded && !busy && !closing && (runningGame == null || runningGame == selectedGame) && CanClosePreview()
         }) + "}));");
+    }
+    private bool CoachGamePage(string source, string game) {
+        return game != null && game == selectedGame && IsCurrentWorkspacePage(source) &&
+            WorkspacePolicy.Game(source, origin) == game && new Uri(source).AbsolutePath == "/score/" + game;
+    }
+    private bool CoachSessionCurrent(string source, string game, HttpClient controller, int revision) {
+        return CoachGamePage(source, game) && coachPageRevision == revision &&
+            game == runningGame && recording && !gameEnded && !closing && controller != null && controller == local &&
+            child != null && !child.HasExited && StateFlag("canCaptureCoachClip");
+    }
+    private async Task CaptureCoachClip(string source, string nonce) {
+        var game = selectedGame; var controller = local; var revision = coachPageRevision;
+        Guid clip; string capturedAt; double duration, minimum;
+        object detail = new { gameId = game, nonce = nonce, ok = false, error = "Studio couldn’t capture the recent camera clip. Try again shortly." };
+        if (!busy && !coachCapturePending && CoachSessionCurrent(source, game, controller, revision)) {
+            coachCapturePending = true;
+            try {
+                var captured = await Command(new { action = "capture-coach-clip" }, 22000);
+                DateTimeOffset timestamp;
+                capturedAt = TextValue(captured, "capturedAt");
+                if (CoachSessionCurrent(source, game, controller, revision) &&
+                    Guid.TryParseExact(TextValue(captured, "clipId"), "D", out clip) &&
+                    DateTimeOffset.TryParse(capturedAt, out timestamp) &&
+                    CoachClipSeconds(captured, "duration", out duration) && duration > 0 && duration <= 125 &&
+                    CoachClipSeconds(captured, "minimum", out minimum) && Math.Abs(minimum - Math.Max(0, duration - 120)) < 0.001) {
+                    coachClipId = clip;
+                    detail = new { gameId = game, nonce = nonce, ok = true, clipId = clip.ToString(), capturedAt = capturedAt, duration = duration, minimum = minimum };
+                }
+            } catch { /* Never forward controller diagnostics to the page. */ }
+            finally { coachCapturePending = false; }
+        }
+        if (revision == coachPageRevision && CoachGamePage(source, game))
+            await web.ExecuteScriptAsync("window.dispatchEvent(new CustomEvent('studio-coach-capture-result',{detail:" + json.Serialize(detail) + "}));");
+    }
+    private static bool CoachClipSeconds(Dictionary<string, object> state, string key, out double seconds) {
+        seconds = 0;
+        object value;
+        if (!state.TryGetValue(key, out value) || !(value is int || value is long || value is decimal || value is double)) return false;
+        seconds = Convert.ToDouble(value);
+        return !Double.IsNaN(seconds) && !Double.IsInfinity(seconds);
+    }
+    private async void CoachClipResource(object sender, CoreWebView2WebResourceRequestedEventArgs e) {
+        if (origin == null || !e.Request.Uri.StartsWith(origin + "/__studio-coach-clip/", StringComparison.Ordinal)) return;
+        var deferral = e.GetDeferral();
+        var ownsDownload = false;
+        try {
+            var core = web.CoreWebView2;
+            var game = runningGame; var controller = local; var revision = coachPageRevision; var source = core.Source;
+            var uri = new Uri(e.Request.Uri);
+            var parts = uri.AbsolutePath.Split('/'); Guid clip;
+            var headers = e.Request.Headers;
+            var fetch = e.ResourceContext == CoreWebView2WebResourceContext.Fetch ||
+                e.ResourceContext == CoreWebView2WebResourceContext.XmlHttpRequest;
+            if (!CoachSessionCurrent(source, game, controller, revision) || coachDownloadPending ||
+                uri.Query.Length != 0 || parts.Length != 4 || parts[2] != game ||
+                !Guid.TryParseExact(parts[3], "D", out clip) || coachClipId != clip ||
+                e.Request.Method != "GET" || !fetch ||
+                headers.Contains("Range") || !headers.Contains("Referer") ||
+                headers.GetHeader("Referer") != new Uri(source).GetLeftPart(UriPartial.Query))
+                throw new InvalidOperationException();
+            coachDownloadPending = ownsDownload = true;
+            using (var timeout = new System.Threading.CancellationTokenSource(10000))
+            using (var request = new HttpRequestMessage(HttpMethod.Get, localAddress + "/coach-clip/" + clip.ToString())) {
+                request.Headers.Add("Origin", localAddress);
+                using (var response = await controller.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, timeout.Token)) {
+                    var length = response.Content.Headers.ContentLength;
+                    if (!response.IsSuccessStatusCode || length == null || length <= 0 || length > MaxCoachClipBytes ||
+                        response.Content.Headers.ContentType == null || response.Content.Headers.ContentType.MediaType != "video/mp4")
+                        throw new InvalidDataException();
+                    var bytes = new byte[(int)length];
+                    using (var input = await response.Content.ReadAsStreamAsync()) {
+                        for (var offset = 0; offset < bytes.Length;) {
+                            var received = await input.ReadAsync(bytes, offset, bytes.Length - offset, timeout.Token);
+                            if (received == 0) throw new EndOfStreamException();
+                            offset += received;
+                        }
+                    }
+                    if (!CoachSessionCurrent(source, game, controller, revision) || coachClipId != clip)
+                        throw new InvalidOperationException();
+                    e.Response = core.Environment.CreateWebResourceResponse(new MemoryStream(bytes, false), 200, "OK",
+                        "Content-Type: video/mp4\r\nCache-Control: no-store\r\nX-Content-Type-Options: nosniff\r\nContent-Length: " + bytes.Length);
+                }
+            }
+        } catch {
+            try {
+                var core = web.CoreWebView2;
+                if (core != null)
+                    e.Response = core.Environment.CreateWebResourceResponse(new MemoryStream(new byte[0]), 404, "Coach clip unavailable", "Cache-Control: no-store");
+            } catch { /* The browser may have closed while the clip was being read. */ }
+        } finally {
+            if (ownsDownload) coachDownloadPending = false;
+            deferral.Complete();
+        }
     }
     private async void ReplayResource(object sender, CoreWebView2WebResourceRequestedEventArgs e) {
         if (origin == null || !e.Request.Uri.StartsWith(origin + "/__studio-replay/")) return;
@@ -1346,7 +1455,7 @@ internal sealed class Workspace : Form
             RecordCleanupWarning("Previous Studio cleanup was not confirmed. Check any saved recording before using it.");
         }
         if (local != null) local.Dispose(); local = null;
-        child = null; owned.Dispose(); runningGame = null; sessionTitle = null; lastState = null; previewMapping = null; localAddress = null; recording = false;
+        child = null; owned.Dispose(); runningGame = null; sessionTitle = null; lastState = null; previewMapping = null; localAddress = null; recording = false; coachClipId = null;
         UpdateSleepPrevention();
         appliedCameraSources.Clear();
         if (!closing) { PublishSavedCameraInputs(); PublishSessionStatus(); }

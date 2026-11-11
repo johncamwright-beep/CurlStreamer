@@ -2,7 +2,7 @@
 import { replayRange } from "./studio-replay-range";
 import { programCompletionSchema } from "../program-presentation";
 import { createServer, type IncomingMessage } from "node:http";
-import { randomBytes } from "node:crypto";
+import { randomBytes, randomUUID } from "node:crypto";
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { z } from "zod";
@@ -16,12 +16,15 @@ import { m4CameraInputSchema, m4CameraZoomSchema } from "../m4-camera-input";
 import { createM4IpCameraManager } from "./m4-ip-camera";
 import { networkInterfaces } from "node:os";
 import { startStudioCoachReview } from "./studio-coach-review";
+import { captureCoachClip } from "./studio-coach-capture";
 
+const coachClipLifetimeMs = 120_000;
 const command = z.discriminatedUnion("action", [
   z
     .object({ action: z.literal("start-coach-review"), host: z.ipv4() })
     .strict(),
   z.object({ action: z.literal("stop-coach-review") }).strict(),
+  z.object({ action: z.literal("capture-coach-clip") }).strict(),
   z.object({ action: z.literal("capture-replay") }).strict(),
   z.object({ action: z.literal("cancel-replay") }).strict(),
   z
@@ -282,7 +285,6 @@ export async function createM4OperatorServer(options: {
     ...options.ipCamera,
     diagnostic: options.connectionDiagnostic,
   });
-  let coachReviewEpoch = 0;
   let coachReview:
     Awaited<ReturnType<typeof startStudioCoachReview>> | undefined;
   const coachAddresses = () =>
@@ -318,6 +320,17 @@ export async function createM4OperatorServer(options: {
         : "Streaming is disabled for this pilot.",
     streamEpoch = 0;
   let programHandle: ProgramHandle | undefined;
+  let coachClip: {
+    id: string;
+    bytes: Buffer;
+    expiresAt: number;
+    expiry: NodeJS.Timeout;
+  } | null = null;
+  let servingCoachClip = false;
+  const releaseCoachClip = () => {
+    if (coachClip) clearTimeout(coachClip.expiry);
+    coachClip = null;
+  };
   let replayState: Awaited<
     ReturnType<NonNullable<ProgramHandle["replay"]>["status"]>
   > | null = null;
@@ -405,6 +418,7 @@ export async function createM4OperatorServer(options: {
       desktop.snapshot().authorized,
     );
     const programEnded = programAuthorityEnded();
+    if (programEnded) releaseCoachClip();
     return {
       pc,
       pairing,
@@ -424,6 +438,10 @@ export async function createM4OperatorServer(options: {
             code: coachReview?.code ?? null,
           }
         : null,
+      canCaptureCoachClip:
+        program === "recording" &&
+        !programEnded &&
+        Boolean(programHandle?.coach),
       programAuthorityEnded: programEnded,
       canHoldStream:
         !programEnded && programHandle?.presentation?.supported === true,
@@ -573,6 +591,38 @@ export async function createM4OperatorServer(options: {
       response.end(bytes.subarray(range.start, range.end + 1));
       return;
     }
+    if (request.method === "GET" && request.url?.startsWith("/coach-clip/")) {
+      if (request.headers.origin !== address) {
+        reply(403, { error: "Request denied" });
+        return;
+      }
+      if (
+        coachClip &&
+        (coachClip.expiresAt <= performance.now() || programAuthorityEnded())
+      )
+        releaseCoachClip();
+      const clip = coachClip;
+      if (
+        !clip ||
+        request.url !== `/coach-clip/${clip.id}` ||
+        program !== "recording"
+      ) {
+        reply(404, { error: "Coach clip unavailable" });
+        return;
+      }
+      if (servingCoachClip || request.headers.range !== undefined) {
+        reply(409, { error: "Coach clip transfer unavailable" });
+        return;
+      }
+      servingCoachClip = true;
+      response.once("close", () => (servingCoachClip = false));
+      response.writeHead(200, {
+        "Content-Type": "video/mp4",
+        "Content-Length": clip.bytes.length,
+      });
+      response.end(clip.bytes);
+      return;
+    }
     if (request.method === "GET" && request.url === "/state") {
       const handle = programHandle;
       const current = await handle?.replay?.status().catch(() => null);
@@ -623,6 +673,42 @@ export async function createM4OperatorServer(options: {
     }
     try {
       const input = await body(request);
+      if (input.action === "capture-coach-clip") {
+        const handle = programHandle;
+        const isCurrent = () =>
+          !closing &&
+          handle === programHandle &&
+          program === "recording" &&
+          !programAuthorityEnded();
+        if (busy || !handle?.coach || !isCurrent()) {
+          reply(409, { error: "Coach capture unavailable" });
+          return;
+        }
+        try {
+          const { bytes, ...metadata } = await captureCoachClip(
+            handle.coach,
+            isCurrent,
+          );
+          if (!isCurrent() || response.destroyed) {
+            if (!response.destroyed)
+              reply(409, { error: "Coach capture unavailable" });
+            return;
+          }
+          releaseCoachClip();
+          const clipId = randomUUID();
+          coachClip = {
+            id: clipId,
+            bytes,
+            expiresAt: performance.now() + coachClipLifetimeMs,
+            expiry: setTimeout(releaseCoachClip, coachClipLifetimeMs).unref(),
+          };
+          reply(200, { clipId, ...metadata });
+        } catch {
+          if (!response.destroyed)
+            reply(409, { error: "Coach capture unavailable" });
+        }
+        return;
+      }
       if (
         input.action === "start-coach-review" ||
         input.action === "stop-coach-review"
@@ -641,7 +727,6 @@ export async function createM4OperatorServer(options: {
         }
         ++busy;
         try {
-          ++coachReviewEpoch;
           coachReview?.close();
           coachReview = undefined;
           if (input.action === "start-coach-review") {
@@ -971,56 +1056,10 @@ export async function createM4OperatorServer(options: {
           programHandle = handle;
           program = "recording";
           programMessage = "Program connected. Local recording is active.";
-          // Start the paired LAN buffer in the background; coaches initiate captures.
-          // A failed LAN listener must never stop recording or broadcasting.
-          if (
-            options.program?.coachControl &&
-            handle.coach &&
-            options.origin.startsWith("https://")
-          ) {
-            const epoch = ++coachReviewEpoch;
-            const host = coachAddresses().sort(
-              (a, b) =>
-                Number(b.startsWith("192.168.")) -
-                Number(a.startsWith("192.168.")),
-            )[0];
-            if (host)
-              void startStudioCoachReview({
-                host,
-                port: 3189,
-                gameId: options.gameId,
-                directory: options.program.recordingRoot,
-                appOrigin: options.origin,
-                htmlPath: join(
-                  options.program.rendererRoot,
-                  "coach-review.html",
-                ),
-                coach: handle.coach,
-              })
-                .then((opened) => {
-                  if (
-                    programHandle !== handle ||
-                    closing ||
-                    coachReview ||
-                    epoch !== coachReviewEpoch
-                  ) {
-                    opened.close();
-                    return;
-                  }
-                  coachReview = opened;
-                  void handle.closed.finally(() => {
-                    opened.close();
-                    if (coachReview === opened) coachReview = undefined;
-                  });
-                })
-                .catch(() => {
-                  /* Phone review settings allow another LAN address. */
-                });
-          }
-
           void handle.closed.then((result) => {
             if (!result.finalized) cleanupFailed = true;
             if (programHandle !== handle) return;
+            releaseCoachClip();
             if (handle.stream && streaming !== "failed") {
               streaming = result.finalized ? "stopped" : "failed";
               streamingMessage = result.finalized
@@ -1092,6 +1131,7 @@ export async function createM4OperatorServer(options: {
           }
         } else if (input.action === "stop-program") {
           const handle = programHandle!;
+          releaseCoachClip();
           program = "stopping";
           programMessage = "Finalizing the local recording…";
           if (handle.stream) {
@@ -1238,6 +1278,7 @@ export async function createM4OperatorServer(options: {
       if (closePromise) return closePromise;
       clearInterval(heartbeat);
       closing = true;
+      releaseCoachClip();
       coachReview?.close();
       coachReview = undefined;
       ++epoch;

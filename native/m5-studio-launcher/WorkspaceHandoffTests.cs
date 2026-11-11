@@ -41,7 +41,7 @@ internal static class WorkspaceHandoffTests
             var core = web.CoreWebView2;
             core.AddWebResourceRequestedFilter("*", CoreWebView2WebResourceContext.All);
             core.WebResourceRequested += (sender, args) => {
-                if (args.Request.Uri.StartsWith(origin + "/__studio-preview/")) return;
+                if (args.Request.Uri.StartsWith(origin + "/__studio-preview/") || args.Request.Uri.StartsWith(origin + "/__studio-coach-clip/")) return;
                 var api = args.Request.Uri.Contains("/api/games/");
                 if (api) requests++;
                 var body = api ? "{\"sourceUrl\":\"" + origin + "/studio-m3/" + (mode == 1 ? "22222222-2222-4222-8222-222222222222" : id) + "/program#code=" + new string('a',43) + "\"}" : "<!doctype html><title>Fixture game</title><h1>Fixture game</h1>";
@@ -150,6 +150,7 @@ internal static class WorkspaceHandoffTests
                         typeof(Workspace).GetField("localAddress",flags).SetValue(form,null);
                         typeof(Workspace).GetField("lastState",flags).SetValue(form,readyState);
                     }
+                    await CheckCoachClip(form, core, id, readyState);
                     await core.ExecuteScriptAsync("window.chrome.webview.postMessage({type:'studio-game-ready',gameId:'"+id+"'});window.chrome.webview.postMessage({type:'studio-session-title',gameId:'"+id+"',title:'Fixture current game'});");
                     await Task.Delay(100);
                     if((string)typeof(Workspace).GetField("sessionTitle",flags).GetValue(form)!="Fixture current game") throw new Exception("Backward-compatible Ready plus separate title did not update the current session.");
@@ -385,7 +386,7 @@ internal static class WorkspaceHandoffTests
                                     (string)remembered.Invoke(form,null) != id ||
                                     (bool)typeof(Workspace).GetField("gameEnded",flags).GetValue(form) || requests != requestsBeforeLeave)
                                     throw new Exception("Workspace close did not cleanly stop the paused sender or leave the game resumable.");
-                                File.WriteAllText(output, "PASS: native WebView2 handoff, camera boundaries, open-game leave, and bounded completed-game controller cleanup.");
+                                File.WriteAllText(output, "PASS: native WebView2 handoff, coach clip isolation, camera boundaries, open-game leave, and bounded completed-game controller cleanup.");
                                 result = 0;
                             } catch (Exception error) { File.WriteAllText(output, "FAIL: " + error.Message); }
                             finally { timeout.Stop(); }
@@ -512,6 +513,65 @@ internal static class WorkspaceHandoffTests
         string actual = "null";
         for (int i = 0; i < 30 && actual == "null"; i++) { await Task.Delay(100); actual = await core.ExecuteScriptAsync("window.previewResult"); }
         if (actual != (expected ? "true" : "false")) throw new Exception("Preview image boundary failed: " + actual);
+    }
+    private static async Task CheckCoachClip(Workspace form, CoreWebView2 core, string game, Dictionary<string,object> readyState) {
+        const string foreign = "22222222-2222-4222-8222-222222222222", nonce = "55555555-5555-4555-8555-555555555555";
+        var flags = BindingFlags.Instance | BindingFlags.NonPublic;
+        var state = typeof(Workspace).GetField("lastState",flags);
+        var local = typeof(Workspace).GetField("local",flags);
+        var address = typeof(Workspace).GetField("localAddress",flags);
+        var handler = new CoachClipFixture();
+        var fetchHeaders = new List<string>();
+        EventHandler<CoreWebView2WebResourceRequestedEventArgs> observeFetch = (sender,args) => {
+            if (!args.Request.Uri.Contains("/__studio-coach-clip/")) return;
+            fetchHeaders.Add(args.ResourceContext + "," + String.Join(",", new[] { "Range", "Referer" }.Select(
+                name => args.Request.Headers.Contains(name) ? args.Request.Headers.GetHeader(name) : "-")));
+        };
+        core.WebResourceRequested += observeFetch;
+        using (var controller = new System.Net.Http.HttpClient(handler)) {
+            state.SetValue(form,new Dictionary<string,object>(readyState) { { "canCaptureCoachClip", true } });
+            local.SetValue(form,controller); address.SetValue(form,"http://127.0.0.1:12345");
+            try {
+                var capture = "window.chrome.webview.postMessage({type:'studio-coach-capture',nonce:'" + nonce + "',gameId:'";
+                await core.ExecuteScriptAsync("window.coachReceipts=[];window.addEventListener('studio-coach-capture-result',e=>window.coachReceipts.push(e.detail));" + capture + foreign + "'});");
+                await Task.Delay(100);
+                if (handler.Captures != 0 || await core.ExecuteScriptAsync("window.coachReceipts.length") != "0")
+                    throw new Exception("Foreign game requested a coach capture.");
+                await core.ExecuteScriptAsync(capture + game + "'});");
+                for (int i=0;i<25 && await core.ExecuteScriptAsync("window.coachReceipts.length")=="0";i++) await Task.Delay(50);
+                if (handler.Captures != 1 || await core.ExecuteScriptAsync("window.coachReceipts.length===1&&window.coachReceipts[0].ok&&window.coachReceipts[0].nonce==='" + nonce + "'&&window.coachReceipts[0].duration===122&&window.coachReceipts[0].minimum===2") != "true")
+                    throw new Exception("Coach capture did not return scoped timing metadata.");
+                await core.ExecuteScriptAsync("window.coachFetch=null;(async()=>{const clip=window.coachReceipts[0].clipId;const base='/__studio-coach-clip/';const foreign=await fetch(base+'" + foreign + "/'+clip);const ranged=await fetch(base+'" + game + "/'+clip,{headers:{Range:'bytes=0-1'}});const response=await fetch(base+'" + game + "/'+clip,{mode:'same-origin'});window.coachFetch=[foreign.status,ranged.status,response.status,response.headers.get('content-type'),...(new Uint8Array(await response.arrayBuffer()))]})().catch(()=>window.coachFetch=['error']);");
+                for (int i=0;i<25 && await core.ExecuteScriptAsync("window.coachFetch")=="null";i++) await Task.Delay(50);
+                var result = await core.ExecuteScriptAsync("window.coachFetch");
+                if (handler.Downloads != 1 || result != "[404,404,200,\"video/mp4\",1,2,3]")
+                    throw new Exception("Coach clip resource isolation failed: " + result + " Downloads: " + handler.Downloads + " Headers: " + String.Join(";", fetchHeaders));
+            } finally {
+                core.WebResourceRequested -= observeFetch;
+                local.SetValue(form,null); address.SetValue(form,null); state.SetValue(form,readyState);
+            }
+        }
+    }
+    private sealed class CoachClipFixture : System.Net.Http.HttpMessageHandler {
+        private const string ClipId = "33333333-3333-4333-8333-333333333333";
+        internal int Captures, Downloads;
+        protected override async Task<System.Net.Http.HttpResponseMessage> SendAsync(System.Net.Http.HttpRequestMessage request, System.Threading.CancellationToken cancellationToken) {
+            var path = request.RequestUri.AbsolutePath;
+            var response = new System.Net.Http.HttpResponseMessage(System.Net.HttpStatusCode.OK);
+            if (request.Method == System.Net.Http.HttpMethod.Post && path == "/command" && (await request.Content.ReadAsStringAsync()).Contains("capture-coach-clip")) {
+                Captures++;
+                response.Content = new System.Net.Http.StringContent("{\"clipId\":\"" + ClipId + "\",\"capturedAt\":\"2026-11-11T20:00:00.000Z\",\"duration\":122,\"minimum\":2}");
+            } else if (request.Method == System.Net.Http.HttpMethod.Get && path == "/coach-clip/" + ClipId) {
+                Downloads++;
+                response.Content = new System.Net.Http.ByteArrayContent(new byte[] { 1, 2, 3 });
+                response.Content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("video/mp4");
+            } else if (request.Method == System.Net.Http.HttpMethod.Get && path == "/state") {
+                response.Content = new System.Net.Http.StringContent("{\"program\":\"recording\",\"streaming\":\"armed\",\"broadcast\":\"live\",\"canCaptureCoachClip\":true,\"localOutput\":{\"state\":\"active\"}}");
+            } else {
+                response.StatusCode = System.Net.HttpStatusCode.NotFound;
+            }
+            return response;
+        }
     }
     private sealed class DelayedHold : System.Net.Http.HttpMessageHandler {
         private readonly TaskCompletionSource<System.Net.Http.HttpResponseMessage> response = new TaskCompletionSource<System.Net.Http.HttpResponseMessage>();

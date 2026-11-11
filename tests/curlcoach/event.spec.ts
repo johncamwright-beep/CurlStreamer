@@ -132,8 +132,8 @@ test("charting draft survives analysis navigation and season reads are cached", 
     .getByRole("dialog", { name: "Change", exact: true })
     .getByRole("button", { name: "Done", exact: true })
     .click();
-  await page.getByRole("tab", { name: "Notes", exact: true }).click();
-  await openEntryTab(page, "Notes");
+  await page.getByRole("tab", { name: "Shot Flags", exact: true }).click();
+  await openEntryTab(page, "Shot Flags");
   await page
     .getByLabel("Private coaching note")
     .fill("Keep this unsaved draft");
@@ -160,7 +160,7 @@ test("charting draft survives analysis navigation and season reads are cached", 
   await navigate(page, "Game analysis");
   await navigate(page, "Charting");
   await expect(page.getByLabel("End", { exact: true })).toHaveValue("3");
-  await openEntryTab(page, "Notes");
+  await openEntryTab(page, "Shot Flags");
   await expect(page.getByLabel("Private coaching note")).toHaveValue(
     "Keep this unsaved draft",
   );

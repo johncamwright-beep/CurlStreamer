@@ -477,11 +477,11 @@ test("reload preserves drafts and lineup changes never rewrite recorded players"
       includeHidden: true,
     }),
   ).toHaveValue("2");
-  await page.getByRole("tab", { name: "Notes", exact: true }).click();
-  await openEntryTab(page, "Notes");
+  await page.getByRole("tab", { name: "Shot Flags", exact: true }).click();
+  await openEntryTab(page, "Shot Flags");
   await page.getByLabel("Private coaching note").fill("Next rock note");
   await page.reload();
-  await openEntryTab(page, "Notes");
+  await openEntryTab(page, "Shot Flags");
   await expect(page.getByLabel("Private coaching note")).toHaveValue(
     "Next rock note",
   );

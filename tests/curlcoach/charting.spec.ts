@@ -182,27 +182,11 @@ test("scoped local lab charts, corrects and audits a synthetic shot", async ({
     .getByRole("dialog", { name: "Change", exact: true })
     .getByRole("button", { name: "Done", exact: true })
     .click();
-  await page.getByRole("tab", { name: "Notes", exact: true }).click();
-  await openEntryTab(page, "Notes");
+  await page.getByRole("tab", { name: "Shot Flags", exact: true }).click();
+  await openEntryTab(page, "Shot Flags");
   await page.getByLabel("Flag shot for review").selectOption("yes");
-  for (const [label, seconds] of [
-    ["30s", "30"],
-    ["45s", "45"],
-    ["60s", "60"],
-    ["90s", "90"],
-    ["2m", "120"],
-    ["3m", "180"],
-    ["4m", "240"],
-  ]) {
-    await page.getByRole("button", { name: label, exact: true }).click();
-    await expect(page.getByLabel("Go back (seconds)")).toHaveValue(seconds);
-  }
-  await page.getByLabel("Go back (seconds)").fill("31");
-  await expect(
-    page.getByRole("button", { name: "30s", exact: true }),
-  ).toHaveAttribute("aria-pressed", "false");
-  await page.getByRole("button", { name: "45s", exact: true }).click();
-  await openEntryTab(page, "Notes");
+  await expect(page.getByLabel("Go back (seconds)")).toHaveCount(0);
+  await openEntryTab(page, "Shot Flags");
   await page.getByLabel("Private coaching note").fill("Review the line call");
   await openEntryTab(page, "Shot");
   await openEntryTab(page, "Shot");
@@ -266,7 +250,7 @@ test("scoped local lab charts, corrects and audits a synthetic shot", async ({
       page.getByRole("combobox", { name: field, exact: true }),
     ).toHaveValue("");
   }
-  await openEntryTab(page, "Notes");
+  await openEntryTab(page, "Shot Flags");
   await expect(page.getByLabel("Flag shot for review")).toHaveValue("no");
   await page
     .getByRole("button", { name: "Flagged shots", exact: true })
@@ -289,7 +273,7 @@ test("scoped local lab charts, corrects and audits a synthetic shot", async ({
     (event: { shot?: { note?: string } }) =>
       event.shot?.note === "Review the line call",
   );
-  expect(flagged.shot.videoReview.lookBackSeconds).toBe(45);
+  expect(flagged.shot.flagged).toBe(true);
   await openEntryTab(page, "Shot");
   await page
     .getByRole("combobox", { name: "Shot type", exact: true })

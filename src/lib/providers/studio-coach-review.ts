@@ -1,11 +1,9 @@
 import { randomInt, randomUUID } from "node:crypto";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { setTimeout as delay } from "node:timers/promises";
 import { z } from "zod";
-import { coachMp4Duration } from "./coach-mp4-duration";
 import { startCoachLocalProof } from "./coach-local-proof";
-import type { startM4StudioRecorder } from "./m4-studio-recorder";
+import { captureCoachClip, type CoachRecorder } from "./studio-coach-capture";
 
 /** Opt-in Studio integration. Local selections are durable; this does not write production shots. */
 export async function startStudioCoachReview(options: {
@@ -15,9 +13,7 @@ export async function startStudioCoachReview(options: {
   directory: string;
   htmlPath?: string;
   appOrigin?: string;
-  coach: NonNullable<
-    Awaited<ReturnType<typeof startM4StudioRecorder>>["coach"]
-  >;
+  coach: CoachRecorder;
 }) {
   const gameId = z.uuid().parse(options.gameId);
   const appOrigin = options.appOrigin
@@ -43,24 +39,13 @@ export async function startStudioCoachReview(options: {
     duration: 120,
     htmlPath: options.htmlPath,
     capture: async () => {
-      if (closed) throw Error("Game review closed");
-      const capturedAt = new Date().toISOString();
-      await options.coach.capture();
-      const deadline = Date.now() + 16000;
-      while (Date.now() < deadline) {
-        if (closed) throw Error("Game review closed");
-        const status = await options.coach.status();
-        if (status.state === 7) throw Error("Camera buffer unavailable");
-        if (status.state === 3) {
-          const bytes = await options.coach.snapshot();
-          const duration = coachMp4Duration(bytes);
-          const video = join(directory, `${randomUUID()}.mp4`);
-          await writeFile(video, bytes, { flag: "wx" });
-          return { video, duration, capturedAt };
-        }
-        await delay(200);
-      }
-      throw Error("Camera capture timed out");
+      const { bytes, duration, capturedAt } = await captureCoachClip(
+        options.coach,
+        () => !closed,
+      );
+      const video = join(directory, `${randomUUID()}.mp4`);
+      await writeFile(video, bytes, { flag: "wx" });
+      return { video, duration, capturedAt };
     },
     saveSelection: async (selection, clip) => {
       if (closed || !clip) throw Error("Game review closed");

@@ -12,13 +12,17 @@ export function StudioPreviewStatus({ gameId }: { gameId: string }) {
     return null;
   const paused = session?.gameId === gameId && session.presentation === "hold";
   const live =
-    session?.gameId === gameId &&
-    session.live &&
-    session.outputActive &&
-    !paused;
+    session?.gameId === gameId && session.live && session.outputActive;
+  const label = live
+    ? paused
+      ? "LIVE · PAUSED"
+      : "LIVE"
+    : paused
+      ? "PAUSED"
+      : "PREVIEW";
   return (
     <span className="studio-preview-status" data-live={Boolean(live)}>
-      {paused ? "PAUSED" : live ? "LIVE" : "PREVIEW"}
+      {label}
     </span>
   );
 }

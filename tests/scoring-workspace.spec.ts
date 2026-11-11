@@ -397,17 +397,23 @@ test("desktop game day keeps scoring primary and settings available on demand", 
     name: "Studio program preview",
     exact: true,
   });
-  await expect(
-    page.locator(".scoring-page-actions").getByRole("button", {
-      name: "Stop broadcast",
-      exact: true,
-    }),
-  ).toBeEnabled();
-  await expect(
-    page
-      .getByRole("region", { name: "Stream preview and camera settings" })
-      .getByRole("button", { name: "Pause broadcast", exact: true }),
-  ).toBeEnabled();
+  const broadcastActions = page.locator("#studio-broadcast-actions");
+  const stopBroadcast = broadcastActions.getByRole("button", {
+    name: "Stop broadcast",
+    exact: true,
+  });
+  const pauseBroadcast = broadcastActions.getByRole("button", {
+    name: "Pause broadcast",
+    exact: true,
+  });
+  await expect(stopBroadcast).toBeEnabled();
+  await expect(pauseBroadcast).toBeEnabled();
+  if (info.project.name !== "mobile") {
+    const stopBox = (await stopBroadcast.boundingBox())!;
+    const pauseBox = (await pauseBroadcast.boundingBox())!;
+    expect(pauseBox.y).toBe(stopBox.y);
+    expect(pauseBox.x - stopBox.x - stopBox.width).toBe(8);
+  }
   await expect(
     preview.getByRole("img", { name: "Actual Studio program output" }),
   ).toBeVisible();
@@ -531,6 +537,7 @@ test("desktop game day keeps scoring primary and settings available on demand", 
             receiving: true,
             outputActive: true,
             canReconnect: true,
+            canHoldStream: true,
             message: "YouTube status delayed test message",
           },
         }),
@@ -543,6 +550,7 @@ test("desktop game day keeps scoring primary and settings available on demand", 
   await expect(page.locator(".studio-status-latest")).toHaveText("", {
     timeout: 20000,
   });
+  const beforeLog = await position();
   await page.getByRole("button", { name: "Status Log", exact: true }).click();
   const log = page.getByRole("dialog", { name: "Status Log", exact: true });
   await expect(log).toContainText("YouTube status delayed test message");
@@ -557,7 +565,7 @@ test("desktop game day keeps scoring primary and settings available on demand", 
   }, testGameId);
   await expect(forceClose).toHaveCount(0);
   await log.getByRole("button", { name: "Close", exact: true }).click();
-  expect(await position()).toEqual(before);
+  expect(await position()).toEqual(beforeLog);
   await expect(
     page.getByRole("region", { name: "Score by end, scroll for more ends" }),
   ).toBeVisible();

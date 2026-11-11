@@ -334,7 +334,7 @@ test("desktop game day keeps scoring primary and settings available on demand", 
   await page.addInitScript(() =>
     Object.defineProperty(navigator, "userAgent", {
       value:
-        "CurlStreamerStudio/0.3 StudioNativeAudio/1 StudioProgramPreview/1",
+        "CurlStreamerStudio/0.3 StudioNativeAudio/1 StudioProgramPreview/1 StudioReplay/1",
     }),
   );
   await page.addInitScript(() => {
@@ -397,6 +397,23 @@ test("desktop game day keeps scoring primary and settings available on demand", 
     name: "Studio program preview",
     exact: true,
   });
+  const previewPanel = page.getByRole("region", {
+    name: "Stream preview and camera settings",
+  });
+  await expect(
+    previewPanel.getByRole("heading", { name: "Program preview", exact: true }),
+  ).toHaveCount(0);
+  const previewTools = previewPanel.getByRole("group", {
+    name: "Studio tools",
+  });
+  await expect(previewTools.getByRole("button")).toHaveCount(3);
+  expect(
+    await previewTools
+      .getByRole("button")
+      .evaluateAll((buttons) =>
+        buttons.map((button) => button.getBoundingClientRect().height),
+      ),
+  ).toEqual([44, 44, 44]);
   const broadcastActions = page.locator("#studio-broadcast-actions");
   const stopBroadcast = broadcastActions.getByRole("button", {
     name: "Stop broadcast",
@@ -611,6 +628,10 @@ test("desktop game day keeps scoring primary and settings available on demand", 
   });
   if (info.project.name !== "mobile") {
     await page.setViewportSize({ width: 1680, height: 960 });
+    const widePreview = (await preview.boundingBox())!;
+    expect(
+      Math.abs(widePreview.height - (widePreview.width * 9) / 16),
+    ).toBeLessThan(2);
     await page.screenshot({
       path: info.outputPath("studio-cockpit-1680.png"),
       fullPage: true,

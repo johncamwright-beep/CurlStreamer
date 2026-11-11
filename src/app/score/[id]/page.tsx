@@ -746,7 +746,6 @@ function ScorerGame({ id }: { id: string }) {
                   className="scoring-preview-panel"
                   aria-label="Stream preview and camera settings"
                 >
-                  <h2 className="scoring-eyebrow">Program preview</h2>
                   <StudioProgramPreview key={id} gameId={id} embedded />
                   <StudioPreviewStatus gameId={id} />
                   <StudioShotFlagRelay gameId={id} />

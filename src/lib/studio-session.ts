@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+export const studioGameCompletionEvent = "studio-game-completion-saved";
+
 export const studioReplayStateSchema = z
   .object({
     state: z.number().int().min(0).max(7),

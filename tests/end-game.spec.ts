@@ -107,8 +107,10 @@ test("End Game returns to Games and reopening shows the saved result", async ({
   game.config.sharedYoutubeWatchUrl = "https://youtu.be/abcdefghijk";
   let cleanupRetries = 0;
   let committed = false;
-  await page.route("**/dashboard", (route) =>
-    route.fulfill({ contentType: "text/html", body: "<h1>Games</h1>" }),
+  await page.route(
+    (url) => url.pathname === "/dashboard",
+    (route) =>
+      route.fulfill({ contentType: "text/html", body: "<h1>Games</h1>" }),
   );
   await page.route(`**/api/games/${testGameId}`, async (route) => {
     await route.fulfill({
@@ -222,8 +224,10 @@ test("authorized scoring page confirms an empty scoreboard as a 0–0 tie", asyn
   const completion = { ...completedFixture(), result };
   const game = { ...gameFixture(), scoreEvents: [] };
   let committed = false;
-  await page.route("**/dashboard", (route) =>
-    route.fulfill({ contentType: "text/html", body: "<h1>Games</h1>" }),
+  await page.route(
+    (url) => url.pathname === "/dashboard",
+    (route) =>
+      route.fulfill({ contentType: "text/html", body: "<h1>Games</h1>" }),
   );
   await page.route(`**/api/games/${testGameId}`, (route) =>
     route.fulfill({

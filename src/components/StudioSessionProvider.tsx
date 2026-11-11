@@ -7,6 +7,7 @@ import {
   resolveStudioNavigation,
   sessionGamePath,
   shouldGuardStudioNavigation,
+  studioGameCompletionEvent,
   studioNavigationRequestSchema,
   studioSessionBridge,
   studioSessionLabel,
@@ -33,7 +34,7 @@ export function StudioSessionProvider({ children }: { children: ReactNode }) {
     router = useRouter();
   const [session, setSession] = useState<StudioSession | null>(null);
   const current = useRef(session);
-  current.current = session;
+  const completedGame = useRef<string | null>(null);
   const [navigation, setNavigation] = useState<NavigationRequest | null>(null);
   const [switching, setSwitching] = useState(false);
   const pendingNavigation = useRef<NavigationRequest | null>(null);
@@ -69,10 +70,31 @@ export function StudioSessionProvider({ children }: { children: ReactNode }) {
       const value = studioSessionSchema.safeParse(
         (event as CustomEvent).detail,
       );
-      if (value.success) {
-        current.current = value.data;
-        setSession(value.data);
-      }
+      if (!value.success) return;
+      // Studio acknowledges completion before its controller has shut down.
+      // The completed game is no longer available to pause or return to.
+      if (
+        completedGame.current &&
+        value.data.active &&
+        value.data.gameId === completedGame.current
+      )
+        return;
+      completedGame.current = null;
+      current.current = value.data;
+      setSession(value.data);
+    };
+    const completed = (event: Event) => {
+      const gameId = (event as CustomEvent).detail?.gameId;
+      if (
+        typeof gameId !== "string" ||
+        !sessionGamePath(location.pathname, gameId) ||
+        (current.current?.active && current.current.gameId !== gameId)
+      )
+        return;
+      completedGame.current = gameId;
+      current.current = null;
+      setSession(null);
+      if (pendingNavigation.current?.gameId === gameId) close();
     };
     const nativeNavigation = (event: Event) => {
       const value = studioNavigationRequestSchema.safeParse(
@@ -92,10 +114,12 @@ export function StudioSessionProvider({ children }: { children: ReactNode }) {
       } catch {}
     };
     window.addEventListener("studio-session-status", receive);
+    window.addEventListener(studioGameCompletionEvent, completed);
     window.addEventListener("studio-navigation-request", nativeNavigation);
     studioSessionBridge()?.postMessage({ type: "studio-session-observe" });
     return () => {
       window.removeEventListener("studio-session-status", receive);
+      window.removeEventListener(studioGameCompletionEvent, completed);
       window.removeEventListener("studio-navigation-request", nativeNavigation);
     };
   }, []);

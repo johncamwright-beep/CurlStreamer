@@ -52,6 +52,12 @@ async function setup(page: Page, session = liveSession, bridge = true) {
                     detail: fixture.session,
                   }),
                 );
+              if (message.type === "studio-game-ended")
+                window.dispatchEvent(
+                  new CustomEvent("studio-game-ended-ack", {
+                    detail: { gameId: message.gameId },
+                  }),
+                );
             },
           },
         },
@@ -251,6 +257,65 @@ test("continue leaves the game while its live Studio status remains available", 
   await expect(page).toHaveURL(`/score/${testGameId}`);
   await expect(banner).toHaveCount(0);
   await expect(dialog(page)).toHaveCount(0);
+});
+
+test("finalizing returns to Games while Studio shuts down the completed broadcast", async ({
+  page,
+}) => {
+  await setup(page, { ...liveSession, presentation: "hold" });
+  const result = {
+    outcome: "home_win",
+    label: "Home win",
+    totals: { home: 2, away: 0 },
+    ends: [],
+  };
+  await page.route(`**/api/games/${testGameId}/completion`, (route) =>
+    route.fulfill({
+      json:
+        route.request().postDataJSON().action === "review"
+          ? {
+              reviewId: requestNonce,
+              inputRevision: 3,
+              result,
+              youtubeWatchUrl: null,
+            }
+          : {
+              completionSaved: true,
+              cleanup: { status: "pending", attempts: 0, lastError: null },
+            },
+    }),
+  );
+
+  await page.getByRole("button", { name: "Close Game", exact: true }).click();
+  await page
+    .getByRole("dialog", { name: "Is this game completed?" })
+    .getByRole("button", { name: "Yes", exact: true })
+    .click();
+  const gamesRequest = page.waitForRequest(
+    (request) => new URL(request.url()).pathname === "/dashboard",
+  );
+  await page
+    .getByRole("dialog", { name: "Finalize game score 2–0?" })
+    .getByRole("button", { name: "Yes", exact: true })
+    .click();
+  await gamesRequest;
+  // The standard fixture server redirects unauthenticated Games requests.
+  await expect(page).toHaveURL(/\/login(?:\?|$)/);
+  await expect(dialog(page)).toHaveCount(0);
+  const banner = page.getByRole("complementary", {
+    name: "Active Studio game",
+  });
+  await status(page, { busy: true });
+  await expect(banner).toHaveCount(0);
+  expect(await messages(page, "studio-game-ended")).toEqual([
+    { type: "studio-game-ended", gameId: testGameId },
+  ]);
+  await status(page, {
+    ...liveSession,
+    gameId: otherGameId,
+    title: "Next game",
+  });
+  await expect(banner).toContainText("Next game");
 });
 
 test("active sender remains identifiable when YouTube confirmation is delayed", async ({

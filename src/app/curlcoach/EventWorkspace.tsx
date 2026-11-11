@@ -449,10 +449,14 @@ function WorkspaceContent({
   const selectedEvent = statsEventId || data?.event.id || "all";
   const seasonReady = statsData?.event.seasonId === selectedSeason;
   const eventReady =
-    data?.event.seasonId === selectedSeason && data?.event.id === selectedEvent;
-  // Event statistics are already in the scoring response. Don't hold them up
-  // while the rest of the season loads for the All events selector.
-  const analysisData = seasonReady ? statsData : eventReady ? data : null;
+    (data?.event.seasonId ?? "unassigned") === selectedSeason &&
+    data?.event.id === selectedEvent;
+  // A season response may omit a game whose assigned season differs from its
+  // event. Use the current event's games and latest flags for that event.
+  const useEventAnalysis =
+    eventReady &&
+    (!seasonReady || (view === "Analysis" && analysisTab === "flagged"));
+  const analysisData = useEventAnalysis ? data : seasonReady ? statsData : null;
   const statsReady = !!analysisData;
   const hasData = !!data;
   useEffect(() => {
@@ -639,6 +643,20 @@ function WorkspaceContent({
       `${location.pathname}${location.search}#analysis/${tab}`,
     );
   }
+  function selectChartedGameForAnalysis() {
+    if (!event || !game || (eventId && event.id !== eventId)) return;
+    setSeasonId(event.seasonId ?? "unassigned");
+    setStatsEventId(event.id);
+    setAnalysisGame(game.id);
+    setPlayer("all");
+    setCompetitionLevel("all");
+    setShotFilters(defaultShotFilters);
+    const url = new URL(location.href);
+    url.searchParams.set("source", source);
+    url.searchParams.set("event", event.id);
+    url.searchParams.set("game", game.id);
+    history.replaceState(history.state, "", url);
+  }
   function remember(source: string, event: string, game = "") {
     preserveLinkedGame.current = false;
     history.replaceState(
@@ -691,6 +709,11 @@ function WorkspaceContent({
     <a
       key={page.view}
       href={`#${slug(page.view)}`}
+      onClick={
+        page.view === "Analysis" && view === "Charting"
+          ? selectChartedGameForAnalysis
+          : undefined
+      }
       aria-current={primaryView === page.view ? "page" : undefined}
     >
       {page.label}

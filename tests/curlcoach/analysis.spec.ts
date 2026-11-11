@@ -34,6 +34,10 @@ test("legacy analysis links select the matching submenu", async ({ page }) => {
   ).toBeFocused();
   await page.keyboard.press("ArrowRight");
   await expect(
+    page.getByRole("tab", { name: "Event Performance Over Time", exact: true }),
+  ).toBeFocused();
+  await page.keyboard.press("ArrowRight");
+  await expect(
     page.getByRole("tab", { name: "Miss Analysis", exact: true }),
   ).toBeFocused();
   await expect(

@@ -88,6 +88,7 @@ async function fixture(
     enhancedFailure?: "preferences" | "game";
     scheduleAnotherGame?: boolean;
     missingLinkedGame?: boolean;
+    omitGameTwoFromSeason?: boolean;
   } = {},
 ) {
   const games = new Map<string, CoachGame>();
@@ -213,8 +214,10 @@ async function fixture(
         source: "streamer",
         organizationId,
         seasonId: "season-fixture",
-        games: [...games.values()].filter(
-          (game) => season || game.eventId === eventId,
+        games: [...games.values()].filter((game) =>
+          season
+            ? !options.omitGameTwoFromSeason || game.id !== gameTwo
+            : game.eventId === eventId,
         ),
       },
       catalog: [
@@ -401,6 +404,69 @@ test("completed games show only their closed panel until explicitly reopened", a
     page.getByRole("heading", { name: "Game closed", exact: true }),
   ).toBeVisible();
 });
+test("Flagged Shots opens on the just-finished game and shows its saved flag", async ({
+  page,
+}) => {
+  const games = await fixture(page, { omitGameTwoFromSeason: true });
+  for (const [gameId, note] of [
+    [gameOne, "Flag from game one"],
+    [gameTwo, "Flag from game two"],
+  ]) {
+    games.get(gameId)!.standaloneReviews = [
+      {
+        id: crypto.randomUUID(),
+        audience: "player",
+        playerId: "alice",
+        playerName: "Alice",
+        note,
+        selectedAt: "2026-11-10T15:00:00Z",
+      },
+    ];
+  }
+  await page.getByRole("button", { name: "Refresh event" }).click();
+  await page.getByRole("button", { name: "Change game", exact: true }).click();
+  await page
+    .getByRole("combobox", { name: "Game", exact: true })
+    .selectOption(gameTwo);
+  await start(page);
+  await page
+    .getByRole("button", { name: "Finish private coaching session" })
+    .click();
+  await expect(
+    page.getByRole("heading", { name: "Game closed", exact: true }),
+  ).toBeVisible();
+
+  const seasonRequest = page.waitForResponse((response) =>
+    new URL(response.url()).searchParams.has("seasonId"),
+  );
+  await page
+    .getByRole("link", { name: "Analysis", exact: true })
+    .first()
+    .click();
+  const flagged = page.getByRole("tab", { name: "Flagged shots", exact: true });
+  await flagged.click();
+  expect((await seasonRequest).ok()).toBe(true);
+  const gameFilter = page.getByRole("combobox", { name: "Game", exact: true });
+  const eventFilter = page.getByRole("combobox", {
+    name: "Event",
+    exact: true,
+  });
+  const flags = page.getByRole("region", { name: "Flagged shots" });
+  await expect(gameFilter).toHaveValue(gameTwo);
+  await expect(eventFilter).toHaveValue(eventOne);
+  await expect(
+    page.getByRole("combobox", { name: "Season", exact: true }),
+  ).toHaveValue("season-fixture");
+  await expect(flags.getByText("Flag from game two")).toBeVisible();
+  await expect(flags.getByText("Flag from game one")).toHaveCount(0);
+  await page.reload();
+  await expect(gameFilter).toHaveValue(gameTwo);
+  await expect(flags.getByText("Flag from game two")).toBeVisible();
+  await gameFilter.selectOption(gameOne);
+  await expect(flags.getByText("Flag from game one")).toBeVisible();
+  await expect(flags.getByText("Flag from game two")).toHaveCount(0);
+});
+
 test("event transitions retain the event picker without flashing an unavailable error", async ({
   page,
 }) => {

@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { test, expect, type Page, type Route } from "@playwright/test";
 import { build } from "esbuild";
 import { resolve } from "node:path";
 import { readFile } from "node:fs/promises";
@@ -7,10 +7,10 @@ const gameId = "11111111-1111-4111-8111-111111111111";
 const appOrigin = "https://coach.example.test";
 const capturedAt = "2026-11-10T15:00:00.000Z";
 
-test("chooses a local flag start and retries only the same flag metadata", async ({
-  page,
-  context,
-}) => {
+async function captureFixture(
+  page: Page,
+  onClip?: (route: Route, attempt: number) => Promise<boolean>,
+) {
   const bundle = await build({
     stdin: {
       contents: `
@@ -58,7 +58,7 @@ test("chooses a local flag start and retries only the same flag metadata", async
   const media = await readFile(resolve("public/celebrations/cat-dance.mp4"));
   const writes: string[] = [];
   let mediaRequests = 0;
-  await context.route(`${appOrigin}/**`, async (route) => {
+  await page.route(`${appOrigin}/**`, async (route) => {
     const { pathname } = new URL(route.request().url());
     if (pathname === "/api/curlcoach/local-review") {
       writes.push(route.request().postData() ?? "");
@@ -71,6 +71,7 @@ test("chooses a local flag start and retries only the same flag metadata", async
     }
     if (pathname === "/fixture-clip") {
       mediaRequests++;
+      if (await onClip?.(route, mediaRequests)) return;
       await route.fulfill({
         body: media,
         headers: {
@@ -86,6 +87,27 @@ test("chooses a local flag start and retries only the same flag metadata", async
     });
   });
   await page.goto(appOrigin);
+  return { writes, mediaRequests: () => mediaRequests };
+}
+
+function startPicker(page: Page) {
+  const select = page.getByRole("button", {
+    name: "Select Flag Start",
+    exact: true,
+  });
+  const picker = page.getByRole("dialog", { name: "Select Flag Start" });
+  const choose = picker.getByRole("button", {
+    name: "Choose Start Point",
+    exact: true,
+  });
+  return { select, picker, choose, video: picker.locator("video") };
+}
+
+test("chooses a local flag start and retries only the same flag metadata", async ({
+  page,
+  context,
+}) => {
+  const { writes, mediaRequests } = await captureFixture(page);
   await expect(page.getByLabel("Laptop address")).toHaveCount(0);
   await expect(page.getByLabel("Pairing code")).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Finalize Flag" })).toHaveCount(
@@ -96,17 +118,8 @@ test("chooses a local flag start and retries only the same flag metadata", async
   const player = page.getByRole("combobox", { name: "Player", exact: true });
   await player.selectOption("sam");
 
-  const select = page.getByRole("button", {
-    name: "Select Flag Start",
-    exact: true,
-  });
+  const { select, picker, choose, video } = startPicker(page);
   await select.click();
-  const picker = page.getByRole("dialog", { name: "Select Flag Start" });
-  const choose = picker.getByRole("button", {
-    name: "Choose Start Point",
-    exact: true,
-  });
-  const video = picker.locator("video");
   await expect(video).toHaveAttribute("src", /^blob:/, { timeout: 15000 });
   await expect(choose).toBeEnabled();
   const slider = picker.getByRole("slider", { name: "Shot start" });
@@ -122,7 +135,7 @@ test("chooses a local flag start and retries only the same flag metadata", async
   await expect(page.locator(".shot-flag-video")).toHaveCount(0);
   await select.click();
   await expect(choose).toBeEnabled();
-  expect(mediaRequests).toBe(2);
+  expect(mediaRequests()).toBe(2);
   await picker.getByRole("button", { name: "−1 second", exact: true }).click();
   await expect(slider).toHaveAttribute("aria-valuetext", "1.0 seconds back");
   await slider.fill("1");
@@ -144,7 +157,7 @@ test("chooses a local flag start and retries only the same flag metadata", async
   await expect(video).toHaveJSProperty("currentTime", 1);
   await picker.getByRole("button", { name: "+1 second", exact: true }).click();
   await picker.getByRole("button", { name: "Close Select Flag Start" }).click();
-  expect(mediaRequests).toBe(2);
+  expect(mediaRequests()).toBe(2);
   await page
     .getByLabel("Flag note (optional)")
     .fill("Good line through the port");
@@ -199,4 +212,117 @@ test("chooses a local flag start and retries only the same flag metadata", async
     ),
   ).toBe(true);
   expect(context.pages()).toHaveLength(1);
+});
+
+test("waits for a selectable frame and automatically replaces a stalled clip", async ({
+  page,
+}) => {
+  await page.clock.install();
+  await page.addInitScript(() => {
+    const create = URL.createObjectURL.bind(URL);
+    let firstUrl: string | undefined;
+    URL.createObjectURL = (object) => {
+      const url = create(object);
+      firstUrl ??= url;
+      return url;
+    };
+    const readyState = Object.getOwnPropertyDescriptor(
+      HTMLMediaElement.prototype,
+      "readyState",
+    )!;
+    Object.defineProperty(HTMLMediaElement.prototype, "readyState", {
+      ...readyState,
+      get(this: HTMLMediaElement) {
+        const state = readyState.get!.call(this);
+        return this.src === firstUrl ? Math.min(state, 1) : state;
+      },
+    });
+  });
+  const { mediaRequests } = await captureFixture(page);
+  await page.getByLabel("Flag shot for review").selectOption("yes");
+  await page.getByLabel("Flag audience").selectOption("team");
+  const { select, picker, choose, video } = startPicker(page);
+  await select.click();
+  await expect(video).toHaveAttribute("src", /^blob:/);
+  await expect(picker.getByRole("status")).toHaveText("Loading recent video…");
+  await expect(choose).toBeDisabled();
+  expect(mediaRequests()).toBe(1);
+  await page.clock.fastForward(8_100);
+  await expect(choose).toBeEnabled();
+  await expect(picker.getByRole("status")).toHaveCount(0);
+  expect(mediaRequests()).toBe(2);
+  await choose.click();
+  await expect(page.getByText("Start point selected")).toBeVisible();
+});
+
+test("retries one invalid clip and cancels the retry when the picker closes", async ({
+  page,
+}) => {
+  let finishRetry!: () => void;
+  const retry = new Promise<void>((resolve) => (finishRetry = resolve));
+  const { mediaRequests } = await captureFixture(
+    page,
+    async (route, attempt) => {
+      if (attempt === 1) {
+        await route.fulfill({
+          body: "corrupt video",
+          contentType: "video/mp4",
+        });
+        return true;
+      }
+      if (attempt === 2) {
+        await retry;
+        await route.abort();
+        return true;
+      }
+      return false;
+    },
+  );
+  await page.getByLabel("Flag shot for review").selectOption("yes");
+  await page.getByLabel("Flag audience").selectOption("team");
+  const { select, picker, choose, video } = startPicker(page);
+  await select.click();
+  await expect(picker.getByRole("status")).toHaveText("Retrying recent video…");
+  await expect.poll(mediaRequests).toBe(2);
+  await expect(choose).toBeDisabled();
+  await picker.getByRole("button", { name: "Close Select Flag Start" }).click();
+  await expect(picker).toBeHidden();
+  finishRetry();
+  await expect(video).toHaveCount(0);
+  expect(mediaRequests()).toBe(2);
+  await select.click();
+  await expect(choose).toBeEnabled();
+  expect(mediaRequests()).toBe(3);
+});
+
+test("a transfer timeout offers reload without starting another long transfer", async ({
+  page,
+}) => {
+  await page.clock.install();
+  let finishTransfer!: () => void;
+  const transfer = new Promise<void>((resolve) => (finishTransfer = resolve));
+  const { mediaRequests } = await captureFixture(
+    page,
+    async (route, attempt) => {
+      if (attempt !== 1) return false;
+      await transfer;
+      await route.abort();
+      return true;
+    },
+  );
+  await page.getByLabel("Flag shot for review").selectOption("yes");
+  await page.getByLabel("Flag audience").selectOption("team");
+  const { select, picker, choose } = startPicker(page);
+  await select.click();
+  await expect.poll(mediaRequests).toBe(1);
+  await expect(picker.getByRole("status")).toHaveText("Loading recent video…");
+  await page.clock.fastForward(75_100);
+  await expect(picker.getByRole("alert")).toHaveText(
+    "Recent video took too long to load.",
+  );
+  finishTransfer();
+  expect(mediaRequests()).toBe(1);
+  await picker.getByRole("button", { name: "Reload recent video" }).click();
+  await expect(choose).toBeEnabled();
+  expect(mediaRequests()).toBe(2);
 });

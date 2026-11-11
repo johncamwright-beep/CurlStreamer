@@ -1,6 +1,8 @@
 import type { Workspace } from "./event";
 import type { State } from "./model";
 
+const revision = (state: State) => state.revision ?? state.events.length;
+
 /** Merge confirmed saves into loaded views without another season download. */
 export function updateWorkspaceState(
   workspace: Workspace,
@@ -12,9 +14,7 @@ export function updateWorkspaceState(
     event: {
       ...workspace.event,
       games: workspace.event.games.map((game) =>
-        game.id === state.gameId &&
-        (state.revision ?? state.events.length) >=
-          (game.state.revision ?? game.state.events.length)
+        game.id === state.gameId && revision(state) >= revision(game.state)
           ? { ...game, state }
           : game,
       ),
@@ -32,20 +32,30 @@ export function refreshWorkspaceEvent(
     workspace.event.source !== current.event.source
   )
     return workspace;
-  const ids = new Set(current.event.games.map((game) => game.id));
-  const retained = {
+  const refreshed = new Map(current.event.games.map((game) => [game.id, game]));
+  return {
     ...workspace,
     event: {
       ...workspace.event,
-      games: workspace.event.games.filter(
-        (game) =>
-          (game.eventId ?? workspace.event.id) !== current.event.id ||
-          ids.has(game.id),
-      ),
+      games: workspace.event.games.flatMap((game) => {
+        const next = refreshed.get(game.id);
+        if (!next)
+          return (game.eventId ?? workspace.event.id) === current.event.id
+            ? []
+            : [game];
+        return [
+          {
+            ...game,
+            broadcastReview: next.broadcastReview,
+            reviewCorrections: next.reviewCorrections,
+            standaloneReviews: next.standaloneReviews,
+            state:
+              revision(next.state) >= revision(game.state)
+                ? next.state
+                : game.state,
+          },
+        ];
+      }),
     },
   };
-  return current.event.games.reduce(
-    (result, game) => updateWorkspaceState(result, game.state),
-    retained,
-  );
 }

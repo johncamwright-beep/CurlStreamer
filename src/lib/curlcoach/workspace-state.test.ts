@@ -30,6 +30,28 @@ describe("confirmed workspace saves", () => {
     expect(result.event.games[0].state).toBe(state);
     expect(data.event.games[0].state).not.toBe(state);
   });
+  it("refreshes the saved flags without dropping newer charting or season analysis", () => {
+    const cached = workspace();
+    const game = cached.event.games[0];
+    game.state.revision = 12;
+    game.analysisReady = true;
+    const fresh = workspace();
+    fresh.event.games[0].state.revision = 11;
+    const flag = {
+      id: "11111111-1111-4111-8111-111111111111",
+      audience: "team" as const,
+      playerId: null,
+      playerName: null,
+      note: "Review the sweep call",
+      selectedAt: "2026-11-11T15:00:00Z",
+    };
+    fresh.event.games[0].standaloneReviews = [flag];
+    expect(refreshWorkspaceEvent(cached, fresh).event.games[0]).toMatchObject({
+      standaloneReviews: [flag],
+      state: { revision: 12 },
+      analysisReady: true,
+    });
+  });
   it("never moves a newer response backward or crosses an organization", () => {
     const data = workspace();
     data.event.games[0].state.revision = 12;

@@ -373,7 +373,6 @@ for (const scenario of [
         .click();
       await endFixtureGame(page);
       await page.goBack();
-      await page.goBack();
       await expect(page).toHaveURL(dashboardURL);
       await dashboardCounts(page, 0, 1, 0);
       await expect(page.getByLabel("Filter by event")).toHaveValue(

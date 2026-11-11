@@ -7,6 +7,7 @@ import { StudioOverlay } from "@/components/StudioOverlay";
 import { StudioPreviewStatus } from "@/components/StudioPreviewStatus";
 import { TeamLogo } from "@/components/TeamLogo";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { use, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useGame, GameUpdateError } from "@/components/GameSync";
 import { ScoringSummary } from "@/components/ScoringSummary";
@@ -47,6 +48,7 @@ export default function Scorer({
 }
 
 function ScorerGame({ id }: { id: string }) {
+  const router = useRouter();
   const cameraInputs = useStudioCameraInputs(id);
   const {
     game,
@@ -496,7 +498,7 @@ function ScorerGame({ id }: { id: string }) {
                       sharedYoutubeWatchUrl={game.config.sharedYoutubeWatchUrl}
                       enabled
                       disabled={scoringLocked}
-                      onCompleted={() => window.location.assign("/dashboard")}
+                      onCompleted={() => router.replace("/dashboard")}
                     />
                   </div>
                 </div>
@@ -819,7 +821,7 @@ function ScorerGame({ id }: { id: string }) {
                     sharedYoutubeWatchUrl={game.config.sharedYoutubeWatchUrl}
                     enabled
                     disabled={scoringLocked}
-                    onCompleted={() => window.location.assign("/dashboard")}
+                    onCompleted={() => router.replace("/dashboard")}
                   />
                 </div>
               )}

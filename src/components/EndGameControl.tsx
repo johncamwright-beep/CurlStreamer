@@ -4,7 +4,11 @@ import { z } from "zod";
 import type { CompletionReview } from "@/lib/game-completion";
 import { organizerAccessToken } from "@/lib/access-session";
 import { announceGameCompletion } from "@/lib/dashboard-refresh";
-import { leaveStudioGame, studioSessionBridge } from "@/lib/studio-session";
+import {
+  leaveStudioGame,
+  studioGameCompletionEvent,
+  studioSessionBridge,
+} from "@/lib/studio-session";
 import { useStudioSession } from "./StudioSessionContext";
 import { StudioOverlay } from "./StudioOverlay";
 
@@ -58,6 +62,9 @@ const completionReplySchema = z
 function notifyStudioGameEnded(gameId: string) {
   const bridge = studioSessionBridge();
   if (!bridge) return;
+  window.dispatchEvent(
+    new CustomEvent(studioGameCompletionEvent, { detail: { gameId } }),
+  );
   return new Promise<void>((resolve) => {
     const timer = window.setTimeout(finish, 2000);
     function finish() {

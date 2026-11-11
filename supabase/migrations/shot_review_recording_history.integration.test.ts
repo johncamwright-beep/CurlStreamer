@@ -52,6 +52,16 @@ beforeAll(async () => {
   );
   await db.exec(access.slice(assertion, access.indexOf("$$;", assertion) + 3));
   await db.exec(
+    migration("0026_add_m4_desktop_authority").split(
+      "create function public.approve_m4_desktop_pairing",
+    )[0],
+  );
+  await db.exec(
+    migration("0027_add_m4_output_quarantine").split(
+      "-- Private helper follows the shared lock order",
+    )[0],
+  );
+  await db.exec(
     migration("0029_add_m4_provider_retirement").split(
       "alter table public.m4_output_intents",
     )[0],
@@ -65,6 +75,7 @@ beforeAll(async () => {
   await db.exec(migration("0085_shot_review_recordings"));
   await db.exec(migration("0098_shot_review_recording_history"));
   await db.exec(migration("0099_youtube_recording_start_anchor"));
+  await db.exec(migration("0104_shot_review_delivery_gaps"));
   await db.exec(`
     insert into m4_provider_retirements (
       game_id, organization_id, broadcast_generation, operation_token,
@@ -89,6 +100,16 @@ const read = (actor = coach, games = [game], organizationId = org) =>
   db.query("select * from read_shot_tracker_recording_history($1, $2, $3)", [
     actor,
     organizationId,
+    games,
+  ]);
+
+const readWithDeliveryGaps = (actor = coach, games = [game]) =>
+  db.query<{
+    youtube_broadcast_id: string;
+    delivery_gaps: { stopped_at: string; resumed_at: string }[];
+  }>("select * from read_shot_tracker_recording_history_v2($1, $2, $3)", [
+    actor,
+    org,
     games,
   ]);
 
@@ -135,6 +156,7 @@ it("rejects browser callers, unlicensed teammates and mixed-organization game re
     await db.exec(`set role ${role}`);
     try {
       await expect(read()).rejects.toThrow("permission denied");
+      await expect(readWithDeliveryGaps()).rejects.toThrow("permission denied");
       await expect(
         db.query(
           "select record_m4_live_evidence($1, 1, 'currentvid1', 'stream-1', now())",
@@ -153,6 +175,12 @@ it("rejects browser callers, unlicensed teammates and mixed-organization game re
     await expect(read(coach, [game, otherGame])).rejects.toThrow(
       "game unavailable",
     );
+    await expect(readWithDeliveryGaps(teammate)).rejects.toThrow(
+      "explicit curlcoach access required",
+    );
+    await expect(
+      readWithDeliveryGaps(coach, [game, otherGame]),
+    ).rejects.toThrow("game unavailable");
     await expect(read(coach, [otherGame], otherOrg)).rejects.toThrow(
       "active team account required",
     );
@@ -160,6 +188,59 @@ it("rejects browser callers, unlicensed teammates and mixed-organization game re
     expect((await read(coach, [])).rows).toEqual([]);
   } finally {
     await db.exec("reset role");
+  }
+});
+
+it("returns bounded delivery gaps for the exact current and retired recordings", async () => {
+  await db.exec("begin");
+  try {
+    await db.exec(`
+      with deliveries (generation, video, status, delivered_at, revoked_at, lease_ends_at, org_id) as (values
+        (1, 'currentvid1', 'stopped', '2026-11-10 14:59:50Z'::timestamptz, '2026-11-10 15:27Z'::timestamptz, '2026-11-10 15:28Z'::timestamptz, '${org}'::uuid),
+        (2, 'currentvid1', 'stopped', '2026-11-10 16:30Z', '2026-11-10 16:34Z', '2026-11-10 16:33Z', '${org}'),
+        (3, 'currentvid1', 'active', '2026-11-10 16:35Z', null, '2026-11-10 16:39Z', '${org}'),
+        (4, 'previousvi1', 'stopped', '2026-11-10 12:59:58Z', '2026-11-10 13:15Z', '2026-11-10 13:16Z', '${org}'),
+        (5, 'previousvi1', 'stopped', '2026-11-10 13:40Z', '2026-11-10 13:45Z', '2026-11-10 13:46Z', '${org}'),
+        (6, 'previousvi1', 'active', '2026-11-10 14:30Z', null, '2026-11-10 14:31Z', '${org}'),
+        (7, 'currentvid1', 'active', '2026-11-10 15:29Z', null, '2026-11-10 15:30Z', '${otherOrg}'),
+        (8, 'currentvid1', 'pending', null, null, null, '${org}'),
+        (9, 'currentvid1', 'active', '2026-11-10 15:31Z', null, '2026-11-10 15:32Z', '${org}')
+      ), desktops as (
+        insert into m4_desktop_sessions (game_id, organization_id, generation, status,
+          code_hash, challenge_hash, expires_at, lease_expires_at, revoked_at)
+        select '${game}', org_id, generation, status, lpad(generation::text, 64, '0'),
+          repeat('a', 64), '2026-11-10 20:00Z', lease_ends_at, revoked_at
+        from deliveries
+        returning session_id, generation
+      )
+      insert into m4_output_intents (intent_id, game_id, organization_id, session_id,
+        generation, broadcast_generation, youtube_broadcast_id, youtube_stream_id, phase,
+        delivery_recorded_at)
+      select gen_random_uuid(), '${game}', deliveries.org_id, desktops.session_id,
+        case when deliveries.generation = 9 then 99 else deliveries.generation end,
+        1, deliveries.video, 'stream-1',
+        case when deliveries.delivered_at is null then 'reserved' else 'quarantined' end,
+        deliveries.delivered_at
+      from deliveries join desktops using (generation);
+    `);
+    await db.exec("set local role service_role");
+    const rows = (await readWithDeliveryGaps()).rows;
+    const gaps = (video: string) =>
+      rows
+        .find((row) => row.youtube_broadcast_id === video)
+        ?.delivery_gaps.map(({ stopped_at, resumed_at }) => [
+          new Date(stopped_at).toISOString(),
+          new Date(resumed_at).toISOString(),
+        ]);
+    expect(gaps("currentvid1")).toEqual([
+      ["2026-11-10T15:27:00.000Z", "2026-11-10T16:30:00.000Z"],
+      ["2026-11-10T16:33:03.000Z", "2026-11-10T16:35:00.000Z"],
+    ]);
+    expect(gaps("previousvi1")).toEqual([
+      ["2026-11-10T13:15:00.000Z", "2026-11-10T13:40:00.000Z"],
+    ]);
+  } finally {
+    await db.exec("rollback");
   }
 });
 

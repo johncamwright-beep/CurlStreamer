@@ -916,7 +916,8 @@
 }
 .scoring-preview-panel {
   display: grid;
-  gap: 10px;
+  align-content: start;
+  gap: 6px;
   min-width: 0;
 }
 .scoring-camera-adjustments > summary {
@@ -1059,13 +1060,13 @@
   position: relative;
   border: 1px solid #294456;
   border-radius: 14px;
-  padding: 14px;
+  padding: 4px;
   background: #091925;
 }
 .studio-preview-status {
   position: absolute;
-  top: 52px;
-  left: 24px;
+  top: 10px;
+  left: 10px;
   padding: 4px 8px;
   border-radius: 5px;
   background: #142d3a;
@@ -1324,12 +1325,6 @@
   margin: 0;
   padding: 6px;
 }
-.scoring-desktop .scoring-preview-panel {
-  align-content: start;
-}
-.scoring-desktop .scoring-preview-panel > button {
-  height: 48px;
-}
 .scoring-desktop .scoring-team-row .scoring-total {
   align-self: end;
 }
@@ -1586,8 +1581,7 @@
         1.05fr
       );
   }
-  .scoring-desktop .scoring-card,
-  .scoring-desktop .scoring-preview-panel {
+  .scoring-desktop .scoring-card {
     padding: 10px;
   }
   .scoring-desktop .scoring-summary {
@@ -1665,23 +1659,6 @@
     gap: 8px;
     grid-template-rows: 1fr auto;
   }
-  .scoring-desktop .scoring-preview-panel {
-    gap: 8px;
-  }
-  .scoring-desktop
-    .scoring-preview-panel
-    > section[aria-label="Studio program preview"] {
-    max-height: 180px;
-    min-height: 0 !important;
-  }
-  .scoring-desktop .scoring-preview-panel > button {
-    height: 44px;
-    min-height: 44px;
-  }
-  .scoring-desktop .studio-preview-status {
-    top: 40px;
-    left: 18px;
-  }
   .scoring-desktop .scoring-entry {
     grid-template-columns: 85px minmax(160px, 1fr) minmax(260px, 1.25fr) minmax(
         310px,
@@ -1729,7 +1706,7 @@
   min-height: 44px;
   min-width: 0;
   width: 100%;
-  padding-inline: 8px;
+  padding: 4px 8px;
   font-size: 12px;
   white-space: nowrap;
   overflow: hidden;

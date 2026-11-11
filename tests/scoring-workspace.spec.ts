@@ -334,7 +334,7 @@ test("desktop game day keeps scoring primary and settings available on demand", 
   await page.addInitScript(() =>
     Object.defineProperty(navigator, "userAgent", {
       value:
-        "CurlStreamerStudio/0.3 StudioNativeAudio/1 StudioProgramPreview/1",
+        "CurlStreamerStudio/0.3 StudioNativeAudio/1 StudioProgramPreview/1 StudioReplay/1",
     }),
   );
   await page.addInitScript(() => {
@@ -406,6 +406,7 @@ test("desktop game day keeps scoring primary and settings available on demand", 
   const previewTools = previewPanel.getByRole("group", {
     name: "Studio tools",
   });
+  await expect(previewTools.getByRole("button")).toHaveCount(3);
   expect(
     await previewTools
       .getByRole("button")

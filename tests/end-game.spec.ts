@@ -1,7 +1,7 @@
 import { expect, test, type Route } from "@playwright/test";
 import { gameFixture, testGameId } from "../src/test/game-fixture";
 
-test("Studio close opens a scoped review and Cancel leaves the game active", async ({
+test("Studio close opens a scoped review and No leaves the game active", async ({
   page,
 }) => {
   let completionWrites = 0;
@@ -60,12 +60,12 @@ test("Studio close opens a scoped review and Cancel leaves the game active", asy
       ),
     testGameId,
   );
-  await expect(page.getByRole("dialog", { name: "Final score" })).toBeVisible();
-  await expect(page.getByRole("spinbutton", { name: "Rocks" })).toHaveValue(
-    "3",
-  );
+  const confirmation = page.getByRole("dialog", {
+    name: "Finalize game score 3–2?",
+  });
+  await expect(confirmation).toBeVisible();
   expect(completionWrites).toBe(0);
-  await page.getByRole("button", { name: "Close", exact: true }).click();
+  await confirmation.getByRole("button", { name: "No", exact: true }).click();
   await expect(page.getByRole("dialog")).toHaveCount(0);
   const messages = await page.evaluate(
     () =>
@@ -100,15 +100,16 @@ function completedFixture() {
   };
 }
 
-test("End Game reviews the score and replaces controls with the saved result", async ({
+test("End Game returns to Games and reopening shows the saved result", async ({
   page,
 }, testInfo) => {
   const game = gameFixture();
   game.config.sharedYoutubeWatchUrl = "https://youtu.be/abcdefghijk";
   let cleanupRetries = 0;
+  let committed = false;
   await page.route(`**/api/games/${testGameId}`, async (route) => {
     await route.fulfill({
-      json: game,
+      json: committed ? completedFixture() : game,
       headers: {
         "x-curlcast-operator": "true",
         "x-curlcast-account-role": "owner",
@@ -147,6 +148,7 @@ test("End Game reviews the score and replaces controls with the saved result", a
       });
       return;
     }
+    committed = true;
     await route.fulfill({
       json: {
         completion: completedFixture(),
@@ -168,17 +170,17 @@ test("End Game reviews the score and replaces controls with the saved result", a
   await expect(page.getByRole("dialog")).toHaveCount(0);
   await page.getByRole("button", { name: "Close Game", exact: true }).click();
   await page.getByRole("button", { name: "Yes", exact: true }).click();
-  await expect(page.getByRole("spinbutton", { name: "Rocks" })).toHaveValue(
-    "3",
-  );
-  await expect(page.getByRole("spinbutton", { name: "Stones" })).toHaveValue(
-    "2",
-  );
+  const confirmation = page.getByRole("dialog", {
+    name: "Finalize game score 3–2?",
+  });
+  await expect(confirmation).toBeVisible();
   await page.screenshot({
     path: testInfo.outputPath("score-confirmation.png"),
     fullPage: true,
   });
-  await page.getByRole("button", { name: "End Game", exact: true }).click();
+  await confirmation.getByRole("button", { name: "Yes", exact: true }).click();
+  await expect(page).toHaveURL(/\/dashboard$/);
+  await page.goto(`/games/${testGameId}`);
   await expect(
     page.getByRole("heading", { name: "Home 3 – 2 Visitors" }),
   ).toBeVisible();
@@ -204,108 +206,69 @@ test("End Game reviews the score and replaces controls with the saved result", a
   });
 });
 
-for (const noScore of [false, true])
-  test(`authorized scoring page can end with ${noScore ? "no score" : "entered totals"}`, async ({
-    page,
-  }, testInfo) => {
-    const game = gameFixture();
-    const recordedId = "22222222-2222-4222-8222-222222222222";
-    const replacementId = "33333333-3333-4333-8333-333333333333";
-    const expectedScore = noScore ? null : { home: 0, away: 5 };
-    const finalResult = noScore
-      ? {
-          outcome: "no_result",
-          label: "No result recorded",
-          totals: null,
-          ends: [],
-        }
-      : {
-          outcome: "away_win",
-          label: "Away win",
-          totals: expectedScore,
-          ends: [],
-        };
-    await page.route(`**/api/games/${testGameId}`, (route) =>
-      route.fulfill({
-        json: game,
-        headers: {
-          "x-curlcast-operator": "true",
-          "x-curlcast-account-role": "owner",
-        },
-      }),
-    );
-    await page.route(`**/api/games/${testGameId}/completion`, async (route) => {
-      if (route.request().method() === "GET") {
-        await route.fulfill({
-          json: { status: "complete", attempts: 1, lastError: null },
-        });
-        return;
-      }
-      const body = route.request().postDataJSON();
-      if (body.action === "review") {
-        const replacement = body.finalScore !== undefined;
-        if (replacement) expect(body.finalScore).toEqual(expectedScore);
-        await route.fulfill({
-          json: {
-            reviewId: replacement ? replacementId : recordedId,
-            inputRevision: 7,
-            result: replacement
-              ? finalResult
-              : {
-                  outcome: "home_win",
-                  label: "Home win",
-                  totals: { home: 2, away: 0 },
-                  ends: [],
-                },
-            youtubeWatchUrl: null,
-          },
-        });
-        return;
-      }
-      expect(body).toEqual({ action: "complete", reviewId: replacementId });
-      await route.fulfill({
-        json: {
-          completion: { ...completedFixture(), result: finalResult },
-          cleanup: { status: "complete", attempts: 1, lastError: null },
-        },
+test("authorized scoring page confirms an empty scoreboard as a 0–0 tie", async ({
+  page,
+}) => {
+  const reviewId = "22222222-2222-4222-8222-222222222222";
+  const result = {
+    outcome: "tie",
+    label: "Tie",
+    totals: { home: 0, away: 0 },
+    ends: [],
+  };
+  const completion = { ...completedFixture(), result };
+  const game = { ...gameFixture(), scoreEvents: [] };
+  let committed = false;
+  await page.route(`**/api/games/${testGameId}`, (route) =>
+    route.fulfill({
+      json: committed ? completion : game,
+      headers: {
+        "x-curlcast-operator": "true",
+        "x-curlcast-account-role": "owner",
+      },
+    }),
+  );
+  await page.route(`**/api/games/${testGameId}/completion`, async (route) => {
+    if (route.request().method() === "GET")
+      return route.fulfill({
+        json: { status: "complete", attempts: 1, lastError: null },
       });
-    });
-
-    await page.goto(`/score/${testGameId}`);
-    await expect(
-      page.getByRole("button", { name: "Close Game" }),
-    ).toBeVisible();
-    await page.screenshot({
-      path: testInfo.outputPath("scoring-end-game-access.png"),
-      fullPage: true,
-    });
-    await page.getByRole("button", { name: "Close Game", exact: true }).click();
-    await page.getByRole("button", { name: "Yes", exact: true }).click();
-    const home = page.getByRole("spinbutton", { name: "Rocks" });
-    const away = page.getByRole("spinbutton", { name: "Stones" });
-    await expect(home).toHaveValue("2");
-    await expect(away).toHaveValue("0");
-    await page.screenshot({
-      path: testInfo.outputPath("scoring-end-game-confirmation.png"),
-      fullPage: true,
-    });
-    if (noScore) {
-      await page.getByRole("button", { name: "End without score" }).click();
-    } else {
-      await home.fill("-1");
-      const end = page.getByRole("button", { name: "End Game", exact: true });
-      await expect(end).toBeDisabled();
-      await home.fill("0");
-      await away.fill("5");
-      await end.click();
+    const body = route.request().postDataJSON();
+    if (body.action === "review") {
+      expect(body).toEqual({
+        action: "review",
+        finalScore: "scoreboard",
+        youtubeWatchUrl: "",
+      });
+      return route.fulfill({
+        json: { reviewId, inputRevision: 7, result, youtubeWatchUrl: null },
+      });
     }
-    await expect(
-      page.getByRole("heading", {
-        name: noScore ? "No result recorded" : "Home 0 – 5 Visitors",
-      }),
-    ).toBeVisible();
+    expect(body).toEqual({ action: "complete", reviewId });
+    committed = true;
+    return route.fulfill({
+      json: {
+        completion,
+        cleanup: { status: "complete", attempts: 1, lastError: null },
+      },
+    });
   });
 
+  await page.goto(`/score/${testGameId}`);
+  await page.getByRole("button", { name: "Close Game", exact: true }).click();
+  await page.getByRole("button", { name: "Yes", exact: true }).click();
+  const confirmation = page.getByRole("dialog", {
+    name: "Finalize game score 0–0?",
+  });
+  await expect(confirmation).toBeVisible();
+  await expect(confirmation.getByRole("button")).toHaveCount(2);
+  await confirmation.getByRole("button", { name: "Yes", exact: true }).click();
+  await expect(page).toHaveURL(/\/dashboard$/);
+  await page.goto(`/score/${testGameId}`);
+  await expect(
+    page.getByRole("heading", { name: "Home 0 – 0 Visitors" }),
+  ).toBeVisible();
+});
 test("scorer-only scoring access cannot End Game", async ({ page }) => {
   await page.route(`**/api/games/${testGameId}`, (route) =>
     route.fulfill({
@@ -349,10 +312,11 @@ for (const [role, managesCleanup] of [
   ["scorer", false],
   ["viewer", false],
 ] as const) {
-  test(`completed lobby gives ${role} the correct cleanup controls after reload`, async ({
+  test(`completed lobby retries cleanup automatically only for authorized ${role} access`, async ({
     page,
   }) => {
     let cleanupRequests = 0;
+    let cleanupRetries = 0;
     await page.route(`**/api/games/${testGameId}`, (route) =>
       route.fulfill({
         json: completedFixture(),
@@ -364,6 +328,12 @@ for (const [role, managesCleanup] of [
     );
     await page.route(`**/api/games/${testGameId}/completion`, (route) => {
       cleanupRequests += 1;
+      if (route.request().method() === "POST") {
+        cleanupRetries += 1;
+        return route.fulfill({
+          json: { status: "complete", attempts: 2, lastError: null },
+        });
+      }
       return route.fulfill({
         json: { status: "failed", attempts: 1, lastError: "provider timeout" },
       });
@@ -374,20 +344,17 @@ for (const [role, managesCleanup] of [
       page.getByRole("heading", { name: "Home 3 – 2 Visitors" }),
     ).toBeVisible();
     if (managesCleanup) {
-      await expect(
-        page.getByRole("button", { name: "Retry live video shutdown" }),
-      ).toBeVisible();
-      expect(cleanupRequests).toBeGreaterThan(0);
+      await expect.poll(() => cleanupRetries).toBe(1);
     } else {
-      await expect(
-        page.getByRole("button", { name: "Retry live video shutdown" }),
-      ).toHaveCount(0);
       expect(cleanupRequests).toBe(0);
     }
+    await expect(
+      page.getByRole("button", { name: "Retry live video shutdown" }),
+    ).toHaveCount(0);
   });
 }
 
-test("completed lobby preserves organizer cleanup controls after reload", async ({
+test("completed lobby automatically retries authorized organizer cleanup after reload", async ({
   page,
 }) => {
   const organizer = `header.${Buffer.from(
@@ -406,13 +373,15 @@ test("completed lobby preserves organizer cleanup controls after reload", async 
     }),
   );
 
+  const retry = page.waitForRequest(
+    (request) =>
+      request.url().endsWith("/completion") && request.method() === "POST",
+  );
   await page.goto(`/games/${testGameId}`);
-  await expect(
-    page.getByRole("button", { name: "Retry live video shutdown" }),
-  ).toBeVisible();
+  expect((await retry).headers().authorization).toBe(`Bearer ${organizer}`);
 });
 
-test("completed Studio can request emergency exit while provider cleanup remains failed", async ({
+test("completed Studio reports failed cleanup without requesting operator shutdown", async ({
   page,
 }) => {
   await page.addInitScript(
@@ -458,7 +427,6 @@ test("completed Studio can request emergency exit while provider cleanup remains
     }),
   );
   await page.goto(`/games/${testGameId}`);
-  await page.getByRole("button", { name: "Force close Studio" }).click();
   await expect(
     page.getByText("Live video shutdown has not been confirmed."),
   ).toBeVisible();
@@ -470,7 +438,7 @@ test("completed Studio can request emergency exit while provider cleanup remains
       (window as unknown as Window & { recoveryMessages: unknown[] })
         .recoveryMessages,
   );
-  expect(messages).toContainEqual({
+  expect(messages).not.toContainEqual({
     type: "studio-force-close",
     gameId: testGameId,
   });

@@ -555,11 +555,7 @@ test("desktop game day keeps scoring primary and settings available on demand", 
       }),
     );
   }, testGameId);
-  await forceClose.click();
-  await expect(page.locator("body")).toHaveAttribute(
-    "data-force-close",
-    JSON.stringify({ type: "studio-force-close", gameId: testGameId }),
-  );
+  await expect(forceClose).toHaveCount(0);
   await log.getByRole("button", { name: "Close", exact: true }).click();
   expect(await position()).toEqual(before);
   await expect(

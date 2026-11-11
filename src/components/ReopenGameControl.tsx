@@ -3,7 +3,13 @@ import { useState } from "react";
 import { StudioOverlay } from "@/components/StudioOverlay";
 import { announceGameCompletion } from "@/lib/dashboard-refresh";
 
-export function ReopenGameControl({ gameId }: { gameId: string }) {
+export function ReopenGameControl({
+  gameId,
+  compact = false,
+}: {
+  gameId: string;
+  compact?: boolean;
+}) {
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -54,7 +60,8 @@ export function ReopenGameControl({ gameId }: { gameId: string }) {
   return (
     <>
       <button
-        className="btn-secondary mt-5 min-h-11"
+        type="button"
+        className={`btn-secondary min-h-11${compact ? "" : " mt-5"}`}
         onClick={() => setOpen(true)}
       >
         Reopen scoring

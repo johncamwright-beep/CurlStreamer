@@ -7,7 +7,7 @@ import { z } from "zod";
 import { requestStudioPresentation } from "@/lib/studio-presentation-client";
 import { WindowsStudioRequired } from "./WindowsStudioRequired";
 import { organizerAccessToken } from "@/lib/access-session";
-import { studioLastLiveLabel } from "@/lib/studio-session";
+import { studioLastLiveLabel, studioSessionBridge } from "@/lib/studio-session";
 
 const stateSchema = z.object({
   gameId: z.string(),
@@ -48,12 +48,13 @@ const broadcastSessionSchema = z.object({
     .enum(["idle", "preparing", "prepared", "stopping", "stopped", "failed"])
     .optional(),
   watchUrl: watchUrlSchema.optional(),
+  lastErrorCode: z.string().optional(),
 });
 
 function studioBroadcastRequest(
   gameId: string,
   signal: AbortSignal,
-  action?: "go-live" | "stop",
+  action?: { action: "go-live" } | { action: "restart"; watchUrl: string },
 ) {
   const token = organizerAccessToken(localStorage, gameId);
   return fetch(`/api/games/${gameId}/studio-m4`, {
@@ -62,7 +63,7 @@ function studioBroadcastRequest(
       ...(action ? { "content-type": "application/json" } : {}),
       ...(token ? { authorization: `Bearer ${token}` } : {}),
     },
-    ...(action ? { method: "POST", body: JSON.stringify({ action }) } : {}),
+    ...(action ? { method: "POST", body: JSON.stringify(action) } : {}),
     signal,
   });
 }
@@ -94,10 +95,8 @@ export function StudioYouTube({
   const [goingLive, setGoingLive] = useState(false);
   const [error, setError] = useState("");
   const [stopOpen, setStopOpen] = useState(false);
-  const [stopStatus, setStopStatus] = useState<
-    "stopping" | "retry" | "stopped"
-  >();
-  const [stopError, setStopError] = useState("");
+  const [replacementOpen, setReplacementOpen] = useState(false);
+  const [replacing, setReplacing] = useState(false);
   const [presentationError, setPresentationError] = useState("");
   const [restartOpen, setRestartOpen] = useState(false);
   const [restarting, setRestarting] = useState(false);
@@ -106,12 +105,13 @@ export function StudioYouTube({
   const [copyError, setCopyError] = useState("");
   const [bridgeAvailable, setBridgeAvailable] = useState(false);
   const flight = useRef<AbortController | undefined>(undefined);
-  const stopFlight = useRef<AbortController | undefined>(undefined);
+  const replacementFlight = useRef<AbortController | undefined>(undefined);
+  const sessionRevision = useRef(0);
   const nextCheck = useRef(0);
   const failures = useRef(0);
   const halted = useRef(false);
   const confirmedLive = useRef<string | undefined>(undefined);
-  const [terminal, setTerminal] = useState(false);
+  const [endedWatchUrl, setEndedWatchUrl] = useState<string>();
   const lastViewers = useRef<number | undefined>(undefined);
   const presentationFlight = useRef<object | undefined>(undefined);
   const presentationConfirmedUntil = useRef(0);
@@ -119,11 +119,20 @@ export function StudioYouTube({
   currentGame.current = id;
   const watchingOutput = state && ["armed", "paused"].includes(state.streaming);
   const held = state?.presentation?.mode === "hold";
+  const disconnected = state?.streaming === "paused";
+  const terminal =
+    endedWatchUrl !== undefined &&
+    (!endedWatchUrl || endedWatchUrl === watchUrl);
   const ending = ["preparing-end", "ended"].includes(
     state?.presentation?.mode ?? "",
   );
-  const broadcastLive =
+  const wasLive =
     (state?.gameId === id && state.live) || confirmedLive.current === id;
+  const broadcastLive =
+    wasLive &&
+    !terminal &&
+    !disconnected &&
+    (!state || ["armed", "starting"].includes(state.streaming));
   const launching =
     state?.gameId === id &&
     ["starting", "armed"].includes(state.streaming) &&
@@ -132,7 +141,7 @@ export function StudioYouTube({
     !state.programAuthorityEnded &&
     !held &&
     !ending &&
-    !stopStatus &&
+    !replacing &&
     !terminal;
   const canGoLive =
     launching &&
@@ -164,7 +173,7 @@ export function StudioYouTube({
       const result = await studioBroadcastRequest(
         id,
         AbortSignal.any([attempt.signal, AbortSignal.timeout(30000)]),
-        "go-live",
+        { action: "go-live" },
       );
       if (!isCurrent() || confirmedLive.current === id) return;
       if (!result.ok) {
@@ -186,9 +195,9 @@ export function StudioYouTube({
       if (!isCurrent() || confirmedLive.current === id) return;
       const messages: Record<string, string> = {
         ended:
-          "YouTube has completed this broadcast and cannot reopen its watch link. Start a new game for a new broadcast.",
+          "YouTube finished this broadcast. Restart broadcast to continue this game on a new watch link.",
         removed:
-          "YouTube removed this broadcast. Check your channel in YouTube Studio.",
+          "YouTube removed this broadcast. Restart broadcast to continue this game on a new watch link.",
         "setup-required":
           "YouTube reports incomplete broadcast settings. Check your YouTube account.",
         "stream-error":
@@ -203,7 +212,11 @@ export function StudioYouTube({
       );
       if (["live", "reconnecting"].includes(response.phase))
         confirmedLive.current = id;
-      setTerminal(["ended", "removed"].includes(response.phase));
+      if (["ended", "removed"].includes(response.phase)) {
+        const endedLink = watchUrlSchema.safeParse(response.watchUrl);
+        if (endedLink.success) setWatchUrl(endedLink.data);
+        setEndedWatchUrl(endedLink.success ? endedLink.data : watchUrl);
+      }
       setError(messages[response.phase] ?? "");
     } catch {
       if (!isCurrent() || confirmedLive.current === id) return;
@@ -234,47 +247,64 @@ export function StudioYouTube({
     )
       void goLive();
   }, [bridgeAvailable, canGoLive, pending, state]);
-  async function stopBroadcast() {
-    if (stopFlight.current || !canStopBroadcast) return;
+  async function replaceBroadcast() {
+    if (replacementFlight.current || !canReplaceBroadcast) return;
     const attempt = new AbortController();
-    stopFlight.current = attempt;
+    replacementFlight.current = attempt;
+    sessionRevision.current++;
     const isCurrent = () =>
-      currentGame.current === id && stopFlight.current === attempt;
-    setStopOpen(false);
-    setStopStatus("stopping");
-    setStopError("");
+      currentGame.current === id && replacementFlight.current === attempt;
+    setReplacementOpen(false);
+    setReplacing(true);
+    setError("");
     try {
       const response = await studioBroadcastRequest(
         id,
-        AbortSignal.any([attempt.signal, AbortSignal.timeout(30000)]),
-        "stop",
+        AbortSignal.any([attempt.signal, AbortSignal.timeout(90000)]),
+        { action: "restart", watchUrl },
       );
+      const payload: unknown = await response.json().catch(() => null);
       if (!isCurrent()) return;
-      if ([401, 403].includes(response.status)) {
-        setStopStatus((current) =>
-          current === "stopped" ? current : stopStatus,
+      if (!response.ok) {
+        const problem = z
+          .object({ error: z.string().max(300) })
+          .safeParse(payload);
+        throw new Error(
+          problem.success
+            ? problem.data.error
+            : "YouTube could not restart the broadcast. Try again.",
         );
-        setStopError(
-          "Broadcast administrator access is required to stop the broadcast.",
-        );
-        return;
       }
-      if (!response.ok) throw new Error();
-      const result = broadcastSessionSchema.parse(await response.json());
-      if (!isCurrent()) return;
-      if (result.desiredState !== "stopped" || result.status !== "stopped")
-        throw new Error();
+      const result = broadcastSessionSchema.safeParse(payload);
+      if (
+        !result.success ||
+        result.data.desiredState !== "live" ||
+        result.data.watchUrl === watchUrl
+      )
+        throw new Error(
+          "YouTube could not prepare a new broadcast. Try again shortly.",
+        );
+      setWatchUrl(result.data.watchUrl ?? "");
+      setEndedWatchUrl(undefined);
       confirmedLive.current = undefined;
-      setStopStatus("stopped");
-      setPresentationError("");
-    } catch {
-      if (!isCurrent()) return;
-      setStopStatus((current) => (current === "stopped" ? current : "retry"));
-      setStopError(
-        "Studio could not confirm that YouTube stopped the broadcast. Retry stop to check again.",
-      );
+      lastViewers.current = undefined;
+      if (result.data.status !== "prepared" || !result.data.watchUrl)
+        throw new Error(
+          "The new broadcast is not ready. Try connecting again shortly.",
+        );
+      await send(state?.canRestartBroadcast ? "restart" : "start");
+    } catch (cause) {
+      if (isCurrent())
+        setError(
+          cause instanceof Error
+            ? cause.message
+            : "YouTube could not restart the broadcast. Try again.",
+        );
     } finally {
-      if (isCurrent()) stopFlight.current = undefined;
+      if (isCurrent()) {
+        replacementFlight.current = undefined;
+        setReplacing(false);
+      }
     }
   }
   useEffect(() => {
@@ -285,22 +315,23 @@ export function StudioYouTube({
     const controller = new AbortController();
     let loading = false;
     async function load() {
-      if (loading) return;
+      if (loading || replacementFlight.current) return;
       loading = true;
+      const revision = sessionRevision.current;
       try {
         const response = await studioBroadcastRequest(id, controller.signal);
         if (!response.ok) return;
         const result = broadcastSessionSchema.parse(await response.json());
-        if (controller.signal.aborted) return;
-        if (result.watchUrl) setWatchUrl(result.watchUrl);
-        if (result.desiredState !== "stopped") return;
-        if (result.status === "stopped" && result.watchUrl) {
-          confirmedLive.current = undefined;
-          setStopStatus("stopped");
-          setStopError("");
-        } else if (result.status === "stopping" || result.status === "failed") {
-          setStopStatus((current) => current ?? "retry");
-        }
+        if (controller.signal.aborted || revision !== sessionRevision.current)
+          return;
+        setWatchUrl(result.watchUrl ?? "");
+        if (
+          result.watchUrl &&
+          (result.lastErrorCode === "youtube_broadcast_terminal" ||
+            (result.desiredState === "stopped" &&
+              ["stopped", "failed"].includes(result.status ?? "")))
+        )
+          setEndedWatchUrl(result.watchUrl);
       } catch {
         /* Retry during this output session; never display an unverified destination. */
       } finally {
@@ -322,9 +353,9 @@ export function StudioYouTube({
     setGoingLive(false);
     setError("");
     setStopOpen(false);
-    setStopStatus(undefined);
-    setStopError("");
-    setTerminal(false);
+    setReplacementOpen(false);
+    setReplacing(false);
+    setEndedWatchUrl(undefined);
     confirmedLive.current = undefined;
     lastViewers.current = undefined;
     presentationFlight.current = undefined;
@@ -338,6 +369,7 @@ export function StudioYouTube({
       const parsed = stateSchema.safeParse((event as CustomEvent).detail);
       if (!parsed.success || parsed.data.gameId !== id) return;
       last = Date.now();
+      if (parsed.data.streaming === "paused") confirmedLive.current = undefined;
       if (
         parsed.data.live ||
         (parsed.data.streaming === "armed" &&
@@ -372,8 +404,8 @@ export function StudioYouTube({
     return () => {
       flight.current?.abort();
       flight.current = undefined;
-      stopFlight.current?.abort();
-      stopFlight.current = undefined;
+      replacementFlight.current?.abort();
+      replacementFlight.current = undefined;
       clearInterval(timer);
       window.removeEventListener("studio-youtube-status", receive);
     };
@@ -381,20 +413,16 @@ export function StudioYouTube({
   async function send(
     action: "start" | "disconnect" | "hold" | "resume" | "restart",
   ) {
-    const bridge = (
-      window as unknown as {
-        chrome?: { webview?: { postMessage(value: unknown): void } };
-      }
-    ).chrome?.webview;
+    const bridge = studioSessionBridge();
     if (
       !bridge ||
       pending ||
       presentationFlight.current ||
-      stopStatus ||
       !state ||
       state.busy ||
       (action === "restart" && !state.canRestartBroadcast) ||
-      (action === "disconnect" && !state.canReconnect) ||
+      (action === "disconnect" &&
+        (!state.canReconnect || state.streaming !== "armed")) ||
       (["hold", "resume"].includes(action) && !state.canHoldStream)
     )
       return;
@@ -402,7 +430,6 @@ export function StudioYouTube({
       flight.current?.abort();
       flight.current = undefined;
       setGoingLive(false);
-      setTerminal(false);
       halted.current = action === "disconnect";
       nextCheck.current = 0;
       failures.current = 0;
@@ -479,25 +506,32 @@ export function StudioYouTube({
     state?.canRestartBroadcast &&
     !ending &&
     !terminal &&
-    !stopStatus &&
+    !disconnected &&
+    !replacing &&
     (restartRequired ||
       held ||
       Boolean(presentationError) ||
-      (broadcastLive && needsRecovery));
+      (wasLive && needsRecovery));
   const blocked = !state?.available || state.busy || pending || ending;
   const canStopBroadcast =
-    !ending &&
-    !terminal &&
-    stopStatus !== "stopped" &&
-    stopStatus !== "stopping" &&
-    (stopStatus === "retry" || (broadcastLive && !state?.busy && !pending));
+    broadcastLive &&
+    !blocked &&
+    !replacing &&
+    state?.streaming === "armed" &&
+    state.canReconnect;
+  const canReplaceBroadcast =
+    terminal &&
+    Boolean(watchUrl) &&
+    !blocked &&
+    !replacing &&
+    (state?.streaming === "idle" || state?.canRestartBroadcast === true);
   const starting = launching && (!canGoLive || goingLive);
   const reconnectingOutput =
-    state?.streaming === "paused" ||
-    (needsRecovery && state?.canRecover && !offerRestart);
+    needsRecovery && state?.canRecover && !offerRestart;
   const showPictureControl =
     restarting ||
-    (!stopStatus &&
+    (!replacing &&
+      !disconnected &&
       !restartRequired &&
       !ending &&
       !terminal &&
@@ -505,13 +539,11 @@ export function StudioYouTube({
         (broadcastLive &&
           (state?.streaming === "armed" || reconnectingOutput))));
   let broadcastLabel = "Broadcast to YouTube";
-  if (stopStatus === "stopped" || terminal) broadcastLabel = "Broadcast ended";
-  else if (stopStatus === "stopping") broadcastLabel = "Stopping broadcast…";
-  else if (stopStatus === "retry") broadcastLabel = "Retry stop";
+  if (replacing) broadcastLabel = "Restarting broadcast…";
   else if (broadcastLive) broadcastLabel = "Stop broadcast";
   else if (pending || state?.busy) broadcastLabel = "Please wait…";
+  else if (terminal || disconnected) broadcastLabel = "Restart broadcast";
   else if (starting) broadcastLabel = "Starting broadcast…";
-  else if (state?.streaming === "paused") broadcastLabel = "Reconnect";
   else if (needsRecovery)
     broadcastLabel = state?.canRecover
       ? "Reconnect broadcast"
@@ -539,17 +571,21 @@ export function StudioYouTube({
           : undefined
       }
       disabled={
-        broadcastLive || stopStatus
-          ? !canStopBroadcast
-          : blocked ||
-            starting ||
-            terminal ||
-            restartRequired ||
-            state?.streaming === "stopping" ||
-            Boolean(needsRecovery && !state?.canRecover)
+        terminal
+          ? !canReplaceBroadcast
+          : broadcastLive
+            ? !canStopBroadcast
+            : replacing ||
+              blocked ||
+              starting ||
+              (restartRequired && !disconnected) ||
+              state?.streaming === "stopping" ||
+              Boolean(needsRecovery && !state?.canRecover)
       }
       onClick={() => {
-        if (canStopBroadcast) {
+        if (canReplaceBroadcast) {
+          setReplacementOpen(true);
+        } else if (canStopBroadcast) {
           setStopOpen(true);
         } else if (canGoLive) {
           halted.current = false;
@@ -557,7 +593,13 @@ export function StudioYouTube({
           nextCheck.current = 0;
           void goLive();
         } else {
-          void send("start");
+          void send(
+            disconnected &&
+              (restartRequired || presentationError) &&
+              state?.canRestartBroadcast
+              ? "restart"
+              : "start",
+          );
         }
       }}
     >
@@ -604,9 +646,7 @@ export function StudioYouTube({
             : pending || state?.busy
               ? "Please wait…"
               : reconnectingOutput
-                ? state?.streaming === "paused"
-                  ? "Reconnect"
-                  : "Reconnect broadcast"
+                ? "Reconnect broadcast"
                 : held
                   ? "Resume broadcast"
                   : state?.canHoldStream
@@ -646,28 +686,28 @@ export function StudioYouTube({
           <strong
             role="status"
             className={
-              state?.live && stopStatus !== "stopped"
+              state?.live && !terminal && !disconnected
                 ? "text-red-400"
                 : "text-slate-300"
             }
             title={
-              !stopStatus && !state?.live && lastLiveLabel
+              !terminal && !state?.live && lastLiveLabel
                 ? `${lastLiveLabel}. Studio is still sending video; a fresh YouTube confirmation is unavailable.`
                 : undefined
             }
           >
-            {stopStatus === "stopped"
+            {terminal
               ? "Broadcast ended"
               : !state
                 ? "Status unavailable"
-                : held
-                  ? state.live
-                    ? "Paused · YouTube still live"
-                    : "Paused · Sending card"
-                  : state.live
-                    ? "● LIVE"
-                    : state.streaming === "paused"
-                      ? "Disconnected"
+                : disconnected
+                  ? "Disconnected"
+                  : held
+                    ? state.live
+                      ? "Paused · YouTube still live"
+                      : "Paused · Sending card"
+                    : state.live
+                      ? "● LIVE"
                       : watchingOutput && state.outputActive
                         ? "Sending video"
                         : state?.receiving
@@ -678,7 +718,7 @@ export function StudioYouTube({
                               ? "Connecting…"
                               : "Not live"}
           </strong>
-          {showViewers && stopStatus !== "stopped" && (
+          {showViewers && !terminal && !disconnected && (
             <span
               className="min-w-0 truncate text-xs text-slate-300"
               aria-live="polite"
@@ -705,16 +745,37 @@ export function StudioYouTube({
         onClose={() => setStopOpen(false)}
       >
         <p>
-          This ends the YouTube broadcast. You cannot resume on this watch link.
-          Your game and scores stay open.
+          Studio will stop sending video. Restart broadcast to reconnect on the
+          same YouTube link.
         </p>
         <button
           type="button"
           className="btn min-h-11"
           disabled={!canStopBroadcast}
-          onClick={() => void stopBroadcast()}
+          onClick={() => {
+            setStopOpen(false);
+            void send("disconnect");
+          }}
         >
           Stop broadcast
+        </button>
+      </StudioOverlay>
+      <StudioOverlay
+        title="Restart broadcast?"
+        open={replacementOpen}
+        onClose={() => setReplacementOpen(false)}
+      >
+        <p>
+          The previous broadcast ended. Studio will create a new YouTube link
+          for this game.
+        </p>
+        <button
+          type="button"
+          className="btn min-h-11"
+          disabled={!canReplaceBroadcast}
+          onClick={() => void replaceBroadcast()}
+        >
+          Restart broadcast
         </button>
       </StudioOverlay>
       <StudioOverlay
@@ -741,7 +802,7 @@ export function StudioYouTube({
       </StudioOverlay>
       <StudioStatusMessage
         message={
-          !stopStatus && restartRequired
+          !terminal && restartRequired
             ? "The Studio video session expired. Restart the broadcast connection to return to game video."
             : presentationError && !state?.canRestartBroadcast
               ? "If Resume keeps failing, press Ctrl+Shift+Q to close Studio. Reopen the same game and reconnect to its saved broadcast."
@@ -753,7 +814,7 @@ export function StudioYouTube({
       </a>
       <StudioStatusMessage
         message={
-          !stopStatus && !terminal && needsRecovery
+          !terminal && needsRecovery
             ? state?.canRecover
               ? "Reconnect restarts the local cameras and checks your existing YouTube broadcast. Your game and watch link are kept."
               : "YouTube: Close and reopen Studio, choosing No when asked to end the game. Update Studio to reconnect here."
@@ -769,7 +830,8 @@ export function StudioYouTube({
       />
       <StudioStatusMessage
         message={
-          !stopStatus &&
+          !terminal &&
+          !disconnected &&
           (state?.receiving || state?.outputActive) &&
           !state.live &&
           !error
@@ -788,12 +850,7 @@ export function StudioYouTube({
       <StudioStatusMessage
         role="alert"
         source="YouTube"
-        message={!stopStatus && error && !state?.live ? error : null}
-      />
-      <StudioStatusMessage
-        role="alert"
-        source="YouTube"
-        message={stopStatus === "stopped" ? null : stopError}
+        message={error && (terminal || !state?.live) ? error : null}
       />
       <StudioStatusMessage
         role="alert"

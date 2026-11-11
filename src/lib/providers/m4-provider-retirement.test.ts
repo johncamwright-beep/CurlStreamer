@@ -136,6 +136,19 @@ describe("M4 independent provider retirement evidence", () => {
     expect(String(fetcher.mock.calls[1][0])).toContain("liveBroadcasts");
   });
 
+  it("accepts a removed broadcast only for the exact saved video", async () => {
+    const fetcher = responses(
+      owned,
+      { items: [] },
+      {
+        items: [{ id: "broadcast-1", status: { lifeCycleStatus: "revoked" } }],
+      },
+    );
+    await expect(
+      verifyM4ProviderRetirement("token", expected, fetcher),
+    ).resolves.toBeUndefined();
+  });
+
   it("rejects invalid resource identifiers before any provider operation", async () => {
     const fetcher = responses();
     await expect(

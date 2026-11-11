@@ -41,6 +41,7 @@ async function startupFixture(page: Page) {
         live: false,
         receiving: false,
         outputActive: true,
+        canReconnect: true,
         canHoldStream: true,
         message: "",
         ...overrides,
@@ -151,7 +152,7 @@ test("Studio distinguishes delayed YouTube checks from stopped output and missin
   await expect(page.getByText("27 last reported")).toHaveCount(0);
   await expect(
     page.getByRole("button", { name: "Stop broadcast" }),
-  ).toBeEnabled();
+  ).toBeDisabled();
   expect(starts).toBe(0);
 });
 
@@ -179,28 +180,14 @@ test("Studio authorizes the YouTube transition with the current game's organizer
       r.request().method() === "POST"
         ? r.request().postDataJSON().action
         : undefined;
-    return r.fulfill({
-      json:
-        action === "stop"
-          ? { desiredState: "stopped", status: "stopped" }
-          : action === "go-live"
-            ? { phase: "live" }
-            : {},
-    });
+    return r.fulfill({ json: action === "go-live" ? { phase: "live" } : {} });
   });
   await page.goto("/startup-fixture");
   await report();
-  await page
-    .getByRole("button", { name: "Stop broadcast", exact: true })
-    .click();
-  await page
-    .getByRole("dialog", { name: "Stop broadcast?" })
-    .getByRole("button", { name: "Stop broadcast", exact: true })
-    .click();
   await expect(
-    page.getByRole("button", { name: "Broadcast ended" }),
-  ).toBeDisabled();
-  await expect.poll(() => headers.length).toBeGreaterThanOrEqual(3);
+    page.getByRole("button", { name: "Stop broadcast", exact: true }),
+  ).toBeEnabled();
+  await expect.poll(() => headers.length).toBeGreaterThanOrEqual(2);
   expect(headers.every((value) => value?.startsWith("Bearer fixture."))).toBe(
     true,
   );
@@ -336,84 +323,137 @@ test("Late go-live failures cannot overwrite confirmed live status or a differen
   await expect(page.getByRole("alert")).toContainText("needs attention");
 });
 
-test("Stop broadcast confirms provider shutdown, retries with the sender offline, and preserves the watch link", async ({
+test("Stop broadcast disconnects only Studio and can restart on the same watch link", async ({
   page,
 }) => {
   const report = await startupFixture(page);
   const watchUrl = "https://www.youtube.com/watch?v=abcdefghijk";
   const requests: unknown[] = [];
-  let status = "prepared";
   await page.route("**/api/games/fixture-game/studio-m4", (route) => {
-    if (route.request().method() === "POST") {
+    if (route.request().method() === "POST")
       requests.push(route.request().postDataJSON());
-      status = requests.length === 1 ? "failed" : "stopped";
-    }
     return route.fulfill({
       json: {
-        desiredState: status === "prepared" ? "live" : "stopped",
-        status,
+        desiredState: "live",
+        status: "prepared",
         watchUrl,
+        phase: "live",
       },
     });
   });
-  await page.clock.install();
   await page.goto("/startup-fixture");
   await expect(
     page.getByRole("link", { name: "Watch on YouTube" }),
   ).toHaveAttribute("href", watchUrl);
   await report({ live: true, receiving: true });
-  await report({
-    live: false,
-    streaming: "failed",
-    outputActive: false,
-    canRestartBroadcast: true,
-    canRecover: true,
-  });
   const stop = page.getByRole("button", {
     name: "Stop broadcast",
     exact: true,
   });
-  await expect(
-    page.getByRole("button", { name: "Restart broadcast connection" }),
-  ).toBeEnabled();
   const confirmation = page.getByRole("dialog", { name: "Stop broadcast?" });
   await stop.click();
-  await expect(confirmation).toContainText("Your game and scores stay open.");
   await confirmation
     .getByRole("button", { name: "Close", exact: true })
     .click();
-  expect(requests).toEqual([]);
-  await page.clock.fastForward(7000);
-  await expect(page.getByRole("status")).toHaveText("Status unavailable");
+  expect(await page.evaluate(() => (window as any).sent)).toEqual([]);
   await stop.click();
   await confirmation
     .getByRole("button", { name: "Stop broadcast", exact: true })
     .click();
-  await expect(page.getByRole("alert")).toContainText("could not confirm");
-  await report({ streaming: "stopped", outputActive: false, available: false });
-  await page.getByRole("button", { name: "Retry stop", exact: true }).click();
-  await confirmation
-    .getByRole("button", { name: "Stop broadcast", exact: true })
+  await report({
+    streaming: "paused",
+    outputActive: false,
+    presentation: { mode: "hold" },
+  });
+  await expect(page.getByRole("status")).toHaveText("Disconnected");
+  await page
+    .getByRole("button", { name: "Restart broadcast", exact: true })
     .click();
-  await expect(
-    page.getByRole("button", { name: "Broadcast ended" }),
-  ).toBeDisabled();
-  await expect(page.getByRole("status")).toHaveText("Broadcast ended");
-  expect(requests).toEqual([{ action: "stop" }, { action: "stop" }]);
-  expect(
-    await page.evaluate(() => (window as unknown as { sent: unknown[] }).sent),
-  ).toEqual([]);
+  expect(await page.evaluate(() => (window as any).sent)).toEqual([
+    { type: "studio-youtube-stop", gameId: "fixture-game" },
+    { type: "studio-youtube-start", gameId: "fixture-game" },
+  ]);
+  await report({ live: true, receiving: true });
+  await expect(stop).toBeEnabled();
   await page.reload();
-  await expect(
-    page.getByRole("button", { name: "Broadcast ended" }),
-  ).toBeDisabled();
   await expect(
     page.getByRole("link", { name: "Watch on YouTube" }),
   ).toHaveAttribute("href", watchUrl);
+  await report({ streaming: "idle", outputActive: false });
+  await page
+    .getByRole("button", { name: "Broadcast to YouTube", exact: true })
+    .click();
+  expect(await page.evaluate(() => (window as any).sent)).toEqual([
+    { type: "studio-youtube-start", gameId: "fixture-game" },
+  ]);
+  expect(requests).toEqual([]);
 });
 
+test("a previously ended broadcast can be explicitly replaced for the same game", async ({
+  page,
+}) => {
+  const report = await startupFixture(page);
+  const watchUrl = "https://www.youtube.com/watch?v=abcdefghijk";
+  const newWatchUrl = "https://www.youtube.com/watch?v=lmnopqrstuv";
+  const requests: unknown[] = [];
+  await page.route("**/api/games/fixture-game/studio-m4", (route) => {
+    if (route.request().method() === "POST") {
+      requests.push(route.request().postDataJSON());
+      if (requests.length === 1)
+        return route.fulfill({
+          status: 409,
+          json: { error: "Could not verify the previous broadcast." },
+        });
+      return route.fulfill({
+        json: {
+          desiredState: "live",
+          status: "prepared",
+          watchUrl: newWatchUrl,
+        },
+      });
+    }
+    return route.fulfill({
+      json: { desiredState: "stopped", status: "stopped", watchUrl },
+    });
+  });
+  await page.goto("/startup-fixture");
+  await expect(page.getByRole("status")).toHaveText("Broadcast ended");
+  await report({ streaming: "idle", outputActive: false });
+  const restart = page.getByRole("button", {
+    name: "Restart broadcast",
+    exact: true,
+  });
+  const confirmation = page.getByRole("dialog", { name: "Restart broadcast?" });
+  for (let attempt = 0; attempt < 2; attempt++) {
+    await restart.click();
+    await expect(confirmation).toContainText("new YouTube link for this game");
+    await confirmation
+      .getByRole("button", { name: "Restart broadcast", exact: true })
+      .click();
+    if (attempt === 0) {
+      await expect(page.getByRole("alert")).toContainText(
+        "Could not verify the previous broadcast.",
+      );
+      await expect(
+        page.getByRole("link", { name: "Watch on YouTube" }),
+      ).toHaveAttribute("href", watchUrl);
+    }
+  }
+  await expect(
+    page.getByRole("link", { name: "Watch on YouTube" }),
+  ).toHaveAttribute("href", newWatchUrl);
+  expect(requests).toEqual([
+    { action: "restart", watchUrl },
+    { action: "restart", watchUrl },
+  ]);
+  expect(await page.evaluate(() => (window as any).sent)).toEqual([
+    { type: "studio-youtube-start", gameId: "fixture-game" },
+  ]);
+});
 for (const phase of ["ended", "removed"]) {
-  test(`Studio cannot retry a ${phase} broadcast`, async ({ page }) => {
+  test(`Studio never retries a ${phase} broadcast automatically`, async ({
+    page,
+  }) => {
     const report = await startupFixture(page);
     let requests = 0;
     await page.route("**/api/games/fixture-game/studio-m4", (r) => {
@@ -425,7 +465,7 @@ for (const phase of ["ended", "removed"]) {
     await report();
     await expect(page.getByRole("alert")).toBeVisible();
     await expect(
-      page.getByRole("button", { name: "Broadcast ended" }),
+      page.getByRole("button", { name: "Restart broadcast" }),
     ).toBeDisabled();
     await page.clock.fastForward(60000);
     await report();
@@ -638,21 +678,26 @@ test("Studio YouTube sends game-scoped commands and expires live status", async 
   await expect(
     page.getByRole("link", { name: "Watch on YouTube" }),
   ).toHaveAttribute("href", watchUrl);
-  await page.getByRole("button", { name: "Reconnect", exact: true }).click();
+  await page
+    .getByRole("button", { name: "Restart broadcast", exact: true })
+    .click();
   await report("fixture-game", true);
   await page.clock.fastForward(7000);
   await expect(page.getByRole("status")).toHaveText("Status unavailable");
   await expect(
     page.getByRole("button", { name: "Stop broadcast" }),
-  ).toBeEnabled();
+  ).toBeDisabled();
   await expect(
     page.getByRole("link", { name: "Watch on YouTube" }),
   ).toHaveAttribute("href", watchUrl);
   await report("fixture-game", false, false, "stopped");
   await expect(page.getByRole("status")).toHaveText("Not live");
   await expect(
-    page.getByRole("button", { name: "Stop broadcast", exact: true }),
-  ).toBeEnabled();
+    page.getByRole("button", {
+      name: "Restart Studio to reconnect",
+      exact: true,
+    }),
+  ).toBeDisabled();
   await page.evaluate(() =>
     window.dispatchEvent(
       new CustomEvent("studio-youtube-status", {

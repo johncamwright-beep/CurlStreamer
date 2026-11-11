@@ -8,6 +8,7 @@ export function StudioOverlay({
   children,
   dismissible = true,
   showCloseButton = true,
+  compact = false,
 }: {
   title: string;
   open: boolean;
@@ -15,6 +16,7 @@ export function StudioOverlay({
   children: ReactNode;
   dismissible?: boolean;
   showCloseButton?: boolean;
+  compact?: boolean;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
   const titleId = useId();
@@ -26,6 +28,7 @@ export function StudioOverlay({
     <dialog
       ref={ref}
       className="studio-status-dialog studio-settings-dialog"
+      style={compact ? { maxWidth: "24rem" } : undefined}
       aria-labelledby={titleId}
       onCancel={(event) => {
         if (!dismissible) event.preventDefault();

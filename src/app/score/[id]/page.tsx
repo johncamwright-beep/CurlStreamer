@@ -22,10 +22,6 @@ import { gameCapabilities } from "@/lib/current-game";
 import { canManageCompletion, hasOrganizerAccess } from "@/lib/access-session";
 import { CompletedGameSummary } from "@/components/CompletedGameSummary";
 import { EndGameControl } from "@/components/EndGameControl";
-import type {
-  CompletionCleanup,
-  SafeGameCompletion,
-} from "@/lib/game-completion";
 import { StudioDeviceCards } from "@/components/StudioDeviceCards";
 import { StudioYouTube } from "@/components/StudioYouTube";
 import { StudioProgramPreview } from "@/components/StudioProgramPreview";
@@ -91,25 +87,15 @@ function ScorerGame({ id }: { id: string }) {
   });
   const [correctingHammer, setCorrectingHammer] = useState(false);
   const [organizerAccess, setOrganizerAccess] = useState(false);
-  const [finished, setFinished] = useState<SafeGameCompletion>();
-  const [finishedCleanup, setFinishedCleanup] = useState<CompletionCleanup>();
-  const [endingBroadcast, setEndingBroadcast] = useState(false);
-  useEffect(() => {
-    function progress(event: Event) {
-      const detail = (event as CustomEvent).detail;
-      if (detail?.gameId === id && typeof detail.active === "boolean")
-        setEndingBroadcast(detail.active);
-    }
-    window.addEventListener("studio-ending-progress", progress);
-    return () => window.removeEventListener("studio-ending-progress", progress);
-  }, [id]);
   useEffect(
     () => setOrganizerAccess(hasOrganizerAccess(localStorage, id)),
     [id],
   );
-  const completed = completion ?? finished;
+  const completed = completion;
+  const hasGame = Boolean(game);
+  const hasCompleted = Boolean(completed);
   const terminal =
-    Boolean(completed) || lifecycle === "closed" || lifecycle === "deleted";
+    hasCompleted || lifecycle === "closed" || lifecycle === "deleted";
   const sponsorsInitialized = useRef(false);
   const [sponsorStartError, setSponsorStartError] = useState("");
   useEffect(() => {
@@ -141,8 +127,7 @@ function ScorerGame({ id }: { id: string }) {
     : "";
   useEffect(() => {
     if (
-      (!game && !terminal) ||
-      endingBroadcast ||
+      (!hasGame && !terminal) ||
       !desktop ||
       (!terminal && (!m1Pilot || (!accountOperator && !organizerAccess)))
     )
@@ -165,31 +150,23 @@ function ScorerGame({ id }: { id: string }) {
       });
   }, [
     id,
-    Boolean(game),
-    Boolean(completed),
+    hasGame,
+    hasCompleted,
     terminal,
     desktop,
     m1Pilot,
     accountOperator,
     organizerAccess,
-    endingBroadcast,
     studioTitle,
   ]);
   const canEndGame = canManageCompletion(accountRole, organizerAccess);
   if (completed)
     return (
       <main className="mx-auto max-w-3xl p-5">
-        {endingBroadcast && (
-          <p role="status" className="mb-4 text-slate-300">
-            Final score saved. Showing the closing card to viewers…
-          </p>
-        )}
         <CompletedGameSummary
           gameId={id}
           completion={completed}
           cleanupControls={canEndGame}
-          canReopen={["owner", "team_admin"].includes(accountRole)}
-          initialCleanup={finishedCleanup}
         />
       </main>
     );
@@ -496,7 +473,7 @@ function ScorerGame({ id }: { id: string }) {
           </div>
           {canEndGame && (
             <div className="scoring-page-actions">
-              {desktop && <StudioStatusArea gameId={id} />}
+              {desktop && <StudioStatusArea />}
               {microphoneSyncError && <p role="alert">{microphoneSyncError}</p>}
               {!desktop && (
                 <Link
@@ -516,15 +493,10 @@ function ScorerGame({ id }: { id: string }) {
                   <div className="scoring-header-finish">
                     <EndGameControl
                       gameId={id}
-                      homeName={game.config.homeName}
-                      awayName={game.config.awayName}
                       sharedYoutubeWatchUrl={game.config.sharedYoutubeWatchUrl}
                       enabled
                       disabled={scoringLocked}
-                      onCompleted={(value, cleanup) => {
-                        setFinished(value);
-                        setFinishedCleanup(cleanup);
-                      }}
+                      onCompleted={() => window.location.assign("/dashboard")}
                     />
                   </div>
                 </div>
@@ -848,15 +820,10 @@ function ScorerGame({ id }: { id: string }) {
                 <div className="scoring-card scoring-finish">
                   <EndGameControl
                     gameId={id}
-                    homeName={game.config.homeName}
-                    awayName={game.config.awayName}
                     sharedYoutubeWatchUrl={game.config.sharedYoutubeWatchUrl}
                     enabled
                     disabled={scoringLocked}
-                    onCompleted={(value, cleanup) => {
-                      setFinished(value);
-                      setFinishedCleanup(cleanup);
-                    }}
+                    onCompleted={() => window.location.assign("/dashboard")}
                   />
                 </div>
               )}

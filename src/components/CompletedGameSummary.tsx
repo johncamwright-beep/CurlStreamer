@@ -6,9 +6,6 @@ import type {
   SafeGameCompletion,
 } from "@/lib/game-completion";
 import { organizerAccessToken } from "@/lib/access-session";
-import { z } from "zod";
-import { studioSessionBridge } from "@/lib/studio-session";
-import { ReopenGameControl } from "@/components/ReopenGameControl";
 
 function completionToken(gameId: string) {
   return (
@@ -28,38 +25,17 @@ export function CompletedGameSummary({
   gameId,
   completion,
   cleanupControls = false,
-  initialCleanup,
-  canReopen = false,
 }: {
   gameId: string;
   completion: SafeGameCompletion;
   cleanupControls?: boolean;
-  initialCleanup?: CompletionCleanup;
-  canReopen?: boolean;
 }) {
-  const [cleanup, setCleanup] = useState<CompletionCleanup | undefined>(
-    initialCleanup,
-  );
+  const [cleanup, setCleanup] = useState<CompletionCleanup>();
   const [cleanupError, setCleanupError] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [canForceClose, setCanForceClose] = useState(false);
-  useEffect(() => {
-    const receive = (event: Event) => {
-      const result = z
-        .object({ gameId: z.uuid(), canForceClose: z.boolean() })
-        .strict()
-        .safeParse((event as CustomEvent).detail);
-      setCanForceClose(
-        result.success &&
-          result.data.gameId === gameId &&
-          result.data.canForceClose,
-      );
-    };
-    window.addEventListener("studio-recovery-status", receive);
-    studioSessionBridge()?.postMessage({ type: "studio-session-observe" });
-    return () => window.removeEventListener("studio-recovery-status", receive);
-  }, [gameId]);
   const cleanupStatus = cleanup?.status;
+  const shouldRetry =
+    cleanupControls &&
+    (cleanupStatus === "pending" || cleanupStatus === "failed");
   const loadCleanup = useCallback(async () => {
     try {
       const token = completionToken(gameId);
@@ -82,8 +58,8 @@ export function CompletedGameSummary({
     }
   }, [gameId]);
   useEffect(() => {
-    if (cleanupControls && !initialCleanup) void loadCleanup();
-  }, [cleanupControls, initialCleanup, loadCleanup]);
+    if (cleanupControls) void loadCleanup();
+  }, [cleanupControls, loadCleanup]);
 
   const retryCleanup = useCallback(async () => {
     try {
@@ -113,8 +89,7 @@ export function CompletedGameSummary({
   }, [gameId]);
 
   useEffect(() => {
-    if (!cleanupControls || !cleanupStatus || cleanupStatus === "complete")
-      return;
+    if (!shouldRetry) return;
     let cancelled = false;
     void (async () => {
       for (let attempt = 1; attempt <= 3 && !cancelled; attempt += 1) {
@@ -129,13 +104,7 @@ export function CompletedGameSummary({
     return () => {
       cancelled = true;
     };
-  }, [cleanupControls, cleanupStatus, retryCleanup]);
-
-  async function retry() {
-    setBusy(true);
-    await retryCleanup();
-    setBusy(false);
-  }
+  }, [shouldRetry, retryCleanup]);
 
   return (
     <section
@@ -175,17 +144,11 @@ export function CompletedGameSummary({
           role="status"
           className="mt-4 rounded-lg bg-amber-950 p-3 text-amber-200"
         >
-          <p>Live video shutdown has not been confirmed.</p>
-          {cleanup.lastError && (
-            <p className="mt-2 text-sm">Last attempt: {cleanup.lastError}</p>
-          )}
-          <button
-            className="btn-secondary mt-3"
-            disabled={busy}
-            onClick={retry}
-          >
-            {busy ? "Retrying…" : "Retry live video shutdown"}
-          </button>
+          <p>
+            {cleanup.status === "pending"
+              ? "Shutting down live video…"
+              : "Live video shutdown has not been confirmed."}
+          </p>
         </div>
       )}
       {cleanupControls && cleanupError && (
@@ -194,42 +157,6 @@ export function CompletedGameSummary({
           className="mt-4 rounded-lg bg-amber-950 p-3 text-amber-200"
         >
           <p>{cleanupError} The final result remains saved.</p>
-          {!cleanup && (
-            <button
-              className="btn-secondary mt-3"
-              disabled={busy}
-              onClick={retry}
-            >
-              {busy ? "Retrying…" : "Retry live video shutdown"}
-            </button>
-          )}
-        </div>
-      )}
-      {cleanupControls &&
-        canForceClose &&
-        (cleanupStatus !== "complete" || cleanupError) && (
-          <div className="mt-4">
-            <p className="text-sm text-slate-300">
-              The final score is saved. You can close Studio while YouTube
-              shutdown remains unconfirmed.
-            </p>
-            <button
-              className="btn-secondary mt-3"
-              title="Emergency exit (Ctrl+Shift+Q). Stops local video and audio; YouTube shutdown may still need retrying."
-              onClick={() =>
-                studioSessionBridge()?.postMessage({
-                  type: "studio-force-close",
-                  gameId,
-                })
-              }
-            >
-              Force close Studio
-            </button>
-          </div>
-        )}
-      {canReopen && (
-        <div>
-          <ReopenGameControl gameId={gameId} />
         </div>
       )}
       <Link className="btn-secondary mt-5 inline-flex" href="/dashboard">

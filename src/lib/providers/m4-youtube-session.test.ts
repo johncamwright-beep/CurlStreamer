@@ -57,6 +57,7 @@ vi.mock("./youtube-live", () => ({
 vi.mock("./obs-local", () => ({ ObsLocal: mocks.obs }));
 import {
   prepareM4Session,
+  restartM4Session,
   readM4Session,
   stopM4Session,
   goLiveM4Session,
@@ -214,6 +215,142 @@ describe("M4 provider orchestration", () => {
     expect(mocks.rpc.mock.calls.map(([name]) => name)).not.toContain(
       "claim_abandoned_m4_cleanup",
     );
+  });
+  describe("explicit replacement", () => {
+    const old = {
+      status: "prepared",
+      youtubeBroadcastId: "abcdefghijk",
+      youtubeStreamId: "old-stream",
+      youtubeBroadcastCreateState: "ready",
+      youtubeStreamCreateState: "ready",
+      watchUrl,
+    };
+    const replacementWatchUrl = "https://www.youtube.com/watch?v=replacement";
+    function fixture(initial: Record<string, unknown> = {}) {
+      state(session({ ...old, ...initial }));
+      let rpc = mocks.rpc.getMockImplementation()!;
+      const restartRpc = async (
+        name: string,
+        parameters: Record<string, number>,
+      ) => {
+        if (name !== "claim_m4_broadcast_restart") return rpc(name, parameters);
+        const generation = parameters.p_generation + 1;
+        const overrides =
+          parameters.p_connection_version == null
+            ? { generation }
+            : {
+                ...old,
+                generation,
+                desiredState: "stopped",
+                status: "stopping",
+              };
+        const current = state(session(overrides));
+        rpc = mocks.rpc.getMockImplementation()!;
+        mocks.rpc.mockImplementation(restartRpc);
+        return { data: current() };
+      };
+      mocks.rpc.mockImplementation(restartRpc);
+      mocks.broadcast.mockResolvedValue({
+        id: "replacement",
+        watchUrl: replacementWatchUrl,
+        lifeCycleStatus: "ready",
+      });
+    }
+
+    it("replaces a provider-retired video without modifying the replay", async () => {
+      fixture({
+        status: "stopped",
+        desiredState: "stopped",
+        providerStep: "m4-provider-retired",
+      });
+      expect(await restartM4Session(gameId, credential, "abcdefghijk")).toEqual(
+        {
+          desiredState: "live",
+          status: "prepared",
+          watchUrl: replacementWatchUrl,
+        },
+      );
+      expect(mocks.rpc).toHaveBeenCalledWith(
+        "claim_m4_broadcast_restart",
+        expect.objectContaining({
+          p_generation: 1,
+          p_youtube_broadcast_id: "abcdefghijk",
+          p_connection_version: null,
+        }),
+      );
+      expect(mocks.verifyRetirement).not.toHaveBeenCalled();
+      expect(mocks.finish).not.toHaveBeenCalled();
+      expect(mocks.remove).not.toHaveBeenCalled();
+    });
+
+    it("verifies terminal evidence before retirement and only deletes the old ingest stream", async () => {
+      fixture();
+      expect(
+        await restartM4Session(gameId, credential, "abcdefghijk"),
+      ).toMatchObject({
+        status: "prepared",
+        watchUrl: replacementWatchUrl,
+      });
+      expect(mocks.verifyRetirement).toHaveBeenNthCalledWith(
+        1,
+        "private-access",
+        {
+          broadcastId: "abcdefghijk",
+          channelId: "original-channel",
+        },
+      );
+      expect(mocks.verifyRetirement).toHaveBeenNthCalledWith(
+        2,
+        "private-access",
+        {
+          broadcastId: "abcdefghijk",
+          streamId: "old-stream",
+          channelId: "original-channel",
+        },
+      );
+      expect(mocks.rpc).toHaveBeenCalledWith(
+        "claim_m4_broadcast_restart",
+        expect.objectContaining({
+          p_generation: 1,
+          p_youtube_broadcast_id: "abcdefghijk",
+          p_connection_version: 1,
+          p_encrypted_credentials: "encrypted-private",
+        }),
+      );
+      expect(mocks.rpc).toHaveBeenCalledWith(
+        "claim_m4_broadcast_restart",
+        expect.objectContaining({
+          p_generation: 2,
+          p_youtube_broadcast_id: "abcdefghijk",
+          p_connection_version: null,
+        }),
+      );
+      expect(mocks.finish).not.toHaveBeenCalled();
+      expect(mocks.remove).toHaveBeenCalledExactlyOnceWith(
+        "private-access",
+        "old-stream",
+      );
+    });
+
+    it("preserves the saved broadcast when evidence is unavailable or the request is stale", async () => {
+      fixture();
+      await expect(
+        restartM4Session(gameId, credential, "replacement"),
+      ).rejects.toMatchObject({ code: "55000" });
+      expect(mocks.verifyRetirement).not.toHaveBeenCalled();
+      mocks.verifyRetirement.mockRejectedValueOnce(
+        new Error("m4_retirement_unconfirmed"),
+      );
+      await expect(
+        restartM4Session(gameId, credential, "abcdefghijk"),
+      ).rejects.toThrow("m4_retirement_unconfirmed");
+      expect(mocks.rpc.mock.calls.map(([name]) => name)).toEqual([
+        "get_m4_broadcast_session",
+        "get_m4_broadcast_session",
+      ]);
+      expect(mocks.remove).not.toHaveBeenCalled();
+      expect(mocks.broadcast).not.toHaveBeenCalled();
+    });
   });
   it("prepares manual provider resources in durable order without starting OBS or transitioning live", async () => {
     state(session());

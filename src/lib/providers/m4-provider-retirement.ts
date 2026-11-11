@@ -18,7 +18,7 @@ const broadcastsSchema = z.object({
     .array(
       z.object({
         id: idSchema,
-        status: z.object({ lifeCycleStatus: z.literal("complete") }),
+        status: z.object({ lifeCycleStatus: z.enum(["complete", "revoked"]) }),
       }),
     )
     .max(1),

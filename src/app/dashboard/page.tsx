@@ -10,7 +10,6 @@ import type { GamesTab } from "@/lib/game-hub";
 import { loadDashboardBroadcasts } from "@/lib/dashboard-broadcasts";
 import { GamesDashboard } from "./GamesDashboard";
 import "./dashboard.css";
-import Link from "next/link";
 import { readSetupProgress } from "@/lib/onboarding";
 
 export default async function GamesPage({
@@ -61,45 +60,36 @@ export default async function GamesPage({
     games.filter((g) => g.status !== "closed").map((g) => g.id),
   );
   const teamSettings = await settingsPromise;
+  const setup =
+    membership.role === "owner"
+      ? readSetupProgress(
+          user.user_metadata?.team_setup,
+          membership.organization_id,
+        )
+      : null;
   return (
-    <>
-      {membership.role === "owner" && teamSettings && (
-        <TeamSetupChecklist
-          settings={teamSettings.settings}
-          logo={teamSettings.logo}
-          seasons={hierarchy.seasons.length}
-          games={hierarchy.games.length}
-        />
-      )}
-      {membership.role === "owner" &&
-        (() => {
-          const setup = readSetupProgress(
-            user.user_metadata?.team_setup,
-            membership.organization_id,
-          );
-          return setup && !setup.complete ? (
-            <aside
-              className="mx-auto mt-4 flex max-w-6xl flex-wrap items-center justify-between gap-3 rounded-xl border border-cyan-600 bg-cyan-950 p-4"
-              aria-label="Team setup"
-            >
-              <p>Finish setting up your team · Step {setup.step} of 6</p>
-              <Link className="btn" href="/onboarding">
-                Resume team setup
-              </Link>
-            </aside>
-          ) : null;
-        })()}
-      <GamesDashboard
-        account={result.account}
-        accountLogo={teamSettings?.logo || teamLogoSource(membership.teamName)}
-        games={games}
-        events={events}
-        seasons={hierarchy.seasons}
-        season={season}
-        tab={tab}
-        selectedEvent={requestedEvent}
-        broadcasts={broadcasts}
-      />
-    </>
+    <GamesDashboard
+      account={result.account}
+      accountLogo={teamSettings?.logo || teamLogoSource(membership.teamName)}
+      games={games}
+      events={events}
+      seasons={hierarchy.seasons}
+      season={season}
+      tab={tab}
+      selectedEvent={requestedEvent}
+      broadcasts={broadcasts}
+      setupWalkthrough={
+        membership.role === "owner" && (
+          <TeamSetupChecklist
+            organizationId={membership.organization_id}
+            settings={teamSettings?.settings}
+            logo={teamSettings?.logo ?? null}
+            seasons={hierarchy.seasons.length}
+            games={hierarchy.games.length}
+            resumeStep={setup?.complete ? undefined : setup?.step}
+          />
+        )
+      }
+    />
   );
 }

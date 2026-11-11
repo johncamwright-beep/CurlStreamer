@@ -187,7 +187,7 @@ test("replay-enabled status updates preview to LIVE and yields the badge during 
   });
   await page.getByRole("button", { name: "Close Game", exact: true }).click();
   await expect(
-    page.getByRole("button", { name: "Pause and leave" }),
+    page.getByRole("button", { name: "No", exact: true }),
   ).toBeEnabled();
 });
 

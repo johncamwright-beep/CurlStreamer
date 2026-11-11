@@ -7,12 +7,14 @@ export function StudioOverlay({
   onClose,
   children,
   dismissible = true,
+  showCloseButton = true,
 }: {
   title: string;
   open: boolean;
   onClose: () => void;
   children: ReactNode;
   dismissible?: boolean;
+  showCloseButton?: boolean;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
   const titleId = useId();
@@ -33,14 +35,16 @@ export function StudioOverlay({
     >
       <header>
         <h2 id={titleId}>{title}</h2>
-        <button
-          className="btn-secondary min-h-11"
-          type="button"
-          disabled={!dismissible}
-          onClick={onClose}
-        >
-          Close
-        </button>
+        {showCloseButton && (
+          <button
+            className="btn-secondary min-h-11"
+            type="button"
+            disabled={!dismissible}
+            onClick={onClose}
+          >
+            Close
+          </button>
+        )}
       </header>
       <div className="studio-overlay-content">{children}</div>
     </dialog>

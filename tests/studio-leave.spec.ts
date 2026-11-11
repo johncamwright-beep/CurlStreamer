@@ -19,6 +19,7 @@ const idlePreview = {
 async function loadLeaveFixture(
   page: Page,
   session: typeof idlePreview | null = idlePreview,
+  includeYouTube = false,
 ) {
   const bundle = await build({
     bundle: true,
@@ -33,12 +34,13 @@ async function loadLeaveFixture(
       contents: `
       import React, {useState} from 'react';import {createRoot} from 'react-dom/client';
       import {EndGameControl} from './src/components/EndGameControl';
+      import {StudioYouTube} from './src/components/StudioYouTube';
       import {StudioSessionContext} from './src/components/StudioSessionContext';
       window.sent=[];window.chrome={webview:{postMessage(v){window.sent.push(v)}}};
       function Fixture() {
         const [session, setSession] = useState(${JSON.stringify(session)});
         window.updateFixtureSession = setSession;
-        return <StudioSessionContext.Provider value={session}><EndGameControl gameId="${gameId}" homeName="Home" awayName="Away" enabled onCompleted={()=>{throw Error('Unexpected completion')}}/></StudioSessionContext.Provider>;
+        return <StudioSessionContext.Provider value={session}>${includeYouTube ? `<StudioYouTube id="${gameId}"/>` : ""}<EndGameControl gameId="${gameId}" homeName="Home" awayName="Away" enabled onCompleted={()=>{throw Error('Unexpected completion')}}/></StudioSessionContext.Provider>;
       }
       createRoot(document.getElementById('root')).render(<Fixture/>);
     `,
@@ -136,8 +138,13 @@ test("idle preview ignores stale YouTube live; No leaves without ending or pausi
   const close = page.getByRole("button", { name: "Close Game", exact: true });
   await close.click();
   await expect(
-    page.getByRole("dialog", { name: "Is the game done?" }),
+    page.getByRole("dialog", { name: "Is this game completed?" }),
   ).toBeVisible();
+  await expect(
+    page
+      .getByRole("dialog")
+      .getByRole("button", { name: "Close", exact: true }),
+  ).toHaveCount(0);
   await expect(
     page.getByRole("button", { name: "Pause and leave" }),
   ).toHaveCount(0);
@@ -226,5 +233,84 @@ test("No returns to Games without a Studio session or a completion request", asy
   await page.getByRole("button", { name: "Close Game", exact: true }).click();
   await page.getByRole("button", { name: "No", exact: true }).click();
   await expect(page).toHaveURL(/dashboard$/);
+  expect(completions()).toBe(0);
+});
+
+test("Stop broadcast followed by Close Game and No leaves the saved game open", async ({
+  page,
+}) => {
+  const broadcastRequests: unknown[] = [];
+  await page.route(`**/api/games/${gameId}/studio-m4`, (route) => {
+    const stopped = route.request().method() === "POST";
+    if (stopped) broadcastRequests.push(route.request().postDataJSON());
+    return route.fulfill({
+      json: {
+        desiredState: stopped ? "stopped" : "live",
+        status: stopped ? "stopped" : "prepared",
+        watchUrl: "https://www.youtube.com/watch?v=abcdefghijk",
+      },
+    });
+  });
+  const completions = await loadLeaveFixture(
+    page,
+    { ...idlePreview, streaming: "armed", outputActive: true, live: true },
+    true,
+  );
+  await expect(page.getByRole("button", { name: "Close Game" })).toBeVisible();
+  await page.evaluate((gameId) => {
+    window.dispatchEvent(
+      new CustomEvent("studio-youtube-status", {
+        detail: {
+          gameId,
+          available: true,
+          busy: false,
+          streaming: "armed",
+          live: true,
+          receiving: true,
+          outputActive: true,
+          message: "",
+        },
+      }),
+    );
+  }, gameId);
+  await page
+    .getByRole("button", { name: "Stop broadcast", exact: true })
+    .click();
+  await page
+    .getByRole("dialog", { name: "Stop broadcast?" })
+    .getByRole("button", { name: "Stop broadcast", exact: true })
+    .click();
+  await expect(
+    page.getByRole("button", { name: "Broadcast ended" }),
+  ).toBeDisabled();
+  await page.evaluate(
+    (session) => {
+      (window as any).updateFixtureSession(session);
+    },
+    { ...idlePreview, streaming: "stopped", presentation: "hold" },
+  );
+  await page.getByRole("button", { name: "Close Game", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "Is this game completed?" });
+  await expect(
+    dialog.getByRole("button", { name: "Close", exact: true }),
+  ).toHaveCount(0);
+  await expect(
+    dialog.getByRole("button", { name: "Pause and leave" }),
+  ).toHaveCount(0);
+  await dialog.getByRole("button", { name: "No", exact: true }).click();
+  await page.evaluate(() => {
+    const request = (window as any).sent.find(
+      (value: any) => value.type === "studio-game-leave",
+    );
+    if (request?.previewOnly !== true)
+      throw Error("Expected inactive game leave");
+    window.dispatchEvent(
+      new CustomEvent("studio-game-leave-result", {
+        detail: { gameId: request.gameId, nonce: request.nonce, ok: true },
+      }),
+    );
+  });
+  await expect(page).toHaveURL(/dashboard$/);
+  expect(broadcastRequests).toEqual([{ action: "stop" }]);
   expect(completions()).toBe(0);
 });

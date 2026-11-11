@@ -162,7 +162,7 @@ test("End Game reviews the score and replaces controls with the saved result", a
   await page.goto(`/games/${testGameId}`);
   await page.getByRole("button", { name: "Close Game", exact: true }).click();
   await expect(
-    page.getByRole("dialog", { name: "Is the game done?" }),
+    page.getByRole("dialog", { name: "Is this game completed?" }),
   ).toBeVisible();
   await page.getByRole("button", { name: "Cancel", exact: true }).click();
   await expect(page.getByRole("dialog")).toHaveCount(0);

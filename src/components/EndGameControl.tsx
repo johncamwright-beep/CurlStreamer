@@ -479,11 +479,12 @@ export function EndGameControl({
               ? "Final score"
               : broadcastRunning
                 ? "Broadcast is running"
-                : "Is the game done?"
+                : "Is this game completed?"
           }
           open={open}
           onClose={close}
           dismissible={!busy && !closingStudio}
+          showCloseButton={endChosen}
         >
           {!endChosen ? (
             leaveMode ? (

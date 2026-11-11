@@ -44,6 +44,7 @@ internal sealed class Workspace : Form
     private CameraInputPanel cameraSettings;
     private bool cameraPreferencesUnavailable;
     private int cameraZoomRevision;
+    private int stateRevision;
     private string workspaceCloseGame, workspaceCloseNonce;
     private bool gameEnded;
     private DateTime endingUntil = DateTime.MinValue;
@@ -248,23 +249,33 @@ internal sealed class Workspace : Form
     }
     private async Task LeaveGame(string game, string nonce, bool previewOnly) {
         var ok = false;
-        var fastPreview = CanClosePreview();
-        var streaming = TextValue(lastState, "streaming");
-        var localOutput = LocalOutputState();
-        var closeWithoutPause = fastPreview || (previewOnly && WorkspacePolicy.ConfirmedInactiveOutput(streaming, localOutput));
-        var error = fastPreview ? "Studio couldn’t close the camera preview. Try closing the game again."
-            : closeWithoutPause ? "Studio couldn’t finish saving the recording. Try closing the game again."
-            : "Studio couldn’t confirm the pause screen. Stay here and try again.";
-        if (previewOnly && !closeWithoutPause) {
-            error = "The broadcast state changed. Open Close Game again to leave or end it.";
-        } else if (!busy && !closing && !gameEnded && selectedGame == game && (runningGame == null || runningGame == game)) {
+        var error = "Studio couldn’t confirm the broadcast status. Stay here and try again.";
+        if (!busy && !closing && !gameEnded && selectedGame == game && (runningGame == null || runningGame == game)) {
             busy = true; UpdateButtons();
+            var deadline = Stopwatch.StartNew();
             try {
+                // Recheck the owned sender, not a cached observation from before
+                // Stop broadcast. Unknown or active output must never be abandoned.
+                if (previewOnly && !CanClosePreview() && local != null && child != null && !child.HasExited)
+                    ApplyState(await ReadYouTubeControllerState());
+                if (closing || gameEnded || selectedGame != game || (runningGame != null && runningGame != game))
+                    throw new InvalidOperationException();
+                var fastPreview = CanClosePreview();
+                var streaming = TextValue(lastState, "streaming");
+                var localOutput = LocalOutputState();
+                var closeWithoutPause = fastPreview || (previewOnly && WorkspacePolicy.ConfirmedInactiveOutput(streaming, localOutput));
+                error = fastPreview ? "Studio couldn’t close the camera preview. Try closing the game again."
+                    : closeWithoutPause ? "Studio couldn’t finish saving the recording. Try closing the game again."
+                    : "Studio couldn’t confirm the pause screen. Stay here and try again.";
+                if (previewOnly && !closeWithoutPause) {
+                    error = "The broadcast state changed. Open Close Game again to leave or end it.";
+                    throw new InvalidOperationException();
+                }
                 RememberGame(game);
                 if (closeWithoutPause) {
                     // A sender that has stopped may still have a recording to finalize.
                     var cleanup = CloseControllerWithin(fastPreview);
-                    if (await Task.WhenAny(cleanup, Task.Delay(ControllerCloseDeadlineMs)) == cleanup) {
+                    if (await Task.WhenAny(cleanup, Task.Delay(Math.Max(1, ControllerCloseDeadlineMs - (int)deadline.ElapsedMilliseconds))) == cleanup) {
                         await cleanup;
                         ok = child == null && !recording;
                     }
@@ -974,6 +985,7 @@ internal sealed class Workspace : Form
     private string TextValue(Dictionary<string, object> state, string key) { object value; return state != null && state.TryGetValue(key, out value) ? value as string : null; }
     private void ApplyState(Dictionary<string, object> state) {
         if (child == null || child.HasExited) return;
+        stateRevision++;
         lastState = state;
         UpdateSleepPrevention();
         var phase = TextValue(state, "program");
@@ -1055,8 +1067,9 @@ internal sealed class Workspace : Form
         if (polling || closing || local == null || !recording) return;
         var observedChild = child;
         var observedZoomRevision = cameraZoomRevision;
+        var observedStateRevision = stateRevision;
         polling = true;
-        try { using (var timeout = new System.Threading.CancellationTokenSource(3000)) using (var response = await local.GetAsync(localAddress + "/state", timeout.Token)) { response.EnsureSuccessStatusCode(); var observed = json.Deserialize<Dictionary<string, object>>(await response.Content.ReadAsStringAsync()); if (!closing && child == observedChild && cameraZoomRevision == observedZoomRevision) ApplyState(observed); } }
+        try { using (var timeout = new System.Threading.CancellationTokenSource(3000)) using (var response = await local.GetAsync(localAddress + "/state", timeout.Token)) { response.EnsureSuccessStatusCode(); var observed = json.Deserialize<Dictionary<string, object>>(await response.Content.ReadAsStringAsync()); if (!closing && child == observedChild && cameraZoomRevision == observedZoomRevision && stateRevision == observedStateRevision) ApplyState(observed); } }
         catch { if (!busy) status.Text = "Recording status is unavailable. Keep Studio open while checking the recording."; }
         finally { polling = false; }
         if (!recording && child != null && !busy && !closing) { try { await CloseController(); } catch { status.Text = "Camera cleanup is pending. Keep Studio open and try disconnecting again."; } }

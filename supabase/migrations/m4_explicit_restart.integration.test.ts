@@ -255,12 +255,12 @@ it("accepts idempotent native pauses only for the authorized delivered intent", 
       stoppedAt,
       resumedAt,
     ]);
-  const gaps = async () => {
+  const gaps = async (videoId = video) => {
     const { rows } = await db.query<{
       delivery_gaps: { stopped_at: string; resumed_at: string | null }[];
     }>(
-      "select delivery_gaps from read_shot_tracker_recording_history_v2($1,$2,$3)",
-      [owner, org, [pauseGame]],
+      "select delivery_gaps from read_shot_tracker_recording_history_v2($1,$2,$3) where youtube_broadcast_id=$4",
+      [owner, org, [pauseGame], videoId],
     );
     return rows[0].delivery_gaps.map(({ stopped_at, resumed_at }) => [
       new Date(stopped_at).toISOString(),
@@ -356,6 +356,32 @@ it("accepts idempotent native pauses only for the authorized delivered intent", 
       [at(500), at(1400)],
       [at(1300), at(1400)],
     ]);
+  } finally {
+    await db.exec("reset role");
+  }
+
+  const nextVideo = "nextvideo12";
+  await db.exec(`
+    insert into m4_provider_retirements (game_id,organization_id,broadcast_generation,
+      operation_token,youtube_broadcast_id,youtube_channel_id,confirmed_at)
+      values ('${pauseGame}','${org}',1,gen_random_uuid(),'${video}','${channel}','${at(1300)}');
+    insert into m4_broadcast_cycle_history (game_id,organization_id,session_key,retirement_id,metadata)
+      select b.game_id,b.organization_id,b.session_key,r.retirement_id,to_jsonb(b)
+      from broadcast_sessions b join m4_provider_retirements r
+        on r.game_id=b.game_id and r.youtube_broadcast_id=b.youtube_broadcast_id
+      where b.game_id='${pauseGame}';
+    update broadcast_sessions set session_key=gen_random_uuid(),operation_generation=2,
+      youtube_broadcast_id='${nextVideo}',started_at='${at(1400)}' where game_id='${pauseGame}';
+    update m4_output_intents set youtube_broadcast_id='${nextVideo}',broadcast_generation=2
+      where game_id='${pauseGame}' and generation=2;
+    set role service_role;
+  `);
+  try {
+    expect(await gaps()).toEqual([
+      [at(100), at(200)],
+      [at(500), null],
+    ]);
+    expect(await gaps(nextVideo)).toEqual([]);
   } finally {
     await db.exec("reset role");
   }

@@ -219,6 +219,9 @@ test("authorized scoring page confirms an empty scoreboard as a 0–0 tie", asyn
   const completion = { ...completedFixture(), result };
   const game = { ...gameFixture(), scoreEvents: [] };
   let committed = false;
+  await page.route("**/dashboard", (route) =>
+    route.fulfill({ contentType: "text/html", body: "<h1>Games</h1>" }),
+  );
   await page.route(`**/api/games/${testGameId}`, (route) =>
     route.fulfill({
       json: committed ? completion : game,

@@ -46,7 +46,7 @@ internal sealed class Workspace : Form
     private int cameraZoomRevision;
     private int stateRevision;
     private string workspaceCloseGame, workspaceCloseNonce;
-    private bool gameEnded;
+    private bool gameEnded, finishingCompletedGame;
     private DateTime endingUntil = DateTime.MinValue;
     private readonly UsbAudio usbAudio = new UsbAudio();
     private readonly object usbLock = new object();
@@ -302,7 +302,7 @@ internal sealed class Workspace : Form
         bottom.Visible = closing || (!recording && (selectedGame != null || origin == null));
         gameDay.Enabled = !busy && !closing && (recording ? runningGame : lastGame) != null;
         record.Visible = !recording; finish.Visible = recording;
-        record.Enabled = !busy && !closing && selectedGame != null && !recording && origin != null;
+        record.Enabled = !busy && !closing && !gameEnded && !finishingCompletedGame && selectedGame != null && !recording && origin != null;
         finish.Enabled = !busy && !closing && recording;
         devices.Enabled = !busy && !closing && selectedGame != null;
         try { PublishSessionStatus(); }
@@ -359,7 +359,9 @@ internal sealed class Workspace : Form
             };
             core.Settings.AreDevToolsEnabled = false; core.Settings.IsStatusBarEnabled = false;
             core.NavigationStarting += (s, e) => {
-                if (busy || closing) { e.Cancel = true; return; }
+                var completedGameExit = gameEnded && e.Uri == origin + "/dashboard" && selectedGame != null &&
+                    WorkspacePolicy.Game(core.Source, origin) == selectedGame && (runningGame == null || runningGame == selectedGame);
+                if (closing || (busy && !completedGameExit)) { e.Cancel = true; return; }
                 if (WorkspacePolicy.YouTubeAccountConnection(e.Uri, origin)) {
                     e.Cancel = true;
                     // Start a fresh browser session; never transfer Studio cookies or OAuth state.
@@ -538,12 +540,15 @@ internal sealed class Workspace : Form
             if ((value.Count == 2 || (value.Count == 3 && TextValue(value, "type") == "studio-game-ready" && value.ContainsKey("title"))) && TextValue(value, "gameId") == selectedGame && selectedGame != null && !closing) {
                 var type = TextValue(value, "type");
                 if (type == "studio-game-ended") {
-                    if (runningGame != null && runningGame != selectedGame) return;
+                    var path = new Uri(source).AbsolutePath;
+                    if ((path != "/score/" + selectedGame && path != "/games/" + selectedGame) ||
+                        (runningGame != null && runningGame != selectedGame)) return;
                     gameEnded = true; ForgetGame(); lastGame = null;
-                    for (int wait = 0; busy && !closing && wait < 120; wait++) await Task.Delay(1000);
-                    if (busy || closing) { status.Text = "Game ended. Wait for the current Studio action, then close Studio."; return; }
-                    if (endingUntil > DateTime.UtcNow) return;
-                    if (recording && runningGame == selectedGame) await StopRecording();
+                    try {
+                        var ignored = web.CoreWebView2.ExecuteScriptAsync("window.dispatchEvent(new CustomEvent('studio-game-ended-ack',{detail:" +
+                            json.Serialize(new { gameId = selectedGame }) + "}));");
+                    } catch { /* A page that has already left must not block local cleanup. */ }
+                    await FinishCompletedGame();
                     return;
                 }
                 if (busy) return;
@@ -551,7 +556,7 @@ internal sealed class Workspace : Form
                 if (type == "studio-game-ready") {
                     PublishSavedCameraInputs();
                     if (!WorkspacePolicy.CanStartSession(runningGame, selectedGame)) { PublishSessionStatus(); return; }
-                    if (runningGame != null && gameEnded) { PublishSessionStatus(); return; }
+                    if (finishingCompletedGame || (runningGame != null && gameEnded)) { PublishSessionStatus(); return; }
                     if (runningGame == null) gameEnded = false;
                     var title = TextValue(value, "title");
                     if (title != null && title.Length <= 200 && !System.Text.RegularExpressions.Regex.IsMatch(title, @"[\x00-\x1f\x7f]")) sessionTitle = title;
@@ -596,7 +601,7 @@ internal sealed class Workspace : Form
         SetThreadExecutionState(active ? 0x80000003u : 0x80000000u);
     }
     private bool NavigationNeedsReview() {
-        return LocalOutputState() == "active" || TextValue(lastState, "broadcast") == "live" || TextValue(lastState, "streaming") == "starting";
+        return !gameEnded && (LocalOutputState() == "active" || TextValue(lastState, "broadcast") == "live" || TextValue(lastState, "streaming") == "starting");
     }
     private async Task<bool> HoldBroadcast() {
         var result = await Command(new { action = "hold-stream" }, 12000);
@@ -760,7 +765,7 @@ internal sealed class Workspace : Form
         } finally { handoff = null; handoffNonce = null; }
     }
     private async Task<string> WebsiteYouTube(string gameId, string suffix, object body) {
-        if (closing || WorkspacePolicy.Game(web.CoreWebView2.Source, origin) != gameId) throw new InvalidDataException();
+        if (closing || gameEnded || WorkspacePolicy.Game(web.CoreWebView2.Source, origin) != gameId) throw new InvalidDataException();
         handoffNonce = Guid.NewGuid().ToString("N"); handoff = new TaskCompletionSource<Dictionary<string, object>>();
         var script = "(async()=>{let status=0,sourceUrl='';try{const r=await fetch(" + json.Serialize("/api/games/" + gameId + "/studio-m4" + suffix) + ",{method:'POST',headers:{'content-type':'application/json'},body:" + json.Serialize(json.Serialize(body)) + ",signal:AbortSignal.timeout(30000)});status=r.status;const v=await r.json();sourceUrl=v.lastErrorCode||v.code||v.status||'';}catch{}window.chrome.webview.postMessage({nonce:" + json.Serialize(handoffNonce) + ",status,sourceUrl});})();";
         try {
@@ -867,7 +872,7 @@ internal sealed class Workspace : Form
         return roles;
     }
     private async Task StartRecording() {
-        if (busy || closing || recording || !WorkspacePolicy.CanStartSession(runningGame, selectedGame)) return;
+        if (busy || closing || gameEnded || finishingCompletedGame || recording || !WorkspacePolicy.CanStartSession(runningGame, selectedGame)) return;
         busy = true; UpdateButtons(); var gameId = selectedGame;
         try {
             await ConnectProgram(gameId);
@@ -879,10 +884,11 @@ internal sealed class Workspace : Form
     private async Task ConnectProgram(string gameId) {
             status.Text = "Checking this PC and connecting your game…";
             if (!controllerClose.IsCompleted) await controllerClose;
-            if (closing || !WorkspacePolicy.CanStartSession(runningGame, gameId)) throw new InvalidOperationException();
+            if (closing || gameEnded || finishingCompletedGame || !WorkspacePolicy.CanStartSession(runningGame, gameId)) throw new InvalidOperationException();
             ReadCameraPreferences();
             if (cameraPreferencesUnavailable) throw new WorkspaceFailure("Saved camera settings could not be read. Open Camera Settings for details.");
             if (child != null && child.HasExited) await CloseController();
+            if (gameEnded || finishingCompletedGame) throw new InvalidOperationException();
             if (child == null) await StartController(gameId);
             var checkedState = await Command(new { action = "check" });
             if (TextValue(checkedState, "pc") != "ready") throw new WorkspaceFailure("This PC did not pass the recording check. Check the Studio installation.");
@@ -890,6 +896,7 @@ internal sealed class Workspace : Form
                 await ConfigureCameraSource(source.Key, CameraInputs.ActiveSource(source.Value));
             status.Text = "Preparing your camera connection…";
             var code = await PrepareGrant(gameId);
+            if (gameEnded || finishingCompletedGame) throw new InvalidOperationException();
             status.Text = "Connecting cameras…";
             ApplyState(await Command(new { action = "start-program", invitation = code }));
             if (!recording) throw new WorkspaceFailure("Cameras could not connect. Your game and camera assignments are retained. Try Connect cameras again.");
@@ -901,10 +908,32 @@ internal sealed class Workspace : Form
         catch { status.Text = "Finalization was not confirmed. Keep Studio open and check the recordings folder."; }
         finally { busy = false; UpdateButtons(); }
     }
+    private async Task FinishCompletedGame() {
+        if (finishingCompletedGame || closing) return;
+        if (child == null) { endingUntil = DateTime.MinValue; UpdateButtons(); return; }
+        finishingCompletedGame = true;
+        var owned = child;
+        var finalCard = Stopwatch.StartNew();
+        try {
+            // A committed game may still have a bounded final card on air.
+            while (!closing && child == owned && endingUntil > DateTime.UtcNow && finalCard.ElapsedMilliseconds < 30000)
+                await Task.Delay(250);
+            if (closing || child != owned) return;
+            endingUntil = DateTime.MinValue;
+            if (handoff != null) handoff.TrySetException(new InvalidOperationException());
+            try { if (local != null) local.CancelPendingRequests(); }
+            catch (ObjectDisposedException) { }
+            await CloseController();
+        } catch {
+            status.Text = "Game saved. Studio couldn’t close the local recording. Check Saved videos.";
+        } finally {
+            finishingCompletedGame = false; UpdateButtons();
+        }
+    }
     private async Task StartController(string gameId) {
         var node = Path.Combine(root, "node", "node.exe"); var controller = Path.Combine(root, "app", "studio.mjs");
         await Task.Run(() => { Verify(node, nodeHash); Verify(controller, controllerHash); });
-        if (closing) throw new InvalidOperationException();
+        if (closing || gameEnded || finishingCompletedGame || selectedGame != gameId) throw new InvalidOperationException();
         ready = new TaskCompletionSource<string>(); exited = new TaskCompletionSource<bool>(); controllerReady = false; startupFailed = false; lastState = null;
         appliedCameraSources.Clear();
         var processReady = ready; var processExited = exited; bool processCleanupConfirmed = false;
@@ -922,7 +951,7 @@ internal sealed class Workspace : Form
         process.Start(); child = process; runningGame = gameId; process.BeginOutputReadLine(); process.BeginErrorReadLine();
         ObserveExit(process, processReady, processExited, () => processCleanupConfirmed);
         if (await Task.WhenAny(processReady.Task, Task.Delay(120000)) != processReady.Task) throw new InvalidDataException();
-        if (closing || child != process) throw new InvalidOperationException();
+        if (closing || gameEnded || finishingCompletedGame || child != process) throw new InvalidOperationException();
         localAddress = await processReady.Task;
         local = new HttpClient(new HttpClientHandler { CookieContainer = new CookieContainer(), AllowAutoRedirect = false, UseProxy = false }) { Timeout = TimeSpan.FromSeconds(120) };
         using (var result = await local.GetAsync(localAddress)) result.EnsureSuccessStatusCode();
@@ -1030,7 +1059,7 @@ internal sealed class Workspace : Form
         web.CoreWebView2.ExecuteScriptAsync("window.dispatchEvent(new CustomEvent('studio-session-status',{detail:" + json.Serialize(new {
             replay = active ? replay : null,
             coachReview = active ? coachReview : null,
-            gameId = active ? runningGame : null, title = active ? sessionTitle ?? "Current game" : "", active = active, busy = busy || closing,
+            gameId = active ? runningGame : null, title = active ? sessionTitle ?? "Current game" : "", active = active, busy = busy || closing || finishingCompletedGame,
             presentation = active && presentation != null ? TextValue(presentation, "mode") ?? "live" : "live",
             streaming = active ? TextValue(lastState, "streaming") ?? "idle" : "idle",
             outputActive = active && output != null && TextValue(output, "state") == "active",
@@ -1073,7 +1102,6 @@ internal sealed class Workspace : Form
         catch { if (!busy) status.Text = "Recording status is unavailable. Keep Studio open while checking the recording."; }
         finally { polling = false; }
         if (!recording && child != null && !busy && !closing) { try { await CloseController(); } catch { status.Text = "Camera cleanup is pending. Keep Studio open and try disconnecting again."; } }
-        if (gameEnded && endingUntil != DateTime.MinValue && endingUntil <= DateTime.UtcNow && !busy && !closing) { endingUntil = DateTime.MinValue; await StopRecording(); }
     }
     private string CameraInputStatus(string role) {
         object inputs, slot;
@@ -1300,25 +1328,29 @@ internal sealed class Workspace : Form
     private async Task ReleaseController(bool previewOnly) {
         var owned = child;
         if (owned == null) return;
+        var completed = gameEnded;
         status.Text = previewOnly ? "Closing camera preview…" : "Stopping output and disconnecting cameras…";
         if (!owned.HasExited) {
             try { owned.StandardInput.WriteLine("close"); owned.StandardInput.Flush(); }
-            catch { if (!owned.HasExited && !previewOnly) throw; }
+            catch { if (!owned.HasExited && !previewOnly && !completed) throw; }
         }
         var receipt = exited.Task;
         if (await Task.WhenAny(receipt, Task.Delay(previewOnly ? 6000 : 24000)) != receipt || !owned.HasExited) {
-            // Only an unpaired preview can be abandoned automatically.
-            // Recorder and camera children have parent-death watchdogs.
-            if (!previewOnly || !await WorkspacePolicy.ForceStopController(owned)) throw new InvalidDataException();
+            // A completed game cannot resume its output. For open games, only
+            // an unpaired preview may be stopped without a cleanup receipt.
+            if ((!previewOnly && !completed && !gameEnded) || !await WorkspacePolicy.ForceStopController(owned)) throw new InvalidDataException();
         }
-        if (!forceClosing && !previewOnly && !receipt.Result && !(startupFailed && !controllerReady)) {
+        var cleanupConfirmed = receipt.Status == TaskStatus.RanToCompletion && receipt.Result;
+        if (!forceClosing && !previewOnly && !cleanupConfirmed && !(startupFailed && !controllerReady)) {
             // Keep the cleanup warning even after the local sender exits.
             RecordCleanupWarning("Previous Studio cleanup was not confirmed. Check any saved recording before using it.");
         }
         if (local != null) local.Dispose(); local = null;
         child = null; owned.Dispose(); runningGame = null; sessionTitle = null; lastState = null; previewMapping = null; localAddress = null; recording = false;
+        UpdateSleepPrevention();
         appliedCameraSources.Clear();
         if (!closing) { PublishSavedCameraInputs(); PublishSessionStatus(); }
+        if (completed && !closing) status.Text = cleanupConfirmed ? "Game saved. Cameras disconnected." : "Game saved. Local recording finalization was not confirmed. Check Saved videos.";
         pendingNavigation = pendingNavigationNonce = pendingNavigationGame = permittedNavigation = leaveDashboardGame = null;
     }
     private void OpenRecordings() {

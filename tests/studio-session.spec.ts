@@ -158,7 +158,7 @@ async function presentationReceipt(
   );
 }
 
-test("replay-enabled status updates preview to LIVE and yields the badge during replay", async ({
+test("preview shows the live hold card and yields the badge during replay", async ({
   page,
 }) => {
   await setup(page, { ...liveSession, live: false, outputActive: false });
@@ -169,6 +169,14 @@ test("replay-enabled status updates preview to LIVE and yields the badge during 
     outputActive: true,
     replay: { state: 1, durationMs: 0, availableMs: 60000, clipId: null },
   });
+  await expect(badge).toHaveText("LIVE");
+  await status(page, { presentation: "hold" });
+  await expect(badge).toHaveText("LIVE · PAUSED");
+  await expect(badge).toHaveAttribute("data-live", "true");
+  await status(page, { outputActive: false });
+  await expect(badge).toHaveText("PAUSED");
+  await expect(badge).toHaveAttribute("data-live", "false");
+  await status(page, { presentation: "live", outputActive: true });
   await expect(badge).toHaveText("LIVE");
   await status(page, {
     replay: {

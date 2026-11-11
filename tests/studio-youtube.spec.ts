@@ -822,7 +822,7 @@ test("Studio pause waits for a correlated native receipt and reports failures wh
               message: "",
               canReconnect: true,
               canHoldStream: !expired,
-              canRestartBroadcast: expired,
+              canRestartBroadcast: true,
               programAuthorityEnded: expired,
               presentation: { mode, generation },
             },
@@ -895,6 +895,10 @@ test("Studio pause waits for a correlated native receipt and reports failures wh
   });
   await expect(resume).toBeEnabled();
   await expect(stop).toBeEnabled();
+  await expect(resume).toHaveCount(1);
+  await expect(
+    controls.getByRole("button", { name: "Restart broadcast connection" }),
+  ).toHaveCount(0);
   await expect(page.getByRole("status")).toHaveText(
     "Paused · YouTube still live",
   );

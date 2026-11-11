@@ -501,7 +501,6 @@ export function StudioYouTube({
     !disconnected &&
     !replacing &&
     (restartRequired ||
-      held ||
       Boolean(presentationError) ||
       (wasLive && needsRecovery));
   const blocked = !state?.available || state.busy || pending || ending;

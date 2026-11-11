@@ -191,6 +191,25 @@ export default function LocalFlagCapture({
   return (
     <EntryOverlay
       title="Flag recent video"
+      footer={
+        clip ? (
+          <button
+            type="button"
+            className="primary"
+            disabled={
+              !ready ||
+              !settled ||
+              playing ||
+              busy ||
+              saved ||
+              (audience === "player" && !playerId)
+            }
+            onClick={() => void save()}
+          >
+            {saved ? "Flag saved" : "Save flag"}
+          </button>
+        ) : undefined
+      }
       onOpen={() => {
         if (!address) setSetup(true);
       }}
@@ -353,21 +372,6 @@ export default function LocalFlagCapture({
               onChange={(e) => setNote(e.target.value)}
             />
           </label>
-          <button
-            type="button"
-            className="primary"
-            disabled={
-              !ready ||
-              !settled ||
-              playing ||
-              busy ||
-              saved ||
-              (audience === "player" && !playerId)
-            }
-            onClick={() => void save()}
-          >
-            {saved ? "Flag saved" : "Save flag"}
-          </button>
         </>
       )}
     </EntryOverlay>

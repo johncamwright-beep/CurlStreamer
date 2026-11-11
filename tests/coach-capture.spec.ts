@@ -1,6 +1,7 @@
 import { test, expect } from "@playwright/test";
 import { build } from "esbuild";
 import { resolve } from "node:path";
+import { readFile } from "node:fs/promises";
 import { startCoachLocalProof } from "../src/lib/providers/coach-local-proof";
 const gameId = "11111111-1111-4111-8111-111111111111";
 const appOrigin = "https://coach.example.test";
@@ -33,6 +34,7 @@ test("Shot Tracker captures over LAN, scrubs locally and saves only flag metadat
       jsx: "automatic",
       define: { "process.env.NODE_ENV": '"production"' },
     });
+    const css = await readFile("src/app/curlcoach/coach.css", "utf8");
     let body: any;
     await context.route(`${appOrigin}/**`, async (route) => {
       if (route.request().url().endsWith("/api/curlcoach/local-review")) {
@@ -42,7 +44,7 @@ test("Shot Tracker captures over LAN, scrubs locally and saves only flag metadat
       }
       await route.fulfill({
         contentType: "text/html",
-        body: `<html><meta name="viewport" content="width=device-width,initial-scale=1"><style>dialog{max-width:90vw}input,select,textarea{display:block;max-width:100%;min-height:44px}button{min-height:44px}video{max-width:100%}</style><div id="root"></div><script>${bundle.outputFiles[0].text}</script></html>`,
+        body: `<html><meta name="viewport" content="width=device-width,initial-scale=1"><style>*{box-sizing:border-box}body{margin:0;background:#071521;color:#eaf3ff;font-family:Arial,sans-serif}${css}</style><div class="coach-workspace"><div class="coach-lab" id="root"></div></div><script>${bundle.outputFiles[0].text}</script></html>`,
       });
     });
     await page.goto(appOrigin);
@@ -65,6 +67,14 @@ test("Shot Tracker captures over LAN, scrubs locally and saves only flag metadat
     await expect(save).toBeEnabled();
     expect(proof.stats().mediaRequests).toBe(requests);
     await page.getByLabel("Review notes").fill("Good line through the port");
+    await page.screenshot({
+      path: test.info().outputPath("coaching-scrubber.png"),
+    });
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= innerWidth,
+      ),
+    ).toBe(true);
     await save.click();
     await expect(page.locator("body")).toHaveAttribute("data-saved", "yes");
     expect(body).toMatchObject({

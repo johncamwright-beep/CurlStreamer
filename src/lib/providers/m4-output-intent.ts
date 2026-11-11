@@ -86,3 +86,36 @@ export async function claimM4OutputIntent(
     );
   }
 }
+
+/** Store timing evidence under the same output delivery authority. */
+export async function recordM4OutputPause(
+  gameId: string,
+  credential: M4DesktopCredential,
+  pause: {
+    intentId: string;
+    pauseId: string;
+    stoppedAt: string;
+    resumedAt?: string;
+  },
+) {
+  if (!m4DesktopEnabled()) throw new Error("m4_output_pause_unavailable");
+  const { error } = await createAdminSupabaseClient().rpc(
+    "record_m4_output_pause",
+    {
+      p_game_id: gameId,
+      p_session_id: credential.sessionId,
+      p_generation: credential.generation,
+      p_bearer_hash: createHash("sha256")
+        .update(credential.bearer)
+        .digest("hex"),
+      p_intent_id: pause.intentId,
+      p_pause_id: pause.pauseId,
+      p_stopped_at: pause.stoppedAt,
+      p_resumed_at: pause.resumedAt ?? null,
+    },
+  );
+  if (error)
+    throw Object.assign(new Error("m4_output_pause_unavailable"), {
+      code: error.code,
+    });
+}

@@ -490,7 +490,7 @@ function ScorerGame({ id }: { id: string }) {
                 <div className="flex flex-wrap items-start gap-2">
                   <div
                     id="studio-broadcast-actions"
-                    className="studio-header-broadcast"
+                    className="studio-header-broadcast flex flex-wrap items-start gap-2"
                   />
                   <div className="scoring-header-finish">
                     <EndGameControl
@@ -768,10 +768,6 @@ function ScorerGame({ id }: { id: string }) {
                       />
                     }
                   />
-                  <div
-                    id="studio-presentation-actions"
-                    className="empty:hidden"
-                  />
                   <StudioOverlay
                     title="Camera Settings"
                     open={cameraSettingsOpen}
@@ -810,7 +806,6 @@ function ScorerGame({ id }: { id: string }) {
                   <StudioYouTube
                     id={id}
                     controlsTarget="studio-broadcast-actions"
-                    presentationControlsTarget="studio-presentation-actions"
                   />
                 </div>
               )}

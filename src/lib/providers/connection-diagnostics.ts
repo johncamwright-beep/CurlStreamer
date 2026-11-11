@@ -110,6 +110,7 @@ export const connectionDiagnosticSchema = z
         "connect",
         "heartbeat",
         "output_intent",
+        "output_pause",
         "target",
         "observe",
       ])

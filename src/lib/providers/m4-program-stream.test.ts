@@ -370,6 +370,7 @@ describe("independent managed program stream", () => {
     vi.useFakeTimers();
     const f = fixture();
     let output: "active" | "stopped" = "active";
+    let activeBytes = 1234;
     const native = {
       ...f.native,
       pause: vi.fn(async () => {
@@ -385,25 +386,46 @@ describe("independent managed program stream", () => {
             : output,
         failure: "none" as const,
         authority: f.native.snapshot().state === "stopped" ? 2 : 1,
-        bytes: output === "active" ? 1234 : 0,
+        bytes: output === "active" ? activeBytes : 0,
       })),
     };
     vi.spyOn(f.desktop, "observeOutput").mockRejectedValue(
       new Error("provider unavailable"),
     );
+    const recordPause = vi
+      .spyOn(f.desktop, "recordOutputPause")
+      .mockRejectedValueOnce(new Error("temporary report failure"))
+      .mockResolvedValue(undefined);
     const stream = new M4ProgramStream(native);
     await stream.start(f.desktop, "intent");
     await stream.pause();
+    const pause = recordPause.mock.calls[0]?.[1];
+    expect(pause).toEqual({
+      id: expect.any(String),
+      stoppedAt: expect.any(String),
+    });
     expect(stream.snapshot()).toMatchObject({
       state: "paused",
       liveConfirmed: false,
       localOutput: { state: "stopped" },
     });
-    await vi.advanceTimersByTimeAsync(5000);
+    await vi.advanceTimersByTimeAsync(6000);
+    expect(recordPause.mock.calls).toEqual([
+      ["intent", pause],
+      ["intent", pause],
+    ]);
     expect(native.renew).toHaveBeenCalledOnce();
     expect(f.release).not.toHaveBeenCalled();
+    activeBytes = 0;
     await stream.resume();
     await vi.advanceTimersByTimeAsync(1000);
+    expect(recordPause).toHaveBeenCalledTimes(2);
+    activeBytes = 1234;
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(recordPause).toHaveBeenLastCalledWith("intent", {
+      ...pause,
+      resumedAt: expect.any(String),
+    });
     expect(stream.snapshot()).toMatchObject({
       state: "armed",
       localOutput: { state: "active" },

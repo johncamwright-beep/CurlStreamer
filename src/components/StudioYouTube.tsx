@@ -71,25 +71,16 @@ function studioBroadcastRequest(
 export function StudioYouTube({
   id,
   controlsTarget,
-  presentationControlsTarget,
 }: {
   id: string;
   controlsTarget?: string;
-  presentationControlsTarget?: string;
 }) {
   const [controlsHost, setControlsHost] = useState<HTMLElement | null>(null);
-  const [presentationControlsHost, setPresentationControlsHost] =
-    useState<HTMLElement | null>(null);
   useEffect(() => {
     setControlsHost(
       controlsTarget ? document.getElementById(controlsTarget) : null,
     );
-    setPresentationControlsHost(
-      presentationControlsTarget
-        ? document.getElementById(presentationControlsTarget)
-        : null,
-    );
-  }, [controlsTarget, presentationControlsTarget]);
+  }, [controlsTarget]);
   const [state, setState] = useState<z.infer<typeof stateSchema>>();
   const [pending, setPending] = useState(false);
   const [goingLive, setGoingLive] = useState(false);
@@ -128,8 +119,9 @@ export function StudioYouTube({
   );
   const wasLive =
     (state?.gameId === id && state.live) || confirmedLive.current === id;
+  const sendingHoldCard = state?.gameId === id && held && state.outputActive;
   const broadcastLive =
-    wasLive &&
+    (wasLive || sendingHoldCard) &&
     !terminal &&
     !disconnected &&
     (!state || ["armed", "starting"].includes(state.streaming));
@@ -606,8 +598,9 @@ export function StudioYouTube({
       {broadcastLabel}
     </button>
   );
-  const presentationControls = (showPictureControl || offerRestart) && (
-    <div className="flex flex-wrap gap-2">
+  const controls = (
+    <>
+      {broadcastControls}
       {showPictureControl && (
         <button
           type="button"
@@ -666,7 +659,7 @@ export function StudioYouTube({
           Restart broadcast connection
         </button>
       )}
-    </div>
+    </>
   );
   if (!bridgeAvailable) return <WindowsStudioRequired gameId={id} />;
   return (
@@ -733,12 +726,11 @@ export function StudioYouTube({
           )}
         </div>
       </div>
-      {controlsHost
-        ? createPortal(broadcastControls, controlsHost)
-        : broadcastControls}
-      {presentationControlsHost
-        ? createPortal(presentationControls, presentationControlsHost)
-        : presentationControls}
+      {controlsHost ? (
+        createPortal(controls, controlsHost)
+      ) : (
+        <div className="flex flex-wrap items-start gap-2">{controls}</div>
+      )}
       <StudioOverlay
         title="Stop broadcast?"
         open={stopOpen}

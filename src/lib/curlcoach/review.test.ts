@@ -74,6 +74,40 @@ it("links a phone flag to the recording from its own broadcast, including after 
     ),
   ).toContain("v=SecondVideo&t=60s");
 });
+it("keeps earlier timestamps available while output is stopped and merges overlapping gap evidence after restart", () => {
+  const stoppedAt = "2026-11-11T12:03:00Z";
+  const resumedAt = "2026-11-11T12:08:00Z";
+  const recording = {
+    url: "https://youtu.be/abcdefghijk",
+    startedAt: "2026-11-11T12:00:00Z",
+    deliveryGaps: [{ stoppedAt, resumedAt: null }],
+  };
+  const flag = (flaggedAt: string) => ({
+    flaggedAt,
+    videoReview: { url: "", positionSeconds: null, lookBackSeconds: 0 },
+  });
+  expect(
+    reviewLink(
+      withBroadcastReview(flag("2026-11-11T12:02:00Z"), recording).videoReview,
+    ),
+  ).toContain("t=120s");
+  expect(
+    reviewLink(
+      withBroadcastReview(flag("2026-11-11T12:04:00Z"), recording).videoReview,
+    ),
+  ).toBeNull();
+  expect(
+    reviewLink(
+      withBroadcastReview(flag("2026-11-11T12:09:30Z"), {
+        ...recording,
+        deliveryGaps: [
+          { stoppedAt, resumedAt },
+          { stoppedAt: "2026-11-11T12:04:00Z", resumedAt },
+        ],
+      }).videoReview,
+    ),
+  ).toContain("t=270s");
+});
 it("rejects unsafe links and invalid durations at the schema boundary", () => {
   for (const url of [
     "javascript:alert(1)",

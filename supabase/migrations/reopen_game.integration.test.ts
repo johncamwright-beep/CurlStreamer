@@ -62,9 +62,10 @@ beforeAll(async () => {
   );
   await db.exec(source("0089_reopen_game_scoring"));
   await db.exec(source("0097_close_game_final_score"));
+  await db.exec(source("0102_review_game_completion_with_scoreboard"));
 }, 30000);
 afterAll(() => db.close());
-async function activeFixture(n: number) {
+async function activeFixture(n: number, scored = true) {
   const game = id(n),
     org = id(n + 1),
     user = id(n + 2),
@@ -98,12 +99,13 @@ async function activeFixture(n: number) {
   );
   await db.query("insert into game_states(game_id,state) values($1,$2)", [
     game,
-    { status: "active", scoreEvents: [event] },
+    { status: "active", scoreEvents: scored ? [event] : [] },
   ]);
-  await db.query(
-    "insert into score_events(id,game_id,event_type,payload,actor) values($1,$2,'end',$3,'test')",
-    [event.id, game, event],
-  );
+  if (scored)
+    await db.query(
+      "insert into score_events(id,game_id,event_type,payload,actor) values($1,$2,'end',$3,'test')",
+      [event.id, game, event],
+    );
   return { game, user, review, completion, event, request: id(n + 7) };
 }
 
@@ -167,6 +169,31 @@ const selectFinalScore = (
     "select * from review_game_completion_with_final_score($1,$2,$3,false,null,$4)",
     [f.game, f.review, user, selection],
   );
+
+it.each([true, false])(
+  "reviews and publishes scoreboard totals (scored: %s)",
+  async (scored) => {
+    const { game, user, review, completion, event } = await activeFixture(
+      scored ? 710 : 720,
+      scored,
+    );
+    const expected = {
+      outcome: scored ? "home_win" : "tie",
+      totals: { home: scored ? 1 : 0, away: 0 },
+      ends: scored ? [event.score] : [],
+    };
+    const reviewed = await db.query(
+      "select * from review_game_completion_with_scoreboard($1,$2,$3,false,null)",
+      [game, review, user],
+    );
+    expect(reviewed.rows[0]).toMatchObject({ result: expected });
+    const completed = await db.query(
+      "select * from complete_reviewed_game($1,$2,$3,$4,false)",
+      [game, review, completion, user],
+    );
+    expect(completed.rows[0]).toMatchObject({ result: expected });
+  },
+);
 
 it.each([
   { n: 500, finalScore: null, outcome: "no_result" },

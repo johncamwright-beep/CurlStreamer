@@ -38,6 +38,9 @@ test("owner setup saves actual profile details, resumes, and finishes without pu
   expect(settings.published).toBe(false);
   await page.getByRole("button", { name: "Save progress and exit" }).click();
   await page.waitForURL("**/dashboard");
+  await page
+    .getByText("Complete your team setup – walkthrough", { exact: true })
+    .click();
   await page.getByRole("link", { name: "Resume team setup" }).click();
   await expect(
     page.getByRole("heading", { name: "Your public page", exact: true }),
@@ -76,6 +79,9 @@ test("owner setup saves actual profile details, resumes, and finishes without pu
     page.getByRole("heading", { name: "Ready to get started" }),
   ).toBeVisible();
   await page.getByRole("link", { name: "Go to your games" }).click();
+  await page
+    .getByText("Complete your team setup – walkthrough", { exact: true })
+    .click();
   await expect(
     page.getByRole("link", { name: "Resume team setup" }),
   ).toHaveCount(0);

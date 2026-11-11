@@ -1,7 +1,9 @@
 import Link from "next/link";
+import type { ReactNode } from "react";
 import { AppNavigation } from "@/components/AppNavigation";
 import { TeamGameLinks } from "@/components/TeamGameLinks";
 import { GameDeletionControl } from "@/components/GameDeletionControl";
+import { ReopenGameControl } from "@/components/ReopenGameControl";
 import { type AccountContext } from "@/lib/auth/account";
 import type {
   EventRecord,
@@ -29,6 +31,7 @@ export function GamesDashboard({
   tab,
   broadcasts,
   selectedEvent,
+  setupWalkthrough,
 }: {
   account: AccountContext;
   accountLogo?: string | null;
@@ -39,6 +42,7 @@ export function GamesDashboard({
   tab: GamesTab;
   broadcasts: { available: boolean; sessions: DashboardBroadcast[] };
   selectedEvent?: string;
+  setupWalkthrough?: ReactNode;
 }) {
   const membership = account.membership!;
   const administrator = ["owner", "team_admin"].includes(membership.role);
@@ -137,6 +141,7 @@ export function GamesDashboard({
           </Link>
         )}
       </header>
+      {setupWalkthrough}
       {!!groups.broadcasting.length && (
         <section
           className="dashboard-activity"
@@ -481,6 +486,7 @@ function GameCard({
         <details className="dashboard-more">
           <summary>More actions</summary>
           <div>
+            {completed && <ReopenGameControl gameId={game.id} compact />}
             {game.opponentId && game.seasonId && (
               <OpponentEditControl
                 opponentId={game.opponentId}

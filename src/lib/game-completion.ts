@@ -157,7 +157,7 @@ export async function reviewGameCompletion(
   gameId: string,
   credential: CompletionCredential,
   youtubeWatchUrl: string | null = null,
-  finalScore?: CompletionFinalScore,
+  finalScore?: CompletionFinalScore | "scoreboard",
 ): Promise<Result<CompletionReview>> {
   try {
     const id = idSchema.parse(gameId);
@@ -171,14 +171,16 @@ export async function reviewGameCompletion(
     };
     const admin = createAdminSupabaseClient();
     const { data, error } =
-      finalScore === undefined
-        ? await admin.rpc("review_game_completion_with_link", args)
-        : await admin.rpc("review_game_completion_with_final_score", {
-            ...args,
-            p_selection: {
-              finalScore: completionFinalScoreSchema.parse(finalScore),
-            },
-          });
+      finalScore === "scoreboard"
+        ? await admin.rpc("review_game_completion_with_scoreboard", args)
+        : finalScore === undefined
+          ? await admin.rpc("review_game_completion_with_link", args)
+          : await admin.rpc("review_game_completion_with_final_score", {
+              ...args,
+              p_selection: {
+                finalScore: completionFinalScoreSchema.parse(finalScore),
+              },
+            });
     if (error) return failure(error);
     const row = (data as Record<string, unknown>[] | null)?.[0];
     return row

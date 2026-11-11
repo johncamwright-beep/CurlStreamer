@@ -88,6 +88,7 @@ export async function dashboardFixtureResponse(request, url) {
     "read_game_state",
     "read_game_team_logo",
     "review_game_completion_with_link",
+    "review_game_completion_with_scoreboard",
     "complete_reviewed_game",
     "read_game_completion_summary",
     "get_game_completion_cleanup",
@@ -164,7 +165,10 @@ export async function dashboardFixtureResponse(request, url) {
       status: 200,
       body: [{ status: "complete", attempts: 1, last_error: null }],
     };
-  if (operation === "review_game_completion_with_link") {
+  if (
+    operation === "review_game_completion_with_link" ||
+    operation === "review_game_completion_with_scoreboard"
+  ) {
     fixture.review = {
       review_id: input.p_review_id,
       input_revision: 0,

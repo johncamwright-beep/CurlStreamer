@@ -143,7 +143,7 @@ describe("End Game route", () => {
     expect(mocks.verified).not.toHaveBeenCalled();
   });
 
-  it.each([null, { home: 0, away: 0 }, { home: 3, away: 6 }])(
+  it.each([null, "scoreboard", { home: 0, away: 0 }, { home: 3, away: 6 }])(
     "passes the explicit final score choice %j to review",
     async (finalScore) => {
       const response = await POST(
@@ -235,6 +235,29 @@ describe("End Game route", () => {
       succeeded: false,
       error: "YouTube broadcast shutdown was not confirmed",
     });
+  });
+
+  it("retries failed provider cleanup after the saved completion response", async () => {
+    mocks.stopBroadcast.mockResolvedValueOnce({ status: "failed" });
+    mocks.recordCleanup.mockResolvedValueOnce({
+      ok: true,
+      value: {
+        status: "failed",
+        attempts: 1,
+        lastError: "Provider unavailable",
+      },
+    });
+    const result = await POST(request({ action: "complete", reviewId }), {
+      params: Promise.resolve({ id: gameId }),
+    });
+    expect(await result.json()).toMatchObject({
+      completion: summary,
+      cleanup: { status: "failed" },
+    });
+    expect(mocks.stopBroadcast).toHaveBeenCalledOnce();
+    expect(mocks.after).toHaveBeenCalledOnce();
+    await mocks.after.mock.calls[0][0]();
+    expect(mocks.stopBroadcast).toHaveBeenCalledTimes(2);
   });
 
   it("reports completion as saved when summary retrieval briefly fails", async () => {

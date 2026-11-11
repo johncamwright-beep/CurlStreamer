@@ -25,7 +25,7 @@ function statusText(session: M4ManagerSession | undefined) {
   if (session.status === "prepared")
     return "Prepared. The broadcast and its stream exist. Live status is checked manually in YouTube.";
   if (session.status === "failed")
-    return "The previous operation is uncertain. Do not prepare a replacement; retire the owned resources after checking the provider.";
+    return "Check the broadcast status in Studio before trying again.";
   if (session.status === "stopped")
     return "Provider retirement is confirmed for this preparation cycle.";
   if (session.status === "stopping")
@@ -47,15 +47,10 @@ export function m4ManagerCanAct(
   return Boolean(session && freshRead && !uncertain);
 }
 
-export function m4ManagerFailureMessage(
-  action: "prepare" | "stop",
-  refused = false,
-) {
+export function m4ManagerFailureMessage(refused = false) {
   if (refused)
     return "Broadcast administrator access was refused. No resource action was completed.";
-  return action === "prepare"
-    ? "Preparation outcome is unknown. Do not retry or create a replacement; check the provider and refresh this page."
-    : "Retirement outcome is unknown. Keep the resources quarantined, check the provider, then refresh this page.";
+  return "Preparation outcome is unknown. Do not retry or create a replacement; check the provider and refresh this page.";
 }
 
 export function M4BroadcastManager({ id }: { id: string }) {
@@ -144,7 +139,7 @@ export function M4BroadcastManager({ id }: { id: string }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
-  async function act(action: "prepare" | "stop") {
+  async function prepare() {
     if (
       actionInFlight.current ||
       busy ||
@@ -164,7 +159,7 @@ export function M4BroadcastManager({ id }: { id: string }) {
         method: "POST",
         credentials: "same-origin",
         headers: headers(),
-        body: JSON.stringify({ action }),
+        body: JSON.stringify({ action: "prepare" }),
         signal: AbortSignal.any([
           controller.signal,
           AbortSignal.timeout(15_000),
@@ -183,7 +178,7 @@ export function M4BroadcastManager({ id }: { id: string }) {
         if (!refused) setUncertain(true);
         setFreshRead(false);
         setSession(undefined);
-        setMessage(m4ManagerFailureMessage(action, refused));
+        setMessage(m4ManagerFailureMessage(refused));
       }
     } finally {
       if (attempt === epoch.current) setBusy(false);
@@ -192,7 +187,8 @@ export function M4BroadcastManager({ id }: { id: string }) {
   }
 
   const canPrepare =
-    session?.status === "idle" || session?.status === "stopped";
+    session?.status === "idle" ||
+    (session?.status === "stopped" && !session.watchUrl);
   const canAct = m4ManagerCanAct(session, freshRead, uncertain);
   return (
     <main className="mx-auto min-h-screen max-w-2xl p-5 md:py-12">
@@ -224,22 +220,14 @@ export function M4BroadcastManager({ id }: { id: string }) {
           </a>
         )}
         {authority === "allowed" && (
-          <div className="grid gap-3 sm:grid-cols-3">
+          <div className="grid gap-3 sm:grid-cols-2">
             <button
               type="button"
               disabled={busy || !canAct || !canPrepare}
-              onClick={() => void act("prepare")}
+              onClick={() => void prepare()}
               className="min-h-11 rounded-lg bg-cyan-400 px-4 py-3 font-bold text-slate-950 disabled:opacity-50"
             >
               {busy ? "Working…" : "Prepare broadcast"}
-            </button>
-            <button
-              type="button"
-              disabled={busy || !canAct || session?.status === "stopped"}
-              onClick={() => void act("stop")}
-              className="min-h-11 rounded-lg border border-slate-500 px-4 py-3 font-bold disabled:opacity-50"
-            >
-              {busy ? "Working…" : "Retire broadcast and stream"}
             </button>
             <button
               type="button"
@@ -262,9 +250,8 @@ export function M4BroadcastManager({ id }: { id: string }) {
           </a>
         )}
         <p className="text-sm text-slate-300">
-          Start and end the broadcast manually in YouTube. Use retirement after
-          the rehearsal; a failed or uncertain result never creates a
-          replacement.
+          Start or stop sending video from Studio. Complete the game to end the
+          YouTube broadcast.
         </p>
       </section>
     </main>

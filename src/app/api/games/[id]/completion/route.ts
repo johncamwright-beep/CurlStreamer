@@ -26,7 +26,9 @@ const bodySchema = z.discriminatedUnion("action", [
   z.object({
     action: z.literal("review"),
     youtubeWatchUrl: z.string().max(500),
-    finalScore: completionFinalScoreSchema.optional(),
+    finalScore: completionFinalScoreSchema
+      .or(z.literal("scoreboard"))
+      .optional(),
   }),
   z
     .object({
@@ -219,6 +221,12 @@ export async function POST(
       cleanupResult = current.ok
         ? current.value
         : { status: "pending" as const, attempts: 0, lastError: null };
+    }
+    if (!ready.ok || cleanupResult.status === "failed") {
+      after(async () => {
+        const retryReady = await completionCleanupReady(gameId, authority);
+        if (retryReady.ok && retryReady.value) await cleanup(gameId, authority);
+      });
     }
   }
   const summary = await readGameCompletionSummary(gameId).catch(

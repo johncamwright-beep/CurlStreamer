@@ -194,6 +194,11 @@ const server = createServer(async (request, response) => {
   }
   if (url.pathname === "/rest/v1/organizations")
     return send(response, 200, { name: "Test Curling Club" });
+  if (
+    url.pathname === "/rest/v1/team_public_profiles" &&
+    url.searchParams.get("select") === "settings,logo_url"
+  )
+    return send(response, 200, []);
   const dashboard = await dashboardFixtureResponse(request, url);
   if (dashboard !== null)
     return send(response, dashboard.status, dashboard.body);

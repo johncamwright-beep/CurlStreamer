@@ -68,6 +68,31 @@ describe("dashboard role controls", () => {
       );
     },
   );
+  it.each(["owner", "team_admin"] as const)(
+    "offers completed Reopen scoring in More actions to %s",
+    (role) => {
+      const html = render(role, [{ ...game, status: "completed" }]);
+      expect(html).toMatch(
+        /<details class="dashboard-more"><summary>More actions<\/summary><div><button[^>]+>Reopen scoring<\/button>/,
+      );
+    },
+  );
+  it.each(["viewer", "scorer", "game_operator"] as const)(
+    "hides completed Reopen scoring from %s",
+    (role) => {
+      expect(render(role, [{ ...game, status: "completed" }])).not.toContain(
+        "Reopen scoring",
+      );
+    },
+  );
+  it.each(["active", "closed"] as const)(
+    "hides Reopen scoring on %s games",
+    (status) => {
+      expect(render("owner", [{ ...game, status }])).not.toContain(
+        "Reopen scoring",
+      );
+    },
+  );
   it("shows the completed score in the row with team links to details and no View result button", () => {
     const html = render("viewer", [
       {

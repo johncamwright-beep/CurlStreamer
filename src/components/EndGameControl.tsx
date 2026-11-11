@@ -1,15 +1,9 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import { z } from "zod";
-import type {
-  CompletionCleanup,
-  CompletionReview,
-  SafeGameCompletion,
-} from "@/lib/game-completion";
+import type { CompletionReview } from "@/lib/game-completion";
 import { organizerAccessToken } from "@/lib/access-session";
 import { announceGameCompletion } from "@/lib/dashboard-refresh";
-import { requestStudioPresentation } from "@/lib/studio-presentation-client";
-import type { StudioClosingPreparation } from "@/lib/studio-presentation-client";
 import { leaveStudioGame, studioSessionBridge } from "@/lib/studio-session";
 import { useStudioSession } from "./StudioSessionContext";
 import { StudioOverlay } from "./StudioOverlay";
@@ -27,15 +21,9 @@ const resultSchema = z.object({
 const reviewSchema = z.object({
   reviewId: z.uuid(),
   inputRevision: z.number().int().nonnegative(),
-  result: resultSchema,
+  result: resultSchema.extend({ totals: finalScoreSchema }),
   youtubeWatchUrl: z.string().nullable(),
 });
-type FinalScore = z.infer<typeof finalScoreSchema>;
-
-function scoreValue(value: string) {
-  return /^\d+$/.test(value) ? Number(value) : Number.NaN;
-}
-
 const completionReplySchema = z
   .object({
     completion: z
@@ -67,113 +55,57 @@ const completionReplySchema = z
   })
   .refine((value) => Boolean(value.completion || value.completionSaved));
 
-const workspaceCloseReceiptSchema = z
-  .object({
-    type: z.literal("studio-close-workspace-result").optional(),
-    gameId: z.uuid(),
-    nonce: z.uuid(),
-    ok: z.boolean(),
-    error: z.string().max(300).nullable().optional(),
-  })
-  .strict();
+function notifyStudioGameEnded(gameId: string) {
+  const bridge = studioSessionBridge();
+  if (!bridge) return;
+  return new Promise<void>((resolve) => {
+    const timer = window.setTimeout(finish, 2000);
+    function finish() {
+      window.clearTimeout(timer);
+      window.removeEventListener("studio-game-ended-ack", acknowledge);
+      resolve();
+    }
+    function acknowledge(event: Event) {
+      if ((event as CustomEvent).detail?.gameId === gameId) finish();
+    }
+    window.addEventListener("studio-game-ended-ack", acknowledge);
+    try {
+      bridge.postMessage({ type: "studio-game-ended", gameId });
+    } catch {
+      finish();
+    }
+  });
+}
 
 export function EndGameControl({
   gameId,
-  homeName,
-  awayName,
   sharedYoutubeWatchUrl = null,
   enabled,
   disabled = false,
   onCompleted,
 }: {
   gameId: string;
-  homeName: string;
-  awayName: string;
   sharedYoutubeWatchUrl?: string | null;
   enabled: boolean;
   disabled?: boolean;
-  onCompleted: (
-    completion: SafeGameCompletion,
-    cleanup: CompletionCleanup,
-  ) => void;
+  onCompleted: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const [endChosen, setEndChosen] = useState(false);
   const session = useStudioSession();
   const [review, setReview] = useState<CompletionReview>();
-  const [score, setScore] = useState({ home: "", away: "" });
   const [busy, setBusy] = useState(false);
   const [leaveMode, setLeaveMode] = useState<"preview" | "pause" | null>(null);
   const [error, setError] = useState("");
   const [completionSaved, setCompletionSaved] = useState(false);
-  const [canGracefulEnd, setCanGracefulEnd] = useState(false);
-  const [prepareFailed, setPrepareFailed] = useState(false);
   const [completionUnconfirmed, setCompletionUnconfirmed] = useState(false);
-  const [canForceClose, setCanForceClose] = useState(false);
-  const [closingStudio, setClosingStudio] = useState<
-    "closing" | "waiting" | "confirmed" | null
-  >(null);
   const completionFlight = useRef(false);
   const reviewFlight = useRef(false);
   const leaveFlight = useRef(false);
-  const closeWorkspaceNonce = useRef<string | null>(null);
-
-  useEffect(() => {
-    function status(event: Event) {
-      const detail = (event as CustomEvent).detail;
-      if (detail?.gameId !== gameId) return;
-      setCanGracefulEnd(
-        detail.available === true && detail.canGracefulEnd === true,
-      );
-    }
-    window.addEventListener("studio-youtube-status", status);
-    return () => window.removeEventListener("studio-youtube-status", status);
-  }, [gameId]);
-
-  useEffect(() => {
-    function recoveryStatus(event: Event) {
-      const detail = (event as CustomEvent).detail;
-      if (detail?.gameId === gameId)
-        setCanForceClose(detail.canForceClose === true);
-    }
-    function closed(event: Event) {
-      const reply = workspaceCloseReceiptSchema.safeParse(
-        (event as CustomEvent).detail,
-      );
-      if (
-        !reply.success ||
-        reply.data.gameId !== gameId ||
-        reply.data.nonce !== closeWorkspaceNonce.current
-      )
-        return;
-      closeWorkspaceNonce.current = null;
-      setClosingStudio(reply.data.ok ? "confirmed" : null);
-      if (!reply.data.ok)
-        setError(reply.data.error || "Studio did not close. Try again.");
-    }
-    window.addEventListener("studio-recovery-status", recoveryStatus);
-    window.addEventListener("studio-close-workspace-result", closed);
-    studioSessionBridge()?.postMessage({ type: "studio-session-observe" });
-    return () => {
-      closeWorkspaceNonce.current = null;
-      window.removeEventListener("studio-recovery-status", recoveryStatus);
-      window.removeEventListener("studio-close-workspace-result", closed);
-    };
-  }, [gameId]);
-
-  useEffect(() => {
-    if (closingStudio !== "closing") return;
-    const timer = window.setTimeout(() => setClosingStudio("waiting"), 45000);
-    return () => window.clearTimeout(timer);
-  }, [closingStudio]);
-
-  function endingProgress(active: boolean) {
-    window.dispatchEvent(
-      new CustomEvent("studio-ending-progress", {
-        detail: { gameId, active },
-      }),
-    );
-  }
+  const broadcastRunning =
+    session?.active === true &&
+    session.gameId === gameId &&
+    session.outputActive;
 
   function notifyStudio(type: string) {
     studioSessionBridge()?.postMessage({ type, gameId });
@@ -209,24 +141,15 @@ export function EndGameControl({
         ...(token ? { authorization: `Bearer ${token}` } : {}),
       },
       body: JSON.stringify(body),
-      signal: AbortSignal.timeout(20000),
+      signal: AbortSignal.timeout(30000),
     });
     const value = await response.json().catch(() => null);
     if (!response.ok)
       throw Object.assign(new Error(value?.error ?? "End Game failed."), {
-        definitelyNotCommitted: [400, 401, 403, 409].includes(response.status),
+        status: response.status,
       });
     if (!value) throw new Error("End Game could not be confirmed.");
     return value;
-  }
-
-  async function requestReview(finalScore?: FinalScore | null) {
-    const value = await request({
-      action: "review",
-      youtubeWatchUrl: sharedYoutubeWatchUrl ?? "",
-      ...(finalScore === undefined ? {} : { finalScore }),
-    });
-    return reviewSchema.parse(value);
   }
 
   async function reviewScore() {
@@ -235,15 +158,13 @@ export function EndGameControl({
     setEndChosen(true);
     setBusy(true);
     setError("");
-    setPrepareFailed(false);
     try {
-      const next = await requestReview();
-      setReview(next);
-      const totals = next.result.totals;
-      setScore({
-        home: totals ? String(totals.home) : "",
-        away: totals ? String(totals.away) : "",
+      const value = await request({
+        action: "review",
+        youtubeWatchUrl: sharedYoutubeWatchUrl ?? "",
+        finalScore: "scoreboard",
       });
+      setReview(reviewSchema.parse(value));
     } catch (cause) {
       setError(
         cause instanceof Error && !(cause instanceof z.ZodError)
@@ -256,10 +177,7 @@ export function EndGameControl({
     }
   }
 
-  async function complete(
-    mode: "standard" | "without-card",
-    finalScore?: FinalScore | null,
-  ) {
+  async function complete() {
     if (
       !review ||
       completionFlight.current ||
@@ -270,99 +188,29 @@ export function EndGameControl({
     completionFlight.current = true;
     setBusy(true);
     setError("");
-    const shouldPrepare =
-      mode === "standard" && (canGracefulEnd || prepareFailed);
-    let prepared = false;
-    let submitting = false;
-    let committed = false;
-    if (shouldPrepare) endingProgress(true);
+    let saved = false;
     try {
-      let selected = review;
-      if (
-        finalScore === null ||
-        (finalScore &&
-          (finalScore.home !== review.result.totals?.home ||
-            finalScore.away !== review.result.totals?.away))
-      ) {
-        selected = await requestReview(finalScore);
-        setReview(selected);
-      }
-      let closing: StudioClosingPreparation | null | undefined;
-      if (shouldPrepare) {
-        try {
-          const receipt = await requestStudioPresentation(gameId, "prepare");
-          if (!receipt.closing)
-            throw new Error("Studio could not prepare the final screen.");
-          closing = receipt.closing;
-        } catch {
-          setPrepareFailed(true);
-          setError(
-            "Studio could not confirm the final screen. Your game is still open.",
-          );
-          return;
-        }
-        prepared = true;
-      }
-      submitting = true;
       const received = await request({
         action: "complete",
-        reviewId: selected.reviewId,
-        ...(closing ? { closing } : {}),
+        reviewId: review.reviewId,
       });
-      const parsed = completionReplySchema.safeParse(received);
-      if (!parsed.success) throw new Error("End Game could not be confirmed.");
-      const value = parsed.data;
-      committed = Boolean(value.completion || value.completionSaved);
-      if (committed) announceGameCompletion(gameId);
-      if (prepared && value.closing) {
-        try {
-          // Only the committed server snapshot may become a Game over card.
-          // Studio confirms a painted card, dwells, then acknowledges output Stop.
-          if (value.completion)
-            await requestStudioPresentation(gameId, "show", {
-              completion: value.completion,
-              closing: value.closing,
-            });
-        } catch {
-          // The result remains saved. Never hold the game open or invent a
-          // displayed final score when the renderer cannot acknowledge it.
-        }
-        try {
-          await requestStudioPresentation(gameId, "finish", {}, 6000);
-        } catch {
-          // The immutable server deadline also fences the native output.
-        }
-        value.cleanup = await request({ action: "retry-cleanup" }).catch(
-          () => value.cleanup,
-        );
-      } else if (prepared) {
-        await requestStudioPresentation(gameId, "cancel").catch(
-          () => undefined,
-        );
-      }
-      if (value.completion) onCompleted(value.completion, value.cleanup);
-      else if (value.completionSaved) {
-        setCompletionSaved(true);
-        window.setTimeout(() => window.location.reload(), 500);
-      }
+      completionReplySchema.parse(received);
+      saved = true;
+      announceGameCompletion(gameId);
+      await notifyStudioGameEnded(gameId);
+      setCompletionSaved(true);
+      onCompleted();
     } catch (cause) {
-      const rejected =
-        (cause as { definitelyNotCommitted?: boolean } | null)
-          ?.definitelyNotCommitted === true;
-      if (prepared && !committed) {
-        // A missing HTTP response can follow a successful database commit.
-        // Never return to live video on that ambiguous outcome.
-        await requestStudioPresentation(
-          gameId,
-          rejected ? "cancel" : "finish",
-          {},
-          6000,
-        ).catch(() => undefined);
+      if (saved) {
+        window.location.assign("/dashboard");
+        return;
       }
-      if (submitting && !committed && !rejected) {
+      const status = (cause as { status?: number } | null)?.status;
+      const rejected = [400, 401, 403, 409].includes(status ?? 0);
+      if (!rejected) {
         setCompletionUnconfirmed(true);
         setError(
-          "End Game could not be confirmed. Reopen this game to check whether the result was saved.",
+          "End Game could not be confirmed. Reload this game to check whether the result was saved.",
         );
         return;
       }
@@ -371,12 +219,8 @@ export function EndGameControl({
           ? cause.message
           : "End Game failed.";
       setError(message);
-      if (message.includes("Review the final score again")) {
-        setPrepareFailed(false);
-        setReview(undefined);
-      }
+      if (status === 409) setReview(undefined);
     } finally {
-      if (shouldPrepare) endingProgress(false);
       completionFlight.current = false;
       setBusy(false);
     }
@@ -401,58 +245,24 @@ export function EndGameControl({
     }
   }
 
-  function closeStudio() {
-    if (closeWorkspaceNonce.current) return;
-    const bridge = studioSessionBridge();
-    if (!bridge) {
-      setError("Windows Studio is unavailable.");
-      return;
-    }
-    const nonce = crypto.randomUUID();
-    closeWorkspaceNonce.current = nonce;
-    setClosingStudio("closing");
-    try {
-      bridge.postMessage({ type: "studio-close-workspace", gameId, nonce });
-    } catch {
-      closeWorkspaceNonce.current = null;
-      setClosingStudio(null);
-      setError("Windows Studio is unavailable.");
-    }
-  }
-
   if (!enabled && !session?.canLeaveGame) return null;
   const close = () => {
-    if (busy || closingStudio) return;
+    if (busy || completionSaved || completionUnconfirmed) return;
     setOpen(false);
     setEndChosen(false);
     setReview(undefined);
     setError("");
-    setPrepareFailed(false);
-    setCompletionUnconfirmed(false);
     notifyStudio("studio-end-game-cancelled");
   };
-  const broadcastRunning =
-    session?.active === true &&
-    session.gameId === gameId &&
-    session.outputActive;
-  const canLeave =
-    session?.canLeaveGame === true &&
-    (!session.active || session.gameId === gameId) &&
-    !session.busy;
-  const needsPreviewClose =
+  const needsStudioLeave =
     session?.canLeaveGame === true &&
     (!session.active || session.gameId === gameId);
-  const canCloseWorkspace =
-    session?.canCloseWorkspace &&
-    (!session.active || session.gameId === gameId);
-  const editableScore = finalScoreSchema.safeParse({
-    home: scoreValue(score.home),
-    away: scoreValue(score.away),
-  });
-  const scoreLocked = busy || disabled || !!closingStudio || completionSaved;
-  const showReviewedResult =
-    prepareFailed || completionUnconfirmed || completionSaved;
   const resultTotals = review?.result.totals;
+  const title = !endChosen
+    ? "Is this game completed?"
+    : resultTotals
+      ? `Finalize game score ${resultTotals.home}–${resultTotals.away}?`
+      : "Finalize game score?";
   return (
     <div>
       <div className="flex flex-wrap justify-end gap-2">
@@ -467,24 +277,14 @@ export function EndGameControl({
           Close Game
         </button>
       </div>
-      {!open && error && (
-        <p role="alert" className="mt-2 text-sm text-red-300">
-          {error}
-        </p>
-      )}
       {open && (
         <StudioOverlay
-          title={
-            endChosen
-              ? "Final score"
-              : broadcastRunning
-                ? "Broadcast is running"
-                : "Is this game completed?"
-          }
+          title={title}
           open={open}
           onClose={close}
-          dismissible={!busy && !closingStudio}
-          showCloseButton={endChosen}
+          dismissible={!busy && !completionSaved && !completionUnconfirmed}
+          showCloseButton={false}
+          compact
         >
           {!endChosen ? (
             leaveMode ? (
@@ -523,212 +323,91 @@ export function EndGameControl({
               </div>
             ) : (
               <div className="flex flex-wrap gap-3">
-                {broadcastRunning && (
-                  <button
-                    className="btn-secondary min-h-11"
-                    disabled={busy || disabled || !canLeave || !!closingStudio}
-                    onClick={() => void leaveGame(false)}
-                  >
-                    Pause and leave
-                  </button>
-                )}
                 <button
                   className="btn min-h-11"
-                  disabled={busy || disabled || !enabled || !!closingStudio}
+                  disabled={busy || disabled || !enabled}
                   onClick={() => void reviewScore()}
                 >
-                  {broadcastRunning ? "End Game" : "Yes"}
+                  Yes
                 </button>
-                {!broadcastRunning && (
-                  <button
-                    className="btn-secondary min-h-11"
-                    disabled={
-                      busy ||
-                      disabled ||
-                      !!closingStudio ||
-                      (needsPreviewClose && !canLeave)
-                    }
-                    onClick={() => {
-                      if (needsPreviewClose) void leaveGame(true);
-                      else window.location.assign("/dashboard");
-                    }}
-                  >
-                    No
-                  </button>
-                )}
                 <button
                   className="btn-secondary min-h-11"
-                  disabled={busy || !!closingStudio}
+                  disabled={
+                    busy ||
+                    disabled ||
+                    (broadcastRunning && !needsStudioLeave) ||
+                    (needsStudioLeave && session.busy)
+                  }
+                  onClick={() => {
+                    if (needsStudioLeave) void leaveGame(!broadcastRunning);
+                    else window.location.assign("/dashboard");
+                  }}
+                >
+                  No
+                </button>
+                <button
+                  className="btn-secondary min-h-11"
+                  disabled={busy}
                   onClick={close}
                 >
                   Cancel
                 </button>
               </div>
             )
-          ) : !review ? (
-            busy ? (
-              <p role="status">Loading final score…</p>
-            ) : (
-              <div className="flex flex-wrap gap-3">
-                <button
-                  className="btn min-h-11"
-                  disabled={disabled || !!closingStudio}
-                  onClick={() => void reviewScore()}
-                >
-                  Reload final score
-                </button>
-                <button
-                  className="btn-secondary min-h-11"
-                  onClick={close}
-                  disabled={!!closingStudio}
-                >
-                  Cancel
-                </button>
-              </div>
-            )
-          ) : showReviewedResult ? (
+          ) : (
             <>
-              <p className="text-xl font-bold">
-                {resultTotals
-                  ? `${homeName} ${resultTotals.home} – ${resultTotals.away} ${awayName}`
-                  : review.result.label}
-              </p>
-              {!completionSaved && (
+              {busy ? (
+                <p role="status" className="mt-3">
+                  {review ? "Ending game…" : "Loading final score…"}
+                </p>
+              ) : completionSaved ? (
+                <p role="status" className="mt-3 text-emerald-300">
+                  Game ended. Returning to Games…
+                </p>
+              ) : (
                 <div className="mt-3 flex flex-wrap gap-3">
-                  {prepareFailed && !completionUnconfirmed && (
+                  {completionUnconfirmed ? (
+                    <button
+                      className="btn-secondary min-h-11"
+                      onClick={() => window.location.reload()}
+                    >
+                      Reload game
+                    </button>
+                  ) : (
                     <>
-                      <button
-                        className="btn min-h-11"
-                        disabled={scoreLocked}
-                        onClick={() => void complete("without-card")}
-                      >
-                        {busy ? "Ending…" : "End game without final screen"}
-                      </button>
+                      {resultTotals ? (
+                        <button
+                          className="btn min-h-11"
+                          disabled={disabled}
+                          onClick={() => void complete()}
+                        >
+                          Yes
+                        </button>
+                      ) : (
+                        <button
+                          className="btn min-h-11"
+                          disabled={disabled}
+                          onClick={() => void reviewScore()}
+                        >
+                          Reload final score
+                        </button>
+                      )}
                       <button
                         className="btn-secondary min-h-11"
-                        disabled={scoreLocked}
-                        onClick={() => void complete("standard")}
+                        onClick={close}
                       >
-                        Retry final screen
+                        No
                       </button>
                     </>
                   )}
-                  <button
-                    className="btn-secondary min-h-11"
-                    disabled={busy || !!closingStudio}
-                    onClick={() => {
-                      if (completionUnconfirmed) {
-                        close();
-                        return;
-                      }
-                      setPrepareFailed(false);
-                      setError("");
-                    }}
-                  >
-                    {completionUnconfirmed ? "Back to game" : "Back"}
-                  </button>
                 </div>
               )}
             </>
-          ) : (
-            <form
-              onSubmit={(event) => {
-                event.preventDefault();
-                if (editableScore.success && !scoreLocked)
-                  void complete("standard", editableScore.data);
-              }}
-            >
-              <div className="grid grid-cols-2 gap-3">
-                {(["home", "away"] as const).map((side) => (
-                  <label key={side} className="block font-bold">
-                    {side === "home" ? homeName : awayName}
-                    <input
-                      className="mt-2 min-h-11 w-full rounded-lg bg-slate-800 px-3"
-                      type="number"
-                      inputMode="numeric"
-                      min={0}
-                      max={Number.MAX_SAFE_INTEGER}
-                      step={1}
-                      value={score[side]}
-                      disabled={scoreLocked}
-                      onChange={(event) =>
-                        setScore({ ...score, [side]: event.target.value })
-                      }
-                    />
-                  </label>
-                ))}
-              </div>
-              <div className="mt-4 flex flex-wrap gap-3">
-                <button
-                  className="btn min-h-11"
-                  disabled={scoreLocked || !editableScore.success}
-                  type="submit"
-                >
-                  {busy ? "Ending…" : "End Game"}
-                </button>
-                <button
-                  className="btn-secondary min-h-11"
-                  type="button"
-                  disabled={scoreLocked}
-                  onClick={() => void complete("standard", null)}
-                >
-                  End without score
-                </button>
-                <button
-                  className="btn-secondary min-h-11"
-                  type="button"
-                  disabled={busy || !!closingStudio}
-                  onClick={() => {
-                    setEndChosen(false);
-                    setReview(undefined);
-                    setError("");
-                  }}
-                >
-                  Back
-                </button>
-              </div>
-            </form>
           )}
           {error && (
             <p role="alert" className="mt-3 text-red-300">
               {error}
             </p>
-          )}
-          {completionSaved && (
-            <p role="status" className="mt-3 text-emerald-300">
-              Game ended. Loading the saved final result…
-            </p>
-          )}
-          {((canCloseWorkspace && (error || closingStudio)) ||
-            canForceClose) && (
-            <div className="mt-4 border-t border-slate-700 pt-4">
-              <div className="flex flex-wrap gap-3">
-                {canCloseWorkspace && (error || closingStudio) && (
-                  <button
-                    className="btn-secondary min-h-11"
-                    disabled={busy || !!closingStudio}
-                    onClick={closeStudio}
-                  >
-                    Close Studio without ending game
-                  </button>
-                )}
-                {canForceClose && (
-                  <button
-                    className="btn-secondary min-h-11 border-red-700 text-red-200"
-                    onClick={() => notifyStudio("studio-force-close")}
-                  >
-                    Force close Studio
-                  </button>
-                )}
-              </div>
-              {closingStudio && (
-                <p role="status" className="mt-2 text-sm text-slate-300">
-                  {closingStudio === "waiting"
-                    ? "Studio is still closing. Check for a Windows confirmation prompt."
-                    : "Closing Studio…"}
-                </p>
-              )}
-            </div>
           )}
         </StudioOverlay>
       )}

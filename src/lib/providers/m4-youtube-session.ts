@@ -71,6 +71,7 @@ const sessionSchema = z.object({
   youtubeBroadcastCreateState: creationSchema.optional(),
   youtubeStreamCreateState: creationSchema.optional(),
   lastErrorCode: z.string().optional(),
+  providerStep: z.string().optional(),
 });
 type Session = z.infer<typeof sessionSchema>;
 export type SafeM4Session = {
@@ -117,15 +118,16 @@ async function actor(gameId: string, credential: CompletionCredential) {
     ...(await completionActorParameters(gameId, credential)),
   };
 }
+async function getM4Session(gameId: string, credential: CompletionCredential) {
+  return sessionSchema.parse(
+    await rpc("get_m4_broadcast_session", await actor(gameId, credential)),
+  );
+}
 export async function readM4Session(
   gameId: string,
   credential: CompletionCredential,
 ) {
-  return safe(
-    sessionSchema.parse(
-      await rpc("get_m4_broadcast_session", await actor(gameId, credential)),
-    ),
-  );
+  return safe(await getM4Session(gameId, credential));
 }
 
 /** Explicit organizer start, after verifying YouTube reception and current authority. */
@@ -135,9 +137,7 @@ export async function goLiveM4Session(
 ) {
   if (!m4Configuration()) throw Error("m4_provider_unavailable");
   const read = async () => {
-    const session = sessionSchema.parse(
-      await rpc("get_m4_broadcast_session", await actor(gameId, credential)),
-    );
+    const session = await getM4Session(gameId, credential);
     // The read RPC intentionally omits game config (unlike preparation).
     // Resolve visibility from the saved game instead of defaulting Public
     // broadcasts to Unlisted. Read it again for the pre-transition fence.
@@ -284,12 +284,80 @@ export async function prepareM4Session(
   if (!m4Configuration())
     throw Object.assign(Error("M4 preparation unavailable"), { code: "55000" });
   const existing = await readM4Session(gameId, credential);
-  // Recovery must never retire and replace a game's existing watch page.
-  // Delivered authority remains one-use. A full restart requires a fresh
-  // pairing after the old sender's lease expires; provider IDs stay unchanged.
-  // Only End Game may complete provider resources.
+  // Ordinary recovery keeps the game's saved watch page.
   if (existing.watchUrl && existing.status === "stopped") return existing;
-  let s = await claim(gameId, credential, "prepared");
+  return prepareClaimedM4Session(
+    gameId,
+    credential,
+    await claim(gameId, credential, "prepared"),
+  );
+}
+
+/** Replace an ended video only after an explicit request for that saved link. */
+export async function restartM4Session(
+  gameId: string,
+  credential: CompletionCredential,
+  broadcastId: string,
+): Promise<SafeM4Session> {
+  if (!m4Configuration())
+    throw Object.assign(Error("M4 preparation unavailable"), { code: "55000" });
+  const existing = await getM4Session(gameId, credential);
+  if (
+    !existing.watchUrl ||
+    existing.youtubeBroadcastId !== broadcastId ||
+    !existing.generation
+  )
+    throw Object.assign(Error("m4_restart_link_changed"), { code: "55000" });
+  await requireTeamBroadcastAccess(existing.organizationId);
+
+  const claimRestart = async (generation: number, inspect?: Session) =>
+    sessionSchema.parse(
+      await rpc("claim_m4_broadcast_restart", {
+        ...(await actor(gameId, credential)),
+        p_generation: generation,
+        p_youtube_broadcast_id: broadcastId,
+        p_operation_token: randomUUID(),
+        p_connection_version: inspect?.connectionVersion ?? null,
+        p_encrypted_credentials: inspect?.encryptedCredentials ?? null,
+      }),
+    );
+
+  let generation = existing.generation;
+  if (
+    existing.status !== "stopped" ||
+    existing.providerStep !== "m4-provider-retired"
+  ) {
+    if (
+      !existing.channelId ||
+      existing.channelId !== existing.savedChannelId ||
+      !existing.connectionVersion ||
+      !existing.encryptedCredentials
+    )
+      throw Error("youtube_reconnect_required");
+    const token = await accessToken(existing);
+    await verifyM4ProviderRetirement(token, {
+      broadcastId,
+      channelId: existing.channelId,
+    });
+    const cleanup = await claimRestart(generation, existing);
+    if (cleanup.action !== "run" || !cleanup.generation)
+      throw Object.assign(Error("m4_operation_fenced"), { code: "55000" });
+    const retired = await finishM4Session(gameId, credential, cleanup, token);
+    if (retired.status !== "stopped") return retired;
+    generation = cleanup.generation;
+  }
+  return prepareClaimedM4Session(
+    gameId,
+    credential,
+    await claimRestart(generation),
+  );
+}
+
+async function prepareClaimedM4Session(
+  gameId: string,
+  credential: CompletionCredential,
+  s: Session,
+): Promise<SafeM4Session> {
   if (s.action !== "run") return safe(s);
   let creating: "broadcast" | "stream" | undefined;
   try {
@@ -398,6 +466,7 @@ async function finishM4Session(
   gameId: string,
   credential: CompletionCredential,
   s: Session,
+  terminalAccessToken?: string,
 ): Promise<SafeM4Session> {
   if (s.action !== "run") return safe(s);
   try {
@@ -420,8 +489,11 @@ async function finishM4Session(
         !context.encrypted
       )
         throw Error("youtube_reconnect_required");
-      const token = await accessToken(s);
-      if ((await loadOwnedYouTubeChannel(token)).id !== context.channelId)
+      const token = terminalAccessToken ?? (await accessToken(s));
+      if (
+        !terminalAccessToken &&
+        (await loadOwnedYouTubeChannel(token)).id !== context.channelId
+      )
         throw Error("youtube_reconnect_required");
       let broadcastId = s.youtubeBroadcastId,
         streamId = s.youtubeStreamId;
@@ -445,20 +517,18 @@ async function finishM4Session(
         youtubeStreamId: streamId,
         providerStep: "m4-cleanup-intent",
       });
-      let finishUncertain = false;
-      try {
-        if (broadcastId) await finishYouTubeBroadcast(token, broadcastId);
-      } catch {
-        finishUncertain = true;
+      if (broadcastId && !terminalAccessToken) {
+        try {
+          await finishYouTubeBroadcast(token, broadcastId);
+        } catch {
+          // A lost response can be resolved only by independent positive reads.
+          await verifyM4ProviderRetirement(token, {
+            broadcastId,
+            channelId: context.channelId,
+          });
+        }
       }
       const resources = { broadcastId, streamId, channelId: context.channelId };
-      if (finishUncertain) {
-        // A lost response can be resolved only by independent positive reads.
-        await verifyM4ProviderRetirement(token, {
-          broadcastId,
-          channelId: context.channelId,
-        });
-      }
       s = await record(s, "stopping", {
         providerStep: "m4-broadcast-finished",
       });

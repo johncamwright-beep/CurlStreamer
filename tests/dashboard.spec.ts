@@ -86,6 +86,54 @@ test("results distinguish no-result and historical closure and retain safe repla
   ).toBeVisible();
   await expect(page.getByText("Team Gushue", { exact: true })).toHaveCount(0);
 });
+
+test("reopens a completed game from its More actions menu", async ({
+  page,
+}) => {
+  await page
+    .getByRole("navigation", { name: "Browse games" })
+    .getByRole("link", { name: /^Results/ })
+    .click();
+  const detailsLink = page.getByRole("link", {
+    name: "Team Gushue game details",
+  });
+  await expect(detailsLink).toBeVisible();
+  const gameId = (await detailsLink.getAttribute("href"))!.split("/").at(-1)!;
+  const card = page
+    .locator(".dashboard-game-card")
+    .filter({ has: detailsLink });
+  const menu = card.locator("details");
+  const reopen = menu.getByRole("button", {
+    name: "Reopen scoring",
+    exact: true,
+  });
+  const dialog = page.getByRole("dialog", { name: "Reopen scoring" });
+  await expect(reopen).toBeHidden();
+  await menu.getByText("More actions", { exact: true }).click();
+  await reopen.click();
+  await expect(dialog).toBeVisible();
+  await dialog.getByRole("button", { name: "Close", exact: true }).click();
+  await expect(dialog).toBeHidden();
+
+  await page.route(`**/api/games/${gameId}/result`, (route) =>
+    route.fulfill({ json: { revision: 42 } }),
+  );
+  await page.route(`**/api/games/${gameId}/reopen`, (route) =>
+    route.fulfill({ json: { status: "active", gameId } }),
+  );
+  await page.route(`**/score/${gameId}`, (route) =>
+    route.fulfill({ contentType: "text/html", body: "<h1>Scoring</h1>" }),
+  );
+  await reopen.click();
+  const request = page.waitForRequest(`**/api/games/${gameId}/reopen`);
+  await dialog.getByRole("button", { name: "Reopen and continue" }).click();
+  expect((await request).postDataJSON()).toMatchObject({
+    expectedRevision: 42,
+    requestId: expect.any(String),
+  });
+  await expect(page).toHaveURL(new RegExp(`/score/${gameId}$`));
+});
+
 test("dashboard fits narrow phones and preserves reachable controls", async ({
   page,
 }, info) => {
@@ -131,6 +179,27 @@ test("dashboard fits narrow phones and preserves reachable controls", async ({
   );
   await subscription.click();
   await expect(page).toHaveURL(/\/account\?section=subscription$/);
+});
+
+test("team walkthrough starts collapsed and stays dismissed after reload", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 320, height: 800 });
+  const region = page.getByRole("region", { name: "Team setup" });
+  const summary = region.locator("summary");
+  const checklist = region.getByRole("list");
+  await expect(summary).toHaveText("Complete your team setup – walkthrough");
+  await expect(checklist).toBeHidden();
+  await expect.poll(async () => (await region.boundingBox())?.height).toBe(44);
+  await summary.focus();
+  await page.keyboard.press("Enter");
+  await expect(checklist).toBeVisible();
+  await expect(checklist.getByRole("link")).toHaveCount(5);
+  await expect(region.getByText("Team setup · 2/5 ready")).toBeVisible();
+  await region.getByRole("button", { name: "Dismiss", exact: true }).click();
+  await expect(region).toBeHidden();
+  await page.reload();
+  await expect(region).toBeHidden();
 });
 
 test("event filter follows the selected event across game views and resets", async ({
@@ -245,27 +314,18 @@ async function dashboardCounts(
 async function endFixtureGame(page: Page) {
   await page.getByRole("button", { name: "Close Game", exact: true }).click();
   await page.getByRole("button", { name: "Yes", exact: true }).click();
-  const scoreDialog = page.getByRole("dialog", { name: "Final score" });
-  await expect(scoreDialog.getByRole("spinbutton").first()).toBeVisible();
+  const scoreDialog = page.getByRole("dialog", {
+    name: /^Finalize game score \d+–\d+\?$/,
+  });
   const committed = page.waitForResponse(
     (response) =>
       response.url().endsWith("/completion") &&
       response.request().method() === "POST" &&
       response.request().postDataJSON()?.action === "complete",
   );
-  const finish = scoreDialog.getByRole("button", {
-    name: "End Game",
-    exact: true,
-  });
-  if (await finish.isEnabled()) await finish.click();
-  else
-    await scoreDialog
-      .getByRole("button", { name: "End without score" })
-      .click();
+  await scoreDialog.getByRole("button", { name: "Yes", exact: true }).click();
   expect((await committed).ok()).toBe(true);
-  await expect(
-    page.getByRole("link", { name: "Back to Games", exact: true }),
-  ).toBeVisible();
+  await expect(page).toHaveURL(/\/dashboard$/);
 }
 
 for (const scenario of [
@@ -312,6 +372,7 @@ for (const scenario of [
         .getByRole("link", { name: /^Open Game:.*Refresh regression opponent/ })
         .click();
       await endFixtureGame(page);
+      await page.goBack();
       await page.goBack();
       await expect(page).toHaveURL(dashboardURL);
       await dashboardCounts(page, 0, 1, 0);

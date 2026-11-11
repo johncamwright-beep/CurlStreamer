@@ -75,11 +75,9 @@ test("live sender offers pause and leave, waits for acknowledgement, and retains
   });
   await page.getByRole("button", { name: "Close Game", exact: true }).click();
   await expect(
-    page.getByRole("dialog", { name: "Broadcast is running" }),
+    page.getByRole("dialog", { name: "Is this game completed?" }),
   ).toBeVisible();
-  await page
-    .getByRole("button", { name: "Pause and leave", exact: true })
-    .click();
+  await page.getByRole("button", { name: "No", exact: true }).click();
   await expect(page.getByRole("status")).toBeVisible();
   await expect(page.getByRole("status")).toHaveText("Pausing the broadcast…");
   await expect(page.locator('[role="status"] svg')).toHaveClass(/animate-spin/);
@@ -111,9 +109,7 @@ test("live sender offers pause and leave, waits for acknowledgement, and retains
   });
   await expect(page.getByRole("alert")).toHaveText("Recording still closing");
   await expect(page).toHaveURL(/leave-fixture$/);
-  await page
-    .getByRole("button", { name: "Pause and leave", exact: true })
-    .click();
+  await page.getByRole("button", { name: "No", exact: true }).click();
   await page.evaluate(() => {
     const request = (window as any).sent
       .filter((v: any) => v.type === "studio-game-leave")
@@ -219,7 +215,7 @@ test("a refused preview close stays in the game and offers the live options", as
   await expect(page).toHaveURL(/leave-fixture$/);
   await expect(
     page.getByRole("button", {
-      name: "Pause and leave",
+      name: "No",
       exact: true,
     }),
   ).toBeEnabled();
@@ -241,12 +237,12 @@ test("Stop broadcast followed by Close Game and No leaves the saved game open", 
 }) => {
   const broadcastRequests: unknown[] = [];
   await page.route(`**/api/games/${gameId}/studio-m4`, (route) => {
-    const stopped = route.request().method() === "POST";
-    if (stopped) broadcastRequests.push(route.request().postDataJSON());
+    if (route.request().method() === "POST")
+      broadcastRequests.push(route.request().postDataJSON());
     return route.fulfill({
       json: {
-        desiredState: stopped ? "stopped" : "live",
-        status: stopped ? "stopped" : "prepared",
+        desiredState: "live",
+        status: "prepared",
         watchUrl: "https://www.youtube.com/watch?v=abcdefghijk",
       },
     });
@@ -266,6 +262,7 @@ test("Stop broadcast followed by Close Game and No leaves the saved game open", 
           busy: false,
           streaming: "armed",
           live: true,
+          canReconnect: true,
           receiving: true,
           outputActive: true,
           message: "",
@@ -280,15 +277,35 @@ test("Stop broadcast followed by Close Game and No leaves the saved game open", 
     .getByRole("dialog", { name: "Stop broadcast?" })
     .getByRole("button", { name: "Stop broadcast", exact: true })
     .click();
-  await expect(
-    page.getByRole("button", { name: "Broadcast ended" }),
-  ).toBeDisabled();
   await page.evaluate(
     (session) => {
+      if (
+        !(window as any).sent.some(
+          (value: any) =>
+            value.type === "studio-youtube-stop" &&
+            value.gameId === session.gameId,
+        )
+      )
+        throw Error("Expected the local Stop broadcast command");
       (window as any).updateFixtureSession(session);
+      window.dispatchEvent(
+        new CustomEvent("studio-youtube-status", {
+          detail: {
+            ...session,
+            available: true,
+            canReconnect: true,
+            receiving: false,
+            message: "",
+            presentation: { mode: "hold" },
+          },
+        }),
+      );
     },
-    { ...idlePreview, streaming: "stopped", presentation: "hold" },
+    { ...idlePreview, streaming: "paused", presentation: "hold" },
   );
+  await expect(
+    page.getByRole("button", { name: "Restart broadcast", exact: true }),
+  ).toBeEnabled();
   await page.getByRole("button", { name: "Close Game", exact: true }).click();
   const dialog = page.getByRole("dialog", { name: "Is this game completed?" });
   await expect(
@@ -311,6 +328,6 @@ test("Stop broadcast followed by Close Game and No leaves the saved game open", 
     );
   });
   await expect(page).toHaveURL(/dashboard$/);
-  expect(broadcastRequests).toEqual([{ action: "stop" }]);
+  expect(broadcastRequests).toEqual([]);
   expect(completions()).toBe(0);
 });

@@ -4,7 +4,7 @@ const mocks = vi.hoisted(() => ({
   token: vi.fn(),
   read: vi.fn(),
   prepare: vi.fn(),
-  stop: vi.fn(),
+  restart: vi.fn(),
   config: vi.fn(),
   goLive: vi.fn(),
 }));
@@ -15,7 +15,7 @@ vi.mock("@/lib/tokens", () => ({ readAccessToken: mocks.token }));
 vi.mock("@/lib/providers/m4-youtube-session", () => ({
   readM4Session: mocks.read,
   prepareM4Session: mocks.prepare,
-  stopM4Session: mocks.stop,
+  restartM4Session: mocks.restart,
   m4Configuration: mocks.config,
   goLiveM4Session: mocks.goLive,
 }));
@@ -39,7 +39,6 @@ beforeEach(() => {
   mocks.config.mockReturnValue(true);
   mocks.read.mockResolvedValue({ desiredState: "stopped", status: "idle" });
   mocks.prepare.mockResolvedValue({ desiredState: "live", status: "prepared" });
-  mocks.stop.mockResolvedValue({ desiredState: "stopped", status: "stopped" });
 });
 afterEach(() => vi.unstubAllEnvs());
 describe("M4 private preparation and cleanup API", () => {
@@ -148,10 +147,10 @@ describe("M4 private preparation and cleanup API", () => {
   it("accepts only matching organizer tokens and retains verified account fallback", async () => {
     mocks.token.mockResolvedValue({ purpose: "organizer", gameId: id });
     await POST(
-      request({ action: "stop" }, { authorization: "Bearer synthetic" }),
+      request({ action: "prepare" }, { authorization: "Bearer synthetic" }),
       context,
     );
-    expect(mocks.stop).toHaveBeenCalledWith(id, {
+    expect(mocks.prepare).toHaveBeenCalledWith(id, {
       kind: "organizer",
       token: "synthetic",
     });
@@ -187,12 +186,16 @@ describe("M4 private preparation and cleanup API", () => {
     ).toBe(403);
     expect(mocks.prepare).not.toHaveBeenCalled();
   });
-  it("gates the disposable feature and preparation configuration while preserving stop", async () => {
+  it("gates the disposable feature and blocks permanent stop from older clients", async () => {
     mocks.config.mockReturnValue(false);
     expect((await POST(request({ action: "prepare" }), context)).status).toBe(
       503,
     );
-    expect((await POST(request({ action: "stop" }), context)).status).toBe(200);
+    const stop = await POST(request({ action: "stop" }), context);
+    expect(stop.status).toBe(409);
+    expect(await stop.json()).toEqual({
+      error: expect.stringContaining("Close Game"),
+    });
     vi.stubEnv("CURLCAST_M4_LOCAL_YOUTUBE", "");
     expect((await GET(request(), context)).status).toBe(503);
     expect(mocks.read).not.toHaveBeenCalled();
@@ -202,12 +205,63 @@ describe("M4 private preparation and cleanup API", () => {
     { action: "start" },
     { action: "prepare", visibility: "public" },
     { action: "stop", gameId: id },
+    { action: "restart" },
+    { action: "restart", watchUrl: "" },
+    { action: "restart", watchUrl: "https://attacker.example/video" },
+    {
+      action: "restart",
+      watchUrl: "https://youtu.be/abcdefghijk",
+      visibility: "public",
+    },
   ])(
     "rejects unsupported actions and authority/output overrides",
     async (body) => {
       expect((await POST(request(body), context)).status).toBe(400);
       expect(mocks.prepare).not.toHaveBeenCalled();
-      expect(mocks.stop).not.toHaveBeenCalled();
+      expect(mocks.restart).not.toHaveBeenCalled();
+    },
+  );
+  it("fences explicit restart by the old video and returns the new safe link", async () => {
+    mocks.restart.mockResolvedValue({
+      desiredState: "live",
+      status: "prepared",
+      watchUrl: "https://youtu.be/replacement",
+      streamKey: "private-canary",
+    });
+    const input = {
+      action: "restart",
+      watchUrl: "https://youtu.be/abcdefghijk?si=extra",
+    };
+    expect(
+      (await POST(request(input, { origin: "https://other.example" }), context))
+        .status,
+    ).toBe(403);
+    expect(mocks.restart).not.toHaveBeenCalled();
+    const result = await POST(request(input), context);
+    expect(result.status).toBe(200);
+    expect(mocks.restart).toHaveBeenCalledWith(id, account, "abcdefghijk");
+    expect(await result.json()).toEqual({
+      desiredState: "live",
+      status: "prepared",
+      watchUrl: "https://www.youtube.com/watch?v=replacement",
+    });
+  });
+  it.each(["m4_restart_link_changed", "m4_retirement_unconfirmed"])(
+    "returns an actionable restart conflict for %s",
+    async (code) => {
+      mocks.restart.mockRejectedValue(new Error(code));
+      const result = await POST(
+        request({
+          action: "restart",
+          watchUrl: "https://youtu.be/abcdefghijk",
+        }),
+        context,
+      );
+      expect(result.status).toBe(409);
+      expect(await result.json()).toMatchObject({
+        code,
+        error: expect.any(String),
+      });
     },
   );
   it("rejects invalid IDs, malformed input, and invalid deployment origin", async () => {

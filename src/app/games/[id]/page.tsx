@@ -8,6 +8,7 @@ import { cameraDisplayStatus } from "@/lib/camera-status";
 import { AppNavigation } from "@/components/AppNavigation";
 import { gameEntryPresentation, gameEntryCapabilities } from "@/lib/game-entry";
 import { GameReadScreen } from "@/components/GameReadScreen";
+import { studioSessionBridge } from "@/lib/studio-session";
 import "@/components/game-entry.css";
 
 import {
@@ -18,10 +19,6 @@ import {
 import { GameInvitations } from "@/components/GameInvitations";
 import { EndGameControl } from "@/components/EndGameControl";
 import { CompletedGameSummary } from "@/components/CompletedGameSummary";
-import type {
-  CompletionCleanup,
-  SafeGameCompletion,
-} from "@/lib/game-completion";
 export default function GameLobby({
   params,
 }: {
@@ -39,8 +36,6 @@ export default function GameLobby({
     navigationMetadata,
     refreshContext,
   } = useGame(id, undefined, undefined, true);
-  const [finished, setFinished] = useState<SafeGameCompletion>();
-  const [finishedCleanup, setFinishedCleanup] = useState<CompletionCleanup>();
   const [organizerAccess, setOrganizerAccess] = useState(false);
   const [scoringAccess, setScoringAccess] = useState(false);
   const [desktop, setDesktop] = useState(false);
@@ -51,6 +46,13 @@ export default function GameLobby({
     setOrganizerAccess(hasOrganizerAccess(localStorage, id));
     setScoringAccess(hasScoringAccess(localStorage, id));
   }, [id]);
+  useEffect(() => {
+    if (completion)
+      studioSessionBridge()?.postMessage({
+        type: "studio-game-ended",
+        gameId: id,
+      });
+  }, [completion, id]);
   useEffect(() => {
     if (
       desktop &&
@@ -110,7 +112,7 @@ export default function GameLobby({
       setDisconnecting(undefined);
     }
   }
-  const completed = completion ?? finished;
+  const completed = completion;
   if (
     desktop &&
     game &&
@@ -127,8 +129,6 @@ export default function GameLobby({
           gameId={id}
           completion={completed}
           cleanupControls={canManageCompletion(accountRole, organizerAccess)}
-          canReopen={["owner", "team_admin"].includes(accountRole)}
-          initialCleanup={finishedCleanup}
         />
       </main>
     );
@@ -352,14 +352,9 @@ export default function GameLobby({
             )}
             <EndGameControl
               gameId={id}
-              homeName={game.config.homeName}
-              awayName={game.config.awayName}
               sharedYoutubeWatchUrl={game.config.sharedYoutubeWatchUrl}
               enabled={canManageCompletion(accountRole, organizerAccess)}
-              onCompleted={(value, cleanup) => {
-                setFinished(value);
-                setFinishedCleanup(cleanup);
-              }}
+              onCompleted={() => router.push("/dashboard")}
             />
           </div>
         </section>

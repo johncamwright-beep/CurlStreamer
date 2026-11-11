@@ -12,16 +12,29 @@ import { m4YouTubeFailureCode } from "@/lib/providers/m4-youtube-failure";
 import {
   readM4Session,
   prepareM4Session,
-  stopM4Session,
+  restartM4Session,
   m4Configuration,
   goLiveM4Session,
 } from "@/lib/providers/m4-youtube-session";
 
 export const dynamic = "force-dynamic";
 const paramsSchema = z.object({ id: z.uuid() }).strict();
-const bodySchema = z
-  .object({ action: z.enum(["prepare", "stop", "go-live"]) })
-  .strict();
+const watchVideoId = youtubeWatchUrlSchema.transform((value) => {
+  if (!value) return null;
+  const url = new URL(value);
+  if (url.hostname === "youtu.be") return url.pathname.split("/")[1];
+  if (url.pathname === "/watch") return url.searchParams.get("v");
+  return url.pathname.split("/")[2];
+});
+const bodySchema = z.discriminatedUnion("action", [
+  z.object({ action: z.enum(["prepare", "stop", "go-live"]) }).strict(),
+  z
+    .object({
+      action: z.literal("restart"),
+      watchUrl: watchVideoId.pipe(z.string().max(128)),
+    })
+    .strict(),
+]);
 const safeSessionSchema = z.object({
   phase: z
     .enum([
@@ -54,21 +67,14 @@ const safeSessionSchema = z.object({
       "youtube_broadcast_terminal",
       "m4_provider_unavailable",
       "m4_operation_fenced",
+      "m4_retirement_unconfirmed",
     ])
     .optional()
     .catch(undefined),
-  watchUrl: youtubeWatchUrlSchema
-    .transform((value) => {
-      if (!value) return undefined;
-      const url = new URL(value);
-      const id =
-        url.hostname === "youtu.be"
-          ? url.pathname.split("/")[1]
-          : url.pathname === "/watch"
-            ? url.searchParams.get("v")
-            : url.pathname.split("/")[2];
-      return `https://www.youtube.com/watch?v=${id}`;
-    })
+  watchUrl: watchVideoId
+    .transform((id) =>
+      id ? `https://www.youtube.com/watch?v=${id}` : undefined,
+    )
     .optional(),
 });
 function response(body: unknown, status = 200) {
@@ -124,6 +130,24 @@ function failure(error: unknown) {
     error instanceof Error ? providerMessages[error.message] : undefined;
   if (message)
     return response({ error: message, code: (error as Error).message }, 503);
+  if (error instanceof Error && error.message === "m4_restart_link_changed")
+    return response(
+      {
+        error:
+          "This game's saved YouTube link has changed. Refresh Studio to see the current link.",
+        code: "m4_restart_link_changed",
+      },
+      409,
+    );
+  if (error instanceof Error && error.message === "m4_retirement_unconfirmed")
+    return response(
+      {
+        error:
+          "YouTube has not confirmed that this broadcast ended. Check the saved broadcast in YouTube Studio and try again.",
+        code: "m4_retirement_unconfirmed",
+      },
+      409,
+    );
   const code = (error as { code?: unknown } | null)?.code;
   if (code === "P0409")
     return response(
@@ -215,19 +239,31 @@ async function post(request: Request, context: Context) {
   )
     return response({ error: "Invalid request origin." }, 403);
   try {
-    const authority = await credential(request, parsed.data.id);
+    const gameId = parsed.data.id;
+    const authority = await credential(request, gameId);
     if (!authority) return failure({ code: "42501" });
-    if (body.data.action === "prepare" && !m4Configuration())
+    const action = body.data.action;
+    if (action === "stop")
+      return response(
+        {
+          error:
+            "Use Stop in Studio to pause the stream, or Close Game to end it.",
+        },
+        409,
+      );
+    if ((action === "prepare" || action === "restart") && !m4Configuration())
       return response(
         { error: "Local YouTube preparation is not configured." },
         503,
       );
+    if (body.data.action === "restart")
+      return safeResponse(
+        await restartM4Session(gameId, authority, body.data.watchUrl),
+      );
     return safeResponse(
-      body.data.action === "prepare"
-        ? await prepareM4Session(parsed.data.id, authority)
-        : body.data.action === "go-live"
-          ? await goLiveM4Session(parsed.data.id, authority)
-          : await stopM4Session(parsed.data.id, authority),
+      await (action === "prepare"
+        ? prepareM4Session(gameId, authority)
+        : goLiveM4Session(gameId, authority)),
     );
   } catch (error) {
     return failure(error);

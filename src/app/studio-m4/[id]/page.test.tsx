@@ -37,11 +37,8 @@ describe("M4 broadcast manager page", () => {
     );
     expect(enabled).toContain("Broadcast manager");
     expect(fetchMock).not.toHaveBeenCalled();
-    expect(m4ManagerFailureMessage("prepare", true)).toContain(
-      "access was refused",
-    );
-    expect(m4ManagerFailureMessage("prepare")).toContain("Do not retry");
-    expect(m4ManagerFailureMessage("stop")).toContain("quarantined");
+    expect(m4ManagerFailureMessage(true)).toContain("access was refused");
+    expect(m4ManagerFailureMessage()).toContain("Do not retry");
 
     const staleIdle = { desiredState: "stopped", status: "idle" } as const;
     const retired = { desiredState: "stopped", status: "stopped" } as const;

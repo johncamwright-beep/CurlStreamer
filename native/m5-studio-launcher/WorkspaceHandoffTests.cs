@@ -32,7 +32,7 @@ internal static class WorkspaceHandoffTests
         var prepare = typeof(Workspace).GetMethod("PrepareGrant", BindingFlags.Instance | BindingFlags.NonPublic);
         var output = Path.Combine(root, "handoff-result.txt");
         int mode = 0, requests = 0, result = 1; bool ran = false;
-        var timeout = new Timer { Interval = 60000 };
+        var timeout = new Timer { Interval = 90000 };
         timeout.Tick += (s, e) => { File.WriteAllText(output, "FAIL: WebView fixture timed out."); Environment.Exit(1); };
         timeout.Start();
         web.CoreWebView2InitializationCompleted += (s, e) => {
@@ -322,6 +322,48 @@ internal static class WorkspaceHandoffTests
                     } finally {
                         try { if (!inactiveChild.HasExited) { inactiveChild.Kill(); inactiveChild.WaitForExit(5000); } } catch (InvalidOperationException) { }
                     }
+                    // An already saved game closes even when an operator command
+                    // is busy or the local controller cannot acknowledge shutdown.
+                    foreach (var respondsToClose in new[] { true, false }) {
+                        if (!respondsToClose) await NavigateCameraFixture(core, origin + "/games/" + id);
+                        var completedChild = NewShutdownFixture(testNode, respondsToClose ? 0 : -1);
+                        var completedExit = AttachShutdownFixture(form, completedChild, id, readyState);
+                        var childField = typeof(Workspace).GetField("child",flags);
+                        var busyField = typeof(Workspace).GetField("busy",flags);
+                        var endedField = typeof(Workspace).GetField("gameEnded",flags);
+                        var finishingField = typeof(Workspace).GetField("finishingCompletedGame",flags);
+                        var warning = Path.Combine(fixtureProfile,"recording-warning.json");
+                        File.Delete(warning);
+                        busyField.SetValue(form,true);
+                        typeof(Workspace).GetField("endingUntil",flags).SetValue(form,DateTime.UtcNow.AddMilliseconds(1500));
+                        var postEnded = "window.chrome.webview.postMessage({type:'studio-game-ended',gameId:'";
+                        try {
+                            await core.ExecuteScriptAsync("window.endedAcks=[];window.addEventListener('studio-game-ended-ack',e=>window.endedAcks.push(e.detail.gameId));" + postEnded + otherId + "'});");
+                            await Task.Delay(100);
+                            if ((bool)endedField.GetValue(form) || await core.ExecuteScriptAsync("window.endedAcks.length") != "0")
+                                throw new Exception("Foreign completion reached the local controller.");
+                            await core.ExecuteScriptAsync(postEnded + id + "'});");
+                            for (int i=0;i<15 && await core.ExecuteScriptAsync("window.endedAcks.length")=="0";i++) await Task.Delay(50);
+                            if (!(bool)endedField.GetValue(form) || completedChild.HasExited ||
+                                await core.ExecuteScriptAsync("window.endedAcks.length===1&&window.endedAcks[0]==='" + id + "'") != "true")
+                                throw new Exception("Terminal cleanup was not acknowledged before the final card finished.");
+                            if (!respondsToClose) await NavigateCameraFixture(core, origin + "/dashboard");
+                            var cleanupDeadline = DateTime.UtcNow.AddSeconds(35);
+                            while ((childField.GetValue(form) != null || (bool)finishingField.GetValue(form)) && DateTime.UtcNow < cleanupDeadline)
+                                await Task.Delay(100);
+                            if (childField.GetValue(form) != null || (bool)finishingField.GetValue(form) || form.IsDisposed ||
+                                (string)remembered.Invoke(form,null) != null || requests != requestsBeforeLeave ||
+                                (respondsToClose && (!completedExit.Task.IsCompleted || !completedExit.Task.Result)) ||
+                                File.Exists(warning) == respondsToClose)
+                                throw new Exception("Completed game did not release the local controller or report recording status correctly.");
+                        } finally {
+                            try { if (!completedChild.HasExited) { completedChild.Kill(); completedChild.WaitForExit(5000); } } catch (InvalidOperationException) { }
+                        }
+                        busyField.SetValue(form,false);
+                        endedField.SetValue(form,false);
+                        if (!respondsToClose) await NavigateCameraFixture(core, origin + "/score/" + id);
+                        typeof(Workspace).GetMethod("RememberGame",flags).Invoke(form,new object[]{id});
+                    }
                     // A paused and busy sender must close without the hosted final-card flow.
                     // Simulate an owned controller whose only successful operation is stdin close.
                     var pausedChild = NewShutdownFixture(testNode, 0);
@@ -343,7 +385,7 @@ internal static class WorkspaceHandoffTests
                                     (string)remembered.Invoke(form,null) != id ||
                                     (bool)typeof(Workspace).GetField("gameEnded",flags).GetValue(form) || requests != requestsBeforeLeave)
                                     throw new Exception("Workspace close did not cleanly stop the paused sender or leave the game resumable.");
-                                File.WriteAllText(output, "PASS: native WebView2 handoff, preview and camera boundaries. Paired recording finalized and busy expired sender closed while their games stayed open.");
+                                File.WriteAllText(output, "PASS: native WebView2 handoff, camera boundaries, open-game leave, and bounded completed-game controller cleanup.");
                                 result = 0;
                             } catch (Exception error) { File.WriteAllText(output, "FAIL: " + error.Message); }
                             finally { timeout.Stop(); }
@@ -362,7 +404,8 @@ internal static class WorkspaceHandoffTests
         return result;
     }
     private static System.Diagnostics.Process NewShutdownFixture(string node, int closeDelayMs) {
-        var script = "process.stdin.on('data',x=>{if(String(x).trim()==='close')setTimeout(()=>process.stdout.write('CLOSED\\n',()=>process.exit(0))," + closeDelayMs + ");});";
+        var script = closeDelayMs < 0 ? "process.stdin.resume();" :
+            "process.stdin.on('data',x=>{if(String(x).trim()==='close')setTimeout(()=>process.stdout.write('CLOSED\\n',()=>process.exit(0))," + closeDelayMs + ");});";
         return new System.Diagnostics.Process {
             StartInfo = new System.Diagnostics.ProcessStartInfo(node, "-e \"" + script + "\"") {
                 UseShellExecute = false, CreateNoWindow = true, RedirectStandardInput = true, RedirectStandardOutput = true

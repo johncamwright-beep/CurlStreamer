@@ -12,6 +12,7 @@ type FirstFrame = {
   url: string;
   window?: SeekWindow;
   seekStarted: boolean;
+  preferFirst?: boolean;
   fallback?: number;
 };
 const captureTimeoutMs = 75_000;
@@ -106,16 +107,18 @@ export default function LocalFlagCapture({
       element.pause();
       if (!initial.seekStarted) {
         initial.seekStarted = true;
-        const target = initial.window.last;
+        const target = initial.preferFirst
+          ? initial.window.first
+          : initial.window.last;
         if (Math.abs(element.currentTime - target) > 0.001) {
           element.currentTime = target;
-          initial.fallback = window.setTimeout(() => {
-            if (firstFrame.current !== initial || !initial.window) return;
-            // An incomplete tail can stall a seek. Keep the downloaded clip
-            // and show its first available frame so scrubbing can start.
-            element.currentTime = initial.window.first;
-            flushSeek();
-          }, firstSeekTimeoutMs);
+          if (!initial.preferFirst)
+            initial.fallback = window.setTimeout(() => {
+              if (firstFrame.current !== initial || !initial.window) return;
+              // Keep the downloaded clip if the near-end seek stalls.
+              element.currentTime = initial.window.first;
+              flushSeek();
+            }, firstSeekTimeoutMs);
           return;
         }
       }
@@ -430,10 +433,12 @@ export default function LocalFlagCapture({
                     const element = video.current;
                     const initial = firstFrame.current;
                     if (!element || !initial) return;
-                    if (initial.seekStarted && initial.window)
-                      element.currentTime = initial.window.first;
+                    window.clearTimeout(initial.fallback);
+                    initial.preferFirst ||= initial.seekStarted;
+                    initial.seekStarted = false;
+                    initial.window = undefined;
+                    element.load();
                     void element.play().catch(() => undefined);
-                    flushSeek();
                   }}
                 >
                   Tap to load video

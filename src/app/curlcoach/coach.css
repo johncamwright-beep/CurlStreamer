@@ -581,9 +581,13 @@
   background: #99e8df;
 }
 .shot-flag-playback {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
   gap: 8px;
+}
+.coach-workspace .shot-flag-playback button {
+  min-width: 44px;
+  padding-inline: 6px;
 }
 .coach-review-item {
   padding: 12px 0;

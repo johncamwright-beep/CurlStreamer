@@ -564,10 +564,11 @@ export default function LocalFlagCapture({
                   <div className="shot-flag-playback">
                     <button
                       type="button"
+                      aria-label="−0.25 seconds"
                       disabled={!!loading || startingVideo || !seekWindow}
                       onClick={() => seek(time - flagNudgeSeconds)}
                     >
-                      −0.25 seconds
+                      −0.25 s
                     </button>
                     <button
                       type="button"
@@ -595,10 +596,11 @@ export default function LocalFlagCapture({
                     </button>
                     <button
                       type="button"
+                      aria-label="+0.25 seconds"
                       disabled={!!loading || startingVideo || !seekWindow}
                       onClick={() => seek(time + flagNudgeSeconds)}
                     >
-                      +0.25 seconds
+                      +0.25 s
                     </button>
                   </div>
                 </>

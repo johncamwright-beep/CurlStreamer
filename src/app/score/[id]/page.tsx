@@ -1,4 +1,5 @@
 "use client";
+import { StudioTroubleshooting } from "@/components/StudioTroubleshooting";
 import { StudioReplay } from "@/components/StudioReplay";
 import { StudioShotFlagRelay } from "@/components/StudioShotFlagRelay";
 import { StudioCelebrations } from "@/components/StudioCelebrations";
@@ -476,6 +477,7 @@ function ScorerGame({ id }: { id: string }) {
           {canEndGame && (
             <div className="scoring-page-actions">
               {desktop && <StudioStatusArea />}
+              {desktop && <StudioTroubleshooting gameId={id} />}
               {microphoneSyncError && <p role="alert">{microphoneSyncError}</p>}
               {!desktop && (
                 <Link

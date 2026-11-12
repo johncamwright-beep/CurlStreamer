@@ -1044,6 +1044,11 @@ internal sealed class Workspace : Form
         object phoneAudio;
         if (web.CoreWebView2 != null && WorkspacePolicy.SameOrigin(web.CoreWebView2.Source, origin) && selectedGame == runningGame && state.TryGetValue("phoneAudio", out phoneAudio))
             web.CoreWebView2.ExecuteScriptAsync("window.dispatchEvent(new CustomEvent('studio-audio-status',{detail:" + json.Serialize(new { gameId = runningGame, cameras = phoneAudio }) + "}));");
+        if (web.CoreWebView2 != null && WorkspacePolicy.SameOrigin(web.CoreWebView2.Source, origin) && selectedGame == runningGame) {
+            object nativeHealth; state.TryGetValue("nativeHealth", out nativeHealth);
+            object diagnosticInputs; state.TryGetValue("cameraInputs", out diagnosticInputs);
+            web.CoreWebView2.ExecuteScriptAsync("window.dispatchEvent(new CustomEvent('studio-local-health',{detail:" + json.Serialize(new { gameId = runningGame, capturedAt = (long)(DateTime.UtcNow - new DateTime(1970,1,1)).TotalMilliseconds, nativeHealth = nativeHealth, cameras = diagnosticInputs }) + "}));");
+        }
         PublishYouTubeStatus(state);
         status.Text = phase == "recording" ? "Cameras ready · Not recording · YouTube off" : phase == "stopped" ? "Cameras disconnected · No recording saved" : TextValue(state, "programMessage") ?? "Camera status is unavailable.";
         UpdateButtons();

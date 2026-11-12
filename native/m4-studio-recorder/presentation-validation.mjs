@@ -143,6 +143,21 @@ try {
   assert(health.readUInt32LE(8) > 0);
   assert(health.readUInt32LE(12) > 0);
   assert(health.readUInt32LE(16) < 2500);
+  const telemetry = JSON.parse(
+    await readFile(
+      join(
+        evidence,
+        `curlstreamer-m4-cef-${"f".repeat(32)}`,
+        "studio-health.json",
+      ),
+      "utf8",
+    ),
+  );
+  assert(Date.now() - telemetry.capturedAt < 10000);
+  assert(telemetry.renderFps > 0 && telemetry.renderFps <= 31);
+  assert.equal(telemetry.targetKbps, 6000);
+  assert.equal(telemetry.sentKbps, 0);
+  assert.equal(telemetry.adaptiveBitrate, false); // No RTMP output in this fixture.
   mode = "live";
   await command("RFU1");
   await delay(2500);

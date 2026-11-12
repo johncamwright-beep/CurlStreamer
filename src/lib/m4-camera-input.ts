@@ -113,8 +113,22 @@ export type M4CameraInputSnapshot = {
   zoom?: number;
   health?: z.infer<typeof m4CameraHealthSchema>;
 };
+export const m4CameraNativeHealthSchema = z
+  .object({
+    decodedFrames: z.number().int().nonnegative(),
+    decodeErrors: z.number().int().nonnegative(),
+    processingMs: z.number().finite().nonnegative().max(600000),
+    transport: z.enum(["udp", "tcp"]).optional(),
+    sourceWidth: z.number().int().positive().max(16384).optional(),
+    sourceHeight: z.number().int().positive().max(16384).optional(),
+    receivedKbps: z.number().finite().nonnegative().optional(),
+    bufferMs: z.number().int().min(0).max(10000).optional(),
+  })
+  .strict();
+
 export const m4CameraHealthSchema = z
   .object({
+    native: m4CameraNativeHealthSchema.optional(),
     receivedFps: z.number().nonnegative().max(240),
     lastFrameAgeMs: z.number().nonnegative().nullable(),
     longestGapMs: z.number().nonnegative(),

@@ -1,3 +1,4 @@
+import { nativeHealthReader } from "./studio-native-health";
 // Node-only owner for the private renderer, direct cameras and isolated recorder.
 import { randomBytes } from "node:crypto";
 import { mkdir, rm } from "node:fs/promises";
@@ -182,6 +183,7 @@ export async function startM4ProgramHost(
     return cameraCleanup ? result : { ...result, finalized: false };
   });
   return {
+    troubleshooting: nativeHealthReader(cacheDirectory),
     coach: recorder.coach,
     replay: recorder.replay,
     stop,

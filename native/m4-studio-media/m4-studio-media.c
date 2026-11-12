@@ -15,6 +15,9 @@ typedef bool (*bind_fn)(obs_service_t *, obs_output_t *);
 typedef bool (*start_fn)(obs_service_t *);
 
 struct m4_media {
+    wchar_t telemetry_path[4096];
+    ULONGLONG telemetry_at;
+    uint64_t telemetry_bytes;
     studio_coach *coach;
     studio_replay *replay;
     obs_output_t *record;
@@ -295,6 +298,7 @@ static bool initialize(const wchar_t *runtime_bin, const wchar_t *absolute_mkv, 
         if (!m->program) goto fail;
         obs_set_output_source(0, m->program);
         if (!initialize_preview(m, cache_root)) goto fail;
+        if (swprintf_s(m->telemetry_path, 4096, L"%ls\\studio-health.json", cache_root)<0) goto fail;
     }
     *out = m; return true;
 fail:
@@ -329,7 +333,12 @@ bool m4_media_prepare_stream(m4_media *m, const wchar_t *runtime_bin, const wcha
     bind = (bind_fn)(void *)GetProcAddress(dll, "m4_bind_output");
     if (!m->attach || !m->start_stream || !bind) return false;
     m->service = obs_service_create("curlstreamer_m4_memory", "M4 memory-only stream authority", NULL, NULL);
-    m->stream = obs_output_create("rtmp_output", "M4 independent program RTMP", NULL, NULL);
+    obs_data_t *output_settings = obs_data_create();
+    /* Prefer continuous video under upload congestion. OBS restores bitrate
+     * gradually; shared recording/replay encoders follow the same quality. */
+    obs_data_set_bool(output_settings, "dyn_bitrate", true);
+    m->stream = obs_output_create("rtmp_output", "M4 independent program RTMP", output_settings, NULL);
+    obs_data_release(output_settings);
     if (!m->service || !m->stream) return false;
     obs_output_set_video_encoder(m->stream, m->video);
     obs_output_set_audio_encoder(m->stream, m->audio, 0);
@@ -338,8 +347,32 @@ bool m4_media_prepare_stream(m4_media *m, const wchar_t *runtime_bin, const wcha
 }
 bool m4_media_attach_stream(m4_media *m, HANDLE pipe, const unsigned char capability[32], uint32_t parent_pid)
 { return m && m->attach && m->service && m->attach(m->service, pipe, capability, parent_pid); }
+/* Small, atomic, private, local-only snapshot. Diagnostics cannot stop media. */
+static void telemetry(m4_media *m)
+{
+    ULONGLONG now=GetTickCount64(), elapsed=now-m->telemetry_at;
+    if (!m->telemetry_path[0] || elapsed<2000) return;
+    uint64_t bytes=m->stream?obs_output_get_total_bytes(m->stream):0;
+    double kbps=m->telemetry_at && bytes>=m->telemetry_bytes ? (double)(bytes-m->telemetry_bytes)*8.0/(double)elapsed : 0;
+    m->telemetry_at=now; m->telemetry_bytes=bytes;
+    obs_data_t *settings=obs_encoder_get_settings(m->video);
+    long long bitrate=obs_data_get_int(settings,"bitrate"); obs_data_release(settings);
+    FILETIME ft; GetSystemTimeAsFileTime(&ft); ULARGE_INTEGER epoch; epoch.LowPart=ft.dwLowDateTime; epoch.HighPart=ft.dwHighDateTime;
+    char body[1024];
+    int size=snprintf(body,sizeof(body),"{\"capturedAt\":%llu,\"targetKbps\":%lld,\"sentKbps\":%.3f,\"congestion\":%.4f,\"droppedFrames\":%d,\"totalFrames\":%d,\"adaptiveBitrate\":%s,\"renderFps\":%.3f,\"renderMs\":%.3f,\"renderSkippedFrames\":%u}",
+        (unsigned long long)((epoch.QuadPart-116444736000000000ULL)/10000),bitrate,kbps,m->stream?(double)obs_output_get_congestion(m->stream):0,
+        m->stream?obs_output_get_frames_dropped(m->stream):0,m->stream?obs_output_get_total_frames(m->stream):0,m->stream?"true":"false",
+        obs_get_active_fps(),(double)obs_get_average_frame_time_ns()/1000000.0,obs_get_lagged_frames());
+    wchar_t temp[4104];
+    if (size<=0 || size>=(int)sizeof(body) || swprintf_s(temp,4104,L"%ls.tmp",m->telemetry_path)<0) return;
+    HANDLE file=CreateFileW(temp,GENERIC_WRITE,0,NULL,CREATE_ALWAYS,FILE_ATTRIBUTE_NORMAL,NULL);
+    if (file==INVALID_HANDLE_VALUE) return;
+    DWORD written=0; BOOL ok=WriteFile(file,body,(DWORD)size,&written,NULL); CloseHandle(file);
+    if (!ok || written!=(DWORD)size || !MoveFileExW(temp,m->telemetry_path,MOVEFILE_REPLACE_EXISTING)) DeleteFileW(temp);
+}
+
 void m4_media_poll_stream(m4_media *m)
-{ if (m) { studio_coach_tick(m->coach); studio_replay_tick(m->replay); if (m->start_stream && m->service) m->start_stream(m->service); } }
+{ if (m) { telemetry(m); studio_coach_tick(m->coach); studio_replay_tick(m->replay); if (m->start_stream && m->service) m->start_stream(m->service); } }
 void m4_media_program_health(const m4_media *m, uint32_t *sequence, uint32_t *paint_changes, uint32_t *age_ms, uint32_t *status)
 {
     *sequence = 0; *paint_changes = 0; *age_ms = UINT32_MAX; *status = 0;

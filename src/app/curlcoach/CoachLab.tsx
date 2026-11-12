@@ -214,7 +214,8 @@ export default function CoachLab({
   const enhancedRecord = enhancedData.documents.find(
     (d) => d.kind === "supplement" && d.shotId === editing,
   );
-  const enhancedKey = `shot-enhanced-draft:${metrics.scopeKey}:${context?.gameId}:${editing ?? `${draft.end}:${draft.position}:${draft.stone}`}`;
+  const shotKey = editing ?? `${draft.end}:${draft.position}:${draft.stone}`;
+  const enhancedKey = `shot-enhanced-draft:${metrics.scopeKey}:${context?.gameId}:${shotKey}`;
   const [enhancedDraft, setEnhancedDraft] = useState<{
     key: string;
     value: Supplement;
@@ -1285,7 +1286,7 @@ export default function CoachLab({
                       {context?.source === "streamer" && (
                         <>
                           <LocalFlagCapture
-                            key={`${metrics.scopeKey}:${context.gameId}`}
+                            key={`${metrics.scopeKey}:${context.gameId}:${shotKey}`}
                             gameId={context.gameId}
                             players={players}
                             defaultPlayerId={draft.playerId}

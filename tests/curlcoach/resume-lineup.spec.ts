@@ -567,6 +567,47 @@ test("reload preserves drafts and lineup changes never rewrite recorded players"
   await expect.poll(() => games.get(gameOne)!.state.events.length).toBe(2);
 });
 
+test("video flag choice survives shot edits and resets after Next Turn", async ({
+  page,
+}) => {
+  await page.route("**/api/curlcoach/clip-relay", (route) =>
+    route.fulfill({ status: 503, json: { error: "Fixture video offline" } }),
+  );
+  await fixture(page);
+  await start(page);
+
+  const flag = page.getByRole("combobox", {
+    name: "Flag shot for review",
+    exact: true,
+  });
+  const audience = page.getByRole("combobox", {
+    name: "Flag audience",
+    exact: true,
+  });
+  await openEntryTab(page, "Shot Flags");
+  await expect(flag).toHaveValue("no");
+  await flag.selectOption("yes");
+  await audience.selectOption("player");
+
+  await openEntryTab(page, "Shot");
+  await page
+    .getByRole("combobox", { name: "Shot type", exact: true })
+    .selectOption("Draw");
+  await openEntryTab(page, "Execution");
+  await page.getByLabel("Numeric grade").selectOption("4");
+  await openEntryTab(page, "Shot Flags");
+  await expect(flag).toHaveValue("yes");
+  await expect(audience).toHaveValue("player");
+
+  await page.getByRole("button", { name: "Next Turn", exact: true }).click();
+  await expect(
+    page.getByRole("region", { name: "Current shot context" }),
+  ).toContainText("Rock 2");
+  await openEntryTab(page, "Shot Flags");
+  await expect(flag).toHaveValue("no");
+  await expect(audience).toHaveCount(0);
+});
+
 test("Change recalls a recorded shot, saves an audited correction and returns to the current draft", async ({
   page,
 }) => {

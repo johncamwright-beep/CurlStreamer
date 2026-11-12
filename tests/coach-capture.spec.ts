@@ -270,6 +270,31 @@ test("a stalled seek near the end falls back on the same clip", async ({
   await expect(page.getByText("Start point selected")).toBeVisible();
 });
 
+test("reload requests a fresh clip from a working picker and keeps the flag note", async ({
+  page,
+}) => {
+  const { mediaRequests } = await captureFixture(page);
+  await page.getByLabel("Flag shot for review").selectOption("yes");
+  await page.getByLabel("Flag audience").selectOption("team");
+  const { select, picker, choose, video } = startPicker(page);
+  await select.click();
+  await expect(choose).toBeEnabled();
+  const first = await video.getAttribute("src");
+  await choose.click();
+  await page.getByLabel("Flag note (optional)").fill("Watch the takeout");
+
+  await select.click();
+  await expect(video).toHaveAttribute("src", first!);
+  await picker.getByRole("button", { name: "Reload recent video" }).click();
+  await expect(choose).toBeEnabled();
+  await expect(video).not.toHaveAttribute("src", first!);
+  expect(mediaRequests()).toBe(2);
+  await choose.click();
+  await expect(page.getByLabel("Flag note (optional)")).toHaveValue(
+    "Watch the takeout",
+  );
+});
+
 test("a browser that blocks autoplay can load the same clip with a tap", async ({
   page,
 }) => {

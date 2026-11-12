@@ -10,12 +10,13 @@ type StartPoint = { time: number; selectedAt: string; capturedAt: string };
 type SeekWindow = { first: number; last: number; duration: number };
 type FirstFrame = {
   url: string;
-  hasMetadata: boolean;
-  ready: () => void;
-  fail: (error: Error) => void;
+  window?: SeekWindow;
+  seekStarted: boolean;
+  preferFirst?: boolean;
+  fallback?: number;
 };
 const captureTimeoutMs = 75_000;
-const firstFrameTimeoutMs = 8_000;
+const firstSeekTimeoutMs = 1_500;
 const videoError = "Video could not play. Reload recent video to try again.";
 
 export default function LocalFlagCapture({
@@ -40,6 +41,9 @@ export default function LocalFlagCapture({
   const [settled, setSettled] = useState(false);
   const [playing, setPlaying] = useState(false);
   const [loading, setLoading] = useState<"loading" | "retrying" | null>(null);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [startingVideo, setStartingVideo] = useState(false);
+  const [tapToLoad, setTapToLoad] = useState(false);
   const [clipError, setClipError] = useState("");
   const [saving, setSaving] = useState(false);
   const [locked, setLocked] = useState(false);
@@ -65,14 +69,65 @@ export default function LocalFlagCapture({
     () => () => {
       captureRequest.current?.abort();
       saveRequest.current?.abort();
+      window.clearTimeout(firstFrame.current?.fallback);
       if (clipUrl.current) URL.revokeObjectURL(clipUrl.current);
     },
     [],
   );
 
+  useEffect(() => {
+    const element = video.current;
+    if (
+      !pickerOpen ||
+      !element ||
+      !clip ||
+      firstFrame.current?.url !== clip.url
+    )
+      return;
+    // Safari may defer a paused video's preload. Muted inline playback asks it
+    // to decode, and the first decoded frame is paused before the initial seek.
+    const showTap = () => {
+      if (firstFrame.current?.url === clip.url) setTapToLoad(true);
+    };
+    const timer = window.setTimeout(showTap, 1_000);
+    void element.play().catch((error: unknown) => {
+      if (error instanceof DOMException && error.name === "NotAllowedError")
+        showTap();
+    });
+    return () => window.clearTimeout(timer);
+  }, [clip, pickerOpen]);
+
   function flushSeek() {
     const element = video.current;
     if (!element || element.src !== clipUrl.current || element.seeking) return;
+    const ready = element.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA;
+    const initial = firstFrame.current;
+    if (initial) {
+      if (!pickerOpen || !ready || !initial.window) return;
+      element.pause();
+      if (!initial.seekStarted) {
+        initial.seekStarted = true;
+        const target = initial.preferFirst
+          ? initial.window.first
+          : initial.window.last;
+        if (Math.abs(element.currentTime - target) > 0.001) {
+          element.currentTime = target;
+          if (!initial.preferFirst)
+            initial.fallback = window.setTimeout(() => {
+              if (firstFrame.current !== initial || !initial.window) return;
+              // Keep the downloaded clip if the near-end seek stalls.
+              element.currentTime = initial.window.first;
+              flushSeek();
+            }, firstSeekTimeoutMs);
+          return;
+        }
+      }
+      window.clearTimeout(initial.fallback);
+      firstFrame.current = null;
+      setTime(element.currentTime);
+      setStartingVideo(false);
+      setTapToLoad(false);
+    }
     if (pendingSeek.current !== null) {
       const target = pendingSeek.current;
       pendingSeek.current = null;
@@ -81,9 +136,7 @@ export default function LocalFlagCapture({
         return;
       }
     }
-    const ready = element.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA;
     setSettled(ready);
-    if (ready && firstFrame.current?.hasMetadata) firstFrame.current.ready();
   }
 
   function seek(seconds: number, available = seekWindow) {
@@ -99,7 +152,11 @@ export default function LocalFlagCapture({
   function clearClip() {
     const url = clipUrl.current;
     clipUrl.current = null;
+    window.clearTimeout(firstFrame.current?.fallback);
+    firstFrame.current = null;
     if (url) URL.revokeObjectURL(url);
+    setStartingVideo(false);
+    setTapToLoad(false);
     setSeekWindow(null);
     setSettled(false);
     setPlaying(false);
@@ -107,31 +164,12 @@ export default function LocalFlagCapture({
     setClip(null);
   }
 
-  function loadFirstFrame(captured: Omit<Clip, "url">, signal: AbortSignal) {
+  function showClip(captured: Omit<Clip, "url">) {
     const url = URL.createObjectURL(captured.video);
     clipUrl.current = url;
-    return new Promise<void>((resolve, reject) => {
-      const cancel = () => finish(signal.reason);
-      const deadline = window.setTimeout(
-        () => finish(Error("Recent video took too long to display.")),
-        firstFrameTimeoutMs,
-      );
-      function finish(error?: Error) {
-        window.clearTimeout(deadline);
-        signal.removeEventListener("abort", cancel);
-        if (firstFrame.current?.url === url) firstFrame.current = null;
-        if (error) reject(error);
-        else resolve();
-      }
-      firstFrame.current = {
-        url,
-        hasMetadata: false,
-        ready: () => finish(),
-        fail: finish,
-      };
-      signal.addEventListener("abort", cancel, { once: true });
-      setClip({ ...captured, url });
-    });
+    firstFrame.current = { url, seekStarted: false };
+    setStartingVideo(true);
+    setClip({ ...captured, url });
   }
 
   async function capture() {
@@ -157,7 +195,7 @@ export default function LocalFlagCapture({
         try {
           const captured = await captureShotFlagClip(gameId, controller.signal);
           controller.signal.throwIfAborted();
-          await loadFirstFrame(captured, controller.signal);
+          showClip(captured);
           return;
         } catch (error) {
           if (controller.signal.aborted) return;
@@ -187,6 +225,7 @@ export default function LocalFlagCapture({
   }
 
   function closePicker() {
+    setPickerOpen(false);
     cancelCapture();
     video.current?.pause();
     if (selectedClipUrl.current !== clipUrl.current) clearClip();
@@ -194,10 +233,6 @@ export default function LocalFlagCapture({
 
   function failVideo(element: HTMLVideoElement) {
     if (element !== video.current || element.src !== clipUrl.current) return;
-    if (firstFrame.current?.url === element.src) {
-      firstFrame.current.fail(Error(videoError));
-      return;
-    }
     clearClip();
     setClipError(videoError);
   }
@@ -209,6 +244,7 @@ export default function LocalFlagCapture({
       !seekWindow ||
       !element ||
       loading ||
+      startingVideo ||
       !settled ||
       element.readyState < HTMLMediaElement.HAVE_CURRENT_DATA ||
       element.seeking ||
@@ -309,6 +345,7 @@ export default function LocalFlagCapture({
             setStatus("");
             if (event.target.value === "yes") {
               setFlagging(true);
+              void capture();
               setPlayerId(
                 players.some((member) => member.id === defaultPlayerId)
                   ? defaultPlayerId
@@ -363,11 +400,17 @@ export default function LocalFlagCapture({
               title="Select Flag Start"
               doneLabel="Choose Start Point"
               doneDisabled={
-                !!loading || !seekWindow || !settled || playing || !!clipError
+                !!loading ||
+                startingVideo ||
+                !seekWindow ||
+                !settled ||
+                playing ||
+                !!clipError
               }
               onOpen={() => {
-                if (!clip || clipError) void capture();
-                else if (start && selectedClipUrl.current === clip.url)
+                setPickerOpen(true);
+                if (!clip && !clipError) void capture();
+                else if (start && clip && selectedClipUrl.current === clip.url)
                   seek(start.time);
               }}
               onDone={chooseStart}
@@ -379,6 +422,27 @@ export default function LocalFlagCapture({
                     ? "Loading recent video…"
                     : "Retrying recent video…"}
                 </p>
+              )}
+              {startingVideo && !loading && (
+                <p role="status">Opening recent video…</p>
+              )}
+              {tapToLoad && startingVideo && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    const element = video.current;
+                    const initial = firstFrame.current;
+                    if (!element || !initial) return;
+                    window.clearTimeout(initial.fallback);
+                    initial.preferFirst ||= initial.seekStarted;
+                    initial.seekStarted = false;
+                    initial.window = undefined;
+                    element.load();
+                    void element.play().catch(() => undefined);
+                  }}
+                >
+                  Tap to load video
+                </button>
               )}
               {clipError && (
                 <>
@@ -397,39 +461,38 @@ export default function LocalFlagCapture({
                     src={clip.url}
                     playsInline
                     muted
-                    preload="auto"
+                    preload={pickerOpen ? "auto" : "none"}
                     onLoadedMetadata={({ currentTarget }) => {
-                      if (currentTarget.src !== clipUrl.current) return;
-                      if (firstFrame.current?.url === currentTarget.src)
-                        firstFrame.current.hasMetadata = true;
+                      const initial = firstFrame.current;
+                      if (!initial || initial.url !== currentTarget.src) return;
                       const mediaDuration = currentTarget.duration;
                       const duration =
                         Number.isFinite(mediaDuration) && mediaDuration > 0
                           ? Math.min(mediaDuration, clip.duration)
                           : clip.duration;
-                      // Seek just before EOF so the browser can show a frame.
-                      const last = Math.max(0, duration - 0.05);
+                      // Leave room for the video track to end before the audio.
+                      const last = Math.max(0, duration - 0.5);
                       const first = Math.min(clip.minimum, last);
                       const available = { first, last, duration };
+                      initial.window = available;
                       setSeekWindow(available);
-                      seek(
-                        start && selectedClipUrl.current === clip.url
-                          ? start.time
-                          : last,
-                        available,
-                      );
+                      flushSeek();
                     }}
                     onLoadedData={flushSeek}
                     onCanPlay={flushSeek}
+                    onPlaying={flushSeek}
                     onSeeking={() => setSettled(false)}
                     onSeeked={flushSeek}
-                    onPlay={() => setPlaying(true)}
+                    onPlay={() => {
+                      if (!firstFrame.current) setPlaying(true);
+                    }}
                     onPause={() => {
                       setPlaying(false);
                       flushSeek();
                     }}
                     onTimeUpdate={() => {
                       if (
+                        !startingVideo &&
                         pendingSeek.current === null &&
                         video.current &&
                         !video.current.seeking &&
@@ -443,7 +506,7 @@ export default function LocalFlagCapture({
                     }}
                     onError={({ currentTarget }) => failVideo(currentTarget)}
                   />
-                  {!loading && seekWindow && (
+                  {!loading && !startingVideo && seekWindow && (
                     <label>
                       Shot start · {seekLabel}
                       <input
@@ -465,7 +528,7 @@ export default function LocalFlagCapture({
                   <div className="shot-flag-playback">
                     <button
                       type="button"
-                      disabled={!!loading || !seekWindow}
+                      disabled={!!loading || startingVideo || !seekWindow}
                       onClick={() => seek(time - 1)}
                     >
                       −1 second
@@ -473,7 +536,10 @@ export default function LocalFlagCapture({
                     <button
                       type="button"
                       disabled={
-                        !!loading || !seekWindow || (!playing && !settled)
+                        !!loading ||
+                        startingVideo ||
+                        !seekWindow ||
+                        (!playing && !settled)
                       }
                       onClick={() => {
                         const element = video.current;
@@ -493,7 +559,7 @@ export default function LocalFlagCapture({
                     </button>
                     <button
                       type="button"
-                      disabled={!!loading || !seekWindow}
+                      disabled={!!loading || startingVideo || !seekWindow}
                       onClick={() => seek(time + 1)}
                     >
                       +1 second

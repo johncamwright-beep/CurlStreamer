@@ -114,6 +114,7 @@ test("chooses a local flag start and retries only the same flag metadata", async
     0,
   );
   await page.getByLabel("Flag shot for review").selectOption("yes");
+  await expect.poll(mediaRequests).toBe(1);
   await page.getByLabel("Flag audience").selectOption("player");
   const player = page.getByRole("combobox", { name: "Player", exact: true });
   await player.selectOption("sam");
@@ -122,13 +123,14 @@ test("chooses a local flag start and retries only the same flag metadata", async
   await select.click();
   await expect(video).toHaveAttribute("src", /^blob:/, { timeout: 15000 });
   await expect(choose).toBeEnabled();
+  expect(mediaRequests()).toBe(1);
   const slider = picker.getByRole("slider", { name: "Shot start" });
   const duration = await video.evaluate(
     (element: HTMLVideoElement) => element.duration,
   );
   const latest = Number(await slider.getAttribute("max"));
   expect(duration).toBeLessThan(12);
-  expect(duration - latest).toBeCloseTo(0.05, 3);
+  expect(duration - latest).toBeCloseTo(0.5, 3);
   expect(Number(await slider.inputValue())).toBeCloseTo(latest, 3);
   await expect(slider).toHaveAttribute("aria-valuetext", "Newest frame");
   await picker.getByRole("button", { name: "Close Select Flag Start" }).click();
@@ -214,27 +216,35 @@ test("chooses a local flag start and retries only the same flag metadata", async
   expect(context.pages()).toHaveLength(1);
 });
 
-test("waits for a selectable frame and automatically replaces a stalled clip", async ({
+test("a stalled seek near the end falls back on the same clip", async ({
   page,
 }) => {
   await page.clock.install();
   await page.addInitScript(() => {
-    const create = URL.createObjectURL.bind(URL);
-    let firstUrl: string | undefined;
-    URL.createObjectURL = (object) => {
-      const url = create(object);
-      firstUrl ??= url;
-      return url;
-    };
-    const readyState = Object.getOwnPropertyDescriptor(
-      HTMLMediaElement.prototype,
-      "readyState",
-    )!;
-    Object.defineProperty(HTMLMediaElement.prototype, "readyState", {
-      ...readyState,
+    const media = HTMLMediaElement.prototype;
+    const currentTime = Object.getOwnPropertyDescriptor(media, "currentTime")!;
+    const seeking = Object.getOwnPropertyDescriptor(media, "seeking")!;
+    const stalled = new WeakMap<HTMLMediaElement, number>();
+    Object.defineProperty(media, "currentTime", {
+      ...currentTime,
       get(this: HTMLMediaElement) {
-        const state = readyState.get!.call(this);
-        return this.src === firstUrl ? Math.min(state, 1) : state;
+        return stalled.get(this) ?? currentTime.get!.call(this);
+      },
+      set(this: HTMLMediaElement, value: number) {
+        if (value > this.duration - 1 && !this.dataset.tailSeekStalled) {
+          this.dataset.tailSeekStalled = "yes";
+          this.dataset.frameDecodedBeforeSeek = String(this.readyState >= 2);
+          stalled.set(this, value);
+          return;
+        }
+        stalled.delete(this);
+        currentTime.set!.call(this, value);
+      },
+    });
+    Object.defineProperty(media, "seeking", {
+      ...seeking,
+      get(this: HTMLMediaElement) {
+        return stalled.has(this) || seeking.get!.call(this);
       },
     });
   });
@@ -244,18 +254,86 @@ test("waits for a selectable frame and automatically replaces a stalled clip", a
   const { select, picker, choose, video } = startPicker(page);
   await select.click();
   await expect(video).toHaveAttribute("src", /^blob:/);
-  await expect(picker.getByRole("status")).toHaveText("Loading recent video…");
+  const url = await video.getAttribute("src");
+  await expect(video).toHaveAttribute("data-tail-seek-stalled", "yes");
+  await expect(video).toHaveAttribute("data-frame-decoded-before-seek", "true");
   await expect(choose).toBeDisabled();
-  expect(mediaRequests()).toBe(1);
-  await page.clock.fastForward(8_100);
+  await page.clock.fastForward(2_000);
   await expect(choose).toBeEnabled();
   await expect(picker.getByRole("status")).toHaveCount(0);
-  expect(mediaRequests()).toBe(2);
+  await expect(video).toHaveAttribute("src", url!);
+  expect(
+    await video.evaluate((element: HTMLVideoElement) => element.currentTime),
+  ).toBeLessThan(1);
+  expect(mediaRequests()).toBe(1);
   await choose.click();
   await expect(page.getByText("Start point selected")).toBeVisible();
 });
 
-test("retries one invalid clip and cancels the retry when the picker closes", async ({
+test("a browser that blocks autoplay can load the same clip with a tap", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    const media = HTMLMediaElement.prototype;
+    const play = media.play;
+    const readyState = Object.getOwnPropertyDescriptor(media, "readyState")!;
+    let playCalls = 0;
+    Object.defineProperty(media, "readyState", {
+      ...readyState,
+      get(this: HTMLMediaElement) {
+        const state = readyState.get!.call(this);
+        return playCalls < 2 ? Math.min(state, 1) : state;
+      },
+    });
+    media.play = function () {
+      playCalls++;
+      if (playCalls === 1)
+        return Promise.reject(
+          new DOMException("Playback needs a tap", "NotAllowedError"),
+        );
+      return play.call(this).then(() => {
+        this.dispatchEvent(new Event("loadeddata"));
+      });
+    };
+  });
+  const { mediaRequests } = await captureFixture(page);
+  await page.getByLabel("Flag shot for review").selectOption("yes");
+  await page.getByLabel("Flag audience").selectOption("team");
+  const { select, picker, choose, video } = startPicker(page);
+  await select.click();
+  await expect(video).toHaveAttribute("src", /^blob:/);
+  const url = await video.getAttribute("src");
+  await expect(choose).toBeDisabled();
+  await picker.getByRole("button", { name: "Tap to load video" }).click();
+  await expect(choose).toBeEnabled();
+  await expect(video).toHaveAttribute("src", url!);
+  expect(mediaRequests()).toBe(1);
+});
+
+test("an invalid clip waits for an explicit reload before transferring again", async ({
+  page,
+}) => {
+  const { mediaRequests } = await captureFixture(
+    page,
+    async (route, attempt) => {
+      if (attempt !== 1) return false;
+      await route.fulfill({ body: "corrupt video", contentType: "video/mp4" });
+      return true;
+    },
+  );
+  await page.getByLabel("Flag shot for review").selectOption("yes");
+  await page.getByLabel("Flag audience").selectOption("team");
+  const { select, picker, choose } = startPicker(page);
+  await select.click();
+  await expect(picker.getByRole("alert")).toContainText("Video could not play");
+  await expect(choose).toBeDisabled();
+  expect(mediaRequests()).toBe(1);
+  await picker.getByRole("button", { name: "Reload recent video" }).click();
+  await expect(choose).toBeEnabled();
+  expect(mediaRequests()).toBe(2);
+});
+
+test("retries one failed transfer and cancels the retry when the picker closes", async ({
   page,
 }) => {
   let finishRetry!: () => void;
@@ -264,10 +342,7 @@ test("retries one invalid clip and cancels the retry when the picker closes", as
     page,
     async (route, attempt) => {
       if (attempt === 1) {
-        await route.fulfill({
-          body: "corrupt video",
-          contentType: "video/mp4",
-        });
+        await route.abort();
         return true;
       }
       if (attempt === 2) {

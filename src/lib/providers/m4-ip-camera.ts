@@ -10,6 +10,7 @@ import type {
 import { cameraRoleSchema, type CameraRole } from "../m2-studio-protocol";
 import {
   m4CameraInputSchema,
+  m4CameraNativeHealthSchema,
   m4CameraZoomSchema,
   type M4CameraInput,
   type M4CameraInputSnapshot,
@@ -82,11 +83,7 @@ type Slot = {
   arrivals: number[];
   longestGapMs: number;
   reconnects: number;
-  nativeHealth?: {
-    decodedFrames: number;
-    decodeErrors: number;
-    processingMs: number;
-  };
+  nativeHealth?: z.infer<typeof m4CameraNativeHealthSchema>;
   counter: number;
   audio: Buffer;
   authBlocked?: boolean;
@@ -284,6 +281,7 @@ export function createM4IpCameraManager(
       slot.errorCode = "auth_failed";
       return;
     }
+    slot.nativeHealth = undefined;
     slot.generation++;
     const generation = slot.generation;
     flush(slot);
@@ -412,22 +410,9 @@ export function createM4IpCameraManager(
           slot.errorCode = null;
         } else if (type === "DIAG") {
           try {
-            slot.nativeHealth = z
-              .object({
-                decodedFrames: z
-                  .number()
-                  .int()
-                  .nonnegative()
-                  .max(Number.MAX_SAFE_INTEGER),
-                decodeErrors: z
-                  .number()
-                  .int()
-                  .nonnegative()
-                  .max(Number.MAX_SAFE_INTEGER),
-                processingMs: z.number().nonnegative().max(600000),
-              })
-              .strict()
-              .parse(JSON.parse(payload.toString("utf8")));
+            slot.nativeHealth = m4CameraNativeHealthSchema.parse(
+              JSON.parse(payload.toString("utf8")),
+            );
           } catch {
             fail("invalid_pipe");
             return;
@@ -561,6 +546,7 @@ export function createM4IpCameraManager(
       ...(config.kind !== "phone"
         ? {
             health: {
+              ...(slot.nativeHealth ? { native: slot.nativeHealth } : {}),
               receivedFps: Math.min(
                 240,
                 slot.arrivals.filter((at) => now() - at < 2000).length / 2,

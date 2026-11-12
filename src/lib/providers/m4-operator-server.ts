@@ -135,6 +135,7 @@ function readProgramInvitation(value: string, origin: string, gameId: string) {
 }
 type ProgramHandle = Omit<
   Awaited<ReturnType<typeof startM4ProgramHost>>,
+  | "troubleshooting"
   | "stream"
   | "previewMapping"
   | "cameraStatus"
@@ -147,6 +148,9 @@ type ProgramHandle = Omit<
   | "replay"
   | "coach"
 > & {
+  troubleshooting?: Awaited<
+    ReturnType<typeof startM4ProgramHost>
+  >["troubleshooting"];
   coach?: Awaited<ReturnType<typeof startM4ProgramHost>>["coach"];
   replay?: Awaited<ReturnType<typeof startM4ProgramHost>>["replay"];
   presentation?: NonNullable<
@@ -484,6 +488,7 @@ export async function createM4OperatorServer(options: {
         program === "recording" ? programHandle?.previewMapping : undefined,
       cameraStatus:
         program === "recording" ? programHandle?.cameraStatus?.() : {},
+      nativeHealth: programHandle?.troubleshooting?.() ?? null,
       cameraInputs: cameraInputs.snapshot(),
       phoneAudio:
         program === "recording" ? (programHandle?.audioStatus?.() ?? {}) : {},

@@ -443,6 +443,12 @@ async function sustainedCapture(udp = false) {
       } else if (type === "DIAG") {
         assert(length <= 1024);
         const health = JSON.parse(payload.toString());
+        assert(health.sourceWidth > 0 && health.sourceHeight > 0);
+        assert(
+          Number.isFinite(health.receivedKbps) && health.receivedKbps >= 0,
+        );
+        assert.equal(health.bufferMs, 1000);
+        assert(["udp", "tcp"].includes(health.transport));
         assert(
           Number.isSafeInteger(health.decodedFrames) &&
             health.decodedFrames >= 0,

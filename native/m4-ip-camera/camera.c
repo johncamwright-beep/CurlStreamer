@@ -315,7 +315,8 @@ int main(int argc, char **argv)
     int result=1, vi=-1, ai=-1, ready=0, tcp_fallback=0; int64_t next_frame=AV_NOPTS_VALUE, pts_origin=AV_NOPTS_VALUE;
     ULONGLONG clock_origin=GetTickCount64(); HANDLE watcher=NULL; const char *failure="unavailable";
     uint64_t decoded_frames=0, decode_errors=0;
-    ULONGLONG next_diagnostic=0, processing_ms=0;
+    ULONGLONG next_diagnostic=0, processing_ms=0, bitrate_at=GetTickCount64();
+    uint64_t video_bytes=0;
     ULONGLONG startup_limit=GetTickCount64()+8000;
     av_log_set_level(AV_LOG_QUIET); output=GetStdHandle(STD_OUTPUT_HANDLE);
     SetConsoleCtrlHandler(console_stop,TRUE);
@@ -334,9 +335,16 @@ open_input:
     AVDictionary *settings=NULL;
     /* The interrupt owns the actual deadline; the socket timeout is a backup.
      * This preserves fixed timeout evidence when FFmpeg collapses I/O errors. */
-    av_dict_set(&settings,"rtsp_transport",prefer_udp && !tcp_fallback?"udp+tcp":"tcp",0); av_dict_set(&settings,"timeout","4000000",0);
+    av_dict_set(&settings,"rtsp_transport",prefer_udp && !tcp_fallback?"udp":"tcp",0); av_dict_set(&settings,"timeout","4000000",0);
     av_dict_set(&settings,"rw_timeout","4000000",0); av_dict_set(&settings,"protocol_whitelist",prefer_udp?"rtsp,tcp,udp,rtp":"rtsp,tcp",0);
-    if (prefer_udp) av_dict_set(&settings,"rtsp_flags","filter_src",0);
+    if (prefer_udp) {
+        av_dict_set(&settings,"rtsp_flags","filter_src",0);
+        /* Bounded tolerance for brief Wi-Fi bursts and out-of-order packets.
+         * Keep the existing paced playout and microphone offset unchanged. */
+        input->max_delay=500000;
+        av_dict_set(&settings,"reorder_queue_size","512",0);
+        av_dict_set(&settings,"buffer_size","1048576",0);
+    }
     av_dict_set(&settings,"analyzeduration","1000000",0);
     deadline=GetTickCount64()+4000;
     ULONGLONG attempt_limit=prefer_udp && !tcp_fallback?startup_limit-4000:startup_limit;
@@ -380,6 +388,7 @@ open_input:
         }
         deadline=GetTickCount64()+3000;
         if (!ready && prefer_udp && !tcp_fallback && deadline>attempt_limit) deadline=attempt_limit;
+        if (packet->stream_index==vi && packet->size>0) video_bytes+=(uint64_t)packet->size;
         AVCodecContext *decoder=packet->stream_index==vi?video:packet->stream_index==ai?audio:NULL;
         int sent=decoder?avcodec_send_packet(decoder,packet):0;
         if (decoder && sent<0 && sent!=AVERROR(EAGAIN)) {
@@ -441,9 +450,12 @@ open_input:
             if (decoder==audio) avcodec_flush_buffers(audio);
             else { failure="decode_failed"; break; }
         }
-        if (GetTickCount64()>=next_diagnostic) {
-            char stats[256];
-            int size=snprintf(stats,sizeof(stats),"{\"decodedFrames\":%llu,\"decodeErrors\":%llu,\"processingMs\":%llu}",(unsigned long long)decoded_frames,(unsigned long long)decode_errors,(unsigned long long)processing_ms);
+        if (ready && GetTickCount64()>=next_diagnostic) {
+            char stats[512];
+            ULONGLONG elapsed=GetTickCount64()-bitrate_at;
+            double kbps=elapsed ? (double)video_bytes*8.0/(double)elapsed : 0;
+            int size=snprintf(stats,sizeof(stats),"{\"decodedFrames\":%llu,\"decodeErrors\":%llu,\"processingMs\":%llu,\"sourceWidth\":%d,\"sourceHeight\":%d,\"receivedKbps\":%.3f,\"bufferMs\":%d,\"transport\":\"%s\"}",(unsigned long long)decoded_frames,(unsigned long long)decode_errors,(unsigned long long)processing_ms,video->width,video->height,kbps,PLAYOUT_DELAY_MS,prefer_udp && !tcp_fallback?"udp":"tcp");
+            bitrate_at=GetTickCount64(); video_bytes=0;
             if (size>0 && size<(int)sizeof(stats)) record("DIAG",stats,(uint32_t)size);
             next_diagnostic=GetTickCount64()+2000;
         }

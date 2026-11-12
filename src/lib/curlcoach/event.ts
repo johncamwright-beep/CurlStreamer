@@ -28,6 +28,7 @@ export type CoachGame = {
   advancedReady?: boolean;
   id: string;
   eventId: string;
+  seasonId?: string;
   label: string;
   opponent: string;
   teamName: string;

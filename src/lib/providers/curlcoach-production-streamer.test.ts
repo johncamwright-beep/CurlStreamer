@@ -116,10 +116,23 @@ it("refuses another event and supports eventless games", async () => {
     "organization",
   );
   const rows = await m.games();
+  const seasonId = "00000000-0000-4000-8000-000000000003";
   rows.value[0].event_id = null;
+  rows.value[0].season_id = seasonId;
   m.games.mockResolvedValue(rows);
+  m.seasons.mockResolvedValue({
+    ok: true,
+    value: [{ id: seasonId, name: "Season" }],
+  });
   const result = await loadProductionStreamerEvent("standalone");
   expect(result.event.games[0].id).toBe(gid);
+  expect(result.event.games[0].seasonId).toBe(seasonId);
+  const season = await loadProductionStreamerEvent(
+    undefined,
+    undefined,
+    seasonId,
+  );
+  expect(season.event.games.map((game) => game.id)).toEqual([gid]);
 });
 
 it("a shot save reads only the selected authorized game's scoreboard", async () => {

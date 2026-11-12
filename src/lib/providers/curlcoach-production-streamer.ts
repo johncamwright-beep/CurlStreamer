@@ -348,6 +348,10 @@ export async function loadProductionStreamerEvent(
       return {
         id: row.id,
         eventId: row.event_id ?? "standalone",
+        seasonId:
+          row.season_id ??
+          catalog.find((entry) => entry.id === row.event_id)?.seasonId ??
+          "unassigned",
         label:
           row.game_label || `Game ${row.game_number ?? fallbackNumbers[index]}`,
         teamName: row.config.homeName,

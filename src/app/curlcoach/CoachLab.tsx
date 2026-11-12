@@ -60,7 +60,7 @@ import {
   ResultsEntry,
 } from "./SubtypeEntry";
 import EntryOverlay from "./EntryOverlay";
-import LocalFlagCapture from "./LocalFlagCapture";
+import LocalFlagCapture, { type LocalFlagHandle } from "./LocalFlagCapture";
 import {
   EnhancedFields,
   GameContext,
@@ -312,6 +312,7 @@ export default function CoachLab({
     setStatusMessage(value);
   }
   const [busy, setBusy] = useState(false);
+  const videoFlag = useRef<LocalFlagHandle>(null);
   const [lineupOpen, setLineupOpen] = useState(false);
   const pendingLineup = useRef<{
     signature: string;
@@ -372,9 +373,19 @@ export default function CoachLab({
       setBusy(false);
     }
   }
+  async function saveFlagBeforeLeaving() {
+    const result = await videoFlag.current?.saveSelectedFlag();
+    if (result === "failed") {
+      setEntryTab("Shot Flags");
+      setFailure("Could not save the flag. Your selection and note are kept.");
+    }
+    return result;
+  }
+
   async function save(shot: Shot | null, id: string, advance = false) {
-    if (!state || closed || !started) return;
+    if (!state || closed || !started || busy) return;
     setBusy(true);
+    let flagSaved = "";
     try {
       const includeEnhanced =
         !!context &&
@@ -396,6 +407,11 @@ export default function CoachLab({
             },
           })
         : undefined;
+      if (shot === draft) {
+        const result = await saveFlagBeforeLeaving();
+        if (result === "failed") return;
+        if (result === "saved") flagSaved = "Flag saved. ";
+      }
       const signature = JSON.stringify({
         shot,
         editing: editing ?? (shot === draft ? "new" : id),
@@ -460,7 +476,7 @@ export default function CoachLab({
       setEditing(null);
       setMessage(
         shot
-          ? "Attempt saved. Report updated."
+          ? `${flagSaved}Attempt saved. Report updated.`
           : "Attempt removed by an audited revision.",
       );
       if (shot) setEntryTab("Shot");
@@ -483,12 +499,12 @@ export default function CoachLab({
             setDraft(values);
             setEditing(nextId);
             setMessage(
-              `Saved. Next turn already recorded: end ${next.end}, ${next.position}, stone ${next.stone}. Review or correct it.`,
+              `${flagSaved}Saved. Next turn already recorded: end ${next.end}, ${next.position}, stone ${next.stone}. Review or correct it.`,
             );
           } else {
             setDraft(next);
             setMessage(
-              `Saved. Next turn: end ${next.end}, ${next.position}, stone ${next.stone}.`,
+              `${flagSaved}Saved. Next turn: end ${next.end}, ${next.position}, stone ${next.stone}.`,
             );
           }
         }
@@ -520,7 +536,8 @@ export default function CoachLab({
       }
     } catch (error) {
       setFailure(
-        captureError(error, "Save not confirmed. Reload before retrying."),
+        flagSaved +
+          captureError(error, "Save not confirmed. Reload before retrying."),
       );
     } finally {
       setBusy(false);
@@ -601,9 +618,15 @@ export default function CoachLab({
     );
   }
   async function lifecycle(action: "finish" | "reopen") {
-    if (!context || !state) return;
+    if (!context || !state || busy) return;
     setBusy(true);
+    let flagSaved = "";
     try {
+      if (action === "finish") {
+        const result = await saveFlagBeforeLeaving();
+        if (result === "failed") return;
+        if (result === "saved") flagSaved = "Flag saved. ";
+      }
       const response = await fetch("/api/curlcoach/workspace", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -622,14 +645,15 @@ export default function CoachLab({
       context.onSaved(data);
       setMessage(
         action === "finish"
-          ? "Private coaching session closed. Shared game scoring continues normally."
+          ? `${flagSaved}Private coaching session closed. Shared game scoring continues normally.`
           : "Private coaching session reopened.",
       );
     } catch (error) {
       setFailure(
-        error instanceof Error
-          ? error.message
-          : "Session update was not confirmed.",
+        flagSaved +
+          (error instanceof Error
+            ? error.message
+            : "Session update was not confirmed."),
       );
     } finally {
       setBusy(false);
@@ -1287,10 +1311,14 @@ export default function CoachLab({
                         <>
                           <LocalFlagCapture
                             key={`${metrics.scopeKey}:${context.gameId}:${shotKey}`}
+                            ref={videoFlag}
                             gameId={context.gameId}
                             players={players}
                             defaultPlayerId={draft.playerId}
-                            onSaved={() => context.onReviewSaved?.()}
+                            onSaved={() => {
+                              setMessage("Flag saved.");
+                              context.onReviewSaved?.();
+                            }}
                           />
                           <h3>Shot notes</h3>
                         </>

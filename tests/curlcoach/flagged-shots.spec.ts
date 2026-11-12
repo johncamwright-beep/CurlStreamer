@@ -116,6 +116,15 @@ test("flagged-shot menu retains filters and shows one timestamped link per flag"
       .first(),
   ).toBeVisible();
   await expect(page.getByLabel("Timestamp", { exact: true })).toHaveCount(0);
+  await page.getByText("More filters", { exact: true }).click();
+  const shotType = page.getByRole("combobox", {
+    name: "Shot type",
+    exact: true,
+  });
+  await shotType.selectOption("Hits");
+  await expect(standalone).toBeVisible();
+  await shotType.selectOption("all");
+  await page.getByText("More filters", { exact: true }).click();
   await page
     .getByRole("combobox", { name: "Team / player", exact: true })
     .selectOption("lead");
@@ -123,6 +132,28 @@ test("flagged-shot menu retains filters and shows one timestamped link per flag"
     page.getByRole("combobox", { name: "Team / player", exact: true }),
   ).toHaveValue("lead");
   await expect(standalone).toHaveCount(0);
+  const eventFilter = page.getByRole("combobox", {
+    name: "Event",
+    exact: true,
+  });
+  const gameFilter = page.getByRole("combobox", { name: "Game", exact: true });
+  await eventFilter.selectOption("practice");
+  const selectedGame = await gameFilter
+    .locator("option")
+    .nth(1)
+    .getAttribute("value");
+  expect(selectedGame).toBeTruthy();
+  await gameFilter.selectOption(selectedGame!);
+  await page.reload();
+  await expect(eventFilter).toHaveValue("practice");
+  await expect(gameFilter).toHaveValue(selectedGame!);
+  await page.goto("/curlcoach#analysis/flagged");
+  await expect(
+    page.getByRole("combobox", { name: "Season", exact: true }),
+  ).toHaveValue("sample-season");
+  await expect(eventFilter).toHaveValue("practice");
+  await expect(gameFilter).toHaveValue(selectedGame!);
+  await expect(standalone).toBeVisible();
   await page
     .getByRole("link", { name: "Charting", exact: true })
     .first()

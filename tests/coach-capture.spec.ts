@@ -111,9 +111,7 @@ test("chooses a local flag start and retries only the same flag metadata", async
   const { writes, mediaRequests } = await captureFixture(page);
   await expect(page.getByLabel("Laptop address")).toHaveCount(0);
   await expect(page.getByLabel("Pairing code")).toHaveCount(0);
-  await expect(page.getByRole("button", { name: "Finalize Flag" })).toHaveCount(
-    0,
-  );
+  await expect(page.getByRole("button", { name: "Save Flag" })).toHaveCount(0);
   await page.getByLabel("Flag shot for review").selectOption("yes");
   await expect.poll(mediaRequests).toBe(1);
   await page.getByLabel("Flag audience").selectOption("player");
@@ -169,7 +167,7 @@ test("chooses a local flag start and retries only the same flag metadata", async
     .getByLabel("Flag note (optional)")
     .fill("Good line through the port");
   const finalize = page.getByRole("button", {
-    name: "Finalize Flag",
+    name: "Save Flag",
     exact: true,
   });
   await finalize.click();
@@ -338,9 +336,7 @@ test("fine scrubbing keeps the last drag position and exposes the full clip", as
   const selected = Number(await slider.inputValue());
   expect(selected).toBeCloseTo(25.25, 2);
   await choose.click();
-  await page
-    .getByRole("button", { name: "Finalize Flag", exact: true })
-    .click();
+  await page.getByRole("button", { name: "Save Flag", exact: true }).click();
   await expect.poll(() => writes.length).toBe(1);
   const savedAt = Date.parse(JSON.parse(writes[0]).review.selectedAt);
   expect(

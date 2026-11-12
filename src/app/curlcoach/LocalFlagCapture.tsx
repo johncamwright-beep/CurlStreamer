@@ -444,14 +444,7 @@ export default function LocalFlagCapture({
                   Tap to load video
                 </button>
               )}
-              {clipError && (
-                <>
-                  <p role="alert">{clipError}</p>
-                  <button type="button" onClick={() => void capture()}>
-                    Reload recent video
-                  </button>
-                </>
-              )}
+              {clipError && <p role="alert">{clipError}</p>}
               {clip && !clipError && (
                 <>
                   <video
@@ -567,6 +560,13 @@ export default function LocalFlagCapture({
                   </div>
                 </>
               )}
+              <button
+                type="button"
+                disabled={!!loading}
+                onClick={() => void capture()}
+              >
+                Reload recent video
+              </button>
             </EntryOverlay>
           </div>
           {start && (

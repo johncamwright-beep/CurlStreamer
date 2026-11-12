@@ -241,7 +241,7 @@ test("a standalone flag adjusts the timestamp and preserves its notes", async ({
       const [games, setGames] = useState([]);
       async function refresh() { setGames(await (await fetch('/flags-fixture-data')).json()); }
       useEffect(() => { void refresh(); }, []);
-      return <FlaggedShots shots={[]} games={games} players={[]} playerId="all" includeStandalone canSave onSaved={refresh}/>;
+      return <FlaggedShots shots={[]} games={games} players={[]} playerId="all" canSave onSaved={refresh}/>;
     }
     createRoot(document.getElementById('root')).render(<Fixture/>);
   `,

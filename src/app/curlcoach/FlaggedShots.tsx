@@ -156,7 +156,6 @@ export default function FlaggedShots({
   games,
   players,
   playerId,
-  includeStandalone,
   canSave,
   onSaved,
 }: {
@@ -164,7 +163,6 @@ export default function FlaggedShots({
   games: CoachGame[];
   players: RosterEntry[];
   playerId: string;
-  includeStandalone: boolean;
   canSave: boolean;
   onSaved: () => Promise<void>;
 }) {
@@ -180,15 +178,11 @@ export default function FlaggedShots({
         a.end - b.end ||
         a.stone - b.stone,
     );
-  const standalone = includeStandalone
-    ? games.flatMap((game) =>
-        (game.standaloneReviews ?? [])
-          .filter(
-            (review) => playerId === "all" || review.playerId === playerId,
-          )
-          .map((review) => ({ game, review })),
-      )
-    : [];
+  const standalone = games.flatMap((game) =>
+    (game.standaloneReviews ?? [])
+      .filter((review) => playerId === "all" || review.playerId === playerId)
+      .map((review) => ({ game, review })),
+  );
   return (
     <section aria-label="Flagged shots">
       {!flagged.length && !standalone.length && (

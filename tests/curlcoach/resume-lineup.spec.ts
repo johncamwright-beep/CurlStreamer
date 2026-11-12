@@ -63,6 +63,27 @@ test.beforeAll(async () => {
     write: false,
     tsconfig: "tsconfig.json",
     loader: { ".css": "empty" },
+    plugins: [
+      {
+        name: "flag-clip-fixture",
+        setup(builder) {
+          builder.onResolve(
+            { filter: /^@\/lib\/curlcoach\/shot-flag-clip$/ },
+            () => ({ path: "clip", namespace: "flag-clip-fixture" }),
+          );
+          builder.onLoad(
+            { filter: /.*/, namespace: "flag-clip-fixture" },
+            () => ({
+              contents: `export async function captureShotFlagClip(gameId, signal) {
+              const response = await fetch('/__tracker_flag_clip.mp4', { signal });
+              if (!response.ok) throw new Error('Fixture video offline');
+              return { video: await response.blob(), duration: 12, minimum: 0, capturedAt: '2026-11-10T15:00:00.000Z' };
+            }`,
+            }),
+          );
+        },
+      },
+    ],
     stdin: {
       loader: "tsx",
       resolveDir: process.cwd(),
@@ -570,7 +591,7 @@ test("reload preserves drafts and lineup changes never rewrite recorded players"
 test("video flag choice survives shot edits and resets after Next Turn", async ({
   page,
 }) => {
-  await page.route("**/api/curlcoach/clip-relay", (route) =>
+  await page.route("**/__tracker_flag_clip.mp4", (route) =>
     route.fulfill({ status: 503, json: { error: "Fixture video offline" } }),
   );
   await fixture(page);
@@ -607,6 +628,112 @@ test("video flag choice survives shot edits and resets after Next Turn", async (
   await expect(flag).toHaveValue("no");
   await expect(audience).toHaveCount(0);
 });
+
+for (const firstAction of ["Next Turn", "Save Flag"] as const) {
+  test(`Next Turn keeps the flag from ${firstAction} and retries the same flag after a lost reply`, async ({
+    page,
+  }) => {
+    await page.route("**/__tracker_flag_clip.mp4", (route) =>
+      route.fulfill({
+        path: "public/celebrations/cat-dance.mp4",
+        contentType: "video/mp4",
+      }),
+    );
+    const requests: string[] = [];
+    const committed = new Map<string, string>();
+    let games: Awaited<ReturnType<typeof fixture>>;
+    let finishFirst!: () => void;
+    const firstReply = new Promise<void>((resolve) => {
+      finishFirst = resolve;
+    });
+    await page.route("**/api/curlcoach/local-review", async (route) => {
+      const body = route.request().postData()!;
+      const { review } = JSON.parse(body);
+      requests.push(body);
+      committed.set(review.id, review.notes);
+      games.get(gameOne)!.standaloneReviews = [...committed].map(
+        ([id, note]) => ({
+          id,
+          audience: "team",
+          playerId: null,
+          playerName: null,
+          note,
+          selectedAt: review.selectedAt,
+        }),
+      );
+      if (requests.length === 1) {
+        await firstReply;
+        await route.fulfill({
+          status: 503,
+          json: { error: "Fixture reply lost" },
+        });
+      } else {
+        await route.fulfill({ json: { saved: true } });
+      }
+    });
+
+    games = await fixture(page);
+    await start(page);
+    await page.getByLabel("Numeric grade").selectOption("4");
+    await openEntryTab(page, "Shot Flags");
+    await page
+      .getByRole("combobox", { name: "Flag shot for review", exact: true })
+      .selectOption("yes");
+    await page
+      .getByRole("combobox", { name: "Flag audience", exact: true })
+      .selectOption("team");
+    await page
+      .getByRole("button", { name: "Select Flag Start", exact: true })
+      .click();
+    await page
+      .getByRole("button", { name: "Choose Start Point", exact: true })
+      .click();
+    const note = page.getByLabel("Flag note (optional)");
+    await note.fill("Review the weight call");
+    const nextTurn = page.getByRole("button", {
+      name: "Next Turn",
+      exact: true,
+    });
+    const shotContext = page.getByRole("region", {
+      name: "Current shot context",
+    });
+    expect(requests).toHaveLength(0);
+    try {
+      if (firstAction === "Save Flag") {
+        await page
+          .getByRole("button", { name: "Save Flag", exact: true })
+          .click();
+        await expect.poll(() => requests.length).toBe(1);
+      }
+      await nextTurn.click();
+      await expect.poll(() => requests.length).toBe(1);
+      expect(games.get(gameOne)!.state.events).toHaveLength(0);
+      await expect(shotContext).toContainText("Rock 1");
+    } finally {
+      finishFirst();
+    }
+    await expect(nextTurn).toBeEnabled();
+    await expect(note).toHaveValue("Review the weight call");
+    await expect(shotContext).toContainText("Rock 1");
+    expect(games.get(gameOne)!.state.events).toHaveLength(0);
+
+    await nextTurn.click();
+    await expect(shotContext).toContainText("Rock 2");
+    expect(requests).toEqual([requests[0], requests[0]]);
+    expect([...committed.values()]).toEqual(["Review the weight call"]);
+    expect(games.get(gameOne)!.state.events).toHaveLength(1);
+    await page
+      .getByRole("navigation", { name: "Shot Tracker shortcuts" })
+      .getByRole("link", { name: "Analysis", exact: true })
+      .click();
+    await page.getByRole("tab", { name: "Flagged shots", exact: true }).click();
+    await expect(
+      page
+        .getByRole("region", { name: "Flagged shots", exact: true })
+        .getByText("Review the weight call", { exact: true }),
+    ).toHaveCount(1);
+  });
+}
 
 test("Change recalls a recorded shot, saves an audited correction and returns to the current draft", async ({
   page,

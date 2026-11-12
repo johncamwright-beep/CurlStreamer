@@ -59,6 +59,12 @@ import {
   defaultShotFilters,
   filterAnalysisShots,
 } from "@/lib/curlcoach/analysis";
+import {
+  loadAnalysisSelection,
+  readAnalysisSelection,
+  rememberAnalysisSelection,
+  type AnalysisSelection,
+} from "@/lib/curlcoach/analysis-selection";
 import EventReportLibrary from "./EventReportLibrary";
 import { MetricsOptions } from "./EnhancedMetrics";
 import ScoringWakeLock from "./ScoringWakeLock";
@@ -330,8 +336,9 @@ function WorkspaceContent({
       initialEventId ?? (mode === "streamer" ? "" : "shorty-example"),
     ),
     [gameId, setGameId] = useState(""),
-    [player, setPlayer] = useState("all"),
-    [analysisGame, setAnalysisGame] = useState("all"),
+    [requestedPlayer, setPlayer] = useState("all"),
+    [analysisSelection, setAnalysisSelection] =
+      useState<AnalysisSelection | null>(null),
     [competitionLevel, setCompetitionLevel] = useState("all"),
     [data, setData] = useState<Workspace | null>(null),
     [error, setError] = useState(""),
@@ -342,6 +349,7 @@ function WorkspaceContent({
   }, [open, reloadMetrics]);
   const chooseScheduledOnOpen = useRef(false);
   const preserveLinkedGame = useRef(false);
+  const chartingContextChanged = useRef(false);
   const [scheduleNow, setScheduleNow] = useState(() => Date.now());
   useEffect(() => {
     const timer = setInterval(() => setScheduleNow(Date.now()), 30000);
@@ -350,6 +358,18 @@ function WorkspaceContent({
   useEffect(() => {
     const query = new URLSearchParams(location.search);
     const requestedGame = query.get("game");
+    const linkedAnalysis = readAnalysisSelection(query);
+    const analysisLink = /^#(?:analysis(?:\/|$)|flagged-shots$)/.test(
+      location.hash,
+    );
+    const requestedSource =
+      mode === "streamer" || query.get("source") === "streamer"
+        ? "streamer"
+        : "sample";
+    chartingContextChanged.current =
+      !analysisLink &&
+      !linkedAnalysis &&
+      !!(requestedGame || query.get("event") || initialEventId);
     chooseScheduledOnOpen.current = mode === "streamer" && !requestedGame;
     preserveLinkedGame.current = mode === "streamer" && !!requestedGame;
     drafts.current.clear();
@@ -366,16 +386,21 @@ function WorkspaceContent({
       // Storage may be unavailable; in-memory tracking still works.
     }
     resumeStore.current = stored;
+    const rememberedAnalysis =
+      accountScope || requestedSource === "sample"
+        ? loadAnalysisSelection(accountScope)
+        : undefined;
+    setAnalysisSelection(
+      linkedAnalysis ??
+        (requestedGame && analysisLink
+          ? { seasonId: "", eventId: "", gameId: requestedGame }
+          : (rememberedAnalysis ?? null)),
+    );
     if (mode !== "streamer" && query.get("source") === "streamer")
       setSource("streamer");
     if (!initialEventId && query.get("event")) setEventId(query.get("event")!);
     if (requestedGame) {
       setGameId(requestedGame);
-      if (
-        location.hash === "#analysis/flagged" ||
-        location.hash === "#flagged-shots"
-      )
-        setAnalysisGame(requestedGame);
     } else if (
       !query.get("event") &&
       !initialEventId &&
@@ -383,6 +408,7 @@ function WorkspaceContent({
       (mode !== "streamer" ||
         Date.now() - stored.active.updatedAt < 4 * 3600000)
     ) {
+      chooseScheduledOnOpen.current = false;
       setSource(stored.active.source);
       setEventId(stored.active.eventId);
       setGameId(stored.active.gameId);
@@ -432,8 +458,6 @@ function WorkspaceContent({
     accountScope?.actorId,
     accountScope?.organizationId,
   ]);
-  const [seasonId, setSeasonId] = useState("");
-  const [statsEventId, setStatsEventId] = useState("");
   const [statsData, setStatsData] = useState<Workspace | null>(null);
   const [statsError, setStatsError] = useState("");
   // Component-local only: never persist private coaching data across accounts.
@@ -445,17 +469,53 @@ function WorkspaceContent({
     "Options",
     "Enhanced review",
   ].includes(view);
-  const selectedSeason = seasonId || data?.event.seasonId || "unassigned";
-  const selectedEvent = statsEventId || data?.event.id || "all";
+  const event = data?.event;
+  const game = event?.games.find((item) => item.id === gameId);
+  const seasonOptions = data?.seasons?.length
+    ? data.seasons
+    : data
+      ? [{ id: "unassigned", name: "No season assigned" }]
+      : [];
+  const chartedSeason = game?.seasonId ?? event?.seasonId ?? "unassigned";
+  const requestedSeason = analysisSelection?.seasonId || chartedSeason;
+  const selectedSeason = seasonOptions.some(
+    (season) => season.id === requestedSeason,
+  )
+    ? requestedSeason
+    : ((
+        seasonOptions.find((season) => season.id === chartedSeason) ??
+        seasonOptions[0]
+      )?.id ?? "");
+  const eventOptions = (data?.catalog ?? []).filter(
+    (entry) =>
+      (entry.seasonId ?? "unassigned") === selectedSeason ||
+      entry.id === "standalone",
+  );
+  const requestedEvent = analysisSelection?.eventId || event?.id;
+  const selectedEvent =
+    eventOptions.find((entry) => entry.id === requestedEvent)?.id ?? "all";
   const seasonReady = statsData?.event.seasonId === selectedSeason;
   const eventReady =
-    (data?.event.seasonId ?? "unassigned") === selectedSeason &&
-    data?.event.id === selectedEvent;
+    !!event &&
+    event.id === selectedEvent &&
+    (event.id === "standalone" ||
+      (event.seasonId ?? "unassigned") === selectedSeason);
+  const requestedAnalysisGame =
+    analysisSelection?.gameId ??
+    (view === "Analysis" && analysisTab === "flagged" ? game?.id : undefined) ??
+    "all";
+  const selectedGameMissingFromSeason =
+    eventReady &&
+    requestedAnalysisGame !== "all" &&
+    event.games.some((item) => item.id === requestedAnalysisGame) &&
+    !statsData?.event.games.some((item) => item.id === requestedAnalysisGame);
   // A season response may omit a game whose assigned season differs from its
   // event. Use the current event's games and latest flags for that event.
   const useEventAnalysis =
     eventReady &&
-    (!seasonReady || (view === "Analysis" && analysisTab === "flagged"));
+    (!seasonReady ||
+      selectedGameMissingFromSeason ||
+      (view === "Analysis" && analysisTab === "flagged"));
   const analysisData = useEventAnalysis ? data : seasonReady ? statsData : null;
   const statsReady = !!analysisData;
   const hasData = !!data;
@@ -463,7 +523,8 @@ function WorkspaceContent({
     if (!statistics) setStatsData(null);
   }, [statistics]);
   useEffect(() => {
-    if (!open || !statistics || !hasData || seasonReady) return;
+    if (!open || !statistics || !hasData || !selectedSeason || seasonReady)
+      return;
     const controller = new AbortController();
     setStatsError("");
     void fetch(
@@ -593,28 +654,35 @@ function WorkspaceContent({
       setBusy(false);
     }
   }
-  const event = data?.event,
-    game = event?.games.find((g) => g.id === gameId),
-    statsGames = statsReady
-      ? (analysisData?.event.games ?? [])
-          .filter((g) => selectedEvent === "all" || g.eventId === selectedEvent)
-          .filter(
-            (g) =>
-              competitionLevel === "all" ||
-              (g.competitionLevel ?? "unrecorded") === competitionLevel,
-          )
-          .map((g) => ({
-            ...g,
-            label:
-              selectedEvent === "all"
-                ? (analysisData?.catalog.find((e) => e.id === g.eventId)
-                    ?.name ?? "Single games") +
-                  " · " +
-                  g.label
-                : g.label,
-          }))
-      : [],
-    analysisGames = statsGames.filter(
+  const statsGames = statsReady
+    ? (analysisData?.event.games ?? [])
+        .filter((g) => selectedEvent === "all" || g.eventId === selectedEvent)
+        .filter(
+          (g) =>
+            !useEventAnalysis || !g.seasonId || g.seasonId === selectedSeason,
+        )
+        .filter(
+          (g) =>
+            competitionLevel === "all" ||
+            (g.competitionLevel ?? "unrecorded") === competitionLevel,
+        )
+        .map((g) => ({
+          ...g,
+          label:
+            selectedEvent === "all"
+              ? (analysisData?.catalog.find((e) => e.id === g.eventId)?.name ??
+                  "Single games") +
+                " · " +
+                g.label
+              : g.label,
+        }))
+    : [];
+  const analysisGame = statsGames.some(
+    (item) => item.id === requestedAnalysisGame,
+  )
+    ? requestedAnalysisGame
+    : "all";
+  const analysisGames = statsGames.filter(
       (g) => analysisGame === "all" || g.id === analysisGame,
     ),
     analysisPlayers = [
@@ -626,14 +694,49 @@ function WorkspaceContent({
           .flatMap<RosterEntry>((g) => g.roster ?? g.state.roster ?? roster)
           .map((p) => [p.id, p]),
       ).values(),
-    ],
-    all = event
+    ];
+  const player = analysisPlayers.some((item) => item.id === requestedPlayer)
+    ? requestedPlayer
+    : "all";
+  const all = event
       ? analysisEventShots({ ...event, games: analysisGames }).filter((s) =>
           analysisGames.some((g) => g.id === s.gameId),
         )
       : [],
     playerShots = all.filter((s) => player === "all" || s.playerId === player),
     selected = filterAnalysisShots(playerShots, analysisGames, shotFilters);
+  useEffect(() => {
+    if (
+      !statistics ||
+      !statsReady ||
+      !selectionReady ||
+      !selectedSeason ||
+      !event ||
+      event.source !== source ||
+      (eventId && event.id !== eventId)
+    )
+      return;
+    rememberAnalysisSelection(
+      {
+        seasonId: selectedSeason,
+        eventId: selectedEvent,
+        gameId: analysisGame,
+      },
+      accountScope,
+      !!accountScope || source === "sample",
+    );
+  }, [
+    statistics,
+    statsReady,
+    selectionReady,
+    selectedSeason,
+    selectedEvent,
+    analysisGame,
+    event,
+    source,
+    eventId,
+    accountScope,
+  ]);
   function changeAnalysisTab(tab: AnalysisTab) {
     setAnalysisTab(tab);
     setView("Analysis");
@@ -645,9 +748,13 @@ function WorkspaceContent({
   }
   function selectChartedGameForAnalysis() {
     if (!event || !game || (eventId && event.id !== eventId)) return;
-    setSeasonId(event.seasonId ?? "unassigned");
-    setStatsEventId(event.id);
-    setAnalysisGame(game.id);
+    if (analysisSelection && !chartingContextChanged.current) return;
+    chartingContextChanged.current = false;
+    setAnalysisSelection({
+      seasonId: chartedSeason,
+      eventId: event.id,
+      gameId: game.id,
+    });
     setPlayer("all");
     setCompetitionLevel("all");
     setShotFilters(defaultShotFilters);
@@ -658,6 +765,7 @@ function WorkspaceContent({
     history.replaceState(history.state, "", url);
   }
   function remember(source: string, event: string, game = "") {
+    chartingContextChanged.current = true;
     preserveLinkedGame.current = false;
     history.replaceState(
       null,
@@ -666,6 +774,7 @@ function WorkspaceContent({
     );
   }
   function saved(state: State) {
+    chartingContextChanged.current = true;
     savedStates.current.set(state.gameId, state);
     setStatsData(null);
     setData((current) =>
@@ -731,7 +840,6 @@ function WorkspaceContent({
               setBusy(true);
               setError("");
               setEventId(e.target.value);
-              setAnalysisGame("all");
               setPlayer("all");
               remember(source, e.target.value);
             }}
@@ -874,6 +982,11 @@ function WorkspaceContent({
                       setData(null);
                       setStatsData(null);
                       savedStates.current.clear();
+                      setAnalysisSelection(
+                        e.target.value === "sample"
+                          ? (loadAnalysisSelection(accountScope) ?? null)
+                          : null,
+                      );
                       setSource(e.target.value as typeof source);
                       remember(
                         e.target.value,
@@ -897,15 +1010,22 @@ function WorkspaceContent({
                     Season
                     <select
                       value={selectedSeason}
-                      disabled={!data}
+                      disabled={!seasonOptions.length}
                       onChange={(e) => {
-                        setSeasonId(e.target.value);
-                        setStatsEventId("all");
-                        setAnalysisGame("all");
+                        setAnalysisSelection({
+                          seasonId: e.target.value,
+                          eventId: "all",
+                          gameId: "all",
+                        });
                         setPlayer("all");
                       }}
                     >
-                      {(data?.seasons ?? []).map((season) => (
+                      {!seasonOptions.length && (
+                        <option value="">
+                          {error ? "Seasons unavailable" : "Loading seasons…"}
+                        </option>
+                      )}
+                      {seasonOptions.map((season) => (
                         <option key={season.id} value={season.id}>
                           {season.name}
                         </option>
@@ -919,23 +1039,20 @@ function WorkspaceContent({
                         value={selectedEvent}
                         disabled={!data}
                         onChange={(e) => {
-                          setStatsEventId(e.target.value);
-                          setAnalysisGame("all");
+                          setAnalysisSelection({
+                            seasonId: selectedSeason,
+                            eventId: e.target.value,
+                            gameId: "all",
+                          });
                           setPlayer("all");
                         }}
                       >
                         <option value="all">All events</option>
-                        {(statsData?.catalog ?? data?.catalog ?? [])
-                          .filter(
-                            (e) =>
-                              e.seasonId === selectedSeason ||
-                              e.id === "standalone",
-                          )
-                          .map((e) => (
-                            <option key={e.id} value={e.id}>
-                              {e.name}
-                            </option>
-                          ))}
+                        {eventOptions.map((e) => (
+                          <option key={e.id} value={e.id}>
+                            {e.name}
+                          </option>
+                        ))}
                       </select>
                     </label>
                   )}
@@ -950,7 +1067,6 @@ function WorkspaceContent({
                       setBusy(true);
                       setError("");
                       setEventId(e.target.value);
-                      setAnalysisGame("all");
                       setPlayer("all");
                       remember(source, e.target.value);
                     }}
@@ -970,12 +1086,23 @@ function WorkspaceContent({
                       Game
                       <select
                         value={analysisGame}
+                        disabled={!statsReady}
                         onChange={(e) => {
-                          setAnalysisGame(e.target.value);
+                          setAnalysisSelection({
+                            seasonId: selectedSeason,
+                            eventId: selectedEvent,
+                            gameId: e.target.value,
+                          });
                           setPlayer("all");
                         }}
                       >
-                        <option value="all">All games</option>
+                        <option value="all">
+                          {!statsReady && statistics
+                            ? error || statsError
+                              ? "Games unavailable"
+                              : "Loading games…"
+                            : "All games"}
+                        </option>
                         {statsGames.map((g) => (
                           <option key={g.id} value={g.id}>
                             {g.label} · vs {g.opponent}
@@ -1016,7 +1143,11 @@ function WorkspaceContent({
                     value={competitionLevel}
                     onChange={(e) => {
                       setCompetitionLevel(e.target.value);
-                      setAnalysisGame("all");
+                      setAnalysisSelection({
+                        seasonId: selectedSeason,
+                        eventId: selectedEvent,
+                        gameId: "all",
+                      });
                       setPlayer("all");
                     }}
                   >
@@ -1088,6 +1219,16 @@ function WorkspaceContent({
                   Reset more filters
                 </button>
               </div>
+              {view === "Analysis" &&
+                analysisTab === "flagged" &&
+                Object.values(shotFilters).some(
+                  (filter) => filter !== "all",
+                ) && (
+                  <p className="score-stat-caption">
+                    Shot details filter charted attempts. Standalone video flags
+                    stay visible.
+                  </p>
+                )}
               {view !== "Analysis" && (
                 <p className="score-stat-caption">
                   Shot filters use the score and hammer at the start of the end.
@@ -1209,6 +1350,7 @@ function WorkspaceContent({
                     standaloneReviews: game.standaloneReviews,
                     onSaved: saved,
                     onReviewSaved: () => {
+                      chartingContextChanged.current = true;
                       void refresh(undefined, false);
                     },
                   }}
@@ -1247,9 +1389,6 @@ function WorkspaceContent({
                           games={analysisGames}
                           players={analysisPlayers}
                           playerId={player}
-                          includeStandalone={Object.values(shotFilters).every(
-                            (filter) => filter === "all",
-                          )}
                           canSave={mode === "streamer"}
                           onSaved={() => refresh()}
                         />

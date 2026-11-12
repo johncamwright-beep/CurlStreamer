@@ -1,6 +1,12 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import {
+  useEffect,
+  useImperativeHandle,
+  useRef,
+  useState,
+  type Ref,
+} from "react";
 import { captureShotFlagClip } from "@/lib/curlcoach/shot-flag-clip";
 import EntryOverlay from "./EntryOverlay";
 import FlagScrubSlider, { flagNudgeSeconds } from "./FlagScrubSlider";
@@ -16,6 +22,10 @@ type FirstFrame = {
   preferFirst?: boolean;
   fallback?: number;
 };
+type FlagSaveResult = "none" | "saved" | "failed";
+export type LocalFlagHandle = {
+  saveSelectedFlag: () => Promise<FlagSaveResult>;
+};
 const captureTimeoutMs = 75_000;
 const firstSeekTimeoutMs = 1_500;
 const fineScrubSeconds = 20;
@@ -26,11 +36,13 @@ export default function LocalFlagCapture({
   players,
   defaultPlayerId,
   onSaved,
+  ref,
 }: {
   gameId: string;
   players: readonly { id: string; name: string }[];
   defaultPlayerId: string;
   onSaved: () => void;
+  ref?: Ref<LocalFlagHandle>;
 }) {
   const [flagging, setFlagging] = useState(false);
   const [audience, setAudience] = useState<Audience>("");
@@ -58,7 +70,10 @@ export default function LocalFlagCapture({
   const pendingSeek = useRef<number | null>(null);
   const firstFrame = useRef<FirstFrame | null>(null);
   const captureRequest = useRef<AbortController | null>(null);
-  const saveRequest = useRef<AbortController | null>(null);
+  const saveRequest = useRef<{
+    controller: AbortController;
+    result: Promise<FlagSaveResult>;
+  } | null>(null);
   const payload = useRef<string | null>(null);
   const player = players.find((member) => member.id === playerId);
   const canPick = audience === "team" || (audience === "player" && !!player);
@@ -84,7 +99,7 @@ export default function LocalFlagCapture({
   useEffect(
     () => () => {
       captureRequest.current?.abort();
-      saveRequest.current?.abort();
+      saveRequest.current?.controller.abort();
       window.clearTimeout(firstFrame.current?.fallback);
       if (clipUrl.current) URL.revokeObjectURL(clipUrl.current);
     },
@@ -314,10 +329,14 @@ export default function LocalFlagCapture({
     payload.current = null;
   }
 
-  async function save() {
-    if (!start || !audience || !canSave || saveRequest.current) return;
+  function saveSelectedFlag(): Promise<FlagSaveResult> {
+    if (saveRequest.current) return saveRequest.current.result;
+    if (!start) return Promise.resolve("none");
+    if (!audience || !canSave) {
+      setStatus("Choose who the flag is for before saving it.");
+      return Promise.resolve("failed");
+    }
     const controller = new AbortController();
-    saveRequest.current = controller;
     setSaving(true);
     setLocked(true);
     setStatus("Saving flag…");
@@ -336,34 +355,47 @@ export default function LocalFlagCapture({
       ...(audience === "player" ? { playerId } : {}),
       expectedRevision: 0,
     });
+    const result = submitFlag(payload.current, controller);
+    saveRequest.current = { controller, result };
+    return result;
+  }
+
+  async function submitFlag(
+    body: string,
+    controller: AbortController,
+  ): Promise<FlagSaveResult> {
     try {
       const response = await fetch("/api/curlcoach/local-review", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: payload.current,
+        body,
         signal: AbortSignal.any([
           controller.signal,
           AbortSignal.timeout(15_000),
         ]),
       });
-      if (controller.signal.aborted) return;
-      if (!response.ok)
+      const receipt = await response.json().catch(() => null);
+      if (controller.signal.aborted) return "failed";
+      if (!response.ok || receipt?.saved !== true)
         throw Error("Could not save the flag. Try saving it again.");
       resetFlag();
       setStatus(
         `Flag saved for ${audience === "team" ? "the team" : player?.name}. Find it in Flagged shots.`,
       );
       onSaved();
+      return "saved";
     } catch {
       if (!controller.signal.aborted)
         setStatus("Could not save the flag. Your selection and note are kept.");
+      return "failed";
     } finally {
-      if (saveRequest.current === controller) {
+      if (saveRequest.current?.controller === controller) {
         saveRequest.current = null;
         if (!controller.signal.aborted) setSaving(false);
       }
     }
   }
+  useImperativeHandle(ref, () => ({ saveSelectedFlag }));
 
   return (
     <section
@@ -616,7 +648,7 @@ export default function LocalFlagCapture({
           </div>
           {start && (
             <>
-              <p>Start point selected</p>
+              <p>Start point selected. Save Flag or use Next Turn.</p>
               <label>
                 Flag note (optional)
                 <textarea
@@ -631,10 +663,21 @@ export default function LocalFlagCapture({
                 type="button"
                 className="primary"
                 disabled={!canSave || saving}
-                onClick={() => void save()}
+                onClick={() => void saveSelectedFlag()}
               >
-                {saving ? "Saving flag…" : "Finalize Flag"}
+                {saving ? "Saving flag…" : "Save Flag"}
               </button>
+              {locked && !saving && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    resetFlag();
+                    setStatus("Flag draft cleared.");
+                  }}
+                >
+                  Clear flag draft
+                </button>
+              )}
             </>
           )}
         </>

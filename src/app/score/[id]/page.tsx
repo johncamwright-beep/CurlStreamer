@@ -5,7 +5,6 @@ import { StudioShotFlagRelay } from "@/components/StudioShotFlagRelay";
 import { StudioCelebrations } from "@/components/StudioCelebrations";
 import { StudioToolsRow } from "@/components/StudioToolsRow";
 import { StudioOverlay } from "@/components/StudioOverlay";
-import { StudioPreviewStatus } from "@/components/StudioPreviewStatus";
 import { TeamLogo } from "@/components/TeamLogo";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -749,7 +748,7 @@ function ScorerGame({ id }: { id: string }) {
                   aria-label="Stream preview and camera settings"
                 >
                   <StudioProgramPreview key={id} gameId={id} embedded />
-                  <StudioPreviewStatus gameId={id} />
+                  <div id="studio-preview-status" />
                   <StudioShotFlagRelay gameId={id} />
                   <StudioToolsRow
                     cameraSettings={
@@ -807,6 +806,7 @@ function ScorerGame({ id }: { id: string }) {
                   <StudioYouTube
                     id={id}
                     controlsTarget="studio-broadcast-actions"
+                    previewStatusTarget="studio-preview-status"
                   />
                 </div>
               )}

@@ -10,6 +10,7 @@ vi.mock("@/lib/supabase/admin", () => ({
 it("overlays the correction while retaining the bookmark identity and selected camera time", async () => {
   const game = "00000000-0000-4000-8000-000000000001";
   const review = "00000000-0000-4000-8000-000000000002";
+  const legacyReview = "00000000-0000-4000-8000-000000000003";
   const account = { organizationId: "team", userId: "coach" } as CoachAccount;
   const selectedAt = "2026-11-10T15:00:00.000Z";
   const url = "https://www.youtube.com/watch?v=abcdefghijk";
@@ -22,11 +23,13 @@ it("overlays the correction while retaining the bookmark identity and selected c
         {
           request_id: review,
           game_id: game,
-          audience: "player",
-          player_id: "lead",
-          player_name: "Alex",
+          audience: "team",
+          player_id: null,
+          player_name: null,
           note: "Original note",
           selected_at: selectedAt,
+          end_number: 6,
+          shot_number: 7,
         },
       ],
       error: null,
@@ -48,11 +51,12 @@ it("overlays the correction while retaining the bookmark identity and selected c
     [game]: [
       {
         id: review,
-        audience: "player",
-        playerId: "lead",
-        playerName: "Alex",
+        audience: "team",
+        playerId: null,
+        playerName: null,
         note: "",
         selectedAt,
+        shotContext: { end: 6, shot: 7 },
         videoReview: { url, positionSeconds: 0, lookBackSeconds: 0 },
       },
     ],
@@ -68,8 +72,25 @@ it("overlays the correction while retaining the bookmark identity and selected c
     p_games: [game],
   });
 
+  query.order.mockResolvedValue({
+    data: [
+      {
+        request_id: legacyReview,
+        game_id: game,
+        audience: "team",
+        player_id: null,
+        player_name: null,
+        note: "Legacy team flag",
+        selected_at: selectedAt,
+        end_number: null,
+        shot_number: null,
+      },
+    ],
+    error: null,
+  });
   admin.rpc.mockResolvedValue({ data: null, error: { code: "PGRST202" } });
-  const original = (await loadStandaloneReviews(account, [game]))[game][0];
-  expect(original.note).toBe("Original note");
-  expect(original.videoReview).toBeUndefined();
+  const [legacy] = (await loadStandaloneReviews(account, [game]))[game];
+  expect(legacy.note).toBe("Legacy team flag");
+  expect(legacy.shotContext).toBeUndefined();
+  expect(legacy.videoReview).toBeUndefined();
 });

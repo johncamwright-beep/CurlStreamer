@@ -1079,6 +1079,34 @@
 .studio-preview-status[data-live="true"] {
   background: #e71942;
 }
+.studio-preview-status[data-connecting="true"] {
+  background: #503811;
+  color: #ffe8a6;
+}
+.studio-preview-connecting > span {
+  display: inline-block;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .studio-preview-connecting > span {
+    animation: studio-preview-connecting-dot 1.2s ease-in-out infinite;
+  }
+  .studio-preview-connecting > span:nth-child(2) {
+    animation-delay: 120ms;
+  }
+  .studio-preview-connecting > span:nth-child(3) {
+    animation-delay: 240ms;
+  }
+}
+@keyframes studio-preview-connecting-dot {
+  0%,
+  45%,
+  100% {
+    transform: translateY(0);
+  }
+  22% {
+    transform: translateY(-3px);
+  }
+}
 .studio-overlay-content {
   padding-top: 16px;
 }

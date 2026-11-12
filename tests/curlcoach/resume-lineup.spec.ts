@@ -640,7 +640,10 @@ for (const firstAction of ["Next Turn", "Save Flag"] as const) {
       }),
     );
     const requests: string[] = [];
-    const committed = new Map<string, string>();
+    const committed = new Map<
+      string,
+      NonNullable<CoachGame["standaloneReviews"]>[number]
+    >();
     let games: Awaited<ReturnType<typeof fixture>>;
     let finishFirst!: () => void;
     const firstReply = new Promise<void>((resolve) => {
@@ -650,17 +653,16 @@ for (const firstAction of ["Next Turn", "Save Flag"] as const) {
       const body = route.request().postData()!;
       const { review } = JSON.parse(body);
       requests.push(body);
-      committed.set(review.id, review.notes);
-      games.get(gameOne)!.standaloneReviews = [...committed].map(
-        ([id, note]) => ({
-          id,
-          audience: "team",
-          playerId: null,
-          playerName: null,
-          note,
-          selectedAt: review.selectedAt,
-        }),
-      );
+      committed.set(review.id, {
+        id: review.id,
+        audience: "team",
+        playerId: null,
+        playerName: null,
+        note: review.notes,
+        selectedAt: review.selectedAt,
+        shotContext: review.shotContext,
+      });
+      games.get(gameOne)!.standaloneReviews = [...committed.values()];
       if (requests.length === 1) {
         await firstReply;
         await route.fulfill({
@@ -674,6 +676,12 @@ for (const firstAction of ["Next Turn", "Save Flag"] as const) {
 
     games = await fixture(page);
     await start(page);
+    await page.getByRole("button", { name: "Change", exact: true }).click();
+    const change = page.getByRole("dialog", { name: "Change", exact: true });
+    await change.getByLabel("Throwing position").selectOption("Third");
+    await change.getByLabel("End", { exact: true }).fill("4");
+    await change.getByRole("button", { name: "Done", exact: true }).click();
+    await openEntryTab(page, "Execution");
     await page.getByLabel("Numeric grade").selectOption("4");
     await openEntryTab(page, "Shot Flags");
     await page
@@ -720,18 +728,23 @@ for (const firstAction of ["Next Turn", "Save Flag"] as const) {
     await nextTurn.click();
     await expect(shotContext).toContainText("Rock 2");
     expect(requests).toEqual([requests[0], requests[0]]);
-    expect([...committed.values()]).toEqual(["Review the weight call"]);
+    expect([...committed.values()]).toMatchObject([
+      { note: "Review the weight call", shotContext: { end: 4, shot: 5 } },
+    ]);
     expect(games.get(gameOne)!.state.events).toHaveLength(1);
     await page
       .getByRole("navigation", { name: "Shot Tracker shortcuts" })
       .getByRole("link", { name: "Analysis", exact: true })
       .click();
     await page.getByRole("tab", { name: "Flagged shots", exact: true }).click();
-    await expect(
-      page
-        .getByRole("region", { name: "Flagged shots", exact: true })
-        .getByText("Review the weight call", { exact: true }),
-    ).toHaveCount(1);
+    const flag = page
+      .getByRole("region", { name: "Flagged shots", exact: true })
+      .getByRole("article")
+      .filter({ hasText: "Review the weight call" });
+    await expect(flag).toHaveCount(1);
+    await expect(flag).toContainText(
+      "Game one · vs Fixture opponent · End 4 · Shot 5",
+    );
   });
 }
 

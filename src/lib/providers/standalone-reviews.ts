@@ -18,7 +18,7 @@ export async function loadStandaloneReviews(
   let query = admin
     .from("shot_tracker_standalone_reviews")
     .select(
-      "request_id,game_id,audience,player_id,player_name,note,selected_at",
+      "request_id,game_id,audience,player_id,player_name,note,selected_at,end_number,shot_number",
     )
     .eq("organization_id", account.organizationId)
     .eq("actor_user_id", account.userId)
@@ -37,6 +37,8 @@ export async function loadStandaloneReviews(
         player_name: z.string().nullable(),
         note: z.string(),
         selected_at: z.string(),
+        end_number: z.number().nullable(),
+        shot_number: z.number().nullable(),
       }),
     )
     .parse(data);
@@ -79,6 +81,10 @@ export async function loadStandaloneReviews(
         playerName: row.player_name,
         note: correction?.note ?? row.note,
         selectedAt: new Date(row.selected_at).toISOString(),
+        ...(row.end_number !== null &&
+          row.shot_number !== null && {
+            shotContext: { end: row.end_number, shot: row.shot_number },
+          }),
         ...(correction && {
           videoReview: {
             url: correction.video_url,

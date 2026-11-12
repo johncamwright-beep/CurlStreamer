@@ -372,24 +372,42 @@ test("desktop game day keeps scoring primary and settings available on demand", 
     expect(closeBox.y).toBe(broadcastBox.y);
     expect(closeBox.x - broadcastBox.x - broadcastBox.width).toBe(8);
   }
-  await page.evaluate((gameId) => {
-    window.dispatchEvent(
-      new CustomEvent("studio-youtube-status", {
-        detail: {
-          gameId,
-          available: true,
-          busy: false,
-          streaming: "armed",
-          live: true,
-          receiving: true,
-          message: "",
-          canReconnect: true,
-          canHoldStream: true,
-          outputActive: true,
-        },
-      }),
+  const broadcastStatus = (streaming: string, live = false) =>
+    page.evaluate(
+      (detail) =>
+        window.dispatchEvent(
+          new CustomEvent("studio-youtube-status", { detail }),
+        ),
+      {
+        gameId: testGameId,
+        available: true,
+        busy: false,
+        streaming,
+        live,
+        receiving: live,
+        message: "",
+        canReconnect: true,
+        canHoldStream: true,
+        outputActive: live,
+      },
     );
-  }, testGameId);
+  const previewBadge = page.locator(".studio-preview-status");
+  await expect(previewBadge).toHaveText("PREVIEW");
+  await broadcastStatus("idle");
+  await headerBroadcast.click();
+  await expect(previewBadge).toHaveAttribute("data-connecting", "true");
+  const connectingDot = previewBadge
+    .locator(".studio-preview-connecting > span")
+    .first();
+  await expect(connectingDot).toHaveCSS(
+    "animation-name",
+    "studio-preview-connecting-dot",
+  );
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await expect(connectingDot).toHaveCSS("animation-name", "none");
+  await page.emulateMedia({ reducedMotion: "no-preference" });
+  await broadcastStatus("armed", true);
+  await expect(previewBadge).toHaveText("LIVE");
   await expect(
     page.getByRole("link", { name: "Watch on YouTube" }),
   ).toBeVisible();

@@ -195,6 +195,8 @@ export default function FlaggedShots({
             <h2>{review.audience === "team" ? "Team" : review.playerName}</h2>
             <p>
               {game.label} · vs {game.opponent}
+              {review.shotContext &&
+                ` · End ${review.shotContext.end} · Shot ${review.shotContext.shot}`}
             </p>
             <FlagVideo
               key={`${video?.url}:${reviewStart(video)}:${video?.estimated}:${review.note}`}

@@ -1,7 +1,7 @@
 import { test, expect, type Page } from "@playwright/test";
 import { build } from "esbuild";
 
-async function startupFixture(page: Page) {
+async function startupFixture(page: Page, preview = false) {
   const bundle = await build({
     bundle: true,
     write: false,
@@ -10,7 +10,7 @@ async function startupFixture(page: Page) {
     jsx: "automatic",
     tsconfig: "tsconfig.json",
     stdin: {
-      contents: `import React from 'react';import {createRoot} from 'react-dom/client';import {StudioYouTube} from './src/components/StudioYouTube';window.sent=[];window.chrome={webview:{postMessage(v){window.sent.push(v)}}};const root=createRoot(document.getElementById('root'));window.renderGame=id=>root.render(<StudioYouTube id={id} controlsTarget="studio-broadcast-actions"/>);window.renderGame('fixture-game');`,
+      contents: `import React from 'react';import {createRoot} from 'react-dom/client';import {StudioYouTube} from './src/components/StudioYouTube';window.sent=[];window.chrome={webview:{postMessage(v){window.sent.push(v)}}};const root=createRoot(document.getElementById('root'));window.renderGame=id=>root.render(<StudioYouTube id={id} controlsTarget="studio-broadcast-actions" ${preview ? 'previewStatusTarget="fixture-preview"' : ""}/>);window.renderGame('fixture-game');`,
       loader: "tsx",
       resolveDir: process.cwd(),
     },
@@ -18,7 +18,7 @@ async function startupFixture(page: Page) {
   await page.route("**/startup-fixture", (r) =>
     r.fulfill({
       contentType: "text/html",
-      body: '<div id="studio-broadcast-actions"></div><div id="root"></div><script src="/startup-fixture.js"></script>',
+      body: '<div id="studio-broadcast-actions"></div><div id="fixture-preview"></div><div id="root"></div><script src="/startup-fixture.js"></script>',
     }),
   );
   await page.route("**/startup-fixture.js", (r) =>
@@ -48,6 +48,62 @@ async function startupFixture(page: Page) {
       },
     );
 }
+
+test("Program Preview connects immediately and waits for live output through status gaps and restart", async ({
+  page,
+}) => {
+  const report = await startupFixture(page, true);
+  await page.route("**/api/games/fixture-game/studio-m4", (route) =>
+    route.fulfill({ json: { phase: "starting" } }),
+  );
+  await page.clock.install();
+  await page.goto("/startup-fixture");
+  const preview = page.locator("#fixture-preview").getByRole("status");
+  const controls = page.locator("#studio-broadcast-actions");
+  const start = controls.getByRole("button", { name: "Broadcast to YouTube" });
+  const pause = controls.getByRole("button", { name: "Pause broadcast" });
+  const idle = {
+    streaming: "idle",
+    outputActive: false,
+    canHoldStream: false,
+    canReconnect: false,
+  };
+  await expect(preview).toHaveText("PREVIEW");
+  await report(idle);
+  await start.click();
+  await expect(preview).toHaveAttribute("data-connecting", "true");
+  await expect(pause).toBeDisabled();
+  await report(idle);
+  await expect(preview).toHaveAttribute("data-connecting", "true");
+  await page.clock.fastForward(7000);
+  await expect(preview).toHaveText("PREVIEW");
+  await expect(start).toBeDisabled();
+
+  await report(idle);
+  await start.click();
+  await report({ streaming: "starting", outputActive: false });
+  await page.clock.fastForward(7000);
+  await expect(preview).toHaveAttribute("data-connecting", "true");
+  await expect(pause).toBeDisabled();
+  await report({ live: false, receiving: true, lastLiveAgeMs: 30000 });
+  await expect(preview).toHaveAttribute("data-connecting", "true");
+  await report({ live: true, outputActive: false });
+  await expect(preview).toHaveAttribute("data-connecting", "true");
+  await report({ live: true, receiving: true });
+  await expect(preview).toHaveText("LIVE");
+  await expect(pause).toBeEnabled();
+
+  await report({ streaming: "paused", outputActive: false });
+  await expect(preview).toHaveText("PREVIEW");
+  await controls.getByRole("button", { name: "Restart broadcast" }).click();
+  await report({ lastLiveAgeMs: 1000, receiving: true });
+  await expect(preview).toHaveAttribute("data-connecting", "true");
+  await report({ live: true, presentation: { mode: "hold" } });
+  await expect(preview).toHaveText("LIVE · PAUSED");
+  await expect(
+    controls.getByRole("button", { name: "Resume broadcast" }),
+  ).toBeEnabled();
+});
 
 for (const restored of [false, true])
   test(`YouTube status loss does not show startup or restart a previously live broadcast (${restored ? "restored" : "observed"})`, async ({
@@ -233,7 +289,7 @@ test("Studio starts now despite delayed reception telemetry and retries without 
   ).toBeDisabled();
   await expect(
     page.getByRole("button", { name: "Pause broadcast" }),
-  ).toHaveCount(0);
+  ).toBeDisabled();
   // An active encoder is sufficient to check; the server independently
   // verifies YouTube reception before it requests a live transition.
   await report();
@@ -294,7 +350,7 @@ test("Late go-live failures cannot overwrite confirmed live status or a differen
   ).toBeDisabled();
   await expect(
     page.getByRole("button", { name: "Pause broadcast" }),
-  ).toHaveCount(0);
+  ).toBeDisabled();
   await report({ live: true });
   release();
   await expect(
@@ -568,7 +624,7 @@ test("Studio YouTube sends game-scoped commands and expires live status", async 
   await expect(start).toBeEnabled();
   await expect(
     page.getByRole("button", { name: "Disconnect", exact: true }),
-  ).toHaveCount(0);
+  ).toBeDisabled();
   // YouTube may acknowledge the request before it finishes going live.
   await page.clock.fastForward(11000);
   await report("fixture-game", false, true);

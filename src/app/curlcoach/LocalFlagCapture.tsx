@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { captureShotFlagClip } from "@/lib/curlcoach/shot-flag-clip";
 import EntryOverlay from "./EntryOverlay";
+import FlagScrubSlider, { flagNudgeSeconds } from "./FlagScrubSlider";
 
 type Audience = "" | "team" | "player";
 type Clip = Awaited<ReturnType<typeof captureShotFlagClip>> & { url: string };
@@ -17,6 +18,7 @@ type FirstFrame = {
 };
 const captureTimeoutMs = 75_000;
 const firstSeekTimeoutMs = 1_500;
+const fineScrubSeconds = 20;
 const videoError = "Video could not play. Reload recent video to try again.";
 
 export default function LocalFlagCapture({
@@ -38,6 +40,8 @@ export default function LocalFlagCapture({
   const [start, setStart] = useState<StartPoint | null>(null);
   const [time, setTime] = useState(0);
   const [seekWindow, setSeekWindow] = useState<SeekWindow | null>(null);
+  const [fullClip, setFullClip] = useState(false);
+  const [fineStart, setFineStart] = useState<number | null>(null);
   const [settled, setSettled] = useState(false);
   const [playing, setPlaying] = useState(false);
   const [loading, setLoading] = useState<"loading" | "retrying" | null>(null);
@@ -59,11 +63,23 @@ export default function LocalFlagCapture({
   const player = players.find((member) => member.id === playerId);
   const canPick = audience === "team" || (audience === "player" && !!player);
   const canSave = locked || canPick;
+  const canZoom =
+    seekWindow && seekWindow.last - seekWindow.first > fineScrubSeconds;
+  const sliderFirst = seekWindow
+    ? fullClip || !canZoom
+      ? seekWindow.first
+      : (fineStart ?? seekWindow.last - fineScrubSeconds)
+    : 0;
+  const sliderLast = seekWindow
+    ? fullClip || !canZoom
+      ? seekWindow.last
+      : Math.min(seekWindow.last, sliderFirst + fineScrubSeconds)
+    : 0;
   const secondsBack = seekWindow ? Math.max(0, seekWindow.last - time) : 0;
   const seekLabel =
-    secondsBack < 0.05
+    secondsBack < 0.005
       ? "Newest frame"
-      : `${secondsBack.toFixed(1)} seconds back`;
+      : `${secondsBack.toFixed(2)} seconds back`;
 
   useEffect(
     () => () => {
@@ -97,6 +113,23 @@ export default function LocalFlagCapture({
     return () => window.clearTimeout(timer);
   }, [clip, pickerOpen]);
 
+  function movePlayhead(target: number, available: SeekWindow) {
+    setTime(target);
+    const latestStart = Math.max(
+      available.first,
+      available.last - fineScrubSeconds,
+    );
+    setFineStart((previous) => {
+      const first = previous ?? latestStart;
+      if (target >= first && target <= first + fineScrubSeconds)
+        return previous;
+      return Math.max(
+        available.first,
+        Math.min(latestStart, target - fineScrubSeconds / 2),
+      );
+    });
+  }
+
   function flushSeek() {
     const element = video.current;
     if (!element || element.src !== clipUrl.current || element.seeking) return;
@@ -124,7 +157,7 @@ export default function LocalFlagCapture({
       }
       window.clearTimeout(initial.fallback);
       firstFrame.current = null;
-      setTime(element.currentTime);
+      movePlayhead(element.currentTime, initial.window);
       setStartingVideo(false);
       setTapToLoad(false);
     }
@@ -143,7 +176,7 @@ export default function LocalFlagCapture({
     if (!available || !video.current) return;
     const target = Math.max(available.first, Math.min(available.last, seconds));
     video.current.pause();
-    setTime(target);
+    movePlayhead(target, available);
     setSettled(false);
     pendingSeek.current = target;
     flushSeek();
@@ -158,6 +191,8 @@ export default function LocalFlagCapture({
     setStartingVideo(false);
     setTapToLoad(false);
     setSeekWindow(null);
+    setFullClip(false);
+    setFineStart(null);
     setSettled(false);
     setPlaying(false);
     pendingSeek.current = null;
@@ -254,7 +289,7 @@ export default function LocalFlagCapture({
       return false;
     const selected = Math.max(
       seekWindow.first,
-      Math.min(seekWindow.last, element.currentTime),
+      Math.min(seekWindow.last, time),
     );
     selectedClipUrl.current = clip.url;
     setStart({
@@ -483,48 +518,56 @@ export default function LocalFlagCapture({
                       setPlaying(false);
                       flushSeek();
                     }}
-                    onTimeUpdate={() => {
+                    onTimeUpdate={({ currentTarget }) => {
                       if (
                         !startingVideo &&
                         pendingSeek.current === null &&
-                        video.current &&
-                        !video.current.seeking &&
+                        currentTarget === video.current &&
+                        !currentTarget.paused &&
+                        !currentTarget.seeking &&
                         seekWindow
                       ) {
-                        const current = video.current.currentTime;
-                        if (current > seekWindow.last && !video.current.paused)
-                          seek(seekWindow.last);
-                        else setTime(Math.min(seekWindow.last, current));
+                        const current = currentTarget.currentTime;
+                        if (current > seekWindow.last) seek(seekWindow.last);
+                        else movePlayhead(current, seekWindow);
                       }
                     }}
                     onError={({ currentTarget }) => failVideo(currentTarget)}
                   />
                   {!loading && !startingVideo && seekWindow && (
-                    <label>
-                      Shot start · {seekLabel}
-                      <input
-                        aria-label="Shot start"
-                        aria-valuetext={seekLabel}
-                        type="range"
-                        min={seekWindow.first}
-                        max={seekWindow.last}
-                        step="any"
-                        value={time}
-                        onChange={(event) => seek(Number(event.target.value))}
+                    <div className="shot-flag-timeline">
+                      <div className="shot-flag-timeline-header">
+                        <div>
+                          <div>Shot start · {seekLabel}</div>
+                          {canZoom && !fullClip && (
+                            <small>20-second view</small>
+                          )}
+                        </div>
+                        {canZoom && (
+                          <button
+                            type="button"
+                            onClick={() => setFullClip(!fullClip)}
+                          >
+                            {fullClip ? "Fine scrub" : "Full clip"}
+                          </button>
+                        )}
+                      </div>
+                      <FlagScrubSlider
+                        first={sliderFirst}
+                        last={sliderLast}
+                        time={time}
+                        description={seekLabel}
+                        onSeek={seek}
                       />
-                      <small>
-                        Drag left to go back through the last{" "}
-                        {Math.ceil(seekWindow.last - seekWindow.first)} seconds.
-                      </small>
-                    </label>
+                    </div>
                   )}
                   <div className="shot-flag-playback">
                     <button
                       type="button"
                       disabled={!!loading || startingVideo || !seekWindow}
-                      onClick={() => seek(time - 1)}
+                      onClick={() => seek(time - flagNudgeSeconds)}
                     >
-                      −1 second
+                      −0.25 seconds
                     </button>
                     <button
                       type="button"
@@ -537,7 +580,7 @@ export default function LocalFlagCapture({
                       onClick={() => {
                         const element = video.current;
                         if (!element) return;
-                        if (playing) element.pause();
+                        if (playing) seek(element.currentTime);
                         else
                           void element.play().catch((error: unknown) => {
                             if (!(
@@ -553,9 +596,9 @@ export default function LocalFlagCapture({
                     <button
                       type="button"
                       disabled={!!loading || startingVideo || !seekWindow}
-                      onClick={() => seek(time + 1)}
+                      onClick={() => seek(time + flagNudgeSeconds)}
                     >
-                      +1 second
+                      +0.25 seconds
                     </button>
                   </div>
                 </>

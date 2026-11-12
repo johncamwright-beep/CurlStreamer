@@ -10,6 +10,7 @@ const capturedAt = "2026-11-10T15:00:00.000Z";
 async function captureFixture(
   page: Page,
   onClip?: (route: Route, attempt: number) => Promise<boolean>,
+  clipDuration = 12,
 ) {
   const bundle = await build({
     stdin: {
@@ -46,7 +47,7 @@ async function captureFixture(
             () => ({
               contents: `export async function captureShotFlagClip(gameId, signal) {
           const response = await fetch('/fixture-clip', { signal });
-          return { video: await response.blob(), duration: 12, minimum: 0, capturedAt: "${capturedAt}" };
+          return { video: await response.blob(), duration: ${clipDuration}, minimum: 0, capturedAt: "${capturedAt}" };
         }`,
             }),
           );
@@ -138,8 +139,10 @@ test("chooses a local flag start and retries only the same flag metadata", async
   await select.click();
   await expect(choose).toBeEnabled();
   expect(mediaRequests()).toBe(2);
-  await picker.getByRole("button", { name: "−1 second", exact: true }).click();
-  await expect(slider).toHaveAttribute("aria-valuetext", "1.0 seconds back");
+  await picker
+    .getByRole("button", { name: "−0.25 seconds", exact: true })
+    .click();
+  await expect(slider).toHaveAttribute("aria-valuetext", "0.25 seconds back");
   await slider.fill("1");
   await expect(video).toHaveJSProperty("currentTime", 1);
   await expect(choose).toBeEnabled();
@@ -157,7 +160,9 @@ test("chooses a local flag start and retries only the same flag metadata", async
   await audience.selectOption("player");
   await select.click();
   await expect(video).toHaveJSProperty("currentTime", 1);
-  await picker.getByRole("button", { name: "+1 second", exact: true }).click();
+  await picker
+    .getByRole("button", { name: "+0.25 seconds", exact: true })
+    .click();
   await picker.getByRole("button", { name: "Close Select Flag Start" }).click();
   expect(mediaRequests()).toBe(2);
   await page
@@ -214,6 +219,133 @@ test("chooses a local flag start and retries only the same flag metadata", async
     ),
   ).toBe(true);
   expect(context.pages()).toHaveLength(1);
+});
+
+test("fine scrubbing keeps the last drag position and exposes the full clip", async ({
+  page,
+  context,
+}, testInfo) => {
+  // Map the short fixture's real decoding and seek events onto two minutes.
+  await page.addInitScript(() => {
+    const media = HTMLMediaElement.prototype;
+    const duration = Object.getOwnPropertyDescriptor(media, "duration")!;
+    const currentTime = Object.getOwnPropertyDescriptor(media, "currentTime")!;
+    Object.defineProperty(media, "duration", {
+      ...duration,
+      get(this: HTMLMediaElement) {
+        const seconds = duration.get!.call(this);
+        return Number.isFinite(seconds) ? 120 : seconds;
+      },
+    });
+    Object.defineProperty(media, "currentTime", {
+      ...currentTime,
+      get(this: HTMLMediaElement) {
+        return (currentTime.get!.call(this) * 120) / duration.get!.call(this);
+      },
+      set(this: HTMLMediaElement, seconds: number) {
+        currentTime.set!.call(this, (seconds * duration.get!.call(this)) / 120);
+      },
+    });
+  });
+  const { writes } = await captureFixture(page, undefined, 120);
+  await page.getByLabel("Flag shot for review").selectOption("yes");
+  await page.getByLabel("Flag audience").selectOption("team");
+  const { select, picker, choose, video } = startPicker(page);
+  await select.click();
+  await expect(choose).toBeEnabled();
+  const slider = picker.getByRole("slider", { name: "Shot start" });
+  const latest = Number(await slider.getAttribute("max"));
+  await expect(slider).toHaveAttribute("min", String(latest - 20));
+
+  await slider.scrollIntoViewIfNeeded();
+  const box = (await slider.boundingBox())!;
+  const input = await context.newCDPSession(page);
+  const y = box.y + box.height / 2;
+  const startX = box.x + box.width * 0.7;
+  const movedX = box.x + box.width * 0.45;
+  const touch = testInfo.project.name === "phone";
+  if (touch) {
+    await input.send("Input.dispatchTouchEvent", {
+      type: "touchStart",
+      touchPoints: [{ x: startX, y }],
+    });
+    await input.send("Input.dispatchTouchEvent", {
+      type: "touchMove",
+      touchPoints: [{ x: movedX, y }],
+    });
+  } else {
+    await input.send("Input.dispatchMouseEvent", {
+      type: "mousePressed",
+      x: startX,
+      y,
+      button: "left",
+      buttons: 1,
+      clickCount: 1,
+    });
+    await input.send("Input.dispatchMouseEvent", {
+      type: "mouseMoved",
+      x: movedX,
+      y,
+      button: "left",
+      buttons: 1,
+    });
+  }
+  await expect
+    .poll(async () => Number(await slider.inputValue()))
+    .toBeLessThan(latest - 6);
+  const dragged = await slider.inputValue();
+  if (touch) {
+    await input.send("Input.dispatchTouchEvent", {
+      type: "touchEnd",
+      touchPoints: [],
+    });
+  } else {
+    await input.send("Input.dispatchMouseEvent", {
+      type: "mouseReleased",
+      x: box.x + box.width * 0.85,
+      y,
+      button: "left",
+      buttons: 0,
+      clickCount: 1,
+    });
+  }
+  await expect(slider).toHaveValue(dragged);
+  await expect(choose).toBeEnabled();
+
+  // A late media event can report an earlier seek after the thumb is lifted.
+  await video.evaluate((element: HTMLVideoElement) => {
+    Object.defineProperty(element, "currentTime", {
+      configurable: true,
+      value: element.currentTime - 3,
+    });
+    element.dispatchEvent(new Event("timeupdate"));
+    Reflect.deleteProperty(element, "currentTime");
+  });
+  await expect(slider).toHaveValue(dragged);
+  await picker.getByRole("button", { name: "Full clip", exact: true }).click();
+  await expect(slider).toHaveAttribute("min", "0");
+  await expect(slider).toHaveValue(dragged);
+  await slider.fill("25");
+  await picker.getByRole("button", { name: "Fine scrub", exact: true }).click();
+  await expect(slider).toHaveAttribute("min", "15");
+  await expect(slider).toHaveAttribute("max", "35");
+  await expect(slider).toHaveValue("25");
+
+  await picker
+    .getByRole("button", { name: "+0.25 seconds", exact: true })
+    .click();
+  await expect(choose).toBeEnabled();
+  const selected = Number(await slider.inputValue());
+  expect(selected).toBeCloseTo(25.25, 2);
+  await choose.click();
+  await page
+    .getByRole("button", { name: "Finalize Flag", exact: true })
+    .click();
+  await expect.poll(() => writes.length).toBe(1);
+  const savedAt = Date.parse(JSON.parse(writes[0]).review.selectedAt);
+  expect(
+    Math.abs(savedAt - (Date.parse(capturedAt) - (120 - selected) * 1000)),
+  ).toBeLessThanOrEqual(1);
 });
 
 test("a stalled seek near the end falls back on the same clip", async ({

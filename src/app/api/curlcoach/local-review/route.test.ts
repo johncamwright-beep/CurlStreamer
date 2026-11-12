@@ -118,7 +118,11 @@ it("saves standalone team flags without creating attempts and rejects unknown pl
     events: [],
     roster: [{ id: "lead", name: "Alex" }],
   });
-  const req = (audience: string, playerId?: string) =>
+  const req = (
+    audience: string,
+    playerId?: string,
+    shotContext?: { end: number; shot: number },
+  ) =>
     new Request("http://localhost/api/curlcoach/local-review", {
       method: "POST",
       headers: {
@@ -130,10 +134,12 @@ it("saves standalone team flags without creating attempts and rejects unknown pl
         shotId: null,
         expectedRevision: 0,
         playerId,
-        review: { ...body.review, audience },
+        review: { ...body.review, audience, shotContext },
       }),
     });
-  expect((await POST(req("team"))).status).toBe(200);
+  expect((await POST(req("team", undefined, { end: 4, shot: 7 }))).status).toBe(
+    200,
+  );
   expect(m.save).not.toHaveBeenCalled();
   expect(m.rpc).toHaveBeenCalledWith(
     "save_standalone_review",
@@ -142,7 +148,16 @@ it("saves standalone team flags without creating attempts and rejects unknown pl
       p_org: "org",
       p_game: gameId,
       p_player: null,
+      p_selected: body.review.selectedAt,
+      p_end: 4,
+      p_shot: 7,
     }),
+  );
+  expect((await POST(req("team", undefined, { end: 0, shot: 7 }))).status).toBe(
+    400,
+  );
+  expect((await POST(req("player", "lead", { end: 4, shot: 7 }))).status).toBe(
+    400,
   );
   expect((await POST(req("player", "intruder"))).status).toBe(400);
   expect((await POST(req("player", "lead"))).status).toBe(200);
@@ -150,6 +165,7 @@ it("saves standalone team flags without creating attempts and rejects unknown pl
     "save_standalone_review",
     expect.objectContaining({ p_player: "lead", p_name: "Alex" }),
   );
+  expect(m.rpc.mock.lastCall?.[1]).not.toHaveProperty("p_end");
 });
 
 const loadRequest = () =>

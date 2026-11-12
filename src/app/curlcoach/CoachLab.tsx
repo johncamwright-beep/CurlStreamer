@@ -1315,6 +1315,10 @@ export default function CoachLab({
                             gameId={context.gameId}
                             players={players}
                             defaultPlayerId={draft.playerId}
+                            shotContext={{
+                              end: draft.end,
+                              shot: rockNumber(draft),
+                            }}
                             onSaved={() => {
                               setMessage("Flag saved.");
                               context.onReviewSaved?.();

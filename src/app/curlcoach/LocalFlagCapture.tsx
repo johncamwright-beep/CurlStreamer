@@ -8,6 +8,7 @@ import {
   type Ref,
 } from "react";
 import { captureShotFlagClip } from "@/lib/curlcoach/shot-flag-clip";
+import type { StandaloneShotContext } from "@/lib/curlcoach/standalone-review";
 import EntryOverlay from "./EntryOverlay";
 import FlagScrubSlider, { flagNudgeSeconds } from "./FlagScrubSlider";
 
@@ -35,12 +36,14 @@ export default function LocalFlagCapture({
   gameId,
   players,
   defaultPlayerId,
+  shotContext,
   onSaved,
   ref,
 }: {
   gameId: string;
   players: readonly { id: string; name: string }[];
   defaultPlayerId: string;
+  shotContext: StandaloneShotContext;
   onSaved: () => void;
   ref?: Ref<LocalFlagHandle>;
 }) {
@@ -350,6 +353,7 @@ export default function LocalFlagCapture({
         selectedAt: start.selectedAt,
         capturedAt: start.capturedAt,
         timingEstimated: true,
+        ...(audience === "team" && { shotContext }),
       },
       shotId: null,
       ...(audience === "player" ? { playerId } : {}),

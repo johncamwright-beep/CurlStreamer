@@ -97,6 +97,7 @@ test("flagged-shot menu retains filters and shows one timestamped link per flag"
     .first();
   await expect(standalone).toBeVisible();
   await expect(standalone.getByRole("heading", { name: "Team" })).toBeVisible();
+  await expect(standalone).not.toContainText(/End \d+ · Shot \d+/);
   await expect(standalone.getByRole("link")).toHaveCount(1);
   await expect(
     standalone.getByRole("link", { name: "Link to video", exact: true }),

@@ -21,6 +21,7 @@ async function captureFixture(
         createRoot(document.getElementById('root')).render(
           <form onSubmit={event => {event.preventDefault(); document.body.dataset.graded = 'yes'}}>
             <LocalFlagCapture gameId="${gameId}" defaultPlayerId="alex"
+              shotContext={{end: 3, shot: 7}}
               players={[{id: 'alex', name: 'Alex'}, {id: 'sam', name: 'Sam'}]}
               onSaved={()=>document.body.dataset.saved='yes'}/>
           </form>
@@ -196,6 +197,7 @@ test("chooses a local flag start and retries only the same flag metadata", async
   });
   expect(writes[1].length).toBeLessThan(1000);
   expect(playerFlag.review.video).toBeUndefined();
+  expect(playerFlag.review.shotContext).toBeUndefined();
 
   await page.getByLabel("Flag shot for review").selectOption("yes");
   await page.getByLabel("Flag audience").selectOption("team");
@@ -211,6 +213,7 @@ test("chooses a local flag start and retries only the same flag metadata", async
   expect(teamFlag.playerId).toBeUndefined();
   expect(teamFlag.review.audience).toBe("team");
   expect(teamFlag.review.notes).toBe("");
+  expect(teamFlag.review.shotContext).toEqual({ end: 3, shot: 7 });
   expect(
     await page.evaluate(
       () => document.documentElement.scrollWidth <= innerWidth,

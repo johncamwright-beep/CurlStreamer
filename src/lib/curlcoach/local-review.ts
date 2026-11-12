@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { currentShots, type State } from "./model";
+import { standaloneShotContextSchema } from "./standalone-review";
 
 export const localReviewSchema = z
   .object({
@@ -11,6 +12,7 @@ export const localReviewSchema = z
     selectedAt: z.iso.datetime(),
     capturedAt: z.iso.datetime(),
     timingEstimated: z.literal(true),
+    shotContext: standaloneShotContextSchema.optional(),
   })
   .strict()
   .refine((value) => {
@@ -24,7 +26,12 @@ export const localReviewSaveSchema = z
     playerId: z.string().min(1).max(100).optional(),
     expectedRevision: z.number().int().nonnegative(),
   })
-  .strict();
+  .strict()
+  .refine(
+    ({ review, shotId }) =>
+      !review.shotContext || (review.audience === "team" && shotId === null),
+    "Shot context is only accepted for standalone Team flags",
+  );
 
 export function localReviewCommand(
   state: State,

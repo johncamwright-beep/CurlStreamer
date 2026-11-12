@@ -2,6 +2,7 @@
 import { createPortal } from "react-dom";
 import { StudioStatusMessage } from "./StudioStatusArea";
 import { StudioOverlay } from "./StudioOverlay";
+import { StudioPreviewStatus, type PreviewStatus } from "./StudioPreviewStatus";
 import { useEffect, useRef, useState } from "react";
 import { z } from "zod";
 import { requestStudioPresentation } from "@/lib/studio-presentation-client";
@@ -50,6 +51,7 @@ const broadcastSessionSchema = z.object({
   watchUrl: watchUrlSchema.optional(),
   lastErrorCode: z.string().optional(),
 });
+const STATUS_TIMEOUT_MS = 6000;
 
 function studioBroadcastRequest(
   gameId: string,
@@ -71,18 +73,34 @@ function studioBroadcastRequest(
 export function StudioYouTube({
   id,
   controlsTarget,
+  previewStatusTarget,
 }: {
   id: string;
   controlsTarget?: string;
+  previewStatusTarget?: string;
 }) {
   const [controlsHost, setControlsHost] = useState<HTMLElement | null>(null);
+  const [previewStatusHost, setPreviewStatusHost] =
+    useState<HTMLElement | null>(null);
   useEffect(() => {
     setControlsHost(
       controlsTarget ? document.getElementById(controlsTarget) : null,
     );
-  }, [controlsTarget]);
-  const [state, setState] = useState<z.infer<typeof stateSchema>>();
+    setPreviewStatusHost(
+      previewStatusTarget ? document.getElementById(previewStatusTarget) : null,
+    );
+  }, [controlsTarget, previewStatusTarget]);
+  const [lastStatus, setState] = useState<z.infer<typeof stateSchema>>();
+  const [statusStale, setStatusStale] = useState(true);
+  const knownState = lastStatus?.gameId === id ? lastStatus : undefined;
+  // Keep the layout stable through missing status updates, but require a fresh
+  // report before enabling commands or claiming that the broadcast is live.
+  const state = statusStale ? undefined : knownState;
   const [pending, setPending] = useState(false);
+  const [startRequest, setStartRequest] = useState<{
+    at: number;
+    accepted: boolean;
+  } | null>(null);
   const [goingLive, setGoingLive] = useState(false);
   const [error, setError] = useState("");
   const [stopOpen, setStopOpen] = useState(false);
@@ -102,6 +120,7 @@ export function StudioYouTube({
   const failures = useRef(0);
   const halted = useRef(false);
   const confirmedLive = useRef<string | undefined>(undefined);
+  const observedLive = useRef<string | undefined>(undefined);
   const [endedWatchUrl, setEndedWatchUrl] = useState<string>();
   const lastViewers = useRef<number | undefined>(undefined);
   const presentationFlight = useRef<object | undefined>(undefined);
@@ -109,13 +128,13 @@ export function StudioYouTube({
   const currentGame = useRef(id);
   currentGame.current = id;
   const watchingOutput = state && ["armed", "paused"].includes(state.streaming);
-  const held = state?.presentation?.mode === "hold";
-  const disconnected = state?.streaming === "paused";
+  const held = knownState?.presentation?.mode === "hold";
+  const disconnected = knownState?.streaming === "paused";
   const terminal =
     endedWatchUrl !== undefined &&
     (!endedWatchUrl || endedWatchUrl === watchUrl);
   const ending = ["preparing-end", "ended"].includes(
-    state?.presentation?.mode ?? "",
+    knownState?.presentation?.mode ?? "",
   );
   const wasLive =
     (state?.gameId === id && state.live) || confirmedLive.current === id;
@@ -124,7 +143,7 @@ export function StudioYouTube({
     (wasLive || sendingHoldCard) &&
     !terminal &&
     !disconnected &&
-    (!state || ["armed", "starting"].includes(state.streaming));
+    (!knownState || ["armed", "starting"].includes(knownState.streaming));
   const launching =
     state?.gameId === id &&
     ["starting", "armed"].includes(state.streaming) &&
@@ -139,6 +158,19 @@ export function StudioYouTube({
     launching &&
     state.streaming === "armed" &&
     (state.receiving || state.outputActive);
+  const connecting =
+    !terminal &&
+    !held &&
+    !ending &&
+    (startRequest !== null ||
+      replacing ||
+      restarting ||
+      (observedLive.current !== id &&
+        knownState?.available &&
+        !knownState.programAuthorityEnded &&
+        (knownState.streaming === "starting" ||
+          (knownState.streaming === "armed" &&
+            knownState.lastLiveAgeMs == null))));
   useEffect(() => {
     setBridgeAvailable(
       Boolean(
@@ -279,6 +311,7 @@ export function StudioYouTube({
       setWatchUrl(result.data.watchUrl ?? "");
       setEndedWatchUrl(undefined);
       confirmedLive.current = undefined;
+      observedLive.current = undefined;
       lastViewers.current = undefined;
       if (result.data.status !== "prepared" || !result.data.watchUrl)
         throw new Error(
@@ -343,12 +376,14 @@ export function StudioYouTube({
     nextCheck.current = 0;
     failures.current = 0;
     setGoingLive(false);
+    setStartRequest(null);
     setError("");
     setStopOpen(false);
     setReplacementOpen(false);
     setReplacing(false);
     setEndedWatchUrl(undefined);
     confirmedLive.current = undefined;
+    observedLive.current = undefined;
     lastViewers.current = undefined;
     presentationFlight.current = undefined;
     presentationConfirmedUntil.current = 0;
@@ -357,11 +392,42 @@ export function StudioYouTube({
     setRestarting(false);
     setPresentationError("");
     setState(undefined);
+    setStatusStale(true);
     const receive = (event: Event) => {
       const parsed = stateSchema.safeParse((event as CustomEvent).detail);
       if (!parsed.success || parsed.data.gameId !== id) return;
-      last = Date.now();
-      if (parsed.data.streaming === "paused") confirmedLive.current = undefined;
+      const receivedAt = Date.now();
+      last = receivedAt;
+      const data = parsed.data;
+      const startingOutput = ["starting", "armed"].includes(data.streaming);
+      const firstStartup =
+        data.streaming === "starting" && observedLive.current !== id;
+      if (data.streaming === "paused") {
+        confirmedLive.current = undefined;
+        observedLive.current = undefined;
+      }
+      setStartRequest((request) => {
+        if (
+          !data.available ||
+          data.programAuthorityEnded ||
+          (data.live && data.outputActive)
+        )
+          return null;
+        if (!request)
+          return firstStartup ? { at: receivedAt, accepted: true } : null;
+        if (startingOutput)
+          return request.accepted ? request : { ...request, accepted: true };
+        // An idle report can already be in flight when the operator clicks.
+        // Wait for startup, an explicit failure or expiry before resetting it.
+        if (
+          !data.busy &&
+          (request.accepted ||
+            data.message ||
+            receivedAt - request.at > STATUS_TIMEOUT_MS)
+        )
+          return null;
+        return request;
+      });
       if (
         parsed.data.live ||
         (parsed.data.streaming === "armed" &&
@@ -371,6 +437,7 @@ export function StudioYouTube({
         if (parsed.data.concurrentViewers != null)
           lastViewers.current = parsed.data.concurrentViewers;
         confirmedLive.current = id;
+        if (data.live && data.outputActive) observedLive.current = id;
         failures.current = 0;
         setError("");
       }
@@ -384,12 +451,14 @@ export function StudioYouTube({
           ? { ...parsed.data, presentation: current.presentation }
           : parsed.data,
       );
+      setStatusStale(false);
       if (!presentationFlight.current) setPending(false);
     };
     window.addEventListener("studio-youtube-status", receive);
     const timer = setInterval(() => {
-      if (Date.now() - last > 6000) {
-        setState(undefined);
+      if (Date.now() - last > STATUS_TIMEOUT_MS) {
+        setStatusStale(true);
+        setStartRequest((request) => (request?.accepted ? request : null));
         if (!presentationFlight.current) setPending(false);
       }
     }, 1000);
@@ -429,6 +498,9 @@ export function StudioYouTube({
     setError("");
     setPresentationError("");
     setPending(true);
+    if (action === "start" || action === "restart")
+      setStartRequest({ at: Date.now(), accepted: false });
+    if (action === "disconnect") setStartRequest(null);
     if (action === "hold" || action === "resume" || action === "restart") {
       const attempt = {};
       presentationFlight.current = attempt;
@@ -459,12 +531,14 @@ export function StudioYouTube({
         if (
           currentGame.current === id &&
           presentationFlight.current === attempt
-        )
+        ) {
+          if (action === "restart") setStartRequest(null);
           setPresentationError(
             cause instanceof Error
               ? cause.message
               : "Studio could not confirm the broadcast picture.",
           );
+        }
       } finally {
         if (
           currentGame.current === id &&
@@ -516,19 +590,21 @@ export function StudioYouTube({
     !blocked &&
     !replacing &&
     (state?.streaming === "idle" || state?.canRestartBroadcast === true);
-  const starting = launching && (!canGoLive || goingLive);
+  const starting = connecting && (!canGoLive || goingLive);
   const reconnectingOutput =
     needsRecovery && state?.canRecover && !offerRestart;
+  const waitingForPicture = connecting && !broadcastLive;
   const showPictureControl =
     restarting ||
     (!replacing &&
-      !disconnected &&
-      !restartRequired &&
       !ending &&
       !terminal &&
-      (held ||
-        (broadcastLive &&
-          (state?.streaming === "armed" || reconnectingOutput))));
+      (connecting ||
+        (!disconnected &&
+          !restartRequired &&
+          (held ||
+            (broadcastLive &&
+              (knownState?.streaming === "armed" || reconnectingOutput))))));
   let broadcastLabel = "Broadcast to YouTube";
   if (replacing) broadcastLabel = "Restarting broadcast…";
   else if (broadcastLive) broadcastLabel = "Stop broadcast";
@@ -607,6 +683,7 @@ export function StudioYouTube({
           disabled={
             blocked ||
             restarting ||
+            waitingForPicture ||
             (!reconnectingOutput &&
               (held
                 ? !state?.canHoldStream
@@ -615,11 +692,13 @@ export function StudioYouTube({
           title={
             reconnectingOutput
               ? "Reconnect local video to the same YouTube broadcast."
-              : held
-                ? "Return from the temporary pause card to live video on the same watch link."
-                : state?.canHoldStream
-                  ? "Show a temporary pause card while keeping the stream connected."
-                  : "Disconnect video temporarily. Update Windows Studio to show a pause card while keeping the stream connected."
+              : waitingForPicture
+                ? "This control becomes available once the broadcast connects."
+                : held
+                  ? "Return from the temporary pause card to live video on the same watch link."
+                  : knownState?.canHoldStream
+                    ? "Show a temporary pause card while keeping the stream connected."
+                    : "Disconnect video temporarily. Update Windows Studio to show a pause card while keeping the stream connected."
           }
           onClick={() =>
             void send(
@@ -635,13 +714,14 @@ export function StudioYouTube({
         >
           {restarting
             ? "Restarting connection…"
-            : pending || state?.busy
+            : !connecting && (pending || state?.busy)
               ? "Please wait…"
               : reconnectingOutput
                 ? "Reconnect broadcast"
                 : held
                   ? "Resume broadcast"
-                  : state?.canHoldStream
+                  : knownState?.canHoldStream ||
+                      (waitingForPicture && !knownState?.canReconnect)
                     ? "Pause broadcast"
                     : "Disconnect"}
         </button>
@@ -660,12 +740,38 @@ export function StudioYouTube({
       )}
     </>
   );
-  if (!bridgeAvailable) return <WindowsStudioRequired gameId={id} />;
+  let previewStatus: PreviewStatus | undefined;
+  const previewLive = state?.live && state.outputActive;
+  if (terminal || ending || (disconnected && !connecting))
+    previewStatus = "preview";
+  else if (previewLive) previewStatus = held ? "live-paused" : "live";
+  else if (connecting) previewStatus = "connecting";
+  else if (held) previewStatus = "paused";
+  else if (
+    knownState?.streaming === "armed" &&
+    (observedLive.current === id || knownState.lastLiveAgeMs != null)
+  )
+    previewStatus = knownState.outputActive && state ? "sending" : "checking";
+  else if (state) previewStatus = "preview";
+  const previewBadge = previewStatusHost
+    ? createPortal(
+        <StudioPreviewStatus gameId={id} broadcastStatus={previewStatus} />,
+        previewStatusHost,
+      )
+    : null;
+  if (!bridgeAvailable)
+    return (
+      <>
+        {previewBadge}
+        <WindowsStudioRequired gameId={id} />
+      </>
+    );
   return (
     <section
       className={`scoring-card studio-youtube${controlsTarget ? " studio-youtube-quick" : ""}`}
       aria-label="YouTube broadcast"
     >
+      {previewBadge}
       <div className="scoring-section-heading">
         <h2 className="flex items-center gap-2">
           <svg width="32" height="24" viewBox="0 0 32 24" aria-hidden="true">

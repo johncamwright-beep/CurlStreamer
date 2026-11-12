@@ -144,6 +144,10 @@ export async function POST(request: Request) {
           p_name: player?.name ?? null,
           p_note: review.notes,
           p_selected: review.selectedAt,
+          ...(review.shotContext && {
+            p_end: review.shotContext.end,
+            p_shot: review.shotContext.shot,
+          }),
         },
       );
       if (error) throw Error("Review storage unavailable");

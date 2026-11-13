@@ -14,7 +14,6 @@ import {
 import {
   localDateTimeToUtc,
   scheduledStartToLocalInput,
-  formatScheduledStart,
 } from "@/lib/team-hierarchy";
 import { ROCK_COLOUR_PRESETS } from "@/components/RockColourSelector";
 import { DEFAULT_TIMEZONE, TimezoneSelect } from "@/components/TimezoneSelect";
@@ -27,6 +26,12 @@ import { nextEventGameNumber } from "@/lib/next-event-game-number";
 
 type Opponent = { id: string; display_name: string };
 type Dialog = "season" | "event" | null;
+type ScheduleDestination = "games" | "another";
+type YouTubeScheduleNotice = {
+  id: string;
+  destination: ScheduleDestination;
+  message: string;
+};
 
 class ScheduleRequestError extends Error {
   constructor(
@@ -56,6 +61,18 @@ function youtubeSchedulingMessage(code?: string) {
       return "The game was saved, but its YouTube watch page is still pending.";
   }
 }
+
+function getYouTubeScheduleNotice(youtube?: {
+  status?: string;
+  thumbnailStatus?: string;
+  errorCode?: string;
+}) {
+  if (youtube?.status !== "ready")
+    return youtubeSchedulingMessage(youtube?.errorCode);
+  if (youtube.thumbnailStatus === "pending")
+    return "Your watch link is ready, but YouTube could not accept its preview image.";
+}
+
 export function GameCreationForm({
   teamName,
   seasons: initialSeasons,
@@ -118,6 +135,7 @@ export function GameCreationForm({
   );
   const gameForm = useRef<HTMLFormElement>(null);
   const gameNumberInput = useRef<HTMLInputElement>(null);
+  const duplicateSubmitter = useRef<HTMLButtonElement | undefined>(undefined);
   const acceptedDuplicate = useRef("");
   const [duplicatePrompt, setDuplicatePrompt] = useState(false);
   const [showGameNumber, setShowGameNumber] = useState(false);
@@ -206,13 +224,8 @@ export function GameCreationForm({
   const [sharedYoutubeWatchUrl, setSharedYoutubeWatchUrl] = useState(
     editing?.config.sharedYoutubeWatchUrl ?? "",
   );
-  const [createdGame, setCreatedGame] = useState<{
-    id: string;
-    youtubeStatus?: string;
-    youtubeErrorCode?: string;
-    thumbnailStatus?: string;
-  } | null>(null);
-  const [finishedScheduling, setFinishedScheduling] = useState(false);
+  const [youtubeNotice, setYouTubeNotice] = useState<YouTubeScheduleNotice>();
+  const [schedulingMessage, setSchedulingMessage] = useState("");
   const [error, setError] = useState("");
   const [scheduledDate, setScheduledDate] = useState(
     initialSchedule?.date ?? "",
@@ -392,8 +405,46 @@ export function GameCreationForm({
       setBusy(false);
     }
   }
+  function finishScheduling(
+    destination: ScheduleDestination,
+    savedGameNumber?: string,
+  ) {
+    if (destination === "games") {
+      router.replace(`/dashboard?season=${encodeURIComponent(seasonId)}`);
+      router.refresh();
+      return;
+    }
+    creationGameId.current = crypto.randomUUID();
+    acceptedDuplicate.current = "";
+    setShowGameNumber(false);
+    setYouTubeNotice(undefined);
+    setScheduledTime("");
+    setGameNumberText(
+      nextEventGameNumber(eventId, games, [
+        ...newGameNumbers,
+        ...(savedGameNumber ? [savedGameNumber] : []),
+      ]),
+    );
+    setTitleCustomized(false);
+    setError("");
+    setSchedulingMessage("Game scheduled.");
+    setBusy(false);
+    saving.current = false;
+  }
   async function submit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
+    if (saving.current) return;
+    const submitter = (e.nativeEvent as SubmitEvent).submitter;
+    const destination =
+      submitter instanceof HTMLButtonElement && submitter.value === "another"
+        ? "another"
+        : "games";
+    if (youtubeNotice) {
+      saving.current = true;
+      setBusy(true);
+      finishScheduling(destination);
+      return;
+    }
     if (!validOpponent) {
       setError("Choose a matching opponent or create a new opponent.");
       return;
@@ -410,13 +461,15 @@ export function GameCreationForm({
       numberInUse &&
       acceptedDuplicate.current !== `${eventId}:${gameNumberText}`
     ) {
+      duplicateSubmitter.current =
+        submitter instanceof HTMLButtonElement ? submitter : undefined;
       setDuplicatePrompt(true);
       return;
     }
-    if (saving.current) return;
     saving.current = true;
     setBusy(true);
     setError("");
+    setSchedulingMessage("");
     const form = new FormData(e.currentTarget);
     const date = String(form.get("scheduledDate"));
     const gameNumber =
@@ -457,22 +510,26 @@ export function GameCreationForm({
         },
       });
       if (!editing) {
-        if (eventId && gameNumberText)
-          setNewGameNumbers((numbers) => [
-            ...numbers,
-            `${eventId}:${gameNumberText}`,
-          ]);
-        setCreatedGame({
-          id: body.game.id,
-          thumbnailStatus: body.youtube?.thumbnailStatus,
-          youtubeStatus: youtubeEnabled
-            ? (body.youtube?.status ?? "pending")
-            : undefined,
-          youtubeErrorCode: body.youtube?.errorCode,
-        });
-        setBusy(false);
-        saving.current = false;
-        onCreated?.(body.game.id);
+        const savedGameNumber =
+          eventId && gameNumberText
+            ? `${eventId}:${gameNumberText}`
+            : undefined;
+        if (savedGameNumber)
+          setNewGameNumbers((numbers) => [...numbers, savedGameNumber]);
+        if (onCreated) {
+          onCreated(body.game.id);
+          setBusy(false);
+          saving.current = false;
+          return;
+        }
+        const message = youtubeEnabled
+          ? getYouTubeScheduleNotice(body.youtube)
+          : undefined;
+        if (message) {
+          setYouTubeNotice({ id: body.game.id, destination, message });
+          setBusy(false);
+          saving.current = false;
+        } else finishScheduling(destination, savedGameNumber);
         return;
       }
       if (editing && body.youtube?.status === "pending") {
@@ -500,129 +557,43 @@ export function GameCreationForm({
     }
   }
   async function retryYouTube() {
-    if (!createdGame) return;
+    if (!youtubeNotice || saving.current) return;
+    saving.current = true;
     setBusy(true);
     setError("");
     try {
       const body = await mutate({
         operation: "retryYouTube",
-        gameId: createdGame.id,
+        gameId: youtubeNotice.id,
       });
-      if (body.youtube?.status !== "ready") {
-        setCreatedGame({
-          ...createdGame,
-          youtubeStatus: body.youtube?.status ?? "pending",
-          youtubeErrorCode: body.youtube?.errorCode,
-        });
-        setBusy(false);
+      const message = getYouTubeScheduleNotice(body.youtube);
+      if (!message) {
+        finishScheduling(youtubeNotice.destination);
         return;
       }
-      setCreatedGame({
-        ...createdGame,
-        youtubeStatus: "ready",
-        youtubeErrorCode: undefined,
-        thumbnailStatus: body.youtube?.thumbnailStatus,
-      });
-      setBusy(false);
+      setYouTubeNotice({ ...youtubeNotice, message });
     } catch (e) {
       setError(
         e instanceof Error ? e.message : "YouTube could not be reached.",
       );
-      setBusy(false);
     }
+    setBusy(false);
+    saving.current = false;
   }
-  if (createdGame)
-    return (
-      <section
-        className="panel mx-auto max-w-xl space-y-5"
-        aria-labelledby="game-saved-heading"
-      >
-        <h1 id="game-saved-heading" className="text-2xl font-bold">
-          Game scheduled
-        </h1>
-        <p>
-          {selectedEvent?.name ?? "Single game"} ·{" "}
-          {formatScheduledStart(scheduledInstant!, effectiveTimezone)}
-        </p>
-        {createdGame.youtubeStatus &&
-          (createdGame.youtubeStatus !== "ready" ||
-            createdGame.thumbnailStatus === "pending") && (
-            <div className="setup-notice" role="status">
-              <p>
-                {createdGame.youtubeStatus === "ready"
-                  ? "Your watch link is ready, but YouTube could not accept its preview image. You can retry or continue scheduling."
-                  : youtubeSchedulingMessage(createdGame.youtubeErrorCode)}
-              </p>
-              <button
-                type="button"
-                className="btn-secondary mt-2"
-                disabled={busy}
-                onClick={retryYouTube}
-              >
-                {busy ? "Retrying YouTube…" : "Retry YouTube"}
-              </button>
-            </div>
-          )}
-        <h2 className="text-xl font-bold">
-          {finishedScheduling
-            ? "Open the last game?"
-            : selectedEvent
-              ? "Schedule another game for this event?"
-              : "Schedule another game?"}
-        </h2>
-        <div className="flex flex-wrap gap-3">
-          <button
-            type="button"
-            className="btn"
-            disabled={busy}
-            onClick={() => {
-              if (finishedScheduling) {
-                router.push(`/score/${createdGame.id}`);
-                return;
-              }
-              creationGameId.current = crypto.randomUUID();
-              acceptedDuplicate.current = "";
-              setShowGameNumber(false);
-              setCreatedGame(null);
-              setScheduledTime("");
-              setGameNumberText(
-                nextEventGameNumber(eventId, games, newGameNumbers),
-              );
-              setTitleCustomized(false);
-              setError("");
-            }}
-          >
-            {finishedScheduling ? "Yes, open game" : "Yes, schedule another"}
-          </button>
-          <button
-            type="button"
-            className="btn-secondary"
-            disabled={busy}
-            onClick={() => {
-              if (finishedScheduling) {
-                router.push("/dashboard");
-                return;
-              }
-              setFinishedScheduling(true);
-            }}
-          >
-            {finishedScheduling ? "No, view all games" : "No, I’m finished"}
-          </button>
-        </div>
-        {error && (
-          <p role="alert" className="text-red-300">
-            {error}
-          </p>
-        )}
-      </section>
-    );
+  const scheduleDisabled =
+    busy || !seasonId || !scheduledInstant || !validOpponent;
   return (
     <>
       <header className="setup-heading">
         <h1>{editing ? "Edit game" : "Schedule game"}</h1>
       </header>
-      <form ref={gameForm} onSubmit={submit} className="setup-form">
-        <fieldset disabled={busy} className="setup-fields">
+      <form
+        ref={gameForm}
+        onSubmit={submit}
+        className="setup-form"
+        aria-busy={busy}
+      >
+        <fieldset disabled={busy || !!youtubeNotice} className="setup-fields">
           <div className="setup-grid">
             <label className="setup-field">
               Season
@@ -912,56 +883,82 @@ export function GameCreationForm({
               </label>
             )}
           </section>
-          <div className="setup-section setup-actions">
-            {duplicatePrompt && numberInUse && (
-              <div role="alert" className="setup-notice">
-                <p>
-                  You’ve already used game {gameNumberText} in this event. Use
-                  this number again?
-                </p>
-                <div className="mt-3 flex flex-wrap gap-3">
-                  <button
-                    type="button"
-                    className="btn"
-                    onClick={() => {
-                      acceptedDuplicate.current = `${eventId}:${gameNumberText}`;
-                      setDuplicatePrompt(false);
-                      gameForm.current?.requestSubmit();
-                    }}
-                  >
-                    Yes, use this number
-                  </button>
-                  <button
-                    type="button"
-                    className="btn-secondary"
-                    onClick={() => {
-                      setDuplicatePrompt(false);
-                      if (editing || showGameNumber)
-                        gameNumberInput.current?.focus();
-                      else setShowGameNumber(true);
-                    }}
-                  >
-                    No, change number
-                  </button>
-                </div>
-              </div>
-            )}
-            {error && (
-              <p role="alert" className="setup-error">
-                {error}
+        </fieldset>
+        <div className="setup-section setup-actions">
+          {duplicatePrompt && numberInUse && (
+            <div role="alert" className="setup-notice">
+              <p>
+                You’ve already used game {gameNumberText} in this event. Use
+                this number again?
               </p>
-            )}
+              <div className="mt-3 flex flex-wrap gap-3">
+                <button
+                  type="button"
+                  className="btn"
+                  onClick={() => {
+                    acceptedDuplicate.current = `${eventId}:${gameNumberText}`;
+                    setDuplicatePrompt(false);
+                    gameForm.current?.requestSubmit(duplicateSubmitter.current);
+                  }}
+                >
+                  Yes, use this number
+                </button>
+                <button
+                  type="button"
+                  className="btn-secondary"
+                  onClick={() => {
+                    setDuplicatePrompt(false);
+                    if (editing || showGameNumber)
+                      gameNumberInput.current?.focus();
+                    else setShowGameNumber(true);
+                  }}
+                >
+                  No, change number
+                </button>
+              </div>
+            </div>
+          )}
+          {error && (
+            <p role="alert" className="setup-error">
+              {error}
+            </p>
+          )}
+          {youtubeNotice && (
+            <div className="setup-notice setup-youtube-notice">
+              <p role="status">{youtubeNotice.message}</p>
+              <p className="mt-1">You can retry YouTube or continue.</p>
+              <button
+                type="button"
+                className="btn-secondary mt-2"
+                disabled={busy}
+                onClick={retryYouTube}
+              >
+                Retry YouTube
+              </button>
+            </div>
+          )}
+          <button
+            type="submit"
+            value="games"
+            disabled={scheduleDisabled}
+            className="btn setup-submit"
+          >
+            {editing ? "Save changes" : "Schedule"}
+          </button>
+          {!editing && !onCreated && (
             <button
               type="submit"
-              disabled={
-                busy || !seasonId || !scheduledInstant || !validOpponent
-              }
-              className="btn setup-submit"
+              value="another"
+              className="btn-secondary setup-submit-another"
+              disabled={scheduleDisabled}
             >
-              {busy ? "Saving…" : editing ? "Save changes" : "Schedule game"}
+              Schedule and Create Another
             </button>
-          </div>
-        </fieldset>
+          )}
+          <span className="sr-only" role="status">
+            {busy ? "Saving…" : schedulingMessage}
+          </span>
+        </div>
       </form>
       {opponentDialog && (
         <OpponentDetailsDialog

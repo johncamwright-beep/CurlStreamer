@@ -1,24 +1,25 @@
 import { ProgramVideoDelayQueue } from "../program-video-delay";
-import { decodeM4CameraBitmap } from "./m4-camera-image-browser";
+import { createM4CameraFramePainter } from "./m4-camera-image-browser";
 
 /** Decode on presentation, never retain seconds of full-resolution bitmaps. */
 export function createProgramVideoPlayout({
   canvas,
   delayMs,
+  paintFrame,
   onFrame,
   onStale,
 }: {
   canvas: HTMLCanvasElement;
   delayMs: number;
+  paintFrame?: ReturnType<typeof createM4CameraFramePainter>;
   onFrame: (width: number, height: number) => void;
   onStale?: () => void;
 }) {
   const queue = new ProgramVideoDelayQueue(delayMs);
   const context = canvas.getContext("2d");
+  const paintCamera = paintFrame ?? createM4CameraFramePainter(canvas);
   const lifetime = new AbortController();
   let revision = 0;
-  let pendingDecodes = 0;
-  let presenting = false;
   let lastPaintAt: number | undefined;
   let startedAt = performance.now();
   let stale = false;
@@ -38,45 +39,18 @@ export function createProgramVideoPlayout({
   const paint = async () => {
     if (lifetime.signal.aborted) return;
     const started = performance.now();
-    if (!presenting && pendingDecodes < 2 && context) {
-      const blob = queue.takeDue(performance.now());
-      if (blob) {
-        presenting = true;
-        const current = revision;
-        const attempt = new AbortController();
-        const timeout = setTimeout(() => attempt.abort(), 2000);
-        let bitmap: ImageBitmap | undefined;
-        try {
-          bitmap = await decodeM4CameraBitmap(
-            blob,
-            AbortSignal.any([lifetime.signal, attempt.signal]),
-            (input) => {
-              pendingDecodes++;
-              return Promise.resolve()
-                .then(() => createImageBitmap(input))
-                .finally(() => pendingDecodes--);
-            },
-          );
-          if (
-            !lifetime.signal.aborted &&
-            !attempt.signal.aborted &&
-            revision === current
-          ) {
-            if (canvas.width !== bitmap.width) canvas.width = bitmap.width;
-            if (canvas.height !== bitmap.height) canvas.height = bitmap.height;
-            context.drawImage(bitmap, 0, 0);
-            lastPaintAt = performance.now();
-            stale = false;
-            onFrame(bitmap.width, bitmap.height);
-          }
-        } catch {
-          /* A failed decode skips this picture without replaying a backlog. */
-        } finally {
-          clearTimeout(timeout);
-          attempt.abort();
-          bitmap?.close();
-          presenting = false;
-        }
+    const blob = queue.takeDue(started);
+    if (blob) {
+      const current = revision;
+      const frame = await paintCamera(
+        blob,
+        lifetime.signal,
+        () => revision === current,
+      );
+      if (frame && !lifetime.signal.aborted && revision === current) {
+        lastPaintAt = performance.now();
+        stale = false;
+        onFrame(frame.width, frame.height);
       }
     }
     if (!lifetime.signal.aborted)

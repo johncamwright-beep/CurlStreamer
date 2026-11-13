@@ -1,14 +1,18 @@
 "use client";
 
 import { useEffect } from "react";
-import { decodeM4CameraBitmap } from "./m4-camera-image-browser";
+import { createM4CameraFramePainter } from "./m4-camera-image-browser";
 import { m4RendererInstance } from "./m4-renderer-health-browser";
 import { cameraAspect } from "../program-camera-layout";
 import { createProgramVideoPlayout } from "./program-video-playout-browser";
+import type { ConnectionDiagnosticInput } from "./connection-diagnostics";
 import type { CameraRole } from "../m2-studio-protocol";
 
 const FRAME_INTERVAL_MS = 1000 / 30;
 const OBSERVATION_INTERVAL_MS = 1000;
+const DIAGNOSTIC_INTERVAL_MS = 10_000;
+const FRESHNESS_MS = 5000;
+const MAX_JPEG_BYTES = 2 * 1024 * 1024;
 
 /** Only the private program renderer can fetch these uncredentialed loopback
  * paths. RTSP addresses and camera passwords never reach browser JavaScript. */
@@ -17,12 +21,14 @@ export function M4IpCameraTransport({
   generation,
   sourceIdentity,
   onChange,
+  diagnostic,
   delayMs = 0,
 }: {
   role: CameraRole;
   generation: number;
   sourceIdentity: string;
   delayMs?: number;
+  diagnostic: (event: ConnectionDiagnosticInput) => void;
   onChange(
     role: CameraRole,
     state: {
@@ -45,6 +51,26 @@ export function M4IpCameraTransport({
     let lastFrame = 0;
     let observation: AbortController | undefined;
     let lastObservation = -Infinity;
+    const startedAt = Date.now();
+    const reports = new Map<string, number>();
+    const report = (
+      code: ConnectionDiagnosticInput["code"],
+      action?: ConnectionDiagnosticInput["action"],
+      status?: number,
+    ) => {
+      if (lifetime.signal.aborted) return;
+      const key = action ? code + ":" + action : code;
+      const now = performance.now();
+      if (now - (reports.get(key) ?? -Infinity) < DIAGNOSTIC_INTERVAL_MS)
+        return;
+      reports.set(key, now);
+      diagnostic({ layer: "media", code, role, action, status });
+    };
+    const paintFrame = createM4CameraFramePainter(
+      canvas,
+      (timedOut) => report(timedOut ? "timeout" : "capture_failed"),
+      () => report("retry"),
+    );
     const publish = (width: number, height: number) => {
       const aspect = cameraAspect(width, height);
       if (!displayed || aspect !== publishedAspect) {
@@ -63,8 +89,10 @@ export function M4IpCameraTransport({
         ? createProgramVideoPlayout({
             canvas,
             delayMs,
+            paintFrame,
             onFrame: publish,
             onStale: () => {
+              report("paint_stale");
               displayed = false;
               onChange(role, {
                 sourceIdentity,
@@ -99,17 +127,23 @@ export function M4IpCameraTransport({
           sourceGeneration: generation,
         }),
       })
-        .then((response) => response.text())
-        .catch(() => undefined)
+        .then(async (response) => {
+          await response.text();
+          if (!response.ok)
+            report("verification_failed", "observe", response.status);
+        })
+        .catch(() =>
+          report(
+            attempt.signal.aborted ? "timeout" : "transport_failed",
+            "observe",
+          ),
+        )
         .finally(() => {
           clearTimeout(timeout);
           attempt.abort();
           if (observation === attempt) observation = undefined;
         });
     };
-    // createImageBitmap cannot be cancelled. Leave room for recovery after one
-    // stalled decode, but never accumulate unbounded decoder work on retries.
-    let pendingDecodes = 0;
     const clear = () => {
       playout?.clear();
       context?.clearRect(0, 0, canvas.width, canvas.height);
@@ -117,18 +151,10 @@ export function M4IpCameraTransport({
       lastFrame = 0;
       onChange(role, { sourceIdentity, message: "Reconnecting IP camera…" });
     };
-    const poll = async () => {
-      const started = performance.now();
-      if (pendingDecodes >= 2) {
-        if (lastFrame > 0 && Date.now() - lastFrame >= 5000) clear();
-        if (!lifetime.signal.aborted)
-          timer = setTimeout(() => void poll(), FRAME_INTERVAL_MS);
-        return;
-      }
+    const readFrame = async () => {
       const attempt = new AbortController();
       const timeout = setTimeout(() => attempt.abort(), 2000);
       const signal = AbortSignal.any([lifetime.signal, attempt.signal]);
-      let bitmap: ImageBitmap | undefined;
       try {
         const response = await fetch(
           `/ip-camera/${role}/frame?generation=${generation}&after=${counter}`,
@@ -140,60 +166,64 @@ export function M4IpCameraTransport({
           },
         );
         if (lifetime.signal.aborted) return;
-        if (response.status === 204) return;
+        if (response.status === 204) {
+          if (Date.now() - (lastFrame || startedAt) >= FRESHNESS_MS)
+            report("paint_stale", "read");
+          return;
+        }
+        if (!response.ok) {
+          report("transport_failed", "read", response.status);
+          return;
+        }
         if (
-          !response.ok ||
           response.headers.get("content-type") !== "image/jpeg" ||
           response.headers.get("x-m4-ip-camera-generation") !==
             String(generation) ||
-          Number(response.headers.get("content-length")) > 2 * 1024 * 1024
+          Number(response.headers.get("content-length")) > MAX_JPEG_BYTES
         )
           throw Error();
         const frame = Number(response.headers.get("x-m4-ip-camera-frame"));
         if (!Number.isSafeInteger(frame) || frame <= counter) throw Error();
-        const blob = await response.blob();
-        if (blob.size > 2 * 1024 * 1024 || !blob.size) throw Error();
+        const image = await response.blob();
+        if (image.size > MAX_JPEG_BYTES || !image.size) throw Error();
         if (lifetime.signal.aborted || attempt.signal.aborted) return;
-        if (playout) {
-          // Polling and observations follow received frames while presentation
-          // runs independently. No decoder or bitmap waits inside this queue.
-          counter = frame;
-          lastFrame = Date.now();
-          playout.enqueue(blob);
-          observe();
-          return;
-        }
-        bitmap = await decodeM4CameraBitmap(blob, signal, (input) => {
-          pendingDecodes++;
-          return Promise.resolve()
-            .then(() => createImageBitmap(input))
-            .finally(() => pendingDecodes--);
-        });
-        if (lifetime.signal.aborted || attempt.signal.aborted || !context)
-          return;
-        if (canvas.width !== bitmap.width) canvas.width = bitmap.width;
-        if (canvas.height !== bitmap.height) canvas.height = bitmap.height;
-        context.drawImage(bitmap, 0, 0);
-        publish(bitmap.width, bitmap.height);
-        bitmap.close();
-        bitmap = undefined;
-        counter = frame;
-        lastFrame = Date.now();
-        observe();
+        return { frame, image };
       } catch {
-        /* Retain a fresh picture through a missed local request. */
+        report(attempt.signal.aborted ? "timeout" : "transport_failed", "read");
       } finally {
         clearTimeout(timeout);
         attempt.abort();
-        bitmap?.close();
-        if (!lifetime.signal.aborted) {
-          if (lastFrame > 0 && Date.now() - lastFrame >= 5000) clear();
-          timer = setTimeout(
-            () => void poll(),
-            Math.max(0, FRAME_INTERVAL_MS - (performance.now() - started)),
-          );
+      }
+    };
+    const poll = async () => {
+      const started = performance.now();
+      const next = await readFrame();
+      if (lifetime.signal.aborted) return;
+      if (next) {
+        // Skip a failed decode and let the next poll fetch the newest JPEG.
+        counter = next.frame;
+        if (playout) {
+          lastFrame = Date.now();
+          playout.enqueue(next.image);
+          observe();
+        } else {
+          const painted = await paintFrame(next.image, lifetime.signal);
+          if (painted && !lifetime.signal.aborted) {
+            publish(painted.width, painted.height);
+            lastFrame = Date.now();
+            observe();
+          }
         }
       }
+      if (lifetime.signal.aborted) return;
+      if (lastFrame > 0 && Date.now() - lastFrame >= FRESHNESS_MS) {
+        report("paint_stale");
+        clear();
+      }
+      timer = setTimeout(
+        () => void poll(),
+        Math.max(0, FRAME_INTERVAL_MS - (performance.now() - started)),
+      );
     };
     onChange(role, { sourceIdentity, message: "Connecting IP camera…" });
     void poll();
@@ -206,6 +236,6 @@ export function M4IpCameraTransport({
       canvas.height = 0;
       canvas.remove();
     };
-  }, [role, generation, sourceIdentity, onChange, delayMs]);
+  }, [role, generation, sourceIdentity, onChange, diagnostic, delayMs]);
   return null;
 }

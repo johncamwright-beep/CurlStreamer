@@ -56,6 +56,7 @@ function ScorerGame({ id }: { id: string }) {
     lifecycle,
     error,
     act,
+    beginCompletion,
     accountOperator,
     m1Pilot,
     accountRole,
@@ -499,6 +500,7 @@ function ScorerGame({ id }: { id: string }) {
                       sharedYoutubeWatchUrl={game.config.sharedYoutubeWatchUrl}
                       enabled
                       disabled={scoringLocked}
+                      beginCompletion={beginCompletion}
                       onCompleted={() => router.replace("/dashboard")}
                     />
                   </div>
@@ -817,6 +819,7 @@ function ScorerGame({ id }: { id: string }) {
                     sharedYoutubeWatchUrl={game.config.sharedYoutubeWatchUrl}
                     enabled
                     disabled={scoringLocked}
+                    beginCompletion={beginCompletion}
                     onCompleted={() => router.replace("/dashboard")}
                   />
                 </div>

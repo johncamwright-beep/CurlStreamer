@@ -29,6 +29,7 @@ export default function GameLobby({
   const {
     game,
     completion,
+    beginCompletion,
     error,
     refresh,
     accountRole,
@@ -354,6 +355,7 @@ export default function GameLobby({
               gameId={id}
               sharedYoutubeWatchUrl={game.config.sharedYoutubeWatchUrl}
               enabled={canManageCompletion(accountRole, organizerAccess)}
+              beginCompletion={beginCompletion}
               onCompleted={() => router.replace("/dashboard")}
             />
           </div>

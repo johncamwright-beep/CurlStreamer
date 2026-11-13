@@ -211,6 +211,89 @@ test("End Game returns to Games and reopening shows the saved result", async ({
   });
 });
 
+test("a completion read cannot replace the finalizing dialog before Games opens", async ({
+  page,
+}) => {
+  let pollInFlight!: (route: Route) => void;
+  const pendingPoll = new Promise<Route>((resolve) => (pollInFlight = resolve));
+  let holdRead = false;
+  let saveInFlight!: (route: Route) => void;
+  const pendingSave = new Promise<Route>((resolve) => (saveInFlight = resolve));
+  const owner = {
+    "x-curlcast-operator": "true",
+    "x-curlcast-account-role": "owner",
+  };
+  const completion = completedFixture();
+  await page.route(
+    (url) => url.pathname === "/dashboard",
+    (route) =>
+      route.fulfill({ contentType: "text/html", body: "<h1>Games</h1>" }),
+  );
+  await page.route(`**/api/games/${testGameId}`, (route) => {
+    if (holdRead) {
+      holdRead = false;
+      pollInFlight(route);
+      return;
+    }
+    return route.fulfill({ json: gameFixture(), headers: owner });
+  });
+  await page.route(`**/api/games/${testGameId}/completion`, (route) => {
+    if (route.request().method() === "GET")
+      return route.fulfill({
+        json: { status: "complete", attempts: 1, lastError: null },
+      });
+    if (route.request().postDataJSON()?.action === "review")
+      return route.fulfill({
+        json: {
+          reviewId: "22222222-2222-4222-8222-222222222222",
+          inputRevision: 7,
+          result: completion.result,
+          youtubeWatchUrl: null,
+        },
+      });
+    saveInFlight(route);
+  });
+  await page.goto(`/score/${testGameId}`);
+  await page.getByRole("button", { name: "Close Game", exact: true }).click();
+  await page
+    .getByRole("dialog", { name: "Is this game completed?" })
+    .getByRole("button", { name: "Yes", exact: true })
+    .click();
+  const confirmation = page.getByRole("dialog", {
+    name: "Finalize game score 3–2?",
+  });
+  await expect(confirmation).toBeVisible();
+  holdRead = true;
+  await page.evaluate(() =>
+    document.dispatchEvent(new Event("visibilitychange")),
+  );
+  const poll = await pendingPoll;
+  await confirmation.getByRole("button", { name: "Yes", exact: true }).click();
+  const save = await pendingSave;
+  const pollFinished = page.waitForEvent(
+    "requestfinished",
+    (request) => request === poll.request(),
+  );
+  await poll.fulfill({ json: completion, headers: owner });
+  await pollFinished;
+  // Let React commit anything read from the completed response.
+  await page.evaluate(
+    () =>
+      new Promise((resolve) =>
+        requestAnimationFrame(() => requestAnimationFrame(resolve)),
+      ),
+  );
+  await expect(confirmation.getByRole("status")).toHaveText("Ending game…");
+  await expect(page.getByText("Final result", { exact: true })).toHaveCount(0);
+  await save.fulfill({
+    json: {
+      completion,
+      cleanup: { status: "complete", attempts: 1, lastError: null },
+    },
+  });
+  await expect(page).toHaveURL(/\/dashboard$/);
+});
+
 test("authorized scoring page confirms an empty scoreboard as a 0–0 tie", async ({
   page,
 }) => {

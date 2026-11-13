@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { z } from "zod";
 import type { CompletionReview } from "@/lib/game-completion";
 import { organizerAccessToken } from "@/lib/access-session";
+import { clearCurrentGameIfMatching } from "@/lib/current-game";
 import { announceGameCompletion } from "@/lib/dashboard-refresh";
 import {
   leaveStudioGame,
@@ -89,12 +90,14 @@ export function EndGameControl({
   sharedYoutubeWatchUrl = null,
   enabled,
   disabled = false,
+  beginCompletion,
   onCompleted,
 }: {
   gameId: string;
   sharedYoutubeWatchUrl?: string | null;
   enabled: boolean;
   disabled?: boolean;
+  beginCompletion?: () => () => void;
   onCompleted: () => void;
 }) {
   const [open, setOpen] = useState(false);
@@ -193,6 +196,9 @@ export function EndGameControl({
     )
       return;
     completionFlight.current = true;
+    // Keep the operator dialog mounted until the committed game leaves this
+    // page, even if a refresh observes the completed result first.
+    const releaseRefresh = beginCompletion?.();
     setBusy(true);
     setError("");
     let saved = false;
@@ -205,6 +211,11 @@ export function EndGameControl({
       saved = true;
       announceGameCompletion(gameId);
       await notifyStudioGameEnded(gameId);
+      try {
+        clearCurrentGameIfMatching(localStorage, gameId);
+      } catch {
+        // Device-local storage is optional during completion.
+      }
       setCompletionSaved(true);
       onCompleted();
     } catch (cause) {
@@ -221,6 +232,7 @@ export function EndGameControl({
         );
         return;
       }
+      releaseRefresh?.();
       const message =
         cause instanceof Error && !(cause instanceof z.ZodError)
           ? cause.message

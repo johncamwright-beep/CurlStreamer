@@ -475,9 +475,9 @@ test("an inline YouTube warning retries the saved game and honors Schedule", asy
     });
   });
   await page.getByRole("button", { name: "Schedule", exact: true }).click();
-  await expect(page.locator(".setup-form").getByRole("status")).toContainText(
-    "Check this channel's Live list",
-  );
+  await expect(
+    page.locator(".setup-youtube-notice").getByRole("status"),
+  ).toContainText("Check this channel's Live list");
   await expect(page).toHaveURL(/\/games\/new(?:\?|$)/);
   await expect(
     page.getByRole("heading", { name: "Schedule game" }),

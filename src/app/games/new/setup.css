@@ -252,6 +252,19 @@
   background: #4bd2df;
   font-size: 16px;
 }
+.setup-form .setup-submit-another {
+  min-height: 44px;
+  max-width: 100%;
+  font-size: 16px;
+}
+.setup-youtube-notice {
+  flex: 1 1 100%;
+}
+@media (max-width: 33.99rem) {
+  .setup-form :is(.setup-submit, .setup-submit-another) {
+    width: 100%;
+  }
+}
 .setup-form button:disabled {
   cursor: not-allowed;
   opacity: 0.5;

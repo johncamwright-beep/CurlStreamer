@@ -62,6 +62,10 @@ export function useGame<V extends GameView = undefined>(
   );
   const currentWriteScope = useRef(writeScope);
   currentWriteScope.current = writeScope;
+  const beginCompletion = useCallback(() => {
+    writeScope.fence.begin();
+    return () => writeScope.fence.finish();
+  }, [writeScope]);
   const refresh = useCallback(
     async (includeNavigationMetadata = false) => {
       if (currentWriteScope.current !== writeScope) return;
@@ -384,6 +388,7 @@ export function useGame<V extends GameView = undefined>(
     lifecycle,
     error,
     act,
+    beginCompletion,
     refresh: refreshGame,
     accountOperator,
     accountRole,

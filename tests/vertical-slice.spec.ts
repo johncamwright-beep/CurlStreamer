@@ -43,7 +43,7 @@ test.beforeAll(async () => {
           }));
           builder.onLoad({ filter: /.*/, namespace: "fixture" }, () => ({
             contents:
-              "export function useRouter(){return {push(path){window.location.assign(path)},refresh(){}}}",
+              "export function useRouter(){return {replace(path){window.location.replace(path)},refresh(){}}}",
             loader: "js",
           }));
         },
@@ -62,6 +62,12 @@ async function scheduleGame(page: Page) {
     route.fulfill({
       contentType: "text/html",
       body: '<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><main id="root"></main><script src="/fixture-schedule.js"></script>',
+    }),
+  );
+  await page.route(/\/dashboard\?season=/, (route) =>
+    route.fulfill({
+      contentType: "text/html",
+      body: '<h1>Games</h1><a href="/score/' + testGameId + '">Open game</a>',
     }),
   );
   await page.route("**/fixture-schedule.js", (route) =>
@@ -118,12 +124,11 @@ async function scheduleGame(page: Page) {
   ).toHaveValue("Stones");
   await page.locator('input[name="scheduledDate"]').fill("2026-11-01");
   await page.locator('input[name="scheduledTime"]').fill("13:00");
-  await page
-    .getByRole("button", { name: "Schedule game", exact: true })
-    .click();
-  await page.getByRole("button", { name: "No, I’m finished" }).click();
-  await page.getByRole("button", { name: "Yes, open game" }).click();
-  await expect(page).toHaveURL(new RegExp(`/score/${testGameId}$`));
+  await page.getByRole("button", { name: "Schedule", exact: true }).click();
+  await expect(page).toHaveURL(/\/dashboard\?season=/);
+  await expect(
+    page.getByRole("heading", { name: "Games", exact: true }),
+  ).toBeVisible();
   expect(
     await page.evaluate(
       (id) => localStorage.getItem(`curlcast-access-${id}`),
@@ -135,10 +140,12 @@ async function scheduleGame(page: Page) {
   return game;
 }
 
-test("organizer schedules a game and chooses to open Game Scoring", async ({
+test("organizer schedules a game, returns to Games, and opens scoring", async ({
   page,
 }) => {
   await scheduleGame(page);
+  await page.getByRole("link", { name: "Open game", exact: true }).click();
+  await expect(page).toHaveURL(new RegExp("/score/" + testGameId + "$"));
   await expect(
     page.getByRole("button", { name: "Save 1 point", exact: true }),
   ).toBeVisible();

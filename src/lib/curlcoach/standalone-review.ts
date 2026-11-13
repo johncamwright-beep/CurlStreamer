@@ -2,8 +2,11 @@ import { z } from "zod";
 import {
   videoReviewSchema,
   withBroadcastReview,
+  youtubeId,
   type BroadcastReview,
 } from "./review";
+
+const youtubeReviewLeadInSeconds = 7;
 
 export const standaloneShotContextSchema = z.strictObject({
   end: z.number().int().min(1).max(20),
@@ -26,7 +29,7 @@ export function standaloneReviewVideo(
   review: StandaloneReview,
   broadcast?: BroadcastReview,
 ) {
-  return withBroadcastReview(
+  const { videoReview } = withBroadcastReview(
     {
       flaggedAt: review.selectedAt,
       videoReview: review.videoReview ?? {
@@ -37,5 +40,14 @@ export function standaloneReviewVideo(
       },
     },
     broadcast,
-  ).videoReview;
+  );
+  // Add context after mapping the selected frame to its recording. A saved
+  // manual correction already specifies the exact starting second.
+  if (
+    !review.videoReview &&
+    videoReview.positionSeconds !== null &&
+    youtubeId(new URL(videoReview.url))
+  )
+    return { ...videoReview, lookBackSeconds: youtubeReviewLeadInSeconds };
+  return videoReview;
 }

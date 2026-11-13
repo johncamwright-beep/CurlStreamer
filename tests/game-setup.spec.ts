@@ -162,11 +162,10 @@ test("the Event add button chooses its season and preserves the game draft", asy
   await expect(
     page.getByRole("combobox", { name: "Ends", exact: true }),
   ).toHaveValue("10");
-  await page
-    .getByRole("button", { name: "Schedule game", exact: true })
-    .click();
+  await page.getByRole("button", { name: "Schedule", exact: true }).click();
+  await expect(page).toHaveURL(/\/dashboard\?season=/);
   await expect(
-    page.getByRole("heading", { name: "Game scheduled", exact: true }),
+    page.getByRole("heading", { name: "Games", exact: true }),
   ).toBeVisible();
   expect(payloads[2]).toMatchObject({
     operation: "createGame",
@@ -216,14 +215,21 @@ test("opponent search starts at TBD and supports keyboard selection and cancella
   ).toBeVisible();
 });
 
-test("schedules multiple games with the same event and distinct save keys", async ({
+test("schedules multiple games from the form and returns directly to Games", async ({
   page,
 }) => {
-  await page
-    .getByRole("combobox", { name: "Event", exact: true })
-    .selectOption({ label: "Autumn Club Championship" });
+  const season = page.getByRole("combobox", { name: "Season", exact: true });
+  const event = page.getByRole("combobox", { name: "Event", exact: true });
+  const time = page.locator('input[name="scheduledTime"]');
+  const another = page.getByRole("button", {
+    name: "Schedule and Create Another",
+    exact: true,
+  });
+  await event.selectOption({ label: "Autumn Club Championship" });
   await fillGame(page);
   await page.locator('input[name="scheduledDate"]').fill("2026-09-12");
+  const selectedSeason = await season.inputValue();
+  const selectedEvent = await event.inputValue();
   await expect(page.getByLabel("Game number (optional)")).toHaveCount(0);
   const payloads: Record<string, any>[] = [];
   await page.route("**/api/team-schedule", async (route) => {
@@ -233,51 +239,46 @@ test("schedules multiple games with the same event and distinct save keys", asyn
       json: { game: { id: payload.gameId } },
     });
   });
-  await page
-    .getByRole("button", { name: "Schedule game", exact: true })
-    .click();
+
+  await another.click();
+  await expect(time).toHaveValue("");
+  await expect(season).toHaveValue(selectedSeason);
+  await expect(event).toHaveValue(selectedEvent);
   await expect(
-    page.getByRole("heading", { name: "Game scheduled", exact: true }),
-  ).toBeVisible();
-  await page.getByRole("button", { name: "Yes, schedule another" }).click();
-  await expect(
-    page.getByRole("combobox", { name: "Event", exact: true }),
-  ).toHaveValue(payloads[0].eventId);
+    page.getByRole("combobox", { name: "Opponent", exact: true }),
+  ).toHaveValue("Team Wright");
   await expect(page.locator('input[name="scheduledDate"]')).toHaveValue(
     "2026-09-12",
   );
-  await expect(page.locator('input[name="scheduledTime"]')).toHaveValue("");
-  await page.locator('input[name="scheduledTime"]').fill("20:30");
-  await page
-    .getByRole("button", { name: "Schedule game", exact: true })
-    .click();
+  await expect(page).toHaveURL(/\/games\/new(?:\?|$)/);
   await expect(
-    page.getByRole("heading", { name: "Game scheduled", exact: true }),
+    page.getByRole("heading", { name: "Schedule game", exact: true }),
   ).toBeVisible();
-  expect(payloads).toHaveLength(2);
-  expect(payloads[1].gameId).not.toBe(payloads[0].gameId);
-  expect(payloads[1].eventId).toBe(payloads[0].eventId);
-  expect(payloads.map((payload) => payload.gameNumber)).toEqual([6, 7]);
-  expect(payloads[1].config).toMatchObject({
-    scheduledEnds: payloads[0].config.scheduledEnds,
-  });
-  await page.getByRole("button", { name: "Yes, schedule another" }).click();
-  await page.locator('input[name="scheduledTime"]').fill("21:30");
-  await page
-    .getByRole("button", { name: "Schedule game", exact: true })
-    .click();
+
+  await time.fill("20:30");
+  await another.click();
+  await expect(time).toHaveValue("");
+  await expect(event).toHaveValue(selectedEvent);
   await expect(
-    page.getByRole("heading", { name: "Game scheduled", exact: true }),
+    page.getByRole("combobox", { name: "Opponent", exact: true }),
+  ).toHaveValue("Team Wright");
+  await time.fill("21:30");
+  await page.getByRole("button", { name: "Schedule", exact: true }).click();
+  await expect(page).toHaveURL(
+    new RegExp("/dashboard\\?season=" + selectedSeason + "$"),
+  );
+  await expect(
+    page.getByRole("heading", { name: "Games", exact: true }),
   ).toBeVisible();
   expect(payloads.map((payload) => payload.gameNumber)).toEqual([6, 7, 8]);
+  expect(payloads.map((payload) => payload.eventId)).toEqual([
+    selectedEvent,
+    selectedEvent,
+    selectedEvent,
+  ]);
   expect(new Set(payloads.map((payload) => payload.gameId)).size).toBe(3);
-  await page.getByRole("button", { name: "No, I’m finished" }).click();
-  await expect(
-    page.getByRole("heading", { name: "Open the last game?" }),
-  ).toBeVisible();
-  await page.getByRole("button", { name: "No, view all games" }).click();
-  await expect(page).toHaveURL(/\/dashboard$/);
 });
+
 test("an automatically assigned game number can be cleared after a conflict", async ({
   page,
 }) => {
@@ -297,9 +298,7 @@ test("an automatically assigned game number can be cleared after a conflict", as
       },
     });
   });
-  await page
-    .getByRole("button", { name: "Schedule game", exact: true })
-    .click();
+  await page.getByRole("button", { name: "Schedule", exact: true }).click();
   await expect(
     page.getByRole("alert").filter({ hasText: "game number is already used" }),
   ).toContainText("game number is already used");
@@ -307,9 +306,7 @@ test("an automatically assigned game number can be cleared after a conflict", as
   const number = page.getByLabel("Game number (optional)");
   await expect(number).toHaveValue("6");
   await number.fill("");
-  await page
-    .getByRole("button", { name: "Schedule game", exact: true })
-    .click();
+  await page.getByRole("button", { name: "Schedule", exact: true }).click();
   await expect.poll(() => payloads.length).toBe(2);
   expect(payloads[1]).toMatchObject({
     gameNumber: null,
@@ -350,16 +347,32 @@ test("rock colour choices and an unlisted YouTube reservation are saved", async 
     await new Promise((resolve) => setTimeout(resolve, 400));
     await route.fulfill({ status: 503, json: { error: "Try again shortly." } });
   });
-  await page
-    .getByRole("button", { name: "Schedule game", exact: true })
-    .click();
-  await expect(page.getByRole("button", { name: "Saving…" })).toBeDisabled();
+  await page.getByRole("button", { name: "Schedule", exact: true }).click();
+  await expect(
+    page.locator(".setup-form button[type=submit]:enabled"),
+  ).toHaveCount(0);
   await expect(
     page.getByRole("combobox", { name: "Opponent", exact: true }),
   ).toBeDisabled();
   await expect(
     page.getByRole("alert").filter({ hasText: "Try again shortly." }),
   ).toBeVisible();
+  await expect(page).toHaveURL(/\/games\/new(?:\?|$)/);
+  await expect(page.locator('input[name="scheduledDate"]')).toHaveValue(
+    "2026-10-20",
+  );
+  await expect(page.locator('input[name="scheduledTime"]')).toHaveValue(
+    "18:30",
+  );
+  await expect(
+    page.getByRole("combobox", { name: "Opponent", exact: true }),
+  ).toHaveValue("Team Wright");
+  await expect(
+    page.getByRole("button", {
+      name: "Schedule and Create Another",
+      exact: true,
+    }),
+  ).toBeEnabled();
   expect(payloads).toHaveLength(1);
   expect(payloads[0]).toMatchObject({
     operation: "createGame",
@@ -376,7 +389,7 @@ test("rock colour choices and an unlisted YouTube reservation are saved", async 
     },
   });
   await expect(
-    page.getByRole("button", { name: "Schedule game", exact: true }),
+    page.getByRole("button", { name: "Schedule", exact: true }),
   ).toBeEnabled();
 });
 
@@ -423,11 +436,9 @@ test("YouTube options switch between a shared link and a public reservation", as
     });
   });
   await page
-    .getByRole("button", { name: "Schedule game", exact: true })
+    .getByRole("button", { name: "Schedule and Create Another", exact: true })
     .click();
-  await expect(
-    page.getByRole("heading", { name: "Game scheduled", exact: true }),
-  ).toBeVisible();
+  await expect(page.locator('input[name="scheduledTime"]')).toHaveValue("");
   expect(payloads).toHaveLength(1);
   expect(payloads[0]).toMatchObject({
     operation: "createGame",
@@ -440,12 +451,11 @@ test("YouTube options switch between a shared link and a public reservation", as
   });
   expect(postUrls).toHaveLength(1);
   expect(postUrls[0]).toMatch(/\/api\/team-schedule$/);
-  await page.getByRole("button", { name: "Yes, schedule another" }).click();
   await expect(streaming).toBeChecked();
   await expect(visibility).toBeChecked();
 });
 
-test("a pending YouTube page explains the uncertainty and retries the same game", async ({
+test("an inline YouTube warning retries the saved game and honors Schedule", async ({
   page,
 }) => {
   await fillGame(page);
@@ -464,19 +474,57 @@ test("a pending YouTube page explains the uncertainty and retries the same game"
       },
     });
   });
-  await page
-    .getByRole("button", { name: "Schedule game", exact: true })
-    .click();
-  await expect(page.getByRole("status")).toContainText(
-    "Check this channel's Live list",
-  );
+  await page.getByRole("button", { name: "Schedule", exact: true }).click();
+  await expect(
+    page.locator(".setup-youtube-notice").getByRole("status"),
+  ).toContainText("Check this channel's Live list");
+  await expect(page).toHaveURL(/\/games\/new(?:\?|$)/);
+  await expect(
+    page.getByRole("heading", { name: "Schedule game" }),
+  ).toBeVisible();
   await page.getByRole("button", { name: "Retry YouTube" }).click();
-  await expect(page.getByRole("status")).toHaveCount(0);
+  await expect(page).toHaveURL(/\/dashboard\?season=/);
   expect(payloads.map((item) => item.operation)).toEqual([
     "createGame",
     "retryYouTube",
   ]);
   expect(payloads[1].gameId).toBe(payloads[0].gameId);
+});
+
+test("continues to another game after a YouTube warning without scheduling a duplicate", async ({
+  page,
+}) => {
+  await fillGame(page);
+  await page.getByRole("switch", { name: "YouTube streaming" }).check();
+  const operations: string[] = [];
+  await page.route("**/api/team-schedule", async (route) => {
+    const payload = route.request().postDataJSON();
+    operations.push(payload.operation);
+    await route.fulfill({
+      json: {
+        game: { id: payload.gameId },
+        youtube: {
+          status: "pending",
+          errorCode: "broadcast_operation_uncertain",
+        },
+      },
+    });
+  });
+  const another = page.getByRole("button", {
+    name: "Schedule and Create Another",
+    exact: true,
+  });
+  await another.click();
+  await expect(
+    page.getByRole("button", { name: "Retry YouTube" }),
+  ).toBeVisible();
+  await another.click();
+  await expect(page.locator('input[name="scheduledTime"]')).toHaveValue("");
+  await expect(page.getByRole("button", { name: "Retry YouTube" })).toHaveCount(
+    0,
+  );
+  await expect(page).toHaveURL(/\/games\/new(?:\?|$)/);
+  expect(operations).toEqual(["createGame"]);
 });
 test("an empty YouTube title blocks reservation until it is filled", async ({
   page,
@@ -485,9 +533,7 @@ test("an empty YouTube title blocks reservation until it is filled", async ({
   await page.getByRole("switch", { name: "YouTube streaming" }).click();
   const title = page.getByLabel("YouTube title", { exact: true });
   await title.fill("");
-  await page
-    .getByRole("button", { name: "Schedule game", exact: true })
-    .click();
+  await page.getByRole("button", { name: "Schedule", exact: true }).click();
   await expect(title).toBeFocused();
   expect(
     await title.evaluate(
@@ -587,7 +633,7 @@ test("unmatched search cannot save a stale opponent and clearing restores TBD", 
     payloads.push(route.request().postDataJSON());
     await route.fulfill({ status: 503, json: { error: "Try again shortly." } });
   });
-  const save = page.getByRole("button", { name: "Schedule game", exact: true });
+  const save = page.getByRole("button", { name: "Schedule", exact: true });
   await expect(save).toBeDisabled();
   await expect(
     page
@@ -748,9 +794,7 @@ test("saving a new opponent adds it to search and leaving TBD restores selection
   await expect(picker).toBeEnabled();
   await picker.fill("Granite");
   await page.getByRole("option", { name: "Team Granite", exact: true }).click();
-  await page
-    .getByRole("button", { name: "Schedule game", exact: true })
-    .click();
+  await page.getByRole("button", { name: "Schedule", exact: true }).click();
   await expect.poll(() => payloads.length).toBe(2);
   expect(payloads[1]).toMatchObject({
     opponentId: "88888888-8888-4888-8888-888888888888",

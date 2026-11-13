@@ -84,8 +84,11 @@ async function openCards(page: Page) {
 
 test("IP camera disconnect cancels retries while the eye controls broadcast visibility", async ({
   page,
-}) => {
-  await page.setViewportSize({ width: 768, height: 850 });
+}, info) => {
+  await page.setViewportSize({
+    width: info.project.name === "mobile" ? 320 : 768,
+    height: 850,
+  });
   const commands: string[] = [];
   const source: StudioCameraInput = {
     kind: "tapo",
@@ -184,6 +187,9 @@ test("IP camera disconnect cancels retries while the eye controls broadcast visi
   await expect(card.getByRole("status")).toHaveText(
     "Connected · Waiting for preview",
   );
+  expect(
+    await card.evaluate((node) => node.scrollWidth <= node.clientWidth),
+  ).toBe(true);
   const health = card.getByRole("button", {
     name: "Camera 2 connection details",
   });

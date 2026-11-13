@@ -27,7 +27,7 @@ export default function Join({ params }: { params: Promise<{ id: string }> }) {
     if (!chooser) return;
     setError("");
     setLinks({});
-    void Promise.all(
+    void Promise.allSettled(
       roles.map(async ([role]) => {
         const r = await fetch(`/api/games/${id}/invitations`, {
           method: "POST",
@@ -43,7 +43,16 @@ export default function Join({ params }: { params: Promise<{ id: string }> }) {
         return [role, result.token];
       }),
     )
-      .then((x) => setLinks(Object.fromEntries(x)))
+      .then((results) => {
+        const available = results.flatMap((result) =>
+          result.status === "fulfilled" ? [result.value] : [],
+        );
+        if (!available.length) {
+          setError("No unclaimed roles are available for this invitation.");
+          return;
+        }
+        setLinks(Object.fromEntries(available));
+      })
       .catch((cause) =>
         setError(
           cause instanceof Error
@@ -68,14 +77,20 @@ export default function Join({ params }: { params: Promise<{ id: string }> }) {
     }
     const result = await r.json();
     preserveAndStoreParticipantAccess(localStorage, id, result.sessionToken);
-    router.push(role === "scorer" ? `/score/${id}` : `/camera/${id}/${role}`);
+    router.push(
+      role === "scorer"
+        ? `/score/${id}`
+        : search.get("media") === "m2"
+          ? `/studio-m2/${id}/camera/${role}`
+          : `/camera/${id}/${role}`,
+    );
   }
   const direct = search.get("token");
   if (direct)
     return (
       <main className="mx-auto max-w-md p-5">
         <div className="panel">
-          <h1 className="text-3xl font-black">Join CurlCast</h1>
+          <h1 className="text-3xl font-black">Join Curl Streamer</h1>
           <p className="my-4">
             This secure link assigns this phone its game role.
           </p>

@@ -1,5 +1,6 @@
 "use client";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { use, useEffect, useState } from "react";
 import { useGame } from "@/components/GameSync";
 import type { Role } from "@/lib/types";
@@ -7,6 +8,7 @@ import { cameraDisplayStatus } from "@/lib/camera-status";
 import { AppNavigation } from "@/components/AppNavigation";
 import { gameEntryPresentation, gameEntryCapabilities } from "@/lib/game-entry";
 import { GameReadScreen } from "@/components/GameReadScreen";
+import { studioSessionBridge } from "@/lib/studio-session";
 import "@/components/game-entry.css";
 
 import {
@@ -17,35 +19,63 @@ import {
 import { GameInvitations } from "@/components/GameInvitations";
 import { EndGameControl } from "@/components/EndGameControl";
 import { CompletedGameSummary } from "@/components/CompletedGameSummary";
-import type {
-  CompletionCleanup,
-  SafeGameCompletion,
-} from "@/lib/game-completion";
 export default function GameLobby({
   params,
 }: {
   params: Promise<{ id: string }>;
 }) {
   const { id } = use(params);
+  const router = useRouter();
   const {
     game,
     completion,
+    beginCompletion,
     error,
     refresh,
     accountRole,
+    m1Pilot,
     navigationMetadata,
     refreshContext,
   } = useGame(id, undefined, undefined, true);
-  const [finished, setFinished] = useState<SafeGameCompletion>();
-  const [finishedCleanup, setFinishedCleanup] = useState<CompletionCleanup>();
   const [organizerAccess, setOrganizerAccess] = useState(false);
   const [scoringAccess, setScoringAccess] = useState(false);
+  const [desktop, setDesktop] = useState(false);
   const [disconnecting, setDisconnecting] = useState<Role>();
   const [cameraActionError, setCameraActionError] = useState("");
   useEffect(() => {
+    setDesktop(navigator.userAgent.includes("CurlStreamerStudio/0.3"));
     setOrganizerAccess(hasOrganizerAccess(localStorage, id));
     setScoringAccess(hasScoringAccess(localStorage, id));
   }, [id]);
+  useEffect(() => {
+    if (completion)
+      studioSessionBridge()?.postMessage({
+        type: "studio-game-ended",
+        gameId: id,
+      });
+  }, [completion, id]);
+  useEffect(() => {
+    if (
+      desktop &&
+      game &&
+      !completion &&
+      (organizerAccess ||
+        scoringAccess ||
+        ["owner", "team_admin", "game_operator", "scorer"].includes(
+          accountRole,
+        ))
+    )
+      router.replace("/score/" + id);
+  }, [
+    game,
+    desktop,
+    completion,
+    organizerAccess,
+    scoringAccess,
+    accountRole,
+    id,
+    router,
+  ]);
   async function cameraAction(
     role: "camera-home" | "camera-away",
     release: boolean,
@@ -83,7 +113,16 @@ export default function GameLobby({
       setDisconnecting(undefined);
     }
   }
-  const completed = completion ?? finished;
+  const completed = completion;
+  if (
+    desktop &&
+    game &&
+    !completed &&
+    (organizerAccess ||
+      scoringAccess ||
+      ["owner", "team_admin", "game_operator", "scorer"].includes(accountRole))
+  )
+    return <GameReadScreen label="Opening game" retry={refreshContext} />;
   if (completed)
     return (
       <main className="mx-auto max-w-3xl p-5">
@@ -91,19 +130,11 @@ export default function GameLobby({
           gameId={id}
           completion={completed}
           cleanupControls={canManageCompletion(accountRole, organizerAccess)}
-          initialCleanup={finishedCleanup}
         />
       </main>
     );
   if (error || !game)
-    return (
-      <GameReadScreen
-        label="Game control"
-        error={error}
-        retry={refreshContext}
-        light
-      />
-    );
+    return <GameReadScreen label="Game" error={error} retry={refreshContext} />;
   const { title, scheduledLabel } = gameEntryPresentation(
     game.config,
     navigationMetadata,
@@ -115,7 +146,8 @@ export default function GameLobby({
     game.config.awayName === "Opponent TBD",
   );
   const canInvite =
-    organizerAccess || ["owner", "team_admin", "scorer"].includes(accountRole);
+    organizerAccess ||
+    ["owner", "team_admin", "game_operator", "scorer"].includes(accountRole);
   return (
     <main className="game-control-page">
       <div className="game-control-inner">
@@ -130,6 +162,11 @@ export default function GameLobby({
             {scheduledLabel} · {game.config.scheduledEnds} ends
           </p>
           <nav className="game-entry-actions" aria-label="Primary game actions">
+            {capabilities.control && (
+              <Link className="btn" href={`/games/${id}/studio`}>
+                Set up Windows Studio
+              </Link>
+            )}
             {capabilities.scoring && (
               <Link className="btn" href={`/score/${id}`}>
                 Open scoring
@@ -175,6 +212,7 @@ export default function GameLobby({
           </p>
           <div className="game-readiness-grid">
             {(["camera-home", "camera-away"] as const).map((role) => {
+              const directPilot = m1Pilot && role === "camera-home";
               const status = cameraDisplayStatus(game, role);
               const stale =
                 game.cameraHealth?.[role] &&
@@ -190,19 +228,35 @@ export default function GameLobby({
               return (
                 <div className="game-readiness-device" key={role}>
                   <h3>{role === "camera-home" ? "Camera 1" : "Camera 2"}</h3>
-                  <strong>{label}</strong>
+                  <strong>
+                    {directPilot
+                      ? game.claims[role]
+                        ? "Claimed · see PC receiver"
+                        : "Not claimed"
+                      : label}
+                  </strong>
                   <p>
-                    {stale
-                      ? "Open the camera phone and check its connection. Its last report is no longer current."
-                      : status === "Unclaimed"
-                        ? canInvite
-                          ? "Create an invitation below and open it on the camera phone."
-                          : "Ask the organizer for a camera invitation."
-                        : status === "Live"
-                          ? "Keep the camera page open. Confirm the received picture in the preview."
-                          : "Open the camera page on the assigned phone and reconnect. Ask the organizer to release the role if you need a different device."}
+                    {directPilot
+                      ? "The claim shows assignment only. Check the received picture and connection in the PC receiver."
+                      : stale
+                        ? "Open the camera phone and check its connection. Its last report is no longer current."
+                        : status === "Unclaimed"
+                          ? canInvite
+                            ? "Create an invitation below and open it on the camera phone."
+                            : "Ask the organizer for a camera invitation."
+                          : status === "Live"
+                            ? "Keep the camera page open. Confirm the received picture in the preview."
+                            : "Open the camera page on the assigned phone and reconnect. Ask the organizer to release the role if you need a different device."}
                   </p>
-                  {game.cameraHealth?.[role] && (
+                  {directPilot && (
+                    <Link
+                      className="btn-secondary"
+                      href={`/studio-spike/${id}`}
+                    >
+                      PC receiver
+                    </Link>
+                  )}
+                  {!directPilot && game.cameraHealth?.[role] && (
                     <small>
                       Last report{" "}
                       {new Date(
@@ -299,13 +353,10 @@ export default function GameLobby({
             )}
             <EndGameControl
               gameId={id}
-              homeName={game.config.homeName}
-              awayName={game.config.awayName}
+              sharedYoutubeWatchUrl={game.config.sharedYoutubeWatchUrl}
               enabled={canManageCompletion(accountRole, organizerAccess)}
-              onCompleted={(value, cleanup) => {
-                setFinished(value);
-                setFinishedCleanup(cleanup);
-              }}
+              beginCompletion={beginCompletion}
+              onCompleted={() => router.replace("/dashboard")}
             />
           </div>
         </section>

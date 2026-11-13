@@ -29,11 +29,21 @@ const mocks = vi.hoisted(() => ({
   listGenerations: vi.fn(),
   readToken: vi.fn(),
   stopBroadcast: vi.fn(),
+  revalidatePath: vi.fn(),
+  cleanupReady: vi.fn(),
+  after: vi.fn(),
 }));
-vi.mock("@/lib/game-completion", () => ({
+vi.mock("next/server", async (original) => ({
+  ...(await original<typeof import("next/server")>()),
+  after: mocks.after,
+}));
+vi.mock("next/cache", () => ({ revalidatePath: mocks.revalidatePath }));
+vi.mock("@/lib/game-completion", async (original) => ({
+  ...(await original<typeof import("@/lib/game-completion")>()),
   verifiedCompletionAccount: mocks.verified,
   reviewGameCompletion: mocks.review,
   completeReviewedGame: mocks.complete,
+  completionCleanupReady: mocks.cleanupReady,
   getCompletionCleanup: mocks.getCleanup,
   recordCompletionCleanup: mocks.recordCleanup,
   readGameCompletionSummary: mocks.readSummary,
@@ -65,6 +75,7 @@ function request(body: unknown, bearer?: string) {
 describe("End Game route", () => {
   beforeEach(() => {
     vi.resetAllMocks();
+    mocks.cleanupReady.mockResolvedValue({ ok: true, value: true });
     mocks.verified.mockResolvedValue({ ok: true, value: account });
     mocks.readToken.mockRejectedValue(new Error("stale participant"));
     mocks.review.mockResolvedValue({
@@ -111,7 +122,8 @@ describe("End Game route", () => {
       { params: Promise.resolve({ id: gameId }) },
     );
     expect(response.status).toBe(200);
-    expect(mocks.review).toHaveBeenCalledWith(gameId, account, null);
+    expect(mocks.review).toHaveBeenCalledWith(gameId, account, null, undefined);
+    expect(mocks.revalidatePath).not.toHaveBeenCalled();
   });
 
   it("accepts a cryptographically verified same-game organizer", async () => {
@@ -122,8 +134,46 @@ describe("End Game route", () => {
         params: Promise.resolve({ id: gameId }),
       },
     );
-    expect(mocks.review).toHaveBeenCalledWith(gameId, organizer, null);
+    expect(mocks.review).toHaveBeenCalledWith(
+      gameId,
+      organizer,
+      null,
+      undefined,
+    );
     expect(mocks.verified).not.toHaveBeenCalled();
+  });
+
+  it.each([null, "scoreboard", { home: 0, away: 0 }, { home: 3, away: 6 }])(
+    "passes the explicit final score choice %j to review",
+    async (finalScore) => {
+      const response = await POST(
+        request({ action: "review", youtubeWatchUrl: "", finalScore }),
+        { params: Promise.resolve({ id: gameId }) },
+      );
+      expect(response.status).toBe(200);
+      expect(mocks.review).toHaveBeenCalledWith(
+        gameId,
+        account,
+        null,
+        finalScore,
+      );
+    },
+  );
+
+  it.each([
+    { home: 1 },
+    { home: -1, away: 0 },
+    { home: 1, away: 2.5 },
+    { home: 1, away: "2" },
+    { home: Number.MAX_SAFE_INTEGER + 1, away: 0 },
+    { home: 1, away: 2, outcome: "home_win" },
+  ])("rejects invalid final scores %j before review", async (finalScore) => {
+    const response = await POST(
+      request({ action: "review", youtubeWatchUrl: "", finalScore }),
+      { params: Promise.resolve({ id: gameId }) },
+    );
+    expect(response.status).toBe(400);
+    expect(mocks.review).not.toHaveBeenCalled();
   });
 
   it("returns the saved result while recording an honest cleanup failure", async () => {
@@ -149,6 +199,13 @@ describe("End Game route", () => {
       "camera-away": [2],
     });
     expect(mocks.stopBroadcast).toHaveBeenCalledWith(gameId, account);
+    expect(mocks.revalidatePath).toHaveBeenCalledExactlyOnceWith("/dashboard");
+    expect(mocks.revalidatePath.mock.invocationCallOrder[0]).toBeGreaterThan(
+      mocks.complete.mock.invocationCallOrder[0],
+    );
+    expect(mocks.revalidatePath.mock.invocationCallOrder[0]).toBeLessThan(
+      mocks.stopBroadcast.mock.invocationCallOrder[0],
+    );
   });
 
   it("does not repeat provider teardown after cleanup is complete", async () => {
@@ -180,6 +237,29 @@ describe("End Game route", () => {
     });
   });
 
+  it("retries failed provider cleanup after the saved completion response", async () => {
+    mocks.stopBroadcast.mockResolvedValueOnce({ status: "failed" });
+    mocks.recordCleanup.mockResolvedValueOnce({
+      ok: true,
+      value: {
+        status: "failed",
+        attempts: 1,
+        lastError: "Provider unavailable",
+      },
+    });
+    const result = await POST(request({ action: "complete", reviewId }), {
+      params: Promise.resolve({ id: gameId }),
+    });
+    expect(await result.json()).toMatchObject({
+      completion: summary,
+      cleanup: { status: "failed" },
+    });
+    expect(mocks.stopBroadcast).toHaveBeenCalledOnce();
+    expect(mocks.after).toHaveBeenCalledOnce();
+    await mocks.after.mock.calls[0][0]();
+    expect(mocks.stopBroadcast).toHaveBeenCalledTimes(2);
+  });
+
   it("reports completion as saved when summary retrieval briefly fails", async () => {
     mocks.readSummary.mockRejectedValue(new Error("read unavailable"));
     const response = await POST(request({ action: "complete", reviewId }), {
@@ -187,5 +267,140 @@ describe("End Game route", () => {
     });
     expect(response.status).toBe(200);
     expect(await response.json()).toMatchObject({ completionSaved: true });
+    expect(mocks.revalidatePath).toHaveBeenCalledExactlyOnceWith("/dashboard");
+  });
+
+  it.each(["authorization", "conflict", "terminal", "unavailable"])(
+    "does not invalidate Games before a failed %s completion",
+    async (kind) => {
+      mocks.complete.mockResolvedValue({ ok: false, kind });
+      const response = await POST(request({ action: "complete", reviewId }), {
+        params: Promise.resolve({ id: gameId }),
+      });
+      expect(response.status).toBe(
+        kind === "authorization" ? 403 : kind === "unavailable" ? 503 : 409,
+      );
+      expect(mocks.revalidatePath).not.toHaveBeenCalled();
+      expect(mocks.stopBroadcast).not.toHaveBeenCalled();
+    },
+  );
+
+  it("keeps the committed result successful if cache invalidation is unavailable", async () => {
+    mocks.revalidatePath.mockImplementation(() => {
+      throw new Error("cache unavailable");
+    });
+    const diagnostic = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const response = await POST(request({ action: "complete", reviewId }), {
+        params: Promise.resolve({ id: gameId }),
+      });
+      expect(response.status).toBe(200);
+      expect(await response.json()).toMatchObject({ completion: summary });
+      expect(mocks.stopBroadcast).toHaveBeenCalledWith(gameId, account);
+      expect(diagnostic).toHaveBeenCalledWith(
+        "Games cache invalidation unavailable after completion",
+      );
+    } finally {
+      diagnostic.mockRestore();
+    }
+  });
+});
+
+describe("bounded final-card completion", () => {
+  beforeEach(() => {
+    vi.resetAllMocks();
+    mocks.verified.mockResolvedValue({ ok: true, value: account });
+    mocks.readToken.mockRejectedValue(new Error("invalid"));
+    mocks.getCleanup.mockResolvedValue({
+      ok: true,
+      value: { status: "pending", attempts: 0, lastError: null },
+    });
+    mocks.recordCleanup.mockResolvedValue({
+      ok: true,
+      value: { status: "complete", attempts: 1, lastError: null },
+    });
+    mocks.cleanupReady.mockResolvedValue({ ok: true, value: true });
+    mocks.readSummary.mockResolvedValue(summary);
+    mocks.listGenerations.mockResolvedValue({});
+    mocks.stopBroadcast.mockResolvedValue({ status: "stopped" });
+  });
+  const closing = {
+    sessionId: gameId,
+    generation: 1,
+    intentId: reviewId,
+    deadlineAt: "2026-10-05T12:00:15+00:00",
+  };
+  it("returns committed snapshot and defers providers to request-independent deadline task", async () => {
+    mocks.complete.mockResolvedValue({
+      ok: true,
+      value: { cleanupStatus: "pending", closing },
+    });
+    const result = await POST(
+      request({
+        action: "complete",
+        reviewId,
+        closing: {
+          sessionId: gameId,
+          generation: 1,
+          intentId: reviewId,
+          capability: "final-card-v1",
+        },
+      }),
+      { params: Promise.resolve({ id: gameId }) },
+    );
+    expect(await result.json()).toMatchObject({
+      completion: summary,
+      closing,
+      cleanup: { status: "pending" },
+    });
+    expect(mocks.after).toHaveBeenCalledOnce();
+    expect(mocks.stopBroadcast).not.toHaveBeenCalled();
+    expect(mocks.terminate).not.toHaveBeenCalled();
+    await mocks.after.mock.calls[0][0]();
+    expect(mocks.stopBroadcast).toHaveBeenCalledOnce();
+  });
+  it("cannot use retry-cleanup to truncate a server-authorized active closing lease", async () => {
+    mocks.cleanupReady.mockResolvedValue({ ok: true, value: false });
+    const result = await POST(request({ action: "retry-cleanup" }), {
+      params: Promise.resolve({ id: gameId }),
+    });
+    expect(await result.json()).toMatchObject({ status: "pending" });
+    expect(mocks.stopBroadcast).not.toHaveBeenCalled();
+    expect(mocks.terminate).not.toHaveBeenCalled();
+  });
+  it("a completion retry without closing capability cannot bypass an earlier grant", async () => {
+    mocks.complete.mockResolvedValue({
+      ok: true,
+      value: { cleanupStatus: "pending" },
+    });
+    mocks.cleanupReady.mockResolvedValue({ ok: true, value: false });
+    const result = await POST(request({ action: "complete", reviewId }), {
+      params: Promise.resolve({ id: gameId }),
+    });
+    expect(await result.json()).toMatchObject({
+      completion: summary,
+      cleanup: { status: "pending" },
+    });
+    expect(mocks.stopBroadcast).not.toHaveBeenCalled();
+  });
+  it("fails closed when closing cleanup authority cannot be checked", async () => {
+    mocks.cleanupReady.mockResolvedValue({ ok: false, kind: "authorization" });
+    const result = await POST(request({ action: "retry-cleanup" }), {
+      params: Promise.resolve({ id: gameId }),
+    });
+    expect(result.status).toBe(403);
+    expect(mocks.stopBroadcast).not.toHaveBeenCalled();
+  });
+  it("rejects a browser-supplied deadline and stop assertion", async () => {
+    const result = await POST(
+      request({
+        action: "complete",
+        reviewId,
+        closing: { ...closing, capability: "final-card-v1", stopped: true },
+      }),
+      { params: Promise.resolve({ id: gameId }) },
+    );
+    expect(result.status).toBe(400);
+    expect(mocks.complete).not.toHaveBeenCalled();
   });
 });

@@ -1,6 +1,88 @@
 import { expect, test, type Route } from "@playwright/test";
 import { gameFixture, testGameId } from "../src/test/game-fixture";
 
+test("Studio close opens a scoped review and No leaves the game active", async ({
+  page,
+}) => {
+  let completionWrites = 0;
+  await page.addInitScript(() => {
+    const w = window as unknown as Window & {
+      chrome?: { webview?: { postMessage: (value: unknown) => void } };
+      studioMessages?: unknown[];
+    };
+    w.studioMessages = [];
+    w.chrome = {
+      ...w.chrome,
+      webview: { postMessage: (value) => w.studioMessages!.push(value) },
+    };
+  });
+  await page.route(`**/api/games/${testGameId}`, (route) =>
+    route.fulfill({
+      json: gameFixture(),
+      headers: {
+        "x-curlcast-operator": "true",
+        "x-curlcast-account-role": "owner",
+      },
+    }),
+  );
+  await page.route(`**/api/games/${testGameId}/completion`, (route) => {
+    if (route.request().postDataJSON()?.action === "review")
+      return route.fulfill({
+        json: {
+          reviewId: "22222222-2222-4222-8222-222222222222",
+          inputRevision: 7,
+          result: completedFixture().result,
+          youtubeWatchUrl: null,
+        },
+      });
+    completionWrites++;
+    return route.fulfill({
+      status: 500,
+      json: { error: "Unexpected completion" },
+    });
+  });
+  await page.goto(`/score/${testGameId}`);
+  await expect(
+    page.getByRole("button", { name: "Close Game", exact: true }),
+  ).toBeVisible();
+  await page.evaluate(() =>
+    window.dispatchEvent(
+      new CustomEvent("studio-end-game-request", {
+        detail: { gameId: "22222222-2222-4222-8222-222222222222" },
+      }),
+    ),
+  );
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await page.evaluate(
+    (id) =>
+      window.dispatchEvent(
+        new CustomEvent("studio-end-game-request", { detail: { gameId: id } }),
+      ),
+    testGameId,
+  );
+  const confirmation = page.getByRole("dialog", {
+    name: "Finalize game score 3–2?",
+  });
+  await expect(confirmation).toBeVisible();
+  expect(completionWrites).toBe(0);
+  await confirmation.getByRole("button", { name: "No", exact: true }).click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  const messages = await page.evaluate(
+    () =>
+      (window as unknown as Window & { studioMessages?: unknown[] })
+        .studioMessages,
+  );
+  expect(messages).toContainEqual({
+    type: "studio-end-game-opened",
+    gameId: testGameId,
+  });
+  expect(messages).toContainEqual({
+    type: "studio-end-game-cancelled",
+    gameId: testGameId,
+  });
+  expect(completionWrites).toBe(0);
+});
+
 function completedFixture() {
   return {
     status: "completed" as const,
@@ -18,14 +100,21 @@ function completedFixture() {
   };
 }
 
-test("End Game reviews the score and replaces controls with the saved result", async ({
+test("End Game returns to Games and reopening shows the saved result", async ({
   page,
 }, testInfo) => {
   const game = gameFixture();
+  game.config.sharedYoutubeWatchUrl = "https://youtu.be/abcdefghijk";
   let cleanupRetries = 0;
+  let committed = false;
+  await page.route(
+    (url) => url.pathname === "/dashboard",
+    (route) =>
+      route.fulfill({ contentType: "text/html", body: "<h1>Games</h1>" }),
+  );
   await page.route(`**/api/games/${testGameId}`, async (route) => {
     await route.fulfill({
-      json: game,
+      json: committed ? completedFixture() : game,
       headers: {
         "x-curlcast-operator": "true",
         "x-curlcast-account-role": "owner",
@@ -64,6 +153,7 @@ test("End Game reviews the score and replaces controls with the saved result", a
       });
       return;
     }
+    committed = true;
     await route.fulfill({
       json: {
         completion: completedFixture(),
@@ -77,31 +167,25 @@ test("End Game reviews the score and replaces controls with the saved result", a
   });
 
   await page.goto(`/games/${testGameId}`);
-  await page.getByRole("button", { name: "End Game" }).click();
+  await page.getByRole("button", { name: "Close Game", exact: true }).click();
   await expect(
-    page.getByText("Visible to viewers on the completed-game page."),
+    page.getByRole("dialog", { name: "Is this game completed?" }),
   ).toBeVisible();
-  await page.getByRole("button", { name: "Cancel" }).click();
-  await expect(
-    page.getByRole("button", { name: "Review final score" }),
-  ).toHaveCount(0);
-  await page.getByRole("button", { name: "End Game" }).click();
-  await page
-    .getByLabel("YouTube watch link (optional)")
-    .fill("https://youtu.be/abcdefghijk");
-  await page.getByRole("button", { name: "Review final score" }).click();
-  await expect(page.getByText("Rocks 3 – 2 Stones")).toBeVisible();
-  await expect(
-    page.getByText("YouTube: https://youtu.be/abcdefghijk"),
-  ).toBeVisible();
-  await expect(
-    page.getByText("This result is final and cannot be edited."),
-  ).toBeVisible();
+  await page.getByRole("button", { name: "Cancel", exact: true }).click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await page.getByRole("button", { name: "Close Game", exact: true }).click();
+  await page.getByRole("button", { name: "Yes", exact: true }).click();
+  const confirmation = page.getByRole("dialog", {
+    name: "Finalize game score 3–2?",
+  });
+  await expect(confirmation).toBeVisible();
   await page.screenshot({
     path: testInfo.outputPath("score-confirmation.png"),
     fullPage: true,
   });
-  await page.getByRole("button", { name: "Confirm End Game" }).click();
+  await confirmation.getByRole("button", { name: "Yes", exact: true }).click();
+  await expect(page).toHaveURL(/\/dashboard$/);
+  await page.goto(`/games/${testGameId}`);
   await expect(
     page.getByRole("heading", { name: "Home 3 – 2 Visitors" }),
   ).toBeVisible();
@@ -112,10 +196,14 @@ test("End Game reviews the score and replaces controls with the saved result", a
   await expect(
     page.getByRole("link", { name: "Watch on YouTube" }),
   ).toHaveAttribute("href", "https://youtu.be/abcdefghijk");
-  await expect(page.getByRole("button", { name: "End Game" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Close Game" })).toHaveCount(0);
+  await expect.poll(() => cleanupRetries).toBe(1);
+  await expect(
+    page.getByText("Live video shutdown has not been confirmed."),
+  ).toHaveCount(0);
   await expect(
     page.getByText("LiveKit accepted all room shutdown requests."),
-  ).toBeVisible();
+  ).toHaveCount(0);
   expect(cleanupRetries).toBe(1);
   await page.screenshot({
     path: testInfo.outputPath("completed-summary.png"),
@@ -123,13 +211,110 @@ test("End Game reviews the score and replaces controls with the saved result", a
   });
 });
 
-test("authorized scoring page reviews and confirms End Game", async ({
+test("a completion read cannot replace the finalizing dialog before Games opens", async ({
   page,
-}, testInfo) => {
-  const game = gameFixture();
+}) => {
+  let pollInFlight!: (route: Route) => void;
+  const pendingPoll = new Promise<Route>((resolve) => (pollInFlight = resolve));
+  let holdRead = false;
+  let saveInFlight!: (route: Route) => void;
+  const pendingSave = new Promise<Route>((resolve) => (saveInFlight = resolve));
+  const owner = {
+    "x-curlcast-operator": "true",
+    "x-curlcast-account-role": "owner",
+  };
+  const completion = completedFixture();
+  await page.route(
+    (url) => url.pathname === "/dashboard",
+    (route) =>
+      route.fulfill({ contentType: "text/html", body: "<h1>Games</h1>" }),
+  );
+  await page.route(`**/api/games/${testGameId}`, (route) => {
+    if (holdRead) {
+      holdRead = false;
+      pollInFlight(route);
+      return;
+    }
+    return route.fulfill({ json: gameFixture(), headers: owner });
+  });
+  await page.route(`**/api/games/${testGameId}/completion`, (route) => {
+    if (route.request().method() === "GET")
+      return route.fulfill({
+        json: { status: "complete", attempts: 1, lastError: null },
+      });
+    if (route.request().postDataJSON()?.action === "review")
+      return route.fulfill({
+        json: {
+          reviewId: "22222222-2222-4222-8222-222222222222",
+          inputRevision: 7,
+          result: completion.result,
+          youtubeWatchUrl: null,
+        },
+      });
+    saveInFlight(route);
+  });
+  await page.goto(`/score/${testGameId}`);
+  await page.getByRole("button", { name: "Close Game", exact: true }).click();
+  await page
+    .getByRole("dialog", { name: "Is this game completed?" })
+    .getByRole("button", { name: "Yes", exact: true })
+    .click();
+  const confirmation = page.getByRole("dialog", {
+    name: "Finalize game score 3–2?",
+  });
+  await expect(confirmation).toBeVisible();
+  holdRead = true;
+  await page.evaluate(() =>
+    document.dispatchEvent(new Event("visibilitychange")),
+  );
+  const poll = await pendingPoll;
+  await confirmation.getByRole("button", { name: "Yes", exact: true }).click();
+  const save = await pendingSave;
+  const pollFinished = page.waitForEvent(
+    "requestfinished",
+    (request) => request === poll.request(),
+  );
+  await poll.fulfill({ json: completion, headers: owner });
+  await pollFinished;
+  // Let React commit anything read from the completed response.
+  await page.evaluate(
+    () =>
+      new Promise((resolve) =>
+        requestAnimationFrame(() => requestAnimationFrame(resolve)),
+      ),
+  );
+  await expect(confirmation.getByRole("status")).toHaveText("Ending game…");
+  await expect(page.getByText("Final result", { exact: true })).toHaveCount(0);
+  await save.fulfill({
+    json: {
+      completion,
+      cleanup: { status: "complete", attempts: 1, lastError: null },
+    },
+  });
+  await expect(page).toHaveURL(/\/dashboard$/);
+});
+
+test("authorized scoring page confirms an empty scoreboard as a 0–0 tie", async ({
+  page,
+}) => {
+  const reviewId = "22222222-2222-4222-8222-222222222222";
+  const result = {
+    outcome: "tie",
+    label: "Tie",
+    totals: { home: 0, away: 0 },
+    ends: [],
+  };
+  const completion = { ...completedFixture(), result };
+  const game = { ...gameFixture(), scoreEvents: [] };
+  let committed = false;
+  await page.route(
+    (url) => url.pathname === "/dashboard",
+    (route) =>
+      route.fulfill({ contentType: "text/html", body: "<h1>Games</h1>" }),
+  );
   await page.route(`**/api/games/${testGameId}`, (route) =>
     route.fulfill({
-      json: game,
+      json: committed ? completion : game,
       headers: {
         "x-curlcast-operator": "true",
         "x-curlcast-account-role": "owner",
@@ -137,56 +322,46 @@ test("authorized scoring page reviews and confirms End Game", async ({
     }),
   );
   await page.route(`**/api/games/${testGameId}/completion`, async (route) => {
-    if (route.request().method() === "GET") {
-      await route.fulfill({
+    if (route.request().method() === "GET")
+      return route.fulfill({
         json: { status: "complete", attempts: 1, lastError: null },
       });
-      return;
-    }
     const body = route.request().postDataJSON();
     if (body.action === "review") {
-      await route.fulfill({
-        json: {
-          reviewId: "22222222-2222-4222-8222-222222222222",
-          inputRevision: 7,
-          result: {
-            outcome: "home_win",
-            label: "Home win",
-            totals: { home: 2, away: 0 },
-            ends: [],
-          },
-          youtubeWatchUrl: null,
-        },
+      expect(body).toEqual({
+        action: "review",
+        finalScore: "scoreboard",
+        youtubeWatchUrl: "",
       });
-      return;
+      return route.fulfill({
+        json: { reviewId, inputRevision: 7, result, youtubeWatchUrl: null },
+      });
     }
-    await route.fulfill({
+    expect(body).toEqual({ action: "complete", reviewId });
+    committed = true;
+    return route.fulfill({
       json: {
-        completion: completedFixture(),
+        completion,
         cleanup: { status: "complete", attempts: 1, lastError: null },
       },
     });
   });
 
   await page.goto(`/score/${testGameId}`);
-  await expect(page.getByRole("button", { name: "End Game" })).toBeVisible();
-  await page.screenshot({
-    path: testInfo.outputPath("scoring-end-game-access.png"),
-    fullPage: true,
+  await page.getByRole("button", { name: "Close Game", exact: true }).click();
+  await page.getByRole("button", { name: "Yes", exact: true }).click();
+  const confirmation = page.getByRole("dialog", {
+    name: "Finalize game score 0–0?",
   });
-  await page.getByRole("button", { name: "End Game" }).click();
-  await page.getByRole("button", { name: "Review final score" }).click();
-  await expect(page.getByText("Rocks 2 – 0 Stones")).toBeVisible();
-  await page.screenshot({
-    path: testInfo.outputPath("scoring-end-game-confirmation.png"),
-    fullPage: true,
-  });
-  await page.getByRole("button", { name: "Confirm End Game" }).click();
+  await expect(confirmation).toBeVisible();
+  await expect(confirmation.getByRole("button")).toHaveCount(2);
+  await confirmation.getByRole("button", { name: "Yes", exact: true }).click();
+  await expect(page).toHaveURL(/\/dashboard$/);
+  await page.goto(`/score/${testGameId}`);
   await expect(
-    page.getByRole("heading", { name: "Home 3 – 2 Visitors" }),
+    page.getByRole("heading", { name: "Home 0 – 0 Visitors" }),
   ).toBeVisible();
 });
-
 test("scorer-only scoring access cannot End Game", async ({ page }) => {
   await page.route(`**/api/games/${testGameId}`, (route) =>
     route.fulfill({
@@ -199,7 +374,7 @@ test("scorer-only scoring access cannot End Game", async ({ page }) => {
   );
 
   await page.goto(`/score/${testGameId}`);
-  await expect(page.getByRole("button", { name: "End Game" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Close Game" })).toHaveCount(0);
   await expect(page.getByText("Game lifecycle")).toHaveCount(0);
 });
 
@@ -230,10 +405,11 @@ for (const [role, managesCleanup] of [
   ["scorer", false],
   ["viewer", false],
 ] as const) {
-  test(`completed lobby gives ${role} the correct cleanup controls after reload`, async ({
+  test(`completed lobby retries cleanup automatically only for authorized ${role} access`, async ({
     page,
   }) => {
     let cleanupRequests = 0;
+    let cleanupRetries = 0;
     await page.route(`**/api/games/${testGameId}`, (route) =>
       route.fulfill({
         json: completedFixture(),
@@ -245,6 +421,12 @@ for (const [role, managesCleanup] of [
     );
     await page.route(`**/api/games/${testGameId}/completion`, (route) => {
       cleanupRequests += 1;
+      if (route.request().method() === "POST") {
+        cleanupRetries += 1;
+        return route.fulfill({
+          json: { status: "complete", attempts: 2, lastError: null },
+        });
+      }
       return route.fulfill({
         json: { status: "failed", attempts: 1, lastError: "provider timeout" },
       });
@@ -255,20 +437,17 @@ for (const [role, managesCleanup] of [
       page.getByRole("heading", { name: "Home 3 – 2 Visitors" }),
     ).toBeVisible();
     if (managesCleanup) {
-      await expect(
-        page.getByRole("button", { name: "Retry live video shutdown" }),
-      ).toBeVisible();
-      expect(cleanupRequests).toBeGreaterThan(0);
+      await expect.poll(() => cleanupRetries).toBe(1);
     } else {
-      await expect(
-        page.getByRole("button", { name: "Retry live video shutdown" }),
-      ).toHaveCount(0);
       expect(cleanupRequests).toBe(0);
     }
+    await expect(
+      page.getByRole("button", { name: "Retry live video shutdown" }),
+    ).toHaveCount(0);
   });
 }
 
-test("completed lobby preserves organizer cleanup controls after reload", async ({
+test("completed lobby automatically retries authorized organizer cleanup after reload", async ({
   page,
 }) => {
   const organizer = `header.${Buffer.from(
@@ -287,10 +466,88 @@ test("completed lobby preserves organizer cleanup controls after reload", async 
     }),
   );
 
+  const retry = page.waitForRequest(
+    (request) =>
+      request.url().endsWith("/completion") && request.method() === "POST",
+  );
+  await page.goto(`/games/${testGameId}`);
+  expect((await retry).headers().authorization).toBe(`Bearer ${organizer}`);
+});
+
+test("completed Studio reports failed cleanup without requesting operator shutdown", async ({
+  page,
+}) => {
+  await page.addInitScript(
+    ({ id }) => {
+      const scope = window as unknown as Window & {
+        chrome: { webview: { postMessage(value: unknown): void } };
+        recoveryMessages: unknown[];
+      };
+      scope.recoveryMessages = [];
+      scope.chrome = {
+        ...scope.chrome,
+        webview: {
+          postMessage(value) {
+            scope.recoveryMessages.push(value);
+            if ((value as { type?: string }).type === "studio-session-observe")
+              setTimeout(
+                () =>
+                  window.dispatchEvent(
+                    new CustomEvent("studio-recovery-status", {
+                      detail: { gameId: id, canForceClose: true },
+                    }),
+                  ),
+                0,
+              );
+          },
+        },
+      };
+    },
+    { id: testGameId },
+  );
+  await page.route(`**/api/games/${testGameId}`, (route) =>
+    route.fulfill({
+      json: completedFixture(),
+      headers: {
+        "x-curlcast-operator": "true",
+        "x-curlcast-account-role": "owner",
+      },
+    }),
+  );
+  await page.route(`**/api/games/${testGameId}/completion`, (route) =>
+    route.fulfill({
+      json: { status: "failed", attempts: 1, lastError: "provider timeout" },
+    }),
+  );
   await page.goto(`/games/${testGameId}`);
   await expect(
-    page.getByRole("button", { name: "Retry live video shutdown" }),
+    page.getByText("Live video shutdown has not been confirmed."),
   ).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "Home 3 – 2 Visitors" }),
+  ).toBeVisible();
+  const messages = await page.evaluate(
+    () =>
+      (window as unknown as Window & { recoveryMessages: unknown[] })
+        .recoveryMessages,
+  );
+  expect(messages).not.toContainEqual({
+    type: "studio-force-close",
+    gameId: testGameId,
+  });
+  await page.evaluate(() =>
+    window.dispatchEvent(
+      new CustomEvent("studio-recovery-status", {
+        detail: {
+          gameId: "22222222-2222-4222-8222-222222222222",
+          canForceClose: true,
+        },
+      }),
+    ),
+  );
+  await expect(
+    page.getByRole("button", { name: "Force close Studio" }),
+  ).toHaveCount(0);
 });
 
 test("an authoritative terminal poll stops local camera capture", async ({
@@ -359,10 +616,14 @@ test("an authoritative terminal poll stops local camera capture", async ({
   holdNextActive = true;
   await activeHeld;
   terminal = true;
+  // One bounded read at a time: wait for its 10-second timeout and error backoff.
+  // Capture stops as soon as the following read confirms the terminal state.
   await expect(
     page.getByRole("heading", { name: "This game is closed" }),
-  ).toBeVisible();
-  await heldActive!.fulfill({ status: 200, json: gameFixture() });
+  ).toBeVisible({ timeout: 25000 });
+  await heldActive!
+    .fulfill({ status: 200, json: gameFixture() })
+    .catch(() => undefined);
   await expect
     .poll(() =>
       page.evaluate(

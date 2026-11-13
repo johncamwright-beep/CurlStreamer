@@ -25,25 +25,24 @@ export function CompletedGameSummary({
   gameId,
   completion,
   cleanupControls = false,
-  initialCleanup,
 }: {
   gameId: string;
   completion: SafeGameCompletion;
   cleanupControls?: boolean;
-  initialCleanup?: CompletionCleanup;
 }) {
-  const [cleanup, setCleanup] = useState<CompletionCleanup | undefined>(
-    initialCleanup,
-  );
+  const [cleanup, setCleanup] = useState<CompletionCleanup>();
   const [cleanupError, setCleanupError] = useState("");
-  const [busy, setBusy] = useState(false);
   const cleanupStatus = cleanup?.status;
+  const shouldRetry =
+    cleanupControls &&
+    (cleanupStatus === "pending" || cleanupStatus === "failed");
   const loadCleanup = useCallback(async () => {
     try {
       const token = completionToken(gameId);
       const response = await fetch(`/api/games/${gameId}/completion`, {
         headers: token ? { authorization: `Bearer ${token}` } : {},
         cache: "no-store",
+        signal: AbortSignal.timeout(10000),
       });
       const value = await response.json().catch(() => null);
       if (!response.ok)
@@ -59,8 +58,8 @@ export function CompletedGameSummary({
     }
   }, [gameId]);
   useEffect(() => {
-    if (cleanupControls && !initialCleanup) void loadCleanup();
-  }, [cleanupControls, initialCleanup, loadCleanup]);
+    if (cleanupControls) void loadCleanup();
+  }, [cleanupControls, loadCleanup]);
 
   const retryCleanup = useCallback(async () => {
     try {
@@ -72,6 +71,7 @@ export function CompletedGameSummary({
           ...(token ? { authorization: `Bearer ${token}` } : {}),
         },
         body: JSON.stringify({ action: "retry-cleanup" }),
+        signal: AbortSignal.timeout(30000),
       });
       const value = await response.json().catch(() => null);
       if (!response.ok)
@@ -89,8 +89,7 @@ export function CompletedGameSummary({
   }, [gameId]);
 
   useEffect(() => {
-    if (!cleanupControls || !cleanupStatus || cleanupStatus === "complete")
-      return;
+    if (!shouldRetry) return;
     let cancelled = false;
     void (async () => {
       for (let attempt = 1; attempt <= 3 && !cancelled; attempt += 1) {
@@ -105,16 +104,13 @@ export function CompletedGameSummary({
     return () => {
       cancelled = true;
     };
-  }, [cleanupControls, cleanupStatus, retryCleanup]);
-
-  async function retry() {
-    setBusy(true);
-    await retryCleanup();
-    setBusy(false);
-  }
+  }, [shouldRetry, retryCleanup]);
 
   return (
-    <section className="panel text-center" aria-labelledby="final-result">
+    <section
+      className="rounded-2xl border border-slate-700 bg-[#101e2c] p-6 text-center text-slate-100"
+      aria-labelledby="final-result"
+    >
       <p className="text-sm font-bold uppercase tracking-widest text-cyan-300">
         Final result
       </p>
@@ -148,17 +144,11 @@ export function CompletedGameSummary({
           role="status"
           className="mt-4 rounded-lg bg-amber-950 p-3 text-amber-200"
         >
-          <p>Live video shutdown has not been confirmed.</p>
-          {cleanup.lastError && (
-            <p className="mt-2 text-sm">Last attempt: {cleanup.lastError}</p>
-          )}
-          <button
-            className="btn-secondary mt-3"
-            disabled={busy}
-            onClick={retry}
-          >
-            {busy ? "Retrying…" : "Retry live video shutdown"}
-          </button>
+          <p>
+            {cleanup.status === "pending"
+              ? "Shutting down live video…"
+              : "Live video shutdown has not been confirmed."}
+          </p>
         </div>
       )}
       {cleanupControls && cleanupError && (
@@ -167,21 +157,7 @@ export function CompletedGameSummary({
           className="mt-4 rounded-lg bg-amber-950 p-3 text-amber-200"
         >
           <p>{cleanupError} The final result remains saved.</p>
-          {!cleanup && (
-            <button
-              className="btn-secondary mt-3"
-              disabled={busy}
-              onClick={retry}
-            >
-              {busy ? "Retrying…" : "Retry live video shutdown"}
-            </button>
-          )}
         </div>
-      )}
-      {cleanup?.status === "complete" && (
-        <p role="status" className="mt-4 text-emerald-300">
-          LiveKit accepted all room shutdown requests.
-        </p>
       )}
       <Link className="btn-secondary mt-5 inline-flex" href="/dashboard">
         Back to Games

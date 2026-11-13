@@ -2,7 +2,9 @@ import { defineConfig, devices } from "@playwright/test";
 export default defineConfig({
   testDir: "./tests",
   fullyParallel: false,
+  workers: 2,
   webServer: {
+    timeout: 180_000,
     command: "npm run build && npm start",
     env: {
       ...process.env,

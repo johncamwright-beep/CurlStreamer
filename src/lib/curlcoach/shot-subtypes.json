@@ -1,0 +1,503 @@
+{
+  "source": "Shot Tracker Shot Types.xlsx / Shot Types / A1:D27 (2026-10-14)",
+  "weights": {
+    "1_guard": "Guard 1",
+    "2_guard": "Guard 2",
+    "3_guard": "Guard 3",
+    "top_12": "Top 12",
+    "top_8": "Top 8",
+    "top_4": "Top 4",
+    "top_button": "Top Button",
+    "button": "Button",
+    "back_4": "Back 4",
+    "back_8": "Back 8",
+    "back_12": "Back 12",
+    "hack": "Hack",
+    "board": "Board",
+    "control_weight_takeout": "Control",
+    "normal_weight_takeout": "Normal",
+    "peel_takeout": "Peel"
+  },
+  "results": {
+    "light": "Light",
+    "heavy": "Heavy",
+    "hog": "Hog",
+    "in_house": "In-House",
+    "left_guard": "Left Guard",
+    "behind_t_line": "Behind T-Line",
+    "missed_score": "Missed Score",
+    "wreck": "Wreck",
+    "left_open": "Left open",
+    "over_curl": "Over Curl",
+    "missed_angle": "Missed Angle",
+    "tap": "Tap",
+    "tap_light": "Tap Light",
+    "tap_deep": "Tap Deep",
+    "miss_wide": "Miss Wide",
+    "miss_narrow": "Miss Narrow",
+    "jammed": "Jammed",
+    "wreck_stone": "Wreck Stone",
+    "flash_wide": "Flash Wide",
+    "flash_narrow": "Flash Narrow",
+    "roll_out_of_position": "Roll out of position",
+    "nose_hit": "Nose Hit",
+    "roll_far": "Roll Far",
+    "roll_short": "Roll Short",
+    "wrong_angle": "Wrong Angle",
+    "missed_stick": "Missed Stick",
+    "missed_stone": "Missed Stone",
+    "half_shot": "Half Shot",
+    "too_much_contact": "Too much Contact",
+    "too_little_contact": "Too little Contact",
+    "flash": "Flash"
+  },
+  "subtypes": [
+    {
+      "id": "guard",
+      "name": "Guard",
+      "standard": "Guard/Front Stone",
+      "weights": ["1_guard", "2_guard", "3_guard"],
+      "results": ["light", "heavy", "hog", "in_house"]
+    },
+    {
+      "id": "front_stone",
+      "name": "Front Stone",
+      "standard": "Guard/Front Stone",
+      "weights": ["top_12", "top_8", "top_4", "top_button"],
+      "results": ["left_guard", "light", "heavy", "behind_t_line"]
+    },
+    {
+      "id": "straight_draw",
+      "name": "Straight Draw",
+      "standard": "Draw",
+      "weights": [
+        "top_12",
+        "top_8",
+        "top_4",
+        "button",
+        "back_4",
+        "back_8",
+        "back_12"
+      ],
+      "results": ["light", "heavy"]
+    },
+    {
+      "id": "draw_to_score",
+      "name": "Draw to Score",
+      "standard": "Draw",
+      "weights": [
+        "top_12",
+        "top_8",
+        "top_4",
+        "button",
+        "back_4",
+        "back_8",
+        "back_12"
+      ],
+      "results": ["missed_score"]
+    },
+    {
+      "id": "around_guard",
+      "name": "Around Guard",
+      "standard": "Come Around",
+      "weights": [
+        "top_12",
+        "top_8",
+        "top_4",
+        "button",
+        "back_4",
+        "back_8",
+        "back_12"
+      ],
+      "results": ["wreck", "light", "heavy", "left_open", "over_curl"]
+    },
+    {
+      "id": "around_house_stone",
+      "name": "Around House Stone",
+      "standard": "Come Around",
+      "weights": [
+        "top_12",
+        "top_8",
+        "top_4",
+        "button",
+        "back_4",
+        "back_8",
+        "back_12"
+      ],
+      "results": ["wreck", "light", "heavy", "left_open", "over_curl"]
+    },
+    {
+      "id": "through_port",
+      "name": "Through Port",
+      "standard": "Come Around",
+      "weights": [
+        "top_12",
+        "top_8",
+        "top_4",
+        "button",
+        "back_4",
+        "back_8",
+        "back_12"
+      ],
+      "results": ["wreck", "light", "heavy", "left_open", "over_curl"]
+    },
+    {
+      "id": "corner_freeze",
+      "name": "Corner Freeze",
+      "standard": "Angle/Freeze",
+      "weights": [
+        "top_12",
+        "top_8",
+        "top_4",
+        "button",
+        "back_4",
+        "back_8",
+        "back_12"
+      ],
+      "results": ["light", "heavy", "missed_angle", "tap"]
+    },
+    {
+      "id": "nose_freeze",
+      "name": "Nose Freeze",
+      "standard": "Angle/Freeze",
+      "weights": [
+        "top_12",
+        "top_8",
+        "top_4",
+        "button",
+        "back_4",
+        "back_8",
+        "back_12"
+      ],
+      "results": ["light", "heavy", "missed_angle", "tap"]
+    },
+    {
+      "id": "tap_back",
+      "name": "Tap Back",
+      "standard": "Tap/Split",
+      "weights": [
+        "top_12",
+        "top_8",
+        "top_4",
+        "button",
+        "back_4",
+        "back_8",
+        "back_12",
+        "hack",
+        "board"
+      ],
+      "results": ["tap_light", "tap_deep", "missed_angle"]
+    },
+    {
+      "id": "split",
+      "name": "Split",
+      "standard": "Tap/Split",
+      "weights": [
+        "top_12",
+        "top_8",
+        "top_4",
+        "button",
+        "back_4",
+        "back_8",
+        "back_12",
+        "hack",
+        "board"
+      ],
+      "results": ["miss_wide", "miss_narrow", "heavy", "light", "jammed"]
+    },
+    {
+      "id": "hit_and_stay",
+      "name": "Hit and Stay",
+      "standard": "Hit & Stay",
+      "weights": [
+        "hack",
+        "board",
+        "control_weight_takeout",
+        "normal_weight_takeout",
+        "peel_takeout"
+      ],
+      "results": [
+        "wreck_stone",
+        "flash_wide",
+        "flash_narrow",
+        "roll_out_of_position",
+        "jammed"
+      ]
+    },
+    {
+      "id": "hit_and_roll_away",
+      "name": "Hit and Roll Away",
+      "standard": "Hit & Roll",
+      "weights": [
+        "hack",
+        "board",
+        "control_weight_takeout",
+        "normal_weight_takeout",
+        "peel_takeout"
+      ],
+      "results": [
+        "wreck_stone",
+        "flash_wide",
+        "flash_narrow",
+        "nose_hit",
+        "roll_far",
+        "roll_short",
+        "jammed"
+      ]
+    },
+    {
+      "id": "hit_and_roll_under",
+      "name": "Hit and Roll Under",
+      "standard": "Hit & Roll",
+      "weights": [
+        "hack",
+        "board",
+        "control_weight_takeout",
+        "normal_weight_takeout",
+        "peel_takeout"
+      ],
+      "results": [
+        "wreck_stone",
+        "flash_wide",
+        "flash_narrow",
+        "nose_hit",
+        "roll_far",
+        "roll_short",
+        "jammed"
+      ]
+    },
+    {
+      "id": "runback_and_stick",
+      "name": "Runback and Stick",
+      "standard": "Runback/Multiple",
+      "weights": [
+        "hack",
+        "board",
+        "control_weight_takeout",
+        "normal_weight_takeout",
+        "peel_takeout"
+      ],
+      "results": [
+        "wreck_stone",
+        "wrong_angle",
+        "flash_wide",
+        "flash_narrow",
+        "missed_stick",
+        "missed_stone",
+        "jammed"
+      ]
+    },
+    {
+      "id": "runback_and_remove_1",
+      "name": "Runback and Remove 1",
+      "standard": "Runback/Multiple",
+      "weights": [
+        "hack",
+        "board",
+        "control_weight_takeout",
+        "normal_weight_takeout",
+        "peel_takeout"
+      ],
+      "results": [
+        "wreck_stone",
+        "wrong_angle",
+        "flash_wide",
+        "flash_narrow",
+        "jammed",
+        "missed_stone"
+      ]
+    },
+    {
+      "id": "runback_and_remove_multiple",
+      "name": "Runback and Remove Multiple",
+      "standard": "Runback/Multiple",
+      "weights": [
+        "hack",
+        "board",
+        "control_weight_takeout",
+        "normal_weight_takeout",
+        "peel_takeout"
+      ],
+      "results": [
+        "wreck_stone",
+        "wrong_angle",
+        "flash_wide",
+        "flash_narrow",
+        "jammed",
+        "half_shot"
+      ]
+    },
+    {
+      "id": "double_takeout",
+      "name": "Double Takeout",
+      "standard": "Runback/Multiple",
+      "weights": [
+        "hack",
+        "board",
+        "control_weight_takeout",
+        "normal_weight_takeout",
+        "peel_takeout"
+      ],
+      "results": [
+        "wreck_stone",
+        "wrong_angle",
+        "flash_wide",
+        "flash_narrow",
+        "jammed",
+        "half_shot"
+      ]
+    },
+    {
+      "id": "triple_or_more_takeout",
+      "name": "Triple or More Takeout",
+      "standard": "Runback/Multiple",
+      "weights": [
+        "hack",
+        "board",
+        "control_weight_takeout",
+        "normal_weight_takeout",
+        "peel_takeout"
+      ],
+      "results": [
+        "wreck_stone",
+        "wrong_angle",
+        "flash_wide",
+        "flash_narrow",
+        "jammed",
+        "half_shot"
+      ]
+    },
+    {
+      "id": "in_off_double",
+      "name": "In-Off Double",
+      "standard": "Runback/Multiple",
+      "weights": [
+        "hack",
+        "board",
+        "control_weight_takeout",
+        "normal_weight_takeout",
+        "peel_takeout"
+      ],
+      "results": [
+        "wreck_stone",
+        "wrong_angle",
+        "flash_wide",
+        "flash_narrow",
+        "jammed",
+        "half_shot"
+      ]
+    },
+    {
+      "id": "tick_guard",
+      "name": "Tick Guard",
+      "standard": "Finesse Hit",
+      "weights": [
+        "hack",
+        "board",
+        "control_weight_takeout",
+        "normal_weight_takeout",
+        "peel_takeout"
+      ],
+      "results": ["too_much_contact", "too_little_contact", "flash"]
+    },
+    {
+      "id": "hit_and_roll_frozen",
+      "name": "Hit and Roll Frozen",
+      "standard": "Finesse Hit",
+      "weights": [
+        "hack",
+        "board",
+        "control_weight_takeout",
+        "normal_weight_takeout",
+        "peel_takeout"
+      ],
+      "results": [
+        "wreck_stone",
+        "flash_wide",
+        "flash_narrow",
+        "nose_hit",
+        "roll_far",
+        "roll_short",
+        "jammed"
+      ]
+    },
+    {
+      "id": "hit_through_port",
+      "name": "Hit through Port",
+      "standard": "Finesse Hit",
+      "weights": [
+        "hack",
+        "board",
+        "control_weight_takeout",
+        "normal_weight_takeout",
+        "peel_takeout"
+      ],
+      "results": [
+        "wreck_stone",
+        "flash_wide",
+        "flash_narrow",
+        "nose_hit",
+        "roll_far",
+        "roll_short",
+        "jammed"
+      ]
+    },
+    {
+      "id": "single_peel",
+      "name": "Single Peel",
+      "standard": "Peel",
+      "weights": [
+        "hack",
+        "board",
+        "control_weight_takeout",
+        "normal_weight_takeout",
+        "peel_takeout"
+      ],
+      "results": [
+        "flash_wide",
+        "flash_narrow",
+        "jammed",
+        "left_guard",
+        "half_shot"
+      ]
+    },
+    {
+      "id": "double_peel",
+      "name": "Double Peel",
+      "standard": "Peel",
+      "weights": [
+        "hack",
+        "board",
+        "control_weight_takeout",
+        "normal_weight_takeout",
+        "peel_takeout"
+      ],
+      "results": [
+        "flash_wide",
+        "flash_narrow",
+        "jammed",
+        "left_guard",
+        "half_shot"
+      ]
+    },
+    {
+      "id": "triple_or_more_peel",
+      "name": "Triple or More Peel",
+      "standard": "Peel",
+      "weights": [
+        "hack",
+        "board",
+        "control_weight_takeout",
+        "normal_weight_takeout",
+        "peel_takeout"
+      ],
+      "results": [
+        "flash_wide",
+        "flash_narrow",
+        "jammed",
+        "left_guard",
+        "half_shot"
+      ]
+    }
+  ]
+}

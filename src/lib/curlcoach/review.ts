@@ -1,0 +1,185 @@
+import { z } from "zod";
+import type { ShotEvent } from "./model";
+
+const youtubeHosts = [
+  "youtube.com",
+  "www.youtube.com",
+  "m.youtube.com",
+  "youtu.be",
+];
+
+export function supportedVideo(value: string) {
+  try {
+    const url = new URL(value);
+    if (
+      !["https:", "http:"].includes(url.protocol) ||
+      url.username ||
+      url.password
+    )
+      return false;
+    return youtubeHosts.includes(url.hostname)
+      ? !!youtubeId(url)
+      : /\.(mp4|webm|ogg)$/i.test(url.pathname);
+  } catch {
+    return false;
+  }
+}
+export function youtubeId(url: URL) {
+  if (!youtubeHosts.includes(url.hostname)) return null;
+  const id =
+    url.hostname === "youtu.be"
+      ? url.pathname.slice(1)
+      : url.searchParams.get("v") ||
+        url.pathname.match(/^\/(?:live|embed|shorts)\/([^/]+)/)?.[1];
+  return id && /^[a-zA-Z0-9_-]{11}$/.test(id) ? id : null;
+}
+export const videoReviewSchema = z
+  .object({
+    url: z
+      .string()
+      .max(2000)
+      .refine(
+        (value) => value === "" || supportedVideo(value),
+        "Use a YouTube recording or a direct MP4, WebM or Ogg video URL.",
+      ),
+    positionSeconds: z.number().int().min(0).max(604800).nullable(),
+    lookBackSeconds: z.number().int().min(0).max(3600),
+    delaySeconds: z.number().int().min(0).max(3600).optional(),
+    estimated: z.boolean().optional(),
+  })
+  .strict();
+export type VideoReview = z.infer<typeof videoReviewSchema>;
+export function recordingLink(video?: VideoReview) {
+  if (!video || !supportedVideo(video.url)) return null;
+  const id = youtubeId(new URL(video.url));
+  return id ? `https://www.youtube.com/watch?v=${id}` : video.url;
+}
+
+export function reviewLink(video?: VideoReview) {
+  const start = reviewStart(video);
+  const link = recordingLink(video);
+  if (start === null || !link) return null;
+  const url = new URL(link);
+  if (youtubeId(url)) url.searchParams.set("t", `${start}s`);
+  else url.hash = `t=${start}`;
+  return url.toString();
+}
+export function videoTime(seconds: number) {
+  return `${Math.floor(seconds / 3600)}:${String(Math.floor(seconds / 60) % 60).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`;
+}
+export function reviewStart(video?: VideoReview) {
+  return !video || video.positionSeconds === null
+    ? null
+    : Math.max(
+        0,
+        video.positionSeconds +
+          (video.delaySeconds ?? 0) -
+          video.lookBackSeconds,
+      );
+}
+
+export type ReviewRecording = {
+  url: string;
+  startedAt?: string;
+  endedAt?: string;
+  estimated?: boolean;
+  deliveryGaps?: { stoppedAt: string; resumedAt: string | null }[];
+};
+export type BroadcastReview = ReviewRecording & {
+  previous?: ReviewRecording[];
+};
+
+function recordingPosition(recording: ReviewRecording, at: number) {
+  const start = Date.parse(recording.startedAt ?? "");
+  let elapsed = at - start;
+  let coveredUntil = start;
+  const gaps = (recording.deliveryGaps ?? [])
+    .map(({ stoppedAt, resumedAt }) => ({
+      stop: Date.parse(stoppedAt),
+      resume: resumedAt === null ? Infinity : Date.parse(resumedAt),
+    }))
+    .filter(({ stop, resume }) => Number.isFinite(stop) && resume > stop)
+    .sort((a, b) => a.stop - b.stop);
+  for (const { stop, resume } of gaps) {
+    if (at < stop) break;
+    if (at < resume) return null;
+    elapsed -= Math.max(0, resume - Math.max(coveredUntil, stop));
+    coveredUntil = Math.max(coveredUntil, resume);
+  }
+  return Math.floor(elapsed / 1000);
+}
+/** Older category-only flags did not capture flaggedAt. Use their first review
+ * save as an explicitly approximate display timestamp; never mutate the audit. */
+export function withRecordedReviewTime<
+  T extends {
+    id: string;
+    flagged?: boolean;
+    review?: string | null;
+    flaggedAt?: string;
+    videoReview?: VideoReview;
+  },
+>(shot: T, events: ShotEvent[]): T {
+  if (shot.flaggedAt || !(shot.flagged ?? !!shot.review)) return shot;
+  const saved = events.find(
+    (event) =>
+      event.shotId === shot.id &&
+      event.shot &&
+      (event.shot.flagged ?? !!event.shot.review),
+  );
+  if (!saved) return shot;
+  return {
+    ...shot,
+    flaggedAt: saved.at,
+    videoReview: {
+      url: "",
+      positionSeconds: null,
+      lookBackSeconds: 30,
+      ...shot.videoReview,
+      estimated: true,
+    },
+  };
+}
+/** Derived display metadata only: never rewrite the coach's append-only events. */
+export function withBroadcastReview<
+  T extends { flaggedAt?: string; videoReview?: VideoReview },
+>(shot: T, broadcast?: BroadcastReview): T {
+  if (reviewLink(shot.videoReview) || !broadcast) return shot;
+  const at = Date.parse(shot.flaggedAt ?? "");
+  const matching = [broadcast, ...(broadcast.previous ?? [])].find((video) => {
+    const start = Date.parse(video.startedAt ?? "");
+    const end = video.endedAt ? Date.parse(video.endedAt) : Infinity;
+    return at >= start && at <= end && supportedVideo(video.url);
+  });
+  // If we know a game has multiple recordings, an unplaced flag must not
+  // open the replacement video as if it held the selected moment.
+  const video =
+    matching ??
+    (broadcast.previous?.length && Number.isFinite(at) ? null : broadcast);
+  if (!video || !supportedVideo(video.url)) return shot;
+  const recording = {
+    ...shot,
+    videoReview: {
+      ...shot.videoReview,
+      url: video.url,
+      positionSeconds: null,
+      lookBackSeconds: shot.videoReview?.lookBackSeconds ?? 30,
+    },
+  };
+  if (!matching?.startedAt) return recording;
+  const positionSeconds = recordingPosition(matching, at);
+  if (positionSeconds === null || positionSeconds > 604800) return recording;
+  return {
+    ...shot,
+    videoReview: {
+      url: video.url,
+      positionSeconds,
+      lookBackSeconds: shot.videoReview?.lookBackSeconds ?? 30,
+      delaySeconds: shot.videoReview?.delaySeconds ?? 0,
+      ...(video.estimated ||
+      video.deliveryGaps?.length ||
+      shot.videoReview?.estimated
+        ? { estimated: true }
+        : {}),
+    },
+  };
+}

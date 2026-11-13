@@ -1,17 +1,9 @@
 import { NextResponse } from "next/server";
 import { gameSchema } from "@/lib/schema";
 import { rateLimit } from "@/lib/rate-limit";
-import { issueOrganizerToken } from "@/lib/tokens";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { createAuthenticatedTeamGame } from "@/lib/team-games";
 export async function POST(request: Request) {
-  const client =
-    request.headers.get("x-forwarded-for")?.split(",")[0] ?? "local";
-  if (!rateLimit(`create:${client}`, 10))
-    return NextResponse.json(
-      { error: "Too many attempts. Wait a minute and try again." },
-      { status: 429 },
-    );
   let user;
   try {
     const supabase = await createServerSupabaseClient();
@@ -26,6 +18,18 @@ export async function POST(request: Request) {
     return NextResponse.json(
       { error: "Your sign-in session could not be verified." },
       { status: 401 },
+    );
+  }
+  try {
+    if (!(await rateLimit(`create:${user.id}`, 10)))
+      return NextResponse.json(
+        { error: "Too many attempts. Wait a minute and try again." },
+        { status: 429, headers: { "Retry-After": "60" } },
+      );
+  } catch {
+    return NextResponse.json(
+      { error: "Game creation is temporarily unavailable. Try again shortly." },
+      { status: 503 },
     );
   }
   const body = gameSchema.safeParse(await request.json().catch(() => null));
@@ -61,8 +65,5 @@ export async function POST(request: Request) {
     }
     game = result.game;
   }
-  return NextResponse.json(
-    { ...game, organizerToken: await issueOrganizerToken(game.id) },
-    { status: 201 },
-  );
+  return NextResponse.json(game, { status: 201 });
 }

@@ -45,6 +45,15 @@ async function credential(
 
 function failure(error: unknown) {
   const code = (error as { code?: unknown } | null)?.code;
+  if (code === "P0402")
+    return response(
+      {
+        error:
+          "Activate your team trial or subscription in Account & Settings before broadcasting.",
+        code: "subscription_required",
+      },
+      402,
+    );
   const message = error instanceof Error ? error.message : "";
   if (code === "42501")
     return response(

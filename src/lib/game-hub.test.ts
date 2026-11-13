@@ -93,3 +93,16 @@ describe("games hub grouping", () => {
     });
   });
 });
+
+it("keeps today's started game in Current and reserves Unfinished for older games", () => {
+  const groups = groupGames(
+    [
+      game("current", "2026-09-19T12:00:00Z"),
+      game("old", "2026-09-18T12:00:00Z"),
+    ],
+    [],
+    Date.parse("2026-09-19T16:00:00Z"),
+  );
+  expect(groups.current.map((g) => g.id)).toEqual(["current"]);
+  expect(groups.unfinished.map((g) => g.id)).toEqual(["old"]);
+});

@@ -1,225 +1,200 @@
 import Link from "next/link";
+import type { ReactNode } from "react";
+import { AppIcon } from "@/components/AppIcon";
 import { AppNavigation } from "@/components/AppNavigation";
 import { TeamGameLinks } from "@/components/TeamGameLinks";
 import { GameDeletionControl } from "@/components/GameDeletionControl";
-import { readableTeamRole, type AccountContext } from "@/lib/auth/account";
+import { ReopenGameControl } from "@/components/ReopenGameControl";
+import { type AccountContext } from "@/lib/auth/account";
 import type {
   EventRecord,
   ScheduledGameRecord,
   SeasonRecord,
 } from "@/lib/team-hierarchy-data";
 import type { DashboardBroadcast } from "@/lib/dashboard-broadcasts";
-import { groupGames, type GamesTab } from "@/lib/game-hub";
+import { groupGames } from "@/lib/game-hub";
 import { formatScheduledStart } from "@/lib/team-hierarchy";
-import { formatCanonicalGameTitle } from "@/lib/game-title";
-import { youtubeWatchUrlSchema } from "@/lib/youtube-watch";
+import {
+  formatCanonicalGameTitle,
+  formatEventGameLabel,
+} from "@/lib/game-title";
+import { firstValidYoutubeWatchUrl } from "@/lib/youtube-watch";
+import { OpponentEditControl } from "@/components/OpponentEditControl";
+import { DashboardRefresh } from "@/components/DashboardRefresh";
+import { YouTubeThumbnailUpdate } from "@/components/YouTubeThumbnailUpdate";
+import { ShotTrackerIcon } from "@/app/curlcoach/ShotTrackerBrand";
+import { DashboardFilters, DashboardSeasonSelect } from "./DashboardFilters";
+import { GameActionsMenu } from "./GameActionsMenu";
+import {
+  dashboardHref,
+  type DashboardQuery,
+  type GameView,
+} from "./dashboard-query";
 
 export function GamesDashboard({
   account,
+  accountLogo,
   games,
   events,
   seasons,
   season,
-  tab,
+  tab = "all",
+  sort = "newest",
+  search = "",
   broadcasts,
+  selectedEvent,
+  setupWalkthrough,
 }: {
   account: AccountContext;
+  accountLogo?: string | null;
   games: ScheduledGameRecord[];
   events: EventRecord[];
   seasons: SeasonRecord[];
   season?: SeasonRecord;
-  tab: GamesTab;
+  tab?: GameView;
+  sort?: DashboardQuery["sort"];
+  search?: string;
   broadcasts: { available: boolean; sessions: DashboardBroadcast[] };
+  selectedEvent?: string;
+  setupWalkthrough?: ReactNode;
 }) {
   const membership = account.membership!;
   const administrator = ["owner", "team_admin"].includes(membership.role);
+  const sessions = new Map(
+    broadcasts.sessions.map((session) => [session.gameId, session]),
+  );
   const activityIds = new Set(
     broadcasts.sessions
-      .filter((s) => ["live", "preparing", "stopping"].includes(s.status))
-      .map((s) => s.gameId),
+      .filter((session) =>
+        ["live", "preparing", "stopping"].includes(session.status),
+      )
+      .map((session) => session.gameId),
   );
-  const groups = groupGames(games, events, Date.now(), activityIds);
-  const href = (next: GamesTab) =>
-    `/dashboard?${new URLSearchParams({ tab: next, ...(season ? { season: season.id } : {}) })}`;
-  const rows = (values: ScheduledGameRecord[]) => (
-    <ul className="dashboard-game-grid">
-      {values.map((game) => (
-        <GameCard
-          key={game.id}
-          game={game}
-          events={events}
-          role={membership.role}
-          administrator={administrator}
-          broadcast={broadcasts.sessions.find((s) => s.gameId === game.id)}
-        />
-      ))}
-    </ul>
+  const eventsById = new Map(events.map((event) => [event.id, event]));
+  const eventFilter =
+    selectedEvent === "single" ||
+    (selectedEvent && eventsById.has(selectedEvent))
+      ? selectedEvent
+      : undefined;
+  const query = { tab, sort, search, season: season?.id, event: eventFilter };
+  const searchTerms = search.toLocaleLowerCase().split(" ").filter(Boolean);
+  const filteredGames = games.filter((game) => {
+    if (
+      eventFilter &&
+      (eventFilter === "single" ? game.eventId : game.eventId !== eventFilter)
+    )
+      return false;
+    const eventName = game.eventId
+      ? eventsById.get(game.eventId)?.name
+      : "Single game";
+    const searchableText = [
+      game.config.homeName,
+      game.config.awayName,
+      game.config.eventName,
+      eventName,
+    ]
+      .join(" ")
+      .toLocaleLowerCase();
+    return searchTerms.every((term) => searchableText.includes(term));
+  });
+  const filteredEvents = events.filter(
+    (event) =>
+      (!eventFilter || event.id === eventFilter) &&
+      (!searchTerms.length ||
+        searchTerms.every((term) =>
+          event.name.toLocaleLowerCase().includes(term),
+        ) ||
+        filteredGames.some((game) => game.eventId === event.id)),
   );
-  const results = [...groups.completed, ...groups.closed];
-  const shown =
+  const groups = groupGames(
+    filteredGames,
+    filteredEvents,
+    Date.now(),
+    activityIds,
+  );
+  const currentGames = new Set(groups.current);
+  const shown = (
     tab === "past"
-      ? results
+      ? [...groups.completed, ...groups.closed]
       : tab === "unfinished"
         ? groups.unfinished
         : tab === "single"
           ? groups.singleGames
-          : groups.upcoming;
+          : tab === "upcoming"
+            ? [
+                ...new Set([
+                  ...groups.broadcasting,
+                  ...groups.current,
+                  ...groups.upcoming,
+                ]),
+              ]
+            : filteredGames
+  ).toSorted((a, b) => {
+    const first = Date.parse(a.scheduledStart ?? a.createdAt);
+    const second = Date.parse(b.scheduledStart ?? b.createdAt);
+    return sort === "newest" ? second - first : first - second;
+  });
+  const eventSummaries = groups.eventSummaries.toSorted((a, b) => {
+    const order = a.event.startDate.localeCompare(b.event.startDate);
+    return sort === "newest" ? -order : order;
+  });
+  const count = tab === "events" ? eventSummaries.length : shown.length;
+  const eventLabel =
+    eventFilter === "single"
+      ? "Standalone games"
+      : eventFilter && eventsById.get(eventFilter)?.name;
   return (
     <main className="games-dashboard">
-      <div className="dashboard-topbar">
-        <AppNavigation signedIn />
-        <span>
-          {account.profile.display_name} · {readableTeamRole(membership.role)}
-        </span>
-      </div>
+      <DashboardRefresh organizationId={membership.organization_id} />
       <header className="dashboard-heading">
-        <div>
-          <p className="dashboard-eyebrow">{membership.teamName}</p>
-          <h1>Games</h1>
-          <p className="dashboard-subtitle">
-            Your schedule, match controls and results in one place.
-          </p>
+        <AppNavigation signedIn accountLogo={accountLogo} />
+        <div className="dashboard-title">
+          <p className="dashboard-team-title">{membership.teamName}</p>
+          <p className="dashboard-team-section">Games</p>
+        </div>
+        <div className="dashboard-season-bar">
+          <DashboardSeasonSelect query={query} seasons={seasons} />
         </div>
         {membership.role !== "viewer" && (
           <Link className="btn dashboard-schedule" href="/games/new">
-            ＋ Schedule a game
+            ＋ Create game
           </Link>
         )}
       </header>
-      <div className="dashboard-season-bar">
-        <div>
-          <span className="dashboard-eyebrow">Season</span>
-          <strong>{season?.name ?? "No season set up"}</strong>
-        </div>
-        {seasons.length > 1 && (
-          <form action="/dashboard" className="dashboard-season-form">
-            <label className="sr-only" htmlFor="dashboard-season">
-              Choose season
-            </label>
-            <select
-              id="dashboard-season"
-              name="season"
-              defaultValue={season?.id}
-            >
-              {seasons.map((item) => (
-                <option key={item.id} value={item.id}>
-                  {item.name}
-                  {item.status === "active" ? " · Current" : ""}
-                </option>
-              ))}
-            </select>
-            <input type="hidden" name="tab" value={tab} />
-            <button className="btn-secondary">View season</button>
-          </form>
-        )}
-        {administrator && (
-          <Link href="/seasons">Manage seasons &amp; events →</Link>
-        )}
-      </div>
-      <div className="dashboard-overview" aria-label="Season overview">
-        <Link href={href("upcoming")}>
-          <strong>{groups.upcoming.length}</strong>
-          <span>Upcoming games</span>
-        </Link>
-        <Link href={href("past")}>
-          <strong>{groups.completed.length}</strong>
-          <span>Completed games</span>
-        </Link>
-        <Link href={href("events")}>
-          <strong>{events.length}</strong>
-          <span>Events</span>
-        </Link>
-      </div>
-      {!broadcasts.available && (
-        <p className="dashboard-notice" role="status">
-          Broadcast status is temporarily unavailable. Your schedule and saved
-          results are still available. <a href={href(tab)}>Refresh status</a>
-        </p>
-      )}
-      {!!groups.broadcasting.length && (
-        <section
-          className="dashboard-activity"
-          aria-labelledby="broadcast-activity"
-        >
-          <div className="dashboard-section-heading">
-            <div>
-              <h2 id="broadcast-activity">Broadcast activity</h2>
-              <p>
-                Last saved YouTube status. Open game controls for the latest
-                status.
-              </p>
-            </div>
-            <a className="btn-secondary" href={href(tab)}>
-              Refresh
-            </a>
-          </div>
-          {rows(groups.broadcasting)}
-        </section>
-      )}
-      {!!groups.unfinished.length && tab !== "unfinished" && (
-        <div className="dashboard-unfinished">
-          <div>
-            <strong>
-              {groups.unfinished.length} unfinished{" "}
-              {groups.unfinished.length === 1 ? "game" : "games"}
-            </strong>
-            <p>Past the scheduled start, or still waiting for a date.</p>
-          </div>
-          <Link href={href("unfinished")}>Review games →</Link>
-        </div>
-      )}
+      {setupWalkthrough}
       <section aria-label="Browse games">
-        <nav className="dashboard-tabs" aria-label="Browse games">
-          {(
-            [
-              ["upcoming", "Upcoming", groups.upcoming.length],
-              ["events", "Events", events.length],
-              ["past", "Results", results.length],
-              ["unfinished", "Unfinished", groups.unfinished.length],
-            ] as const
-          ).map(([key, label, count]) => (
-            <Link
-              key={key}
-              href={href(key)}
-              aria-current={
-                tab === key || (key === "upcoming" && tab === "single")
-                  ? "page"
-                  : undefined
-              }
-            >
-              {label}
-              <span>{count}</span>
-            </Link>
-          ))}
-        </nav>
-        <div className="dashboard-section-heading dashboard-list-heading">
-          <div>
-            <h2>
-              {tab === "events"
-                ? "Events this season"
-                : tab === "past"
-                  ? "Results & history"
-                  : tab === "unfinished"
-                    ? "Unfinished games"
-                    : tab === "single"
-                      ? "Single games"
-                      : "Upcoming games"}
-            </h2>
-            <p>
-              {tab === "past"
-                ? "Final scores and saved YouTube links."
-                : tab === "unfinished"
-                  ? "These games have no final result yet. Review them before finishing or changing the schedule."
-                  : tab === "events"
-                    ? "Open an event to see its games."
-                    : "Scheduled games, in date order."}
-            </p>
+        <div className="dashboard-toolbar">
+          <div className="dashboard-list-title">
+            <h1>Games</h1>
+            <span className="dashboard-game-count" aria-live="polite">
+              {count}
+              <span className="sr-only">
+                {tab === "events"
+                  ? count === 1
+                    ? " event"
+                    : " events"
+                  : count === 1
+                    ? " game"
+                    : " games"}
+              </span>
+            </span>
           </div>
+          <DashboardFilters query={query} events={events} />
         </div>
+        {eventLabel && (
+          <div className="dashboard-active-event">
+            <Link
+              href={dashboardHref({ ...query, event: undefined })}
+              aria-label="Clear event filter"
+            >
+              {eventLabel} <span aria-hidden="true">×</span>
+            </Link>
+          </div>
+        )}
         {tab === "events" ? (
-          groups.eventSummaries.length ? (
+          eventSummaries.length ? (
             <ul className="dashboard-event-grid">
-              {groups.eventSummaries.map(({ event, gameCount, nextGame }) => (
+              {eventSummaries.map(({ event, gameCount, nextGame }) => (
                 <li key={event.id}>
                   <Link
                     className="dashboard-event-card"
@@ -228,7 +203,7 @@ export function GamesDashboard({
                     <span className="dashboard-eyebrow">
                       {event.eventType === "league" ? "League" : "Event"}
                     </span>
-                    <h3>{event.name}</h3>
+                    <h2>{event.name}</h2>
                     <p>
                       {event.startDate} – {event.endDate}
                     </p>
@@ -241,7 +216,7 @@ export function GamesDashboard({
                     </div>
                     <p className="dashboard-event-next">
                       {nextGame?.scheduledStart
-                        ? `Next: ${formatScheduledStart(nextGame.scheduledStart, event.timezone)}`
+                        ? `Next: ${formatScheduledStart(nextGame.scheduledStart, nextGame.timezone ?? event.timezone)}`
                         : "No upcoming games"}
                     </p>
                   </Link>
@@ -250,27 +225,60 @@ export function GamesDashboard({
             </ul>
           ) : (
             <EmptyState
-              title="No events this season"
-              text="Individual games still appear under Upcoming. Create events to group league nights or tournaments."
+              title={
+                search ? "No events match your search" : "No events this season"
+              }
+              text={
+                search
+                  ? "Try a different team or event name."
+                  : "Create events to group league nights or tournaments."
+              }
             />
           )
         ) : shown.length ? (
-          rows(shown)
+          <ul className="dashboard-game-grid">
+            {shown.map((game) => (
+              <GameCard
+                key={game.id}
+                game={game}
+                event={game.eventId ? eventsById.get(game.eventId) : undefined}
+                eventHref={dashboardHref({
+                  ...query,
+                  tab: "all",
+                  event: game.eventId ?? "single",
+                  search: "",
+                })}
+                seasons={seasons}
+                role={membership.role}
+                administrator={administrator}
+                broadcast={sessions.get(game.id)}
+                current={currentGames.has(game)}
+              />
+            ))}
+          </ul>
         ) : (
           <EmptyState
             title={
-              tab === "past"
-                ? "Results will appear here"
-                : tab === "unfinished"
-                  ? "No unfinished games"
-                  : "No upcoming games"
+              search
+                ? "No games match your search"
+                : tab === "past"
+                  ? "Results will appear here"
+                  : tab === "unfinished"
+                    ? "No unfinished games"
+                    : tab === "all"
+                      ? "No games to show"
+                      : "No upcoming games"
             }
             text={
-              tab === "past"
-                ? "End a game to save its final score and YouTube link."
-                : tab === "unfinished"
-                  ? "There are no unscheduled games or past starts waiting for a result."
-                  : "Schedule your next game to get its cameras, scoring and broadcast ready."
+              search
+                ? "Try a different team or event name."
+                : eventFilter
+                  ? "No games match this event in this view."
+                  : tab === "past"
+                    ? "End a game to save its final score and YouTube link."
+                    : tab === "unfinished"
+                      ? "There are no unscheduled games or past starts waiting for a result."
+                      : "Schedule your next game to get its cameras, scoring and broadcast ready."
             }
           />
         )}
@@ -287,7 +295,7 @@ export function GamesDashboard({
 function EmptyState({ title, text }: { title: string; text: string }) {
   return (
     <div className="dashboard-empty">
-      <h3>{title}</h3>
+      <h2>{title}</h2>
       <p>{text}</p>
     </div>
   );
@@ -295,35 +303,53 @@ function EmptyState({ title, text }: { title: string; text: string }) {
 
 function GameCard({
   game,
-  events,
+  event,
+  eventHref,
+  seasons,
   role,
   administrator,
   broadcast,
+  current,
 }: {
   game: ScheduledGameRecord;
-  events: EventRecord[];
+  event?: EventRecord;
+  eventHref: string;
+  seasons: SeasonRecord[];
   role: string;
   administrator: boolean;
   broadcast?: DashboardBroadcast;
+  current: boolean;
 }) {
-  const event = events.find((e) => e.id === game.eventId);
   const title = formatCanonicalGameTitle({
     structured: Boolean(game.seasonId),
     legacyTitle: game.config.eventName,
     homeName: game.config.homeName,
     awayName: game.opponentId ? game.config.awayName : null,
     eventName: event?.name,
+    gameNumber: game.gameNumber,
   });
-  const timezone = event?.timezone ?? game.timezone ?? "UTC";
+  const timezone = game.timezone ?? event?.timezone ?? "America/Toronto";
   const scheduledLabel = game.scheduledStart
     ? formatScheduledStart(game.scheduledStart, timezone)
     : "Schedule not set";
   const completed = game.status === "completed";
   const closed = game.status === "closed";
-  const parsedWatch = youtubeWatchUrlSchema.safeParse(
-    completed ? (game.youtubeWatchUrl ?? "") : (broadcast?.watchUrl ?? ""),
+  const eventLabel = game.eventId
+    ? (event?.name ??
+      (formatEventGameLabel(game.config.eventName, null) || "Event"))
+    : "Single game";
+  const totals = completed ? game.completionResult?.totals : undefined;
+  const watchUrl = firstValidYoutubeWatchUrl(
+    game.config.sharedYoutubeWatchUrl,
+    ...(completed ? [game.youtubeWatchUrl] : []),
+    broadcast?.watchUrl,
+    game.scheduledYouTubeWatchUrl,
   );
-  const watchUrl = parsedWatch.success ? parsedWatch.data : null;
+  const shotTrackerQuery = new URLSearchParams({
+    source: "streamer",
+    event: game.eventId ?? "standalone",
+    game: game.id,
+  });
   const label = completed
     ? game.completionResult?.outcome === "no_result"
       ? "Completed"
@@ -342,108 +368,204 @@ function GameCard({
                 ? "Opponent needed"
                 : !game.scheduledStart
                   ? "Schedule needed"
-                  : Date.parse(game.scheduledStart) < Date.now()
-                    ? "Awaiting result"
-                    : "Scheduled";
+                  : current
+                    ? "Current game"
+                    : Date.parse(game.scheduledStart) < Date.now()
+                      ? "Awaiting result"
+                      : "Scheduled";
+  const team = (side: "home" | "away") => {
+    const name = game.config[`${side}Name`];
+    return (
+      <div className={`dashboard-team dashboard-team-${side}`}>
+        <span
+          className="dashboard-rock"
+          style={{ backgroundColor: game.config[`${side}Color`] }}
+          aria-hidden="true"
+        />
+        <strong>
+          {completed ? (
+            <Link
+              href={`/games/${game.id}`}
+              aria-label={`${name} game details`}
+            >
+              {name}
+            </Link>
+          ) : side === "away" && !game.opponentId ? (
+            "Opponent TBD"
+          ) : (
+            name
+          )}
+        </strong>
+      </div>
+    );
+  };
   return (
     <li className="dashboard-game-card">
+      <h2 className="sr-only">{title}</h2>
       <div className="dashboard-card-meta">
-        <span>{event?.name ?? "Single game"}</span>
-        <span
-          className={`dashboard-status ${completed ? "is-final" : !closed && broadcast?.status === "live" ? "is-live" : ""}`}
-        >
-          {label}
-        </span>
-      </div>
-      <h3 className="sr-only">{title}</h3>
-      <div className="dashboard-matchup">
-        {(["home", "away"] as const).map((side) => (
-          <div key={side}>
-            <span
-              className="dashboard-rock"
-              style={{ backgroundColor: game.config[`${side}Color`] }}
-              aria-hidden="true"
-            />
-            <strong>
-              {side === "away" && !game.opponentId
-                ? "Opponent TBD"
-                : game.config[`${side}Name`]}
-            </strong>
-            {completed && game.completionResult?.totals && (
-              <b
-                aria-label={`${game.config[`${side}Name`]} final score: ${game.completionResult.totals[side]}`}
-              >
-                {game.completionResult.totals[side]}
-              </b>
-            )}
-          </div>
-        ))}
-      </div>
-      {completed && game.completionResult?.label && (
-        <p className="dashboard-outcome">
-          {game.completionResult.outcome === "home_win"
-            ? `${game.config.homeName} won`
-            : game.completionResult.outcome === "away_win"
-              ? `${game.config.awayName} won`
-              : game.completionResult.label}
-        </p>
-      )}
-      <p className="dashboard-game-date">{scheduledLabel}</p>
-      {!completed &&
-        !closed &&
-        broadcast?.updatedAt &&
-        ["live", "preparing", "stopping", "failed"].includes(
-          broadcast.status,
-        ) && (
-          <p className="dashboard-saved-status">
-            Status saved {formatScheduledStart(broadcast.updatedAt, timezone)}
-          </p>
-        )}
-      <div className="dashboard-actions">
-        {completed || closed || role === "viewer" ? (
-          <Link className="btn-secondary" href={`/games/${game.id}`}>
-            {completed ? "View result" : "View game"}
-          </Link>
-        ) : (
-          <TeamGameLinks
-            compact
-            gameId={game.id}
-            title={title}
-            scheduledLabel={scheduledLabel}
-            role={role}
-            opponentTbd={!game.opponentId}
-          />
-        )}
-        {watchUrl &&
-          (completed || (!closed && broadcast?.status === "live")) && (
-            <a
-              className="dashboard-youtube-link"
-              href={watchUrl}
-              target="_blank"
-              rel="noopener noreferrer"
+        <div className="dashboard-card-tags">
+          {!game.eventId || event ? (
+            <Link
+              className="dashboard-event-link"
+              href={eventHref}
+              prefetch={false}
             >
-              <svg aria-hidden="true" viewBox="0 0 24 18">
-                <rect width="24" height="18" rx="5" fill="#ff0033" />
-                <path d="m10 5 7 4-7 4Z" fill="white" />
-              </svg>
-              {completed ? "Watch replay" : "Open YouTube"}
-              <span className="sr-only"> (opens in a new tab)</span>
-            </a>
+              {eventLabel} <span aria-hidden="true">↗</span>
+            </Link>
+          ) : (
+            <span className="dashboard-event-link">{eventLabel}</span>
+          )}
+          <span
+            className={`dashboard-status ${completed ? "is-final" : !closed && broadcast?.status === "live" ? "is-live" : ""}`}
+          >
+            {label}
+          </span>
+        </div>
+        {game.scheduledStart ? (
+          <time className="dashboard-game-date" dateTime={game.scheduledStart}>
+            {scheduledLabel}
+          </time>
+        ) : (
+          <span className="dashboard-game-date">{scheduledLabel}</span>
+        )}
+        {!completed &&
+          !closed &&
+          broadcast?.updatedAt &&
+          ["live", "preparing", "stopping", "failed"].includes(
+            broadcast.status,
+          ) && (
+            <p className="dashboard-saved-status">
+              Status saved {formatScheduledStart(broadcast.updatedAt, timezone)}
+            </p>
           )}
       </div>
-      {administrator && (
-        <details className="dashboard-more">
-          <summary>More actions</summary>
-          <div>
-            {!completed && !closed && (
-              <Link className="btn-secondary" href={`/games/${game.id}/edit`}>
-                Edit game
+      <div className="dashboard-matchup">
+        {team("home")}
+        {totals ? (
+          <div className="dashboard-score">
+            <b
+              aria-label={`${game.config.homeName} final score: ${totals.home}`}
+            >
+              {totals.home}
+            </b>
+            <span aria-hidden="true">:</span>
+            <b
+              aria-label={`${game.config.awayName} final score: ${totals.away}`}
+            >
+              {totals.away}
+            </b>
+          </div>
+        ) : (
+          <span className="dashboard-versus">vs</span>
+        )}
+        {team("away")}
+        {completed && game.completionResult?.label && (
+          <p className="dashboard-outcome">
+            {game.completionResult.outcome === "home_win"
+              ? `${game.config.homeName} won`
+              : game.completionResult.outcome === "away_win"
+                ? `${game.config.awayName} won`
+                : game.completionResult.label}
+          </p>
+        )}
+      </div>
+      <div className="dashboard-actions">
+        {!completed &&
+          (closed || role === "viewer" ? (
+            <Link className="btn-secondary" href={`/games/${game.id}`}>
+              View game
+            </Link>
+          ) : (
+            <TeamGameLinks
+              compact
+              gameId={game.id}
+              title={title}
+              scheduledLabel={scheduledLabel}
+              role={role}
+              opponentTbd={!game.opponentId}
+            />
+          ))}
+        <div className="dashboard-media-actions">
+          <Link
+            className="dashboard-shot-tracker-link"
+            href={`/shot-tracker?${shotTrackerQuery}#charting`}
+            prefetch={false}
+            aria-label={`ShotTracker: ${title}`}
+          >
+            <ShotTrackerIcon size={20} />
+            ShotTracker
+          </Link>
+          {watchUrl &&
+            (completed ||
+              (!closed &&
+                (broadcast?.status === "live" ||
+                  game.scheduledYouTubeStatus === "ready"))) && (
+              <a
+                className="dashboard-youtube-link"
+                href={watchUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                aria-label={
+                  completed
+                    ? undefined
+                    : "Watch on YouTube (opens in a new tab)"
+                }
+              >
+                <svg aria-hidden="true" viewBox="0 0 24 18">
+                  <rect width="24" height="18" rx="5" fill="#ff0033" />
+                  <path d="m10 5 7 4-7 4Z" fill="white" />
+                </svg>
+                {completed ? "Replay" : "Watch"}
+                <span className="sr-only"> (opens in a new tab)</span>
+              </a>
+            )}
+        </div>
+        {administrator && (
+          <GameActionsMenu>
+            {!closed && (
+              <Link
+                className="dashboard-menu-item"
+                href={`/games/${game.id}/edit`}
+              >
+                <AppIcon name="edit" /> Edit game
               </Link>
             )}
-            <GameDeletionControl gameId={game.id} title={title} matchup="" />
-          </div>
-        </details>
-      )}
+            {game.opponentId && game.seasonId && (
+              <div className="dashboard-menu-item">
+                <AppIcon name="opponent" />
+                <OpponentEditControl
+                  opponentId={game.opponentId}
+                  opponentName={game.config.awayName}
+                  seasonId={game.seasonId}
+                  seasonName={
+                    seasons.find((item) => item.id === game.seasonId)?.name ??
+                    "Game season"
+                  }
+                />
+              </div>
+            )}
+            {completed && (
+              <div className="dashboard-menu-item">
+                <span aria-hidden="true">↶</span>
+                <ReopenGameControl gameId={game.id} compact />
+              </div>
+            )}
+            {game.config.youtubeEnabled &&
+              !game.config.sharedYoutubeWatchUrl &&
+              game.scheduledYouTubeWatchUrl &&
+              !completed &&
+              !closed && (
+                <div className="dashboard-menu-item">
+                  <YouTubeThumbnailUpdate gameId={game.id} />
+                </div>
+              )}
+            <div className="dashboard-menu-item dashboard-delete">
+              <span className="dashboard-delete-icon" aria-hidden="true" />
+              <GameDeletionControl gameId={game.id} title={title} matchup="" />
+            </div>
+          </GameActionsMenu>
+        )}
+      </div>
     </li>
   );
 }

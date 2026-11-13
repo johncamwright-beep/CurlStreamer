@@ -50,6 +50,12 @@ async function rpc<T>(
     parameters,
   );
   if (error) {
+    if (
+      (operation === "disconnect" || operation === "oauth_complete") &&
+      error.code === "55000" &&
+      error.message === "youtube connection has an unfinished broadcast"
+    )
+      throw new Error("youtube_connection_in_use");
     diagnostic(operation, error);
     throw new Error(`youtube_${operation}_failed`);
   }

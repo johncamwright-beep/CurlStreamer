@@ -69,27 +69,62 @@ export async function issueLiveKitToken(
   access: LiveKitAccess,
   assignmentGeneration?: number,
 ) {
-  const { url, key, secret } = liveKitConfiguration();
-
   // Camera identities are stable so a reconnect replaces, rather than adds, a
   // publisher. Broadcast consumers remain unique because a page currently has
   // one subscriber Room for each displayed role.
   const identity = cameraAccess(access)
     ? liveKitIdentity(gameId, access, assignmentGeneration)
     : `${["broadcast-viewer", "public-viewer"].includes(access) ? "viewer" : "preview"}-${crypto.randomUUID()}`;
-  const token = await new SignJWT({
-    video: liveKitVideoGrant(gameId, access),
-    metadata: liveKitMetadata(access),
-  })
+  return issueRoomToken(
+    identity,
+    {
+      video: liveKitVideoGrant(gameId, access),
+      metadata: liveKitMetadata(access),
+    },
+    ["broadcast-viewer", "public-viewer"].includes(access) ? "5m" : "10m",
+  );
+}
+
+/** Game-private data signaling for LAN clips. A relay token cannot carry media. */
+export function issueCoachClipRelayToken(
+  gameId: string,
+  role: "coach" | "studio",
+) {
+  const issuedAt = Math.floor(Date.now() / 1000);
+  const expires = issuedAt + (role === "coach" ? 120 : 300);
+  return issueRoomToken(
+    role === "studio" ? `studio-${gameId}` : `coach-${crypto.randomUUID()}`,
+    {
+      video: {
+        room: `coach-clip-${gameId}`,
+        roomJoin: true,
+        canPublishData: true,
+        canPublish: false,
+        canSubscribe: false,
+        canUpdateOwnMetadata: false,
+      },
+      metadata: JSON.stringify({ role, gameId, expiresAt: expires * 1000 }),
+    },
+    expires,
+    issuedAt,
+  );
+}
+
+async function issueRoomToken(
+  identity: string,
+  claims: { video: object; metadata: string },
+  expires: number | string,
+  issuedAt?: number,
+) {
+  const { url, key, secret } = liveKitConfiguration();
+  const token = await new SignJWT(claims)
     .setProtectedHeader({ alg: "HS256", typ: "JWT" })
     .setIssuer(key)
     .setSubject(identity)
     .setNotBefore("0s")
-    .setIssuedAt()
+    .setIssuedAt(issuedAt)
     .setJti(crypto.randomUUID())
-    .setExpirationTime(
-      ["broadcast-viewer", "public-viewer"].includes(access) ? "5m" : "10m",
-    )
+    .setExpirationTime(expires)
     .sign(new TextEncoder().encode(secret));
   return { url, token };
 }

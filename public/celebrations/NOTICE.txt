@@ -1,0 +1,11 @@
+Celebration media
+
+lightsaber.mp4, cat-dance.mp4 and the source for trump-dance.mp4 were supplied
+by the user for this CurlStreamer installation. The lightsaber foreground
+PNGs are derived from the supplied lightsaber clip. Trump Dance preserves
+the full portrait frame inside a square with generated animated side lights.
+Original audio is retained.
+
+These media assets are separate from the CurlStreamer software license.
+This package does not assert a third-party redistribution license for them.
+Personal headshots are stored separately and are not bundled in Studio.

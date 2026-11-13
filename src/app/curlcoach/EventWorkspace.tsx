@@ -1,0 +1,1508 @@
+"use client";
+import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  roster,
+  shotTypes,
+  turns,
+  type RosterEntry,
+  type State,
+} from "@/lib/curlcoach/model";
+import {
+  difficultyEventShots,
+  type CoachEvent,
+  type CoachGame,
+  type Workspace,
+} from "@/lib/curlcoach/event";
+import { analysisEventShots } from "@/lib/curlcoach/advanced-analysis";
+import {
+  teamScoreStatistics,
+  situationWins,
+  type rate,
+} from "@/lib/curlcoach/score-statistics";
+import {
+  updateWorkspaceState,
+  refreshWorkspaceEvent,
+} from "@/lib/curlcoach/workspace-state";
+import { eventLevels } from "@/lib/team-hierarchy";
+import { preferredGame } from "@/lib/current-game";
+import {
+  scheduledCoachGame,
+  coachingReadOnlyReason,
+  coachingClosed,
+} from "@/lib/curlcoach/game-selection";
+import {
+  emptyResumeStore,
+  readResumeStore,
+  writeResumeStore,
+  rememberResume,
+  reconcileResume,
+  resumeId,
+  validResumeSnapshot,
+  type ResumeScope,
+  type ResumeStore,
+  type TrackerResume,
+} from "@/lib/curlcoach/resume-storage";
+import CoachLab from "./CoachLab";
+import { EnhancedReview, MetricsProvider, useMetrics } from "./EnhancedMetrics";
+
+import AnalysisPanels from "./AnalysisPanels";
+import EventPerformance from "./EventPerformance";
+import BaselineMetrics from "./BaselineMetrics";
+import AnalysisDashboard, {
+  AnalysisNavigation,
+  ANALYSIS_TABS,
+  type AnalysisTab,
+} from "./AnalysisDashboard";
+import FlaggedShots from "./FlaggedShots";
+import Table from "./AnalysisTable";
+import {
+  defaultShotFilters,
+  filterAnalysisShots,
+} from "@/lib/curlcoach/analysis";
+import {
+  loadAnalysisSelection,
+  readAnalysisSelection,
+  rememberAnalysisSelection,
+  type AnalysisSelection,
+} from "@/lib/curlcoach/analysis-selection";
+import EventReportLibrary from "./EventReportLibrary";
+import { MetricsOptions } from "./EnhancedMetrics";
+import ScoringWakeLock from "./ScoringWakeLock";
+import EntryOverlay from "./EntryOverlay";
+import ShotTrackerBrand from "./ShotTrackerBrand";
+import "./coach.css";
+const pages = [
+  "Charting",
+  "Analysis",
+  "Game analysis",
+  "Event reports",
+  "Enhanced review",
+  "Options",
+] as const;
+type Page = (typeof pages)[number];
+const primaryPages = [
+  { view: "Charting", label: "Charting" },
+  { view: "Analysis", label: "Analysis" },
+  { view: "Event reports", label: "Reports" },
+] as const;
+const slug = (page: string) => page.toLowerCase().replaceAll(" ", "-");
+const pct = (value: number | null) =>
+  value === null ? "—" : `${value.toFixed(1)}%`;
+function Scoreboard({
+  event,
+  singleGame,
+}: {
+  event: CoachEvent;
+  singleGame: boolean;
+}) {
+  const [enteringEnd, setEnteringEnd] = useState("final");
+  const available = event.games.filter(
+    (g) => g.scoreboardAvailable && g.ends.length,
+  );
+  if (!available.length)
+    return (
+      <section className="event-card" role="status">
+        <h3>No line scores available</h3>
+        <p>
+          {event.games.length
+            ? "No CurlStreamer end scores are available for the selected games. Record the ends in the game's scorer, then refresh here."
+            : "No games match these filters."}
+        </p>
+      </section>
+    );
+  const us = teamScoreStatistics(available),
+    them = teamScoreStatistics(available, true);
+  const formatRate = (r: ReturnType<typeof rate>) =>
+    r.total
+      ? pct(r.percent) + " · " + r.count + " / " + r.total + " ends"
+      : "— · No eligible ends";
+  const comparison = (
+    keys: { key: Exclude<keyof typeof us, "unknownHammer">; label: string }[],
+  ) =>
+    keys.map(({ key, label }) => ({
+      label,
+      values: [formatRate(us[key]), formatRate(them[key])],
+    }));
+  const maxEnd = Math.max(
+    ...available.map((g) => g.scheduledEnds),
+    ...available.flatMap((g) => g.ends.map((e) => e.end)),
+  );
+  const endSelection =
+    enteringEnd === "final" || Number(enteringEnd) <= maxEnd
+      ? enteringEnd
+      : "final";
+  const wins = situationWins(
+    available,
+    endSelection === "final" ? "final" : Number(endSelection),
+  );
+  return (
+    <>
+      {available.length < event.games.length && (
+        <p role="status">
+          Line scores are available for {available.length} of{" "}
+          {event.games.length} selected games. Games without line scores are
+          excluded from these statistics.
+        </p>
+      )}
+      <div className="event-metrics event-shot-metrics">
+        <div>
+          <span>Games</span>
+          <strong>{available.length}</strong>
+        </div>
+        <div>
+          <span>Ends</span>
+          <strong>{available.reduce((n, g) => n + g.ends.length, 0)}</strong>
+        </div>
+        <div>
+          <span>Points for</span>
+          <strong>
+            {available.reduce(
+              (n, g) => n + g.ends.reduce((sum, e) => sum + e.us, 0),
+              0,
+            )}
+          </strong>
+        </div>
+        <div>
+          <span>Against</span>
+          <strong>
+            {available.reduce(
+              (n, g) => n + g.ends.reduce((sum, e) => sum + e.them, 0),
+              0,
+            )}
+          </strong>
+        </div>
+      </div>
+      <p className="score-stat-caption">
+        {singleGame ? "Selected game" : "All selected games combined"} · Each
+        percentage shows matching ends / eligible ends.
+      </p>
+      {us.unknownHammer > 0 && (
+        <p role="status">
+          Hammer is unknown for {us.unknownHammer} recorded ends. Those ends
+          count toward totals and overall blanks, but not hammer statistics.
+        </p>
+      )}
+      <Table
+        title="With hammer"
+        columns={["Our team", "Opponents"]}
+        rows={comparison([
+          { key: "scoring", label: "Score at least 1 point" },
+          { key: "multiple", label: "Score 2 or more points" },
+          { key: "blankWith", label: "Blank the end (0–0)" },
+          { key: "stolenAgainst", label: "Allow a steal" },
+        ])}
+      />
+      <Table
+        title="Without hammer"
+        columns={["Our team", "Opponents"]}
+        rows={comparison([
+          { key: "steals", label: "Steal at least 1 point" },
+          { key: "forceOne", label: "Hold opponent to 1 point" },
+          { key: "blankWithout", label: "Blank the end (0–0)" },
+          { key: "concedeMultiple", label: "Allow 2 or more points" },
+        ])}
+      />
+      <Table
+        title="All ends"
+        columns={["Combined"]}
+        rows={[{ label: "Blank ends (0–0)", values: [formatRate(us.blanks)] }]}
+      />
+      <section className="event-card score-situations">
+        <h3>Winning from a game situation</h3>
+        <label className="event-shot-selector">
+          Entering end
+          <select
+            aria-label="Entering end"
+            value={endSelection}
+            onChange={(e) => setEnteringEnd(e.target.value)}
+          >
+            <option value="final">Final scheduled end</option>
+            {Array.from({ length: maxEnd }, (_, i) => (
+              <option key={i + 1} value={i + 1}>
+                End {i + 1}
+              </option>
+            ))}
+          </select>
+        </label>
+        <p className="score-stat-caption">
+          Completed games only. Score and hammer are measured before the
+          selected end; wins use the final recorded score, including extra ends.
+          Games that ended earlier are excluded.
+        </p>
+        {wins.length ? (
+          <Table
+            title="Win rate by starting situation"
+            ranking="performance"
+            columns={["Win rate", "Wins / games", "Losses", "Ties"]}
+            rows={wins.map((r) => ({
+              label:
+                (r.difference === 0
+                  ? "Tied"
+                  : (r.difference > 0 ? "Up " : "Down ") +
+                    Math.abs(r.difference) +
+                    (Math.abs(r.difference) === 4 ? "+" : "")) +
+                " · " +
+                (r.hammer ? "With hammer" : "Without hammer"),
+              values: [
+                pct(r.percent),
+                r.wins + " / " + r.total,
+                r.losses,
+                r.ties,
+              ],
+            }))}
+          />
+        ) : (
+          <p role="status">
+            No completed games with a known score and hammer reached this end.
+          </p>
+        )}
+      </section>
+      {singleGame &&
+        available.map((game) => (
+          <Table
+            key={game.id}
+            title="Game scoreboard"
+            columns={game.ends.map((e) => String(e.end)).concat("Total")}
+            rows={[
+              {
+                label: game.teamName,
+                values: game.ends
+                  .map((e) => e.us)
+                  .concat(game.ends.reduce((n, e) => n + e.us, 0)),
+              },
+              {
+                label: game.opponent,
+                values: game.ends
+                  .map((e) => e.them)
+                  .concat(game.ends.reduce((n, e) => n + e.them, 0)),
+              },
+            ]}
+          />
+        ))}
+    </>
+  );
+}
+export default function EventWorkspace(
+  props: Parameters<typeof WorkspaceContent>[0],
+) {
+  return (
+    <MetricsProvider key={JSON.stringify(props.accountScope ?? "lab")}>
+      <WorkspaceContent {...props} />
+    </MetricsProvider>
+  );
+}
+function WorkspaceContent({
+  unlocked,
+  mode = "lab",
+  initialEventId,
+  accountScope,
+}: {
+  unlocked: boolean;
+  mode?: "lab" | "streamer";
+  initialEventId?: string;
+  accountScope?: ResumeScope;
+}) {
+  const metrics = useMetrics();
+  const reloadMetrics = metrics.reload;
+  const [shotFilters, setShotFilters] = useState(defaultShotFilters);
+  const drafts = useRef(new Map<string, TrackerResume>());
+  const resumeStore = useRef<ResumeStore | null>(null);
+
+  const [platformAdmin, setPlatformAdmin] = useState(false);
+  useEffect(() => {
+    if (mode !== "streamer") return;
+    const controller = new AbortController();
+    void fetch("/api/account/navigation", {
+      cache: "no-store",
+      signal: controller.signal,
+    })
+      .then(async (response) => {
+        const account = response.ok ? await response.json() : null;
+        if (!controller.signal.aborted)
+          setPlatformAdmin(account?.platformAdmin === true);
+      })
+      .catch(() => {
+        if (!controller.signal.aborted) setPlatformAdmin(false);
+      });
+    return () => controller.abort();
+  }, [mode]);
+  const [open, setOpen] = useState(unlocked),
+    [view, setView] = useState<Page>("Charting"),
+    [analysisTab, setAnalysisTab] = useState<AnalysisTab>("performance"),
+    [source, setSource] = useState<"sample" | "streamer">(
+      mode === "streamer" ? "streamer" : "sample",
+    ),
+    [eventId, setEventId] = useState(
+      initialEventId ?? (mode === "streamer" ? "" : "shorty-example"),
+    ),
+    [gameId, setGameId] = useState(""),
+    [requestedPlayer, setPlayer] = useState("all"),
+    [analysisSelection, setAnalysisSelection] =
+      useState<AnalysisSelection | null>(null),
+    [competitionLevel, setCompetitionLevel] = useState("all"),
+    [data, setData] = useState<Workspace | null>(null),
+    [error, setError] = useState(""),
+    [busy, setBusy] = useState(false);
+  const [selectionReady, setSelectionReady] = useState(false);
+  useEffect(() => {
+    if (open) void reloadMetrics();
+  }, [open, reloadMetrics]);
+  const chooseScheduledOnOpen = useRef(false);
+  const preserveLinkedGame = useRef(false);
+  const chartingContextChanged = useRef(false);
+  const [scheduleNow, setScheduleNow] = useState(() => Date.now());
+  useEffect(() => {
+    const timer = setInterval(() => setScheduleNow(Date.now()), 30000);
+    return () => clearInterval(timer);
+  }, []);
+  useEffect(() => {
+    const query = new URLSearchParams(location.search);
+    const requestedGame = query.get("game");
+    const linkedAnalysis = readAnalysisSelection(query);
+    const analysisLink = /^#(?:analysis(?:\/|$)|flagged-shots$)/.test(
+      location.hash,
+    );
+    const requestedSource =
+      mode === "streamer" || query.get("source") === "streamer"
+        ? "streamer"
+        : "sample";
+    chartingContextChanged.current =
+      !analysisLink &&
+      !linkedAnalysis &&
+      !!(requestedGame || query.get("event") || initialEventId);
+    chooseScheduledOnOpen.current = mode === "streamer" && !requestedGame;
+    preserveLinkedGame.current = mode === "streamer" && !!requestedGame;
+    drafts.current.clear();
+    savedStates.current.clear();
+    setData(null);
+    setStatsData(null);
+    let stored: ResumeStore | null = accountScope
+      ? emptyResumeStore(accountScope)
+      : null;
+    try {
+      if (accountScope)
+        stored = readResumeStore(window.localStorage, accountScope);
+    } catch {
+      // Storage may be unavailable; in-memory tracking still works.
+    }
+    resumeStore.current = stored;
+    const rememberedAnalysis =
+      accountScope || requestedSource === "sample"
+        ? loadAnalysisSelection(accountScope)
+        : undefined;
+    setAnalysisSelection(
+      linkedAnalysis ??
+        (requestedGame && analysisLink
+          ? { seasonId: "", eventId: "", gameId: requestedGame }
+          : (rememberedAnalysis ?? null)),
+    );
+    if (mode !== "streamer" && query.get("source") === "streamer")
+      setSource("streamer");
+    if (!initialEventId && query.get("event")) setEventId(query.get("event")!);
+    if (requestedGame) {
+      setGameId(requestedGame);
+    } else if (
+      !query.get("event") &&
+      !initialEventId &&
+      stored?.active &&
+      (mode !== "streamer" ||
+        Date.now() - stored.active.updatedAt < 4 * 3600000)
+    ) {
+      chooseScheduledOnOpen.current = false;
+      setSource(stored.active.source);
+      setEventId(stored.active.eventId);
+      setGameId(stored.active.gameId);
+    }
+    const read = () => {
+      if (mode === "streamer" && location.hash === "#options") {
+        window.location.replace("/account?section=shot-tracker");
+        return;
+      }
+      const hash = location.hash.slice(1);
+      const legacyAnalysis: Record<string, AnalysisTab> = {
+        "shot-performance": "performance",
+        "data-tables": "performance",
+        "shot-breakdown": "performance",
+        team: "performance",
+        "team-statistics": "performance",
+        "miss-analysis": "misses",
+        "technical-review": "technical",
+        "flagged-shots": "flagged",
+      };
+      if (
+        hash === "analysis" ||
+        hash.startsWith("analysis/") ||
+        legacyAnalysis[hash]
+      ) {
+        setView("Analysis");
+        const tab = legacyAnalysis[hash] ?? hash.split("/")[1];
+        if (tab && Object.hasOwn(ANALYSIS_TABS, tab))
+          setAnalysisTab(tab as AnalysisTab);
+        return;
+      }
+      const alias =
+        {
+          scoring: "charting",
+          "scoreboard-analysis": "game-analysis",
+          "end-by-end-scores": "game-analysis",
+        }[hash] ?? hash;
+      setView(pages.find((page) => slug(page) === alias) ?? "Charting");
+    };
+    read();
+    setSelectionReady(true);
+    window.addEventListener("hashchange", read);
+    return () => window.removeEventListener("hashchange", read);
+  }, [
+    initialEventId,
+    mode,
+    accountScope?.actorId,
+    accountScope?.organizationId,
+  ]);
+  const [statsData, setStatsData] = useState<Workspace | null>(null);
+  const [statsError, setStatsError] = useState("");
+  // Component-local only: never persist private coaching data across accounts.
+  const savedStates = useRef(new Map<string, State>());
+  const refreshSequence = useRef(0);
+  const statistics = ![
+    "Charting",
+    "Event reports",
+    "Options",
+    "Enhanced review",
+  ].includes(view);
+  const event = data?.event;
+  const game = event?.games.find((item) => item.id === gameId);
+  const seasonOptions = data?.seasons?.length
+    ? data.seasons
+    : data
+      ? [{ id: "unassigned", name: "No season assigned" }]
+      : [];
+  const chartedSeason = game?.seasonId ?? event?.seasonId ?? "unassigned";
+  const requestedSeason = analysisSelection?.seasonId || chartedSeason;
+  const selectedSeason = seasonOptions.some(
+    (season) => season.id === requestedSeason,
+  )
+    ? requestedSeason
+    : ((
+        seasonOptions.find((season) => season.id === chartedSeason) ??
+        seasonOptions[0]
+      )?.id ?? "");
+  const eventOptions = (data?.catalog ?? []).filter(
+    (entry) =>
+      (entry.seasonId ?? "unassigned") === selectedSeason ||
+      entry.id === "standalone",
+  );
+  const requestedEvent = analysisSelection?.eventId || event?.id;
+  const selectedEvent =
+    eventOptions.find((entry) => entry.id === requestedEvent)?.id ?? "all";
+  const seasonReady = statsData?.event.seasonId === selectedSeason;
+  const eventReady =
+    !!event &&
+    event.id === selectedEvent &&
+    (event.id === "standalone" ||
+      (event.seasonId ?? "unassigned") === selectedSeason);
+  const requestedAnalysisGame =
+    analysisSelection?.gameId ??
+    (view === "Analysis" && analysisTab === "flagged" ? game?.id : undefined) ??
+    "all";
+  const selectedGameMissingFromSeason =
+    eventReady &&
+    requestedAnalysisGame !== "all" &&
+    event.games.some((item) => item.id === requestedAnalysisGame) &&
+    !statsData?.event.games.some((item) => item.id === requestedAnalysisGame);
+  // A season response may omit a game whose assigned season differs from its
+  // event. Use the current event's games and latest flags for that event.
+  const useEventAnalysis =
+    eventReady &&
+    (!seasonReady ||
+      selectedGameMissingFromSeason ||
+      (view === "Analysis" && analysisTab === "flagged"));
+  const analysisData = useEventAnalysis ? data : seasonReady ? statsData : null;
+  const statsReady = !!analysisData;
+  const hasData = !!data;
+  useEffect(() => {
+    if (!statistics) setStatsData(null);
+  }, [statistics]);
+  useEffect(() => {
+    if (!open || !statistics || !hasData || !selectedSeason || seasonReady)
+      return;
+    const controller = new AbortController();
+    setStatsError("");
+    void fetch(
+      "/api/curlcoach/workspace?" +
+        new URLSearchParams({
+          source,
+          seasonId: selectedSeason,
+          includeDifficulty: "true",
+        }),
+      { cache: "no-store", signal: controller.signal },
+    )
+      .then(async (response) => {
+        const result = await response.json();
+        if (!response.ok)
+          throw new Error(result.error || "Statistics unavailable");
+        if (!controller.signal.aborted) {
+          let current: Workspace = result;
+          for (const state of savedStates.current.values())
+            current = updateWorkspaceState(current, state);
+          setStatsData(current);
+        }
+      })
+      .catch((error) => {
+        if (!controller.signal.aborted)
+          setStatsError(
+            error instanceof Error ? error.message : "Statistics unavailable",
+          );
+      });
+    return () => controller.abort();
+  }, [open, statistics, hasData, seasonReady, selectedSeason, source]);
+  const refresh = useCallback(
+    async (signal?: AbortSignal, resetStatistics = true) => {
+      const sequence = ++refreshSequence.current;
+      setBusy(true);
+      setError("");
+      try {
+        const response = await fetch(
+          `/api/curlcoach/workspace?source=${source}${eventId ? `&eventId=${encodeURIComponent(eventId)}` : ""}`,
+          { cache: "no-store", signal },
+        );
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.error);
+        if (signal?.aborted || sequence !== refreshSequence.current) return;
+        let current: Workspace = result;
+        for (const state of savedStates.current.values())
+          current = updateWorkspaceState(current, state);
+        for (const loadedGame of current.event.games) {
+          const identity = {
+            source: current.event.source,
+            eventId: current.event.id,
+            gameId: loadedGame.id,
+          };
+          const snapshot = resumeStore.current?.drafts.find(
+            (entry) => resumeId(entry) === resumeId(identity),
+          );
+          if (snapshot) {
+            const reconciled = reconcileResume(
+              snapshot,
+              loadedGame.state,
+              accountScope,
+            );
+            if (reconciled) drafts.current.set(resumeId(identity), reconciled);
+            else drafts.current.delete(resumeId(identity));
+          }
+        }
+        setData(current);
+        setStatsData((previous) =>
+          !resetStatistics &&
+          previous?.event.organizationId === current.event.organizationId &&
+          previous.event.source === current.event.source
+            ? refreshWorkspaceEvent(previous, current)
+            : null,
+        );
+        const recommended = scheduledCoachGame(current.event.games);
+        const scheduledDefault =
+          chooseScheduledOnOpen.current && recommended?.scheduledStart
+            ? recommended.id
+            : undefined;
+        chooseScheduledOnOpen.current = false;
+        if (!preserveLinkedGame.current)
+          setGameId(
+            (current) =>
+              scheduledDefault ??
+              (result.event.games.some((g: CoachGame) => g.id === current)
+                ? current
+                : (preferredGame<CoachGame>(result.event.games)?.id ?? "")),
+          );
+      } catch (e) {
+        if (!signal?.aborted && sequence === refreshSequence.current) {
+          setError(e instanceof Error ? e.message : "Event unavailable");
+        }
+      } finally {
+        if (!signal?.aborted && sequence === refreshSequence.current)
+          setBusy(false);
+      }
+    },
+    [source, eventId, accountScope?.actorId, accountScope?.organizationId],
+  );
+  useEffect(() => {
+    if (!open || !selectionReady) return;
+    const controller = new AbortController();
+    void refresh(controller.signal, false);
+    return () => controller.abort();
+  }, [open, selectionReady, refresh]);
+  useEffect(() => {
+    if (!open || !selectionReady || mode !== "streamer") return;
+    const returned = () => {
+      if (document.visibilityState === "visible") void refresh();
+    };
+    document.addEventListener("visibilitychange", returned);
+    return () => document.removeEventListener("visibilitychange", returned);
+  }, [open, selectionReady, mode, refresh]);
+  async function unlock(form: FormData) {
+    setBusy(true);
+    try {
+      const response = await fetch("/api/curlcoach/session", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ key: form.get("key") }),
+      });
+      if (!response.ok) throw new Error("The local lab key was not accepted.");
+      setOpen(true);
+      setError("");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Unable to unlock");
+    } finally {
+      setBusy(false);
+    }
+  }
+  const statsGames = statsReady
+    ? (analysisData?.event.games ?? [])
+        .filter((g) => selectedEvent === "all" || g.eventId === selectedEvent)
+        .filter(
+          (g) =>
+            !useEventAnalysis || !g.seasonId || g.seasonId === selectedSeason,
+        )
+        .filter(
+          (g) =>
+            competitionLevel === "all" ||
+            (g.competitionLevel ?? "unrecorded") === competitionLevel,
+        )
+        .map((g) => ({
+          ...g,
+          label:
+            selectedEvent === "all"
+              ? (analysisData?.catalog.find((e) => e.id === g.eventId)?.name ??
+                  "Single games") +
+                " · " +
+                g.label
+              : g.label,
+        }))
+    : [];
+  const analysisGame = statsGames.some(
+    (item) => item.id === requestedAnalysisGame,
+  )
+    ? requestedAnalysisGame
+    : "all";
+  const analysisGames = statsGames.filter(
+      (g) => analysisGame === "all" || g.id === analysisGame,
+    ),
+    analysisPlayers = [
+      ...new Map(
+        (view === "Analysis" && analysisTab === "events"
+          ? (statsData?.event.games ?? [])
+          : analysisGames
+        )
+          .flatMap<RosterEntry>((g) => g.roster ?? g.state.roster ?? roster)
+          .map((p) => [p.id, p]),
+      ).values(),
+    ];
+  const player = analysisPlayers.some((item) => item.id === requestedPlayer)
+    ? requestedPlayer
+    : "all";
+  const all = event
+      ? analysisEventShots({ ...event, games: analysisGames }).filter((s) =>
+          analysisGames.some((g) => g.id === s.gameId),
+        )
+      : [],
+    playerShots = all.filter((s) => player === "all" || s.playerId === player),
+    selected = filterAnalysisShots(playerShots, analysisGames, shotFilters);
+  useEffect(() => {
+    if (
+      !statistics ||
+      !statsReady ||
+      !selectionReady ||
+      !selectedSeason ||
+      !event ||
+      event.source !== source ||
+      (eventId && event.id !== eventId)
+    )
+      return;
+    rememberAnalysisSelection(
+      {
+        seasonId: selectedSeason,
+        eventId: selectedEvent,
+        gameId: analysisGame,
+      },
+      accountScope,
+      !!accountScope || source === "sample",
+    );
+  }, [
+    statistics,
+    statsReady,
+    selectionReady,
+    selectedSeason,
+    selectedEvent,
+    analysisGame,
+    event,
+    source,
+    eventId,
+    accountScope,
+  ]);
+  function changeAnalysisTab(tab: AnalysisTab) {
+    setAnalysisTab(tab);
+    setView("Analysis");
+    history.replaceState(
+      null,
+      "",
+      `${location.pathname}${location.search}#analysis/${tab}`,
+    );
+  }
+  function selectChartedGameForAnalysis() {
+    if (!event || !game || (eventId && event.id !== eventId)) return;
+    if (analysisSelection && !chartingContextChanged.current) return;
+    chartingContextChanged.current = false;
+    setAnalysisSelection({
+      seasonId: chartedSeason,
+      eventId: event.id,
+      gameId: game.id,
+    });
+    setPlayer("all");
+    setCompetitionLevel("all");
+    setShotFilters(defaultShotFilters);
+    const url = new URL(location.href);
+    url.searchParams.set("source", source);
+    url.searchParams.set("event", event.id);
+    url.searchParams.set("game", game.id);
+    history.replaceState(history.state, "", url);
+  }
+  function remember(source: string, event: string, game = "") {
+    chartingContextChanged.current = true;
+    preserveLinkedGame.current = false;
+    history.replaceState(
+      null,
+      "",
+      `${location.pathname}?${new URLSearchParams({ source, event, game })}${location.hash}`,
+    );
+  }
+  function saved(state: State) {
+    chartingContextChanged.current = true;
+    savedStates.current.set(state.gameId, state);
+    setStatsData(null);
+    setData((current) =>
+      current ? updateWorkspaceState(current, state) : current,
+    );
+  }
+  function retainDraft(
+    value: TrackerResume,
+    activelyTracking = false,
+    stateRevision?: number,
+  ) {
+    if (!event || !game) return;
+    const snapshot = validResumeSnapshot({
+      ...value,
+      source,
+      eventId: event.id,
+      gameId: game.id,
+      stateRevision:
+        stateRevision ?? game.state.revision ?? game.state.events.length,
+      updatedAt: Date.now(),
+    });
+    if (!snapshot) return;
+    drafts.current.set(resumeId(snapshot), value);
+    if (resumeStore.current) {
+      resumeStore.current = rememberResume(
+        resumeStore.current,
+        snapshot,
+        activelyTracking,
+      );
+      try {
+        writeResumeStore(window.localStorage, resumeStore.current);
+      } catch {
+        // Tracking is available even when browser storage is disabled.
+      }
+    }
+  }
+
+  const primaryView =
+    view === "Game analysis" || view === "Enhanced review" ? "Analysis" : view;
+  const primaryLinks = primaryPages.map((page) => (
+    <a
+      key={page.view}
+      href={`#${slug(page.view)}`}
+      onClick={
+        page.view === "Analysis" && view === "Charting"
+          ? selectChartedGameForAnalysis
+          : undefined
+      }
+      aria-current={primaryView === page.view ? "page" : undefined}
+    >
+      {page.label}
+    </a>
+  ));
+  const gamePicker = (
+    <EntryOverlay title="Change game">
+      <div className="coach-entry-grid">
+        <label>
+          Event
+          <select
+            value={eventId || event?.id}
+            disabled={!data || busy}
+            onChange={(e) => {
+              setBusy(true);
+              setError("");
+              setEventId(e.target.value);
+              setPlayer("all");
+              remember(source, e.target.value);
+            }}
+          >
+            {data?.catalog.map((e) => (
+              <option key={e.id} value={e.id}>
+                {e.name}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
+          Game
+          <select
+            value={game?.id ?? ""}
+            disabled={busy || !event?.games.length}
+            onChange={(e) => {
+              setGameId(e.target.value);
+              remember(source, event!.id, e.target.value);
+            }}
+          >
+            {!game && (
+              <option value="" disabled>
+                Choose a game
+              </option>
+            )}
+            {event?.games.map((g) => (
+              <option key={g.id} value={g.id}>
+                {g.label} · {g.teamName} vs {g.opponent}
+                {coachingClosed(g) ? " · Closed" : ""}
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
+    </EntryOverlay>
+  );
+  return (
+    <div className="coach-workspace">
+      <aside className="event-sidebar">
+        <div className="coach-topbar">
+          <ShotTrackerBrand />
+          <nav
+            className="tracker-primary-nav"
+            aria-label="Shot Tracker shortcuts"
+          >
+            {primaryLinks}
+          </nav>
+          <EntryOverlay
+            title="Shot Tracker menu"
+            className="tracker-navigation"
+          >
+            <div
+              id="coach-menu"
+              onClick={(e) => {
+                if ((e.target as HTMLElement).closest("a"))
+                  e.currentTarget.closest("dialog")?.close();
+              }}
+            >
+              <nav aria-label="Shot Tracker pages">{primaryLinks}</nav>
+              <div className="event-sidebar-footer">
+                {mode === "streamer" ? (
+                  <nav aria-label="Account">
+                    <a href="/account">Account &amp; Settings</a>
+                    {platformAdmin && (
+                      <a href="/admin">Platform administration</a>
+                    )}
+                  </nav>
+                ) : (
+                  <p>Local development · Synthetic data</p>
+                )}
+              </div>
+            </div>
+          </EntryOverlay>
+        </div>
+      </aside>
+      <main className="event-main" data-view={view}>
+        {view === "Analysis" && (
+          <AnalysisNavigation
+            tab={analysisTab}
+            onTabChange={changeAnalysisTab}
+          />
+        )}
+        <header className="event-header">
+          <div className="flex flex-wrap items-center gap-x-4">
+            <h1>{view === "Analysis" ? ANALYSIS_TABS[analysisTab] : view}</h1>
+            {view === "Analysis" && analysisTab === "performance" && (
+              <a
+                className="inline-flex min-h-11 items-center underline"
+                href="#game-analysis"
+              >
+                Game analysis
+              </a>
+            )}
+            {view === "Analysis" &&
+              analysisTab === "advanced" &&
+              metrics.preferences.mode === "enhanced" && (
+                <a
+                  className="inline-flex min-h-11 items-center underline"
+                  href="#enhanced-review"
+                >
+                  Enhanced review
+                </a>
+              )}
+            {view === "Game analysis" && (
+              <a
+                className="inline-flex min-h-11 items-center underline"
+                href="#analysis/performance"
+              >
+                Back to Shot Performance
+              </a>
+            )}
+            {view === "Enhanced review" && (
+              <a
+                className="inline-flex min-h-11 items-center underline"
+                href="#analysis/advanced"
+              >
+                Back to Advanced Analysis
+              </a>
+            )}
+          </div>
+          {open && (
+            <button
+              aria-label="Refresh event"
+              title="Refresh event"
+              disabled={busy}
+              onClick={() => void refresh()}
+            >
+              <span aria-hidden="true">↻</span>
+            </button>
+          )}
+          {open && view !== "Charting" && (
+            <div className="event-selectors event-filter-bar">
+              {mode === "lab" && (
+                <label>
+                  Data source
+                  <select
+                    value={source}
+                    onChange={(e) => {
+                      setData(null);
+                      setStatsData(null);
+                      savedStates.current.clear();
+                      setAnalysisSelection(
+                        e.target.value === "sample"
+                          ? (loadAnalysisSelection(accountScope) ?? null)
+                          : null,
+                      );
+                      setSource(e.target.value as typeof source);
+                      remember(
+                        e.target.value,
+                        e.target.value === "sample" ? "shorty-example" : "",
+                      );
+                      setEventId(
+                        e.target.value === "sample" ? "shorty-example" : "",
+                      );
+                    }}
+                  >
+                    <option value="sample">Local examples</option>
+                    <option value="streamer">
+                      Streamer · local connection
+                    </option>
+                  </select>
+                </label>
+              )}
+              {statistics ? (
+                <>
+                  <label>
+                    Season
+                    <select
+                      value={selectedSeason}
+                      disabled={!seasonOptions.length}
+                      onChange={(e) => {
+                        setAnalysisSelection({
+                          seasonId: e.target.value,
+                          eventId: "all",
+                          gameId: "all",
+                        });
+                        setPlayer("all");
+                      }}
+                    >
+                      {!seasonOptions.length && (
+                        <option value="">
+                          {error ? "Seasons unavailable" : "Loading seasons…"}
+                        </option>
+                      )}
+                      {seasonOptions.map((season) => (
+                        <option key={season.id} value={season.id}>
+                          {season.name}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  {(view !== "Analysis" || analysisTab !== "events") && (
+                    <label>
+                      Event
+                      <select
+                        value={selectedEvent}
+                        disabled={!data}
+                        onChange={(e) => {
+                          setAnalysisSelection({
+                            seasonId: selectedSeason,
+                            eventId: e.target.value,
+                            gameId: "all",
+                          });
+                          setPlayer("all");
+                        }}
+                      >
+                        <option value="all">All events</option>
+                        {eventOptions.map((e) => (
+                          <option key={e.id} value={e.id}>
+                            {e.name}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  )}
+                </>
+              ) : (
+                <label>
+                  Event
+                  <select
+                    value={eventId || event?.id}
+                    disabled={!data}
+                    onChange={(e) => {
+                      setBusy(true);
+                      setError("");
+                      setEventId(e.target.value);
+                      setPlayer("all");
+                      remember(source, e.target.value);
+                    }}
+                  >
+                    {data?.catalog.map((e) => (
+                      <option key={e.id} value={e.id}>
+                        {e.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
+              {view !== "Event reports" && (
+                <>
+                  {(view !== "Analysis" || analysisTab !== "events") && (
+                    <label>
+                      Game
+                      <select
+                        value={analysisGame}
+                        disabled={!statsReady}
+                        onChange={(e) => {
+                          setAnalysisSelection({
+                            seasonId: selectedSeason,
+                            eventId: selectedEvent,
+                            gameId: e.target.value,
+                          });
+                          setPlayer("all");
+                        }}
+                      >
+                        <option value="all">
+                          {!statsReady && statistics
+                            ? error || statsError
+                              ? "Games unavailable"
+                              : "Loading games…"
+                            : "All games"}
+                        </option>
+                        {statsGames.map((g) => (
+                          <option key={g.id} value={g.id}>
+                            {g.label} · vs {g.opponent}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  )}
+                  {
+                    <label>
+                      Team / player
+                      <select
+                        value={player}
+                        onChange={(e) => setPlayer(e.target.value)}
+                      >
+                        <option value="all">Whole team</option>
+                        {analysisPlayers.map((p) => (
+                          <option key={p.id} value={p.id}>
+                            {p.name}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  }
+                </>
+              )}
+            </div>
+          )}
+          {statistics && (view !== "Analysis" || analysisTab !== "events") && (
+            <details className="event-card analysis-more">
+              <summary>More filters</summary>
+              <div className="event-filter-bar">
+                <label>
+                  Competition
+                  <select
+                    aria-label="Competition level"
+                    title="Opponent’s level for the game’s season"
+                    value={competitionLevel}
+                    onChange={(e) => {
+                      setCompetitionLevel(e.target.value);
+                      setAnalysisSelection({
+                        seasonId: selectedSeason,
+                        eventId: selectedEvent,
+                        gameId: "all",
+                      });
+                      setPlayer("all");
+                    }}
+                  >
+                    <option value="all">All levels</option>
+                    {eventLevels.map((level) => (
+                      <option key={level}>{level}</option>
+                    ))}
+                    <option value="unrecorded">Not recorded</option>
+                  </select>
+                </label>
+                {(
+                  [
+                    ["type", "Shot type", ["Draws", "Hits", ...shotTypes]],
+                    ["turn", "Turn / target", [...turns]],
+                    [
+                      "end",
+                      "End",
+                      Array.from(
+                        {
+                          length: Math.max(
+                            10,
+                            ...analysisGames.map((g) => g.scheduledEnds),
+                            ...all.map((s) => s.end),
+                          ),
+                        },
+                        (_, i) => String(i + 1),
+                      ),
+                    ],
+                    ["hammer", "Hammer before end", ["with", "without"]],
+                    [
+                      "margin",
+                      "Score difference before end",
+                      ["4", "3", "2", "1", "0", "-1", "-2", "-3", "-4"],
+                    ],
+                  ] as const
+                ).map(([key, label, options]) => (
+                  <label key={key}>
+                    {label}
+                    <select
+                      value={shotFilters[key]}
+                      onChange={(e) =>
+                        setShotFilters((current) => ({
+                          ...current,
+                          [key]: e.target.value,
+                        }))
+                      }
+                    >
+                      <option value="all">All</option>
+                      {options.map((value) => (
+                        <option key={value} value={value}>
+                          {key === "margin"
+                            ? Number(value) === 0
+                              ? "Tied"
+                              : (Number(value) > 0 ? "Up " : "Down ") +
+                                Math.abs(Number(value)) +
+                                (Math.abs(Number(value)) === 4 ? "+" : "")
+                            : value}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                ))}
+                <button
+                  onClick={() => {
+                    setShotFilters(defaultShotFilters);
+                    setCompetitionLevel("all");
+                  }}
+                >
+                  Reset more filters
+                </button>
+              </div>
+              {view === "Analysis" &&
+                analysisTab === "flagged" &&
+                Object.values(shotFilters).some(
+                  (filter) => filter !== "all",
+                ) && (
+                  <p className="score-stat-caption">
+                    Shot details filter charted attempts. Standalone video flags
+                    stay visible.
+                  </p>
+                )}
+              {view !== "Analysis" && (
+                <p className="score-stat-caption">
+                  Shot filters use the score and hammer at the start of the end.
+                  Unknown situations are excluded when filtered.
+                </p>
+              )}
+            </details>
+          )}
+        </header>
+        <p
+          role="status"
+          aria-live="polite"
+          className={error || statsError ? "coach-save-error" : "sr-only"}
+        >
+          {statistics && !statsReady && !error
+            ? statsError || "Loading season statistics…"
+            : busy
+              ? "Loading event…"
+              : error || statsError}
+        </p>
+        {!open ? (
+          <form className="event-card" action={unlock}>
+            <h2>Unlock your local session</h2>
+            <label>
+              Local lab key
+              <input type="password" name="key" required autoComplete="off" />
+            </label>
+            <button disabled={busy}>Unlock lab</button>
+          </form>
+        ) : view === "Options" ? (
+          mode === "lab" ? (
+            <MetricsOptions />
+          ) : (
+            <a href="/account?section=shot-tracker">
+              Open Shot Tracker options in Account &amp; Settings
+            </a>
+          )
+        ) : !event || (eventId && event.id !== eventId) ? (
+          <section className="event-card">
+            <h2>{error ? "Event data is unavailable" : "Loading event…"}</h2>
+            {view === "Charting" && data && gamePicker}
+            {error && (
+              <>
+                <p>{error}</p>
+                <p>
+                  {mode === "streamer"
+                    ? "The selected Streamer game is unavailable to this coach."
+                    : "Use Local examples to explore the seven-game Shorty Jenkins workspace."}
+                </p>
+                {mode === "streamer" &&
+                  view === "Charting" &&
+                  gameId &&
+                  !data && (
+                    <a
+                      className="inline-flex min-h-11 items-center underline"
+                      href="/shot-tracker#charting"
+                    >
+                      Choose another game
+                    </a>
+                  )}
+              </>
+            )}
+          </section>
+        ) : (
+          <>
+            {event.source === "sample" && <p>SYNTHETIC EXAMPLE</p>}
+            {view === "Enhanced review" && (
+              <EnhancedReview key={event.id} event={event} />
+            )}
+            {view === "Event reports" &&
+              (mode === "streamer" ? (
+                <EventReportLibrary />
+              ) : (
+                <p>
+                  AI reports are available for completed events in a connected
+                  Shot Tracker account.
+                </p>
+              ))}
+            <div hidden={view !== "Charting"}>
+              {game &&
+                (source === "sample" ||
+                  !coachingReadOnlyReason(
+                    game,
+                    event?.games ?? [],
+                    scheduleNow,
+                  )) &&
+                (!!game.state.lineupEvents?.length ||
+                  !!game.state.events.length) && (
+                  <ScoringWakeLock active={open && view === "Charting"} />
+                )}
+            </div>
+
+            <div hidden={view !== "Charting"}>
+              {game ? (
+                <CoachLab
+                  key={`${source}:${event.id}:${game.id}`}
+                  unlocked
+                  gamePicker={gamePicker}
+                  resume={drafts.current.get(
+                    resumeId({ source, eventId: event.id, gameId: game.id }),
+                  )}
+                  onResume={(value) => retainDraft(value)}
+                  onTrackingProgress={(value) =>
+                    retainDraft(value, true, value.stateRevision)
+                  }
+                  context={{
+                    source,
+                    label: `${game.label} · ${game.teamName} vs ${game.opponent}`,
+                    eventId: event.id,
+                    gameId: game.id,
+                    readOnlyReason:
+                      source === "streamer"
+                        ? coachingReadOnlyReason(game, event.games, scheduleNow)
+                        : null,
+                    roster: game.roster ?? game.state.roster,
+                    initialState: game.state,
+                    broadcastReview: game.broadcastReview,
+                    reviewCorrections: game.reviewCorrections,
+                    standaloneReviews: game.standaloneReviews,
+                    onSaved: saved,
+                    onReviewSaved: () => {
+                      chartingContextChanged.current = true;
+                      void refresh(undefined, false);
+                    },
+                  }}
+                />
+              ) : (
+                <section className="event-card">
+                  {gameId ? (
+                    <>
+                      <h2>Linked game unavailable</h2>
+                      <p>Choose another game to continue.</p>
+                    </>
+                  ) : (
+                    <p>No games in this event.</p>
+                  )}
+                  {gamePicker}
+                </section>
+              )}
+            </div>
+
+            {statistics && !statsReady ? (
+              <section className="event-card" role="status">
+                {statsError || "Loading analysis�"}
+              </section>
+            ) : (
+              statistics && (
+                <>
+                  {view === "Analysis" ? (
+                    analysisTab === "flagged" ? (
+                      <div
+                        id="analysis-report"
+                        role="tabpanel"
+                        aria-labelledby="analysis-tab-flagged"
+                      >
+                        <FlaggedShots
+                          shots={selected}
+                          games={analysisGames}
+                          players={analysisPlayers}
+                          playerId={player}
+                          canSave={mode === "streamer"}
+                          onSaved={() => refresh()}
+                        />
+                      </div>
+                    ) : analysisTab === "events" ? (
+                      <div
+                        id="analysis-report"
+                        role="tabpanel"
+                        aria-labelledby="analysis-tab-events"
+                      >
+                        {seasonReady && statsData ? (
+                          <EventPerformance
+                            workspace={statsData}
+                            playerId={player === "all" ? undefined : player}
+                          />
+                        ) : (
+                          <p role="status">
+                            {statsError || "Loading season trends…"}
+                          </p>
+                        )}
+                      </div>
+                    ) : (
+                      <>
+                        {analysisTab === "advanced" &&
+                          !seasonReady &&
+                          !statsError && (
+                            <section className="event-card" role="status">
+                              Loading advanced analysis…
+                            </section>
+                          )}
+                        <div
+                          hidden={
+                            analysisTab === "advanced" &&
+                            !seasonReady &&
+                            !statsError
+                          }
+                        >
+                          <AnalysisDashboard
+                            baselineMetrics={
+                              seasonReady && statsData ? (
+                                <BaselineMetrics
+                                  workspace={statsData}
+                                  playerId={
+                                    player === "all" ? undefined : player
+                                  }
+                                  eventId={selectedEvent}
+                                  gameId={analysisGame}
+                                />
+                              ) : undefined
+                            }
+                            shots={selected}
+                            games={analysisGames}
+                            players={analysisPlayers}
+                            tab={analysisTab}
+                            onTabChange={changeAnalysisTab}
+                          />
+                        </div>
+                      </>
+                    )
+                  ) : (
+                    <AnalysisPanels
+                      key={view}
+                      mode="game"
+                      shots={selected}
+                      games={analysisGames}
+                      players={analysisPlayers}
+                      catalog={analysisData?.catalog ?? []}
+                      seasonShots={filterAnalysisShots(
+                        difficultyEventShots({
+                          ...event,
+                          games: seasonReady
+                            ? (statsData?.event.games.filter(
+                                (g) =>
+                                  competitionLevel === "all" ||
+                                  (g.competitionLevel ?? "unrecorded") ===
+                                    competitionLevel,
+                              ) ?? [])
+                            : [],
+                        }).filter(
+                          (s) => player === "all" || s.playerId === player,
+                        ),
+                        seasonReady
+                          ? (statsData?.event.games.filter(
+                              (g) =>
+                                competitionLevel === "all" ||
+                                (g.competitionLevel ?? "unrecorded") ===
+                                  competitionLevel,
+                            ) ?? [])
+                          : [],
+                        shotFilters,
+                      )}
+                      seasonReady={seasonReady}
+                      byEvent={selectedEvent === "all"}
+                    />
+                  )}
+                  {view === "Game analysis" && (
+                    <>
+                      <p className="score-stat-caption">
+                        Game outcomes below describe the whole team across the
+                        selected games. Player and More filters apply to
+                        shooting analysis above.
+                      </p>
+                      <Scoreboard
+                        event={{ ...event, games: analysisGames }}
+                        singleGame={analysisGame !== "all"}
+                      />
+                    </>
+                  )}
+                </>
+              )
+            )}
+          </>
+        )}
+      </main>
+    </div>
+  );
+}

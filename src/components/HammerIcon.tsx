@@ -15,15 +15,12 @@ export function HammerIcon({
       focusable="false"
       className={`${compact ? "h-5 w-5" : "h-7 w-7"} shrink-0 drop-shadow-sm`}
     >
-      <circle cx="16" cy="16" r="15" className="fill-amber-300" />
-      <path
-        d="M5.25 7.25h8.1l4.15 4.15-3.1 3.1-2.25-2.25-7.3 7.3a2.35 2.35 0 0 0 0 3.3l.3.3a2.35 2.35 0 0 0 3.3 0l7.3-7.3L18 18.1l3.1-3.1-7.75-7.75h-8.1Z"
-        className="fill-slate-950"
-      />
-      <path
-        d="m17.4 10.55 2.85-2.85 6.5 6.5-2.85 2.85Z"
-        className="fill-slate-950"
-      />
+      <g transform="rotate(35 16 16)" stroke="#172435" strokeWidth="1.4">
+        <rect x="13" y="12" width="6" height="18" rx="2" fill="#c68a42" />
+        <rect x="4" y="3" width="24" height="12" rx="3" fill="#e2e8ee" />
+        <path d="M9 4v10M23 4v10" stroke="#8294a5" />
+        <path d="M11 6h10" stroke="white" strokeWidth="2" />
+      </g>
     </svg>
   );
 }

@@ -357,7 +357,9 @@ test("rock colour choices and an unlisted YouTube reservation are saved", async 
   await expect(
     page.getByRole("combobox", { name: "Opponent", exact: true }),
   ).toBeDisabled();
-  await expect(page.getByRole("alert")).toContainText("Try again shortly.");
+  await expect(
+    page.getByRole("alert").filter({ hasText: "Try again shortly." }),
+  ).toBeVisible();
   expect(payloads).toHaveLength(1);
   expect(payloads[0]).toMatchObject({
     operation: "createGame",

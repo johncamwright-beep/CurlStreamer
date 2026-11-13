@@ -4,7 +4,6 @@ import type {
   ScheduledGameRecord,
 } from "@/lib/team-hierarchy-data";
 
-export type GamesTab = "upcoming" | "events" | "single" | "past" | "unfinished";
 export function groupGames(
   games: ScheduledGameRecord[],
   events: EventRecord[],

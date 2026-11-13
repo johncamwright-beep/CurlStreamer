@@ -6,16 +6,22 @@ import { getAccountContext } from "@/lib/auth/account";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { AccountServiceUnavailable } from "@/components/AccountServiceUnavailable";
 import { loadTeamHierarchyData } from "@/lib/team-hierarchy-data";
-import type { GamesTab } from "@/lib/game-hub";
 import { loadDashboardBroadcasts } from "@/lib/dashboard-broadcasts";
 import { GamesDashboard } from "./GamesDashboard";
+import { parseGameSearch, parseGameView } from "./dashboard-query";
 import "./dashboard.css";
 import { readSetupProgress } from "@/lib/onboarding";
 
 export default async function GamesPage({
   searchParams,
 }: {
-  searchParams: Promise<{ tab?: string; season?: string; event?: string }>;
+  searchParams: Promise<{
+    tab?: string;
+    season?: string;
+    event?: string;
+    sort?: string;
+    q?: string;
+  }>;
 }) {
   const {
     data: { user },
@@ -43,6 +49,8 @@ export default async function GamesPage({
     tab: requestedTab,
     season: requestedSeason,
     event: requestedEvent,
+    sort: requestedSort,
+    q: requestedSearch,
   } = await searchParams;
   const season =
     hierarchy.seasons.find((s) => s.id === requestedSeason) ??
@@ -50,11 +58,6 @@ export default async function GamesPage({
     hierarchy.seasons[0];
   const games = hierarchy.games.filter((g) => g.seasonId === season?.id);
   const events = hierarchy.events.filter((e) => e.seasonId === season?.id);
-  const tab: GamesTab = ["events", "single", "past", "unfinished"].includes(
-    requestedTab ?? "",
-  )
-    ? (requestedTab as GamesTab)
-    : "upcoming";
   const broadcasts = await loadDashboardBroadcasts(
     result.account,
     games.filter((g) => g.status !== "closed").map((g) => g.id),
@@ -75,7 +78,9 @@ export default async function GamesPage({
       events={events}
       seasons={hierarchy.seasons}
       season={season}
-      tab={tab}
+      tab={parseGameView(requestedTab)}
+      sort={requestedSort === "oldest" ? "oldest" : "newest"}
+      search={parseGameSearch(requestedSearch)}
       selectedEvent={requestedEvent}
       broadcasts={broadcasts}
       setupWalkthrough={

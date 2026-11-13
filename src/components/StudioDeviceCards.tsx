@@ -6,6 +6,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { z } from "zod";
 import type { Role, GameState, Layout } from "@/lib/types";
 import { cameraIsShown, toggleCameraLayout } from "@/lib/camera-layout";
+import { AppIcon } from "./AppIcon";
 import { invitationRoles, issueInvitation } from "./GameInvitations";
 import "./studio-devices.css";
 import { StudioOverlay } from "./StudioOverlay";
@@ -112,6 +113,48 @@ export function DeviceCard({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [recoveryMessage, setRecoveryMessage] = useState("");
+  const [cameraAction, setCameraAction] = useState<
+    "connect-camera" | "disconnect-camera"
+  >();
+  const [cameraError, setCameraError] = useState("");
+  async function changeNativeConnection(
+    action: "connect-camera" | "disconnect-camera",
+  ) {
+    if (role === "scorer" || cameraAction || !enabled) return;
+    setCameraAction(action);
+    setCameraError("");
+    try {
+      await cameraInputNativeConnection(id, role, action);
+    } catch (cause) {
+      setCameraError(
+        cause instanceof Error
+          ? cause.message
+          : "Could not change the camera connection. Try again.",
+      );
+    } finally {
+      setCameraAction(undefined);
+    }
+  }
+  const visibilityButton = onVisibility && shown !== undefined && (
+    <button
+      type="button"
+      className="studio-device-visibility"
+      aria-label={`Show ${label} in broadcast`}
+      aria-pressed={shown}
+      title={`${shown ? "Hide" : "Show"} ${label} in broadcast`}
+      disabled={layoutBusy || !enabled}
+      onClick={async () => {
+        setCameraError("");
+        try {
+          await onVisibility();
+        } catch {
+          setCameraError("Could not change the broadcast picture. Try again.");
+        }
+      }}
+    >
+      <AppIcon name={shown ? "eye" : "eye-off"} />
+    </button>
+  );
   async function reconnectCamera() {
     if (
       busy ||
@@ -303,12 +346,29 @@ export function DeviceCard({
               : "Ready to connect";
   const ipCamera = cameraInput && cameraInput.kind !== "phone";
   const sourceLabel = cameraInput?.kind === "tapo" ? "Tapo" : "IP camera";
+  const supportsConnection = cameraInput?.connectionEnabled !== undefined;
   const connectionEnabled =
     cameraInput?.connectionEnabled ??
     // Older Studios automatically connect configured IP sources and do not
     // accept the explicit Connect command introduced with connectionEnabled.
     Boolean(cameraInput?.configured);
-  if (!scorer && ipCamera)
+  const receivingIpVideo =
+    connectionEnabled &&
+    cameraInput?.phase === "streaming" &&
+    connectionStatus?.videoReceiving === true;
+  if (!scorer && ipCamera) {
+    let ipStatus = "Connecting…";
+    if (cameraAction === "disconnect-camera") ipStatus = "Disconnecting…";
+    else if (!connectionEnabled && !cameraAction) ipStatus = "Ready to connect";
+    else if (cameraInput.phase === "streaming")
+      ipStatus =
+        shown === false
+          ? "Video ready · Hidden"
+          : receivingIpVideo
+            ? "Receiving video"
+            : "Connected · Waiting for preview";
+    else if (cameraInput.phase === "retrying") ipStatus = "Retrying…";
+    else if (cameraInput.phase === "failed") ipStatus = "Connection failed";
     return (
       <section
         className="studio-device studio-camera-device"
@@ -320,28 +380,23 @@ export function DeviceCard({
           </span>
           <div>
             <h2>{label}</h2>
-            <button
-              type="button"
-              className="studio-camera-health-trigger"
-              disabled={!cameraInput.health}
-              onClick={() => setHealthOpen(true)}
-              aria-label={`${label} connection details`}
-            >
-              <span
-                className="studio-device-state"
-                role="status"
-                data-online={Boolean(connectionStatus?.videoReceiving)}
-              >
-                {!connectionEnabled
-                  ? "Ready to connect"
-                  : connectionStatus?.videoReceiving
-                    ? "Receiving video"
-                    : cameraInput.phase === "streaming"
-                      ? `${sourceLabel} connected · Waiting for program video`
-                      : `${sourceLabel} · ${cameraInput.phase}`}
-              </span>
-            </button>
           </div>
+          {visibilityButton}
+          <button
+            type="button"
+            className="studio-camera-health-trigger"
+            disabled={!cameraInput.health || !connectionEnabled}
+            onClick={() => setHealthOpen(true)}
+            aria-label={`${label} connection details`}
+          >
+            <span
+              className="studio-device-state"
+              role="status"
+              data-online={receivingIpVideo}
+            >
+              {ipStatus}
+            </span>
+          </button>
           {onAudio && (
             <label className="studio-device-mic-volume">
               Mic volume
@@ -415,7 +470,11 @@ export function DeviceCard({
               {cameraInput.health.decodeErrors}. Last frame processing:{" "}
               {Math.round(cameraInput.health.processingMs)} ms.
             </p>
-            <p>RTSP over TCP. Packet loss is not measured by these counters.</p>
+            {cameraInput.health.native?.transport && (
+              <p>
+                RTSP over {cameraInput.health.native.transport.toUpperCase()}.
+              </p>
+            )}
           </StudioOverlay>
         )}
         <p>
@@ -425,19 +484,21 @@ export function DeviceCard({
         </p>
         <StudioStatusMessage
           message={
-            cameraInput.errorCode
-              ? `${label}: ${
-                  cameraInput.errorCode === "auth_failed"
-                    ? "Camera Account rejected. Check the local username and password in Settings."
-                    : cameraInput.errorCode === "runtime_missing"
-                      ? "This Studio installation needs its IP camera runtime. Check the installation."
-                      : cameraInput.phase === "retrying"
-                        ? "Waiting for camera video. Retrying automatically…"
-                        : cameraInput.errorCode === "stale_frames"
-                          ? "Camera video stopped. Reconnect or check its connection."
-                          : "Camera could not connect. Check its network connection, address and RTSP access in Settings."
-                }`
-              : null
+            !supportsConnection
+              ? `${label}: Update Windows Studio to control this camera’s connection.`
+              : cameraInput.errorCode
+                ? `${label}: ${
+                    cameraInput.errorCode === "auth_failed"
+                      ? "Camera Account rejected. Check the local username and password in Settings."
+                      : cameraInput.errorCode === "runtime_missing"
+                        ? "This Studio installation needs its IP camera runtime. Check the installation."
+                        : cameraInput.phase === "retrying"
+                          ? "Waiting for camera video. Retrying automatically…"
+                          : cameraInput.errorCode === "stale_frames"
+                            ? "Camera video stopped. Check its connection, then disconnect and connect again."
+                            : "Camera could not connect. Check its network connection, address and RTSP access in Settings."
+                  }`
+                : null
           }
         />
         <div className="studio-device-primary-actions">
@@ -472,57 +533,30 @@ export function DeviceCard({
           >
             Settings
           </button>
-          {onVisibility && (
+          {supportsConnection && (
             <button
-              className="studio-device-action secondary studio-device-visibility"
-              aria-pressed={
-                connectionEnabled && connectionStatus?.videoReceiving
-                  ? shown
-                  : undefined
+              type="button"
+              className="studio-device-action secondary studio-device-connection"
+              disabled={Boolean(cameraAction) || !enabled}
+              onClick={() =>
+                changeNativeConnection(
+                  connectionEnabled ? "disconnect-camera" : "connect-camera",
+                )
               }
-              disabled={busy || layoutBusy || !enabled}
-              onClick={async () => {
-                setBusy(true);
-                setError("");
-                try {
-                  if (connectionEnabled && !connectionStatus?.videoReceiving) {
-                    cameraInputNativeAction(id, role, "reconnect-camera");
-                    return;
-                  }
-                  if (!connectionEnabled)
-                    await cameraInputNativeConnection(
-                      id,
-                      role,
-                      "connect-camera",
-                    );
-                  if (connectionEnabled || !shown) await onVisibility();
-                } catch (cause) {
-                  setError(
-                    !connectionEnabled && cause instanceof Error
-                      ? cause.message
-                      : "Could not change the broadcast picture. Try again.",
-                  );
-                } finally {
-                  setBusy(false);
-                }
-              }}
             >
-              {!connectionEnabled
-                ? "Connect"
-                : !connectionStatus?.videoReceiving
-                  ? "Reconnect"
-                  : shown
-                    ? "Hide"
-                    : "Show"}
+              {connectionEnabled || cameraAction ? "Disconnect" : "Connect"}
             </button>
           )}
         </div>
         <StudioStatusMessage
           role="alert"
-          message={error ? `${label}: ${error}` : null}
+          message={
+            cameraError || error ? `${label}: ${cameraError || error}` : null
+          }
         />
       </section>
     );
+  }
   return (
     <section
       className={
@@ -546,6 +580,7 @@ export function DeviceCard({
             {stateLabel}
           </p>
         </div>
+        {!scorer && visibilityButton}
         {!scorer && onAudio && claimed && (
           <label className="studio-device-mic-volume">
             Mic volume
@@ -631,62 +666,30 @@ export function DeviceCard({
               Settings
             </button>
           )}
-          {!scorer && onVisibility && (
+          {onVisibility && !online && (
             <button
-              className="studio-device-action secondary studio-device-visibility"
-              aria-pressed={!claimed || !online ? undefined : shown}
-              disabled={busy || layoutBusy || !enabled}
+              type="button"
+              className="studio-device-action secondary studio-device-connection"
+              disabled={busy || Boolean(cameraAction) || !enabled}
               onClick={async () => {
-                if (!claimed) {
-                  if (!cameraInput) {
-                    setSettingsOpen(true);
-                    return;
-                  }
-                  setBusy(true);
-                  setError("");
-                  try {
-                    await cameraInputNativeConnection(
-                      id,
-                      role,
-                      "connect-camera",
-                    );
-                    if (!shown) await onVisibility();
-                  } catch (cause) {
-                    setError(
-                      cause instanceof Error
-                        ? cause.message
-                        : "Could not connect the camera.",
-                    );
-                  } finally {
-                    setBusy(false);
-                  }
-                  return;
-                }
-                if (claimed && !online) {
+                if (claimed) {
                   await reconnectCamera();
-                  return;
-                }
-                setError("");
-                try {
-                  await onVisibility();
-                } catch {
-                  setError(
-                    "Could not change the broadcast picture. Try again.",
-                  );
+                } else if (cameraInput) {
+                  await changeNativeConnection("connect-camera");
+                } else {
+                  setSettingsOpen(true);
                 }
               }}
             >
-              {!claimed
-                ? "Connect"
-                : !online
-                  ? "Reconnect"
-                  : shown
-                    ? "Hide"
-                    : "Show"}
+              {claimed ? "Reconnect" : "Connect"}
             </button>
           )}
         </div>
       )}
+      <StudioStatusMessage
+        role="alert"
+        message={cameraError ? `${label}: ${cameraError}` : null}
+      />
       <DeviceOptions
         overlay={!scorer && Boolean(onVisibility)}
         title={`${label} settings`}
@@ -1049,7 +1052,7 @@ export function StudioDeviceCards({
           id={id}
           role={role}
           label={role === "scorer" ? "Remote scorer" : label}
-          cameraInput={cameraInputs[role]}
+          cameraInput={role === "scorer" ? undefined : cameraInputs[role]}
           claimed={Boolean(claims[role])}
           enabled={enabled}
           onChanged={onChanged}

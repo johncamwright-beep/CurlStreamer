@@ -864,9 +864,6 @@
 .studio-device-connect {
   order: 1;
 }
-.studio-device-visibility {
-  order: 2;
-}
 .studio-device-release {
   order: 3;
 }
@@ -1049,12 +1046,6 @@
   font-size: 12px;
   margin-right: 8px;
 }
-.studio-device-camera-header .studio-device-state {
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
 /* Game-day cockpit: fixed sections, with expanded tools in modal overlays. */
 .scoring-desktop .scoring-preview-panel {
   position: relative;
@@ -1183,15 +1174,6 @@
 }
 .scoring-desktop .scoring-device-dock {
   margin-top: 0;
-}
-.scoring-desktop
-  .studio-device.studio-camera-device
-  > .studio-device-camera-header {
-  grid-template-columns: auto minmax(0, 1fr);
-}
-.scoring-desktop .studio-device-mic-volume {
-  grid-column: 1 / -1;
-  width: 100%;
 }
 .scoring-desktop .studio-camera-device {
   min-height: 198px;
@@ -1331,8 +1313,6 @@
 .studio-camera-health-trigger {
   display: block;
   width: 100%;
-  min-height: 44px;
-  text-align: left;
   font-size: 12px;
 }
 .studio-camera-health-trigger .studio-device-state {
@@ -1676,12 +1656,11 @@
     gap: 4px;
   }
   .scoring-desktop .studio-device-primary-actions > button {
-    height: 44px;
+    height: auto;
     min-height: 44px !important;
     padding: 4px !important;
     font-size: 12px;
-    white-space: nowrap;
-    overflow-wrap: normal;
+    white-space: normal;
   }
   .scoring-desktop .studio-device-grid {
     gap: 8px;

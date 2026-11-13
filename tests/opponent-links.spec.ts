@@ -15,15 +15,12 @@ test.beforeEach(async ({ page }) => {
   await expect(
     page.getByRole("heading", { name: "Games", exact: true }),
   ).toBeVisible();
-  await page.goto("/games/new");
-  await expect(
-    page.getByRole("heading", { name: "Schedule a game", exact: true }),
-  ).toBeVisible();
 });
 
-test("creates a linked opponent and saves its shared YouTube watch link", async ({
+test("creates a linked opponent from the opponent directory", async ({
   page,
 }) => {
+  await page.goto("/opponents");
   const opponentRequests: Record<string, unknown>[] = [];
   await page.route("**/api/opponent-profiles**", async (route) => {
     const request = route.request();
@@ -56,7 +53,7 @@ test("creates a linked opponent and saves its shared YouTube watch link", async 
     await route.fulfill({ json: { profile: null } });
   });
 
-  await page.getByLabel("Team 2 — Opponent", { exact: true }).fill("Northern");
+  await page.getByLabel("Search opponents", { exact: true }).fill("Northern");
   await page
     .getByRole("button", { name: "Find a team on CurlStreamer" })
     .click();
@@ -67,23 +64,31 @@ test("creates a linked opponent and saves its shared YouTube watch link", async 
   await page
     .getByRole("button", { name: "Use opponent: Northern Lights" })
     .click();
-  await expect(
-    page.getByLabel("Team 2 — Opponent", { exact: true }),
-  ).toHaveValue("Northern Lights");
+  await expect(page.getByRole("status")).toContainText(
+    "Opponent linked to this team profile.",
+  );
   expect(opponentRequests).toEqual([
     {
       profileId: "99999999-9999-4999-8999-999999999999",
     },
   ]);
+});
 
+test("saves a shared YouTube watch link without making a reservation", async ({
+  page,
+}) => {
+  await page.goto("/games/new");
+  await page
+    .getByRole("combobox", { name: "Opponent", exact: true })
+    .fill("Wright");
+  await page.getByRole("option", { name: "Team Wright", exact: true }).click();
   await page.locator('input[name="scheduledDate"]').fill("2026-10-20");
   await page.locator('input[name="scheduledTime"]').fill("18:30");
+  await expect(
+    page.getByRole("switch", { name: "YouTube streaming" }),
+  ).not.toBeChecked();
   await page
-    .locator("summary")
-    .filter({ hasText: /^Streaming/ })
-    .click();
-  await page
-    .getByLabel("Shared YouTube watch link (optional)")
+    .getByLabel("Paste the YouTube link", { exact: true })
     .fill("https://youtu.be/abcdefghijk");
 
   const schedules: Record<string, unknown>[] = [];
@@ -102,7 +107,7 @@ test("creates a linked opponent and saves its shared YouTube watch link", async 
   ).toBeVisible();
   expect(schedules).toHaveLength(1);
   expect(schedules[0]).toMatchObject({
-    opponentId: linkedOpponentId,
+    opponentId: "77777777-7777-4777-8777-777777777777",
     config: {
       youtubeEnabled: false,
       sharedYoutubeWatchUrl: "https://youtu.be/abcdefghijk",
@@ -147,15 +152,18 @@ test("links a public profile to an existing saved opponent", async ({
     await route.fulfill({ json: { profile: null } });
   });
 
-  const opponent = page.getByLabel("Team 2 — Opponent", { exact: true });
-  await opponent.fill("Wright");
-  await page.getByRole("option", { name: "Team Wright", exact: true }).click();
-  await page
+  await page.goto("/opponents");
+  const opponent = page
+    .getByRole("listitem")
+    .filter({ hasText: "Team Wright" });
+  await opponent
     .getByRole("button", { name: "Find a team on CurlStreamer" })
     .click();
   await page.getByLabel("Search public team profiles").fill("Wright");
   await page.getByRole("button", { name: "Link profile: Team Wright" }).click();
-  await expect(opponent).toHaveValue("Team Wright");
+  await expect(
+    opponent.getByRole("link", { name: "Linked: Team Wright" }),
+  ).toBeVisible();
   expect(posts).toEqual([
     {
       opponentId: "77777777-7777-4777-8777-777777777777",

@@ -61,20 +61,27 @@ test("Program Preview connects immediately and waits for live output through sta
   const preview = page.locator("#fixture-preview").getByRole("status");
   const controls = page.locator("#studio-broadcast-actions");
   const start = controls.getByRole("button", { name: "Broadcast to YouTube" });
+  const connecting = controls.getByRole("button", {
+    name: "Connecting broadcast…",
+  });
+  const stop = controls.getByRole("button", { name: "Stop broadcast" });
   const pause = controls.getByRole("button", { name: "Pause broadcast" });
   const idle = {
     streaming: "idle",
     outputActive: false,
     canHoldStream: false,
     canReconnect: false,
+    message: "Previous broadcast did not connect.",
   };
   await expect(preview).toHaveText("PREVIEW");
   await report(idle);
   await start.click();
   await expect(preview).toHaveAttribute("data-connecting", "true");
+  await expect(connecting).toBeDisabled();
   await expect(pause).toBeDisabled();
   await report(idle);
   await expect(preview).toHaveAttribute("data-connecting", "true");
+  await expect(connecting).toBeDisabled();
   await page.clock.fastForward(7000);
   await expect(preview).toHaveText("PREVIEW");
   await expect(start).toBeDisabled();
@@ -84,13 +91,17 @@ test("Program Preview connects immediately and waits for live output through sta
   await report({ streaming: "starting", outputActive: false });
   await page.clock.fastForward(7000);
   await expect(preview).toHaveAttribute("data-connecting", "true");
+  await expect(connecting).toBeDisabled();
   await expect(pause).toBeDisabled();
   await report({ live: false, receiving: true, lastLiveAgeMs: 30000 });
   await expect(preview).toHaveAttribute("data-connecting", "true");
+  await expect(connecting).toBeDisabled();
   await report({ live: true, outputActive: false });
   await expect(preview).toHaveAttribute("data-connecting", "true");
+  await expect(connecting).toBeDisabled();
   await report({ live: true, receiving: true });
   await expect(preview).toHaveText("LIVE");
+  await expect(stop).toBeEnabled();
   await expect(pause).toBeEnabled();
 
   await report({ streaming: "paused", outputActive: false });
@@ -98,6 +109,7 @@ test("Program Preview connects immediately and waits for live output through sta
   await controls.getByRole("button", { name: "Restart broadcast" }).click();
   await report({ lastLiveAgeMs: 1000, receiving: true });
   await expect(preview).toHaveAttribute("data-connecting", "true");
+  await expect(connecting).toBeDisabled();
   await report({ live: true, presentation: { mode: "hold" } });
   await expect(preview).toHaveText("LIVE · PAUSED");
   await expect(
@@ -240,10 +252,14 @@ test("Studio authorizes the YouTube transition with the current game's organizer
   });
   await page.goto("/startup-fixture");
   await report();
+  await expect.poll(() => headers.length).toBeGreaterThanOrEqual(2);
+  await expect(
+    page.getByRole("button", { name: "Connecting broadcast…" }),
+  ).toBeDisabled();
+  await report({ live: true });
   await expect(
     page.getByRole("button", { name: "Stop broadcast", exact: true }),
   ).toBeEnabled();
-  await expect.poll(() => headers.length).toBeGreaterThanOrEqual(2);
   expect(headers.every((value) => value?.startsWith("Bearer fixture."))).toBe(
     true,
   );
@@ -263,9 +279,9 @@ test("Studio starts now despite delayed reception telemetry and retries without 
     const status =
       requests.length === 1
         ? 409
-        : requests.length === 2
+        : requests.length < 4
           ? 503
-          : requests.length === 3
+          : requests.length === 4
             ? 403
             : 200;
     return r.fulfill({
@@ -278,15 +294,17 @@ test("Studio starts now despite delayed reception telemetry and retries without 
   });
   await page.clock.install();
   await page.goto("/startup-fixture");
-  const broadcast = page.getByRole("button", {
-    name: "Broadcast to YouTube",
+  const connecting = page.getByRole("button", {
+    name: "Connecting broadcast…",
+    exact: true,
+  });
+  const retry = page.getByRole("button", {
+    name: "Retry broadcast",
     exact: true,
   });
   await report({ outputActive: false });
   expect(requests).toHaveLength(0);
-  await expect(
-    page.getByRole("button", { name: "Starting broadcast…" }),
-  ).toBeDisabled();
+  await expect(connecting).toBeDisabled();
   await expect(
     page.getByRole("button", { name: "Pause broadcast" }),
   ).toBeDisabled();
@@ -294,17 +312,26 @@ test("Studio starts now despite delayed reception telemetry and retries without 
   // verifies YouTube reception before it requests a live transition.
   await report();
   await expect(page.getByRole("alert")).toContainText("Retrying automatically");
+  await expect(connecting).toBeDisabled();
   await page.clock.fastForward(11000);
   await report();
   await expect.poll(() => requests.length).toBe(2);
-  await expect(broadcast).toBeEnabled();
-  await broadcast.click();
+  await expect(connecting).toBeDisabled();
+  await page.clock.fastForward(21000);
+  await report();
+  await expect(page.getByRole("alert")).toContainText(
+    "Studio will keep trying",
+  );
+  await expect(retry).toBeEnabled();
+  await page.clock.fastForward(41000);
+  await report();
   await expect(page.getByRole("alert")).toContainText("needs attention");
   await page.clock.fastForward(60000);
   await report();
-  expect(requests).toHaveLength(3);
-  await broadcast.click();
-  await expect.poll(() => requests.length).toBe(4);
+  expect(requests).toHaveLength(4);
+  await retry.click();
+  await expect.poll(() => requests.length).toBe(5);
+  await expect(connecting).toBeDisabled();
   await expect(page.getByRole("alert")).toHaveCount(0);
   await expect(
     page.getByText("Starting this broadcast now.", { exact: false }),
@@ -315,11 +342,11 @@ test("Studio starts now despite delayed reception telemetry and retries without 
   await expect(
     page.getByRole("button", { name: "Stop broadcast" }),
   ).toBeEnabled();
-  await expect(broadcast).toHaveCount(0);
+  await expect(connecting).toHaveCount(0);
   await expect(
     page.getByRole("link", { name: "Watch on YouTube" }),
   ).toHaveAttribute("href", watchUrl);
-  expect(requests).toEqual(Array(4).fill({ action: "go-live" }));
+  expect(requests).toEqual(Array(5).fill({ action: "go-live" }));
   expect(
     await page.evaluate(() => (window as unknown as { sent: unknown[] }).sent),
   ).toEqual([]);
@@ -346,7 +373,7 @@ test("Late go-live failures cannot overwrite confirmed live status or a differen
   await report();
   await expect.poll(() => requests).toBe(1);
   await expect(
-    page.getByRole("button", { name: "Starting broadcast…" }),
+    page.getByRole("button", { name: "Connecting broadcast…" }),
   ).toBeDisabled();
   await expect(
     page.getByRole("button", { name: "Pause broadcast" }),
@@ -604,7 +631,7 @@ test("Studio YouTube sends game-scoped commands and expires live status", async 
               receiving,
               message: "",
               canReconnect: true,
-              outputActive: false,
+              outputActive: live,
             },
           }),
         ),
@@ -621,7 +648,9 @@ test("Studio YouTube sends game-scoped commands and expires live status", async 
   await report("fixture-game", false, true);
   await expect.poll(() => requests.length).toBe(1);
   expect(requests).toEqual([{ action: "go-live" }]);
-  await expect(start).toBeEnabled();
+  await expect(
+    page.getByRole("button", { name: "Connecting broadcast…" }),
+  ).toBeDisabled();
   await expect(
     page.getByRole("button", { name: "Disconnect", exact: true }),
   ).toBeDisabled();
@@ -787,7 +816,7 @@ test("Studio YouTube sends game-scoped commands and expires live status", async 
   ).toBeVisible();
   await recover.click();
   await expect(
-    page.getByRole("button", { name: "Please wait…" }),
+    page.getByRole("button", { name: "Connecting broadcast…" }),
   ).toBeDisabled();
   expect(
     await page.evaluate(() =>
@@ -809,6 +838,7 @@ test("Studio YouTube sends game-scoped commands and expires live status", async 
           streaming: "armed",
           live: true,
           receiving: true,
+          outputActive: true,
           message: "",
         },
       }),

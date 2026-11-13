@@ -16,41 +16,43 @@ test.beforeEach(async ({ page }) => {
     page.getByRole("heading", { name: "Games", exact: true }),
   ).toBeVisible();
 });
-test("dashboard separates reported broadcasts, upcoming games and unfinished games", async ({
+test("dashboard shows each game once by default and filters unfinished games", async ({
   page,
 }, info) => {
   await expect(
     page.getByRole("heading", { name: "Games", exact: true }),
   ).toBeVisible();
+  const view = page.getByLabel("Games view");
+  await expect(view).toHaveValue("all");
+  const rows = page.locator(".dashboard-game-card");
+  await expect(rows).toHaveCount(8);
+  await expect(page.locator(".dashboard-game-count")).toHaveText("8 games");
+  const broadcast = rows.filter({ hasText: "Broadcast opponent" });
+  await expect(broadcast).toHaveCount(1);
+  await expect(broadcast.getByText("YouTube · reported live")).toBeVisible();
   await expect(
-    page.getByRole("heading", { name: "Broadcast activity" }),
-  ).toBeVisible();
-  await expect(page.getByText("YouTube · reported live")).toBeVisible();
-  await expect(
-    page.getByRole("link", { name: /Watch on YouTube/ }),
+    broadcast.getByRole("link", { name: /Watch on YouTube/ }),
   ).toHaveAttribute("href", "https://www.youtube.com/watch?v=liveabcdefgh");
   await expect(
-    page
-      .locator(".dashboard-media-actions")
-      .filter({ has: page.getByRole("link", { name: /Watch on YouTube/ }) })
-      .getByRole("link", { name: /^Shot Tracker:/ }),
+    broadcast.getByRole("link", { name: /^ShotTracker\b/ }),
   ).toHaveAttribute(
     "href",
     "/shot-tracker?source=streamer&event=standalone&game=66666666-6666-4666-8666-000000000008#charting",
   );
-  await expect(page.getByRole("link", { name: /^Unfinished/ })).toBeVisible();
   await expect(
     page.getByRole("link", { name: /^Open Game:.*Team Benning/ }),
   ).toBeVisible();
-  await page.getByRole("link", { name: /^Unfinished/ }).click();
   await expect(
-    page.getByRole("heading", { name: "Unfinished games", exact: true }),
+    page.getByRole("link", { name: "Team Gushue game details" }),
   ).toBeVisible();
+  await view.selectOption("unfinished");
+  await expect(page).toHaveURL(/tab=unfinished/);
   await expect(page.getByText("Team Epping", { exact: true })).toBeVisible();
   await expect(page.getByText("Opponent TBD", { exact: true })).toBeVisible();
   await expect(
     page.getByRole("link", { name: /^Open Game:.*TBD/ }),
   ).toBeVisible();
+  await expect(page.getByText("Team Benning", { exact: true })).toHaveCount(0);
   await page.screenshot({
     path: info.outputPath(`dashboard-unfinished-${info.project.name}.png`),
     fullPage: true,
@@ -59,10 +61,7 @@ test("dashboard separates reported broadcasts, upcoming games and unfinished gam
 test("results distinguish no-result and historical closure and retain safe replay links", async ({
   page,
 }, info) => {
-  await page
-    .getByRole("navigation", { name: "Browse games" })
-    .getByRole("link", { name: /^Results/ })
-    .click();
+  await page.getByLabel("Games view").selectOption("past");
   await expect(
     page.getByLabel("Northern Ontario Curling Club final score: 7"),
   ).toHaveText("7");
@@ -70,9 +69,10 @@ test("results distinguish no-result and historical closure and retain safe repla
   await expect(
     page.getByText("Closed · no final result", { exact: true }),
   ).toBeVisible();
-  await expect(
-    page.getByRole("link", { name: /Watch replay/ }),
-  ).toHaveAttribute("href", "https://www.youtube.com/watch?v=abcdefghijk");
+  await expect(page.getByRole("link", { name: /^Replay\b/ })).toHaveAttribute(
+    "href",
+    "https://www.youtube.com/watch?v=abcdefghijk",
+  );
   await page.screenshot({
     path: info.outputPath(`dashboard-results-${info.project.name}.png`),
     fullPage: true,
@@ -80,7 +80,6 @@ test("results distinguish no-result and historical closure and retain safe repla
   await page
     .getByLabel("Choose season")
     .selectOption("44444444-4444-4444-8444-444444444444");
-  await page.getByRole("button", { name: "View season" }).click();
   await expect(
     page.getByText("Last season opponent", { exact: true }),
   ).toBeVisible();
@@ -89,11 +88,11 @@ test("results distinguish no-result and historical closure and retain safe repla
 
 test("reopens a completed game from its More actions menu", async ({
   page,
-}) => {
-  await page
-    .getByRole("navigation", { name: "Browse games" })
-    .getByRole("link", { name: /^Results/ })
-    .click();
+}, info) => {
+  if (info.project.name === "desktop")
+    await page.setViewportSize({ width: 1440, height: 960 });
+  await page.getByLabel("Games view").selectOption("past");
+  await expect(page.locator(".dashboard-game-count")).toHaveText("3 games");
   const detailsLink = page.getByRole("link", {
     name: "Team Gushue game details",
   });
@@ -102,14 +101,36 @@ test("reopens a completed game from its More actions menu", async ({
   const card = page
     .locator(".dashboard-game-card")
     .filter({ has: detailsLink });
-  const menu = card.locator("details");
-  const reopen = menu.getByRole("button", {
+  const menu = card.locator("summary");
+  const reopen = card.getByRole("button", {
     name: "Reopen scoring",
     exact: true,
   });
   const dialog = page.getByRole("dialog", { name: "Reopen scoring" });
+  await expect(menu).toHaveAttribute("aria-label", "More actions");
   await expect(reopen).toBeHidden();
-  await menu.getByText("More actions", { exact: true }).click();
+  await menu.focus();
+  await page.keyboard.press("Enter");
+  await expect(reopen).toBeVisible();
+  await expect(card.getByRole("link", { name: "Edit game" })).toHaveAttribute(
+    "href",
+    `/games/${gameId}/edit`,
+  );
+  if (info.project.name === "desktop")
+    await page.screenshot({
+      path: info.outputPath("dashboard-results-menu-desktop.png"),
+      fullPage: true,
+    });
+  await reopen.focus();
+  await page.keyboard.press("Escape");
+  await expect(reopen).toBeHidden();
+  await expect(menu).toBeFocused();
+  await menu.click();
+  const deletion = page.getByRole("dialog", { name: /^Delete game:/i });
+  await card.getByRole("button", { name: "Delete Game", exact: true }).click();
+  await expect(deletion).toBeVisible();
+  await deletion.getByRole("button", { name: "Cancel", exact: true }).click();
+  await expect(deletion).toBeHidden();
   await reopen.click();
   await expect(dialog).toBeVisible();
   await dialog.getByRole("button", { name: "Close", exact: true }).click();
@@ -124,6 +145,7 @@ test("reopens a completed game from its More actions menu", async ({
   await page.route(`**/score/${gameId}`, (route) =>
     route.fulfill({ contentType: "text/html", body: "<h1>Scoring</h1>" }),
   );
+  if (!(await reopen.isVisible())) await menu.click();
   await reopen.click();
   const request = page.waitForRequest(`**/api/games/${gameId}/reopen`);
   await dialog.getByRole("button", { name: "Reopen and continue" }).click();
@@ -138,11 +160,32 @@ test("dashboard fits narrow phones and preserves reachable controls", async ({
   page,
 }, info) => {
   await page.setViewportSize({ width: 320, height: 800 });
+  const heading = page.locator(".dashboard-heading");
+  const teamName = heading.locator(".dashboard-team-title");
+  expect(
+    await teamName.evaluate((element) => {
+      const lineHeight = parseFloat(getComputedStyle(element).lineHeight);
+      return element.getBoundingClientRect().height / lineHeight;
+    }),
+  ).toBeLessThanOrEqual(3.01);
+  const season = await heading.getByLabel("Choose season").boundingBox();
+  const createGame = await heading
+    .getByRole("link", { name: /Create game/ })
+    .boundingBox();
+  expect(
+    season &&
+      createGame &&
+      (season.x + season.width <= createGame.x ||
+        createGame.x + createGame.width <= season.x ||
+        season.y + season.height <= createGame.y ||
+        createGame.y + createGame.height <= season.y),
+  ).toBe(true);
   const cards = page.locator(".dashboard-game-card");
   await expect(cards.first()).toBeVisible();
-  const trackerLinks = cards.getByRole("link", { name: /^Shot Tracker:/ });
+  const trackerLinks = cards.getByRole("link", { name: /^ShotTracker\b/ });
   await expect(trackerLinks).toHaveCount(await cards.count());
   await expect(trackerLinks.first()).toBeVisible();
+  await expect(trackerLinks.first()).toHaveText("ShotTracker");
   expect(
     await cards.evaluateAll((items) =>
       items.some((el) => el.getBoundingClientRect().right > innerWidth),
@@ -152,7 +195,7 @@ test("dashboard fits narrow phones and preserves reachable controls", async ({
     await page
       .locator(".games-dashboard")
       .evaluate((main) =>
-        [...main.querySelectorAll("a,button,select,summary")]
+        [...main.querySelectorAll("a,button,select,summary,input[type=search]")]
           .filter(
             (el) =>
               el.getBoundingClientRect().height > 0 &&
@@ -161,6 +204,18 @@ test("dashboard fits narrow phones and preserves reachable controls", async ({
           .map((el) => el.textContent),
       ),
   ).toEqual([]);
+  const menu = cards.first().locator(".dashboard-more");
+  await menu.locator("summary").click();
+  const menuPanel = menu.locator(".dashboard-more-popover");
+  await expect(menuPanel).toBeVisible();
+  expect(
+    await menuPanel.evaluate((panel) => {
+      const { left, right } = panel.getBoundingClientRect();
+      return left >= 0 && right <= innerWidth;
+    }),
+  ).toBe(true);
+  await menu.locator("summary").click();
+  await expect(menuPanel).toBeHidden();
   await page.screenshot({
     path: info.outputPath(`dashboard-narrow-${info.project.name}.png`),
     fullPage: true,
@@ -202,30 +257,45 @@ test("team walkthrough starts collapsed and stays dismissed after reload", async
   await expect(region).toBeHidden();
 });
 
-test("event filter follows the selected event across game views and resets", async ({
+test("search, chronological sort and tournament filters work together", async ({
   page,
 }) => {
-  const filter = page.getByLabel("Filter by event");
-  await filter.selectOption({ label: "Autumn Club Championship" });
+  const view = page.getByLabel("Games view");
+  const sort = page.getByLabel("Sort games");
+  const search = page.getByLabel("Search teams or events");
+  const rows = page.locator(".dashboard-game-card");
+  await expect(sort).toHaveValue("newest");
+  await search.fill("team");
+  await search.press("Enter");
+  await expect(rows).toHaveCount(4);
+  await expect(page.locator(".dashboard-game-count")).toHaveText("4 games");
+  await expect(rows.first()).toContainText("Team Wright");
+  await sort.selectOption("oldest");
+  await expect(rows.first()).toContainText("Team Gushue");
+  await search.fill("Autumn Club Championship");
+  await search.press("Enter");
+  await expect(rows).toHaveCount(1);
+  await expect(rows.first()).toContainText("Team Wright");
+  await rows
+    .getByRole("link", { name: "Autumn Club Championship", exact: true })
+    .click();
   await expect(page).toHaveURL(/event=55555555/);
+  await expect(search).toHaveValue("");
+  await expect(sort).toHaveValue("oldest");
   await expect(
     page.getByRole("link", { name: /^Open Game:.*Team Wright/ }),
   ).toBeVisible();
   await expect(
     page.getByRole("link", { name: /^Open Game:.*Team Benning/ }),
   ).toHaveCount(0);
-  await page.getByRole("link", { name: /^Results/ }).click();
-  await expect(filter).toHaveValue("55555555-5555-4555-8555-555555555555");
+  await view.selectOption("past");
   await expect(
-    page.getByText("No games match this event in this view.", { exact: false }),
+    page.getByRole("link", { name: "Clear event filter" }),
   ).toBeVisible();
-  await filter.selectOption("");
+  await expect(rows).toHaveCount(0);
+  await page.getByRole("link", { name: "Clear event filter" }).click();
   await expect(page.getByText("Team Gushue", { exact: true })).toBeVisible();
-  await page.getByRole("link", { name: /^Upcoming/ }).click();
-  await expect(
-    page.getByRole("heading", { name: "Upcoming games", exact: true }),
-  ).toBeVisible();
-  await filter.selectOption("single");
+  await view.selectOption("single");
   await expect(
     page.getByRole("link", { name: /^Open Game:.*Team Benning/ }),
   ).toBeVisible();
@@ -291,26 +361,6 @@ async function completionFixture(request: APIRequestContext, days: number) {
   return fixture;
 }
 
-async function dashboardCounts(
-  page: Page,
-  upcoming: number,
-  results: number,
-  unfinished: number,
-) {
-  const browse = page.getByRole("navigation", { name: "Browse games" });
-  for (const [name, count] of [
-    ["Upcoming", upcoming],
-    ["Events", 1],
-    ["Results", results],
-    ["Unfinished", unfinished],
-  ] as const)
-    await expect(
-      browse
-        .getByRole("link", { name: new RegExp(`^${name}`) })
-        .locator("span"),
-    ).toHaveText(String(count));
-}
-
 async function endFixtureGame(page: Page) {
   await page.getByRole("button", { name: "Close Game", exact: true }).click();
   await page.getByRole("button", { name: "Yes", exact: true }).click();
@@ -341,26 +391,13 @@ for (const scenario of [
       await page.goto(
         `/dashboard?season=${fixture.seasonId}&event=${fixture.eventId}&tab=${scenario.tab}`,
       );
-      await dashboardCounts(
-        page,
-        scenario.days > 0 ? 1 : 0,
-        0,
-        scenario.days < 0 ? 1 : 0,
-      );
+      const view = page.getByLabel("Games view");
+      const rows = page.locator(".dashboard-game-card");
+      await expect(rows).toHaveCount(1);
       // Populate the Results route cache before completion as well.
-      await page
-        .getByRole("navigation", { name: "Browse games" })
-        .getByRole("link", { name: /^Results/ })
-        .click();
-      await expect(
-        page.getByRole("heading", { name: "Results will appear here" }),
-      ).toBeVisible();
-      await page
-        .getByRole("navigation", { name: "Browse games" })
-        .getByRole("link", {
-          name: new RegExp(`^${scenario.days > 0 ? "Upcoming" : "Unfinished"}`),
-        })
-        .click();
+      await view.selectOption("past");
+      await expect(rows).toHaveCount(0);
+      await view.selectOption(scenario.tab);
       await expect(page).toHaveURL(new RegExp(`tab=${scenario.tab}`));
       const dashboardURL = page.url();
       await page.evaluate(() =>
@@ -374,10 +411,11 @@ for (const scenario of [
       await endFixtureGame(page);
       await page.goBack();
       await expect(page).toHaveURL(dashboardURL);
-      await dashboardCounts(page, 0, 1, 0);
-      await expect(page.getByLabel("Filter by event")).toHaveValue(
-        fixture.eventId,
-      );
+      await expect(rows).toHaveCount(0);
+      await expect(view).toHaveValue(scenario.tab);
+      await expect(
+        page.getByRole("link", { name: "Clear event filter" }),
+      ).toBeVisible();
       await expect(
         page.getByRole("link", {
           name: /^Open Game:.*Refresh regression opponent/,
@@ -388,24 +426,17 @@ for (const scenario of [
           Object.hasOwn(window, "dashboardRegressionDocument"),
         ),
       ).toBe(true);
-      await page
-        .getByRole("navigation", { name: "Browse games" })
-        .getByRole("link", { name: /^Results/ })
-        .click();
+      await view.selectOption("past");
       await expect(
         page.getByText("Refresh regression opponent", { exact: true }),
       ).toBeVisible();
       await expect(
         page.getByLabel("Northern Ontario Curling Club final score: 6"),
       ).toHaveText("6");
-      await page
-        .getByRole("navigation", { name: "Browse games" })
-        .getByRole("link", { name: /^Events/ })
-        .click();
+      await view.selectOption("events");
       await expect(
         page.getByText("No upcoming games", { exact: true }),
       ).toBeVisible();
-      await dashboardCounts(page, 0, 1, 0);
     } finally {
       await request.delete(fixtureURL, {
         data: { seasonId: fixture.seasonId },
@@ -425,7 +456,6 @@ test("an already open dashboard receives another tab's committed End Game withou
     await page.goto(
       `/dashboard?season=${fixture.seasonId}&event=${fixture.eventId}&tab=events`,
     );
-    await dashboardCounts(page, 1, 0, 0);
     await expect(page.locator(".dashboard-event-next")).toContainText("Next:");
     const dashboardURL = page.url();
     await gamePage.goto(`/games/${fixture.gameId}`);
@@ -438,14 +468,13 @@ test("an already open dashboard receives another tab's committed End Game withou
         reads++;
     });
     await endFixtureGame(gamePage);
-    await dashboardCounts(page, 0, 1, 0);
     await expect(page.locator(".dashboard-event-next")).toHaveText(
       "No upcoming games",
     );
     await expect(page).toHaveURL(dashboardURL);
-    await expect(page.getByLabel("Filter by event")).toHaveValue(
-      fixture.eventId,
-    );
+    await expect(
+      page.getByRole("link", { name: "Clear event filter" }),
+    ).toBeVisible();
     const settledReads = reads;
     await page.waitForTimeout(1500);
     expect(reads).toBe(settledReads);

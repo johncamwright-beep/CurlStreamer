@@ -41,18 +41,14 @@ function render(
       games={games}
       events={[]}
       seasons={[]}
-      tab={
-        games.some((g) => g.status === "completed" || g.status === "closed")
-          ? "past"
-          : "upcoming"
-      }
+      tab="all"
       broadcasts={{ available: false, sessions }}
     />,
   );
 }
 describe("dashboard role controls", () => {
   it.each(["owner", "team_admin"] as const)(
-    "offers completed Edit game to %s beside its inline result",
+    "offers completed Edit game to %s in its action menu",
     (role) => {
       const html = render(role, [{ ...game, status: "completed" }]);
       expect(html).toContain('href="/games/one/edit"');
@@ -73,7 +69,7 @@ describe("dashboard role controls", () => {
     (role) => {
       const html = render(role, [{ ...game, status: "completed" }]);
       expect(html).toMatch(
-        /<details class="dashboard-more"><summary>More actions<\/summary><div><button[^>]+>Reopen scoring<\/button>/,
+        /<details[^>]*class="dashboard-more".*?<summary[^>]*aria-label="More actions".*?<button[^>]*>Reopen scoring<\/button>/,
       );
     },
   );
@@ -139,7 +135,7 @@ describe("dashboard role controls", () => {
           : [];
       const html = render("viewer", [completed], sessions);
       expect(html).toContain(`href="${url}"`);
-      expect(html).toContain("Watch replay");
+      expect(html).toContain("Replay");
       expect(html).not.toContain("Watch on YouTube");
     },
   );
@@ -153,11 +149,11 @@ describe("dashboard role controls", () => {
     };
     const html = render("viewer", [completed]);
     expect(html).toContain('href="https://youtu.be/abcdefghijk"');
-    expect(html).toContain("Watch replay");
+    expect(html).toContain("Replay");
     expect(html).not.toContain("javascript:");
     expect(
       render("viewer", [{ ...completed, scheduledYouTubeWatchUrl: null }]),
-    ).not.toContain("Watch replay");
+    ).not.toContain("Replay");
   });
   it("retains the live/readiness gate for unfinished games and hides closed game links", () => {
     const url = "https://youtu.be/abcdefghijk";
@@ -176,7 +172,7 @@ describe("dashboard role controls", () => {
     );
     const live = render("viewer", [active], [{ ...saved, status: "live" }]);
     expect(live).toContain("Watch on YouTube");
-    expect(live).not.toContain("Watch replay");
+    expect(live).not.toContain("Replay");
     expect(
       render(
         "viewer",
@@ -227,7 +223,7 @@ describe("dashboard role controls", () => {
       'href="https://www.youtube.com/watch?v=abcdefghijk"',
     );
   });
-  it("pairs YouTube and Shot Tracker links for the same game", () => {
+  it("pairs ShotTracker and YouTube links for the same game", () => {
     const html = render("viewer", [
       {
         ...game,
@@ -237,16 +233,18 @@ describe("dashboard role controls", () => {
       },
     ]);
     expect(html).toMatch(
-      /class="dashboard-media-actions"><a class="dashboard-youtube-link".*?<\/a><a class="dashboard-shot-tracker-link"/,
+      /class="dashboard-media-actions"><a class="dashboard-shot-tracker-link".*?<\/a><a class="dashboard-youtube-link"/,
     );
     expect(html).toContain(
       'href="/shot-tracker?source=streamer&amp;event=event-one&amp;game=one#charting"',
     );
   });
-  it("offers Shot Tracker for a standalone game without a YouTube link", () => {
+  it("offers ShotTracker with its existing icon for a standalone game without a YouTube link", () => {
     const html = render("viewer");
     expect(html).not.toContain("dashboard-youtube-link");
-    expect(html).toContain('aria-label="Shot Tracker: ');
+    expect(html).toMatch(
+      /class="dashboard-shot-tracker-link"[^>]*><svg[^>]*viewBox="0 0 48 48".*?<\/svg>ShotTracker<\/a>/,
+    );
     expect(html).toContain(
       'href="/shot-tracker?source=streamer&amp;event=standalone&amp;game=one#charting"',
     );

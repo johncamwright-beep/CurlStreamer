@@ -114,7 +114,7 @@ async function scheduleGame(page: Page) {
   await dialog.getByRole("button", { name: "Save", exact: true }).click();
   await expect(dialog).not.toBeVisible();
   await expect(
-    page.getByLabel("Team 2 — Opponent", { exact: true }),
+    page.getByRole("combobox", { name: "Opponent", exact: true }),
   ).toHaveValue("Stones");
   await page.locator('input[name="scheduledDate"]').fill("2026-11-01");
   await page.locator('input[name="scheduledTime"]').fill("13:00");

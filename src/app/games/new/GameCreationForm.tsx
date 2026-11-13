@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import type {
   EventRecord,
@@ -16,8 +16,7 @@ import {
   scheduledStartToLocalInput,
   formatScheduledStart,
 } from "@/lib/team-hierarchy";
-import { RockColourSelector } from "@/components/RockColourSelector";
-import { OpponentProfilePicker } from "@/components/OpponentProfilePicker";
+import { ROCK_COLOUR_PRESETS } from "@/components/RockColourSelector";
 import { DEFAULT_TIMEZONE, TimezoneSelect } from "@/components/TimezoneSelect";
 import { OpponentCombobox } from "@/components/OpponentCombobox";
 import {
@@ -28,6 +27,16 @@ import { nextEventGameNumber } from "@/lib/next-event-game-number";
 
 type Opponent = { id: string; display_name: string };
 type Dialog = "season" | "event" | null;
+
+class ScheduleRequestError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+  ) {
+    super(message);
+  }
+}
+
 function youtubeSchedulingMessage(code?: string) {
   switch (code) {
     case "youtube_reconnect_required":
@@ -108,8 +117,13 @@ export function GameCreationForm({
       : nextEventGameNumber(preselected?.id ?? "", games),
   );
   const gameForm = useRef<HTMLFormElement>(null);
+  const gameNumberInput = useRef<HTMLInputElement>(null);
   const acceptedDuplicate = useRef("");
   const [duplicatePrompt, setDuplicatePrompt] = useState(false);
+  const [showGameNumber, setShowGameNumber] = useState(false);
+  useEffect(() => {
+    if (showGameNumber) gameNumberInput.current?.focus();
+  }, [showGameNumber]);
   const [newGameNumbers, setNewGameNumbers] = useState<string[]>([]);
   const numberInUse = Boolean(
     eventId &&
@@ -139,16 +153,14 @@ export function GameCreationForm({
       (opponents.some((opponent) => opponent.id === opponentChoice) ||
         editing?.opponentId === opponentChoice),
     );
-  const [opponentDialog, setOpponentDialog] = useState<
-    "create" | "edit" | null
-  >(null);
+  const [opponentDialog, setOpponentDialog] = useState(false);
   const selectedOpponent =
     opponents.find((opponent) => opponent.id === opponentChoice) ??
     (editing?.opponentId === opponentChoice
       ? { id: opponentChoice, display_name: editing.config.awayName }
       : undefined);
   const [dialog, setDialog] = useState<Dialog>(
-    initialSeasons.length ? null : "season",
+    !current && canManageTeamDetails ? "season" : null,
   );
   const [eventSeasonId, setEventSeasonId] = useState(seasonId);
   const continueToEvent = useRef(false);
@@ -171,6 +183,7 @@ export function GameCreationForm({
   const creationGameId = useRef(
     typeof crypto === "undefined" ? "" : crypto.randomUUID(),
   );
+  const [chooseColours, setChooseColours] = useState(true);
   const [homeColor, setHomeColor] = useState(
     editing?.config.homeColor ?? "#ef4444",
   );
@@ -181,12 +194,6 @@ export function GameCreationForm({
   const [visibility, setVisibility] = useState(
     editing?.config.youtubeVisibility ?? "unlisted",
   );
-  const visibilityLabel =
-    visibility === "public"
-      ? "Public"
-      : visibility === "private"
-        ? "Private"
-        : "Unlisted";
   const visibilityLocked = Boolean(
     editing &&
     (editing.scheduledYouTubeWatchUrl ||
@@ -232,9 +239,10 @@ export function GameCreationForm({
     (e) => e.seasonId === seasonId && !e.archivedAt,
   );
   const selectedEvent = availableEvents.find((e) => e.id === eventId);
+  const homeTeamName = editing?.config.homeName ?? teamName;
   const effectiveTimezone = timezone;
   const canonicalTitle = formatCanonicalGameTitle({
-    homeName: teamName,
+    homeName: homeTeamName,
     awayName: opponentTbd ? null : opponentSearch,
     eventName: selectedEvent?.name ?? null,
     gameNumber: eventId && gameNumberText ? Number(gameNumberText) : null,
@@ -263,6 +271,7 @@ export function GameCreationForm({
     );
     acceptedDuplicate.current = "";
     setDuplicatePrompt(false);
+    setShowGameNumber(false);
   }
   function openEventDialog() {
     setError("");
@@ -279,7 +288,7 @@ export function GameCreationForm({
     ]);
     setOpponentChoice(saved.id);
     setOpponentSearch(saved.display_name);
-    setOpponentDialog(null);
+    setOpponentDialog(false);
   }
   function chooseSeason(value: string) {
     if (value === "__new") return setDialog("season");
@@ -295,7 +304,10 @@ export function GameCreationForm({
     });
     const body = await response.json().catch(() => null);
     if (!response.ok)
-      throw new Error(body?.error ?? "The change could not be saved.");
+      throw new ScheduleRequestError(
+        body?.error ?? "The change could not be saved.",
+        response.status,
+      );
     return body;
   }
   async function createSeason(form: FormData) {
@@ -386,6 +398,14 @@ export function GameCreationForm({
       setError("Choose a matching opponent or create a new opponent.");
       return;
     }
+    const trimmedTitle = youtubeTitle.trim();
+    if (
+      youtubeEnabled &&
+      (trimmedTitle.length < 2 || trimmedTitle.length > 100)
+    ) {
+      setError("Enter a YouTube title between 2 and 100 characters.");
+      return;
+    }
     if (
       numberInUse &&
       acceptedDuplicate.current !== `${eventId}:${gameNumberText}`
@@ -420,14 +440,19 @@ export function GameCreationForm({
             selectedEvent?.name ?? "Single Game",
             gameNumber,
           ),
-          homeName: teamName,
+          homeName: homeTeamName,
           awayName: opponentTbd ? "Opponent TBD" : opponentName,
-          homeColor: form.get("homeColor"),
-          awayColor: form.get("awayColor"),
-          scheduledEnds: Number(form.get("scheduledEnds")),
+          homeColor,
+          awayColor,
+          scheduledEnds: ends,
           youtubeEnabled,
-          sharedYoutubeWatchUrl,
-          youtubeTitle,
+          sharedYoutubeWatchUrl: youtubeEnabled ? "" : sharedYoutubeWatchUrl,
+          youtubeTitle: youtubeEnabled
+            ? trimmedTitle
+            : (trimmedTitle.length >= 2 ? trimmedTitle : generatedTitle).slice(
+                0,
+                100,
+              ),
           youtubeVisibility: visibility,
         },
       });
@@ -461,6 +486,14 @@ export function GameCreationForm({
       router.push("/dashboard");
       router.refresh();
     } catch (e) {
+      if (
+        e instanceof ScheduleRequestError &&
+        e.status === 409 &&
+        e.message.includes("game number is already used")
+      ) {
+        setShowGameNumber(true);
+        setDuplicatePrompt(false);
+      }
       setError(e instanceof Error ? e.message : "Game could not be saved.");
       setBusy(false);
       saving.current = false;
@@ -549,6 +582,7 @@ export function GameCreationForm({
               }
               creationGameId.current = crypto.randomUUID();
               acceptedDuplicate.current = "";
+              setShowGameNumber(false);
               setCreatedGame(null);
               setScheduledTime("");
               setGameNumberText(
@@ -584,85 +618,43 @@ export function GameCreationForm({
     );
   return (
     <>
-      <nav aria-label="Breadcrumb" className="setup-breadcrumb">
-        <LinkText href="/dashboard">← Games</LinkText>
-        <span>{editing ? "Edit game" : "New game"}</span>
-      </nav>
       <header className="setup-heading">
-        <p className="setup-eyebrow">Match preparation</p>
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <h1>{editing ? "Edit game" : "Schedule a game"}</h1>
-          {canManageTeamDetails && (
-            <button
-              type="button"
-              className="btn-secondary"
-              disabled={busy}
-              onClick={openEventDialog}
-            >
-              Create event
-            </button>
-          )}
-        </div>
-        <p>
-          {editing
-            ? editingTitle
-            : "Set up the match now. Connect cameras and start broadcasting when you’re ready."}
-        </p>
+        <h1>{editing ? "Edit game" : "Schedule game"}</h1>
       </header>
-      <form
-        ref={gameForm}
-        onSubmit={submit}
-        className="setup-form"
-        onInvalidCapture={(e) => {
-          const details = (e.target as HTMLElement).closest("details");
-          if (details) details.open = true;
-        }}
-      >
+      <form ref={gameForm} onSubmit={submit} className="setup-form">
         <fieldset disabled={busy} className="setup-fields">
-          <section className="setup-card" aria-labelledby="setup-match">
-            <div className="setup-section-heading">
-              <span>1</span>
-              <div>
-                <h2 id="setup-match">Teams & event</h2>
-                <p>Choose where this game belongs and who is playing.</p>
-              </div>
-            </div>
-            <div className="setup-grid">
-              <label>
-                Season
+          <div className="setup-grid">
+            <label className="setup-field">
+              Season
+              <select
+                required
+                value={seasonId}
+                onChange={(event) => chooseSeason(event.target.value)}
+              >
+                <option value="" disabled>
+                  Select a season
+                </option>
+                {seasons
+                  .filter((season) => season.status !== "archived")
+                  .map((season) => (
+                    <option key={season.id} value={season.id}>
+                      {season.name}
+                      {season.status === "active" ? " (Current)" : ""}
+                    </option>
+                  ))}
+                {canManageTeamDetails && (
+                  <option value="__new">Create New Season…</option>
+                )}
+              </select>
+            </label>
+            <div className="setup-field">
+              <label htmlFor="setup-event">Event</label>
+              <div className="setup-field-action">
                 <select
-                  required
-                  value={seasonId}
-                  onChange={(e) => chooseSeason(e.target.value)}
-                  className="mt-1 min-h-11 w-full rounded-lg bg-slate-800 p-3"
-                >
-                  <option value="" disabled>
-                    Select a season
-                  </option>
-                  {seasons
-                    .filter((s) => s.status !== "archived")
-                    .map((s) => (
-                      <option key={s.id} value={s.id}>
-                        {s.name}
-                        {s.status === "active" ? " (Current)" : ""}
-                      </option>
-                    ))}
-                  {canManageTeamDetails && (
-                    <option value="__new">Create New Season…</option>
-                  )}
-                </select>
-              </label>
-              <label>
-                Event
-                <select
+                  id="setup-event"
                   disabled={!seasonId}
                   value={eventId}
-                  onChange={(e) =>
-                    e.target.value === "__new"
-                      ? openEventDialog()
-                      : chooseEvent(e.target.value)
-                  }
-                  className="mt-1 min-h-11 w-full rounded-lg bg-slate-800 p-3"
+                  onChange={(event) => chooseEvent(event.target.value)}
                 >
                   <option value="">Single Game</option>
                   {availableEvents.map((event) => (
@@ -670,21 +662,48 @@ export function GameCreationForm({
                       {event.name}
                     </option>
                   ))}
-                  {canManageTeamDetails && (
-                    <option value="__new">Create New Event…</option>
-                  )}
                 </select>
-              </label>
-              <label>
-                Team 1 — Your Team
-                <input
-                  readOnly
-                  value={teamName}
-                  className="mt-1 w-full rounded-lg bg-slate-800 p-3 text-slate-300"
-                />
-              </label>
-              <div>
-                <label htmlFor="setup-opponent">Team 2 — Opponent</label>
+                {canManageTeamDetails && (
+                  <button
+                    type="button"
+                    className="setup-add"
+                    aria-label="Create event"
+                    onClick={openEventDialog}
+                  >
+                    <span aria-hidden="true">+</span>
+                  </button>
+                )}
+              </div>
+            </div>
+            <label className="setup-field">
+              Date
+              <input
+                required
+                name="scheduledDate"
+                type="date"
+                value={scheduledDate}
+                onChange={(event) => setScheduledDate(event.target.value)}
+                min={selectedEvent?.startDate}
+                max={selectedEvent?.endDate}
+              />
+            </label>
+            <label className="setup-field">
+              Time
+              <input
+                required
+                name="scheduledTime"
+                type="time"
+                value={scheduledTime}
+                onChange={(event) => setScheduledTime(event.target.value)}
+              />
+            </label>
+            <label className="setup-field">
+              Team
+              <input readOnly value={homeTeamName} />
+            </label>
+            <div className="setup-field">
+              <label htmlFor="setup-opponent">Opponent</label>
+              <div className="setup-field-action">
                 <OpponentCombobox
                   id="setup-opponent"
                   options={
@@ -698,467 +717,255 @@ export function GameCreationForm({
                   value={opponentChoice}
                   displayName={opponentSearch}
                   disabled={busy}
+                  showDropdown
                   onSelect={(choice, name) => {
                     setOpponentChoice(choice);
                     setOpponentSearch(name);
                     setError("");
                   }}
                 />
-                <div className="mt-2 flex flex-wrap gap-2">
-                  <button
-                    type="button"
-                    className="btn-secondary"
-                    disabled={busy || !seasonId}
-                    onClick={() => setOpponentDialog("create")}
-                  >
-                    Create new opponent
-                  </button>
-                  {selectedOpponent && canManageTeamDetails && (
-                    <button
-                      type="button"
-                      className="btn-secondary"
-                      disabled={busy}
-                      onClick={() => setOpponentDialog("edit")}
-                    >
-                      Edit opponent
-                    </button>
-                  )}
-                </div>
-                {opponentChoice === "" && opponentSearch.trim() && (
-                  <p className="setup-help" role="status">
-                    Choose a matching team or create a new opponent.
-                  </p>
-                )}
-                {!opponentTbd && (
-                  <OpponentProfilePicker
-                    key={opponentChoice}
-                    opponentId={opponentChoice || undefined}
-                    initialQuery={opponentSearch}
-                    onLinked={(saved) => {
-                      setOpponents((items) => [
-                        ...items.filter((item) => item.id !== saved.id),
-                        saved,
-                      ]);
-                      setOpponentChoice(saved.id);
-                      setOpponentSearch(saved.display_name);
-                    }}
-                  />
-                )}
+                <button
+                  type="button"
+                  className="setup-add"
+                  aria-label="Create new opponent"
+                  disabled={!seasonId}
+                  onClick={() => setOpponentDialog(true)}
+                >
+                  <span aria-hidden="true">+</span>
+                </button>
               </div>
             </div>
+            <label className="setup-field">
+              Timezone
+              <TimezoneSelect
+                value={timezone}
+                onChange={(event) => setTimezone(event.target.value)}
+              />
+            </label>
+            <label className="setup-field">
+              Ends
+              <select
+                name="scheduledEnds"
+                value={ends}
+                disabled={Boolean(editing)}
+                onChange={(event) =>
+                  setEnds(Number(event.target.value) as 8 | 10)
+                }
+              >
+                <option value="8">8 ends</option>
+                <option value="10">10 ends</option>
+              </select>
+            </label>
+            {eventId && (editing || showGameNumber) && (
+              <label className="setup-field">
+                Game number (optional)
+                <input
+                  ref={gameNumberInput}
+                  name="gameNumber"
+                  type="number"
+                  min="1"
+                  value={gameNumberText}
+                  onChange={(event) => {
+                    acceptedDuplicate.current = "";
+                    setDuplicatePrompt(false);
+                    setError("");
+                    setGameNumberText(event.target.value);
+                  }}
+                />
+              </label>
+            )}
+          </div>
+          {invalidSchedule && (
+            <p role="alert" className="setup-error">
+              That local date and time is not valid in {effectiveTimezone}.
+              Times skipped when clocks move forward cannot be scheduled.
+            </p>
+          )}
+          <section
+            className="setup-section"
+            aria-labelledby="setup-rock-colours"
+          >
+            <div className="setup-section-heading setup-rock-heading">
+              <h2 id="setup-rock-colours">Rock colours</h2>
+              <SetupSwitch
+                name="Choose now"
+                stateText={chooseColours ? "Choose now" : "Choose later"}
+                checked={chooseColours}
+                onChange={setChooseColours}
+              />
+            </div>
+            {chooseColours && (
+              <div className="setup-palettes">
+                <SetupPalette
+                  label={homeTeamName}
+                  value={homeColor}
+                  onChange={setHomeColor}
+                  disabled={Boolean(editing)}
+                />
+                <SetupPalette
+                  label="Opponent"
+                  value={awayColor}
+                  onChange={setAwayColor}
+                  disabled={Boolean(editing)}
+                />
+              </div>
+            )}
           </section>
-          <section className="setup-card" aria-labelledby="setup-schedule">
+          <section className="setup-section" aria-labelledby="setup-youtube">
             <div className="setup-section-heading">
-              <span>2</span>
-              <div>
-                <h2 id="setup-schedule">Date & time</h2>
-                <p>Use the timezone where the game will be played.</p>
-              </div>
+              <h2 id="setup-youtube">YouTube streaming</h2>
+              <SetupSwitch
+                name="YouTube streaming"
+                stateText={youtubeEnabled ? "On" : "Off"}
+                checked={youtubeEnabled}
+                onChange={setYoutubeEnabled}
+              />
             </div>
-            <div className="setup-grid">
-              <label>
-                Scheduled date ({effectiveTimezone})
-                <input
-                  required
-                  name="scheduledDate"
-                  type="date"
-                  value={scheduledDate}
-                  onChange={(event) => setScheduledDate(event.target.value)}
-                  min={selectedEvent?.startDate}
-                  max={selectedEvent?.endDate}
-                  className="mt-1 w-full rounded-lg bg-slate-800 p-3"
-                />
-              </label>
-              <label>
-                Scheduled time ({effectiveTimezone})
-                <input
-                  required
-                  name="scheduledTime"
-                  type="time"
-                  value={scheduledTime}
-                  onChange={(event) => setScheduledTime(event.target.value)}
-                  className="mt-1 w-full rounded-lg bg-slate-800 p-3"
-                />
-              </label>
-              <label>
-                Timezone
-                <TimezoneSelect
-                  required
-                  name="timezone"
-                  value={timezone}
-                  onChange={(event) => setTimezone(event.target.value)}
-                />
-              </label>
-              <details className="setup-time-help md:col-span-2">
-                <summary>About timezones and daylight saving</summary>
-                <p>
-                  Times are entered in <strong>{effectiveTimezone}</strong>. An
-                  unchanged edit keeps its existing instant; a newly entered
-                  time that repeats when clocks fall back uses the earlier
-                  occurrence.
-                </p>
-              </details>
-              {invalidSchedule && (
-                <p role="alert" className="text-red-300 md:col-span-2">
-                  That local date and time is not valid in {effectiveTimezone}.
-                  Times skipped when clocks move forward cannot be scheduled.
-                </p>
-              )}
-              {eventId && (
-                <div>
-                  <label>
-                    Game number (optional)
+            {youtubeEnabled ? (
+              <>
+                <div className="setup-youtube-fields">
+                  <div className="setup-field setup-visibility">
+                    {editing?.config.youtubeVisibility === "private" ? (
+                      <label className="setup-field">
+                        Broadcast visibility
+                        <select
+                          value={visibility}
+                          disabled={visibilityLocked}
+                          aria-describedby={
+                            visibilityLocked
+                              ? "setup-visibility-lock"
+                              : undefined
+                          }
+                          onChange={(event) =>
+                            setVisibility(
+                              event.target.value as typeof visibility,
+                            )
+                          }
+                        >
+                          <option value="unlisted">Unlisted</option>
+                          <option value="public">Public</option>
+                          <option value="private">Private</option>
+                        </select>
+                      </label>
+                    ) : (
+                      <>
+                        <span>Broadcast visibility</span>
+                        <span id="setup-visibility-options" className="sr-only">
+                          Off is Unlisted. On is Public.
+                        </span>
+                        <SetupSwitch
+                          name="Broadcast visibility"
+                          stateText={
+                            visibility === "public" ? "Public" : "Unlisted"
+                          }
+                          checked={visibility === "public"}
+                          disabled={visibilityLocked}
+                          describedBy={
+                            visibilityLocked
+                              ? "setup-visibility-options setup-visibility-lock"
+                              : "setup-visibility-options"
+                          }
+                          onChange={(checked) =>
+                            setVisibility(checked ? "public" : "unlisted")
+                          }
+                        />
+                      </>
+                    )}
+                    {visibilityLocked && (
+                      <p id="setup-visibility-lock" className="setup-help">
+                        Visibility is fixed once the YouTube watch page
+                        reservation begins.
+                      </p>
+                    )}
+                  </div>
+                  <label className="setup-field">
+                    YouTube title
                     <input
-                      name="gameNumber"
-                      type="number"
-                      min="1"
-                      value={gameNumberText}
-                      aria-describedby={
-                        numberInUse ? "game-number-conflict" : undefined
-                      }
-                      onChange={(e) => setGameNumberText(e.target.value)}
-                      placeholder="Leave blank if not needed"
-                      className="mt-1 w-full rounded-lg bg-slate-800 p-3"
+                      required
+                      minLength={2}
+                      maxLength={100}
+                      name="youtubeTitle"
+                      value={youtubeTitle}
+                      onChange={(event) => {
+                        setCustomTitle(event.target.value);
+                        setTitleCustomized(true);
+                      }}
                     />
                   </label>
-                  {numberInUse && (
-                    <p
-                      id="game-number-conflict"
-                      role="status"
-                      className="mt-2 text-amber-300"
-                    >
-                      Game {gameNumberText} is already used in this event. You
-                      can use it again after confirming below.
-                    </p>
-                  )}
-                  {gameNumberText && (
-                    <button
-                      type="button"
-                      className="mt-1 min-h-11 text-cyan-300"
-                      onClick={() => {
-                        setGameNumberText("");
-                        setError("");
-                      }}
-                    >
-                      Leave game unnumbered
-                    </button>
-                  )}
                 </div>
-              )}
-            </div>
-          </section>
-          <details className="setup-card setup-options">
-            <summary>
-              <strong>Rock colours & game length</strong>
-              <span>{ends} ends · choose standard or custom colours</span>
-            </summary>
-            <div className="setup-grid setup-options-body">
-              <RockColourSelector
-                name="homeColor"
-                label="Team 1 rock colour"
-                defaultValue={homeColor}
-                onValueChange={setHomeColor}
-              />
-              <RockColourSelector
-                name="awayColor"
-                label="Team 2 rock colour"
-                defaultValue={awayColor}
-                onValueChange={setAwayColor}
-              />
-              <label>
-                Scheduled ends
-                <select
-                  name="scheduledEnds"
-                  value={ends}
-                  onChange={(e) => setEnds(Number(e.target.value) as 8 | 10)}
-                  className="mt-1 min-h-11 w-full rounded-lg bg-slate-800 p-3"
-                >
-                  <option>8</option>
-                  <option>10</option>
-                </select>
-              </label>
-            </div>
-          </details>
-          <details className="setup-card setup-options">
-            <summary>
-              <strong>Streaming</strong>
-              <span>
-                {youtubeEnabled
-                  ? visibilityLocked
-                    ? `Yes · ${visibilityLabel} YouTube watch-page reservation`
-                    : `Yes · reserve ${visibility === "unlisted" ? "an" : "a"} ${visibilityLabel.toLowerCase()} YouTube watch link`
-                  : sharedYoutubeWatchUrl
-                    ? "Shared YouTube watch link"
-                    : "No · no YouTube event will be created"}
-              </span>
-            </summary>
-            <p className="setup-help">
-              {visibilityLocked
-                ? "Saving updates the scheduled watch page. It does not start a stream."
-                : "Saving with streaming enabled creates a scheduled watch page. It does not start a stream."}
-            </p>
-            <div className="setup-grid setup-options-body">
-              <fieldset className="md:col-span-2">
-                <legend>Stream this game on YouTube?</legend>
-                <div className="mt-1 flex gap-4">
-                  <label className="min-h-11">
-                    <input
-                      type="radio"
-                      name="youtubeEnabled"
-                      checked={youtubeEnabled}
-                      onChange={() => {
-                        setYoutubeEnabled(true);
-                        setSharedYoutubeWatchUrl("");
-                      }}
-                    />{" "}
-                    Yes
-                  </label>
-                  <label className="min-h-11">
-                    <input
-                      type="radio"
-                      name="youtubeEnabled"
-                      checked={!youtubeEnabled}
-                      onChange={() => setYoutubeEnabled(false)}
-                    />{" "}
-                    No / shared link
-                  </label>
-                </div>
-              </fieldset>
-              <label className="md:col-span-2">
-                Shared YouTube watch link (optional)
+                <a href="/settings/youtube" className="setup-youtube-link">
+                  Manage YouTube connection <span aria-hidden="true">→</span>
+                </a>
+              </>
+            ) : (
+              <label className="setup-field setup-shared-link">
+                Paste the YouTube link
                 <input
                   type="url"
                   name="sharedYoutubeWatchUrl"
                   value={sharedYoutubeWatchUrl}
-                  onChange={(event) => {
-                    setSharedYoutubeWatchUrl(event.target.value);
-                    if (event.target.value.trim()) setYoutubeEnabled(false);
-                  }}
+                  onChange={(event) =>
+                    setSharedYoutubeWatchUrl(event.target.value)
+                  }
                   placeholder="https://youtube.com/watch?v=..."
-                  className="mt-1 w-full rounded-lg bg-slate-800 p-3"
                 />
-                <span className="setup-help">
-                  Use an opponent or event organizer’s YouTube watch link on the
-                  game. The public team page only shows links created in
-                  CurlStreamer with Public visibility.
-                </span>
               </label>
-              {youtubeEnabled && (
-                <>
-                  <label>
-                    Broadcast visibility
-                    <select
-                      name="youtubeVisibility"
-                      value={visibility}
-                      disabled={visibilityLocked}
-                      onChange={(event) =>
-                        setVisibility(event.target.value as typeof visibility)
-                      }
-                      aria-describedby="youtube-visibility-help"
-                      className="mt-1 min-h-11 w-full rounded-lg bg-slate-800 p-3"
-                    >
-                      <option value="unlisted">Unlisted</option>
-                      <option value="public">Public</option>
-                      {editing?.config.youtubeVisibility === "private" && (
-                        <option value="private">Private</option>
-                      )}
-                    </select>
-                    <span id="youtube-visibility-help" className="setup-help">
-                      {visibilityLocked
-                        ? "Visibility is fixed once YouTube watch-page reservation begins. Choose Public when scheduling a future game if you want anyone to find and watch it."
-                        : visibility === "public"
-                          ? "Public: anyone can find and watch this game on YouTube. Saving only schedules the watch page; you start the stream manually."
-                          : visibility === "private"
-                            ? "Private: only people invited through YouTube can watch."
-                            : "Unlisted: anyone with the watch link can watch; the game is not listed publicly on YouTube."}
-                    </span>
-                  </label>
-                  <label className="md:col-span-2">
-                    YouTube title
-                    <input
-                      required
-                      name="youtubeTitle"
-                      value={youtubeTitle}
-                      readOnly={!titleCustomized}
-                      onChange={(event) => setCustomTitle(event.target.value)}
-                      className="mt-1 w-full rounded-lg bg-slate-800 p-3"
-                    />
-                    <span className="mt-2 flex flex-wrap gap-3">
-                      {!titleCustomized ? (
-                        <button
-                          type="button"
-                          className="min-h-11 text-cyan-300"
-                          onClick={() => {
-                            setCustomTitle(generatedTitle);
-                            setTitleCustomized(true);
-                          }}
-                        >
-                          Customize title
-                        </button>
-                      ) : (
-                        <button
-                          type="button"
-                          className="min-h-11 text-cyan-300"
-                          onClick={() => setTitleCustomized(false)}
-                        >
-                          Reset to generated title
-                        </button>
-                      )}
-                    </span>
-                  </label>
-                </>
-              )}
-            </div>
-            {youtubeEnabled && (
-              <LinkText href="/settings/youtube">
-                Manage your team’s YouTube connection →
-              </LinkText>
             )}
-          </details>
-        </fieldset>
-        <aside
-          className="setup-card setup-review"
-          aria-labelledby="setup-review-heading"
-        >
-          <p className="setup-eyebrow">Before you save</p>
-          <h2 id="setup-review-heading">Review game</h2>
-          <div className="setup-match-preview">
-            <div>
-              <span style={{ backgroundColor: homeColor }} aria-hidden="true" />
-              <strong>{teamName}</strong>
-            </div>
-            <div>
-              <span style={{ backgroundColor: awayColor }} aria-hidden="true" />
-              <strong>
-                {opponentTbd
-                  ? "Opponent TBD"
-                  : opponentSearch.trim() || "Choose an opponent"}
-              </strong>
-            </div>
-          </div>
-          <dl>
-            <div>
-              <dt>Season</dt>
-              <dd>
-                {seasons.find((s) => s.id === seasonId)?.name ??
-                  "Choose a season"}
-              </dd>
-            </div>
-            <div>
-              <dt>Event</dt>
-              <dd>{selectedEvent?.name ?? "Single game"}</dd>
-            </div>
-            <div>
-              <dt>Start time</dt>
-              <dd>
-                {scheduledInstant
-                  ? formatScheduledStart(scheduledInstant, effectiveTimezone)
-                  : "Choose a valid date, time and timezone"}
-              </dd>
-            </div>
-            <div>
-              <dt>Game length</dt>
-              <dd>{ends} ends</dd>
-            </div>
-            <div>
-              <dt>Streaming</dt>
-              <dd>
-                {youtubeEnabled
-                  ? visibilityLocked
-                    ? `YouTube watch-page reservation · ${visibilityLabel}`
-                    : `YouTube watch link will be reserved · ${visibilityLabel}`
-                  : sharedYoutubeWatchUrl
-                    ? "Shared YouTube watch link"
-                    : "No YouTube stream"}
-              </dd>
-            </div>
-            {sharedYoutubeWatchUrl && (
-              <div>
-                <dt>Shared YouTube link</dt>
-                <dd className="break-all">{sharedYoutubeWatchUrl}</dd>
+          </section>
+          <div className="setup-section setup-actions">
+            {duplicatePrompt && numberInUse && (
+              <div role="alert" className="setup-notice">
+                <p>
+                  You’ve already used game {gameNumberText} in this event. Use
+                  this number again?
+                </p>
+                <div className="mt-3 flex flex-wrap gap-3">
+                  <button
+                    type="button"
+                    className="btn"
+                    onClick={() => {
+                      acceptedDuplicate.current = `${eventId}:${gameNumberText}`;
+                      setDuplicatePrompt(false);
+                      gameForm.current?.requestSubmit();
+                    }}
+                  >
+                    Yes, use this number
+                  </button>
+                  <button
+                    type="button"
+                    className="btn-secondary"
+                    onClick={() => {
+                      setDuplicatePrompt(false);
+                      if (editing || showGameNumber)
+                        gameNumberInput.current?.focus();
+                      else setShowGameNumber(true);
+                    }}
+                  >
+                    No, change number
+                  </button>
+                </div>
               </div>
             )}
-            {youtubeEnabled && (
-              <div>
-                <dt>YouTube title</dt>
-                <dd>{youtubeTitle || "Enter a title in YouTube settings"}</dd>
-              </div>
-            )}
-          </dl>
-          {opponentTbd && (
-            <p className="setup-notice">
-              You can save with Opponent TBD. Assign the opponent before scoring
-              begins.
-            </p>
-          )}
-          {(!seasonId || !scheduledInstant || !validOpponent) && (
-            <p className="setup-help">
-              Still needed:{" "}
-              {[
-                !seasonId && "season",
-                !scheduledInstant && "date, time and timezone",
-                !validOpponent && "opponent",
-              ]
-                .filter(Boolean)
-                .join("; ")}
-              .
-            </p>
-          )}
-          <button
-            disabled={busy || !seasonId || !scheduledInstant || !validOpponent}
-            className="btn md:col-span-2"
-          >
-            {busy ? "Saving…" : editing ? "Save changes" : "Schedule game"}
-          </button>
-          {duplicatePrompt && numberInUse && (
-            <div role="alert" className="setup-notice md:col-span-2">
-              <p>
-                You’ve already used game {gameNumberText} in this event. Use
-                this number again?
+            {error && (
+              <p role="alert" className="setup-error">
+                {error}
               </p>
-              <div className="mt-3 flex flex-wrap gap-3">
-                <button
-                  type="button"
-                  className="btn"
-                  onClick={() => {
-                    acceptedDuplicate.current = `${eventId}:${gameNumberText}`;
-                    setDuplicatePrompt(false);
-                    gameForm.current?.requestSubmit();
-                  }}
-                >
-                  Yes, use this number
-                </button>
-                <button
-                  type="button"
-                  className="btn-secondary"
-                  onClick={() => {
-                    setDuplicatePrompt(false);
-                    gameForm.current
-                      ?.querySelector<HTMLInputElement>('input[type="number"]')
-                      ?.focus();
-                  }}
-                >
-                  No, change number
-                </button>
-              </div>
-            </div>
-          )}
-          {error && (
-            <p role="alert" className="text-red-300 md:col-span-2">
-              {error}
-            </p>
-          )}
-          <p className="setup-help">
-            {editing
-              ? "Your changes update this game’s teams, schedule and settings."
-              : "Next: schedule another game or choose where to go."}
-          </p>
-        </aside>
+            )}
+            <button
+              type="submit"
+              disabled={
+                busy || !seasonId || !scheduledInstant || !validOpponent
+              }
+              className="btn setup-submit"
+            >
+              {busy ? "Saving…" : editing ? "Save changes" : "Schedule game"}
+            </button>
+          </div>
+        </fieldset>
       </form>
       {opponentDialog && (
         <OpponentDetailsDialog
-          mode={opponentDialog}
-          opponent={opponentDialog === "edit" ? selectedOpponent : undefined}
+          mode="create"
           initialName={opponentChoice === "" ? opponentSearch : ""}
           canManageSeasonDetails={canManageTeamDetails}
           seasonId={seasonId}
@@ -1167,7 +974,7 @@ export function GameCreationForm({
             "Selected season"
           }
           onSaved={opponentSaved}
-          onCancel={() => setOpponentDialog(null)}
+          onCancel={() => setOpponentDialog(false)}
         />
       )}
       {dialog && (
@@ -1177,7 +984,8 @@ export function GameCreationForm({
           aria-labelledby="inline-heading"
           className="panel fixed inset-0 m-auto max-h-[90dvh] w-[calc(100%-2rem)] max-w-lg overflow-y-auto backdrop:bg-black/70"
           onCancel={(event) => {
-            if (busy || seasons.length === 0) event.preventDefault();
+            if (busy || !seasons.some((season) => season.status !== "archived"))
+              event.preventDefault();
             else {
               continueToEvent.current = false;
               setError("");
@@ -1321,7 +1129,7 @@ export function GameCreationForm({
                       ? "Create event"
                       : "Create season"}
                 </button>
-                {seasons.length > 0 && (
+                {seasons.some((season) => season.status !== "archived") && (
                   <button
                     type="button"
                     className="btn-secondary"
@@ -1347,16 +1155,84 @@ export function GameCreationForm({
     </>
   );
 }
-function LinkText({
-  href,
-  children,
+function SetupSwitch({
+  name,
+  stateText,
+  checked,
+  disabled,
+  describedBy,
+  onChange,
 }: {
-  href: string;
-  children: React.ReactNode;
+  name: string;
+  stateText: string;
+  checked: boolean;
+  disabled?: boolean;
+  describedBy?: string;
+  onChange: (checked: boolean) => void;
 }) {
   return (
-    <a className="inline-flex min-h-11 items-center text-cyan-300" href={href}>
-      {children}
-    </a>
+    <label className="setup-switch">
+      <input
+        type="checkbox"
+        role="switch"
+        aria-label={name}
+        aria-describedby={describedBy}
+        checked={checked}
+        disabled={disabled}
+        onChange={(event) => onChange(event.target.checked)}
+      />
+      <span className="setup-switch-track" aria-hidden="true" />
+      <span aria-hidden="true">{stateText}</span>
+    </label>
+  );
+}
+
+function SetupPalette({
+  label,
+  value,
+  disabled,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  disabled?: boolean;
+  onChange: (value: string) => void;
+}) {
+  const id = useId();
+  const colors = ROCK_COLOUR_PRESETS.some(
+    (preset) => preset.value === value.toLowerCase(),
+  )
+    ? ROCK_COLOUR_PRESETS
+    : [...ROCK_COLOUR_PRESETS, { name: "Custom", value }];
+
+  return (
+    <div className="setup-palette" role="radiogroup" aria-labelledby={id}>
+      <p id={id}>{label}</p>
+      <div className="setup-swatches">
+        {colors.map((color) => {
+          const selected = color.value.toLowerCase() === value.toLowerCase();
+          return (
+            <label
+              key={color.value}
+              className="setup-swatch"
+              title={`${label}: ${color.name}`}
+            >
+              <input
+                type="radio"
+                name={`${id}-choice`}
+                value={color.value}
+                aria-label={`${label}: ${color.name}`}
+                checked={selected}
+                disabled={disabled}
+                onChange={() => onChange(color.value)}
+              />
+              <span style={{ backgroundColor: color.value }} aria-hidden="true">
+                {selected && "✓"}
+              </span>
+            </label>
+          );
+        })}
+      </div>
+    </div>
   );
 }

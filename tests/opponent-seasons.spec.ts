@@ -330,7 +330,7 @@ test("game operators create names without gaining season detail controls", async
   await page.getByLabel("Password").fill("playwright-password");
   await page.getByRole("button", { name: "Sign in" }).click();
   await expect(
-    page.getByRole("heading", { name: "Schedule a game", exact: true }),
+    page.getByRole("heading", { name: "Schedule game", exact: true }),
   ).toBeVisible();
   const writes: Record<string, unknown>[] = [];
   await page.route("**/api/team-schedule**", async (route) => {
@@ -353,7 +353,7 @@ test("game operators create names without gaining season detail controls", async
     { operation: "createOpponent", input: { displayName: "Operator team" } },
   ]);
   await expect(
-    page.getByLabel("Team 2 — Opponent", { exact: true }),
+    page.getByRole("combobox", { name: "Opponent", exact: true }),
   ).toHaveValue("Operator team");
   await page.goto("/opponents");
   await expect(

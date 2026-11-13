@@ -23,6 +23,7 @@ export function OpponentCombobox({
   displayName,
   onSelect,
   disabled = false,
+  showDropdown = false,
 }: {
   id: string;
   options: OpponentOption[];
@@ -30,12 +31,18 @@ export function OpponentCombobox({
   displayName: string;
   onSelect: (id: string, displayName: string) => void;
   disabled?: boolean;
+  showDropdown?: boolean;
 }) {
   const [query, setQuery] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(-1);
   const committed = useRef({ id: value || "__tbd", name: displayName });
-  const matches = query === null ? [] : filterOpponents(options, query);
+  const matches =
+    query === null
+      ? showDropdown
+        ? [{ id: "__tbd", display_name: "TBD" }, ...options]
+        : []
+      : filterOpponents(options, query);
   const expanded = open && matches.length > 0 && !disabled;
   const listId = `${id}-results`;
 
@@ -56,6 +63,13 @@ export function OpponentCombobox({
     onSelect(option.id, option.name);
   }
 
+  function chooseMatch(option: OpponentOption) {
+    choose({
+      id: option.id,
+      name: option.id === "__tbd" ? "" : option.display_name,
+    });
+  }
+
   return (
     <div className="relative min-w-0">
       <input
@@ -70,12 +84,13 @@ export function OpponentCombobox({
           expanded && active >= 0 ? `${listId}-${active}` : undefined
         }
         disabled={disabled}
-        className="min-h-11 w-full"
+        className={showDropdown ? "min-h-11 w-full !pr-11" : "min-h-11 w-full"}
         value={query ?? (value === "__tbd" ? "TBD" : displayName)}
         onFocus={(event) => {
           event.currentTarget.select();
-          setOpen(query !== null);
+          setOpen(showDropdown || query !== null);
         }}
+        onClick={showDropdown ? () => setOpen(true) : undefined}
         onBlur={() => {
           setOpen(false);
           setActive(-1);
@@ -106,15 +121,20 @@ export function OpponentCombobox({
                 ? (index + 1) % matches.length
                 : (index <= 0 ? matches.length : index) - 1,
             );
-          } else if (event.key === "Enter" && query !== null) {
+          } else if (event.key === "Enter" && (expanded || query !== null)) {
             event.preventDefault();
-            if (expanded && active >= 0) {
-              const option = matches[active];
-              choose({ id: option.id, name: option.display_name });
-            }
+            if (expanded && active >= 0) chooseMatch(matches[active]);
           }
         }}
       />
+      {showDropdown && (
+        <span
+          aria-hidden="true"
+          className="pointer-events-none absolute right-0 top-0 grid h-11 w-11 place-items-center"
+        >
+          <span className="size-2 rotate-45 border-b-2 border-r-2 border-current" />
+        </span>
+      )}
       {expanded && (
         <ul
           id={listId}
@@ -130,9 +150,7 @@ export function OpponentCombobox({
               aria-selected={active === index}
               className={`flex min-h-11 cursor-pointer items-center rounded px-3 py-2 ${active === index ? "bg-slate-700" : "hover:bg-slate-800"}`}
               onMouseDown={(event) => event.preventDefault()}
-              onClick={() =>
-                choose({ id: option.id, name: option.display_name })
-              }
+              onClick={() => chooseMatch(option)}
             >
               {option.display_name}
             </li>

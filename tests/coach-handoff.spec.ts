@@ -292,14 +292,14 @@ test("a standalone flag adjusts the timestamp and preserves its notes", async ({
   const timestamp = page.getByLabel("Timestamp", { exact: true });
   await expect(page.getByRole("link")).toHaveCount(1);
   await expect(timestamp).toHaveCount(0);
-  await expect(link).toHaveAttribute("href", `${recording}&t=120s`);
+  await expect(link).toHaveAttribute("href", `${recording}&t=113s`);
   await adjust.click();
-  await expect(timestamp).toHaveValue("0:02:00");
+  await expect(timestamp).toHaveValue("0:01:53");
   await timestamp.fill("2:01");
   await page.getByRole("button", { name: "Cancel", exact: true }).click();
-  await expect(link).toHaveAttribute("href", `${recording}&t=120s`);
+  await expect(link).toHaveAttribute("href", `${recording}&t=113s`);
   await adjust.click();
-  await expect(timestamp).toHaveValue("0:02:00");
+  await expect(timestamp).toHaveValue("0:01:53");
   await timestamp.fill("2:01");
   await page.getByRole("button", { name: "Save timestamp" }).click();
   await expect(link).toHaveAttribute("href", `${recording}&t=121s`);

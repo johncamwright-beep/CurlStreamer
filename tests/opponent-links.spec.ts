@@ -99,12 +99,8 @@ test("saves a shared YouTube watch link without making a reservation", async ({
       json: { game: { id: payload.gameId } },
     });
   });
-  await page
-    .getByRole("button", { name: "Schedule game", exact: true })
-    .click();
-  await expect(
-    page.getByRole("heading", { name: "Game scheduled", exact: true }),
-  ).toBeVisible();
+  await page.getByRole("button", { name: "Schedule", exact: true }).click();
+  await expect(page).toHaveURL(/\/dashboard\?season=/);
   expect(schedules).toHaveLength(1);
   expect(schedules[0]).toMatchObject({
     opponentId: "77777777-7777-4777-8777-777777777777",

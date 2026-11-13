@@ -43,7 +43,7 @@ test.beforeAll(async () => {
           }));
           builder.onLoad({ filter: /.*/, namespace: "fixture" }, () => ({
             contents:
-              "export function useRouter(){return {push(path){window.location.assign(path)},refresh(){}}}",
+              "export function useRouter(){return {replace(path){window.location.replace(path)},refresh(){}}}",
             loader: "js",
           }));
         },

@@ -43,7 +43,7 @@ it("routes standalone reviews without adding any scored attempts", () => {
       end: null,
       stone: null,
       note: "Sweep discussion",
-      url: "https://www.youtube.com/watch?v=abcdefghijk&t=30s",
+      url: "https://www.youtube.com/watch?v=abcdefghijk&t=23s",
       estimated: true,
     }),
   ]);

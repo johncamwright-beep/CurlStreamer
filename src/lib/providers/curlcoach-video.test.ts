@@ -86,7 +86,7 @@ it("accounts for the off-air gap between two starts on the same YouTube video", 
     selectedAt: "2026-11-11T14:54:59.294Z",
   };
   expect(reviewLink(standaloneReviewVideo(flag, broadcast))).toContain(
-    "t=1709s",
+    "t=1702s",
   );
   expect(
     reviewLink(
@@ -95,7 +95,7 @@ it("accounts for the off-air gap between two starts on the same YouTube video", 
         broadcast,
       ),
     ),
-  ).toContain("t=997s");
+  ).toContain("t=990s");
   expect(
     standaloneReviewVideo(
       { ...flag, selectedAt: "2026-11-11T14:40:00Z" },
@@ -138,7 +138,7 @@ it("retains known recording links without inventing timing and ignores invalid o
     [gid]: { url: "https://www.youtube.com/watch?v=abcdefghijk" },
   });
 });
-it("uses the earlier recording start for phone seeks without adding another lead-in", async () => {
+it("adds a lead-in to estimated standalone YouTube flags and clamps early links", async () => {
   m.rpc.mockResolvedValue({
     data: [
       {
@@ -153,31 +153,41 @@ it("uses the earlier recording start for phone seeks without adding another lead
   const broadcast = (await loadCoachBroadcastReviews("team", [gid], "coach"))[
     gid
   ];
-  const selectedAt = "2026-11-10T15:00:30Z";
-  const standalone = standaloneReviewVideo(
-    {
-      id: gid,
-      audience: "team",
-      playerId: null,
-      playerName: null,
-      note: "",
-      selectedAt,
-    },
-    broadcast,
+  const flag = {
+    id: gid,
+    audience: "team" as const,
+    playerId: null,
+    playerName: null,
+    note: "",
+    selectedAt: "2026-11-10T15:00:30Z",
+  };
+  const standalone = standaloneReviewVideo(flag, broadcast);
+  expect(reviewLink(standalone)).toBe(
+    "https://www.youtube.com/watch?v=abcdefghijk&t=33s",
   );
+  expect(standalone).toMatchObject({
+    positionSeconds: 40,
+    estimated: true,
+    lookBackSeconds: 7,
+  });
+  expect(
+    reviewLink(
+      standaloneReviewVideo(
+        { ...flag, selectedAt: "2026-11-10T14:59:53Z" },
+        broadcast,
+      ),
+    ),
+  ).toBe("https://www.youtube.com/watch?v=abcdefghijk&t=0s");
   const shot = withBroadcastReview(
     {
-      flaggedAt: selectedAt,
+      flaggedAt: flag.selectedAt,
       videoReview: { url: "", positionSeconds: null, lookBackSeconds: 0 },
     },
     broadcast,
   ).videoReview;
-  for (const video of [standalone, shot]) {
-    expect(reviewLink(video)).toBe(
-      "https://www.youtube.com/watch?v=abcdefghijk&t=40s",
-    );
-    expect(video).toMatchObject({ estimated: true, lookBackSeconds: 0 });
-  }
+  expect(reviewLink(shot)).toBe(
+    "https://www.youtube.com/watch?v=abcdefghijk&t=40s",
+  );
 });
 it("retains earlier broadcast cycles newest first when the current broadcast is replaced", async () => {
   const older = {

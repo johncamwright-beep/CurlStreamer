@@ -103,7 +103,7 @@ test("flagged-shot menu retains filters and shows one timestamped link per flag"
     standalone.getByRole("link", { name: "Link to video", exact: true }),
   ).toHaveAttribute(
     "href",
-    "https://www.youtube.com/watch?v=EarlierFilm&t=120s",
+    "https://www.youtube.com/watch?v=EarlierFilm&t=113s",
   );
   await expect(
     page

@@ -20,8 +20,12 @@ test.beforeEach(async ({ page }) => {
         const source=document.createElement('canvas');
         source.width=90; source.height=160;
         const sourceContext=source.getContext('2d');
-        window.proof={color:'red',observations:0,firstPaint:0,aspect:0};
+        window.proof={color:'red',observations:0,firstPaint:0,aspect:0,diagnostics:[]};
         const nativeDecode=window.createImageBitmap.bind(window);
+        const nativeObjectUrl=URL.createObjectURL.bind(URL);
+        URL.createObjectURL=(blob)=>nativeObjectUrl(window.proof.failHtmlImage && blob.type==='image/jpeg'
+          ? new Blob(['Fixture invalid JPEG'],{type:'image/jpeg'})
+          : blob);
         const stalled=[];
         window.createImageBitmap=(...args)=>window.proof.failMode==='reject'
           ? Promise.reject(new Error('Fixture decode failure'))
@@ -47,6 +51,7 @@ test.beforeEach(async ({ page }) => {
           }
           return nativeFetch(url,options);
         };
+        const diagnostic=event=>window.proof.diagnostics.push(event.code);
         const receive=(role,state)=>{
           window.proof.message=state.message;
           const host=document.getElementById('ip');
@@ -58,7 +63,7 @@ test.beforeEach(async ({ page }) => {
           window.proof.firstPaint=0;window.proof.generation=generation;
           root.render(kind==='phone'
             ? <ProgramDelayedVideo stream={stream} delayMs={delay} onAspect={aspect=>window.proof.aspect=aspect}/>
-            : <M4IpCameraTransport role='camera-home' sourceIdentity={'tapo:'+generation} generation={generation} delayMs={delay} onChange={receive}/>);
+            : <M4IpCameraTransport role='camera-home' sourceIdentity={'tapo:'+generation} generation={generation} delayMs={delay} onChange={receive} diagnostic={diagnostic}/>);
         };
         window.replacePhone=()=>{stream=source.captureStream(30);window.mount('phone',700)};
         window.pixel=()=>{
@@ -123,7 +128,7 @@ test("IP and USB JPEG path presents actual delayed pixels while observations sta
 });
 
 for (const failure of ["reject", "stall"]) {
-  test(`continuing JPEG receipt cannot keep failed ${failure} decoding verified`, async ({
+  test(`continuing JPEG receipt cannot keep a failed ${failure} decoder and image fallback verified`, async ({
     page,
   }) => {
     await page.evaluate(() => (window as any).mount("ip", 250));
@@ -136,6 +141,7 @@ for (const failure of ["reject", "stall"]) {
     const before = await page.evaluate((mode) => {
       const fixture = window as any;
       fixture.proof.failMode = mode;
+      fixture.proof.failHtmlImage = true;
       return fixture.proof.observations;
     }, failure);
     await expect(page.locator("#ip canvas")).toHaveCount(0, { timeout: 8000 });
@@ -145,16 +151,27 @@ for (const failure of ["reject", "stall"]) {
     const failed = await page.evaluate(() => ({
       message: (window as any).proof.message,
       observations: (window as any).proof.observations,
+      diagnostics: (window as any).proof.diagnostics,
     }));
     expect(failed.message).toBe("Reconnecting IP camera…");
     expect(failed.observations).toBeGreaterThan(before);
-    await page.evaluate(() => (window as any).releaseDecoder());
+    expect(failed.diagnostics).toContain("retry");
+    expect(failed.diagnostics).toContain("paint_stale");
+    await page.evaluate(() => {
+      const fixture = window as any;
+      fixture.proof.color = "blue";
+      fixture.proof.failHtmlImage = false;
+    });
     await expect
-      .poll(() => page.evaluate(() => (window as any).pixel()[0]))
+      .poll(() => page.evaluate(() => (window as any).pixel()[2]))
       .toBeGreaterThan(200);
     await expect
       .poll(() => page.evaluate(() => (window as any).proof.lastVerified))
       .toBe(true);
+    expect(await page.evaluate(() => (window as any).proof.failMode)).toBe(
+      failure,
+    );
+    await page.evaluate(() => (window as any).releaseDecoder());
   });
 }
 

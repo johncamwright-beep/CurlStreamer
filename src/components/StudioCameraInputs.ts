@@ -22,24 +22,65 @@ export const studioCameraInputSchema = z
   })
   .strict();
 export type StudioCameraInput = z.infer<typeof studioCameraInputSchema>;
+const studioCameraRoleSchema = z.enum(["camera-home", "camera-away"]);
+type StudioCameraRole = z.infer<typeof studioCameraRoleSchema>;
+type StudioCameraInputs = Partial<Record<StudioCameraRole, StudioCameraInput>>;
+
 export function useStudioCameraInputs(id?: string) {
-  const [cameras, setCameras] = useState<Record<string, StudioCameraInput>>({});
+  const [cameras, setCameras] = useState<StudioCameraInputs>({});
   useEffect(() => {
     setCameras({});
+    const cameraEvents = z.object({
+      gameId: z.literal(id ?? ""),
+      cameras: z.partialRecord(studioCameraRoleSchema, studioCameraInputSchema),
+    });
+    const healthEvents = z.object({
+      gameId: z.literal(id ?? ""),
+      cameras: z.partialRecord(
+        studioCameraRoleSchema,
+        z.object({
+          generation: z.number().int().nonnegative(),
+          health: m4CameraHealthSchema.optional(),
+        }),
+      ),
+    });
     const receive = (event: Event) => {
-      const result = z
-        .object({
-          gameId: z.literal(id ?? ""),
-          cameras: z.partialRecord(
-            z.enum(["camera-home", "camera-away"]),
-            studioCameraInputSchema,
-          ),
-        })
-        .safeParse((event as CustomEvent).detail);
-      if (result.success) setCameras(result.data.cameras);
+      const result = cameraEvents.safeParse((event as CustomEvent).detail);
+      if (result.success)
+        setCameras((current) => {
+          const next = { ...result.data.cameras };
+          for (const role of studioCameraRoleSchema.options) {
+            const camera = next[role];
+            const previous = current[role];
+            if (camera && camera.generation === previous?.generation)
+              next[role] = {
+                ...camera,
+                health: camera.health ?? previous.health,
+              };
+          }
+          return next;
+        });
+    };
+    const receiveHealth = (event: Event) => {
+      const result = healthEvents.safeParse((event as CustomEvent).detail);
+      if (result.success)
+        setCameras((current) => {
+          const next = { ...current };
+          for (const role of studioCameraRoleSchema.options) {
+            const camera = current[role];
+            const sample = result.data.cameras[role];
+            if (sample?.health && camera?.generation === sample.generation)
+              next[role] = { ...camera, health: sample.health };
+          }
+          return next;
+        });
     };
     window.addEventListener("studio-camera-inputs", receive);
-    return () => window.removeEventListener("studio-camera-inputs", receive);
+    window.addEventListener("studio-local-health", receiveHealth);
+    return () => {
+      window.removeEventListener("studio-camera-inputs", receive);
+      window.removeEventListener("studio-local-health", receiveHealth);
+    };
   }, [id]);
   return cameras;
 }
@@ -47,7 +88,7 @@ export function useStudioCameraInputs(id?: string) {
 /** Acknowledges connection intent; fresh video is verified independently. */
 export function cameraInputNativeConnection(
   id: string,
-  cameraRole: "camera-home" | "camera-away",
+  cameraRole: StudioCameraRole,
   action: "connect-camera" | "disconnect-camera",
 ) {
   const native = (
@@ -113,7 +154,7 @@ export function cameraInputNativeConnection(
 export function cameraInputNativeAction(
   id: string,
   cameraRole: string,
-  action: "configure-camera" | "reconnect-camera",
+  action: "configure-camera",
 ) {
   const native = (
     window as Window & {

@@ -14,6 +14,7 @@ type Observation = {
   frames?: number;
   verified?: boolean;
   sourceGeneration?: number;
+  event?: { code: string; role?: Role };
 };
 const roles: Role[] = ["camera-home", "camera-away"];
 const snapshot = (
@@ -1041,80 +1042,130 @@ test("IP canvas updates pixels and resolution in place, recovers stale frames, a
   expect(fixture.errors).toEqual([]);
 });
 
-test("two stalled bitmap decodes cap retained work and late release resumes polling", async ({
-  page,
-}) => {
-  await page.addInitScript(() => {
-    const decode = window.createImageBitmap.bind(window);
-    const state = { started: 0, closes: 0, finishes: [] as Array<() => void> };
-    (window as unknown as { __bitmapCap: typeof state }).__bitmapCap = state;
-    window.createImageBitmap = ((blob: Blob) => {
-      state.started++;
-      if (state.started > 2) return decode(blob);
-      const pending = decode(blob);
-      return new Promise<ImageBitmap>((resolve) => {
-        state.finishes.push(() => {
-          void pending.then((bitmap) => {
-            const close = bitmap.close.bind(bitmap);
-            bitmap.close = () => {
-              state.closes++;
-              close();
-            };
-            resolve(bitmap);
+for (const delayMs of [0, 750]) {
+  test(`two stalled bitmap decodes recover through HTML image at ${delayMs}ms program delay`, async ({
+    page,
+  }) => {
+    await page.addInitScript((fixtureBytes) => {
+      const decode = window.createImageBitmap.bind(window);
+      const state = {
+        started: 0,
+        closes: 0,
+        urls: 0,
+        maxUrls: 0,
+        finishes: [] as Array<() => void>,
+      };
+      (window as unknown as { __bitmapCap: typeof state }).__bitmapCap = state;
+      const createUrl = URL.createObjectURL.bind(URL);
+      const revokeUrl = URL.revokeObjectURL.bind(URL);
+      const urls = new Set<string>();
+      URL.createObjectURL = (blob) => {
+        const url = createUrl(blob);
+        if (blob instanceof Blob && blob.size === fixtureBytes) {
+          urls.add(url);
+          state.urls = urls.size;
+          state.maxUrls = Math.max(state.maxUrls, urls.size);
+        }
+        return url;
+      };
+      URL.revokeObjectURL = (url) => {
+        if (urls.delete(url)) state.urls = urls.size;
+        revokeUrl(url);
+      };
+      window.createImageBitmap = ((blob: Blob) => {
+        if (blob.size !== fixtureBytes) return decode(blob);
+        state.started++;
+        if (state.started > 2) return decode(blob);
+        const pending = decode(blob);
+        return new Promise<ImageBitmap>((resolve) => {
+          state.finishes.push(() => {
+            void pending.then((bitmap) => {
+              const close = bitmap.close.bind(bitmap);
+              bitmap.close = () => {
+                state.closes++;
+                close();
+              };
+              resolve(bitmap);
+            });
           });
         });
-      });
-    }) as typeof window.createImageBitmap;
-  });
-  const fixture = await install(page, ["phone", "tapo"], undefined, 0);
-  await expect
-    .poll(() =>
-      page.evaluate(
+      }) as typeof window.createImageBitmap;
+    }, jpeg.length);
+    const fixture = await install(page, ["phone", "tapo"], undefined, -delayMs);
+    await expect
+      .poll(() =>
+        page.evaluate(
+          () =>
+            (window as unknown as { __bitmapCap: { started: number } })
+              .__bitmapCap.started,
+        ),
+      )
+      .toBe(2);
+    await verifyFrame(page, "camera-away");
+    const before = fixture.accepted.filter(
+      (value) => value.cameraRole === "camera-away",
+    ).length;
+    await expect
+      .poll(
+        () =>
+          fixture.accepted.filter((value) => value.cameraRole === "camera-away")
+            .length,
+      )
+      .toBeGreaterThan(before);
+    expect(
+      fixture.observations
+        .filter(
+          (value) =>
+            value.action === "diagnostic" &&
+            value.event?.role === "camera-away",
+        )
+        .map((value) => value.event?.code),
+    ).toEqual(["timeout", "retry"]);
+    expect(
+      await page.evaluate(
         () =>
           (window as unknown as { __bitmapCap: { started: number } })
             .__bitmapCap.started,
       ),
-    )
-    .toBe(2);
-  await page.waitForTimeout(2300);
-  expect(
-    await page.evaluate(
-      () =>
-        (window as unknown as { __bitmapCap: { started: number } }).__bitmapCap
-          .started,
-    ),
-  ).toBe(2);
-  expect(
-    fixture.accepted.filter((value) => value.cameraRole === "camera-away"),
-  ).toHaveLength(0);
-  await expect(
-    panel(page, "camera-away").getByRole("img", { name: "IP camera" }),
-  ).toHaveCount(0);
-  await page.evaluate(() =>
-    (
-      window as unknown as { __bitmapCap: { finishes: Array<() => void> } }
-    ).__bitmapCap.finishes.forEach((finish) => finish()),
-  );
-  await expect
-    .poll(() =>
-      page.evaluate(
+    ).toBe(2);
+    await page.evaluate(() =>
+      (
+        window as unknown as { __bitmapCap: { finishes: Array<() => void> } }
+      ).__bitmapCap.finishes.forEach((finish) => finish()),
+    );
+    await expect
+      .poll(() =>
+        page.evaluate(
+          () =>
+            (window as unknown as { __bitmapCap: { closes: number } })
+              .__bitmapCap.closes,
+        ),
+      )
+      .toBe(2);
+    await verifyFrame(page, "camera-away");
+    await expect
+      .poll(
         () =>
-          (window as unknown as { __bitmapCap: { closes: number } }).__bitmapCap
-            .closes,
-      ),
-    )
-    .toBe(2);
-  await verifyFrame(page, "camera-away");
-  await expect
-    .poll(
-      () =>
-        fixture.accepted.filter((value) => value.cameraRole === "camera-away")
-          .length,
-    )
-    .toBeGreaterThan(0);
-  expect((await fixture.maxActive())["camera-away"]).toBe(1);
-  expect(fixture.errors).toEqual([]);
-});
+          fixture.accepted.filter((value) => value.cameraRole === "camera-away")
+            .length,
+      )
+      .toBeGreaterThan(0);
+    await expect
+      .poll(() =>
+        page.evaluate(() => {
+          const state = (
+            window as unknown as {
+              __bitmapCap: { urls: number; maxUrls: number };
+            }
+          ).__bitmapCap;
+          return { urls: state.urls, maxUrls: state.maxUrls };
+        }),
+      )
+      .toEqual({ urls: 0, maxUrls: 1 });
+    expect((await fixture.maxActive())["camera-away"]).toBe(1);
+    expect(fixture.errors).toEqual([]);
+  });
+}
 
 test("completed camera observations drain their bodies and release attempt signals", async ({
   page,

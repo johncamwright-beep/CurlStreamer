@@ -482,6 +482,7 @@ function ProgramRenderer() {
               sourceIdentity={
                 sources[role].kind + ":" + sources[role].generation
               }
+              diagnostic={log}
               delayMs={sync.cameraDelayMs}
               onChange={onCameraChange}
             />

@@ -1,12 +1,25 @@
 import { build } from "esbuild";
 import { expect, test, type Page } from "@playwright/test";
 import { testGameId } from "../src/test/game-fixture";
+import type { StudioCameraInput } from "../src/components/StudioCameraInputs";
 let bundle: string;
 let stylesheet: string;
 test.beforeAll(async () => {
   const output = await build({
     stdin: {
-      contents: `import React from 'react'; import {createRoot} from 'react-dom/client'; import {StudioDeviceCards} from './src/components/StudioDeviceCards'; const root=createRoot(document.getElementById('root')); window.updateDeviceFixture=(claims)=>root.render(React.createElement(StudioDeviceCards,{id:'${testGameId}',enabled:true,claims,onChanged:async()=>window.updateDeviceFixture({})})); window.updateDeviceFixture({'camera-home':'assigned'});`,
+      contents: `
+        import React from 'react';
+        import {createRoot} from 'react-dom/client';
+        import {StudioDeviceCards} from './src/components/StudioDeviceCards';
+        const root = createRoot(document.getElementById('root'));
+        window.updateDeviceFixture = (claims, layout) => root.render(
+          <StudioDeviceCards id="${testGameId}" enabled claims={claims} layout={layout}
+            onChanged={async () => window.updateDeviceFixture({})}
+            onLayout={layout ? async (value) => window.updateDeviceFixture(claims, value) : undefined}
+          />
+        );
+        window.updateDeviceFixture({'camera-home':'assigned'});
+      `,
       resolveDir: process.cwd(),
       loader: "tsx",
     },
@@ -68,6 +81,157 @@ async function openCards(page: Page) {
   );
   await page.goto("/device-fixture");
 }
+
+test("IP camera disconnect cancels retries while the eye controls broadcast visibility", async ({
+  page,
+}, info) => {
+  await page.setViewportSize({
+    width: info.project.name === "mobile" ? 320 : 768,
+    height: 850,
+  });
+  const commands: string[] = [];
+  const source: StudioCameraInput = {
+    kind: "tapo",
+    configured: true,
+    phase: "retrying",
+    connectionEnabled: true,
+    generation: 2,
+  };
+  await page.exposeFunction("recordCameraCommand", (action: string) => {
+    commands.push(action);
+  });
+  await page.addInitScript(
+    ({ gameId, source }) => {
+      const fixture = window as typeof window & {
+        chrome: {
+          webview: {
+            postMessage(message: { action: string; nonce: string }): void;
+          };
+        };
+        recordCameraCommand(action: string): void;
+        reportCamera(camera: StudioCameraInput): void;
+      };
+      fixture.reportCamera = (camera) =>
+        window.dispatchEvent(
+          new CustomEvent("studio-camera-inputs", {
+            detail: { gameId, cameras: { "camera-away": camera } },
+          }),
+        );
+      fixture.chrome = {
+        webview: {
+          postMessage({ action, nonce }) {
+            fixture.recordCameraCommand(action);
+            const connectionEnabled = action === "connect-camera";
+            source.connectionEnabled = connectionEnabled;
+            source.phase = connectionEnabled ? "streaming" : "idle";
+            source.generation++;
+            fixture.reportCamera(source);
+            window.dispatchEvent(
+              new CustomEvent("studio-camera-connection-result", {
+                detail: {
+                  gameId,
+                  cameraRole: "camera-away",
+                  nonce,
+                  ok: true,
+                  connectionEnabled,
+                  generation: source.generation,
+                },
+              }),
+            );
+          },
+        },
+      };
+    },
+    { gameId: testGameId, source },
+  );
+  await openCards(page);
+  const card = page.getByRole("region", { name: "Camera 2", exact: true });
+  await expect(card).toBeVisible();
+  await page.evaluate((camera) => {
+    const fixture = window as unknown as {
+      updateDeviceFixture(claims: object, layout: string): void;
+      reportCamera(camera: StudioCameraInput): void;
+    };
+    fixture.updateDeviceFixture({ "camera-home": "assigned" }, "split");
+    fixture.reportCamera(camera);
+  }, source);
+
+  const connect = card.getByRole("button", { name: "Connect", exact: true });
+  const disconnect = card.getByRole("button", {
+    name: "Disconnect",
+    exact: true,
+  });
+  const eye = card.getByRole("button", {
+    name: "Show Camera 2 in broadcast",
+  });
+  await expect(card.getByRole("status")).toHaveText("Retrying…");
+  await expect(disconnect).toBeEnabled();
+  await expect(eye).toHaveAttribute("aria-pressed", "true");
+  const eyeBounds = (await eye.boundingBox())!;
+  expect(eyeBounds.height).toBeGreaterThanOrEqual(44);
+  expect(eyeBounds.width).toBeGreaterThanOrEqual(44);
+  await eye.click();
+  await expect(eye).toHaveAttribute("aria-pressed", "false");
+  await expect(disconnect).toBeEnabled();
+  expect(commands).toEqual([]);
+
+  await disconnect.click();
+  await expect(connect).toBeEnabled();
+  await expect(card.getByRole("status")).toHaveText("Ready to connect");
+  await connect.click();
+  await expect(disconnect).toBeEnabled();
+  await expect(card.getByRole("status")).toHaveText("Video ready · Hidden");
+  await expect(eye).toHaveAttribute("aria-pressed", "false");
+  await eye.click();
+  await expect(eye).toHaveAttribute("aria-pressed", "true");
+  await expect(card.getByRole("status")).toHaveText(
+    "Connected · Waiting for preview",
+  );
+  expect(
+    await card.evaluate((node) => node.scrollWidth <= node.clientWidth),
+  ).toBe(true);
+  const health = card.getByRole("button", {
+    name: "Camera 2 connection details",
+  });
+  const reportHealth = (generation: number) =>
+    page.evaluate(
+      ({ gameId, generation }) =>
+        window.dispatchEvent(
+          new CustomEvent("studio-local-health", {
+            detail: {
+              gameId,
+              cameras: {
+                "camera-away": {
+                  generation,
+                  health: {
+                    receivedFps: 20,
+                    lastFrameAgeMs: 39,
+                    longestGapMs: 200,
+                    reconnects: 0,
+                    decodedFrames: 150,
+                    decodeErrors: 0,
+                    processingMs: 2,
+                    native: {
+                      transport: "udp",
+                      decodedFrames: 150,
+                      decodeErrors: 0,
+                      processingMs: 2,
+                    },
+                  },
+                },
+              },
+            },
+          }),
+        ),
+      { gameId: testGameId, generation },
+    );
+  await reportHealth(source.generation);
+  await expect(health).toBeDisabled();
+  await reportHealth(source.generation + 2);
+  await health.click();
+  await expect(page.getByText("RTSP over UDP.")).toBeVisible();
+  expect(commands).toEqual(["disconnect-camera", "connect-camera"]);
+});
 test("device QR requests are explicit, role-specific and cleared when claimed", async ({
   page,
 }, info) => {

@@ -52,6 +52,7 @@ const broadcastSessionSchema = z.object({
   lastErrorCode: z.string().optional(),
 });
 const STATUS_TIMEOUT_MS = 6000;
+const GO_LIVE_FAILURES_BEFORE_MANUAL_RETRY = 3;
 
 function studioBroadcastRequest(
   gameId: string,
@@ -100,8 +101,9 @@ export function StudioYouTube({
   const [startRequest, setStartRequest] = useState<{
     at: number;
     accepted: boolean;
+    previousMessage: string;
   } | null>(null);
-  const [goingLive, setGoingLive] = useState(false);
+  const [retryGoLive, setRetryGoLive] = useState(false);
   const [error, setError] = useState("");
   const [stopOpen, setStopOpen] = useState(false);
   const [replacementOpen, setReplacementOpen] = useState(false);
@@ -158,14 +160,15 @@ export function StudioYouTube({
     launching &&
     state.streaming === "armed" &&
     (state.receiving || state.outputActive);
+  const previewLive = state?.live && state.outputActive;
   const connecting =
     !terminal &&
-    !held &&
     !ending &&
+    !previewLive &&
     (startRequest !== null ||
-      replacing ||
       restarting ||
-      (observedLive.current !== id &&
+      (!held &&
+        confirmedLive.current !== id &&
         knownState?.available &&
         !knownState.programAuthorityEnded &&
         (knownState.streaming === "starting" ||
@@ -190,7 +193,7 @@ export function StudioYouTube({
     const isCurrent = () =>
       currentGame.current === id && flight.current === attempt;
     nextCheck.current = Date.now() + 10000;
-    setGoingLive(true);
+    setRetryGoLive(false);
     setError("");
     let failureMessage = "";
     try {
@@ -207,6 +210,7 @@ export function StudioYouTube({
             code: z.literal("youtube_start_failed"),
           })
           .safeParse(await result.json().catch(() => null));
+        if (!isCurrent() || confirmedLive.current === id) return;
         if (failure.success && result.status === 503)
           failureMessage = failure.data.error;
         // A session can still be settling after encoder startup. A 409 is
@@ -234,6 +238,7 @@ export function StudioYouTube({
       halted.current = ["ended", "removed", "setup-required"].includes(
         response.phase,
       );
+      setRetryGoLive(response.phase === "setup-required");
       if (["live", "reconnecting"].includes(response.phase))
         confirmedLive.current = id;
       if (["ended", "removed"].includes(response.phase)) {
@@ -244,20 +249,24 @@ export function StudioYouTube({
       setError(messages[response.phase] ?? "");
     } catch {
       if (!isCurrent() || confirmedLive.current === id) return;
+      const consecutiveFailures = ++failures.current;
+      const needsAttention = halted.current;
+      const offerRetry =
+        needsAttention ||
+        consecutiveFailures >= GO_LIVE_FAILURES_BEFORE_MANUAL_RETRY;
+      setRetryGoLive(offerRetry);
       setError(
         failureMessage ||
-          (halted.current
+          (needsAttention
             ? "YouTube needs attention. Check YouTube settings. Your game’s watch link is retained."
-            : "YouTube status is temporarily unavailable. Retrying automatically…"),
+            : offerRetry
+              ? "YouTube status is temporarily unavailable. Studio will keep trying, or you can retry now."
+              : "YouTube status is temporarily unavailable. Retrying automatically…"),
       );
       nextCheck.current =
-        Date.now() +
-        Math.min(60000, 5000 * 2 ** Math.min(++failures.current, 4));
+        Date.now() + Math.min(60000, 5000 * 2 ** consecutiveFailures);
     } finally {
-      if (isCurrent()) {
-        flight.current = undefined;
-        setGoingLive(false);
-      }
+      if (isCurrent()) flight.current = undefined;
     }
   }
   useEffect(() => {
@@ -375,7 +384,7 @@ export function StudioYouTube({
     halted.current = false;
     nextCheck.current = 0;
     failures.current = 0;
-    setGoingLive(false);
+    setRetryGoLive(false);
     setStartRequest(null);
     setError("");
     setStopOpen(false);
@@ -401,7 +410,10 @@ export function StudioYouTube({
       const data = parsed.data;
       const startingOutput = ["starting", "armed"].includes(data.streaming);
       const firstStartup =
-        data.streaming === "starting" && observedLive.current !== id;
+        startingOutput &&
+        data.presentation?.mode !== "hold" &&
+        data.lastLiveAgeMs == null &&
+        confirmedLive.current !== id;
       if (data.streaming === "paused") {
         confirmedLive.current = undefined;
         observedLive.current = undefined;
@@ -414,7 +426,9 @@ export function StudioYouTube({
         )
           return null;
         if (!request)
-          return firstStartup ? { at: receivedAt, accepted: true } : null;
+          return firstStartup
+            ? { at: receivedAt, accepted: true, previousMessage: data.message }
+            : null;
         if (startingOutput)
           return request.accepted ? request : { ...request, accepted: true };
         // An idle report can already be in flight when the operator clicks.
@@ -422,7 +436,7 @@ export function StudioYouTube({
         if (
           !data.busy &&
           (request.accepted ||
-            data.message ||
+            (data.message && data.message !== request.previousMessage) ||
             receivedAt - request.at > STATUS_TIMEOUT_MS)
         )
           return null;
@@ -437,7 +451,10 @@ export function StudioYouTube({
         if (parsed.data.concurrentViewers != null)
           lastViewers.current = parsed.data.concurrentViewers;
         confirmedLive.current = id;
-        if (data.live && data.outputActive) observedLive.current = id;
+        if (data.live && data.outputActive) {
+          observedLive.current = id;
+          setRetryGoLive(false);
+        }
         failures.current = 0;
         setError("");
       }
@@ -490,7 +507,7 @@ export function StudioYouTube({
     if (action === "start" || action === "disconnect" || action === "restart") {
       flight.current?.abort();
       flight.current = undefined;
-      setGoingLive(false);
+      setRetryGoLive(false);
       halted.current = action === "disconnect";
       nextCheck.current = 0;
       failures.current = 0;
@@ -499,7 +516,11 @@ export function StudioYouTube({
     setPresentationError("");
     setPending(true);
     if (action === "start" || action === "restart")
-      setStartRequest({ at: Date.now(), accepted: false });
+      setStartRequest({
+        at: Date.now(),
+        accepted: false,
+        previousMessage: state.message,
+      });
     if (action === "disconnect") setStartRequest(null);
     if (action === "hold" || action === "resume" || action === "restart") {
       const attempt = {};
@@ -580,6 +601,7 @@ export function StudioYouTube({
   const blocked = !state?.available || state.busy || pending || ending;
   const canStopBroadcast =
     broadcastLive &&
+    !connecting &&
     !blocked &&
     !replacing &&
     state?.streaming === "armed" &&
@@ -590,10 +612,11 @@ export function StudioYouTube({
     !blocked &&
     !replacing &&
     (state?.streaming === "idle" || state?.canRestartBroadcast === true);
-  const starting = connecting && (!canGoLive || goingLive);
+  // The server checks YouTube automatically while the button stays disabled.
+  // A failed check may offer a manual retry while the next check is scheduled.
+  const canRetryGoLive = connecting && retryGoLive && canGoLive && !blocked;
   const reconnectingOutput =
     needsRecovery && state?.canRecover && !offerRestart;
-  const waitingForPicture = connecting && !broadcastLive;
   const showPictureControl =
     restarting ||
     (!replacing &&
@@ -607,10 +630,13 @@ export function StudioYouTube({
               (knownState?.streaming === "armed" || reconnectingOutput))))));
   let broadcastLabel = "Broadcast to YouTube";
   if (replacing) broadcastLabel = "Restarting broadcast…";
+  else if (connecting)
+    broadcastLabel = canRetryGoLive
+      ? "Retry broadcast"
+      : "Connecting broadcast…";
   else if (broadcastLive) broadcastLabel = "Stop broadcast";
   else if (pending || state?.busy) broadcastLabel = "Please wait…";
   else if (terminal || disconnected) broadcastLabel = "Restart broadcast";
-  else if (starting) broadcastLabel = "Starting broadcast…";
   else if (needsRecovery)
     broadcastLabel = state?.canRecover
       ? "Reconnect broadcast"
@@ -633,33 +659,34 @@ export function StudioYouTube({
       type="button"
       className="btn min-h-11"
       title={
-        launching
-          ? "Start this YouTube broadcast now, including before its scheduled time."
+        canRetryGoLive
+          ? "Retry YouTube confirmation on the saved broadcast."
           : undefined
       }
       disabled={
         terminal
           ? !canReplaceBroadcast
-          : broadcastLive
-            ? !canStopBroadcast
-            : replacing ||
-              blocked ||
-              starting ||
-              (restartRequired && !disconnected) ||
-              state?.streaming === "stopping" ||
-              Boolean(needsRecovery && !state?.canRecover)
+          : connecting
+            ? !canRetryGoLive
+            : broadcastLive
+              ? !canStopBroadcast
+              : replacing ||
+                blocked ||
+                (restartRequired && !disconnected) ||
+                state?.streaming === "stopping" ||
+                Boolean(needsRecovery && !state?.canRecover)
       }
       onClick={() => {
         if (canReplaceBroadcast) {
           setReplacementOpen(true);
         } else if (canStopBroadcast) {
           setStopOpen(true);
-        } else if (canGoLive) {
+        } else if (canRetryGoLive) {
           halted.current = false;
           failures.current = 0;
           nextCheck.current = 0;
           void goLive();
-        } else {
+        } else if (!connecting) {
           void send(
             disconnected &&
               (restartRequired || presentationError) &&
@@ -683,7 +710,7 @@ export function StudioYouTube({
           disabled={
             blocked ||
             restarting ||
-            waitingForPicture ||
+            connecting ||
             (!reconnectingOutput &&
               (held
                 ? !state?.canHoldStream
@@ -692,7 +719,7 @@ export function StudioYouTube({
           title={
             reconnectingOutput
               ? "Reconnect local video to the same YouTube broadcast."
-              : waitingForPicture
+              : connecting
                 ? "This control becomes available once the broadcast connects."
                 : held
                   ? "Return from the temporary pause card to live video on the same watch link."
@@ -721,7 +748,7 @@ export function StudioYouTube({
                 : held
                   ? "Resume broadcast"
                   : knownState?.canHoldStream ||
-                      (waitingForPicture && !knownState?.canReconnect)
+                      (connecting && !knownState?.canReconnect)
                     ? "Pause broadcast"
                     : "Disconnect"}
         </button>
@@ -741,7 +768,6 @@ export function StudioYouTube({
     </>
   );
   let previewStatus: PreviewStatus | undefined;
-  const previewLive = state?.live && state.outputActive;
   if (terminal || ending || (disconnected && !connecting))
     previewStatus = "preview";
   else if (previewLive) previewStatus = held ? "live-paused" : "live";

@@ -48,18 +48,6 @@
   font-size: 12px;
   color: #b8c7d4;
 }
-.studio-device-state::before {
-  content: "";
-  display: inline-block;
-  width: 8px;
-  height: 8px;
-  margin-right: 6px;
-  border-radius: 50%;
-  background: #9caeba;
-}
-.studio-device-state[data-online="true"]::before {
-  background: #66dfc6;
-}
 .studio-device .studio-device-state[data-online="true"] {
   color: #80eed4;
   font-weight: 650;
@@ -198,6 +186,37 @@
 .studio-device-camera-header > div {
   min-width: 0;
 }
+.studio-device-camera-header .studio-device-visibility {
+  display: grid;
+  place-items: center;
+  grid-column: 3;
+  grid-row: 1;
+  align-self: start;
+  width: 44px;
+  min-height: 44px;
+  border: 1px solid #42596d;
+  border-radius: 10px;
+  background: #1b3041;
+  color: #e0eaf2;
+}
+.studio-device-visibility[aria-pressed="true"] {
+  color: #80eed4;
+}
+.studio-device-visibility:disabled {
+  opacity: 0.55;
+}
+.studio-device-visibility .app-icon {
+  width: 21px;
+  height: 21px;
+}
+.studio-camera-health-trigger {
+  grid-column: 1 / -1;
+  min-height: 44px;
+  text-align: left;
+}
+.studio-camera-health-trigger:disabled {
+  min-height: 0;
+}
 .studio-device-camera-header .studio-device-number {
   width: 36px;
   height: 36px;
@@ -206,11 +225,12 @@
   font-size: 15px;
 }
 .studio-device .studio-device-mic-volume {
+  grid-column: 1 / -1;
   display: flex;
   align-items: center;
   gap: 6px;
   justify-self: end;
-  width: 140px;
+  width: 100%;
   min-height: 44px;
   font-size: 12px;
   white-space: nowrap;
@@ -245,6 +265,6 @@
 }
 .studio-device.studio-camera-device
   > .studio-device-primary-actions
-  > button.studio-device-visibility {
-  flex-grow: 1.5;
+  > button.studio-device-connection {
+  flex-basis: 90px;
 }

@@ -113,7 +113,21 @@ test("reports render chronological event charts and export their PDF without AI"
   const input = reportInputs(events[2], "team")[0];
   const saved: SavedReport = {
     ...input,
-    eventPerformance: eventPerformance(events, undefined, events[2].id),
+    eventPerformance: eventPerformance(
+      [
+        events[0],
+        {
+          ...events[0],
+          id: "empty-event",
+          name: "Uncharted event",
+          startDate: "2026-01-15",
+          games: [],
+        },
+        ...events.slice(1),
+      ],
+      undefined,
+      events[2].id,
+    ),
     narrative: {
       summary: {
         text: "Synthetic layout fixture. No AI request was made.",
@@ -154,7 +168,7 @@ test("reports render chronological event charts and export their PDF without AI"
   await page.addScriptTag({ content: bundled.outputFiles[0].text });
   await expect(
     page.getByRole("heading", {
-      name: "Event performance over time",
+      name: "Overall shooting / shot difficulty by event",
       exact: true,
     }),
   ).toBeVisible();
@@ -163,6 +177,13 @@ test("reports render chronological event charts and export their PDF without AI"
       name: "Performance across events in chronological order",
     }),
   ).toHaveCount(8);
+  const firstChart = page
+    .getByRole("img", {
+      name: "Performance across events in chronological order",
+    })
+    .first();
+  await expect(firstChart.locator(".report-trend-line")).toHaveCount(2);
+  await expect(page.getByText("small sample", { exact: true })).toHaveCount(0);
   const download = page.waitForEvent("download");
   await page.getByRole("button", { name: "Download PDF" }).click();
   await (

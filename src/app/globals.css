@@ -969,3 +969,15 @@ button {
   object-fit: cover;
   object-position: center;
 }
+
+.report-chart-table {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.3fr);
+  gap: 16px;
+  align-items: center;
+}
+@media (max-width: 640px) {
+  .report-chart-table {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

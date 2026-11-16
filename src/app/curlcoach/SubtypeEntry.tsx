@@ -140,15 +140,23 @@ export function DifficultyEntry({
   onChange,
 }: Pick<Props, "value" | "onChange">) {
   return (
-    <Choice
-      title="Shot difficulty"
-      value={String(value.values.difficulty ?? "")}
-      choices={[...catalogue.difficulty.choices!]}
-      labels={difficultyEntryLabels}
-      onChange={(choice) =>
-        onChange(changeObservation(value, "difficulty", choice || undefined))
-      }
-    />
+    <div>
+      <Choice
+        title="Shot difficulty"
+        value={String(value.values.difficulty ?? "")}
+        choices={[...catalogue.difficulty.choices!]}
+        labels={difficultyEntryLabels}
+        onChange={(choice) =>
+          onChange(changeObservation(value, "difficulty", choice || undefined))
+        }
+      />
+      {!value.values.difficulty && value.difficultyEstimate && (
+        <small>
+          Historical estimate. Select a rating to replace it with your
+          observation.
+        </small>
+      )}
+    </div>
   );
 }
 

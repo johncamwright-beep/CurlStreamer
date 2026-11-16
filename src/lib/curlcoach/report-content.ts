@@ -84,7 +84,9 @@ export function reportSummaryCards(report: SavedReport) {
               current.averageDifficulty === null
                 ? "Not measured"
                 : ((current.averageDifficulty - 1) * 50).toFixed(1) + "%",
-            basis: current.ratedShots + " rated shots",
+            basis: current.estimatedShots
+              ? `${current.ratedShots} shots · ${current.estimatedShots} estimated`
+              : current.ratedShots + " rated shots",
             difficulty:
               current.averageDifficulty === null
                 ? null

@@ -1,5 +1,6 @@
 import { analysisEventShots, type AnalysisShot } from "./advanced-analysis";
 import { report, shotTypes } from "./model";
+import { difficultyWeight, difficultProbability } from "./difficulty";
 import type { CoachEvent, Workspace } from "./event";
 import type { Evidence } from "./reports";
 
@@ -17,6 +18,7 @@ export type BaselineMetrics = {
   baselineGap: number | null;
   routineMakeRate: number | null;
   ratedShots: number;
+  estimatedShots?: number;
   gradedShots: number;
   averageDifficulty: number | null;
   baselineDifficulty: number | null;
@@ -69,16 +71,16 @@ const measure = (shots: AnalysisShot[]): PerformanceMeasure => {
   const result = report(shots);
   return { percent: result.percent, graded: result.scored };
 };
-const weight = { A: 1, B: 2, C: 3 };
 const rated = (shots: AnalysisShot[]) =>
-  shots.filter((s) => eligible(s) && s.difficulty !== undefined);
+  shots.filter((s) => eligible(s) && difficultyWeight(s) !== undefined);
 const average = (shots: AnalysisShot[]) =>
   shots.length
-    ? shots.reduce((sum, s) => sum + weight[s.difficulty!], 0) / shots.length
+    ? shots.reduce((sum, s) => sum + difficultyWeight(s)!, 0) / shots.length
     : null;
 const difficult = (shots: AnalysisShot[]) =>
   shots.length
-    ? (100 * shots.filter((s) => s.difficulty === "C").length) / shots.length
+    ? (100 * shots.reduce((sum, s) => sum + difficultProbability(s), 0)) /
+      shots.length
     : null;
 export function baselineMetrics(
   shots: AnalysisShot[],
@@ -107,6 +109,9 @@ export function baselineMetrics(
       ? (100 * routine.filter((s) => s.grade === 5).length) / routine.length
       : null,
     ratedShots: currentRated.length,
+    estimatedShots: currentRated.filter(
+      (s) => !s.difficulty && s.difficultyEstimate,
+    ).length,
     gradedShots: report(shots).scored,
     averageDifficulty: currentAverage,
     baselineDifficulty: pastAverage,

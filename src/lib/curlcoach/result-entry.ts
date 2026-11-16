@@ -45,6 +45,7 @@ export function changeObservation(
     values: { ...s.values },
     assessments: { ...s.assessments },
   };
+  if (key === "difficulty") delete next.difficultyEstimate;
   if (key === "contactResult" || key === "rollResult") {
     const old = (s.values.misses ?? []) as string[];
     const related = key === "contactResult" ? contactMiss : rollMiss;

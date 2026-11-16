@@ -218,9 +218,10 @@ export default function EventPerformance({
           Shooting = total graded points / total possible points. Picks and
           ungraded shots are excluded. Missing values are gaps, not zero.
           Baselines use all earlier completed events in this season, excluding
-          the current event and overlapping events. Routine expectations match
-          the same player and subtype, with at least five historical routine
-          shots per match. The gap uses only matched shots.
+          the current event and overlapping events. Routine comparisons pool all
+          eligible historical Easy shots for the selected player or team,
+          starting with one historical shot. The gap is measured in percentage
+          points.
         </p>
         <p>
           Difficulty weights: Easy 1, Moderate 2, Difficult 3. Index = current

@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { allWeights, allResults, shotSubtypes } from "./shot-subtypes";
-import { releases, technicals, type Shot } from "./model";
+import { releases, technicals, shotTypes, type Shot } from "./model";
 
 export const ENHANCED_VERSION = "enhanced-v1" as const;
 export function captureError(
@@ -557,8 +557,28 @@ const valuesSchema = (fields: Record<string, Field>) => {
     .transform((value) => value as Values);
 };
 export const contextSchema = valuesSchema(setupCatalogue);
+export const difficultyEstimateSchema = z
+  .object({
+    method: z.literal("historical-shot-type-v1"),
+    type: z.enum(shotTypes),
+    referenceEvents: z.array(z.uuid()).min(1),
+    counts: z
+      .object({
+        A: z.number().int().nonnegative(),
+        B: z.number().int().nonnegative(),
+        C: z.number().int().nonnegative(),
+      })
+      .strict(),
+  })
+  .strict()
+  .refine(
+    (v) => v.counts.A + v.counts.B + v.counts.C > 0,
+    "Calibration needs observed ratings.",
+  );
+export type DifficultyEstimate = z.infer<typeof difficultyEstimateSchema>;
 export const supplementSchema = z
   .object({
+    difficultyEstimate: difficultyEstimateSchema.optional(),
     version: z.literal(ENHANCED_VERSION),
     mappingVersion: z.literal(ENHANCED_VERSION),
     definitionRevision: z.number().int().nonnegative(),

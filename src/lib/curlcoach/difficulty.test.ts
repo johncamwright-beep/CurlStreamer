@@ -329,6 +329,6 @@ describe("difficulty adjusted shooting", () => {
     expect(difficultySummary(difficultyEventShots(season)).classified).toBe(
       2 * expected.classified,
     );
-    expect(REPORT_INSTRUCTIONS).toContain("SAME classified subset");
+    expect(REPORT_INSTRUCTIONS).toContain("overall shooting plus");
   });
 });

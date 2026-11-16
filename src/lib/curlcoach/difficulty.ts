@@ -1,7 +1,11 @@
 import { z } from "zod";
 import configured from "./difficulty-benchmarks.json";
 import { currentShots, type Shot, type State } from "./model";
-import { supplementSchema, standardConflicts } from "./enhanced-catalog";
+import {
+  supplementSchema,
+  standardConflicts,
+  type DifficultyEstimate,
+} from "./enhanced-catalog";
 import type { EnhancedDocument } from "@/lib/providers/shot-tracker-enhanced";
 
 export const difficultyLevels = ["A", "B", "C"] as const;
@@ -26,10 +30,12 @@ export const difficultyBenchmarks = benchmarkSchema.parse(configured);
 export const difficultyCaveat =
   "Provisional illustrative benchmarks. The easy-shot equivalent is an uncapped comparison index and can exceed 100.";
 export type DifficultyShot = Shot & {
+  difficultyEstimate?: DifficultyEstimate;
   difficulty?: DifficultyLevel;
   difficultyUnavailable?: boolean;
 };
 export type DifficultyRecord = {
+  estimate?: DifficultyEstimate;
   shotId: string;
   identity: string;
   level?: DifficultyLevel;
@@ -90,6 +96,11 @@ export function difficultyRecords(
         shotId: shot.id,
         identity: difficultyIdentity(shot),
         level,
+        ...(valid &&
+        !level &&
+        parsed.data.difficultyEstimate?.type === shot.type
+          ? { estimate: parsed.data.difficultyEstimate }
+          : {}),
         revision: doc.revision,
       },
     ];
@@ -106,8 +117,36 @@ export function withDifficulty<T extends Shot & { id: string }>(
   return {
     ...shot,
     difficulty: ready ? record?.level : undefined,
+    ...(ready && !record?.level && record?.estimate
+      ? { difficultyEstimate: record.estimate }
+      : {}),
     difficultyUnavailable: !ready,
   };
+}
+/** Estimated distributions never become observed Easy/Moderate/Difficult labels. */
+export function difficultyWeight(shot: DifficultyShot): number | undefined {
+  if (shot.difficultyUnavailable) return undefined;
+  if (shot.difficulty) return { A: 1, B: 2, C: 3 }[shot.difficulty];
+  const c = shot.difficultyEstimate?.counts;
+  return c ? (c.A + 2 * c.B + 3 * c.C) / (c.A + c.B + c.C) : undefined;
+}
+export function difficultProbability(shot: DifficultyShot): number {
+  if (shot.difficulty) return shot.difficulty === "C" ? 1 : 0;
+  const c = shot.difficultyEstimate?.counts;
+  return c ? c.C / (c.A + c.B + c.C) : 0;
+}
+function expectedDifficulty(
+  shot: DifficultyShot,
+  config: DifficultyBenchmarks,
+) {
+  if (shot.difficulty) return config.expected[shot.difficulty];
+  const c = shot.difficultyEstimate!.counts;
+  return (
+    (c.A * config.expected.A +
+      c.B * config.expected.B +
+      c.C * config.expected.C) /
+    (c.A + c.B + c.C)
+  );
 }
 /** Aggregate points, never averages of game/player percentages. Round only for display. */
 export function difficultySummary(
@@ -124,14 +163,12 @@ export function difficultySummary(
       s.grade <= 5,
   );
   const classified = eligible.filter(
-    (s) =>
-      !s.difficultyUnavailable &&
-      difficultyLevels.includes(s.difficulty as DifficultyLevel),
+    (s) => !s.difficultyUnavailable && difficultyWeight(s) !== undefined,
   );
   const n = classified.length;
   const actualPoints = classified.reduce((sum, s) => sum + s.grade!, 0);
   const expectedPoints = classified.reduce(
-    (sum, s) => sum + (5 * benchmarks.expected[s.difficulty!]) / 100,
+    (sum, s) => sum + (5 * expectedDifficulty(s, benchmarks)) / 100,
     0,
   );
   const pae = n ? ((actualPoints - expectedPoints) / (5 * n)) * 100 : null;
@@ -139,6 +176,13 @@ export function difficultySummary(
     benchmarks,
     eligible: eligible.length,
     classified: n,
+    ...(classified.some((s) => !s.difficulty && s.difficultyEstimate)
+      ? {
+          estimated: classified.filter(
+            (s) => !s.difficulty && s.difficultyEstimate,
+          ).length,
+        }
+      : {}),
     unavailable: eligible.filter((s) => s.difficultyUnavailable).length,
     coverage: eligible.length ? (n / eligible.length) * 100 : null,
     actual: n ? (actualPoints / (5 * n)) * 100 : null,

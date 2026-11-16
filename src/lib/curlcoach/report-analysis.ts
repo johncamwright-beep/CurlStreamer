@@ -1,5 +1,6 @@
 import { reportEventPerformance } from "./event-performance";
-import { family, type CoachEvent } from "./event";
+import { family, difficultyEventShots, type CoachEvent } from "./event";
+import { difficultySummary } from "./difficulty";
 import { withReportFlags } from "./flagged-shots";
 import {
   currentShots,
@@ -104,6 +105,16 @@ export function withReportAnalysis(
     ...reports,
     reports: reports.reports.map((saved) => ({
       ...saved,
+      ...(event.games.every((g) => g.difficultyReady) &&
+      (packet.audience !== "players" || saved.playerId)
+        ? {
+            difficulty: difficultySummary(
+              difficultyEventShots(event).filter(
+                (s) => !saved.playerId || s.playerId === saved.playerId,
+              ),
+            ),
+          }
+        : {}),
       eventPerformance:
         packet.audience !== "players" || saved.playerId
           ? reportEventPerformance(event, saved.playerId)

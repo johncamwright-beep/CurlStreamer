@@ -51,7 +51,7 @@ export default function BaselineMetrics({
     {
       label: "Game / event difficulty index",
       value: format(metrics.difficultyIndex, ""),
-      detail: `${metrics.ratedShots} rated · 100 = usual difficulty`,
+      detail: `${metrics.ratedShots} rated${metrics.estimatedShots ? ` · ${metrics.estimatedShots} estimated` : ""} · 100 = usual difficulty`,
     },
     {
       label: "Routine full-make rate",

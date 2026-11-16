@@ -228,7 +228,10 @@ export default function EventPerformance({
           mean / historical mean × 100. An index of 100 is usual difficulty.
           This is an ordinal shot-mix comparison, not percentage harder or
           opponent strength. Difficulty should be assessed before the outcome.
-          Unrated shots are excluded.
+          Historical estimates use the recorded reference shot-type distribution
+          and are labelled estimated. Only observed Easy ratings enter routine
+          shooting and its baseline. Unrated shots without an estimate are
+          excluded.
         </p>
       </details>
     </section>

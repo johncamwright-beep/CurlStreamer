@@ -51,7 +51,7 @@ export function reportPercentages(report: SavedReport) {
       id: "adjusted",
       label: "Difficulty adjusted shooting percentage",
       value: `${adjustedReportPercentage(Number.parseFloat(values.find((v) => v.id === "overall")?.value ?? "0"), report.difficulty).toFixed(1)}%`,
-      basis: `${report.difficulty.classified} of ${report.difficulty.eligible} graded shots with difficulty`,
+      basis: `${report.difficulty.classified} of ${report.difficulty.eligible} graded shots with difficulty${report.difficulty.estimated ? ` · ${report.difficulty.estimated} estimated` : ""}`,
     });
   return values;
 }

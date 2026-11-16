@@ -1,3 +1,4 @@
+import { relativeDifficulty } from "./event-performance";
 import {
   difficultyCaveat,
   difficultyDescription,
@@ -79,18 +80,15 @@ export function reportSummaryCards(report: SavedReport) {
             basis: `${current.routineShots} routine shots`,
           },
           {
-            label: "Event shot difficulty",
+            label: "Relative event difficulty",
             value:
-              current.averageDifficulty === null
+              relativeDifficulty(current) === null
                 ? "Not measured"
-                : ((current.averageDifficulty - 1) * 50).toFixed(1) + "%",
+                : relativeDifficulty(current)!.toFixed(1) + "/100",
             basis: current.estimatedShots
               ? `${current.ratedShots} shots · ${current.estimatedShots} estimated`
               : current.ratedShots + " rated shots",
-            difficulty:
-              current.averageDifficulty === null
-                ? null
-                : (current.averageDifficulty - 1) * 50,
+            difficulty: relativeDifficulty(current),
           },
           {
             label: "Difficulty versus history",
@@ -250,18 +248,21 @@ export function reportContent(report: SavedReport) {
         "A routine comparison is unavailable because current or historical Easy ratings are missing.",
       );
     text(narrative.join(" "));
+    text(
+      "Relative difficulty: 50 is the prior-event average; 0 and 100 are ten difficulty percentage points below and above it. No historical ratings means not measured.",
+    );
     heading("Game difficulty and routine baseline");
     table(
-      ["Game", "Opponent", "Routine gap", "Difficulty", "Rated shots"],
+      ["Game", "Opponent", "Routine gap", "Relative difficulty", "Rated shots"],
       current.games.map((g) => [
         g.name,
         g.opponent ?? "",
         g.baselineGap === null
           ? "Not measured"
           : `${g.baselineGap >= 0 ? "+" : ""}${g.baselineGap.toFixed(1)} pp`,
-        g.averageDifficulty === null
+        relativeDifficulty(g) === null
           ? "Not measured"
-          : `${((g.averageDifficulty - 1) * 50).toFixed(1)}%`,
+          : `${relativeDifficulty(g)!.toFixed(1)}/100`,
         String(g.ratedShots),
       ]),
       [30, 55, 34, 32, 27],
@@ -294,7 +295,7 @@ export function reportContent(report: SavedReport) {
               ? "—"
               : `${value(p)!.toFixed(1)}${unit}` +
                 (secondary
-                  ? ` / ${secondary(p) === null ? "—" : secondary(p)!.toFixed(1) + "%"}`
+                  ? ` / ${secondary(p) === null ? "—" : secondary(p)!.toFixed(1) + "/100"}`
                   : ""),
             String(count(p)),
           ]),
@@ -312,14 +313,13 @@ export function reportContent(report: SavedReport) {
       }
     };
     series(
-      "Overall shooting / shot difficulty by event",
+      "Overall shooting / relative difficulty by event",
       (p) => p.percent,
       (p) => p.graded,
       "%",
       0,
       100,
-      (p) =>
-        p.averageDifficulty === null ? null : (p.averageDifficulty - 1) * 50,
+      (p) => relativeDifficulty(p),
     );
     series(
       "Routine baseline gap by event",
@@ -330,11 +330,10 @@ export function reportContent(report: SavedReport) {
       Math.max(10, ...points.map((p) => p.baselineGap ?? 0)),
     );
     series(
-      "Shot difficulty by event",
-      (p) =>
-        p.averageDifficulty === null ? null : (p.averageDifficulty - 1) * 50,
+      "Relative difficulty by event",
+      (p) => relativeDifficulty(p),
       (p) => p.ratedShots,
-      "%",
+      "/100",
       0,
       100,
     );

@@ -40,7 +40,7 @@ export default function ReportDocument({
                   {"difficulty" in card &&
                     typeof card.difficulty === "number" && (
                       <div
-                        aria-label="Event difficulty: Easy to Difficult"
+                        aria-label="Relative event difficulty: 0 easier, 50 usual, 100 harder"
                         style={{
                           position: "relative",
                           height: 72,
@@ -140,7 +140,7 @@ export default function ReportDocument({
                       <p>
                         <span style={{ color: "#087D90" }}>Shooting %</span> ·{" "}
                         <span style={{ color: "#CE3434" }}>
-                          Difficulty (Easy 0–Difficult 100)
+                          Relative difficulty (50 = usual)
                         </span>
                       </p>
                     )}

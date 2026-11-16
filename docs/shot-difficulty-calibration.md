@@ -11,3 +11,7 @@ For reference counts A, B, C, expected difficulty weight is `(A + 2B + 3C) / (A 
 Routine shooting and routine baseline comparisons use only observed Easy ratings. Estimates do not count as Easy shots, even when the reference distribution contains Easy observations. Counts of estimates accompany report and analytics summary metrics. Categorical mix rows represent observed ratings only.
 
 Saved report difficulty summaries are refreshed from the authorized current event projection at read time; stored AI narratives are not regenerated. If difficulty loading fails, the saved summary remains available. This change requires no database schema migration or additional AI request.
+
+## Relative difficulty display
+
+Reports and analytics display `clamp(50 + 250 * (currentMean - historicalMean), 0, 100)` as a score out of 100. Ordinal means still use Easy=1, Moderate=2, Difficult=3 (including calibrated distributions). This is equivalent to 50 plus five times the gap on the original 0–100 difficulty scale: ±10 percentage points spans the displayed range. The selected player's or team's earlier completed events provide the pooled historical baseline. No history means no relative score; the first event is not assigned an invented 50. Saved ratings, routine metrics, adjusted shooting and the separate historical ratio comparison are unchanged.

@@ -3,6 +3,7 @@
 import { useMemo } from "react";
 import {
   eventPerformance,
+  relativeDifficulty,
   splitPerformanceEvents,
 } from "@/lib/curlcoach/event-performance";
 import type { Workspace } from "@/lib/curlcoach/event";
@@ -49,9 +50,9 @@ export default function BaselineMetrics({
       detail: `Historical routine shooting ${format(metrics.expectedRoutinePercent)}`,
     },
     {
-      label: "Game / event difficulty index",
-      value: format(metrics.difficultyIndex, ""),
-      detail: `${metrics.ratedShots} rated${metrics.estimatedShots ? ` · ${metrics.estimatedShots} estimated` : ""} · 100 = usual difficulty`,
+      label: game ? "Relative game difficulty" : "Relative event difficulty",
+      value: format(relativeDifficulty(metrics), "/100"),
+      detail: `${metrics.ratedShots} rated${metrics.estimatedShots ? ` · ${metrics.estimatedShots} estimated` : ""} · 50 = usual difficulty`,
     },
     {
       label: "Routine full-make rate",

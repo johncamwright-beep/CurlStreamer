@@ -5,6 +5,20 @@ import type { CoachEvent, Workspace } from "./event";
 import type { Evidence } from "./reports";
 
 export const MIN_BASELINE_SHOTS = 1;
+/** Display-only score: 50 is prior history; +/-10 raw difficulty points spans 0–100. */
+export function relativeDifficulty(
+  metrics: Pick<BaselineMetrics, "averageDifficulty" | "baselineDifficulty">,
+): number | null {
+  const { averageDifficulty: current, baselineDifficulty: baseline } = metrics;
+  if (
+    current === null ||
+    baseline === null ||
+    !Number.isFinite(current) ||
+    !Number.isFinite(baseline)
+  )
+    return null;
+  return Math.max(0, Math.min(100, 50 + 250 * (current - baseline)));
+}
 export type PerformanceMeasure = {
   percent: number | null;
   graded: number;
@@ -250,7 +264,7 @@ export function performanceEvidence(performance: EventPerformance): Evidence[] {
     add(
       "difficulty",
       "Shot-mix difficulty versus history",
-      `Index ${current.difficultyIndex?.toFixed(0) ?? "unavailable"}; average ${current.averageDifficulty?.toFixed(2) ?? "unavailable"}, historical ${current.baselineDifficulty?.toFixed(2) ?? "unavailable"}. Rated ${current.ratedShots}/${current.gradedShots} graded shots; historical rated ${current.baselineRatedShots}. Difficult share ${pct(current.difficultShare)} versus historical ${pct(current.baselineDifficultShare)}. Ordinal weights A=1 B=2 C=3; 100 is baseline, not a percentage increase in difficulty or opponent strength.`,
+      `Relative difficulty ${relativeDifficulty(current)?.toFixed(1) ?? "unavailable"}/100 (50 usual; +/-10 raw difficulty percentage points spans 0–100, capped). Historical ratio index ${current.difficultyIndex?.toFixed(0) ?? "unavailable"}; average ${current.averageDifficulty?.toFixed(2) ?? "unavailable"}, historical ${current.baselineDifficulty?.toFixed(2) ?? "unavailable"}. Rated ${current.ratedShots}/${current.gradedShots} graded shots; historical rated ${current.baselineRatedShots}. Difficult share ${pct(current.difficultShare)} versus historical ${pct(current.baselineDifficultShare)}. Ordinal weights A=1 B=2 C=3; 100 is baseline, not a percentage increase in difficulty or opponent strength.`,
       current.ratedShots,
     );
   }

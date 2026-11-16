@@ -275,6 +275,17 @@ export async function buildReportPDF(report: SavedReport, eventName: string) {
             align: "right",
           });
         }
+        if (block.reference !== undefined) {
+          pdf.setDrawColor("#71828D");
+          pdf.setLineDashPattern([1, 1], 0);
+          pdf.line(
+            plotX,
+            at(block.reference),
+            plotX + plotWidth,
+            at(block.reference),
+          );
+          pdf.setLineDashPattern([], 0);
+        }
         const points = reportTrendPoints(block.games);
         points.forEach((p, i) =>
           pdf.text(
@@ -322,7 +333,8 @@ export async function buildReportPDF(report: SavedReport, eventName: string) {
           pdf.setFontSize(7);
           [
             "Event",
-            block.secondary ? "Shot / difficulty" : "Rate",
+            block.valueLabel ??
+              (block.secondary ? "Shot / difficulty" : "Rate"),
             "Shots",
           ].forEach((v, i) =>
             pdf.text(
@@ -347,7 +359,7 @@ export async function buildReportPDF(report: SavedReport, eventName: string) {
             pdf.line(tx, ry, tx + 96, ry);
           });
         }
-        y = start + height + 4;
+        y = start + height + 7;
         break;
       }
       case "practice":

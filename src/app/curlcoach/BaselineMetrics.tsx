@@ -50,9 +50,9 @@ export default function BaselineMetrics({
       detail: `Historical routine shooting ${format(metrics.expectedRoutinePercent)}`,
     },
     {
-      label: game ? "Relative game difficulty" : "Relative event difficulty",
-      value: format(relativeDifficulty(metrics), "/100"),
-      detail: `${metrics.ratedShots} rated${metrics.estimatedShots ? ` · ${metrics.estimatedShots} estimated` : ""} · 50 = usual difficulty`,
+      label: game ? "Game difficulty index" : "Event difficulty index",
+      value: format(relativeDifficulty(metrics), ""),
+      detail: `${metrics.ratedShots} rated${metrics.estimatedShots ? ` · ${metrics.estimatedShots} estimated` : ""} · 100 = season average rating`,
     },
     {
       label: "Routine full-make rate",
@@ -65,9 +65,9 @@ export default function BaselineMetrics({
       <p className="analysis-muted" style={{ padding: "8px 24px", margin: 0 }}>
         {event.name}
         {game ? ` · ${game.name}` : ""} · Compared with all{" "}
-        {event.baselineEvents} earlier completed events this season. These event
-        metrics use the selected player’s full event or game, independently of
-        shot filters.
+        {event.baselineEvents} earlier completed events for routine shooting;
+        difficulty uses the shared season average. These event metrics use the
+        selected player’s full event or game, independently of shot filters.
       </p>
       <div className="analysis-kpis">
         {items.map((item) => (

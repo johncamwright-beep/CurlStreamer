@@ -196,3 +196,15 @@ it("puts bounded trend evidence into team, coach and player prompts without API 
     ),
   ).toBe(true);
 });
+
+it("uses the same shot-weighted season reference for first and later events without altering routine history", () => {
+  const first = event("first", "2026-01-01", [s(5, "A")]);
+  const second = event("second", "2026-02-01", [s(3, "C"), s(4, "B")]);
+  const result = eventPerformance([second, first], "lead");
+  expect(result.points.map((p) => p.seasonDifficulty)).toEqual([2, 2]);
+  expect(result.points[0].games[0].seasonDifficulty).toBe(2);
+  expect(result.points[0].baselineDifficulty).toBeNull();
+  expect(result.points[0].routineShots).toBe(1);
+  expect(result.points[0].baselineGap).toBeNull();
+  expect(result.points[1].baselineDifficulty).toBe(1);
+});

@@ -169,6 +169,16 @@ export default function ReportDocument({
                           </text>
                         </g>
                       ))}
+                      {block.reference !== undefined && (
+                        <line
+                          x1={x(0)}
+                          x2={x(1)}
+                          y1={y(block.reference)}
+                          y2={y(block.reference)}
+                          stroke="#71828D"
+                          strokeDasharray="4 4"
+                        />
+                      )}
                       {points.map((point, index) => {
                         const previous = points
                           .slice(0, index)
@@ -234,7 +244,10 @@ export default function ReportDocument({
                         <tr>
                           <th>Event</th>
                           <th>
-                            {block.secondary ? "Shooting / difficulty" : "Rate"}
+                            {block.valueLabel ??
+                              (block.secondary
+                                ? "Shooting / difficulty"
+                                : "Rate")}
                           </th>
                           <th>Shots</th>
                         </tr>

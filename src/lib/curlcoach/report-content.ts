@@ -36,6 +36,8 @@ type ReportBlock =
       games: ShootingRow[];
       rows?: string[][];
       secondary?: (number | null)[];
+      valueLabel?: string;
+      reference?: number;
       firstGame: number;
       eventLabels?: string[];
       minimum?: number;
@@ -80,15 +82,14 @@ export function reportSummaryCards(report: SavedReport) {
             basis: `${current.routineShots} routine shots`,
           },
           {
-            label: "Relative event difficulty",
+            label: "Season difficulty index",
             value:
               relativeDifficulty(current) === null
                 ? "Not measured"
-                : relativeDifficulty(current)!.toFixed(1) + "/100",
+                : relativeDifficulty(current)!.toFixed(1),
             basis: current.estimatedShots
               ? `${current.ratedShots} shots · ${current.estimatedShots} estimated`
-              : current.ratedShots + " rated shots",
-            difficulty: relativeDifficulty(current),
+              : current.ratedShots + " rated shots · 100 = season average",
           },
           {
             label: "Difficulty versus history",
@@ -249,23 +250,39 @@ export function reportContent(report: SavedReport) {
       );
     text(narrative.join(" "));
     text(
-      "Relative difficulty: 50 is the prior-event average; 0 and 100 are ten difficulty percentage points below and above it. No historical ratings means not measured.",
+      "Difficulty index uses Easy=1, Moderate=2, Difficult=3. 100 is the shot-weighted season average through this report; every event uses the same reference. This compares recorded ratings, not opponent strength.",
     );
-    heading("Game difficulty and routine baseline");
+    heading("Routine shooting by game");
     table(
-      ["Game", "Opponent", "Routine gap", "Relative difficulty", "Rated shots"],
+      [
+        "Game / opponent",
+        "Routine shots",
+        "Routine %",
+        "Prior routine %",
+        "Gap (pp)",
+      ],
       current.games.map((g) => [
-        g.name,
-        g.opponent ?? "",
+        `${g.name} · ${g.opponent ?? ""}`,
+        String(g.routineShots),
+        percentage(g.routinePercent),
+        percentage(g.expectedRoutinePercent),
         g.baselineGap === null
-          ? "Not measured"
-          : `${g.baselineGap >= 0 ? "+" : ""}${g.baselineGap.toFixed(1)} pp`,
-        relativeDifficulty(g) === null
-          ? "Not measured"
-          : `${relativeDifficulty(g)!.toFixed(1)}/100`,
+          ? g.routineShots
+            ? "No prior baseline"
+            : "Not measured"
+          : `${g.baselineGap >= 0 ? "+" : ""}${g.baselineGap.toFixed(1)}`,
+      ]),
+      [62, 26, 28, 30, 32],
+    );
+    heading("Shot difficulty by game");
+    table(
+      ["Game / opponent", "Difficulty index", "Rated shots"],
+      current.games.map((g) => [
+        `${g.name} · ${g.opponent ?? ""}`,
+        relativeDifficulty(g)?.toFixed(1) ?? "Not measured",
         String(g.ratedShots),
       ]),
-      [30, 55, 34, 32, 27],
+      [100, 43, 35],
     );
 
     text(
@@ -281,12 +298,16 @@ export function reportContent(report: SavedReport) {
       minimum = 0,
       maximum = 100,
       secondary?: (p: typeof current) => number | null,
+      valueLabel = "Rate",
+      reference?: number,
     ) => {
       heading(title, false, true);
       for (let offset = 0; offset < points.length; offset += 8) {
         const group = points.slice(offset, offset + 8);
         blocks.push({
           kind: "trend",
+          valueLabel,
+          reference,
           firstGame: offset + 1,
           eventLabels: group.map((_, i) => `Event ${offset + i + 1}`),
           rows: group.map((p, i) => [
@@ -297,7 +318,9 @@ export function reportContent(report: SavedReport) {
                 (secondary
                   ? ` / ${secondary(p) === null ? "—" : secondary(p)!.toFixed(1) + "/100"}`
                   : ""),
-            String(count(p)),
+            count(p) === 0 && p.estimatedShots && title.startsWith("Routine")
+              ? "—"
+              : String(count(p)),
           ]),
           secondary: secondary ? group.map(secondary) : undefined,
           minimum,
@@ -313,28 +336,56 @@ export function reportContent(report: SavedReport) {
       }
     };
     series(
-      "Overall shooting / relative difficulty by event",
+      "Shooting percentage by event",
       (p) => p.percent,
       (p) => p.graded,
       "%",
       0,
       100,
-      (p) => relativeDifficulty(p),
+      undefined,
+      "Shooting %",
+    );
+    series(
+      "Routine shooting by event",
+      (p) => p.routinePercent,
+      (p) => p.routineShots,
+      "%",
+      0,
+      100,
+      undefined,
+      "Routine %",
     );
     series(
       "Routine baseline gap by event",
       (p) => p.baselineGap,
-      (p) => p.matchedRoutineShots,
+      (p) => p.routineShots,
       " pp",
       Math.min(-10, ...points.map((p) => p.baselineGap ?? 0)),
       Math.max(10, ...points.map((p) => p.baselineGap ?? 0)),
+      undefined,
+      "Gap (pp)",
+      0,
+    );
+    text(
+      "Routine counts are observed Easy shots. A missing gap with routine shots means no earlier routine baseline. A dash in Shots means only calibrated estimates are available; it does not mean no routine shots were played.",
+    );
+    const indices = points
+      .map(relativeDifficulty)
+      .filter((v): v is number => v !== null);
+    const span = Math.max(
+      20,
+      Math.ceil(Math.max(...indices.map((v) => Math.abs(v - 100)), 0) / 10) *
+        10,
     );
     series(
-      "Relative difficulty by event",
-      (p) => relativeDifficulty(p),
+      "Season difficulty index by event",
+      relativeDifficulty,
       (p) => p.ratedShots,
-      "/100",
-      0,
+      "",
+      Math.max(0, 100 - span),
+      100 + span,
+      undefined,
+      "Index",
       100,
     );
     const types = [...new Set(points.flatMap((p) => Object.keys(p.byType)))]

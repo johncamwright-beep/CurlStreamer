@@ -39,14 +39,14 @@ export default function BaselineMetrics({
   if (!metrics || !event) return null;
   const items = [
     {
-      label: "Routine shooting",
+      label: "Routine shot percentage",
       value: format(metrics.routinePercent),
       detail: `${metrics.routineShots} routine graded shots`,
     },
     {
       label: "Routine baseline gap",
       value: format(metrics.baselineGap, " pp"),
-      detail: `${metrics.matchedRoutineShots} matched · expected ${format(metrics.expectedRoutinePercent)}`,
+      detail: `Historical routine shooting ${format(metrics.expectedRoutinePercent)}`,
     },
     {
       label: "Game / event difficulty index",

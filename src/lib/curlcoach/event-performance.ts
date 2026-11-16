@@ -3,7 +3,7 @@ import { report, shotTypes } from "./model";
 import type { CoachEvent, Workspace } from "./event";
 import type { Evidence } from "./reports";
 
-export const MIN_BASELINE_SHOTS = 5;
+export const MIN_BASELINE_SHOTS = 1;
 export type PerformanceMeasure = {
   percent: number | null;
   graded: number;
@@ -34,7 +34,11 @@ export type EventPerformancePoint = BaselineMetrics &
     baselineEvents: number;
     byType: Record<string, PerformanceMeasure>;
     bySubtype: Record<string, PerformanceMeasure>;
-    games: (BaselineMetrics & { id: string; name: string })[];
+    games: (BaselineMetrics & {
+      id: string;
+      name: string;
+      opponent?: string;
+    })[];
   };
 export type EventPerformance = {
   points: EventPerformancePoint[];
@@ -76,33 +80,16 @@ const difficult = (shots: AnalysisShot[]) =>
   shots.length
     ? (100 * shots.filter((s) => s.difficulty === "C").length) / shots.length
     : null;
-const matchKey = (s: AnalysisShot) =>
-  s.shotSubtype && s.type
-    ? JSON.stringify([s.playerId, s.type, s.shotSubtype])
-    : null;
-
 export function baselineMetrics(
   shots: AnalysisShot[],
   history: AnalysisShot[],
 ): BaselineMetrics {
   const routine = shots.filter((s) => eligible(s) && s.difficulty === "A");
-  const groups = new Map<string, AnalysisShot[]>();
-  history
-    .filter((s) => eligible(s) && s.difficulty === "A")
-    .forEach((s) => {
-      const key = matchKey(s);
-      if (key) groups.set(key, [...(groups.get(key) ?? []), s]);
-    });
-  const matched = routine.flatMap((shot) => {
-    const previous = groups.get(matchKey(shot) ?? "") ?? [];
-    return previous.length >= MIN_BASELINE_SHOTS
-      ? [{ shot, expected: report(previous).percent! }]
-      : [];
-  });
-  const actual = report(matched.map((s) => s.shot)).percent;
-  const expected = matched.length
-    ? matched.reduce((sum, s) => sum + s.expected, 0) / matched.length
-    : null;
+  const historicalRoutine = history.filter(
+    (s) => eligible(s) && s.difficulty === "A",
+  );
+  const actual = report(routine).percent;
+  const expected = report(historicalRoutine).percent;
   const currentRated = rated(shots),
     pastRated = rated(history);
   const currentAverage = average(currentRated);
@@ -111,7 +98,7 @@ export function baselineMetrics(
   return {
     routinePercent: report(routine).percent,
     routineShots: routine.length,
-    matchedRoutineShots: matched.length,
+    matchedRoutineShots: expected === null ? 0 : routine.length,
     matchedRoutinePercent: actual,
     expectedRoutinePercent: expected,
     baselineGap:
@@ -209,6 +196,7 @@ export function eventPerformance(
         games: event.games.map((game) => ({
           id: game.id,
           name: game.label,
+          opponent: game.opponent,
           ...baselineMetrics(select({ ...event, games: [game] }), history),
         })),
       };
@@ -250,8 +238,8 @@ export function performanceEvidence(performance: EventPerformance): Evidence[] {
   if (current) {
     add(
       "baseline",
-      "Routine execution versus personal subtype baseline",
-      `Routine shooting ${pct(current.routinePercent)} on ${current.routineShots} shots. Matched subset ${current.matchedRoutineShots}: actual ${pct(current.matchedRoutinePercent)}, expected ${pct(current.expectedRoutinePercent)}; gap ${current.baselineGap?.toFixed(1) ?? "unavailable"} percentage points. Full-make grade rate ${pct(current.routineMakeRate)}. Previous ${current.baselineEvents} completed events; unmatched shots excluded from gap.`,
+      "Routine execution versus historical routine baseline",
+      `Routine shooting ${pct(current.routinePercent)} on ${current.routineShots} shots. Routine comparison uses ${current.matchedRoutineShots} current shots: actual ${pct(current.matchedRoutinePercent)}, expected ${pct(current.expectedRoutinePercent)}; gap ${current.baselineGap?.toFixed(1) ?? "unavailable"} percentage points. Full-make grade rate ${pct(current.routineMakeRate)}. Previous ${current.baselineEvents} completed events. All eligible historical routine shots are pooled; no subtype match is required.`,
       current.matchedRoutineShots,
     );
     add(

@@ -165,6 +165,44 @@ export async function buildReportPDF(report: SavedReport, eventName: string) {
       pdf.setFont("ReportSans", "normal");
       pdf.setFontSize(8);
       pdf.text(pdf.splitTextToSize(c.basis, cw - 8), x + 4, y + 29);
+      if ("difficulty" in c && typeof c.difficulty === "number") {
+        for (let step = 0; step < 24; step++) {
+          pdf.setFillColor(
+            Math.round(40 + step * 7),
+            Math.round(175 - step * 5),
+            70,
+          );
+          pdf.rect(x + cw - 12, y + 31 - step, 3, 1.1, "F");
+        }
+        const markerY = y + 31 - (c.difficulty * 23) / 100;
+        pdf.setFillColor(ink);
+        pdf.triangle(
+          x + cw - 7,
+          markerY,
+          x + cw - 4,
+          markerY - 1.5,
+          x + cw - 4,
+          markerY + 1.5,
+          "F",
+        );
+        pdf.setFontSize(6);
+        pdf.text("Difficult", x + cw - 18, y + 5);
+        pdf.text("Easy", x + cw - 12, y + 36);
+      }
+      if ("direction" in c && c.direction) {
+        pdf.setFillColor(c.direction > 0 ? "#CE3434" : "#18824A");
+        const ay = y + 18;
+        const ax = x + cw - 10;
+        pdf.triangle(
+          ax,
+          ay + (c.direction > 0 ? -3 : 3),
+          ax - 2,
+          ay,
+          ax + 2,
+          ay,
+          "F",
+        );
+      }
     });
     y += 43;
   }
@@ -201,56 +239,115 @@ export async function buildReportPDF(report: SavedReport, eventName: string) {
         }
         break;
       case "trend": {
-        ensure(51);
-        const plotX = margin + 12;
-        const plotWidth = width - 22;
+        const compact = !!block.rows;
+        const rowHeights =
+          block.rows?.map(
+            (r) =>
+              Math.max(
+                ...r.map((v, i) => lines(v, 7, [57, 27, 12][i] - 3).length),
+              ) *
+                3.4 +
+              3,
+          ) ?? [];
+        const height = compact
+          ? Math.max(49, 10 + rowHeights.reduce((n, v) => n + v, 0))
+          : 49;
+        ensure(height + 4);
+        const start = y;
+        if (compact) {
+          pdf.setDrawColor("#CBD8DE");
+          pdf.setLineWidth(0.2);
+          pdf.roundedRect(margin - 2, start - 2, width + 4, height + 4, 2, 2);
+        }
+        const plotX = margin + 11,
+          plotWidth = compact ? 61 : width - 22;
         const min = block.minimum ?? 0,
           max = block.maximum ?? 100;
-        const at = (value: number) =>
-          y + 40 - (36 * (value - min)) / (max - min);
+        const at = (v: number) => start + 38 - (30 * (v - min)) / (max - min);
         pdf.setFont("ReportSans", "normal");
-        pdf.setFontSize(8);
+        pdf.setFontSize(7);
         pdf.setTextColor(muted);
         pdf.setDrawColor("#CBD8DE");
-        pdf.setLineWidth(0.25);
-        for (const value of [max, (min + max) / 2, min]) {
-          pdf.line(plotX, at(value), plotX + plotWidth, at(value));
-          pdf.text(
-            value.toFixed(0) + (block.unit ?? "%"),
-            plotX - 2,
-            at(value) + 1,
-            {
-              align: "right",
-            },
-          );
+        pdf.setLineWidth(0.2);
+        for (const v of [max, (min + max) / 2, min]) {
+          pdf.line(plotX, at(v), plotX + plotWidth, at(v));
+          pdf.text(v.toFixed(0) + (block.unit ?? "%"), plotX - 2, at(v) + 1, {
+            align: "right",
+          });
         }
         const points = reportTrendPoints(block.games);
-        pdf.setDrawColor("#087D90");
-        pdf.setFillColor("#087D90");
-        pdf.setLineWidth(0.7);
-        points.forEach((point, index) => {
-          const x = plotX + plotWidth * point.x;
+        points.forEach((p, i) =>
           pdf.text(
-            block.eventLabels?.[index] ?? `Game ${block.firstGame + index}`,
-            x,
-            y + 46,
-            {
-              align: "center",
-            },
+            compact
+              ? String(block.firstGame + i)
+              : (block.eventLabels?.[i] ?? "Game " + (block.firstGame + i)),
+            plotX + plotWidth * p.x,
+            start + 44,
+            { align: "center" },
+          ),
+        );
+        const drawSeries = (values: (number | null)[], color: string) => {
+          let previous: { x: number; value: number } | null = null;
+          pdf.setDrawColor(color);
+          pdf.setFillColor(color);
+          pdf.setLineWidth(0.6);
+          values.forEach((value, i) => {
+            if (value === null) return;
+            const x = plotX + plotWidth * points[i].x;
+            if (previous)
+              pdf.line(previous.x, at(previous.value), x, at(value));
+            pdf.circle(x, at(value), 0.9, "F");
+            previous = { x, value };
+          });
+        };
+        drawSeries(
+          points.map((p) => p.value),
+          "#087D90",
+        );
+        if (block.secondary) {
+          drawSeries(block.secondary, "#CE3434");
+          pdf.setFontSize(6);
+          pdf.setTextColor("#087D90");
+          pdf.text("Shooting %", plotX, start + 2);
+          pdf.setTextColor("#CE3434");
+          pdf.text("Difficulty (Easy 0 - Difficult 100)", plotX, start + 6);
+        }
+        if (block.rows) {
+          const tx = margin + 82,
+            widths = [57, 27, 12];
+          let ry = start;
+          pdf.setFillColor(navy);
+          pdf.rect(tx, ry, 96, 7, "F");
+          pdf.setTextColor("#FFFFFF");
+          pdf.setFontSize(7);
+          [
+            "Event",
+            block.secondary ? "Shot / difficulty" : "Rate",
+            "Shots",
+          ].forEach((v, i) =>
+            pdf.text(
+              v,
+              tx + widths.slice(0, i).reduce((n, v) => n + v, 0) + 1,
+              ry + 4,
+            ),
           );
-          if (point.value === null) return;
-          const previous = points[index - 1];
-          if (previous && previous.value !== null)
-            pdf.line(
-              plotX + plotWidth * previous.x,
-              at(previous.value),
-              x,
-              at(point.value),
-            );
-          pdf.circle(x, at(point.value), 1.3, "F");
-        });
-        pdf.setLineWidth(0.2);
-        y += 51;
+          ry += 7;
+          block.rows.forEach((row, i) => {
+            pdf.setTextColor(ink);
+            let x = tx;
+            row.forEach((value, j) => {
+              pdf.text(lines(value, 7, widths[j] - 3), x + 1, ry + 4, {
+                lineHeightFactor: 1.35,
+              });
+              x += widths[j];
+            });
+            ry += rowHeights[i];
+            pdf.setDrawColor("#CBD8DE");
+            pdf.setLineWidth(0.2);
+            pdf.line(tx, ry, tx + 96, ry);
+          });
+        }
+        y = start + height + 4;
         break;
       }
       case "practice":

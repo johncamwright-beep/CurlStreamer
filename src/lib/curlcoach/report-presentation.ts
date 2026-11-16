@@ -1,6 +1,23 @@
 import type { SavedReport } from "./reports";
 import { evidenceBasis } from "./report-counts";
-import { formatEasyShotIndex } from "./difficulty";
+import type { DifficultySummary } from "./difficulty";
+
+/** Only rated shots receive the Easy-reference uplift; unrated shots retain their actual grade. */
+export function adjustedReportPercentage(
+  overall: number,
+  difficulty: DifficultySummary,
+) {
+  const uplift = Math.max(
+    0,
+    difficulty.benchmarks.expected.A -
+      (difficulty.expected ?? difficulty.benchmarks.expected.A),
+  );
+  return Math.min(
+    100,
+    overall +
+      (uplift * difficulty.classified) / Math.max(1, difficulty.eligible),
+  );
+}
 
 /** Older evidence strings contain a redundant index on the moderate reference. */
 export function reportDifficultyEvidenceText(value: string) {
@@ -19,9 +36,12 @@ export function reportPercentages(report: SavedReport) {
       ? [
           {
             id: e.id,
-            label: e.id === "overall" ? "Overall shooting" : e.label,
+            label: e.id === "overall" ? "Overall shooting percentage" : e.label,
             value: percent[0],
-            basis: evidenceBasis(e),
+            basis:
+              e.id === "overall"
+                ? `${e.basis?.shots ?? e.sample} shots charted`
+                : evidenceBasis(e),
           },
         ]
       : [];
@@ -29,8 +49,8 @@ export function reportPercentages(report: SavedReport) {
   if (report.difficulty && report.difficulty.pae !== null)
     values.push({
       id: "adjusted",
-      label: "Easy-shot equivalent index",
-      value: formatEasyShotIndex(report.difficulty),
+      label: "Difficulty adjusted shooting percentage",
+      value: `${adjustedReportPercentage(Number.parseFloat(values.find((v) => v.id === "overall")?.value ?? "0"), report.difficulty).toFixed(1)}%`,
       basis: `${report.difficulty.classified} of ${report.difficulty.eligible} graded shots with difficulty`,
     });
   return values;

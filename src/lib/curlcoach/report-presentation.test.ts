@@ -1,5 +1,9 @@
 import { expect, it } from "vitest";
-import { reportPercentages, reportSections } from "./report-presentation";
+import {
+  adjustedReportPercentage,
+  reportPercentages,
+  reportSections,
+} from "./report-presentation";
 import type { SavedReport } from "./reports";
 it("shows percentages without audit counts and resolves only authorized named aliases", () => {
   const report: SavedReport = {
@@ -50,4 +54,19 @@ it("shows percentages without audit counts and resolves only authorized named al
   expect(report.narrative.summary.text).toContain("Player A");
   report.evidence = [];
   expect(reportSections(report)[0].findings[0].text).toContain("Player A");
+});
+
+it("difficulty adjustment never penalizes easy or unrated shots and caps at 100", () => {
+  const base = {
+    benchmarks: { expected: { A: 85, B: 70, C: 55 } },
+    expected: 55,
+    classified: 5,
+    eligible: 10,
+  } as import("./difficulty").DifficultySummary;
+  expect(adjustedReportPercentage(70, base)).toBe(85);
+  expect(adjustedReportPercentage(95, base)).toBe(100);
+  expect(adjustedReportPercentage(70, { ...base, expected: 85 })).toBe(70);
+  expect(
+    adjustedReportPercentage(70, { ...base, classified: 0, expected: null }),
+  ).toBe(70);
 });

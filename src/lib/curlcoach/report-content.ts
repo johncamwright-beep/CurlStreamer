@@ -33,6 +33,8 @@ type ReportBlock =
   | {
       kind: "trend";
       games: ShootingRow[];
+      rows?: string[][];
+      secondary?: (number | null)[];
       firstGame: number;
       eventLabels?: string[];
       minimum?: number;
@@ -64,7 +66,7 @@ export function reportSummaryCards(report: SavedReport) {
     ...(current
       ? [
           {
-            label: "Routine shooting",
+            label: "Routine shot percentage",
             value: percentage(current.routinePercent),
             basis: `${current.routineShots} routine graded shots`,
           },
@@ -73,13 +75,34 @@ export function reportSummaryCards(report: SavedReport) {
             value:
               current.baselineGap === null
                 ? "Not measured"
-                : `${current.baselineGap.toFixed(1)} pp`,
-            basis: `${current.matchedRoutineShots} of ${current.routineShots} routine shots matched`,
+                : `${current.baselineGap >= 0 ? "+" : ""}${current.baselineGap.toFixed(1)} pp`,
+            basis: `${current.routineShots} routine shots`,
           },
           {
-            label: "Shot-mix difficulty index",
-            value: current.difficultyIndex?.toFixed(0) ?? "Not measured",
-            basis: `${current.ratedShots} rated shots · 100 = usual difficulty`,
+            label: "Event shot difficulty",
+            value:
+              current.averageDifficulty === null
+                ? "Not measured"
+                : ((current.averageDifficulty - 1) * 50).toFixed(1) + "%",
+            basis: current.ratedShots + " rated shots",
+            difficulty:
+              current.averageDifficulty === null
+                ? null
+                : (current.averageDifficulty - 1) * 50,
+          },
+          {
+            label: "Difficulty versus history",
+            value:
+              current.difficultyIndex === null
+                ? "Not measured"
+                : (current.difficultyIndex >= 100 ? "+" : "") +
+                  (current.difficultyIndex - 100).toFixed(1) +
+                  "%",
+            basis: current.baselineRatedShots + " historical rated shots",
+            direction:
+              current.difficultyIndex === null
+                ? 0
+                : Math.sign(current.difficultyIndex - 100),
           },
         ]
       : []),
@@ -102,7 +125,7 @@ export function reportContent(report: SavedReport) {
     blocks.push({ kind: "heading", title, startPage, keepWithChart });
   };
   const text = (value: string, size = 10, muted = false) => {
-    blocks.push({ kind: "text", value, size, muted });
+    if (!muted) blocks.push({ kind: "text", value, size, muted });
   };
   const table = (
     headers: string[],
@@ -136,7 +159,9 @@ export function reportContent(report: SavedReport) {
   heading("Overall assessment");
   text(sections[0].findings[0].text);
   function findings() {
-    for (const section of sections.slice(1)) {
+    for (const section of sections
+      .slice(1)
+      .filter((section) => section.title !== "Next practice")) {
       heading(section.title);
       section.findings.forEach((finding, index) => {
         if (section.title === "Next practice")
@@ -160,39 +185,86 @@ export function reportContent(report: SavedReport) {
   const progression = report.eventPerformance;
   if (progression?.points.length) {
     heading("This event versus prior events");
-    text(
-      "Latest charted season history through this event. Shooting percentages pool eligible graded points, not game percentages. Picks and ungraded shots are excluded. Missing values are gaps. Earlier saved narrative is not regenerated.",
-      8,
-      true,
-    );
     const points = progression.points;
     const current =
       points.find((p) => p.id === progression.currentEventId) ?? points.at(-1)!;
-    text(
-      `Routine shooting ${percentage(current.routinePercent)}; full-make rate ${percentage(current.routineMakeRate)}. Matched routine shots ${current.matchedRoutineShots}/${current.routineShots}: actual ${percentage(current.matchedRoutinePercent)}, expected ${percentage(current.expectedRoutinePercent)}; baseline gap ${current.baselineGap?.toFixed(1) ?? "not measured"} percentage points.`,
+    const prior = points.filter(
+      (p) =>
+        p.id !== current.id &&
+        p.complete &&
+        p.date &&
+        current.date &&
+        p.date < current.date &&
+        p.percent !== null,
     );
-    text(
-      `Shot-mix difficulty index ${current.difficultyIndex?.toFixed(0) ?? "not measured"}; mean ${current.averageDifficulty?.toFixed(2) ?? "not measured"} versus historical ${current.baselineDifficulty?.toFixed(2) ?? "not measured"}. Rated ${current.ratedShots}/${current.gradedShots} graded shots; difficult share ${percentage(current.difficultShare)} versus ${percentage(current.baselineDifficultShare)} historically.`,
-    );
-    text(
-      "Baselines use all earlier completed events in the same season. Routine expectations match each player's subtype, requiring five historical routine shots per match; only matched shots enter the gap. Difficulty weights A=1, B=2, C=3; index 100 is usual difficulty, not a percentage harder or opponent strength. Sparse samples are tentative.",
-      8,
-      true,
-    );
+    const total = prior.reduce((n, p) => n + p.graded, 0);
+    const historical = total
+      ? prior.reduce((n, p) => n + p.percent! * p.graded, 0) / total
+      : null;
+    const gap =
+      current.percent !== null && historical !== null
+        ? current.percent - historical
+        : null;
+    const difficultyChange =
+      current.difficultyIndex === null ? null : current.difficultyIndex - 100;
+    const narrative = [
+      current.percent === null
+        ? "No graded shots are available for this event."
+        : gap === null
+          ? "Shooting was " +
+            percentage(current.percent) +
+            ". This event establishes a starting point for future comparisons."
+          : "Shooting was " +
+            percentage(current.percent) +
+            ", " +
+            Math.abs(gap).toFixed(1) +
+            " percentage points " +
+            (gap >= 0 ? "above" : "below") +
+            " the prior-event average of " +
+            percentage(historical) +
+            ".",
+    ];
+    if (difficultyChange !== null)
+      narrative.push(
+        "The recorded shot mix was " +
+          Math.abs(difficultyChange).toFixed(1) +
+          "% " +
+          (difficultyChange >= 0 ? "harder" : "easier") +
+          " than the historical average.",
+      );
+    if (current.baselineGap !== null)
+      narrative.push(
+        "Routine shots were " +
+          Math.abs(current.baselineGap).toFixed(1) +
+          " percentage points " +
+          (current.baselineGap >= 0 ? "above" : "below") +
+          " their baseline. " +
+          (current.baselineGap < 0
+            ? "Routine execution is an area to review, even when the overall shot mix is difficult."
+            : "Routine execution held up against previous events."),
+      );
+    else
+      narrative.push(
+        "A routine comparison is unavailable because current or historical Easy ratings are missing.",
+      );
+    text(narrative.join(" "));
     heading("Game difficulty and routine baseline");
     table(
-      ["Game", "Routine gap", "Difficulty index", "Matched / rated shots"],
+      ["Game", "Opponent", "Routine gap", "Difficulty", "Rated shots"],
       current.games.map((g) => [
         g.name,
+        g.opponent ?? "",
         g.baselineGap === null
           ? "Not measured"
-          : `${g.baselineGap.toFixed(1)} pp`,
-        g.difficultyIndex?.toFixed(0) ?? "Not measured",
-        `${g.matchedRoutineShots} / ${g.ratedShots}`,
+          : `${g.baselineGap >= 0 ? "+" : ""}${g.baselineGap.toFixed(1)} pp`,
+        g.averageDifficulty === null
+          ? "Not measured"
+          : `${((g.averageDifficulty - 1) * 50).toFixed(1)}%`,
+        String(g.ratedShots),
       ]),
-      [62, 38, 38, 40],
+      [30, 55, 34, 32, 27],
     );
-    heading("Event performance over time");
+
     text(
       "Full-season trends through this event, with one point per event.",
       8,
@@ -205,6 +277,7 @@ export function reportContent(report: SavedReport) {
       unit = "%",
       minimum = 0,
       maximum = 100,
+      secondary?: (p: typeof current) => number | null,
     ) => {
       heading(title, false, true);
       for (let offset = 0; offset < points.length; offset += 8) {
@@ -213,6 +286,17 @@ export function reportContent(report: SavedReport) {
           kind: "trend",
           firstGame: offset + 1,
           eventLabels: group.map((_, i) => `Event ${offset + i + 1}`),
+          rows: group.map((p, i) => [
+            `${offset + i + 1}. ${p.name}\n${p.date ?? ""}`,
+            value(p) === null
+              ? "—"
+              : `${value(p)!.toFixed(1)}${unit}` +
+                (secondary
+                  ? ` / ${secondary(p) === null ? "—" : secondary(p)!.toFixed(1) + "%"}`
+                  : ""),
+            String(count(p)),
+          ]),
+          secondary: secondary ? group.map(secondary) : undefined,
           minimum,
           maximum,
           unit,
@@ -224,21 +308,16 @@ export function reportContent(report: SavedReport) {
           })),
         });
       }
-      table(
-        ["Event / date", "Value", "Eligible shots"],
-        points.map((p, i) => [
-          `${i + 1}. ${p.name} · ${p.date ?? "Date unknown"}${p.complete ? "" : " (in progress)"}`,
-          value(p) === null ? "Not measured" : `${value(p)!.toFixed(1)}${unit}`,
-          String(count(p)) +
-            (count(p) > 0 && count(p) < 5 ? " · small sample" : ""),
-        ]),
-        [106, 36, 36],
-      );
     };
     series(
-      "Overall shooting by event",
+      "Overall shooting / shot difficulty by event",
       (p) => p.percent,
       (p) => p.graded,
+      "%",
+      0,
+      100,
+      (p) =>
+        p.averageDifficulty === null ? null : (p.averageDifficulty - 1) * 50,
     );
     series(
       "Routine baseline gap by event",
@@ -249,17 +328,18 @@ export function reportContent(report: SavedReport) {
       Math.max(10, ...points.map((p) => p.baselineGap ?? 0)),
     );
     series(
-      "Shot-mix difficulty by event",
-      (p) => p.difficultyIndex,
+      "Shot difficulty by event",
+      (p) =>
+        p.averageDifficulty === null ? null : (p.averageDifficulty - 1) * 50,
       (p) => p.ratedShots,
-      "",
+      "%",
       0,
-      Math.max(150, ...points.map((p) => p.difficultyIndex ?? 0)),
+      100,
     );
     const types = [...new Set(points.flatMap((p) => Object.keys(p.byType)))]
       .flatMap((type) => {
         const measured = points.filter(
-          (p) => (p.byType[type]?.graded ?? 0) >= 5,
+          (p) => (p.byType[type]?.graded ?? 0) > 0,
         );
         return measured.length >= 2
           ? [
@@ -334,19 +414,18 @@ export function reportContent(report: SavedReport) {
     for (let index = 0; index < analysis.games.length; index += 8) {
       const games = analysis.games.slice(index, index + 8);
       if (games.some((game) => game.percent !== null))
-        blocks.push({ kind: "trend", games, firstGame: index + 1 });
+        blocks.push({
+          kind: "trend",
+          games,
+          firstGame: index + 1,
+          rows: games.map((g) => [
+            g.label,
+            percentage(g.percent),
+            String(g.graded),
+          ]),
+        });
     }
-    if (analysis.games.length)
-      table(
-        ["Game", "Shooting %", "Graded / charted shots"],
-        analysis.games.map((game, index) => [
-          `Game ${index + 1}${game.label === `Game ${index + 1}` ? "" : ` · ${game.label}`}`,
-          percentage(game.percent),
-          `${game.graded} / ${game.shots}`,
-        ]),
-        [88, 37, 53],
-      );
-    else text("No games available.");
+    if (!analysis.games.length) text("No games available.");
     shooting(
       "Performance by shot",
       "Shot type",

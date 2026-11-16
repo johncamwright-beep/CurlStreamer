@@ -37,6 +37,38 @@ export default function ReportDocument({
                 <dd>
                   <strong>{card.value}</strong>
                   <span>{card.basis}</span>
+                  {"difficulty" in card &&
+                    typeof card.difficulty === "number" && (
+                      <div
+                        aria-label="Event difficulty: Easy to Difficult"
+                        style={{
+                          position: "relative",
+                          height: 72,
+                          width: 12,
+                          background: "linear-gradient(to top,#28af46,#ce3434)",
+                          marginLeft: "auto",
+                        }}
+                      >
+                        <span
+                          style={{
+                            position: "absolute",
+                            bottom: card.difficulty + "%",
+                            left: 14,
+                          }}
+                        >
+                          ◀
+                        </span>
+                      </div>
+                    )}
+                  {"direction" in card && !!card.direction && (
+                    <span
+                      style={{
+                        color: card.direction > 0 ? "#CE3434" : "#18824A",
+                      }}
+                    >
+                      {card.direction > 0 ? "▲" : "▼"}
+                    </span>
+                  )}
                 </dd>
               </div>
             ))}
@@ -99,52 +131,126 @@ export default function ReportDocument({
               const y = (value: number) =>
                 144 - (118 * (value - min)) / (max - min);
               return (
-                <svg
+                <div
                   key={index}
-                  className="report-trend"
-                  viewBox="0 0 600 180"
-                  role="img"
-                  aria-label={
-                    block.eventLabels
-                      ? "Performance across events in chronological order"
-                      : `Shooting percentage by game, games ${block.firstGame} to ${block.firstGame + points.length - 1}`
-                  }
+                  className={block.rows ? "report-chart-table" : undefined}
                 >
-                  {[max, (min + max) / 2, min].map((value) => (
-                    <g key={value}>
-                      <line x1={x(0)} x2={x(1)} y1={y(value)} y2={y(value)} />
-                      <text x={x(0) - 7} y={y(value) + 5} textAnchor="end">
-                        {value.toFixed(0)}
-                        {block.unit ?? "%"}
-                      </text>
-                    </g>
-                  ))}
-                  {points.map((point, index) => {
-                    const previous = points[index - 1];
-                    return (
-                      <g key={index}>
-                        <text x={x(point.x)} y="169" textAnchor="middle">
-                          {block.eventLabels?.[index] ??
-                            `Game ${block.firstGame + index}`}
-                        </text>
-                        {point.value !== null && (
-                          <>
-                            {previous && previous.value !== null && (
+                  <div>
+                    {block.secondary && (
+                      <p>
+                        <span style={{ color: "#087D90" }}>Shooting %</span> ·{" "}
+                        <span style={{ color: "#CE3434" }}>
+                          Difficulty (Easy 0–Difficult 100)
+                        </span>
+                      </p>
+                    )}
+                    <svg
+                      key={index}
+                      className="report-trend"
+                      viewBox="0 0 600 180"
+                      role="img"
+                      aria-label={
+                        block.eventLabels
+                          ? "Performance across events in chronological order"
+                          : `Shooting percentage by game, games ${block.firstGame} to ${block.firstGame + points.length - 1}`
+                      }
+                    >
+                      {[max, (min + max) / 2, min].map((value) => (
+                        <g key={value}>
+                          <line
+                            x1={x(0)}
+                            x2={x(1)}
+                            y1={y(value)}
+                            y2={y(value)}
+                          />
+                          <text x={x(0) - 7} y={y(value) + 5} textAnchor="end">
+                            {value.toFixed(0)}
+                            {block.unit ?? "%"}
+                          </text>
+                        </g>
+                      ))}
+                      {points.map((point, index) => {
+                        const previous = points
+                          .slice(0, index)
+                          .filter((p) => p.value !== null)
+                          .at(-1);
+                        return (
+                          <g key={index}>
+                            <text x={x(point.x)} y="169" textAnchor="middle">
+                              {block.eventLabels?.[index] ??
+                                `Game ${block.firstGame + index}`}
+                            </text>
+                            {point.value !== null && (
+                              <>
+                                {previous && previous.value !== null && (
+                                  <line
+                                    className="report-trend-line"
+                                    x1={x(previous.x)}
+                                    y1={y(previous.value)}
+                                    x2={x(point.x)}
+                                    y2={y(point.value)}
+                                  />
+                                )}
+                                <circle
+                                  cx={x(point.x)}
+                                  cy={y(point.value)}
+                                  r="5"
+                                />
+                              </>
+                            )}
+                          </g>
+                        );
+                      })}
+                      {block.secondary?.map((value, i) => {
+                        if (value === null) return null;
+                        const pi = block
+                          .secondary!.slice(0, i)
+                          .map((v, j) => (v === null ? -1 : j))
+                          .filter((j) => j >= 0)
+                          .at(-1);
+                        return (
+                          <g
+                            key={"difficulty-" + i}
+                            style={{ fill: "#CE3434", stroke: "#CE3434" }}
+                          >
+                            {pi !== undefined && (
                               <line
-                                className="report-trend-line"
-                                x1={x(previous.x)}
-                                y1={y(previous.value)}
-                                x2={x(point.x)}
-                                y2={y(point.value)}
+                                style={{ stroke: "#CE3434", strokeWidth: 3 }}
+                                x1={x(points[pi].x)}
+                                y1={y(block.secondary![pi]!)}
+                                x2={x(points[i].x)}
+                                y2={y(value)}
                               />
                             )}
-                            <circle cx={x(point.x)} cy={y(point.value)} r="5" />
-                          </>
-                        )}
-                      </g>
-                    );
-                  })}
-                </svg>
+                            <circle cx={x(points[i].x)} cy={y(value)} r={4} />
+                          </g>
+                        );
+                      })}
+                    </svg>
+                  </div>
+                  {block.rows && (
+                    <table>
+                      <thead>
+                        <tr>
+                          <th>Event</th>
+                          <th>
+                            {block.secondary ? "Shooting / difficulty" : "Rate"}
+                          </th>
+                          <th>Shots</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {block.rows.map((row, i) => (
+                          <tr key={i}>
+                            {row.map((v, j) => (
+                              <td key={j}>{v}</td>
+                            ))}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  )}
+                </div>
               );
             }
             case "practice":

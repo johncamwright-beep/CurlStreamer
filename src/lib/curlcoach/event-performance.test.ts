@@ -98,7 +98,7 @@ function event(id: string, date: string, shots: AnalysisShot[]) {
   });
   return e;
 }
-it("matches routine expectations by player and subtype and compares the same subset", () => {
+it("pools historical routine shots without requiring subtype labels", () => {
   const history = [
     ...copies(5, s(5)),
     ...copies(5, s(3, "A", "lead", "other")),
@@ -112,10 +112,10 @@ it("matches routine expectations by player and subtype and compares the same sub
   ];
   const m = baselineMetrics(current, history);
   expect(m.routinePercent).toBe(40);
-  expect(m.matchedRoutineShots).toBe(2);
-  expect(m.matchedRoutinePercent).toBe(80);
-  expect(m.expectedRoutinePercent).toBe(80);
-  expect(m.baselineGap).toBe(0);
+  expect(m.matchedRoutineShots).toBe(4);
+  expect(m.matchedRoutinePercent).toBe(40);
+  expect(m.expectedRoutinePercent).toBeCloseTo(800 / 18);
+  expect(m.baselineGap).toBeCloseTo(40 - 800 / 18);
 });
 it("excludes picks, ungraded and unrated shots; retains grade zero", () => {
   const pick = { ...s(null, "C"), excluded: "Pick" } as AnalysisShot;
@@ -130,7 +130,7 @@ it("excludes picks, ungraded and unrated shots; retains grade zero", () => {
   expect(m.baselineGap).toBe(-100);
   expect(m.difficultyIndex).toBe(200);
   expect(m.difficultShare).toBe(50);
-  expect(baselineMetrics([s(5)], copies(4, s(5))).baselineGap).toBeNull();
+  expect(baselineMetrics([s(5)], copies(1, s(5))).baselineGap).toBe(0);
 });
 it("uses all earlier completed same-season events and excludes future, overlap and foreign history", () => {
   const history = Array.from({ length: 7 }, (_, i) =>

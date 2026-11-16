@@ -5,19 +5,21 @@ import type { CoachEvent, Workspace } from "./event";
 import type { Evidence } from "./reports";
 
 export const MIN_BASELINE_SHOTS = 1;
-/** Display-only score: 50 is prior history; +/-10 raw difficulty points spans 0–100. */
+/** Same shot-weighted season reference for every event/game in the comparison. */
 export function relativeDifficulty(
-  metrics: Pick<BaselineMetrics, "averageDifficulty" | "baselineDifficulty">,
+  metrics: Pick<BaselineMetrics, "averageDifficulty" | "seasonDifficulty">,
 ): number | null {
-  const { averageDifficulty: current, baselineDifficulty: baseline } = metrics;
+  const current = metrics.averageDifficulty,
+    baseline = metrics.seasonDifficulty;
   if (
-    current === null ||
-    baseline === null ||
+    current == null ||
+    baseline == null ||
     !Number.isFinite(current) ||
-    !Number.isFinite(baseline)
+    !Number.isFinite(baseline) ||
+    baseline <= 0
   )
     return null;
-  return Math.max(0, Math.min(100, 50 + 250 * (current - baseline)));
+  return (100 * current) / baseline;
 }
 export type PerformanceMeasure = {
   percent: number | null;
@@ -36,6 +38,7 @@ export type BaselineMetrics = {
   gradedShots: number;
   averageDifficulty: number | null;
   baselineDifficulty: number | null;
+  seasonDifficulty?: number | null;
   difficultyIndex: number | null;
   difficultShare: number | null;
   baselineDifficultShare: number | null;
@@ -186,6 +189,17 @@ export function eventPerformance(
         );
       const shots = select(event),
         history = previous.flatMap((past) => select(past.event));
+      const seasonDifficulty = average(
+        rated(
+          ordered
+            .filter(
+              ({ event: other }) =>
+                other.organizationId === event.organizationId &&
+                other.seasonId === event.seasonId,
+            )
+            .flatMap(({ event: other }) => select(other)),
+        ),
+      );
       return {
         id: event.id,
         name: event.name,
@@ -196,6 +210,7 @@ export function eventPerformance(
         baselineEvents: previous.length,
         ...measure(shots),
         ...baselineMetrics(shots, history),
+        seasonDifficulty,
         byType: Object.fromEntries(
           shotTypes.map((type) => [
             type,
@@ -217,6 +232,7 @@ export function eventPerformance(
           name: game.label,
           opponent: game.opponent,
           ...baselineMetrics(select({ ...event, games: [game] }), history),
+          seasonDifficulty,
         })),
       };
     }),
@@ -264,7 +280,7 @@ export function performanceEvidence(performance: EventPerformance): Evidence[] {
     add(
       "difficulty",
       "Shot-mix difficulty versus history",
-      `Relative difficulty ${relativeDifficulty(current)?.toFixed(1) ?? "unavailable"}/100 (50 usual; +/-10 raw difficulty percentage points spans 0–100, capped). Historical ratio index ${current.difficultyIndex?.toFixed(0) ?? "unavailable"}; average ${current.averageDifficulty?.toFixed(2) ?? "unavailable"}, historical ${current.baselineDifficulty?.toFixed(2) ?? "unavailable"}. Rated ${current.ratedShots}/${current.gradedShots} graded shots; historical rated ${current.baselineRatedShots}. Difficult share ${pct(current.difficultShare)} versus historical ${pct(current.baselineDifficultShare)}. Ordinal weights A=1 B=2 C=3; 100 is baseline, not a percentage increase in difficulty or opponent strength.`,
+      `Relative difficulty ${relativeDifficulty(current)?.toFixed(1) ?? "unavailable"} (100 = shot-weighted season average rating; same reference for every plotted event, no clipping). Historical ratio index ${current.difficultyIndex?.toFixed(0) ?? "unavailable"}; average ${current.averageDifficulty?.toFixed(2) ?? "unavailable"}, historical ${current.baselineDifficulty?.toFixed(2) ?? "unavailable"}. Rated ${current.ratedShots}/${current.gradedShots} graded shots; historical rated ${current.baselineRatedShots}. Difficult share ${pct(current.difficultShare)} versus historical ${pct(current.baselineDifficultShare)}. Ordinal weights A=1 B=2 C=3; 100 is baseline, not a percentage increase in difficulty or opponent strength.`,
       current.ratedShots,
     );
   }

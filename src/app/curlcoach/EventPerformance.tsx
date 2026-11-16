@@ -46,7 +46,7 @@ export default function EventPerformance({
     series === "routine"
       ? p.routineShots
       : series === "gap"
-        ? p.matchedRoutineShots
+        ? p.routineShots
         : series === "difficulty"
           ? p.ratedShots
           : series.startsWith("type:")
@@ -54,11 +54,24 @@ export default function EventPerformance({
             : series.startsWith("subtype:")
               ? (p.bySubtype[series.slice(8)]?.graded ?? 0)
               : p.graded;
-  const suffix =
-    series === "gap" ? " pp" : series === "difficulty" ? "/100" : "%";
+  const suffix = series === "gap" ? " pp" : series === "difficulty" ? "" : "%";
   const values = points.map(value).filter((v): v is number => v !== null);
-  const min = series === "gap" ? Math.min(-10, ...values) : 0;
-  const max = series === "gap" ? Math.max(10, ...values) : 100;
+  const span = Math.max(
+    20,
+    Math.ceil(Math.max(0, ...values.map((v) => Math.abs(v - 100))) / 10) * 10,
+  );
+  const min =
+    series === "gap"
+      ? Math.min(-10, ...values)
+      : series === "difficulty"
+        ? Math.max(0, 100 - span)
+        : 0;
+  const max =
+    series === "gap"
+      ? Math.max(10, ...values)
+      : series === "difficulty"
+        ? 100 + span
+        : 100;
   const x = (i: number) =>
     55 + (points.length < 2 ? 280 : (560 * i) / (points.length - 1));
   const y = (v: number) => 150 - (125 * (v - min)) / (max - min);
@@ -79,7 +92,7 @@ export default function EventPerformance({
             <option value="overall">Overall shooting</option>
             <option value="routine">Routine shooting</option>
             <option value="gap">Routine baseline gap</option>
-            <option value="difficulty">Relative event difficulty</option>
+            <option value="difficulty">Season difficulty index</option>
             <optgroup label="Shot types">
               {shotTypes.map((type) => (
                 <option key={type} value={`type:${type}`}>
@@ -136,15 +149,19 @@ export default function EventPerformance({
               <line
                 x1="55"
                 x2="615"
-                y1={y(series === "gap" ? 0 : 50)}
-                y2={y(series === "gap" ? 0 : 50)}
+                y1={y(series === "gap" ? 0 : 100)}
+                y2={y(series === "gap" ? 0 : 100)}
                 stroke="currentColor"
                 strokeDasharray="4 4"
               />
             )}
             {points.map((p, i) => {
-              const v = value(p),
-                previous = i ? value(points[i - 1]) : null;
+              const v = value(p);
+              const previousIndex = points
+                .slice(0, i)
+                .findLastIndex((point) => value(point) !== null);
+              const previous =
+                previousIndex >= 0 ? value(points[previousIndex]) : null;
               return (
                 <g key={p.id}>
                   <text
@@ -160,7 +177,7 @@ export default function EventPerformance({
                     <>
                       {previous !== null && (
                         <line
-                          x1={x(i - 1)}
+                          x1={x(previousIndex)}
                           y1={y(previous)}
                           x2={x(i)}
                           y2={y(v)}
@@ -199,7 +216,11 @@ export default function EventPerformance({
                     <td>{p.date ?? "Unknown"}</td>
                     <td>{format(value(p), suffix)}</td>
                     <td>
-                      {count(p)}
+                      {(series === "gap" || series === "routine") &&
+                      count(p) === 0 &&
+                      p.estimatedShots
+                        ? "Not individually rated"
+                        : count(p)}
                       {count(p) > 0 && count(p) < 5 ? " · small sample" : ""}
                     </td>
                   </tr>
@@ -221,15 +242,15 @@ export default function EventPerformance({
           points.
         </p>
         <p>
-          Difficulty weights: Easy 1, Moderate 2, Difficult 3. Relative
-          difficulty is 50 at the historical average. Ten difficulty percentage
-          points above that average scores 100; ten below scores 0. Values are
-          capped at 0–100. Without historical ratings it is not measured. This
-          is a comparison score, not a shooting percentage or opponent strength.
-          Difficulty should be assessed before the outcome. Historical estimates
-          use the recorded reference shot-type distribution and are labelled
-          estimated. Only observed Easy ratings enter routine shooting and its
-          baseline. Unrated shots without an estimate are excluded.
+          Difficulty weights: Easy 1, Moderate 2, Difficult 3. The index is 100
+          times the average rating divided by the shared shot-weighted season
+          average rating. Every event uses that same reference, including the
+          first. Values are not clipped. This is a rating index, not a shooting
+          percentage. Difficulty should be assessed before the outcome.
+          Historical estimates use the recorded reference shot-type distribution
+          and are labelled estimated. Only observed Easy ratings enter routine
+          shooting and its baseline. Unrated shots without an estimate are
+          excluded.
         </p>
       </details>
     </section>

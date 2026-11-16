@@ -186,8 +186,8 @@ export async function buildReportPDF(report: SavedReport, eventName: string) {
           "F",
         );
         pdf.setFontSize(6);
-        pdf.text("Difficult", x + cw - 18, y + 5);
-        pdf.text("Easy", x + cw - 12, y + 36);
+        pdf.text("Harder", x + cw - 18, y + 5);
+        pdf.text("Easier", x + cw - 12, y + 36);
       }
       if ("direction" in c && c.direction) {
         pdf.setFillColor(c.direction > 0 ? "#CE3434" : "#18824A");
@@ -310,7 +310,7 @@ export async function buildReportPDF(report: SavedReport, eventName: string) {
           pdf.setTextColor("#087D90");
           pdf.text("Shooting %", plotX, start + 2);
           pdf.setTextColor("#CE3434");
-          pdf.text("Difficulty (Easy 0 - Difficult 100)", plotX, start + 6);
+          pdf.text("Relative difficulty (50 = usual)", plotX, start + 6);
         }
         if (block.rows) {
           const tx = margin + 82,

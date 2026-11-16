@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import {
   eventPerformance,
+  relativeDifficulty,
   splitPerformanceEvents,
   type EventPerformancePoint,
 } from "@/lib/curlcoach/event-performance";
@@ -37,7 +38,7 @@ export default function EventPerformance({
         : series === "gap"
           ? p.baselineGap
           : series === "difficulty"
-            ? p.difficultyIndex
+            ? relativeDifficulty(p)
             : series.startsWith("type:")
               ? (p.byType[series.slice(5)]?.percent ?? null)
               : (p.bySubtype[series.slice(8)]?.percent ?? null);
@@ -53,15 +54,11 @@ export default function EventPerformance({
             : series.startsWith("subtype:")
               ? (p.bySubtype[series.slice(8)]?.graded ?? 0)
               : p.graded;
-  const suffix = series === "gap" ? " pp" : series === "difficulty" ? "" : "%";
+  const suffix =
+    series === "gap" ? " pp" : series === "difficulty" ? "/100" : "%";
   const values = points.map(value).filter((v): v is number => v !== null);
   const min = series === "gap" ? Math.min(-10, ...values) : 0;
-  const max =
-    series === "gap"
-      ? Math.max(10, ...values)
-      : series === "difficulty"
-        ? Math.max(150, ...values)
-        : 100;
+  const max = series === "gap" ? Math.max(10, ...values) : 100;
   const x = (i: number) =>
     55 + (points.length < 2 ? 280 : (560 * i) / (points.length - 1));
   const y = (v: number) => 150 - (125 * (v - min)) / (max - min);
@@ -82,7 +79,7 @@ export default function EventPerformance({
             <option value="overall">Overall shooting</option>
             <option value="routine">Routine shooting</option>
             <option value="gap">Routine baseline gap</option>
-            <option value="difficulty">Shot-mix difficulty index</option>
+            <option value="difficulty">Relative event difficulty</option>
             <optgroup label="Shot types">
               {shotTypes.map((type) => (
                 <option key={type} value={`type:${type}`}>
@@ -139,8 +136,8 @@ export default function EventPerformance({
               <line
                 x1="55"
                 x2="615"
-                y1={y(series === "gap" ? 0 : 100)}
-                y2={y(series === "gap" ? 0 : 100)}
+                y1={y(series === "gap" ? 0 : 50)}
+                y2={y(series === "gap" ? 0 : 50)}
                 stroke="currentColor"
                 strokeDasharray="4 4"
               />
@@ -224,14 +221,15 @@ export default function EventPerformance({
           points.
         </p>
         <p>
-          Difficulty weights: Easy 1, Moderate 2, Difficult 3. Index = current
-          mean / historical mean × 100. An index of 100 is usual difficulty.
-          This is an ordinal shot-mix comparison, not percentage harder or
-          opponent strength. Difficulty should be assessed before the outcome.
-          Historical estimates use the recorded reference shot-type distribution
-          and are labelled estimated. Only observed Easy ratings enter routine
-          shooting and its baseline. Unrated shots without an estimate are
-          excluded.
+          Difficulty weights: Easy 1, Moderate 2, Difficult 3. Relative
+          difficulty is 50 at the historical average. Ten difficulty percentage
+          points above that average scores 100; ten below scores 0. Values are
+          capped at 0–100. Without historical ratings it is not measured. This
+          is a comparison score, not a shooting percentage or opponent strength.
+          Difficulty should be assessed before the outcome. Historical estimates
+          use the recorded reference shot-type distribution and are labelled
+          estimated. Only observed Easy ratings enter routine shooting and its
+          baseline. Unrated shots without an estimate are excluded.
         </p>
       </details>
     </section>

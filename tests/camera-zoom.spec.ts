@@ -17,7 +17,7 @@ test("Studio IP zoom stays local, queues intent, preserves drafts, and ignores s
       contents: `
     import React from 'react'; import {createRoot} from 'react-dom/client'; import {CameraZoomControls} from './src/components/CameraZoomControls';
     window.calls=[];window.cloud=[];window.chrome={webview:{postMessage:m=>window.calls.push(m)}};
-    window.sources=(generation=2,zoom=1)=>window.dispatchEvent(new CustomEvent('studio-camera-inputs',{detail:{gameId:'game-1',cameras:{'camera-home':{kind:'rtsp',configured:true,connectionEnabled:true,phase:'streaming',generation,zoom},'camera-away':{kind:'phone',configured:false,connectionEnabled:false,phase:'idle',generation:0}}}}));
+    window.sources=(generation=2,zoom=1)=>window.dispatchEvent(new CustomEvent('studio-camera-inputs',{detail:{gameId:'game-1',cameras:{'camera-home':{kind:'rtsp',configured:true,connectionEnabled:true,phase:'streaming',generation,zoom,zoomMin:.1},'camera-away':{kind:'phone',configured:false,connectionEnabled:false,phase:'idle',generation:0}}}}));
     window.ack=(index,overrides={})=>{const m=window.calls[index];window.dispatchEvent(new CustomEvent('studio-camera-zoom-result',{detail:{gameId:m.gameId,cameraRole:m.cameraRole,generation:m.generation,nonce:m.nonce,ok:true,value:m.value,...overrides}}))};
     createRoot(document.getElementById('root')).render(<CameraZoomControls game={{id:'game-1',cameraZoom:{'camera-away':{supported:true,updatedAt:Date.now(),min:1,max:3,step:.1,value:1}}}} act={async action=>{window.cloud.push(action)}}/>);
   `,
@@ -74,6 +74,18 @@ test("Studio IP zoom stays local, queues intent, preserves drafts, and ignores s
     (window as any).ack(4);
   });
   await expect(slider).toHaveValue("1");
+  await expect(slider).toHaveAttribute("min", "0.1");
+  await slider.fill("0.1");
+  await slider.dispatchEvent("pointerup");
+  await expect
+    .poll(() => page.evaluate(() => (window as any).calls.length))
+    .toBe(6);
+  expect(await page.evaluate(() => (window as any).calls[5].value)).toBe(0.1);
+  await page.evaluate(() => (window as any).ack(5));
+  await expect(page.getByText("0.1× digital zoom")).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Camera 1 zoom out", exact: true }),
+  ).toBeDisabled();
   expect(await page.evaluate(() => (window as any).cloud)).toEqual([]);
   await page
     .getByRole("button", { name: "Camera 2 zoom in", exact: true })

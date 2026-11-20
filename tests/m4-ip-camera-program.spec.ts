@@ -135,6 +135,10 @@ async function install(
   programAudioDelayMs?: number,
 ) {
   let programCameraMode: "auto" | "stacked" | "portrait" = "auto";
+  const cameraPan: Record<Role, number> = {
+    "camera-home": 0,
+    "camera-away": 0,
+  };
   const sources: Record<Role, M4CameraInputSnapshot> = {
     "camera-home": snapshot(kinds[0], 1),
     "camera-away": snapshot(kinds[1], 1),
@@ -214,7 +218,9 @@ async function install(
     }
     if (url.pathname === "/program")
       return route.fulfill({
-        json: { game: { ...game, programCameraMode, programAudioDelayMs } },
+        json: {
+          game: { ...game, programCameraMode, programAudioDelayMs, cameraPan },
+        },
       });
     if (url.pathname === "/camera-inputs")
       return route.fulfill({ json: { cameras: sources } });
@@ -310,6 +316,7 @@ async function install(
       programCameraMode = mode;
     },
     sources,
+    cameraPan,
     frames,
     mode,
     observations,
@@ -680,6 +687,92 @@ test("IP digital zoom changes only the selected picture without restarting its t
   expect((await fixture.maxActive())["camera-home"]).toBe(1);
   expect((await fixture.phones()).starts).toEqual({});
   expect(fixture.errors).toEqual([]);
+});
+
+test("portrait zoom-out reveals the full IP image with black bands and preserves its connection", async ({
+  page,
+}, testInfo) => {
+  const fixture = await install(page, ["tapo", "rtsp"]);
+  await verifyFrame(page, "camera-home");
+  fixture.setLayout("portrait");
+  fixture.cameraPan["camera-home"] = 1;
+  const camera = panel(page, "camera-home").getByRole("img", {
+    name: "IP camera",
+  });
+  await expect(camera).toHaveCSS("object-fit", "cover");
+  await camera.evaluate((canvas) =>
+    canvas.setAttribute("data-zoom-lifetime", "original"),
+  );
+  const bounds = await panel(page, "camera-home").boundingBox();
+  const beforeFrames = fixture.accepted.filter(
+    (value) => value.cameraRole === "camera-home",
+  ).length;
+  fixture.sources["camera-home"].zoom = 0.3;
+  // A 16:9 image at 0.3x fits inside a 9:16 panel, including both source edges.
+  await expect
+    .poll(async () => {
+      const image = await camera.boundingBox();
+      return image && bounds ? image.height / bounds.height : 0;
+    })
+    .toBeCloseTo(0.3, 1);
+  async function verifyZoomedOutPicture() {
+    const { data, info } = await sharp(
+      await panel(page, "camera-home").screenshot(),
+    )
+      .removeAlpha()
+      .raw()
+      .toBuffer({ resolveWithObject: true });
+    const pixel = (x: number, y: number) => {
+      const offset =
+        (Math.floor(info.height * y) * info.width +
+          Math.floor(info.width * x)) *
+        info.channels;
+      return [...data.subarray(offset, offset + 3)];
+    };
+    const [left, center, right] = [
+      pixel(0.1, 0.5),
+      pixel(0.5, 0.5),
+      pixel(0.9, 0.5),
+    ];
+    expect(left[2]).toBeGreaterThan(left[0] + 70);
+    expect(center[0]).toBeGreaterThan(center[1] + 70);
+    expect(right[1]).toBeGreaterThan(right[0] + 70);
+    for (const color of [pixel(0.5, 0.15), pixel(0.5, 0.85)])
+      expect(Math.max(...color)).toBeLessThan(20);
+  }
+  await verifyZoomedOutPicture();
+  // Previously stored pan must not move a picture that now fits the panel.
+  fixture.cameraPan["camera-home"] = -1;
+  await expect
+    .poll(async () =>
+      camera.evaluate((element) => getComputedStyle(element).objectPosition),
+    )
+    .not.toBe("100% 50%");
+  await verifyZoomedOutPicture();
+  expect(await panel(page, "camera-home").boundingBox()).toEqual(bounds);
+  await expect(camera).toHaveAttribute("data-zoom-lifetime", "original");
+  await expect
+    .poll(
+      () =>
+        fixture.accepted.filter((value) => value.cameraRole === "camera-home")
+          .length,
+    )
+    .toBeGreaterThan(beforeFrames);
+  expect(
+    fixture.frameRequests.filter(
+      (request) => request.role === "camera-home" && request.after === 0,
+    ),
+  ).toHaveLength(1);
+  expect(fixture.sources["camera-home"].generation).toBe(1);
+  expect((await fixture.maxActive())["camera-home"]).toBe(1);
+  expect((await fixture.phones()).starts).toEqual({});
+  expect(fixture.errors).toEqual([]);
+  const proof = testInfo.outputPath("portrait-ip-zoom-out.png");
+  await page.getByTestId("broadcast-canvas").screenshot({ path: proof });
+  await testInfo.attach("portrait-ip-zoom-out", {
+    path: proof,
+    contentType: "image/png",
+  });
 });
 
 test("program flushes a changed source and rejects stale, repeated and undecodable camera frames", async ({

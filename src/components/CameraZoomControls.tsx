@@ -145,8 +145,9 @@ function IpCameraZoomControl({
     if (!sending.current && desired.current === undefined)
       setConfirmed(source.zoom ?? 1);
   }, [source.zoom]);
+  const minimumZoom = source.zoomMin ?? 1;
   const clamp = (value: number) =>
-    Math.round(Math.max(1, Math.min(4, value)) * 10) / 10;
+    Math.round(Math.max(minimumZoom, Math.min(4, value)) * 10) / 10;
   const send = async () => {
     if (sending.current || !id) return;
     sending.current = true;
@@ -250,7 +251,7 @@ function IpCameraZoomControl({
         <button
           className="min-h-11"
           type="button"
-          disabled={!enabled || displayed <= 1}
+          disabled={!enabled || displayed <= minimumZoom}
           aria-label={`${label} zoom out`}
           onClick={() => request((desired.current ?? confirmed) - 0.1)}
         >
@@ -270,7 +271,7 @@ function IpCameraZoomControl({
         className="min-h-11"
         aria-label={`${label} zoom level`}
         type="range"
-        min="1"
+        min={minimumZoom}
         max="4"
         step="0.1"
         value={displayed}

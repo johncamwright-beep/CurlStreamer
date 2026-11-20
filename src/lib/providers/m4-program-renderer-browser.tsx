@@ -93,12 +93,14 @@ function CameraVideo({
   onAspect,
   zoom = 1,
   pan = 0,
+  portrait = false,
   delayMs = 0,
 }: {
   state: CameraState;
   onAspect: (aspect: number) => void;
   zoom?: number;
   pan?: number;
+  portrait?: boolean;
   delayMs?: number;
 }) {
   const canvasHost = useRef<HTMLDivElement>(null);
@@ -118,17 +120,42 @@ function CameraVideo({
   useEffect(() => {
     // Zoom only the IP picture. Its original aspect still determines layout;
     // the scoreboard, sponsors and phone hardware zoom remain independent.
-    if (!state.canvas) return;
-    state.canvas.style.transformOrigin = `${50 + Math.max(-1, Math.min(1, pan)) * 50}% 50%`;
-    state.canvas.style.objectPosition = `${50 + Math.max(-1, Math.min(1, pan)) * 50}% 50%`;
-    state.canvas.style.transform = zoom === 1 ? "" : `scale(${zoom})`;
-  }, [state.canvas, zoom, pan]);
+    const canvas = state.canvas;
+    if (!canvas) return;
+    const position = (1 + Math.max(-1, Math.min(1, pan))) / 2;
+    canvas.style.transformOrigin = `${position * 100}% 50%`;
+    canvas.style.objectPosition = `${position * 100}% 50%`;
+    if (zoom < 1) {
+      // Size the complete image before the slot clips it. Scaling a canvas
+      // that is already portrait-cropped cannot reveal the sides of the rings.
+      const aspect = state.aspect ?? canvas.width / canvas.height;
+      const ratio = portrait ? aspect / portraitCameraAspect : 1;
+      const width = zoom * Math.max(1, ratio);
+      const height = zoom * Math.max(1, 1 / ratio);
+      canvas.style.width = `${width * 100}%`;
+      canvas.style.height = `${height * 100}%`;
+      canvas.style.left = `${(1 - width) * (width > 1 ? position : 0.5) * 100}%`;
+      canvas.style.top = `${(1 - height) * 50}%`;
+      canvas.style.transform = "";
+    } else {
+      canvas.style.width = "";
+      canvas.style.height = "";
+      canvas.style.left = "";
+      canvas.style.top = "";
+      canvas.style.transform = zoom === 1 ? "" : `scale(${zoom})`;
+    }
+  }, [state.canvas, state.aspect, zoom, pan, portrait]);
   return (
     <>
       {state.canvas ? (
         <div
           ref={canvasHost}
-          style={{ position: "absolute", inset: 0, overflow: "hidden" }}
+          style={{
+            position: "absolute",
+            inset: 0,
+            overflow: "hidden",
+            background: "#000",
+          }}
         />
       ) : (
         <ProgramDelayedVideo
@@ -512,6 +539,7 @@ function ProgramRenderer() {
           <CameraVideo
             state={cameras[role]}
             delayMs={sync.cameraDelayMs}
+            portrait={game.programCameraMode === "portrait"}
             pan={
               game.programCameraMode === "portrait"
                 ? (game.cameraPan?.[role] ?? 0)

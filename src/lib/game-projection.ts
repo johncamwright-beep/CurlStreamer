@@ -1,12 +1,25 @@
+import { currentCelebration } from "./celebration-state";
+import type { CelebrationCue } from "./player-celebrations";
+import { DEFAULT_PROGRAM_AUDIO_DELAY_MS } from "./program-sync";
 import { deriveScore } from "./scoring";
+import { cameraAudioEnabled } from "./camera-audio";
 import { hasSafeSponsorContent } from "./schema";
 import type { GameConfig, GameState, Sponsor, Team } from "./types";
 
 export interface BroadcastGame {
   id: string;
+  celebration?: CelebrationCue;
+  /** Distinguishes an explicit Stop from a cue naturally expiring in transit. */
+  celebrationStopped?: boolean;
+  broadcastSchedule?: GameState["broadcastSchedule"];
   config: Pick<
     GameConfig,
-    "eventName" | "homeName" | "awayName" | "homeColor" | "awayColor"
+    | "eventName"
+    | "homeName"
+    | "awayName"
+    | "homeColor"
+    | "awayColor"
+    | "homeLogoUrl"
   >;
   score: {
     hammer: Team | null;
@@ -14,8 +27,14 @@ export interface BroadcastGame {
     currentEnd: number;
   };
   layout: GameState["layout"];
+  programCameraMode?: GameState["programCameraMode"];
+  programAudioDelayMs?: GameState["programAudioDelayMs"];
+  cameraPan?: GameState["cameraPan"];
   broadcast: GameState["broadcast"];
   audioMuted: boolean;
+  cameraAudio?: Partial<
+    Record<"camera-home" | "camera-away", { enabled: boolean; volume?: number }>
+  >;
   cameraFraming: GameState["cameraFraming"];
   sponsors: Sponsor[];
   sponsorMode: Pick<
@@ -34,6 +53,11 @@ export interface JoinGame {
   claimedRoles: Record<keyof GameState["claims"], boolean>;
 }
 
+export type PrivateProgramGame = BroadcastGame & {
+  /** Organizer intent for native sources; absent from public broadcast projection. */
+  nativeCameraAudio?: BroadcastGame["cameraAudio"];
+};
+
 /** Explicit allowlists, including nested fields: never serialize stored objects. */
 export function broadcastGame(
   game: GameState,
@@ -45,9 +69,39 @@ export function broadcastGame(
     : game.sponsors.filter(
         (sponsor) => sponsor.enabled && hasSafeSponsorContent(sponsor.dataUrl),
       );
+  const cue = currentCelebration(game);
   return {
     id: game.id,
+    ...(game.celebrationEvents?.at(-1)?.type === "stop"
+      ? { celebrationStopped: true }
+      : {}),
+    ...(cue
+      ? {
+          celebration: {
+            id: cue.id,
+            templateId: cue.templateId,
+            playerId: cue.playerId,
+            playerName: cue.playerName,
+            startedAt: cue.startedAt,
+            expiresAt: cue.expiresAt,
+            volume: cue.volume,
+            muted: cue.muted,
+            ...(cue.headshotUrl ? { headshotUrl: cue.headshotUrl } : {}),
+          },
+        }
+      : {}),
+    ...(game.broadcastSchedule
+      ? {
+          broadcastSchedule: {
+            scheduledStart: game.broadcastSchedule.scheduledStart,
+            timezone: game.broadcastSchedule.timezone,
+          },
+        }
+      : {}),
     config: {
+      ...(game.config.homeLogoUrl
+        ? { homeLogoUrl: game.config.homeLogoUrl }
+        : {}),
       eventName: game.config.eventName,
       homeName: game.config.homeName,
       awayName: game.config.awayName,
@@ -60,8 +114,31 @@ export function broadcastGame(
       currentEnd: score.currentEnd,
     },
     layout: game.layout,
+    programCameraMode: game.programCameraMode ?? "auto",
+    // Send an explicit default so installed Studio renderers use the same
+    // adjustment displayed by the operator controls.
+    programAudioDelayMs:
+      game.programAudioDelayMs ?? DEFAULT_PROGRAM_AUDIO_DELAY_MS,
+    ...(game.cameraPan
+      ? {
+          cameraPan: {
+            "camera-home": game.cameraPan["camera-home"],
+            "camera-away": game.cameraPan["camera-away"],
+          },
+        }
+      : {}),
     broadcast: game.broadcast,
     audioMuted: game.audioMuted,
+    cameraAudio: {
+      "camera-home": {
+        enabled: cameraAudioEnabled(game, "camera-home"),
+        volume: game.cameraAudio?.["camera-home"]?.volume ?? 1,
+      },
+      "camera-away": {
+        enabled: cameraAudioEnabled(game, "camera-away"),
+        volume: game.cameraAudio?.["camera-away"]?.volume ?? 1,
+      },
+    },
     cameraFraming: {
       "camera-home": game.cameraFraming?.["camera-home"] ?? "contain",
       "camera-away": game.cameraFraming?.["camera-away"] ?? "contain",

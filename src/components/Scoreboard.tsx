@@ -3,6 +3,7 @@ import { deriveScore } from "@/lib/scoring";
 import type { GameState } from "@/lib/types";
 import type { BroadcastGame } from "@/lib/game-projection";
 import { HammerIcon } from "./HammerIcon";
+import { BroadcastTeamName } from "./BroadcastTeamName";
 export function Scoreboard({
   game,
   compact = false,
@@ -32,11 +33,17 @@ export function Scoreboard({
               t === "home" ? game.config.homeColor : game.config.awayColor,
           }}
         >
-          <strong
-            className={`${compact ? "text-lg" : "text-2xl"} min-w-0 truncate`}
-          >
-            {t === "home" ? game.config.homeName : game.config.awayName}
-          </strong>
+          {broadcast ? (
+            <BroadcastTeamName
+              name={t === "home" ? game.config.homeName : game.config.awayName}
+            />
+          ) : (
+            <strong
+              className={`${compact ? "text-lg" : "text-2xl"} min-w-0 truncate`}
+            >
+              {t === "home" ? game.config.homeName : game.config.awayName}
+            </strong>
+          )}
           <span className="flex items-center gap-2">
             {s.hammer === t && (
               <HammerIcon

@@ -1,4 +1,19 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import sharp from "sharp";
+
+const sharedCache = vi.hoisted(() => new Map<string, unknown>());
+vi.mock("next/cache", () => ({
+  revalidateTag: vi.fn(() => sharedCache.clear()),
+  unstable_cache:
+    (load: (...args: string[]) => Promise<unknown>) =>
+    async (...args: string[]) => {
+      const key = JSON.stringify(args);
+      if (sharedCache.has(key)) return sharedCache.get(key);
+      const result = await load(...args);
+      sharedCache.set(key, result);
+      return result;
+    },
+}));
 
 const mocks = vi.hoisted(() => ({ rpc: vi.fn(), createSignedUrl: vi.fn() }));
 vi.mock("@/lib/supabase/admin", () => ({
@@ -8,33 +23,34 @@ vi.mock("@/lib/supabase/admin", () => ({
   }),
 }));
 import {
+  invalidateSponsorCache,
   gameBroadcastSponsors,
   gameLibrarySponsors,
   validateSponsorImage,
 } from "./sponsor-library";
 
 describe("sponsor image validation", () => {
-  it("accepts a matching PNG signature", async () => {
-    const file = new File(
-      [new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10])],
-      "logo.png",
-      { type: "image/png" },
+  const png = async () =>
+    new Uint8Array(
+      await sharp({
+        create: { width: 20, height: 40, channels: 4, background: "#00ffff80" },
+      })
+        .png()
+        .toBuffer(),
     );
+  it("accepts a matching PNG signature", async () => {
+    const file = new File([await png()], "logo.png", { type: "image/png" });
     await expect(validateSponsorImage(file)).resolves.toMatchObject({
-      mime: "image/png",
-      extension: "png",
+      mime: "image/webp",
+      extension: "webp",
     });
   });
   it.each(["image/png", "image/x-png", ""])(
     "normalizes PNG bytes reported as %s",
     async (type) => {
-      const file = new File(
-        [new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10])],
-        "team.png",
-        { type },
-      );
+      const file = new File([await png()], "team.png", { type });
       await expect(validateSponsorImage(file)).resolves.toMatchObject({
-        mime: "image/png",
+        mime: "image/webp",
       });
     },
   );
@@ -62,6 +78,7 @@ describe("anonymous Broadcast sponsors", () => {
 
   beforeEach(() => {
     vi.resetAllMocks();
+    invalidateSponsorCache();
     vi.stubEnv("NODE_ENV", "production");
   });
   afterEach(() => {
@@ -91,6 +108,7 @@ describe("anonymous Broadcast sponsors", () => {
           "https://storage.example/object/sign/logo.png?token=short-lived",
         enabled: true,
         rotation: 0,
+        website: undefined,
       },
     ]);
     expect(mocks.rpc).toHaveBeenCalledWith("list_game_organization_sponsors", {
@@ -100,6 +118,21 @@ describe("anonymous Broadcast sponsors", () => {
       "organization/private/logo.png",
       300,
     );
+  });
+
+  it("passes a sponsor website through public game metadata", async () => {
+    mocks.rpc.mockResolvedValue({
+      data: [sponsorRow({ website: "https://sponsor.example" })],
+      error: null,
+    });
+    mocks.createSignedUrl.mockResolvedValue({
+      data: { signedUrl: "https://storage.example/signed/logo" },
+      error: null,
+    });
+
+    await expect(gameBroadcastSponsors("website-game")).resolves.toEqual([
+      expect.objectContaining({ website: "https://sponsor.example" }),
+    ]);
   });
 
   it("reuses stable signed URLs across repeated one-second polls", async () => {
@@ -118,7 +151,7 @@ describe("anonymous Broadcast sponsors", () => {
     const second = await gameBroadcastSponsors("stable-game");
     expect(second).toEqual(first);
     expect(second[0].dataUrl).toBe("https://storage.example/signed/stable");
-    expect(mocks.rpc).toHaveBeenCalledTimes(2);
+    expect(mocks.rpc).toHaveBeenCalledTimes(1);
     expect(mocks.createSignedUrl).toHaveBeenCalledTimes(1);
   });
 
@@ -163,6 +196,7 @@ describe("anonymous Broadcast sponsors", () => {
       });
 
     await gameBroadcastSponsors("replacement-game");
+    invalidateSponsorCache();
     const replaced = await gameBroadcastSponsors("replacement-game");
     expect(replaced[0].dataUrl).toBe("https://storage.example/signed/new");
     expect(mocks.createSignedUrl).toHaveBeenLastCalledWith(
@@ -197,8 +231,10 @@ describe("anonymous Broadcast sponsors", () => {
     }));
 
     await gameBroadcastSponsors("order-archive-game");
+    invalidateSponsorCache();
     const reordered = await gameBroadcastSponsors("order-archive-game");
     expect(reordered.map((sponsor) => sponsor.id)).toEqual(["second", "first"]);
+    invalidateSponsorCache();
     const archived = await gameBroadcastSponsors("order-archive-game");
     expect(archived.map((sponsor) => sponsor.id)).toEqual(["second"]);
     expect(mocks.createSignedUrl).toHaveBeenCalledTimes(5);
@@ -286,6 +322,47 @@ describe("anonymous Broadcast sponsors", () => {
         dataUrl: "https://storage.example/signed/healthy",
       }),
     ]);
+  });
+
+  it("retains metadata for a full game until explicit invalidation", async () => {
+    vi.useFakeTimers();
+    mocks.rpc
+      .mockResolvedValueOnce({ data: [sponsorRow()], error: null })
+      .mockResolvedValueOnce({ data: [], error: null });
+    mocks.createSignedUrl.mockResolvedValue({
+      data: { signedUrl: "https://storage.example/signed/logo" },
+      error: null,
+    });
+    expect(await gameBroadcastSponsors("ttl-game")).toHaveLength(1);
+    expect(await gameBroadcastSponsors("ttl-game")).toHaveLength(1);
+    expect(mocks.rpc).toHaveBeenCalledTimes(1);
+    vi.advanceTimersByTime(3 * 60 * 60 * 1000);
+    expect(await gameBroadcastSponsors("ttl-game")).toHaveLength(1);
+    expect(mocks.rpc).toHaveBeenCalledTimes(1);
+    invalidateSponsorCache();
+    expect(await gameBroadcastSponsors("ttl-game")).toEqual([]);
+    expect(mocks.rpc).toHaveBeenCalledTimes(2);
+  });
+  it("shares concurrent metadata reads and keeps organizations separate", async () => {
+    mocks.rpc.mockResolvedValue({ data: [], error: null });
+    await Promise.all([
+      gameLibrarySponsors("g", "org-a"),
+      gameLibrarySponsors("g", "org-a"),
+    ]);
+    expect(mocks.rpc).toHaveBeenCalledTimes(1);
+    await gameLibrarySponsors("g", "org-b");
+    expect(mocks.rpc).toHaveBeenCalledTimes(2);
+  });
+  it("does not serve invalidated metadata when the database fails", async () => {
+    vi.useFakeTimers();
+    mocks.rpc
+      .mockResolvedValueOnce({ data: [], error: null })
+      .mockResolvedValueOnce({ data: null, error: { message: "offline" } });
+    await gameBroadcastSponsors("fail-closed");
+    invalidateSponsorCache();
+    await expect(gameBroadcastSponsors("fail-closed")).rejects.toThrow(
+      "Sponsor library unavailable",
+    );
   });
 
   it("does not cache signing failures", async () => {

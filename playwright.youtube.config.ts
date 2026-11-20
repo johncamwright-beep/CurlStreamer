@@ -7,10 +7,21 @@ export default defineConfig({
   testDir: "./tests",
   testMatch: [
     "youtube-settings.spec.ts",
+    "admin-access.spec.ts",
+    "team-invitation.spec.ts",
     "dashboard.spec.ts",
     "game-setup.spec.ts",
+    "opponent-links.spec.ts",
+    "opponent-seasons.spec.ts",
+    "team-settings.spec.ts",
+    "public-games-spacing.spec.ts",
+    "billing.spec.ts",
+    "news-editor.spec.ts",
+    "news-image-upload.spec.ts",
+    "onboarding.spec.ts",
   ],
   fullyParallel: false,
+  workers: 2,
   webServer: [
     {
       command: `${node} tests/support/youtube-supabase-mock.mjs`,
@@ -19,8 +30,10 @@ export default defineConfig({
     },
     {
       command: "npm run build && npm start",
+      timeout: 180_000,
       env: {
         ...process.env,
+        APP_BASE_URL: "http://localhost:3000",
         ROLE_TOKEN_SECRET: "curlcast-playwright-only-secret-32-chars",
         NEXT_PUBLIC_SUPABASE_URL: "http://127.0.0.1:3101",
         NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: "playwright-public-placeholder",
@@ -38,7 +51,9 @@ export default defineConfig({
   ],
   use: {
     baseURL: "http://localhost:3000",
-    ...(process.platform === "win32" ? { channel: "msedge" } : {}),
+    ...(process.platform === "win32" && !process.env.PLAYWRIGHT_BUNDLED_CHROMIUM
+      ? { channel: "msedge" }
+      : {}),
   },
   projects: [
     { name: "desktop", use: { ...devices["Desktop Chrome"] } },

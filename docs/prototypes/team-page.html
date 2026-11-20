@@ -1,0 +1,736 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Team page · Curl Streamer design preview</title>
+    <style>
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        background: #eef1f4;
+        color: #152737;
+        font:
+          15px/1.5 system-ui,
+          sans-serif;
+      }
+      button,
+      input,
+      textarea {
+        font: inherit;
+      }
+      button,
+      a,
+      input {
+        min-height: 44px;
+      }
+      button {
+        cursor: pointer;
+        border: 1px solid #ced6dc;
+        border-radius: 8px;
+        padding: 9px 14px;
+        background: white;
+        color: #152737;
+        font-weight: 650;
+      }
+      button:hover {
+        border-color: #967027;
+      }
+      button:focus-visible,
+      a:focus-visible,
+      input:focus-visible,
+      textarea:focus-visible {
+        outline: 3px solid #10a5b8;
+        outline-offset: 3px;
+      }
+      .bar {
+        background: #071522;
+        color: white;
+        padding: 12px 24px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+      }
+      .bar small {
+        color: #b9c8d2;
+      }
+      .badge {
+        font-size: 11px;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        font-weight: 750;
+        color: #8b681e;
+      }
+      .shell {
+        max-width: 1530px;
+        margin: auto;
+        padding: 24px;
+        display: grid;
+        grid-template-columns: 310px minmax(0, 1fr);
+        gap: 24px;
+      }
+      .settings {
+        background: white;
+        border: 1px solid #dce1e6;
+        border-radius: 14px;
+        padding: 20px;
+        align-self: start;
+      }
+      .settings h2 {
+        font-size: 20px;
+        margin: 0;
+      }
+      .muted {
+        color: #687986;
+        font-size: 13px;
+      }
+      .settings label.field {
+        display: block;
+        margin: 16px 0 5px;
+        font-size: 13px;
+        font-weight: 650;
+      }
+      .settings input[type="text"],
+      .settings input[type="url"],
+      textarea {
+        width: 100%;
+        padding: 10px;
+        border: 1px solid #c9d2d9;
+        border-radius: 7px;
+        background: #f8fafb;
+      }
+      textarea {
+        min-height: 80px;
+        resize: vertical;
+      }
+      .switch {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        min-height: 44px;
+      }
+      .switch input {
+        width: 20px;
+        height: 20px;
+        accent-color: #927027;
+      }
+      .group {
+        border-top: 1px solid #e4e8eb;
+        margin-top: 16px;
+        padding-top: 14px;
+      }
+      .primary {
+        background: #122b3b;
+        color: white;
+        border-color: #122b3b;
+      }
+      .settings details summary {
+        cursor: pointer;
+        min-height: 44px;
+        padding: 10px 0;
+        font-weight: 650;
+      }
+      .address {
+        background: #fff;
+        border: 1px solid #dce1e6;
+        border-bottom: 0;
+        border-radius: 12px 12px 0 0;
+        padding: 10px 18px;
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+        font-size: 12px;
+        color: #617380;
+      }
+      .site {
+        background: #fff;
+        border: 1px solid #dce1e6;
+        border-radius: 0 0 14px 14px;
+        overflow: hidden;
+      }
+      .hero {
+        padding: 32px;
+        background: #0b1b28;
+        color: white;
+        border-bottom: 4px solid #bd9544;
+      }
+      .identity {
+        display: flex;
+        gap: 22px;
+        align-items: center;
+      }
+      .identity img {
+        width: 96px;
+        height: 96px;
+        object-fit: contain;
+      }
+      .hero h1 {
+        font-size: 36px;
+        line-height: 1.15;
+        margin: 5px 0 8px;
+        letter-spacing: -0.035em;
+      }
+      .hero p {
+        color: #b5c6cf;
+        margin: 0;
+      }
+      .hero nav {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+        margin-top: 24px;
+      }
+      .hero nav a {
+        display: inline-flex;
+        align-items: center;
+        padding: 8px 15px;
+        color: #e7edf0;
+        text-decoration: none;
+        border: 1px solid #3a4a53;
+        border-radius: 7px;
+      }
+      .content {
+        padding: 26px 32px;
+      }
+      .section-title {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 10px;
+        margin: 0 0 14px;
+      }
+      .section-title h2 {
+        font-size: 20px;
+        letter-spacing: -0.02em;
+        margin: 0;
+      }
+      .fixture {
+        border: 1px solid #dbe1e6;
+        border-radius: 10px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 14px;
+        padding: 14px 18px;
+        margin: 8px 0;
+      }
+      .fixture strong {
+        font-size: 16px;
+      }
+      .fixture small {
+        display: block;
+        color: #697b88;
+      }
+      .score {
+        font-size: 22px;
+        white-space: nowrap;
+        font-weight: 750;
+      }
+      .watch {
+        color: #9d202e;
+        background: #fff7f7;
+        white-space: nowrap;
+      }
+      .section {
+        margin-bottom: 28px;
+        scroll-margin-top: 20px;
+      }
+      .columns {
+        display: grid;
+        grid-template-columns: 1.25fr 1fr;
+        gap: 24px;
+      }
+      .news {
+        border-left: 3px solid #c3a45c;
+        padding: 0 0 0 16px;
+        margin: 18px 0;
+      }
+      .news h3 {
+        margin: 4px 0;
+        font-size: 17px;
+      }
+      .news p {
+        font-size: 14px;
+        color: #586b77;
+        margin: 5px 0;
+      }
+      .sponsors {
+        background: #f8f6f0;
+        border: 1px solid #e7dfcb;
+        padding: 20px;
+        border-radius: 10px;
+      }
+      .sponsor {
+        border: 1px dashed #ccbea0;
+        background: white;
+        padding: 20px;
+        text-align: center;
+        border-radius: 8px;
+        margin-top: 10px;
+        font-family: Georgia, serif;
+        font-size: 19px;
+        color: #7b632e;
+      }
+      .gallery {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 10px;
+      }
+      .photo {
+        background: #edf2f4;
+        border: 1px dashed #b7c5cd;
+        border-radius: 8px;
+        min-height: 105px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: #6b7f8a;
+        font-size: 13px;
+        text-align: center;
+        padding: 14px;
+      }
+      .footer {
+        border-top: 1px solid #e5e9ec;
+        padding: 18px 32px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        color: #71828d;
+        font-size: 12px;
+      }
+      .footer img {
+        width: 112px;
+        height: 34px;
+        object-fit: contain;
+        background: #0b1b28;
+        border-radius: 5px;
+        padding: 5px;
+      }
+      .notice {
+        border: 1px solid #dfd2b3;
+        background: #fff9e9;
+        padding: 10px 14px;
+        border-radius: 8px;
+        margin-bottom: 16px;
+        font-size: 13px;
+      }
+      .hidden {
+        display: none !important;
+      }
+      #status {
+        min-height: 24px;
+        font-size: 13px;
+        color: #557042;
+      }
+      body.preview-only .shell {
+        display: block;
+        max-width: 1120px;
+      }
+      body.preview-only .settings {
+        display: none;
+      }
+      @media (max-width: 1000px) {
+        .shell {
+          grid-template-columns: 270px minmax(0, 1fr);
+          padding: 12px;
+          gap: 12px;
+        }
+        .content,
+        .hero {
+          padding: 22px;
+        }
+        .columns {
+          grid-template-columns: 1fr;
+        }
+        .fixture {
+          flex-wrap: wrap;
+        }
+      }
+      @media (max-width: 720px) {
+        .shell {
+          display: block;
+        }
+        .settings {
+          margin-bottom: 18px;
+        }
+        .hero h1 {
+          font-size: 29px;
+        }
+        .identity img {
+          width: 72px;
+          height: 72px;
+        }
+        .bar {
+          padding: 12px;
+        }
+        .gallery {
+          grid-template-columns: 1fr;
+        }
+        .fixture button {
+          width: 100%;
+        }
+        .address {
+          overflow-wrap: anywhere;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header class="bar">
+      <div><strong>Curl Streamer</strong> <small> / Team website</small></div>
+      <button id="view">View public preview</button>
+    </header>
+    <main class="shell">
+      <aside class="settings">
+        <span class="badge">Interactive mockup</span>
+        <h2>Your team page</h2>
+        <p class="muted">
+          Preview controls only. Nothing here publishes or changes your account.
+        </p>
+        <label class="switch"
+          ><strong>Make page public</strong
+          ><input type="checkbox" id="published"
+        /></label>
+        <label class="field" for="slug">Team address</label
+        ><input
+          id="slug"
+          type="text"
+          value="teambenning"
+          pattern="[a-z0-9-]+"
+          aria-describedby="domain-help"
+        /><small id="domain-help" class="muted"
+          >.curlstreamer.app · proposed address</small
+        >
+        <div class="group">
+          <strong>Show on your page</strong>
+          <label class="switch"
+            >Upcoming games<input
+              type="checkbox"
+              checked
+              data-section="upcoming"
+          /></label>
+          <label class="switch"
+            >Results & YouTube replays<input
+              type="checkbox"
+              checked
+              data-section="results"
+          /></label>
+          <label class="switch"
+            >Team news<input type="checkbox" checked data-section="news"
+          /></label>
+          <label class="switch"
+            >Sponsors<input type="checkbox" checked data-section="sponsors"
+          /></label>
+          <label class="switch"
+            >Photo gallery<input type="checkbox" checked data-section="gallery"
+          /></label>
+          <label class="switch"
+            >Social links<input type="checkbox" checked data-section="social"
+          /></label>
+        </div>
+        <details class="group">
+          <summary>Social profiles</summary>
+          <p class="muted">
+            Public profile links. Automatic social posting would require
+            separate account connections.
+          </p>
+          <label class="field" for="instagram">Instagram URL</label
+          ><input
+            type="url"
+            id="instagram"
+            placeholder="https://instagram.com/yourteam"
+          /><label class="field" for="facebook">Facebook URL</label
+          ><input
+            type="url"
+            id="facebook"
+            placeholder="https://facebook.com/yourteam"
+          /><button id="social-save">Apply to preview</button>
+        </details>
+        <details class="group">
+          <summary>Add a news release</summary>
+          <label class="field" for="headline">Headline</label
+          ><input
+            type="text"
+            id="headline"
+            placeholder="A new season begins"
+            maxlength="100"
+          /><label class="field" for="story">News</label
+          ><textarea
+            id="story"
+            placeholder="Share an update with your supporters…"
+            maxlength="2000"
+          ></textarea
+          ><button id="add-news">Add to preview</button>
+        </details>
+        <details class="group">
+          <summary>Logo, photos & sponsors</summary>
+          <p class="muted">
+            Use the team's account logo and sponsor library. Choose which
+            sponsor assets and game photos are public. Upload and asset
+            selection will be connected in the next implementation.
+          </p>
+        </details>
+        <div class="group">
+          <button class="primary" id="save">Save preview locally</button>
+          <p id="status" role="status" aria-live="polite"></p>
+        </div>
+      </aside>
+      <div>
+        <div class="address">
+          <span id="address">teambenning.curlstreamer.app</span
+          ><span>Design preview · sample content</span>
+        </div>
+        <article class="site">
+          <header class="hero">
+            <div class="identity">
+              <img
+                src="../../public/branding/team-benning.png"
+                alt="Team Benning logo"
+              />
+              <div>
+                <span class="badge">2026–27 season</span>
+                <h1>Team Benning</h1>
+                <p>Follow our season. Watch every end.</p>
+              </div>
+            </div>
+            <nav aria-label="Team page">
+              <a href="#upcoming">Schedule</a><a href="#results">Results</a
+              ><a href="#news">News</a><a href="#sponsors">Our sponsors</a>
+            </nav>
+          </header>
+          <div class="content">
+            <div class="notice" id="privacy">
+              Private draft — only a preview. Your team page is not published.
+            </div>
+            <section class="section" id="upcoming">
+              <div class="section-title">
+                <h2>Coming up</h2>
+                <span class="muted">2026–27</span>
+              </div>
+              <div class="fixture">
+                <div>
+                  <span class="badge">Orion · Game 3</span><br /><strong
+                    >Team Benning vs Team Wright</strong
+                  ><small>September 14 · 1:00 PM EDT · Sample schedule</small>
+                </div>
+                <span class="muted">YouTube link appears when available</span>
+              </div>
+            </section>
+            <section class="section" id="results">
+              <div class="section-title">
+                <h2>Latest results</h2>
+                <span class="muted">Most recent first</span>
+              </div>
+              <div class="fixture">
+                <div>
+                  <strong>Team Benning vs Team Wright</strong
+                  ><small>Orion · Game 2 · Sample result</small>
+                </div>
+                <span class="score">8 – 5</span
+                ><button class="watch" data-demo>▶ Watch replay</button>
+              </div>
+              <div class="fixture">
+                <div>
+                  <strong>Team Benning vs Team Epping</strong
+                  ><small>Orion · Game 1 · Sample result</small>
+                </div>
+                <span class="score">6 – 7</span
+                ><button class="watch" data-demo>▶ Watch replay</button>
+              </div>
+            </section>
+            <div class="columns">
+              <section class="section" id="news">
+                <div class="section-title">
+                  <h2>From the team</h2>
+                  <span class="badge">News</span>
+                </div>
+                <div id="stories">
+                  <article class="news">
+                    <small class="muted"
+                      >Sample news · September 10, 2026</small
+                    >
+                    <h3>See you at Orion</h3>
+                    <p>
+                      Our season is getting underway. Follow the schedule here
+                      and catch the games on YouTube.
+                    </p>
+                  </article>
+                  <article class="news">
+                    <small class="muted">Sample news · September 8, 2026</small>
+                    <h3>Thank you to our supporters</h3>
+                    <p>
+                      We appreciate the sponsors and supporters helping us get
+                      onto the ice this season.
+                    </p>
+                  </article>
+                </div>
+              </section>
+              <section class="section sponsors" id="sponsors">
+                <span class="badge">Proudly supported by</span>
+                <h2>Our sponsors</h2>
+                <p class="muted">
+                  A prominent home for the businesses behind the team.
+                </p>
+                <div class="sponsor">Featured sponsor logo</div>
+                <div class="sponsor">Community sponsor logo</div>
+                <p class="muted">
+                  Placeholders · actual approved sponsor artwork will appear
+                  here.
+                </p>
+              </section>
+            </div>
+            <section class="section" id="gallery">
+              <div class="section-title">
+                <h2>Around the rink</h2>
+                <span class="muted">Team photos</span>
+              </div>
+              <div class="gallery">
+                <div class="photo">Tournament photo</div>
+                <div class="photo">Team photo</div>
+                <div class="photo">Game highlight photo</div>
+              </div>
+            </section>
+            <section id="social">
+              <strong>Follow Team Benning</strong>
+              <p class="muted" id="social-links">
+                Add your social profiles in the controls to preview links here.
+              </p>
+            </section>
+          </div>
+          <footer class="footer">
+            <span>Team Benning · 2026–27</span
+            ><img
+              src="../../public/branding/curlstreamer-logo.png"
+              alt="Powered by Curl Streamer"
+            />
+          </footer>
+        </article>
+      </div>
+    </main>
+    <script>
+      const $ = (id) => document.getElementById(id);
+      const controls = [...document.querySelectorAll("[data-section]")];
+      function render() {
+        const slug =
+          $("slug")
+            .value.toLowerCase()
+            .replace(/[^a-z0-9-]/g, "")
+            .slice(0, 63) || "yourteam";
+        $("address").textContent = slug + ".curlstreamer.app";
+        $("privacy").textContent = $("published").checked
+          ? "Public-page preview — publishing is simulated; this address is not provisioned."
+          : "Private draft — only a preview. Your team page is not published.";
+        for (const c of controls) {
+          $(c.dataset.section).classList.toggle("hidden", !c.checked);
+          const link = document.querySelector(
+            'a[href="#' + c.dataset.section + '"]',
+          );
+          if (link) link.classList.toggle("hidden", !c.checked);
+        }
+      }
+      controls.forEach((c) => c.addEventListener("change", render));
+      $("published").onchange = render;
+      $("slug").oninput = render;
+      $("view").onclick = () => {
+        document.body.classList.toggle("preview-only");
+        $("view").textContent = document.body.classList.contains("preview-only")
+          ? "Back to page controls"
+          : "View public preview";
+      };
+      $("save").onclick = () => {
+        try {
+          localStorage.setItem(
+            "curlstreamer-team-page-prototype",
+            JSON.stringify({
+              slug: $("slug").value,
+              published: $("published").checked,
+              sections: Object.fromEntries(
+                controls.map((c) => [c.dataset.section, c.checked]),
+              ),
+            }),
+          );
+          $("status").textContent =
+            "Saved in this browser only. Nothing published.";
+        } catch {
+          $("status").textContent =
+            "Local saving is unavailable in this browser.";
+        }
+      };
+      try {
+        const saved = JSON.parse(
+          localStorage.getItem("curlstreamer-team-page-prototype") || "null",
+        );
+        if (saved) {
+          $("slug").value = saved.slug;
+          $("published").checked = !!saved.published;
+          controls.forEach(
+            (c) => (c.checked = saved.sections[c.dataset.section] !== false),
+          );
+        }
+      } catch {}
+      $("add-news").onclick = () => {
+        if (!$("headline").value.trim() || !$("story").value.trim()) {
+          $("status").textContent = "Enter a headline and news text first.";
+          return;
+        }
+        const a = document.createElement("article");
+        a.className = "news";
+        const date = document.createElement("small");
+        date.className = "muted";
+        date.textContent = "Preview draft · " + new Date().toLocaleDateString();
+        const title = document.createElement("h3");
+        title.textContent = $("headline").value;
+        const p = document.createElement("p");
+        p.textContent = $("story").value;
+        a.append(date, title, p);
+        $("stories").prepend(a);
+        $("headline").value = "";
+        $("story").value = "";
+        $("status").textContent =
+          "News added to this preview. It has not been published.";
+      };
+      $("social-save").onclick = () => {
+        const links = [];
+        for (const name of ["instagram", "facebook"]) {
+          const raw = $(name).value.trim();
+          if (!raw) continue;
+          try {
+            const url = new URL(raw);
+            if (url.protocol !== "https:") throw Error();
+            const a = document.createElement("a");
+            a.href = url.href;
+            a.textContent = name[0].toUpperCase() + name.slice(1);
+            a.target = "_blank";
+            a.rel = "noopener noreferrer";
+            a.style.display = "inline-flex";
+            a.style.alignItems = "center";
+            a.style.marginRight = "18px";
+            links.push(a);
+          } catch {
+            $("status").textContent = "Use a complete HTTPS profile URL.";
+            return;
+          }
+        }
+        $("social-links").replaceChildren(...links);
+        if (!links.length)
+          $("social-links").textContent = "No social links selected.";
+        $("status").textContent = "Profile links updated in the preview.";
+      };
+      document.querySelectorAll("[data-demo]").forEach(
+        (b) =>
+          (b.onclick = () => {
+            $("status").textContent =
+              "Sample replay only. Real game records will supply the YouTube link.";
+            alert(
+              "This is a sample result. The finished page will open the saved YouTube replay for this game.",
+            );
+          }),
+      );
+      render();
+    </script>
+  </body>
+</html>

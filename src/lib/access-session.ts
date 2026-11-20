@@ -110,7 +110,10 @@ export function canManageCompletion(
   accountRole: string,
   hasOrganizerToken: boolean,
 ) {
-  return hasOrganizerToken || ["owner", "team_admin"].includes(accountRole);
+  return (
+    hasOrganizerToken ||
+    ["owner", "team_admin", "game_operator"].includes(accountRole)
+  );
 }
 
 export function preserveAndStoreParticipantAccess(
@@ -120,9 +123,11 @@ export function preserveAndStoreParticipantAccess(
 ) {
   const current = storage.getItem(`curlcast-access-${id}`);
   const value = claims(current);
+  // This key is preferred by camera publication. Replace it on every claim,
+  // including when an older participant session already occupies it.
+  storage.setItem(`curlcast-participant-access-${id}`, token);
   if (value?.purpose === "organizer" && value.gameId === id) {
     storage.setItem(`curlcast-organizer-access-${id}`, current!);
-    storage.setItem(`curlcast-participant-access-${id}`, token);
     return;
   }
   storage.setItem(`curlcast-access-${id}`, token);

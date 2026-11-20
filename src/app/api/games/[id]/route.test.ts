@@ -18,6 +18,7 @@ import {
 
 const mocks = vi.hoisted(() => ({
   getUser: vi.fn(),
+  resolveCelebration: vi.fn(),
   hierarchy: vi.fn(),
   loadActiveTeam: vi.fn(),
   listTeamGames: vi.fn(),
@@ -50,8 +51,16 @@ vi.mock("@/lib/providers/sponsor-library", () => ({
   gameBroadcastSponsors: mocks.gameBroadcastSponsors,
   gameLibrarySponsors: mocks.gameLibrarySponsors,
 }));
+vi.mock("@/lib/providers/celebration-headshots", () => ({
+  resolveCelebrationRosterPlayerForGame: mocks.resolveCelebration,
+}));
 import { GET, PATCH } from "./route";
-import { GameStateConflictError } from "@/lib/game-state-conflict";
+import {
+  GameClosedError,
+  GameStateConflictError,
+  ScoringIntentConflictError,
+  ScoringWriteConflictError,
+} from "@/lib/game-state-conflict";
 
 // Real loopback HTTP transport, route, authorization and signed tokens.
 // Only external account, persistence, and sponsor providers are replaced.
@@ -348,9 +357,15 @@ describe("GET /api/games/[id] over HTTP", () => {
       },
       score: { hammer: "away", totals: { home: 2, away: 0 }, currentEnd: 2 },
       layout: "split",
+      programCameraMode: "auto",
+      programAudioDelayMs: 2750,
       broadcast: "live",
       audioMuted: false,
       cameraFraming: { "camera-home": "contain", "camera-away": "contain" },
+      cameraAudio: {
+        "camera-home": { enabled: false, volume: 1 },
+        "camera-away": { enabled: false, volume: 1 },
+      },
       sponsors: [
         {
           id: "broadcast-sponsor-0",
@@ -373,6 +388,33 @@ describe("GET /api/games/[id] over HTTP", () => {
     expect(response.headers.has("x-curlcast-account-role")).toBe(false);
     expect(mocks.gameBroadcastSponsors).toHaveBeenCalledWith(testGameId);
     expect(mocks.gameLibrarySponsors).not.toHaveBeenCalled();
+  });
+  it("returns the canonical broadcast schedule to public and authorized game views", async () => {
+    game.broadcastSchedule = {
+      scheduledStart: "2026-10-20T22:30:00Z",
+      timezone: "America/Toronto",
+    };
+    anonymous();
+    const publicResponse = await request("broadcast");
+    expect((await publicResponse.json()).broadcastSchedule).toEqual(
+      game.broadcastSchedule,
+    );
+
+    mocks.getUser.mockResolvedValue({
+      data: { user: { id: "same-team-user" } },
+    });
+    mocks.loadActiveTeam.mockResolvedValue({
+      kind: "ready",
+      team: { organizationId: "same-team", role: "owner" },
+    });
+    mocks.listTeamGames.mockResolvedValue({
+      ok: true,
+      games: [{ game_id: testGameId, game_status: "active" }],
+    });
+    const accountResponse = await request();
+    expect((await accountResponse.json()).broadcastSchedule).toEqual(
+      game.broadcastSchedule,
+    );
   });
   it("publishes short-lived renderable sponsor output without stored sponsor metadata", async () => {
     anonymous();
@@ -698,6 +740,64 @@ describe("GET /api/games/[id] over HTTP", () => {
     expect(response.headers.get("cache-control")).toBe("no-store");
   });
 
+  it("validates PATCH route input before accessing providers", async () => {
+    const response = await PATCH(
+      new Request(`${origin}/api/games/invalid$id`, { method: "PATCH" }),
+      { params: Promise.resolve({ id: "invalid$id" }) },
+    );
+    expect(response.status).toBe(400);
+    expect(mocks.getUser).not.toHaveBeenCalled();
+    expect(mocks.getGame).not.toHaveBeenCalled();
+    expect(mocks.updateGame).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    [new ScoringIntentConflictError(), 409, "scoring_stale_intent"],
+    [new ScoringWriteConflictError(), 409, "scoring_write_conflict"],
+    [new GameClosedError(), 410, undefined],
+    [new GameClosedError("This game is completed"), 410, undefined],
+  ])(
+    "distinguishes terminal scoring/lifecycle failures: %s",
+    async (error, status, code) => {
+      anonymous();
+      mocks.updateGame.mockRejectedValue(error);
+      const response = await PATCH(
+        new Request(`${origin}/api/games/${testGameId}`, {
+          method: "PATCH",
+          headers: {
+            authorization: `Bearer ${await issueOrganizerToken(testGameId)}`,
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({ type: "layout", layout: "home" }),
+        }),
+        { params: Promise.resolve({ id: testGameId }) },
+      );
+      expect(response.status).toBe(status);
+      expect((await response.json()).code).toBe(code);
+    },
+  );
+
+  it("uses only the token authorization snapshot before the authoritative write", async () => {
+    anonymous();
+    const response = await PATCH(
+      new Request(`${origin}/api/games/${testGameId}`, {
+        method: "PATCH",
+        headers: {
+          authorization: `Bearer ${await issueOrganizerToken(testGameId)}`,
+          "content-type": "application/json",
+          "x-curlcast-game-context": "include",
+        },
+        body: JSON.stringify({ type: "layout", layout: "home" }),
+      }),
+      { params: Promise.resolve({ id: testGameId }) },
+    );
+    expect(response.status).toBe(200);
+    expect(mocks.getGame).toHaveBeenCalledOnce();
+    expect(mocks.updateGame).toHaveBeenCalledOnce();
+    expect(mocks.gameLibrarySponsors).not.toHaveBeenCalled();
+    expect(mocks.hierarchy).not.toHaveBeenCalled();
+  });
+
   it("returns 409 when an ordinary state write loses its version race", async () => {
     anonymous();
     mocks.updateGame.mockRejectedValue(new GameStateConflictError());
@@ -752,6 +852,100 @@ describe("GET /api/games/[id] over HTTP", () => {
         generation: undefined,
       },
     );
+  });
+
+  it("accepts only an assigned camera's own zoom status report", async () => {
+    anonymous();
+    const claimant = game.claims["camera-home"]!;
+    const response = await PATCH(
+      new Request(`${origin}/api/games/${testGameId}`, {
+        method: "PATCH",
+        headers: {
+          authorization: `Bearer ${await issueParticipantToken(testGameId, "camera-home", claimant)}`,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          type: "camera-zoom-status",
+          role: "camera-away",
+          supported: false,
+        }),
+      }),
+      { params: Promise.resolve({ id: testGameId }) },
+    );
+    expect(response.status).toBe(403);
+
+    const own = await PATCH(
+      new Request(`${origin}/api/games/${testGameId}`, {
+        method: "PATCH",
+        headers: {
+          authorization: `Bearer ${await issueParticipantToken(testGameId, "camera-home", claimant)}`,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          type: "camera-zoom-status",
+          role: "camera-home",
+          supported: false,
+        }),
+      }),
+      { params: Promise.resolve({ id: testGameId }) },
+    );
+    expect(own.status).toBe(200);
+    expect(mocks.updateGame).toHaveBeenLastCalledWith(
+      testGameId,
+      { type: "camera-zoom-status", role: "camera-home", supported: false },
+      expect.objectContaining({ role: "camera-home", claim: claimant }),
+    );
+  });
+
+  it.each(["camera-zoom", "camera-reconnect"])(
+    "keeps scorer %s commands bound to the scorer assignment",
+    async (type) => {
+      anonymous();
+      const claimant = game.claims.scorer!;
+      const response = await PATCH(
+        new Request(`${origin}/api/games/${testGameId}`, {
+          method: "PATCH",
+          headers: {
+            authorization: `Bearer ${await issueParticipantToken(testGameId, "scorer", claimant)}`,
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({
+            type,
+            role: "camera-home",
+            commandId: "10000000-0000-4000-8000-000000000014",
+            value: 2,
+          }),
+        }),
+        { params: Promise.resolve({ id: testGameId }) },
+      );
+      expect(response.status).toBe(200);
+      expect(mocks.updateGame).toHaveBeenLastCalledWith(
+        testGameId,
+        expect.objectContaining({ type }),
+        expect.objectContaining({ role: "scorer", claim: claimant }),
+      );
+    },
+  );
+  it("does not let an assigned phone issue remote reconnect commands", async () => {
+    anonymous();
+    const claimant = game.claims["camera-home"]!;
+    const response = await PATCH(
+      new Request(`${origin}/api/games/${testGameId}`, {
+        method: "PATCH",
+        headers: {
+          authorization: `Bearer ${await issueParticipantToken(testGameId, "camera-home", claimant)}`,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          type: "camera-reconnect",
+          role: "camera-home",
+          commandId: "10000000-0000-4000-8000-000000000014",
+        }),
+      }),
+      { params: Promise.resolve({ id: testGameId }) },
+    );
+    expect(response.status).toBe(403);
+    expect(mocks.updateGame).not.toHaveBeenCalled();
   });
 
   it("binds scorer writes to the trusted token role and generation", async () => {
@@ -833,4 +1027,94 @@ describe("GET /api/games/[id] over HTTP", () => {
     expect(await response.json()).toEqual({ error: "Invalid update" });
     expect(mocks.updateGame).not.toHaveBeenCalled();
   });
+  it.each(["lightsaber", "cat-dance"])(
+    "resolves same-game roster art and overwrites forged %s URLs",
+    async (templateId) => {
+      anonymous();
+      mocks.resolveCelebration.mockResolvedValue({
+        playerId: "roster-1",
+        playerName: "Sam",
+        headshotUrl: "https://storage.invalid/signed.png?token=short",
+      });
+      const action = {
+        type: "celebration-play",
+        triggerId: "e0d16331-e641-4e3e-a453-adc6ba25eabb",
+        templateId,
+        playerId: "roster-1",
+        playerName: "forged",
+        headshotUrl: "https://attacker.invalid/track",
+        volume: 0.6,
+        muted: false,
+      };
+      const response = await PATCH(
+        new Request(origin + "/api/games/" + testGameId, {
+          method: "PATCH",
+          headers: {
+            authorization: "Bearer " + (await issueOrganizerToken(testGameId)),
+            "content-type": "application/json",
+          },
+          body: JSON.stringify(action),
+        }),
+        { params: Promise.resolve({ id: testGameId }) },
+      );
+      expect(response.status).toBe(200);
+      expect(mocks.resolveCelebration).toHaveBeenCalledWith(
+        testGameId,
+        "roster-1",
+      );
+      expect(mocks.updateGame).toHaveBeenCalledWith(
+        testGameId,
+        {
+          ...action,
+          playerName: "Sam",
+          headshotUrl: "https://storage.invalid/signed.png?token=short",
+        },
+        undefined,
+      );
+    },
+  );
+  it.each(["lightsaber", "cat-dance"])(
+    "requires a verified prepared head and denies camera %s commands",
+    async (templateId) => {
+      anonymous();
+      mocks.resolveCelebration.mockResolvedValue(undefined);
+      const action = {
+        type: "celebration-play",
+        triggerId: "e0d16331-e641-4e3e-a453-adc6ba25eabb",
+        templateId: "lightsaber",
+        playerId: "roster-no-photo",
+        headshotUrl: "https://attacker.invalid/track",
+        volume: 0.6,
+        muted: false,
+      };
+      const patch = (token: string) =>
+        PATCH(
+          new Request(origin + "/api/games/" + testGameId, {
+            method: "PATCH",
+            headers: {
+              authorization: "Bearer " + token,
+              "content-type": "application/json",
+            },
+            body: JSON.stringify(action),
+          }),
+          { params: Promise.resolve({ id: testGameId }) },
+        );
+      expect(
+        (
+          await patch(
+            await issueParticipantToken(
+              testGameId,
+              "camera-home",
+              game.claims["camera-home"]!,
+            ),
+          )
+        ).status,
+      ).toBe(403);
+      expect(mocks.updateGame).not.toHaveBeenCalled();
+      expect((await patch(await issueOrganizerToken(testGameId))).status).toBe(
+        400,
+      );
+      expect(mocks.updateGame).not.toHaveBeenCalled();
+    },
+  );
 });

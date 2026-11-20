@@ -9,7 +9,9 @@ export type AppIconName =
   | "broadcast"
   | "edit"
   | "account"
-  | "logout";
+  | "logout"
+  | "eye"
+  | "eye-off";
 
 export function AppIcon({ name }: { name: AppIconName }) {
   const paths: Record<AppIconName, React.ReactNode> = {
@@ -78,6 +80,17 @@ export function AppIcon({ name }: { name: AppIconName }) {
     logout: (
       <>
         <path d="M10 4H4v16h6M14 8l4 4-4 4M8 12h10" />
+      </>
+    ),
+    eye: (
+      <>
+        <path d="M2 12s4-6 10-6 10 6 10 6-4 6-10 6S2 12 2 12Z" />
+        <circle cx="12" cy="12" r="2.5" />
+      </>
+    ),
+    "eye-off": (
+      <>
+        <path d="M3 3l18 18M10.2 6.2a10 10 0 0 1 1.8-.2c6 0 10 6 10 6a18 18 0 0 1-3.2 3.4M6.3 7.8A18 18 0 0 0 2 12s4 6 10 6a10 10 0 0 0 4.4-1" />
       </>
     ),
   };

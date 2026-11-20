@@ -1,8 +1,10 @@
 import "server-only";
 import { randomUUID } from "crypto";
+import { unstable_cache, revalidateTag } from "next/cache";
 import type { User } from "@supabase/supabase-js";
 import { createAdminSupabaseClient } from "@/lib/supabase/admin";
 import type { LibrarySponsor, Sponsor } from "@/lib/types";
+import { normalizeUploadImage } from "./upload-image";
 
 const BUCKET = "organization-sponsors";
 const SIGNED_URL_SECONDS = 12 * 60 * 60;
@@ -17,6 +19,7 @@ type SponsorRow = {
   storage_path: string;
   position: number;
   archived_at?: string | null;
+  website?: string | null;
 };
 type BroadcastSponsorCacheEntry = {
   stateKey: string;
@@ -24,6 +27,56 @@ type BroadcastSponsorCacheEntry = {
   sponsors: Sponsor[];
 };
 const broadcastSponsorCache = new Map<string, BroadcastSponsorCacheEntry>();
+
+// Shared metadata only; callers must still authorize every game request.
+// Sponsor mutations invalidate all instances, without polling Supabase.
+const SPONSOR_METADATA_TAG = "curlcast-sponsor-metadata-v1";
+const metadataFlights = new Map<string, Promise<SponsorRow[]>>();
+const libraryUrlCache = new Map<string, BroadcastSponsorCacheEntry>();
+export function invalidateSponsorCache() {
+  revalidateTag(SPONSOR_METADATA_TAG);
+  metadataFlights.clear();
+  libraryUrlCache.clear();
+  broadcastSponsorCache.clear();
+}
+function boundedSet<T>(cache: Map<string, T>, key: string, value: T) {
+  if (!cache.has(key) && cache.size >= 256)
+    cache.delete(cache.keys().next().value!);
+  cache.set(key, value);
+}
+const cachedSponsorRows = unstable_cache(
+  async (gameId: string, organizationId: string): Promise<SponsorRow[]> => {
+    const { data, error } = await createAdminSupabaseClient().rpc(
+      organizationId
+        ? "list_sponsors_for_organization"
+        : "list_game_organization_sponsors",
+      organizationId
+        ? { p_organization_id: organizationId }
+        : { p_game_id: gameId },
+    );
+    if (error) throw new Error("Sponsor library unavailable");
+    return ((data ?? []) as SponsorRow[]).filter((row) => !row.archived_at);
+  },
+  ["curlcast-sponsor-metadata-v1"],
+  { tags: [SPONSOR_METADATA_TAG], revalidate: false },
+);
+async function sponsorRows(gameId: string, organizationId?: string) {
+  const key = organizationId
+    ? `organization:${organizationId}`
+    : `game:${gameId}`;
+  const existing = metadataFlights.get(key);
+  if (existing) return existing;
+  const load = cachedSponsorRows(
+    organizationId ? "" : gameId,
+    organizationId ?? "",
+  );
+  metadataFlights.set(key, load);
+  try {
+    return await load;
+  } finally {
+    if (metadataFlights.get(key) === load) metadataFlights.delete(key);
+  }
+}
 
 function broadcastSponsorStateKey(rows: SponsorRow[]) {
   return JSON.stringify(
@@ -34,6 +87,7 @@ function broadcastSponsorStateKey(rows: SponsorRow[]) {
       row.storage_path,
       row.position,
       row.archived_at ?? null,
+      row.website ?? null,
     ]),
   );
 }
@@ -54,6 +108,7 @@ async function presentOne(
     imageUrl: data.signedUrl,
     archived: Boolean(row.archived_at),
     position: row.position,
+    website: row.website ?? undefined,
   };
 }
 
@@ -95,25 +150,34 @@ export async function gameLibrarySponsors(
   gameId: string,
   verifiedOrganizationId?: string,
 ): Promise<Sponsor[]> {
-  const { data, error } = await createAdminSupabaseClient().rpc(
-    verifiedOrganizationId
-      ? "list_sponsors_for_organization"
-      : "list_game_organization_sponsors",
-    verifiedOrganizationId
-      ? { p_organization_id: verifiedOrganizationId }
-      : { p_game_id: gameId },
+  const rows = await sponsorRows(gameId, verifiedOrganizationId);
+  const key = verifiedOrganizationId
+    ? `organization:${verifiedOrganizationId}`
+    : `game:${gameId}`;
+  const stateKey = broadcastSponsorStateKey(rows);
+  const cached = libraryUrlCache.get(key);
+  if (cached && cached.stateKey === stateKey && cached.expiresAt > Date.now())
+    return cached.sponsors;
+  const { sponsors, complete } = await presentAvailable(
+    rows,
+    SIGNED_URL_SECONDS,
   );
-  if (error) throw new Error("Sponsor library unavailable");
-  const rows = ((data ?? []) as SponsorRow[]).filter((row) => !row.archived_at);
-  const { sponsors } = await presentAvailable(rows, SIGNED_URL_SECONDS);
-  return sponsors.map((s) => ({
+  const result = sponsors.map((s) => ({
     id: s.id,
     name: s.name,
     altText: s.altText,
     dataUrl: s.imageUrl,
     enabled: true,
     rotation: 0,
+    website: s.website,
   }));
+  if (complete)
+    boundedSet(libraryUrlCache, key, {
+      stateKey,
+      expiresAt: Date.now() + 4 * 60 * 1000,
+      sponsors: result,
+    });
+  return result;
 }
 
 /** Public Broadcast receives renderable URLs, never the underlying storage path. */
@@ -121,12 +185,7 @@ export async function gameBroadcastSponsors(
   gameId: string,
 ): Promise<Sponsor[]> {
   if (process.env.NODE_ENV !== "production") return [];
-  const { data, error } = await createAdminSupabaseClient().rpc(
-    "list_game_organization_sponsors",
-    { p_game_id: gameId },
-  );
-  if (error) throw new Error("Sponsor library unavailable");
-  const rows = ((data ?? []) as SponsorRow[]).filter((row) => !row.archived_at);
+  const rows = await sponsorRows(gameId);
   const stateKey = broadcastSponsorStateKey(rows);
   const cached = broadcastSponsorCache.get(gameId);
   if (cached && cached.stateKey === stateKey && cached.expiresAt > Date.now())
@@ -139,9 +198,10 @@ export async function gameBroadcastSponsors(
     dataUrl: sponsor.imageUrl,
     enabled: true,
     rotation: 0,
+    website: sponsor.website,
   }));
   if (presented.complete)
-    broadcastSponsorCache.set(gameId, {
+    boundedSet(broadcastSponsorCache, gameId, {
       stateKey,
       expiresAt: Date.now() + PUBLIC_BROADCAST_CACHE_MS,
       sponsors,
@@ -151,6 +211,10 @@ export async function gameBroadcastSponsors(
 
 export type ValidImage = { bytes: Uint8Array; mime: string; extension: string };
 export function validateSponsorImage(file: File): Promise<ValidImage> {
+  if (!file.size || file.size > MAX_UPLOAD_BYTES)
+    return Promise.reject(
+      new Error(`${file.name}: images must be no larger than 4 MB.`),
+    );
   return file.arrayBuffer().then((buffer) => {
     const bytes = new Uint8Array(buffer);
     if (!bytes.length || bytes.length > MAX_UPLOAD_BYTES)
@@ -182,14 +246,20 @@ export function validateSponsorImage(file: File): Promise<ValidImage> {
       throw new Error(
         `${file.name}: file contents are not a supported JPEG, PNG, or WebP image.`,
       );
-    return { bytes, mime: detected[0], extension: detected[1] };
+    return normalizeUploadImage(bytes);
   });
 }
 
 export async function createSponsors(
   user: User,
   organizationId: string,
-  inputs: { file: File; name: string; altText: string; id?: string }[],
+  inputs: {
+    file: File;
+    name: string;
+    altText: string;
+    website?: string;
+    id?: string;
+  }[],
 ) {
   // Validation is deliberately complete before the first storage/database write.
   const validated = await Promise.all(
@@ -219,6 +289,7 @@ export async function createSponsors(
         p_path: path,
         p_mime: input.image.mime,
         p_size: input.image.bytes.length,
+        p_website: input.website ?? null,
       });
       if (error) {
         await db.storage.from(BUCKET).remove([path]);
@@ -236,24 +307,41 @@ export async function createSponsors(
     }
     throw error;
   }
+  invalidateSponsorCache();
   return listSponsorLibrary(user);
 }
 
 export async function updateSponsor(
   user: User,
-  input: { id: string; name: string; altText: string; archived: boolean },
+  input: {
+    id: string;
+    name: string;
+    altText: string;
+    archived: boolean;
+    website?: string;
+  },
 ) {
+  const params: {
+    p_user_id: string;
+    p_id: string;
+    p_name: string;
+    p_alt: string;
+    p_archived: boolean;
+    p_website?: string | null;
+  } = {
+    p_user_id: user.id,
+    p_id: input.id,
+    p_name: input.name,
+    p_alt: input.altText,
+    p_archived: input.archived,
+  };
+  if ("website" in input) params.p_website = input.website ?? null;
   const { error } = await createAdminSupabaseClient().rpc(
     "update_organization_sponsor",
-    {
-      p_user_id: user.id,
-      p_id: input.id,
-      p_name: input.name,
-      p_alt: input.altText,
-      p_archived: input.archived,
-    },
+    params,
   );
   if (error) throw new Error("Sponsor update failed");
+  invalidateSponsorCache();
   return listSponsorLibrary(user);
 }
 
@@ -263,6 +351,7 @@ export async function reorderSponsors(user: User, ids: string[]) {
     { p_user_id: user.id, p_ids: ids },
   );
   if (error) throw new Error("Sponsor reorder failed");
+  invalidateSponsorCache();
   return listSponsorLibrary(user);
 }
 
@@ -296,5 +385,6 @@ export async function replaceSponsor(
   }
   if (typeof oldPath === "string")
     await db.storage.from(BUCKET).remove([oldPath]);
+  invalidateSponsorCache();
   return listSponsorLibrary(user);
 }

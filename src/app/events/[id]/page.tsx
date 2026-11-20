@@ -1,3 +1,4 @@
+import { EventDeletionControl } from "@/components/EventDeletionControl";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { AppNavigation } from "@/components/AppNavigation";
@@ -7,6 +8,8 @@ import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { loadTeamHierarchyData } from "@/lib/team-hierarchy-data";
 import { formatScheduledStart } from "@/lib/team-hierarchy";
 import { formatCanonicalGameTitle } from "@/lib/game-title";
+import { requireCoachAccount } from "@/lib/curlcoach/production-access";
+import { EventWorkspace } from "@/components/EventWorkspace";
 
 export default async function EventPage({
   params,
@@ -29,10 +32,14 @@ export default async function EventPage({
   if (!event) notFound();
   const season = data.seasons.find((item) => item.id === event.seasonId)!;
   const games = data.games.filter((game) => game.eventId === id);
+  const coachAccount =
+    process.env.CURLCOACH_ENABLED === "true"
+      ? await requireCoachAccount()
+      : null;
   const canEdit =
     data.role !== "viewer" && !event.archivedAt && season.status !== "archived";
   return (
-    <main className="mx-auto min-h-screen max-w-4xl p-5 md:py-12">
+    <main className="mx-auto min-h-screen max-w-6xl p-5 md:py-12">
       <div className="mb-4">
         <AppNavigation signedIn />
       </div>
@@ -51,76 +58,96 @@ export default async function EventPage({
           </p>
         )}
       </header>
-      {canEdit && (
-        <div className="mb-5">
-          <EventForm seasonId={season.id} event={event} />
-        </div>
-      )}
-      <section className="grid gap-3">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <h2 className="text-2xl font-bold">Scheduled games</h2>
-          {canEdit && (
-            <Link className="btn" href={`/games/new?eventId=${event.id}`}>
-              Add game
-            </Link>
-          )}
-        </div>
-        {games.length === 0 ? (
-          <div className="panel">
-            <p>No games scheduled for this event.</p>
-            {canEdit && (
-              <Link
-                className="mt-2 inline-block min-h-11 py-3 text-cyan-300"
-                href={`/games/new?eventId=${event.id}`}
-              >
-                Schedule the first game
-              </Link>
-            )}
-          </div>
-        ) : (
-          games.map((game) => {
-            const title = formatCanonicalGameTitle({
-              homeName: game.config.homeName,
-              awayName: game.opponentId ? game.config.awayName : null,
-              eventName: game.config.eventName,
-            });
-            return (
-              <article className="panel" key={game.id}>
-                <h3 className="font-bold">{title}</h3>
-                {game.gameNumber && (
-                  <p className="text-sm text-slate-400">
-                    Game {game.gameNumber}
-                  </p>
-                )}
-                {game.scheduledStart && (
-                  <p className="text-slate-300">
-                    {formatScheduledStart(game.scheduledStart, event.timezone)}{" "}
-                    · {game.status}
-                  </p>
-                )}
-                {game.status === "completed" && (
-                  <p className="mt-2 font-bold text-cyan-200">
-                    Final:{" "}
-                    {game.completionResult?.totals
-                      ? `${game.completionResult.totals.home} – ${game.completionResult.totals.away}`
-                      : game.completionResult?.label}
-                  </p>
-                )}
-                {game.status === "completed" ? (
+      <EventWorkspace
+        key={event.id}
+        eventId={event.id}
+        reportsEnabled={!!coachAccount}
+        edit={
+          canEdit || ["owner", "team_admin"].includes(data.role) ? (
+            <>
+              {canEdit && <EventForm seasonId={season.id} event={event} />}{" "}
+              {["owner", "team_admin"].includes(data.role) && (
+                <EventDeletionControl
+                  eventId={event.id}
+                  name={event.name}
+                  gameCount={games.length}
+                />
+              )}
+            </>
+          ) : undefined
+        }
+        schedule={
+          <section className="grid gap-3">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <h2 className="text-2xl font-bold">Scheduled games</h2>
+              {canEdit && (
+                <Link className="btn" href={`/games/new?eventId=${event.id}`}>
+                  Add game
+                </Link>
+              )}
+            </div>
+            {games.length === 0 ? (
+              <div className="panel">
+                <p>No games scheduled for this event.</p>
+                {canEdit && (
                   <Link
-                    className="btn-secondary mt-3 inline-flex"
-                    href={`/games/${game.id}`}
+                    className="mt-2 inline-block min-h-11 py-3 text-cyan-300"
+                    href={`/games/new?eventId=${event.id}`}
                   >
-                    View result
+                    Schedule the first game
                   </Link>
-                ) : data.role !== "viewer" ? (
-                  <TeamGameLinks gameId={game.id} title={title} />
-                ) : null}
-              </article>
-            );
-          })
-        )}
-      </section>
+                )}
+              </div>
+            ) : (
+              games.map((game) => {
+                const title = formatCanonicalGameTitle({
+                  homeName: game.config.homeName,
+                  awayName: game.opponentId ? game.config.awayName : null,
+                  eventName: game.config.eventName,
+                  gameNumber: game.gameNumber,
+                });
+                return (
+                  <article className="panel" key={game.id}>
+                    <h3 className="font-bold">{title}</h3>
+                    {game.gameNumber && (
+                      <p className="text-sm text-slate-400">
+                        Game {game.gameNumber}
+                      </p>
+                    )}
+                    {game.scheduledStart && (
+                      <p className="text-slate-300">
+                        {formatScheduledStart(
+                          game.scheduledStart,
+                          game.timezone ?? event.timezone,
+                        )}{" "}
+                        · {game.status}
+                      </p>
+                    )}
+                    {game.status === "completed" && (
+                      <p className="mt-2 font-bold text-cyan-200">
+                        Final:{" "}
+                        {game.completionResult?.totals
+                          ? `${game.completionResult.totals.home} – ${game.completionResult.totals.away}`
+                          : game.completionResult?.label}
+                      </p>
+                    )}
+                    {game.status === "completed" ? (
+                      <Link
+                        className="btn-secondary mt-3 inline-flex"
+                        href={`/games/${game.id}`}
+                      >
+                        View result
+                      </Link>
+                    ) : data.role !== "viewer" ? (
+                      <TeamGameLinks gameId={game.id} title={title} />
+                    ) : null}
+                  </article>
+                );
+              })
+            )}
+          </section>
+        }
+      />
     </main>
   );
 }

@@ -2,6 +2,8 @@
 import { useCallback, useEffect, useState } from "react";
 import type { LibrarySponsor } from "@/lib/types";
 import {
+  isSafeSponsorWebsite,
+  normalizeSponsorWebsite,
   snapshotSponsorFiles,
   optimizeSponsorFile,
   uploadSponsorFiles,
@@ -16,6 +18,7 @@ export function SponsorLibrary() {
   );
   const [message, setMessage] = useState("");
   const [failed, setFailed] = useState<PendingSponsorFile[]>([]);
+  const [pending, setPending] = useState<PendingSponsorFile[]>([]);
   const load = useCallback(async () => {
     const response = await fetch("/api/sponsors", { cache: "no-store" });
     if (!response.ok) return setState("failure");
@@ -27,23 +30,30 @@ export function SponsorLibrary() {
   useEffect(() => void load(), [load]);
   const editable = role === "owner" || role === "team_admin";
 
-  async function upload(pending: PendingSponsorFile[]) {
-    if (!pending.length) return;
+  async function upload(items: PendingSponsorFile[]) {
+    if (!items.length) return;
     setFailed([]);
     const outcomes = await uploadSponsorFiles(
-      pending,
+      items,
       undefined,
       (done, total, name) =>
         setMessage(`Uploaded ${done} of ${total}: ${name}`),
     );
     const failures = outcomes.filter((item) => !item.ok);
     setFailed(failures);
+    setPending([]);
     setMessage(
       failures.length
         ? failures.map((item) => `${item.file.name}: ${item.error}`).join(" · ")
         : `${outcomes.length} sponsor${outcomes.length === 1 ? "" : "s"} uploaded.`,
     );
     await load();
+  }
+
+  function updatePending(id: string, changes: Partial<PendingSponsorFile>) {
+    setPending((items) =>
+      items.map((item) => (item.id === id ? { ...item, ...changes } : item)),
+    );
   }
 
   async function update(
@@ -59,6 +69,14 @@ export function SponsorLibrary() {
       ? prompt("Accessible image description", sponsor.altText)
       : sponsor.altText;
     if (!altText) return;
+    const website = edit
+      ? prompt("Sponsor website (optional HTTPS URL)", sponsor.website ?? "")
+      : sponsor.website;
+    if (website === null) return;
+    if (!isSafeSponsorWebsite(website)) {
+      setMessage("Sponsor website must be a valid HTTPS URL.");
+      return;
+    }
     const response = await fetch("/api/sponsors", {
       method: "PATCH",
       headers: { "content-type": "application/json" },
@@ -68,6 +86,11 @@ export function SponsorLibrary() {
         name,
         altText,
         archived,
+        ...(edit
+          ? { website: website?.trim() ?? "" }
+          : sponsor.website
+            ? { website: sponsor.website }
+            : {}),
       }),
     });
     const body = await response.json().catch(() => null);
@@ -220,12 +243,92 @@ export function SponsorLibrary() {
             accept="image/jpeg,image/png,image/webp"
             multiple
             onChange={(event) => {
-              const pending = snapshotSponsorFiles(event.target.files ?? []);
+              const selected = snapshotSponsorFiles(event.target.files ?? []);
               event.target.value = "";
-              void upload(pending);
+              setFailed([]);
+              setPending(selected);
             }}
           />
         </label>
+      )}
+      {pending.length > 0 && (
+        <form
+          className="panel grid gap-4"
+          onSubmit={(event) => {
+            event.preventDefault();
+            const invalid = pending.find(
+              (item) =>
+                !item.name.trim() || !isSafeSponsorWebsite(item.website),
+            );
+            if (invalid) {
+              setMessage(
+                !invalid.name.trim()
+                  ? "Every sponsor needs a display name."
+                  : "Sponsor websites must be valid HTTPS URLs.",
+              );
+              return;
+            }
+            void upload(
+              pending.map((item) => ({
+                ...item,
+                name: item.name.trim(),
+                website: normalizeSponsorWebsite(item.website),
+              })),
+            );
+          }}
+        >
+          <div>
+            <h2 className="text-xl font-bold">Review sponsor details</h2>
+            <p>
+              Set the name and optional website for each logo before upload.
+            </p>
+          </div>
+          {pending.map((item) => (
+            <fieldset
+              className="grid gap-3 border-t border-slate-700 pt-3"
+              key={item.id}
+            >
+              <legend className="font-bold">{item.file.name}</legend>
+              <label className="grid gap-1">
+                Sponsor display name
+                <input
+                  className="min-h-11 rounded border border-slate-600 bg-slate-950 px-3"
+                  value={item.name}
+                  onChange={(event) =>
+                    updatePending(item.id, { name: event.target.value })
+                  }
+                  required
+                />
+              </label>
+              <label className="grid gap-1">
+                Business website{" "}
+                <span className="text-slate-400">(optional)</span>
+                <input
+                  className="min-h-11 rounded border border-slate-600 bg-slate-950 px-3"
+                  type="url"
+                  inputMode="url"
+                  placeholder="https://example.com"
+                  value={item.website ?? ""}
+                  onChange={(event) =>
+                    updatePending(item.id, { website: event.target.value })
+                  }
+                />
+              </label>
+            </fieldset>
+          ))}
+          <div className="flex flex-wrap gap-2">
+            <button className="btn w-fit" type="submit">
+              Upload sponsors
+            </button>
+            <button
+              className="btn-secondary w-fit"
+              type="button"
+              onClick={() => setPending([])}
+            >
+              Cancel
+            </button>
+          </div>
+        </form>
       )}
       {role === "scorer" && (
         <p>You have read-only access to your team’s sponsor library.</p>

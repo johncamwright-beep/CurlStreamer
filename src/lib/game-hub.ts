@@ -1,9 +1,9 @@
+import { isCurrentGame } from "./current-game";
 import type {
   EventRecord,
   ScheduledGameRecord,
 } from "@/lib/team-hierarchy-data";
 
-export type GamesTab = "upcoming" | "events" | "single" | "past" | "unfinished";
 export function groupGames(
   games: ScheduledGameRecord[],
   events: EventRecord[],
@@ -17,6 +17,11 @@ export function groupGames(
     (g) => g.status !== "completed" && g.status !== "closed",
   );
   const broadcasting = open.filter((g) => broadcastingIds.has(g.id));
+  const current = open.filter(
+    (g) =>
+      !broadcastingIds.has(g.id) &&
+      isCurrentGame(g.scheduledStart, g.timezone ?? "America/Toronto", now),
+  );
   const upcoming = open.filter(
     (g) =>
       !broadcastingIds.has(g.id) &&
@@ -31,11 +36,13 @@ export function groupGames(
     )
     .reverse();
   return {
+    current,
     upcoming,
     broadcasting,
     unfinished: open.filter(
       (g) =>
         !broadcastingIds.has(g.id) &&
+        !current.includes(g) &&
         (!g.scheduledStart || new Date(g.scheduledStart).getTime() < now),
     ),
     completed: chronological.filter((g) => g.status === "completed").reverse(),

@@ -1,0 +1,103 @@
+.studio-session-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 10px 20px;
+  background: #102c3b;
+  border-bottom: 1px solid #315263;
+  color: #e8f4f8;
+}
+.studio-session-title {
+  font-weight: 700;
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+.studio-session-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+.studio-session-controls > a,
+.studio-session-controls > button {
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.studio-session-badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 6px 10px;
+  border: 1px solid #456274;
+  border-radius: 10px;
+  font-size: 13px;
+  color: #dbe8ef;
+  background: #142a3a;
+}
+.studio-session-badge[data-live="true"] {
+  color: #84efd1;
+  border-color: #387f70;
+}
+.studio-session-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  background: rgba(2, 9, 17, 0.8);
+}
+.studio-session-dialog {
+  width: min(560px, 100%);
+  max-height: calc(100dvh - 32px);
+  overflow: auto;
+  border: 1px solid #36596c;
+  border-radius: 16px;
+  background: #0d1e2b;
+  color: #e4eff8;
+  padding: 24px;
+  box-shadow: 0 20px 70px #0008;
+}
+.studio-session-dialog h2 {
+  font-size: 22px;
+  font-weight: 700;
+  margin: 0 0 12px;
+}
+.studio-session-dialog p {
+  margin: 12px 0;
+  line-height: 1.5;
+}
+.studio-session-dialog-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 20px;
+}
+.studio-session-dialog-actions button {
+  min-height: 44px;
+  flex: 1 1 150px;
+}
+.studio-session-error {
+  color: #ffbaba;
+  flex-basis: 100%;
+  font-size: 14px;
+}
+@media (max-width: 640px) {
+  .studio-session-banner {
+    padding: 10px 12px;
+  }
+  .studio-session-dialog {
+    padding: 18px;
+  }
+  .studio-session-controls {
+    width: 100%;
+  }
+  .scoring-page-actions .studio-session-controls {
+    justify-content: flex-start;
+  }
+}

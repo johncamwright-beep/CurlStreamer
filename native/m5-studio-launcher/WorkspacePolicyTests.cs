@@ -123,9 +123,14 @@ internal static class WorkspacePolicyTests
         Assert(role == "camera-home" && generation == 3 && zoom == 2.5);
         Assert(!WorkspacePolicy.CameraZoomRequest(zoomRequest, null, id, out role, out generation, out zoom, out nonce));
         Assert(!WorkspacePolicy.CameraZoomRequest(zoomRequest, id, "other-game", out role, out generation, out zoom, out nonce));
-        foreach (var invalid in new object[] { true, "2", 0.9, 4.1, 2.55, Double.NaN, Double.PositiveInfinity }) {
+        foreach (var invalid in new object[] { true, "2", 0, 0.05, 4.1, 2.55, Double.NaN, Double.PositiveInfinity }) {
             var request = new Dictionary<string, object>(zoomRequest); request["value"] = invalid;
             Assert(!WorkspacePolicy.CameraZoomRequest(request, id, id, out role, out generation, out zoom, out nonce));
+        }
+        foreach (var valid in new[] { 0.1, 0.5, 0.9, 1.0, 4.0 }) {
+            var request = new Dictionary<string, object>(zoomRequest); request["value"] = valid;
+            Assert(WorkspacePolicy.CameraZoomRequest(request, id, id, out role, out generation, out zoom, out nonce));
+            Assert(zoom == valid);
         }
         foreach (var field in new[] { "gameId", "cameraRole", "generation", "nonce" }) {
             var request = new Dictionary<string, object>(zoomRequest); request[field] = "invalid";

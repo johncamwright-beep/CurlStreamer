@@ -1,10 +1,10 @@
 # IP camera zoom in Studio
 
-Each Tapo or other RTSP camera has independent **digital zoom** controls below the program preview: minus, plus, a 1–4× slider, and **Reset 1×**. Phone cameras retain their existing hardware zoom controls.
+Each Tapo or other RTSP camera has independent **digital zoom** controls below the program preview, with minus, plus, a 0.1–4× slider, and **Reset 1×**. Studio pilot.61 adds zoom below 1×. Older Windows builds offer their supported 1–4× range.
 
-At 1×, Studio contains the complete camera image in its original aspect ratio. Increasing digital zoom magnifies the center of that camera's picture. The same composition supplies Studio's preview, recording, and YouTube output; scores and sponsor images are unaffected. Zoom changes neither restart the camera decoder nor create a new connection.
+At 1×, Studio uses the selected layout. Portrait mode fills the tall slot, while Auto and Stacked contain the image. Reducing zoom reveals more of the camera frame and adds black space above and below the picture. Increasing zoom magnifies the picture. The same framing supplies Studio's preview, recording, and YouTube output. Scores and sponsor images keep their existing size.
 
-Zoom is retained through automatic recovery and the Reconnect camera action within the current Studio session. Configuring a replacement source resets its zoom to 1×.
+Confirmed zoom is saved with the encrypted camera preferences and restored when Studio opens another game. Automatic recovery and Disconnect/Connect preserve it. Configuring a replacement source resets its zoom to 1×.
 
 The web controls send a correlated native message scoped to the running game, camera role, and source generation. The authenticated loopback operator validates the zoom range and source before accepting it. Stale requests cannot change a replacement camera. Camera credentials remain outside the web controls and safe snapshots.
 

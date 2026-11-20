@@ -500,7 +500,8 @@ export function createM4IpCameraManager(
     slot.longestGapMs = 0;
     slot.reconnects = 0;
     slot.nativeHealth = undefined;
-    if (!preserveZoom) slot.zoom = 1;
+    if (!preserveZoom)
+      slot.zoom = result.data.kind === "phone" ? 1 : (result.data.zoom ?? 1);
     slot.failures = 0;
     slot.authBlocked = false;
     slot.phase = "idle";

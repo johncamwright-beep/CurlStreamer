@@ -666,12 +666,13 @@ internal sealed class Workspace : Form
             cameraZoomRevision++; commanded = true;
             var result = await Command(new { action = "set-camera-zoom", cameraRole = role, generation = generation, value = zoom });
             // An old response cannot restore a source after Settings replaces it.
-            if (selectedGame != gameId || runningGame != gameId || closing ||
+            if (selectedGame != gameId || runningGame != gameId || closing || busy ||
                 lastState == null || !lastState.TryGetValue("cameraInputs", out inputs) || !WorkspacePolicy.CameraZoomSource(inputs, role, generation) ||
                 !result.TryGetValue("cameraInputs", out inputs) || !WorkspacePolicy.CameraZoomSource(inputs, role, generation))
                 throw new InvalidOperationException();
             var update = new Dictionary<string, object>(lastState);
             update["cameraInputs"] = WorkspacePolicy.MergeCameraZoomInputs(lastState["cameraInputs"], result["cameraInputs"], role, generation);
+            cameraInputs = CameraInputs.SaveZoom(CameraPreferenceDirectory, LegacyCameraDirectory, role, zoom);
             ApplyState(update); ok = true;
         } catch { /* Return a fixed message; no local camera details or credentials. */ }
         finally { if (commanded) cameraZoomRevision++; }
@@ -1247,6 +1248,7 @@ internal sealed class Workspace : Form
             var safe = new Dictionary<string, object>();
             // Whitelist facts even if a future local controller adds fields.
             safe["kind"] = kind;
+            if (kind != "phone") safe["zoomMin"] = 0.1;
             object value;
             if (source.TryGetValue("host", out value) && value is string && CameraInputs.PrivateIPv4((string)value)) safe["host"] = value;
             if (kind == "tapo" && source.TryGetValue("stream", out value) && (Object.Equals(value, "stream1") || Object.Equals(value, "stream2"))) safe["stream"] = value;
@@ -1256,7 +1258,7 @@ internal sealed class Workspace : Form
             if (source.TryGetValue("generation", out value) && value is int && (int)value >= 0) safe["generation"] = value;
             if (source.TryGetValue("zoom", out value) && (value is int || value is decimal || value is double)) {
                 var zoom = Convert.ToDouble(value);
-                if (!Double.IsNaN(zoom) && !Double.IsInfinity(zoom) && zoom >= 1 && zoom <= 4) safe["zoom"] = zoom;
+                if (!Double.IsNaN(zoom) && !Double.IsInfinity(zoom) && zoom >= 0.1 && zoom <= 4) safe["zoom"] = zoom;
             }
             foreach (var phase in new[] { "idle", "connecting", "streaming", "retrying", "failed" }) if (TextValue(source, "phase") == phase) safe["phase"] = phase;
             foreach (var error in new[] { "auth_failed", "runtime_missing", "stale_frames", "unavailable", "invalid_pipe" }) if (TextValue(source, "errorCode") == error) safe["errorCode"] = error;
@@ -1273,7 +1275,13 @@ internal sealed class Workspace : Form
         var cameras = new Dictionary<string, object>();
         foreach (var entry in cameraInputs) {
             var kind = TextValue(entry.Value, "kind");
-            cameras[entry.Key] = new { kind = kind, configured = kind != "phone", connectionEnabled = false, phase = "idle", generation = 0 };
+            var safe = new Dictionary<string, object> { { "kind", kind }, { "configured", kind != "phone" }, { "connectionEnabled", false }, { "phase", "idle" }, { "generation", 0 } };
+            if (kind != "phone") {
+                safe["zoomMin"] = 0.1;
+                object zoom;
+                safe["zoom"] = entry.Value.TryGetValue("zoom", out zoom) && CameraInputs.ValidZoom(zoom) ? Convert.ToDouble(zoom) : 1.0;
+            }
+            cameras[entry.Key] = safe;
         }
         PublishCameraInputs(cameras);
     }

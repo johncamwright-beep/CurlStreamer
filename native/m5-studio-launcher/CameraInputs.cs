@@ -83,10 +83,31 @@ internal static class CameraInputs
         if (source == null || !source.ContainsKey("kind")) throw new InvalidDataException();
         var kind = source["kind"] as string;
         if (kind == "phone") { if (source.Count != 1) throw new InvalidDataException(); return; }
-        if (source.Count != 7) throw new InvalidDataException();
+        object zoom;
+        if (source.TryGetValue("zoom", out zoom)) {
+            if (source.Count != 8 || !ValidZoom(zoom)) throw new InvalidDataException();
+        } else if (source.Count != 7) throw new InvalidDataException();
         if (kind == "tapo") { if ((int)source["port"] != 554) throw new InvalidDataException(); Tapo((string)source["host"], (string)source["username"], (string)source["password"], (string)source["stream"], (int)source["rotation"]); }
         else if (kind == "rtsp") Rtsp((string)source["host"], (int)source["port"], (string)source["username"], (string)source["password"], (string)source["path"], (int)source["rotation"]);
         else throw new InvalidDataException();
+    }
+    internal static bool ValidZoom(object value) {
+        if (!(value is int || value is decimal || value is double)) return false;
+        var zoom = Convert.ToDouble(value);
+        return !Double.IsNaN(zoom) && !Double.IsInfinity(zoom) && zoom >= 0.1 && zoom <= 4 &&
+            Math.Abs(zoom * 10 - Math.Round(zoom * 10)) <= 0.000001;
+    }
+    internal static Dictionary<string, Dictionary<string, object>> SaveZoom(string directory, string legacyDirectory, string role, double zoom) {
+        if (!Role(role) || !ValidZoom(zoom)) throw new InvalidDataException();
+        using (LockProfile(directory)) {
+            var values = ReadStored(directory) ?? Load(legacyDirectory);
+            Dictionary<string, object> source;
+            if (!values.TryGetValue(role, out source) || Object.Equals(source["kind"], "phone")) throw new InvalidDataException();
+            source["zoom"] = zoom;
+            Validate(source);
+            WriteProfile(directory, values);
+            return values;
+        }
     }
     internal static Dictionary<string, object> ActiveSource(Dictionary<string, object> profile) {
         return profile == null || (string)profile["kind"] == "phone" ? Phone() : profile;

@@ -35,12 +35,15 @@ export const privateCameraHostSchema = z.string().refine((host) => {
   );
 }, "invalid_private_camera_host");
 
+export const m4CameraZoomSchema = z.number().min(0.1).max(4).multipleOf(0.1);
+
 export const m4CameraInputSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("phone") }).strict(),
   z
     .object({
       kind: z.literal("tapo"),
       host: privateCameraHostSchema,
+      zoom: m4CameraZoomSchema.optional(),
       port: z.literal(554).default(554),
       username: z
         .string()
@@ -62,6 +65,7 @@ export const m4CameraInputSchema = z.discriminatedUnion("kind", [
     .object({
       kind: z.literal("rtsp"),
       host: privateCameraHostSchema,
+      zoom: m4CameraZoomSchema.optional(),
       port: z.number().int().min(1).max(65535).default(554),
       username: z
         .string()
@@ -138,7 +142,7 @@ export const m4CameraHealthSchema = z
     processingMs: z.number().nonnegative(),
   })
   .strict();
-export const m4CameraZoomSchema = z.number().min(1).max(4).multipleOf(0.1);
+
 export const m4CameraInputSnapshotSchema = z
   .object({
     kind: z.enum(["phone", "tapo", "rtsp"]),

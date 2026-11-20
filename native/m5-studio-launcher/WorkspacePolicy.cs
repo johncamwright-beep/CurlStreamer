@@ -95,7 +95,7 @@ internal static class WorkspacePolicy
             !request.TryGetValue("nonce", out requestNonce) || !(requestNonce is string) ||
             !Guid.TryParseExact((string)requestNonce, "D", out parsedNonce)) return false;
         var requestedZoom = Convert.ToDouble(value);
-        if (Double.IsNaN(requestedZoom) || Double.IsInfinity(requestedZoom) || requestedZoom < 1 || requestedZoom > 4 ||
+        if (Double.IsNaN(requestedZoom) || Double.IsInfinity(requestedZoom) || requestedZoom < 0.1 || requestedZoom > 4 ||
             Math.Abs(requestedZoom * 10 - Math.Round(requestedZoom * 10)) > 0.000001) return false;
         role = (string)cameraRole; generation = (int)sourceGeneration; zoom = requestedZoom; nonce = (string)requestNonce;
         return true;

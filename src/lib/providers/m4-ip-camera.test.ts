@@ -295,7 +295,12 @@ describe("local IP camera manager", () => {
     });
     expect(manager.snapshot("camera-away").zoom).toBe(1);
     expect(spawnMock).toHaveBeenCalledTimes(launches);
-    for (const value of [0.9, 4.1, 1.05, NaN, Infinity])
+    for (const value of [0.1, 0.5, 0.9, 1, 4]) {
+      manager.setZoom("camera-home", generation, value);
+      expect(manager.snapshot("camera-home").zoom).toBe(value);
+    }
+    manager.setZoom("camera-home", generation, 2.3);
+    for (const value of [0, 0.05, 4.1, 1.05, NaN, Infinity])
       expect(() => manager.setZoom("camera-home", generation, value)).toThrow(
         "invalid_camera_zoom",
       );
@@ -322,6 +327,21 @@ describe("local IP camera manager", () => {
       ),
     ).toThrow("camera_source_changed");
     expect(manager.snapshot("camera-home").zoom).toBe(2.3);
+    await manager.close();
+  });
+
+  it("restores a stored IP zoom and defaults legacy sources to 1x", async () => {
+    const { manager } = harness();
+    manager.configure("camera-home", { ...config, zoom: 0.1 });
+    expect(manager.snapshot("camera-home").zoom).toBe(0.1);
+    manager.configure("camera-away", {
+      ...config,
+      host: "10.0.0.2",
+      zoom: 0.9,
+    });
+    expect(manager.snapshot("camera-away").zoom).toBe(0.9);
+    manager.configure("camera-home", config);
+    expect(manager.snapshot("camera-home").zoom).toBe(1);
     await manager.close();
   });
 

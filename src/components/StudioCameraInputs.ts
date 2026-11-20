@@ -2,7 +2,10 @@
 
 import { useEffect, useState } from "react";
 import { z } from "zod";
-import { m4CameraHealthSchema } from "@/lib/m4-camera-input";
+import {
+  m4CameraHealthSchema,
+  m4CameraZoomSchema,
+} from "@/lib/m4-camera-input";
 
 export const studioCameraInputSchema = z
   .object({
@@ -17,7 +20,8 @@ export const studioCameraInputSchema = z
     errorCode: z.string().nullable().optional(),
     generation: z.number().int().nonnegative(),
     connectionEnabled: z.boolean().optional(),
-    zoom: z.number().min(1).max(4).optional(),
+    zoom: m4CameraZoomSchema.optional(),
+    zoomMin: z.number().min(0.1).max(1).optional(),
     health: m4CameraHealthSchema.optional(),
   })
   .strict();
@@ -194,7 +198,7 @@ export function cameraInputNativeZoom(
           generation: z.literal(generation),
           nonce: z.literal(nonce),
           ok: z.boolean(),
-          value: z.number().min(1).max(4).optional(),
+          value: m4CameraZoomSchema.optional(),
           error: z.string().optional(),
         })
         .strict()

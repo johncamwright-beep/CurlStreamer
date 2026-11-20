@@ -177,18 +177,18 @@ describe("operator camera input commands", () => {
         409,
       );
       expect((await f.send(zoom(generation - 1))).status).toBe(409);
-      const response = await f.send(zoom(generation, 2.3));
+      const response = await f.send(zoom(generation, 0.5));
       expect(response.status).toBe(200);
       const text = await response.text();
       expect(text).not.toMatch(
         /private-camera-user|private-camera-password|username|password|rtsp:/,
       );
       expect(JSON.parse(text).cameraInputs).toMatchObject({
-        "camera-home": { generation, zoom: 2.3 },
+        "camera-home": { generation, zoom: 0.5 },
         "camera-away": { zoom: 1 },
       });
       expect((await f.send(reconnect())).status).toBe(200);
-      expect((await f.state()).cameraInputs["camera-home"].zoom).toBe(2.3);
+      expect((await f.state()).cameraInputs["camera-home"].zoom).toBe(0.5);
       expect((await f.send(zoom(generation))).status).toBe(409);
       await f.send(configure());
       const replacement = (await f.state()).cameraInputs["camera-home"];
@@ -262,7 +262,7 @@ describe("operator camera input commands", () => {
         zoom(1, 2, "camera-other"),
         zoom(-1),
         zoom(1.5),
-        zoom(1, 0.9),
+        zoom(1, 0),
         zoom(1, 4.1),
         zoom(1, 1.05),
         { ...zoom(), gameId },

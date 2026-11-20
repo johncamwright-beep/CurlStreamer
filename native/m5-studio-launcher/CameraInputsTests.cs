@@ -68,12 +68,21 @@ internal static class CameraInputsTests
             }
             var rtspLoaded = CameraInputs.LoadProfile(stable, Path.Combine(directory, "different-launch-context"));
             if ((string)rtspLoaded["camera-home"]["password"] != "private:secret" || (int)rtspLoaded["camera-away"]["port"] != 8554) throw new Exception("Generic RTSP settings did not round trip.");
+            foreach (var zoom in new[] { 0.1, 0.5, 0.9, 1.0, 4.0 }) {
+                CameraInputs.SaveZoom(stable, legacy, "camera-home", zoom);
+                var restored = CameraInputs.LoadProfile(stable, legacy);
+                if (Convert.ToDouble(restored["camera-home"]["zoom"]) != zoom || (string)restored["camera-home"]["password"] != "private:secret" || (int)restored["camera-away"]["port"] != 8554) throw new Exception("Saved zoom did not round trip independently.");
+            }
+            foreach (var invalid in new[] { 0.0, 0.05, 4.1, 1.05, Double.NaN, Double.PositiveInfinity })
+                Reject(() => CameraInputs.SaveZoom(stable, legacy, "camera-home", invalid));
+            CameraInputs.SaveZoom(stable, legacy, "camera-home", 0.5);
             CameraInputs.SaveSlot(stable, legacy, "camera-home", CameraInputs.Phone());
+            Reject(() => CameraInputs.SaveZoom(stable, legacy, "camera-home", 0.5));
             var phone = CameraInputs.LoadProfile(stable, legacy)["camera-home"];
             var active = CameraInputs.ActiveSource(phone);
             if (active.Count != 1 || (string)active["kind"] != "phone") throw new Exception("Explicit source switch or controller payload is incorrect.");
             var previousIp = CameraInputs.RememberedIp(phone);
-            if ((string)previousIp["password"] != "private:secret" || (int)previousIp["rotation"] != 270) throw new Exception("Switching to Phone lost the previous IP source.");
+            if ((string)previousIp["password"] != "private:secret" || (int)previousIp["rotation"] != 270 || Convert.ToDouble(previousIp["zoom"]) != 0.5) throw new Exception("Switching to Phone lost the previous IP source.");
             if (Encoding.UTF8.GetString(File.ReadAllBytes(stableFile)).Contains("private:secret")) throw new Exception("Remembered RTSP password persisted as plaintext.");
             CameraInputs.SaveSlot(stable, legacy, "camera-home", previousIp);
             if ((string)CameraInputs.LoadProfile(stable, legacy)["camera-home"]["kind"] != "rtsp") throw new Exception("Returning to the previous IP source failed.");

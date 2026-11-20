@@ -9,7 +9,7 @@ describe("native camera source boundary", () => {
   it("rejects a missing bridge and an unconfirmed command within a bounded wait", async () => {
     vi.stubGlobal("window", {});
     await expect(
-      cameraInputNativeZoom("game-1", "camera-home", 2, 1.2),
+      cameraInputNativeZoom("game-1", "camera-home", 2, 0.5),
     ).rejects.toThrow("Open this game in Studio");
     const events = new EventTarget();
     vi.stubGlobal("window", {
@@ -19,7 +19,7 @@ describe("native camera source boundary", () => {
     });
     vi.useFakeTimers();
     try {
-      const promise = cameraInputNativeZoom("game-1", "camera-home", 2, 1.2);
+      const promise = cameraInputNativeZoom("game-1", "camera-home", 2, 0.5);
       const assertion = expect(promise).rejects.toThrow(
         "Studio did not confirm IP camera zoom",
       );
@@ -38,10 +38,22 @@ describe("native camera source boundary", () => {
       generation: 2,
     };
     expect(studioCameraInputSchema.parse(snapshot).zoom).toBeUndefined();
+    expect(
+      studioCameraInputSchema.parse({ ...snapshot, zoomMin: 0.1 }).zoomMin,
+    ).toBe(0.1);
+    expect(studioCameraInputSchema.parse(snapshot).zoomMin).toBeUndefined();
+    for (const zoom of [0.1, 0.5, 0.9, 1, 4])
+      expect(studioCameraInputSchema.parse({ ...snapshot, zoom }).zoom).toBe(
+        zoom,
+      );
     for (const extra of [
       { generation: -1 },
       { generation: 1.5 },
       { zoom: 0 },
+      { zoom: 0.05 },
+      { zoom: 1.05 },
+      { zoomMin: 0 },
+      { zoomMin: 1.1 },
       { zoom: 4.1 },
     ])
       expect(
@@ -63,7 +75,7 @@ describe("native camera source boundary", () => {
       },
     });
     try {
-      const promise = cameraInputNativeZoom("game-1", "camera-home", 2, 1.2);
+      const promise = cameraInputNativeZoom("game-1", "camera-home", 2, 0.5);
       const ack = (extra: object) => {
         const event = new Event("studio-camera-zoom-result");
         Object.assign(event, {
@@ -73,7 +85,7 @@ describe("native camera source boundary", () => {
             generation: sent.generation,
             nonce: sent.nonce,
             ok: true,
-            value: 1.2,
+            value: 0.5,
             ...extra,
           },
         });
@@ -81,7 +93,7 @@ describe("native camera source boundary", () => {
       };
       ack({ generation: 1 });
       ack({});
-      await expect(promise).resolves.toBe(1.2);
+      await expect(promise).resolves.toBe(0.5);
       const rejected = cameraInputNativeZoom("game-1", "camera-home", 2, 1.4);
       ack({ ok: false, error: "rtsp://private-password" });
       await expect(rejected).rejects.toThrow(
@@ -94,7 +106,7 @@ describe("native camera source boundary", () => {
   it("accepts safe media facts and rejects credentials", () => {
     const snapshot = {
       kind: "tapo",
-      host: "192.168.1.2",
+      host: "192.168.0.5",
       stream: "stream1",
       rotation: 90,
       configured: true,
@@ -137,9 +149,17 @@ describe("native camera source boundary", () => {
       generation: 5,
     };
     expect(studioCameraInputSchema.safeParse(snapshot).success).toBe(true);
+    expect(
+      studioCameraInputSchema.parse({ ...snapshot, zoomMin: 0.1 }).zoomMin,
+    ).toBe(0.1);
+    expect(studioCameraInputSchema.parse(snapshot).zoomMin).toBeUndefined();
+    for (const zoom of [0.1, 0.5, 0.9, 1, 4])
+      expect(studioCameraInputSchema.parse({ ...snapshot, zoom }).zoom).toBe(
+        zoom,
+      );
     for (const extra of [
       { path: "/live?password=secret" },
-      { url: "rtsp://user:secret@192.168.1.2/live" },
+      { url: "rtsp://user:secret@192.168.0.5/live" },
       { username: "user" },
     ]) {
       expect(

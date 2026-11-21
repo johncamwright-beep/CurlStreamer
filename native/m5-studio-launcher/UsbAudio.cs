@@ -54,6 +54,9 @@ internal sealed class UsbAudio : IDisposable
     private IntPtr audioEvent;
     private bool running, disposed, allMuted;
     private string error;
+    private string captureOperation = "idle", lastCaptureFailure;
+    private int recoveryAttempts;
+    internal object CaptureDiagnostics() { lock (gate) return new { recoveryAttempts = recoveryAttempts, lastFailure = lastCaptureFailure }; }
     private int sampleRate, channelCount;
     private float[] peaks, rms, levels;
     private bool[] muted;
@@ -109,7 +112,7 @@ internal sealed class UsbAudio : IDisposable
             ThrowIfDisposed();
             if (onMono == null) throw new InvalidOperationException("A mono audio callback is required.");
             if (worker != null) throw new InvalidOperationException("USB audio capture is already started.");
-            error = null; sampleRate = 0; channelCount = 0; peaks = rms = levels = null; muted = null; clippedUntil = null; meterLastPacketAt = 0;
+            error = null; lastCaptureFailure = null; recoveryAttempts = 0; sampleRate = 0; channelCount = 0; peaks = rms = levels = null; muted = null; clippedUntil = null; meterLastPacketAt = 0;
             cancel = new ManualResetEvent(false); ready = new ManualResetEvent(false);
             started = ready;
             worker = new Thread(() => CaptureThread(deviceId)) { IsBackground = true, Name = "CurlStreamer WASAPI capture" };
@@ -186,7 +189,52 @@ internal sealed class UsbAudio : IDisposable
 
     public void Dispose() { if (!disposed) { try { Stop(); } finally { disposed = true; } } }
 
+    internal static void RestoreControls(float[] previousLevels, bool[] previousMuted, float[] nextLevels, bool[] nextMuted) {
+        for (int i = 0; i < nextLevels.Length; i++) {
+            nextLevels[i] = previousLevels != null && i < previousLevels.Length ? previousLevels[i] : 1f;
+            nextMuted[i] = previousMuted != null && i < previousMuted.Length ? previousMuted[i] : false;
+        }
+    }
+
+    internal static bool RetryCapture(Exception error) {
+        return error is COMException || error is NotImplementedException || error is System.ComponentModel.Win32Exception;
+    }
+
+    // Runs on the capture owner thread. Every failed attempt releases its COM
+    // resources before reopening the SAME selected endpoint. Stop interrupts backoff.
+    internal static void RunRecovery(Action attempt, Func<bool> established, Func<int, bool> cancelled, Action<Exception, int> failed) {
+        int failures = 0;
+        while (!cancelled(0)) {
+            try { attempt(); return; }
+            catch (Exception ex) {
+                failures++;
+                failed(ex, failures);
+                if (!established() || !RetryCapture(ex) || cancelled(Math.Min(5000, failures * 1000))) return;
+            }
+        }
+    }
+
     private void CaptureThread(string deviceId)
+    {
+        bool established = false;
+        try {
+            RunRecovery(() => CaptureAttempt(deviceId, () => { established = true; }),
+                () => established, delay => cancel.WaitOne(delay), (ex, count) => {
+                    lock (gate) {
+                        running = false;
+                        recoveryAttempts = count;
+                        lastCaptureFailure = captureOperation + " / " + ex.GetType().Name + " / 0x" + ex.HResult.ToString("X8");
+                        error = established && RetryCapture(ex) ? "USB audio interrupted; reconnecting selected receiver. " + lastCaptureFailure : "USB audio capture stopped: " + lastCaptureFailure;
+                        if (ready != null) ready.Set();
+                    }
+                    try { var lost = DeviceLost; if (lost != null) lost(ex); } catch { }
+                });
+        } finally {
+            lock (gate) { running = false; worker = null; if (cancel != null) cancel.Dispose(); cancel = null; }
+        }
+    }
+
+    private void CaptureAttempt(string deviceId, Action started)
     {
         IMMDeviceEnumerator enumerator = null; IMMDevice device = null; IAudioClient client = null; IAudioCaptureClient capture = null;
         IntPtr format = IntPtr.Zero, evt = IntPtr.Zero;
@@ -196,12 +244,16 @@ internal sealed class UsbAudio : IDisposable
         try {
             if (initialized < 0) Marshal.ThrowExceptionForHR(initialized);
             enumerator = (IMMDeviceEnumerator)new MMDeviceEnumeratorComObject();
+            captureOperation = "GetDevice";
             enumerator.GetDevice(deviceId, out device);
+            captureOperation = "Activate";
             var iidClient = typeof(IAudioClient).GUID; device.Activate(ref iidClient, ClsCtxAll, IntPtr.Zero, out client);
             // Bypass Windows signal processing, which can duplicate a mono mix
             // across a multichannel endpoint. Never silently fall back to mixed input.
             var properties = new AudioClientProperties { size = 16, offload = 0, category = 0, options = 1 };
+            captureOperation = "SetClientProperties";
             ((IAudioClient2)client).SetClientProperties(ref properties);
+            captureOperation = "GetMixFormat";
             client.GetMixFormat(out format);
             var wave = WaveFormat.Read(format);
             if (!wave.IsSupported) throw new NotSupportedException("The selected endpoint mix format is not PCM or IEEE float 16, 24, or 32-bit audio.");
@@ -210,30 +262,32 @@ internal sealed class UsbAudio : IDisposable
             captureProcessor.Configure(captureProcessor.NoiseReductionAvailable ? noiseReduction : "off", humFrequency);
             evt = Native.CreateEvent(IntPtr.Zero, false, false, null);
             if (evt == IntPtr.Zero) throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error());
+            captureOperation = "Initialize";
             client.Initialize(SharedMode, StreamEventCallback, 0, 0, format, IntPtr.Zero);
+            captureOperation = "SetEventHandle";
             client.SetEventHandle(evt);
+            captureOperation = "GetService";
             var iidCapture = typeof(IAudioCaptureClient).GUID; client.GetService(ref iidCapture, out capture);
             lock (gate) {
+                var previousLevels = levels; var previousMuted = muted;
                 audioEvent = evt; sampleRate = wave.sampleRate; channelCount = wave.channels;
                 peaks = new float[channelCount]; rms = new float[channelCount]; levels = new float[channelCount]; muted = new bool[channelCount]; clippedUntil = new long[channelCount];
                 processor = captureProcessor;
-                for (int i = 0; i < channelCount; i++) levels[i] = 1f;
-                running = true;
+                RestoreControls(previousLevels, previousMuted, levels, muted);
             }
+            captureOperation = "Start";
             client.Start();
-            ready.Set();
+            lock (gate) { running = true; error = null; started(); if (ready != null) ready.Set(); }
             var handles = new[] { evt, cancel.SafeWaitHandle.DangerousGetHandle() };
             while (true) {
+                captureOperation = "WaitForAudio";
                 uint wait = Native.WaitForMultipleObjects(2, handles, false, 1000);
                 if (wait == 1) break;
                 if (wait == 0) Drain(capture, wave);
                 else if (wait != 258) throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error(), "WASAPI capture wait failed.");
             }
+            captureOperation = "Stop";
             client.Stop();
-        } catch (Exception ex) {
-            lock (gate) { running = false; error = "USB audio capture stopped: " + SafeMessage(ex); }
-            try { var lost = DeviceLost; if (lost != null) lost(ex); } catch { }
-            lock (gate) { if (ready != null) ready.Set(); }
         } finally {
             lock (gate) { running = false; audioEvent = IntPtr.Zero; processor = null; }
             if (captureProcessor != null) captureProcessor.Dispose();
@@ -241,18 +295,20 @@ internal sealed class UsbAudio : IDisposable
             if (format != IntPtr.Zero) Marshal.FreeCoTaskMem(format);
             if (evt != IntPtr.Zero) Native.CloseHandle(evt);
             if (uninitialize) { try { Native.CoUninitialize(); } catch { } }
-            lock (gate) { worker = null; if (cancel != null) cancel.Dispose(); cancel = null; ready = null; }
         }
     }
 
     private void Drain(IAudioCaptureClient capture, WaveFormat wave)
     {
+        captureOperation = "GetNextPacketSize";
         uint available; capture.GetNextPacketSize(out available);
         while (available != 0) {
             IntPtr data; uint frames, flags; ulong position, timestamp;
+            captureOperation = "GetBuffer";
             capture.GetBuffer(out data, out frames, out flags, out position, out timestamp);
-            try { ProcessPacket(data, checked((int)frames), (flags & BufferSilent) != 0, wave); }
-            finally { capture.ReleaseBuffer(frames); }
+            try { captureOperation = "ProcessPacket"; ProcessPacket(data, checked((int)frames), (flags & BufferSilent) != 0, wave); }
+            finally { captureOperation = "ReleaseBuffer"; capture.ReleaseBuffer(frames); }
+            captureOperation = "GetNextPacketSize";
             capture.GetNextPacketSize(out available);
         }
     }

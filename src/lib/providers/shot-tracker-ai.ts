@@ -82,10 +82,7 @@ Return at most two concrete findings and fifty-five words per section. An empty 
     for (const section of ["eventStats", "eventTrends"] as const) {
       const findings = parsed.data[section];
       const words = findings.map((f) => f.text).join(" ");
-      if (
-        words.trim().split(/\\s+/).length > 55 ||
-        /https?:|www\\./i.test(words)
-      )
+      if (words.trim().split(/\s+/).length > 55 || /https?:|www\./i.test(words))
         throw new Error("Invalid report prose");
       if (
         forbiddenNames.some(

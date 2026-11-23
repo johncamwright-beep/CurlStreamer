@@ -176,6 +176,10 @@
   gap: 0.65rem;
   margin-bottom: 0.75rem;
 }
+.report-matrix-narrative {
+  margin: 0 0 0.65rem;
+  line-height: 1.45;
+}
 .report-comparison h4 small {
   font-size: 0.82rem;
   color: #526574;

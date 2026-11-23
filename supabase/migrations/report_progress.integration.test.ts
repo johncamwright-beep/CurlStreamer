@@ -35,6 +35,7 @@ beforeAll(async () => {
     "0074_shot_tracker_reports.sql",
     "0075_shot_tracker_report_allowance.sql",
     "0087_report_progress.sql",
+    "0107_player_report_sections.sql",
   ])
     await db.exec(readFileSync(`supabase/migrations/${name}`, "utf8"));
   await db.exec("set role service_role");
@@ -160,4 +161,36 @@ it("upgrades an old edition explicitly, retains its original packet and charges 
       "(select count(*) from public.shot_tracker_reports where audience='coach' and status='ready')",
     ),
   ).toBe(2);
+});
+
+it("updates saved player reports once while preserving the prior edition, access and event allowance", async () => {
+  await db.exec("reset role");
+  await db.exec(
+    `insert into public.shot_tracker_reports(organization_id,actor_user_id,event_id,audience,fingerprint,status,lease,generation_version,packet) values('${org}','${actor}','${event}','players','${"d".repeat(64)}','ready','${randomUUID()}',9,'{"audience":"players","policy":"old"}'); set role service_role`,
+  );
+  const next = `'${actor}','${org}','${event}','players','${"e".repeat(64)}','${randomUUID()}'`;
+  const claim = (upgrade: boolean) =>
+    scalar(`public.claim_shot_tracker_report_edition(${next},${upgrade},12)`);
+  expect(await claim(false)).toMatchObject({
+    status: "ready",
+    packet: { policy: "old" },
+  });
+  expect(await claim(true)).toMatchObject({ status: "claimed" });
+  expect(
+    await scalar(
+      `public.finish_shot_tracker_report_step(${next},'{"audience":"players","policy":"new"}')`,
+    ),
+  ).toBe(true);
+  for (const upgrade of [true, false])
+    expect(await claim(upgrade)).toMatchObject({
+      status: "ready",
+      packet: { policy: "new" },
+    });
+  expect(
+    await scalar(
+      `public.read_shot_tracker_report_allowance('${actor}','${org}','${event}')`,
+    ),
+  ).toMatchObject({ used: 1 });
+  await db.exec("reset role; set role authenticated");
+  await expect(claim(true)).rejects.toThrow(/permission denied/);
 });

@@ -56,6 +56,7 @@ export function reportPercentages(report: SavedReport) {
   return values;
 }
 export function reportSections(report: SavedReport) {
+  if ("eventStats" in report.narrative) return [];
   const names = new Map(
     report.evidence.flatMap((e) => {
       if (!e.id.startsWith("player-")) return [];

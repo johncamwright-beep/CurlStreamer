@@ -170,7 +170,10 @@ it("compares a player's completed earlier events and prints assessed zeros and m
   });
   const blocks = playerScorecardBlocks(saved, card);
   const matrices = blocks.filter((b): b is ReportMatrix => b.kind === "matrix");
-  expect(matrices.map((m) => m.title)).toEqual(["Event Stats", "Trends"]);
+  expect(matrices.map((m) => m.title)).toEqual([
+    "Event Stats",
+    "Trends over time (by event)",
+  ]);
   for (const m of matrices) {
     const untagged = m.groups
       .flatMap((g) => g.rows)
@@ -236,7 +239,13 @@ it("compares every game and the last five events with distinct counts, genuine z
   const gameDraw = rows(games).find((r) => r.label === "Draw")!;
   expect(gameDraw.total).toEqual(draw.cells.at(-1));
   expect(gameDraw.cells[5].value).toBeNull();
-  expect(matrixPoints(gameDraw)[5]).toBeNull();
+  expect(matrixPoints(gameDraw).map((point) => point.x)).toEqual([
+    0,
+    2 / 6,
+    3 / 6,
+    4 / 6,
+    1,
+  ]);
   expect(matrixChange(gameDraw).text).toBe("+40.0 pp");
   expect(matrixChange(rows(events).find((r) => r.label === "Peel")!).text).toBe(
     "—",
@@ -387,4 +396,75 @@ it("uses the same shot-weighted season reference for first and later events with
   expect(result.points[0].routineShots).toBe(1);
   expect(result.points[0].baselineGap).toBeNull();
   expect(result.points[1].baselineDifficulty).toBe(1);
+});
+
+it("connects measured points across missing events and grounds player notes in the charted shot and miss", () => {
+  const prior = event("Private old event", "2026-01-01", copies(4, s(3)));
+  const gap = event("Private middle event", "2026-02-01", [
+    { ...s(2), type: "Peel" },
+  ]);
+  const now = event("Private current event", "2026-03-01", [
+    ...copies(3, s(4)),
+    s(0, "C", "other"),
+  ]);
+  now.games[0].state.roster = [
+    { id: "lead", name: "Private Name", position: "Lead" },
+  ];
+  for (const e of [prior, now]) {
+    const g = e.games[0];
+    g.advancedReady = true;
+    g.advancedRecords = g.state.events.flatMap((row) => {
+      if (!row.shot) return [];
+      row.shot.deficiency = "Overcurl";
+      return [
+        {
+          shotId: row.shotId,
+          identity: difficultyIdentity(row.shot),
+          revision: 1,
+          valid: true,
+          needsReview: false,
+          values: { misses: ["wreck_on_guard"] },
+          assessments: { misses: "assessed" },
+        },
+      ];
+    });
+  }
+  now.performanceHistory = [prior, gap];
+  const input = reportInputs(now, "players")[0];
+  const proof = input.sectionEvidence!;
+  expect(
+    proof.find(
+      (e) =>
+        e.id.startsWith("event-") &&
+        e.label === "Draw · Observed miss · Wreck on guard",
+    )?.value,
+  ).toBe("G1=3/3; Total=3/3");
+  expect(
+    proof.find(
+      (e) =>
+        e.id.startsWith("events-") &&
+        e.label === "Draw · Tagged miss · Overcurl",
+    )?.value,
+  ).toBe("E1=4/4; E2=—; E3=3/3; Total=7/7");
+  expect(JSON.stringify(proof)).not.toMatch(/Private|other/);
+  const saved = {
+    ...input,
+    playerId: "lead",
+    narrative: {
+      eventStats: [
+        { text: "You repeatedly caught the guard on draws.", evidence: [] },
+      ],
+      eventTrends: [],
+    },
+  };
+  const matrices = playerScorecardBlocks(saved, playerScorecard(saved)!).filter(
+    (b): b is ReportMatrix => b.kind === "matrix",
+  );
+  expect(matrices[0].narrative).toContain("guard");
+  expect(matrices[1].narrative).toBe("");
+  const draw = matrices[1].groups
+    .find((g) => g.title === "Shot performance")!
+    .rows.find((r) => r.label === "Draw")!;
+  expect(matrixPoints(draw).map((p) => p.x)).toEqual([0, 1]);
+  expect(draw.cells[1].value).toBeNull();
 });

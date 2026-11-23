@@ -13,7 +13,7 @@ import {
 import type { CoachAccount } from "@/lib/curlcoach/production-access";
 import type { CoachEvent } from "@/lib/curlcoach/event";
 import {
-  REPORT_POLICY,
+  reportPolicy,
   eventReportEligibility,
   reportInputs,
   reportPlayers,
@@ -63,7 +63,7 @@ export async function loadReportEvent(account: CoachAccount, eventId: string) {
 export function reportFingerprint(
   event: CoachEvent,
   audience: ReportAudience,
-  policy = REPORT_POLICY,
+  policy = reportPolicy(audience),
 ) {
   return createHash("sha256")
     .update(
@@ -89,6 +89,29 @@ export function reportFingerprint(
                 playerId: p.id,
                 performance: reportEventPerformance(event, p.id),
               })),
+            }
+          : {}),
+        ...(audience === "players" && policy === reportPolicy("players")
+          ? {
+              historyRevisions: (event.performanceHistory ?? [])
+                .filter(
+                  (e) =>
+                    e.organizationId === event.organizationId &&
+                    e.seasonId === event.seasonId,
+                )
+                .map((e) =>
+                  e.games.map((g) => [
+                    g.id,
+                    g.state.revision ?? g.state.events.length,
+                    g.advancedReady,
+                    g.advancedRecords?.map((r) => [
+                      r.shotId,
+                      r.revision,
+                      r.valid,
+                      r.needsReview,
+                    ]),
+                  ]),
+                ),
             }
           : {}),
         event: {
@@ -208,7 +231,7 @@ export async function getEventReports(
                 {
                   eventName: event.name,
                   audience: r.audience,
-                  policy: REPORT_POLICY,
+                  policy: reportPolicy(r.audience),
                   generatedAt: r.updated_at,
                   reports: Object.values(
                     r.progress ?? {},
@@ -314,10 +337,16 @@ export async function generateEventReports(
     p_lease: lease,
   };
   const claim = (await rpc(
-    "claim_shot_tracker_report_step",
+    audience === "players"
+      ? "claim_shot_tracker_report_edition"
+      : "claim_shot_tracker_report_step",
     account,
     event.id,
-    { ...args, p_upgrade: upgrade },
+    {
+      ...args,
+      p_upgrade: upgrade,
+      ...(audience === "players" ? { p_edition: 12 } : {}),
+    },
   )) as { status: string; packet?: ReportPacket };
   if (claim.status === "ready") return withReportAnalysis(claim.packet!, event);
   if (claim.status !== "claimed")
@@ -358,7 +387,7 @@ export async function generateEventReports(
     const packet: ReportPacket = {
       eventName: event.name,
       audience,
-      policy: REPORT_POLICY,
+      policy: reportPolicy(audience),
       generatedAt: new Date().toISOString(),
       reports: [],
     };
@@ -387,7 +416,16 @@ export async function generateEventReports(
       const saved = {
         ...input,
         // Store only evidence used by this concise report; the original charting is unchanged.
-        evidence: selectPromptEvidence(input),
+        evidence:
+          "eventStats" in narrative
+            ? (input.sectionEvidence?.filter((e) =>
+                [...narrative.eventStats, ...narrative.eventTrends].some((f) =>
+                  f.evidence.includes(e.id),
+                ),
+              ) ?? [])
+            : selectPromptEvidence(input),
+        sectionEvidence: undefined,
+        ...(audience === "players" ? { eventPerformance: undefined } : {}),
         games: undefined,
         advanced: undefined,
         technical: undefined,

@@ -82,8 +82,12 @@ beforeEach(() => {
   m.load.mockImplementation((_s, initial) => initial);
   m.rpc.mockImplementation(async (name) => ({
     error: null,
-    data:
-      name === "claim_shot_tracker_report_step" ? { status: "claimed" } : true,
+    data: [
+      "claim_shot_tracker_report_step",
+      "claim_shot_tracker_report_edition",
+    ].includes(name)
+      ? { status: "claimed" }
+      : true,
   }));
   m.generate.mockResolvedValue({
     summary: { text: "Our team works together.", evidence: ["overall"] },
@@ -256,20 +260,22 @@ it("continues player checkpoints across requests and does not regenerate ready p
   const progress: Record<string, ReportPacket["reports"][number]> = {};
   m.rpc.mockImplementation(async (name, args) => ({
     error: null,
-    data:
-      name === "claim_shot_tracker_report_step"
-        ? { status: "claimed" }
-        : name === "read_shot_tracker_reports"
-          ? [
-              {
-                audience: "players",
-                fingerprint: reportFingerprint(e, "players"),
-                progress,
-              },
-            ]
-          : name === "checkpoint_shot_tracker_report"
-            ? !!(progress[args.p_key] = args.p_report)
-            : true,
+    data: [
+      "claim_shot_tracker_report_step",
+      "claim_shot_tracker_report_edition",
+    ].includes(name)
+      ? { status: "claimed" }
+      : name === "read_shot_tracker_reports"
+        ? [
+            {
+              audience: "players",
+              fingerprint: reportFingerprint(e, "players"),
+              progress,
+            },
+          ]
+        : name === "checkpoint_shot_tracker_report"
+          ? !!(progress[args.p_key] = args.p_report)
+          : true,
   }));
   let packet: ReportPacket;
   do {

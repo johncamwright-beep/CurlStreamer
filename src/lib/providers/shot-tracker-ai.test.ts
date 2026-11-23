@@ -177,7 +177,9 @@ it("repairs rejected collective prose once without resending rejected content", 
     .mockResolvedValueOnce(generated("Our team can practise shared targets."));
   vi.stubGlobal("fetch", fetcher);
   const result = await generateShotTrackerNarrative(input, "team", []);
-  expect(result.summary.text).toBe("Our team can practise shared targets.");
+  expect("summary" in result && result.summary.text).toBe(
+    "Our team can practise shared targets.",
+  );
   expect(fetcher).toHaveBeenCalledTimes(2);
   const retry = JSON.parse(fetcher.mock.calls[1][1].body);
   expect(retry.instructions).toContain("Individual commentary in team report");
@@ -330,4 +332,58 @@ it("passes advanced evidence and coaching instructions to the model without raw 
   expect(body.instructions).toContain(
     "When advanced evidence supports a priority",
   );
+});
+
+it("writes only grounded player section findings, retries cross-section citations and permits no trend", async () => {
+  configure();
+  const row = {
+    ...input.evidence[0],
+    id: "event-1",
+    label: "Draw · Tagged miss · Overcurl",
+    value: "G1=3/5; G2=2/3",
+  };
+  const finding = {
+    text: "Your draws repeatedly overcurled.",
+    evidence: [row.id],
+  };
+  const output = (eventTrends: (typeof finding)[]) =>
+    Response.json({
+      status: "completed",
+      output: [
+        {
+          type: "message",
+          content: [
+            {
+              type: "output_text",
+              text: JSON.stringify({ eventStats: [finding], eventTrends }),
+            },
+          ],
+        },
+      ],
+    });
+  const fetcher = vi
+    .fn()
+    .mockResolvedValueOnce(output([finding]))
+    .mockResolvedValueOnce(output([]));
+  vi.stubGlobal("fetch", fetcher);
+  const scoped = { ...input, sectionEvidence: [row] };
+  expect(await generateShotTrackerNarrative(scoped, "players", [])).toEqual({
+    eventStats: [finding],
+    eventTrends: [],
+  });
+  expect(fetcher).toHaveBeenCalledTimes(2);
+  const body = JSON.parse(fetcher.mock.calls[0][1].body);
+  expect(JSON.parse(body.input)).toEqual({ evidence: [row] });
+  expect(Object.keys(body.text.format.schema.properties)).toEqual([
+    "eventStats",
+    "eventTrends",
+  ]);
+  expect(
+    await generateShotTrackerNarrative(
+      { ...input, sectionEvidence: [] },
+      "players",
+      [],
+    ),
+  ).toEqual({ eventStats: [], eventTrends: [] });
+  expect(fetcher).toHaveBeenCalledTimes(2);
 });

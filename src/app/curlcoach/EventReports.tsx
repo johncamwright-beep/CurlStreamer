@@ -175,14 +175,23 @@ export default function EventReports({
     missing.some(
       (a) =>
         !status.allowance.completed.includes(a.id) ||
-        status.entries.some((e) => e.audience === a.id && e.version === 9),
+        status.entries.some(
+          (e) =>
+            e.audience === a.id && e.version === (a.id === "players" ? 12 : 9),
+        ),
     );
   const outdated = audiences.filter((a) =>
     status?.entries.some(
       (e) =>
         e.audience === a.id &&
         e.packet &&
-        e.packet.policy !== "shot-tracker-event-v9",
+        e.status === "ready" &&
+        (a.id === "players"
+          ? e.packet.policy !== "shot-tracker-event-v12"
+          : (e.version ?? 8) < 9 &&
+            !["shot-tracker-event-v9", "shot-tracker-event-v11"].includes(
+              e.packet.policy,
+            )),
     ),
   );
   const canUpgrade =
@@ -194,9 +203,7 @@ export default function EventReports({
     if (generatingSet || busy || !(upgrade ? canUpgrade : canGenerate)) return;
     setGeneratingSet(true);
     try {
-      for (const a of upgrade
-        ? audiences.filter((a) => outdated.includes(a) || missing.includes(a))
-        : missing) {
+      for (const a of upgrade ? outdated : missing) {
         await generate(
           a.id,
           upgrade || !!status?.allowance.completed.includes(a.id),
@@ -310,7 +317,9 @@ export default function EventReports({
               disabled={generatingSet || !!busy || !!processing}
               onClick={() => void generateSet(true)}
             >
-              Update to trend analysis
+              {outdated.length === 1 && outdated[0].id === "players"
+                ? "Update player reports"
+                : "Update reports"}
             </button>
           )}
           {!!missing.length && (

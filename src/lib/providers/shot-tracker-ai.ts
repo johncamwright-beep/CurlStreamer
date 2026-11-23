@@ -3,6 +3,8 @@ import { setTimeout as delay } from "node:timers/promises";
 import { z } from "zod";
 import {
   REPORT_INSTRUCTIONS,
+  playerNarrativeSchema,
+  type PlayerNarrative,
   audienceInstructions,
   narrativeSchema,
   validateNarrative,
@@ -25,7 +27,7 @@ export async function generateShotTrackerNarrative(
   audience: ReportAudience,
   forbiddenNames: string[],
   signal?: AbortSignal,
-): Promise<Narrative> {
+): Promise<Narrative | PlayerNarrative> {
   const requestSignal = signal ?? AbortSignal.timeout(45_000);
   try {
     return await generateOnce(input, audience, forbiddenNames, requestSignal);
@@ -59,9 +61,51 @@ async function generateOnce(
   forbiddenNames: string[],
   signal: AbortSignal,
   correction = "",
-): Promise<Narrative> {
+): Promise<Narrative | PlayerNarrative> {
   const config = reportAIConfig();
   if (!config) throw new Error("AI reports are not configured");
+  if (audience === "players" && input.sectionEvidence) {
+    const evidence = input.sectionEvidence;
+    if (!evidence.length) return { eventStats: [], eventTrends: [] };
+    const raw = await requestNarrative(
+      config.model,
+      `Write two short coaching notes for one curling player. Address the player as you. Use only the supplied aggregate evidence. eventStats covers the selected event, with G marking games. eventTrends covers up to five events, E in chronological order. Use only event- citations for eventStats and events- citations for eventTrends.
+Return at most two concrete findings and fifty-five words per section. An empty array omits a section. If the charting shows no useful pattern, leave it empty. Prefer recurring shot-specific misses or strengths. Use a shot and miss together only when the same evidence row measures both. A generic wreck does not identify the stone. Assessed observations can overlap. Do not infer a cause, blame, or change in skill from missing calls or a change in difficulty. Check each period and its sample. A one-shot category or isolated rebound does not establish a trend. Distinguish a single-event dip from a sustained direction. Missing periods are unobserved. Use plain curling language, no numbers, percentages, names, statistical recap, or generic drills. Each statement must cite the specific evidence for it.` +
+        correction,
+      { evidence },
+      playerNarrativeSchema,
+      3200,
+      signal,
+    );
+    const parsed = playerNarrativeSchema.safeParse(raw);
+    if (!parsed.success) throw new Error("Invalid report prose");
+    for (const section of ["eventStats", "eventTrends"] as const) {
+      const findings = parsed.data[section];
+      const words = findings.map((f) => f.text).join(" ");
+      if (
+        words.trim().split(/\\s+/).length > 55 ||
+        /https?:|www\\./i.test(words)
+      )
+        throw new Error("Invalid report prose");
+      if (
+        forbiddenNames.some(
+          (n) => n.length > 2 && words.toLowerCase().includes(n.toLowerCase()),
+        )
+      )
+        throw new Error("Private identity in report");
+      const prefix = section === "eventStats" ? "event-" : "events-";
+      if (
+        findings.some((f) =>
+          f.evidence.some(
+            (id) =>
+              !id.startsWith(prefix) || !evidence.some((e) => e.id === id),
+          ),
+        )
+      )
+        throw new Error("Unknown evidence");
+    }
+    return parsed.data;
+  }
   if (!input.evidence.length) throw new Error("No report evidence");
   const gameKeys = input.highlights
     ? []
@@ -99,6 +143,36 @@ async function generateOnce(
           .length(gameKeys.length),
       })
     : baseSchema;
+  const text = await requestNarrative(
+    config.model,
+    REPORT_INSTRUCTIONS +
+      "\n" +
+      audienceInstructions(audience) +
+      (gameKeys.length
+        ? "\nAdd one game paragraph for every supplied game key, in schedule order. Each paragraph should be thirty-five to fifty-five words, at most sixty-five. Explain the clearest supported strength, a useful area to work on and one practical adjustment to rehearse. Use only evidence IDs starting with that game's key followed by a hyphen. Do not transfer event-wide or another game's patterns to this game. If no measurements are available, say the game cannot be assessed; absence of records does not mean the athlete did not play. Sparse categories are tentative; do not diagnose delivery or claim that performance caused the game result. The main event overview should synthesize recurring themes instead of repeating these paragraphs. Shooting percentages and execution/miss-label distributions have different denominators; do not equate them. Be specific about the recorded category rather than generic praise, without reciting numbers."
+        : "") +
+      "\n" +
+      correction,
+    {
+      evidence: selectPromptEvidence(input),
+      limitations: input.limitations,
+      ...(gameKeys.length ? { gameKeys } : {}),
+    },
+    outputSchema,
+    input.highlights ? 8000 : Math.min(12000, 3200 + 400 * gameKeys.length),
+    signal,
+  );
+  return validateNarrative(text, input, audience, forbiddenNames);
+}
+
+async function requestNarrative(
+  model: string,
+  instructions: string,
+  aggregates: unknown,
+  schema: z.ZodType,
+  maxTokens: number,
+  signal: AbortSignal,
+): Promise<unknown> {
   const response = await requestReport({
     method: "POST",
     cache: "no-store",
@@ -108,33 +182,17 @@ async function generateOnce(
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
-      model: config.model,
+      model,
       store: false,
-      max_output_tokens: input.highlights
-        ? 8000
-        : Math.min(12000, 3200 + 400 * gameKeys.length),
-      instructions:
-        REPORT_INSTRUCTIONS +
-        "\n" +
-        audienceInstructions(audience) +
-        (gameKeys.length
-          ? "\nAdd one game paragraph for every supplied game key, in schedule order. Each paragraph should be thirty-five to fifty-five words, at most sixty-five. Explain the clearest supported strength, a useful area to work on and one practical adjustment to rehearse. Use only evidence IDs starting with that game's key followed by a hyphen. Do not transfer event-wide or another game's patterns to this game. If no measurements are available, say the game cannot be assessed; absence of records does not mean the athlete did not play. Sparse categories are tentative; do not diagnose delivery or claim that performance caused the game result. The main event overview should synthesize recurring themes instead of repeating these paragraphs. Shooting percentages and execution/miss-label distributions have different denominators; do not equate them. Be specific about the recorded category rather than generic praise, without reciting numbers."
-          : "") +
-        "\n" +
-        correction,
-      input: JSON.stringify({
-        evidence: selectPromptEvidence(input),
-        limitations: input.limitations,
-        ...(gameKeys.length ? { gameKeys } : {}),
-      }),
+      max_output_tokens: maxTokens,
+      instructions,
+      input: JSON.stringify(aggregates),
       text: {
         format: {
           type: "json_schema",
           name: "shot_tracker_report",
           strict: true,
-          // Reuse the finding/evidence definitions instead of repeating every
-          // game evidence ID in each section of the request.
-          schema: z.toJSONSchema(outputSchema, { reused: "ref" }),
+          schema: z.toJSONSchema(schema, { reused: "ref" }),
         },
       },
     }),
@@ -187,7 +245,7 @@ async function generateOnce(
     .filter((c) => c.type === "output_text")
     .map((c) => c.text ?? "")
     .join("");
-  return validateNarrative(JSON.parse(text), input, audience, forbiddenNames);
+  return JSON.parse(text);
 }
 
 async function requestReport(init: RequestInit): Promise<Response> {

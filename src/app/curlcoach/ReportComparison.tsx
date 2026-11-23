@@ -13,6 +13,9 @@ export default function ReportComparison({ matrix }: { matrix: ReportMatrix }) {
       <h4>
         {matrix.title} <small>{matrixScope(matrix)}</small>
       </h4>
+      {matrix.narrative && (
+        <p className="report-matrix-narrative">{matrix.narrative}</p>
+      )}
       {matrix.columns.length > 0 && (
         <div
           className="report-matrix-scroll"

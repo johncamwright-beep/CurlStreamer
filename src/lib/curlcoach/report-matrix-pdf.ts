@@ -50,6 +50,12 @@ export function drawReportMatrix(
       (c) => pdf.splitTextToSize(c.name, colWidth - 2) as string[],
     );
     const headHeight = 8 + Math.max(...names.map((parts) => parts.length)) * 3;
+    font(10);
+    const narrative =
+      offset === 0 && matrix.narrative
+        ? (pdf.splitTextToSize(matrix.narrative, width - 4) as string[])
+        : [];
+    const narrativeHeight = narrative.length ? narrative.length * 4.3 + 4 : 0;
     function header(continued: boolean) {
       font(15, true);
       fill(left, y - 4, 1.6, 5.5, "#13B8CE");
@@ -63,6 +69,13 @@ export function drawReportMatrix(
         (continued ? " · continued" : "");
       pdf.text(scope, left + width, y, { align: "right" });
       y += 3;
+      if (!continued && narrative.length) {
+        font(10);
+        narrative.forEach((line, index) =>
+          pdf.text(line, left + 2, y + 3.8 + index * 4.3),
+        );
+        y += narrativeHeight;
+      }
       fill(left, y, width, headHeight, "#102432");
       fill(totalX, y, totalWidth, headHeight, "#205778");
       font(8, true, "#FFFFFF");
@@ -104,7 +117,11 @@ export function drawReportMatrix(
       });
       y += headHeight;
     }
-    if (matrix.title === "Trends" || offset || y + headHeight + 25 > bottom)
+    if (
+      matrix.title !== "Event Stats" ||
+      offset ||
+      y + narrativeHeight + headHeight + 25 > bottom
+    )
       y = newPage();
     header(false);
     function groupHeading(title: string) {

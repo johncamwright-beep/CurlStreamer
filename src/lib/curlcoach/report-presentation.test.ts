@@ -51,7 +51,9 @@ it("shows percentages without audit counts and resolves only authorized named al
   expect(reportSections(report)[0].findings[0].text).toBe(
     "Review Alex Greenwood's shots with Player B.",
   );
-  expect(report.narrative.summary.text).toContain("Player A");
+  expect(
+    "summary" in report.narrative && report.narrative.summary.text,
+  ).toContain("Player A");
   report.evidence = [];
   expect(reportSections(report)[0].findings[0].text).toContain("Player A");
 });

@@ -4,6 +4,7 @@ import {
   type EventPerformance,
 } from "./event-performance";
 import { reportTrends, type TrendHighlights } from "./report-trends";
+import { playerSectionEvidence } from "./player-section-evidence";
 import { difficultyEventShots, difficultyGameShots } from "./event";
 import {
   advancedReport,
@@ -32,7 +33,8 @@ import {
   type TechnicalSummary,
 } from "./technical";
 
-export const REPORT_POLICY = "shot-tracker-event-v11";
+export const reportPolicy = (audience: ReportAudience) =>
+  audience === "players" ? "shot-tracker-event-v12" : "shot-tracker-event-v11";
 export const audienceSchema = z.enum(["coach", "team", "players"]);
 export type ReportAudience = z.infer<typeof audienceSchema>;
 export const reportRequestSchema = z
@@ -63,6 +65,21 @@ export const narrativeSchema = z
   })
   .strict();
 export type Narrative = z.infer<typeof narrativeSchema>;
+const sectionFinding = findingSchema.extend({
+  text: z
+    .string()
+    .trim()
+    .min(1)
+    .max(360)
+    .regex(/^[^0-9<>]*$/),
+});
+export const playerNarrativeSchema = z
+  .object({
+    eventStats: z.array(sectionFinding).max(2),
+    eventTrends: z.array(sectionFinding).max(2),
+  })
+  .strict();
+export type PlayerNarrative = z.infer<typeof playerNarrativeSchema>;
 export type Evidence = {
   basis?: ReportBasis;
   id: string;
@@ -73,6 +90,7 @@ export type Evidence = {
 };
 export type ReportInput = {
   eventPerformance?: EventPerformance;
+  sectionEvidence?: Evidence[];
   highlights?: TrendHighlights;
   advanced?: AdvancedReport;
   key: string;
@@ -94,7 +112,7 @@ export type SavedReport = ReportInput & {
   }[];
   analysis?: ReportAnalysis;
   flags?: ReportFlag[];
-  narrative: Narrative;
+  narrative: Narrative | PlayerNarrative;
   playerId?: string;
 };
 export type ReportPacket = {
@@ -167,7 +185,11 @@ export function reportInputs(
   ];
   function build(key: string, title: string, playerId?: string): ReportInput {
     const highlights = reportTrends(event, playerId);
-    const eventPerformance = reportEventPerformance(event, playerId);
+    const eventPerformance = reportEventPerformance(
+      event,
+      playerId,
+      !!playerId,
+    );
     const evidence: Evidence[] = [];
     const limitations = [
       "Recorded grades use the provisional 0–5 scale, not a verified Curling Canada benchmark. Zero counts; excluded and ungraded shots do not enter the shooting percentage.",
@@ -447,6 +469,11 @@ export function reportInputs(
           ...detail.evidence,
         ],
         limitations,
+        sectionEvidence: playerSectionEvidence(
+          event,
+          playerId,
+          eventPerformance,
+        ),
         games: detail.games,
         misses,
         technical,

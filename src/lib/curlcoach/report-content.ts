@@ -65,9 +65,7 @@ export function reportTrendPoints(games: ShootingRow[]) {
   }));
 }
 
-export function reportSummaryCards(
-  report: SavedReport,
-): {
+export function reportSummaryCards(report: SavedReport): {
   label: string;
   value: string;
   basis?: string;
@@ -673,7 +671,9 @@ export function reportContent(report: SavedReport) {
   if (!report.highlights && report.games?.length) {
     for (const game of report.games) {
       heading(`Game-by-game review: ${game.title}`, true);
-      const summary = report.narrative.games?.find((g) => g.key === game.key);
+      const summary =
+        "games" in report.narrative &&
+        report.narrative.games?.find((g) => g.key === game.key);
       if (summary) text(summary.text);
       if (game.difficulty) text(difficultyDescription(game.difficulty));
       advancedTables(game.advanced);

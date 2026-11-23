@@ -16,7 +16,8 @@ type Row = {
 };
 export type ReportMatrix = {
   kind: "matrix";
-  title: "Event Stats" | "Trends";
+  title: "Event Stats" | "Trends over time (by event)";
+  narrative?: string;
   columns: { key: string; name: string }[];
   groups: { title: string; rows: Row[] }[];
 };
@@ -34,16 +35,18 @@ export function matrixChange(row: Row) {
   };
 }
 
-// Normalized coordinates shared by the PDF and inline sparklines. Null breaks the line.
+// Keep the original period spacing and draw only observed values.
 export function matrixPoints(row: Row) {
   const max = Math.max(100, ...row.cells.map((c) => c.value ?? 0));
-  return row.cells.map((cell, i) =>
+  return row.cells.flatMap((cell, i) =>
     cell.value === null
-      ? null
-      : {
-          x: row.cells.length === 1 ? 0.5 : i / (row.cells.length - 1),
-          y: 1 - cell.value / max,
-        },
+      ? []
+      : [
+          {
+            x: row.cells.length === 1 ? 0.5 : i / (row.cells.length - 1),
+            y: 1 - cell.value / max,
+          },
+        ],
   );
 }
 export const cellText = (cell: MatrixCell) =>

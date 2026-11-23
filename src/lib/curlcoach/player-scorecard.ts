@@ -1,6 +1,7 @@
 import {
   playerEventWindow,
   type EventPerformancePoint,
+  type EventPerformance,
 } from "./event-performance";
 import type { ReportBlock } from "./report-content";
 import type { SavedReport } from "./reports";
@@ -49,8 +50,8 @@ export function playerScorecardCards(p: Point, prior: Point[]) {
   ];
 }
 
-export function playerScorecardBlocks(
-  report: SavedReport,
+export function playerMatrices(
+  data: EventPerformance,
   { current, points }: NonNullable<ReturnType<typeof playerScorecard>>,
 ) {
   const games = current.games.flatMap((game, index) => {
@@ -61,21 +62,34 @@ export function playerScorecardBlocks(
         : [game.name, game.opponent].filter(Boolean).join(" · ");
     return [{ key: "G" + (index + 1), name, stats: game.playerStats }];
   });
-  const blocks: ReportBlock[] = [
+  return [
     reportMatrix("Event Stats", games, current.playerStats),
     reportMatrix(
-      "Trends",
+      "Trends over time (by event)",
       points.map((p, index) => ({
         key: "E" + (index + 1),
         name: p.name,
         stats: p.playerStats,
       })),
-      report.eventPerformance?.playerTrendTotal,
+      data.playerTrendTotal,
     ),
-  ];
+  ] as const;
+}
+export function playerScorecardBlocks(
+  report: SavedReport,
+  window: NonNullable<ReturnType<typeof playerScorecard>>,
+) {
+  const [event, trends] = playerMatrices(report.eventPerformance!, window);
+  const narrative = report.narrative;
+  if ("eventStats" in narrative) {
+    event.narrative = narrative.eventStats.map((f) => f.text).join(" ");
+    trends.narrative = narrative.eventTrends.map((f) => f.text).join(" ");
+  }
+  const blocks: ReportBlock[] = [event, trends];
   const heading = (title: string) =>
     blocks.push({ kind: "heading", title, startPage: false });
-  const practice = report.narrative.practice[0]?.text;
+  const practice =
+    "practice" in narrative ? narrative.practice[0]?.text : undefined;
   if (practice) {
     heading("Next practice");
     blocks.push({ kind: "text", value: practice, size: 9, muted: false });

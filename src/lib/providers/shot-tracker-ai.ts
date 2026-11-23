@@ -117,26 +117,46 @@ Lead with the strongest finding. Write one short sentence per finding, ideally f
   const gameKeys = input.highlights
     ? []
     : (input.games?.map((g) => g.key) ?? []);
+  const promptEvidence = selectPromptEvidence(input);
   const finding = narrativeSchema.shape.summary.extend({
     text: narrativeSchema.shape.summary.shape.text
       .max(gameKeys.length ? 450 : 1200)
       .regex(/^[^0-9<>]*$/),
     evidence: z
-      .array(
-        z.enum(
-          selectPromptEvidence(input).map((e) => e.id) as [string, ...string[]],
-        ),
-      )
+      .array(z.enum(promptEvidence.map((e) => e.id) as [string, ...string[]]))
       .min(1)
       .max(gameKeys.length ? 3 : 6),
   });
+  function trendFindings(ids: string[]) {
+    if (!ids.length) return z.array(finding).max(0);
+    return z
+      .array(
+        finding.extend({
+          evidence: z
+            .array(z.enum(ids as [string, ...string[]]))
+            .min(1)
+            .max(3),
+        }),
+      )
+      .max(5);
+  }
+  const trendIds = promptEvidence
+    .map((e) => e.id)
+    .filter((id) => id.startsWith("trend-"));
   const baseSchema = narrativeSchema.omit({ games: true }).extend({
     summary: finding,
-    withinGames: z.array(finding).max(5),
-    acrossGames: z.array(finding).max(5),
+    withinGames: trendFindings(
+      trendIds.filter((id) => id.startsWith("trend-game-")),
+    ),
+    acrossGames: trendFindings(
+      trendIds.filter((id) => !id.startsWith("trend-game-")),
+    ),
     strengths: z.array(finding).max(5),
     priorities: z.array(finding).max(5),
-    practice: z.array(finding).min(1).max(2),
+    practice:
+      audience === "players"
+        ? z.array(finding).min(1).max(2)
+        : z.array(finding).max(0),
     review: z.array(finding).min(1).max(2),
   });
   const outputSchema = gameKeys.length
@@ -161,12 +181,12 @@ Lead with the strongest finding. Write one short sentence per finding, ideally f
       "\n" +
       correction,
     {
-      evidence: selectPromptEvidence(input),
+      evidence: promptEvidence,
       limitations: input.limitations,
       ...(gameKeys.length ? { gameKeys } : {}),
     },
     outputSchema,
-    input.highlights ? 8000 : Math.min(12000, 3200 + 400 * gameKeys.length),
+    input.highlights ? 16000 : Math.min(12000, 3200 + 400 * gameKeys.length),
     signal,
   );
   return validateNarrative(text, input, audience, forbiddenNames);

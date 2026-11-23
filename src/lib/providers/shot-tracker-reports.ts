@@ -277,6 +277,7 @@ export async function listReportEvents(account: CoachAccount) {
     date: string | null;
     complete: boolean;
     saved: number;
+    started: boolean;
     processing: boolean;
   }[] = [];
   let next = 0;
@@ -285,7 +286,13 @@ export async function listReportEvents(account: CoachAccount) {
       while (next < catalog.length) {
         const e = catalog[next++];
         const rows = z
-          .array(z.object({ status: z.string(), updated_at: z.string() }))
+          .array(
+            z.object({
+              status: z.string(),
+              updated_at: z.string(),
+              step_pending: z.boolean().optional(),
+            }),
+          )
           .parse(await rpc("read_shot_tracker_reports", account, e.id));
         const eventGames = schedule.filter(
           (g) => g.event_id === e.id && g.game_status !== "deleted",
@@ -298,9 +305,11 @@ export async function listReportEvents(account: CoachAccount) {
             eventGames.length > 0 &&
             eventGames.every((g) => g.game_status === "completed"),
           saved: rows.filter((r) => r.status === "ready").length,
+          started: rows.length > 0,
           processing: rows.some(
             (r) =>
               r.status === "processing" &&
+              !r.step_pending &&
               Date.parse(r.updated_at) > Date.now() - 180000,
           ),
         });

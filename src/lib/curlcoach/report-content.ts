@@ -155,6 +155,20 @@ export function reportContent(report: SavedReport) {
   ) => {
     blocks.push({ kind: "table", headers, rows, widths, layout });
   };
+  if ("eventStats" in report.narrative) {
+    // A saved section narrative can arrive before its comparison data.
+    for (const [title, findings] of [
+      ["Event Stats", report.narrative.eventStats],
+      ["Trends over time (by event)", report.narrative.eventTrends],
+    ] as const) {
+      if (findings.length) {
+        heading(title);
+        text(findings.map((finding) => finding.text).join(" "));
+      }
+    }
+    for (const flag of report.flags ?? []) blocks.push({ kind: "flag", flag });
+    return blocks;
+  }
   const sections = reportSections(report);
   if (report.playerComparison?.length) {
     heading("Player comparison");

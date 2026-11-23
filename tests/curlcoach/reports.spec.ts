@@ -66,7 +66,12 @@ test("player generation continues automatically, exposes a partial failure and r
     { key: "player-1", name: "Alex" },
     { key: "player-2", name: "Blair" },
   ];
-  const first = saved("player-1", "Alex");
+  const crashMessages: string[] = [];
+  page.on("pageerror", (error) => crashMessages.push(error.message));
+  const first = {
+    ...saved("player-1", "Alex"),
+    narrative: { eventStats: [summary], eventTrends: [] },
+  };
   await page.route("**/api/curlcoach/reports**", async (route) => {
     if (route.request().method() === "POST") {
       const { audience } = route.request().postDataJSON();
@@ -150,6 +155,8 @@ test("player generation continues automatically, exposes a partial failure and r
     page.getByText("Blair: Failed - retry available", { exact: true }),
   ).toBeVisible();
   expect(playerRequests).toBe(2);
+  await expect(page.getByRole("article")).toContainText(summary.text);
+  expect(crashMessages).toEqual([]);
   await page
     .getByRole("button", { name: "Generate remaining reports", exact: true })
     .click();

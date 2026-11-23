@@ -7,6 +7,7 @@ type EventItem = {
   date: string | null;
   complete: boolean;
   saved: number;
+  started: boolean;
   processing: boolean;
 };
 export default function EventReportLibrary() {
@@ -21,7 +22,8 @@ export default function EventReportLibrary() {
     })
       .then(async (r) => {
         const data = await r.json();
-        if (!r.ok) throw new Error(data.error);
+        if (!r.ok || !Array.isArray(data?.events))
+          throw new Error(data?.error ?? "Event list unavailable.");
         if (!abort.signal.aborted) setEvents(data.events);
       })
       .catch((e) => {
@@ -44,7 +46,10 @@ export default function EventReportLibrary() {
           key={selected.id}
           eventId={selected.id}
           autoStart={
-            !selected.saved && !selected.processing && selected.complete
+            !selected.started &&
+            !selected.saved &&
+            !selected.processing &&
+            selected.complete
           }
         />
       </div>
@@ -74,18 +79,20 @@ export default function EventReportLibrary() {
                     : e.saved
                       ? "Partly complete - view progress"
                       : e.complete
-                        ? "Not generated"
+                        ? e.started
+                          ? "Needs retry"
+                          : "Not generated"
                         : "Event in progress"}
               </p>
             </div>
             <button
               className="btn min-h-11"
-              disabled={!e.saved && !e.complete && !e.processing}
+              disabled={!e.started && !e.saved && !e.complete && !e.processing}
               onClick={() => setSelected(e)}
             >
               {e.saved
                 ? "View reports"
-                : e.processing
+                : e.processing || e.started
                   ? "View progress"
                   : "Generate reports"}
             </button>

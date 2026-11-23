@@ -1,8 +1,45 @@
 import { expect, it } from "vitest";
 import { gameShots, sampleEvent } from "./event";
 import { reportAnalysis, withReportAnalysis } from "./report-analysis";
+import { reportContent } from "./report-content";
 import type { ReportPacket } from "./reports";
 
+it("renders checkpoint notes without loaded matrices and serves legacy tabs on the same packet", () => {
+  const finding = {
+    text: "Your draws repeatedly overcurled.",
+    evidence: ["event-1"],
+  };
+  const trend = { text: "Your guards improved.", evidence: ["events-1"] };
+  const saved = {
+    key: "player-1",
+    title: "Lead",
+    evidence: [],
+    limitations: [],
+    narrative: { eventStats: [finding], eventTrends: [trend] },
+  };
+  expect(
+    reportContent(saved).map((b) => (b.kind === "text" ? b.value : b.kind)),
+  ).toEqual(["heading", finding.text, "heading", trend.text]);
+  const packet: ReportPacket = {
+    audience: "players",
+    eventName: "Qualifier",
+    policy: "shot-tracker-event-v12",
+    generatedAt: "now",
+    reports: [saved],
+  };
+  const [view] = withReportAnalysis(packet, sampleEvent("practice")).reports;
+  expect(view.narrative).toMatchObject({
+    summary: finding,
+    strengths: [],
+    priorities: [],
+    practice: [],
+    review: [],
+    acrossGames: [trend],
+    eventStats: [finding],
+    eventTrends: [trend],
+  });
+  expect(saved.narrative).not.toHaveProperty("summary");
+});
 it("uses scoped charting for performance, misses, technique, and linked notes", () => {
   const event = sampleEvent("shorty-example");
   event.games = event.games.slice(0, 2);

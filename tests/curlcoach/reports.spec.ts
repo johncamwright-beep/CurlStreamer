@@ -559,10 +559,12 @@ test("report navigation is read-only, generation is explicit, and PDFs contain o
   await expect(page.getByRole("article")).toHaveCount(1);
   await expect(page.getByRole("article")).toContainText("76.3%");
   await expect(page.getByRole("article")).toContainText("85.6%");
-  await expect(page.getByRole("article")).toContainText("301 graded shots");
+  await expect(page.getByRole("article")).toContainText("301 shots charted");
   const summary = page.getByLabel("Report summary", { exact: true });
-  await expect(summary).toContainText("Easy-shot equivalent index");
-  await expect(summary.getByText("110.0", { exact: true })).toBeVisible();
+  await expect(summary).toContainText(
+    "Difficulty adjusted shooting percentage",
+  );
+  await expect(summary.getByText("91.3%", { exact: true })).toBeVisible();
   await expect(summary).toContainText("1 of 2 graded shots with difficulty");
   await expect(page.getByRole("article")).not.toContainText(
     "Difficulty adjusted: 95.0%",

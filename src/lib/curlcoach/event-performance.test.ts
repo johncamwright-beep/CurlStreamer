@@ -72,6 +72,8 @@ function event(id: string, date: string, shots: AnalysisShot[]) {
       type: value.type,
       end: i + 1,
       grade: value.grade,
+      execution: value.execution,
+      deficiency: value.deficiency,
       playerId: value.playerId,
       excluded: value.excluded,
     };
@@ -99,7 +101,8 @@ function event(id: string, date: string, shots: AnalysisShot[]) {
       shotSubtype: value.shotSubtype,
       intendedWeight: null,
       observedDestination: null,
-      resultObservations: null,
+      resultObservations: value.resultObservations ?? null,
+      observedMisses: value.observedMisses,
       destinationAssessment: "not_assessed",
       resultAssessment: "not_assessed",
       analysisStatus: "available",
@@ -107,6 +110,74 @@ function event(id: string, date: string, shots: AnalysisShot[]) {
   });
   return e;
 }
+it("shows the three most frequent same-shot pairs with pooled, observed denominators", () => {
+  const over = {
+    ...s(2),
+    deficiency: "Overcurl" as const,
+    resultObservations: ["over_curl"],
+  };
+  const wreck = {
+    ...s(2),
+    type: "Come Around" as const,
+    observedMisses: ["wreck_on_guard"],
+    resultObservations: ["wreck"],
+  };
+  const prior = event("previous", "2026-01-01", [
+    ...copies(2, over),
+    ...copies(2, wreck),
+    { ...s(2), resultObservations: ["in_house"] },
+    { ...over, excluded: "Pick" },
+    { ...over, playerId: "skip" },
+  ]);
+  const current = event("current", "2026-02-01", [
+    ...copies(2, { ...s(1), deficiency: "Light" }),
+    { ...s(2), deficiency: "Heavy" },
+    ...copies(2, {
+      ...s(2),
+      type: "Peel",
+      observedMisses: ["flash_wide"],
+      resultObservations: ["flash", "flash_wide"],
+    }),
+    { ...over, execution: "Make" },
+  ]);
+  const data = reportEventPerformance(
+    { ...current, performanceHistory: [prior] },
+    "lead",
+    true,
+  );
+  const saved = {
+    playerId: "lead",
+    eventPerformance: data,
+    narrative: { eventStats: [], eventTrends: [] },
+  } as unknown as SavedReport;
+  const [games, trends] = playerScorecardBlocks(
+    saved,
+    playerScorecard(saved)!,
+  ) as ReportMatrix[];
+  const pairs = (m: ReportMatrix) =>
+    m.groups.find((g) => g.title.startsWith("Recurring misses"))!.rows;
+  expect(pairs(games).map((r) => r.label)).toEqual([
+    "Draw · Light",
+    "Peel · Flash Wide",
+  ]);
+  expect(pairs(trends).map((r) => r.label)).toEqual([
+    "Come Around · Wreck on guard",
+    "Draw · Light",
+    "Draw · Overcurl",
+  ]);
+  expect(pairs(trends)[0].cells).toEqual([
+    { value: 100, sample: "2/2" },
+    { value: null },
+  ]);
+  expect(pairs(trends)[2]).toMatchObject({
+    cells: [
+      { value: 100, sample: "2/2" },
+      { value: 0, sample: "0/3" },
+    ],
+    total: { value: 40, sample: "2/5" },
+    better: "neutral",
+  });
+});
 it("uses one easy-shot scale for players and keeps estimates outside observed difficulty", () => {
   const easy = [...copies(15, s(4)), ...copies(5, s(5))];
   const moderate = [...copies(10, s(3, "B")), ...copies(10, s(4, "B"))];

@@ -74,7 +74,7 @@ it("sends only aggregate evidence to a fixed server provider and validates struc
   };
   const resolve = (node: SchemaNode): SchemaNode =>
     node.$ref ? resolve(schema.$defs[node.$ref.split("/").pop()!]) : node;
-  expect(resolve(schema.properties.practice).maxItems).toBe(2);
+  expect(resolve(schema.properties.practice).maxItems).toBe(0);
   expect(body.text.format.strict).toBe(true);
   expect(
     resolve(resolve(schema.properties.summary).properties.text).pattern,
@@ -87,6 +87,46 @@ it("sends only aggregate evidence to a fixed server provider and validates struc
     ).enum,
   ).toEqual(["overall"]);
   expect(JSON.stringify(schema).match(/"enum":\["overall"\]/g)).toHaveLength(1);
+});
+it("limits trend findings to evidence from the matching scope and reserves room for full event reports", async () => {
+  configure();
+  const within = { ...input.evidence[0], id: "trend-game-1" };
+  const across = { ...input.evidence[0], id: "trend-shooting-overall" };
+  const fetcher = vi
+    .fn()
+    .mockResolvedValue(generated("Our team can practise shared targets."));
+  vi.stubGlobal("fetch", fetcher);
+  await generateShotTrackerNarrative(
+    {
+      ...input,
+      evidence: [...input.evidence, within, across],
+      highlights: {
+        withinGames: [within],
+        acrossGames: [across],
+        strengths: [],
+        priorities: [],
+      },
+    },
+    "coach",
+    [],
+  );
+  const body = JSON.parse(fetcher.mock.calls[0][1].body);
+  const schema = body.text.format.schema;
+  const resolve = (node: {
+    $ref?: string;
+    properties?: unknown;
+    enum?: string[];
+  }) => (node.$ref ? schema.$defs[node.$ref.split("/").pop()!] : node);
+  for (const [field, id] of [
+    ["withinGames", within.id],
+    ["acrossGames", across.id],
+  ]) {
+    expect(
+      resolve(resolve(schema.properties[field].items).properties.evidence.items)
+        .enum,
+    ).toEqual([id]);
+  }
+  expect(body.max_output_tokens).toBe(16000);
 });
 function generated(text: string, evidence = "overall") {
   const finding = { text, evidence: [evidence] };

@@ -2,6 +2,7 @@
 import ReportDocument from "./ReportDocument";
 import { ReportEmail } from "./ReportEmail";
 import {
+  Component,
   useCallback,
   useEffect,
   useRef,
@@ -33,6 +34,28 @@ const audiences = [
       "A separate strengths and development report for each recorded player.",
   },
 ] as const;
+class ReportPreview extends Component<
+  { children: ReactNode },
+  { failed: boolean }
+> {
+  state = { failed: false };
+
+  static getDerivedStateFromError() {
+    return { failed: true };
+  }
+
+  render() {
+    return this.state.failed ? (
+      <p role="alert">
+        This report preview could not open. You can still select another saved
+        report.
+      </p>
+    ) : (
+      this.props.children
+    );
+  }
+}
+
 export default function EventReports({
   eventId,
   renderLayout,
@@ -59,10 +82,16 @@ export default function EventReports({
         `/api/curlcoach/reports?eventId=${encodeURIComponent(eventId)}`,
         { cache: "no-store", signal },
       );
-      const result = await r
-        .json()
-        .catch(() => ({ error: "Reports are unavailable in this workspace." }));
-      if (!r.ok) throw new Error(result.error ?? "Reports unavailable.");
+      const result = await r.json().catch(() => null);
+      if (
+        !r.ok ||
+        !Array.isArray(result?.entries) ||
+        !Array.isArray(result?.allowance?.completed)
+      )
+        throw new Error(
+          result?.error ??
+            "Report status could not be loaded. Refresh to try again.",
+        );
       if (!signal?.aborted) setStatus(result);
     },
     [eventId],
@@ -116,7 +145,11 @@ export default function EventReports({
           signal: c.signal,
         });
         const data = await r.json();
-        if (!r.ok) throw new Error(data.error ?? "Report generation failed.");
+        if (!r.ok || !Array.isArray(data?.packet?.reports))
+          throw new Error(
+            data?.error ??
+              "The report response was incomplete. Check the saved reports and retry.",
+          );
         if (!c.signal.aborted) {
           setStatus((s) =>
             s
@@ -434,7 +467,11 @@ export default function EventReports({
                 reportKey={current.key}
               />
             )}
-            <ReportDocument report={current} eventName={packet.eventName} />
+            <ReportPreview
+              key={`${eventId}:${selectedAudience}:${current.key}:${packet.generatedAt}`}
+            >
+              <ReportDocument report={current} eventName={packet.eventName} />
+            </ReportPreview>
           </>
         ) : (
           <div className="rounded border border-slate-500 p-6">

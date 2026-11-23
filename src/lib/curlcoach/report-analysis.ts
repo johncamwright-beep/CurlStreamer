@@ -122,6 +122,28 @@ export function withReportAnalysis(
     ...reports,
     reports: reports.reports.map((saved) => ({
       ...saved,
+      // Tabs opened before section narratives were introduced still read these legacy fields.
+      ...(saved.narrative && "eventStats" in saved.narrative
+        ? {
+            narrative: {
+              ...saved.narrative,
+              summary: {
+                text: saved.narrative.eventStats.map((f) => f.text).join(" "),
+                evidence: [
+                  ...new Set(
+                    saved.narrative.eventStats.flatMap((f) => f.evidence),
+                  ),
+                ],
+              },
+              acrossGames: saved.narrative.eventTrends,
+              withinGames: [],
+              strengths: [],
+              priorities: [],
+              practice: [],
+              review: [],
+            },
+          }
+        : {}),
       difficulty: saved.difficulty?.estimated ? undefined : saved.difficulty,
       playerComparison,
       ...(event.games.every((g) => g.difficultyReady) &&

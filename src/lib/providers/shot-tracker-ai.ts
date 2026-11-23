@@ -74,7 +74,8 @@ Return at most two concrete findings and fifty-five words per section. An empty 
         correction,
       { evidence },
       playerNarrativeSchema,
-      3200,
+      // The model also spends output tokens interpreting the two matrices.
+      8000,
       signal,
     );
     const parsed = playerNarrativeSchema.safeParse(raw);

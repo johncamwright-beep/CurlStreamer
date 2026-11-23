@@ -90,6 +90,26 @@
 .report-summary dt {
   color: #526574;
 }
+.report-summary-compact {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.report-summary-compact > div {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: 0.65rem 0.8rem;
+}
+.report-summary-compact dd {
+  margin: 0;
+}
+.report-summary-compact dd strong {
+  font-size: clamp(1.12rem, 3.6cqi, 1.6rem);
+}
+@container (min-width:40rem) {
+  .report-summary-compact {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
 .report-summary strong {
   display: block;
   font-size: 1.6rem;
@@ -217,8 +237,11 @@
   stroke: #087d83;
   stroke-width: 1.8;
 }
-.report-matrix-latest {
-  background: #e0f4f4;
+.report-comparison th.report-total-head {
+  background: #205778;
+}
+.report-matrix-total {
+  background: #dceff9;
   font-weight: 700;
 }
 .report-matrix-change {

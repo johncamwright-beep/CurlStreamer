@@ -45,6 +45,9 @@ export default function ReportComparison({ matrix }: { matrix: ReportMatrix }) {
                     <span>{c.name}</span>
                   </th>
                 ))}
+                <th scope="col" className="report-total-head">
+                  Total
+                </th>
                 <th scope="col">
                   Change<span>{matrixEndpoints(matrix)}</span>
                 </th>
@@ -53,7 +56,7 @@ export default function ReportComparison({ matrix }: { matrix: ReportMatrix }) {
             {matrix.groups.map((group) => (
               <tbody key={group.title}>
                 <tr className="report-matrix-group">
-                  <th scope="rowgroup" colSpan={matrix.columns.length + 3}>
+                  <th scope="rowgroup" colSpan={matrix.columns.length + 4}>
                     {group.title}
                   </th>
                 </tr>
@@ -90,16 +93,16 @@ export default function ReportComparison({ matrix }: { matrix: ReportMatrix }) {
                           })}
                         </svg>
                       </td>
-                      {row.cells.map((c, i) => (
+                      {[...row.cells, row.total].map((c, i) => (
                         <td
                           key={i}
                           className={
-                            i === row.cells.length - 1
-                              ? "report-matrix-latest"
+                            i === row.cells.length
+                              ? "report-matrix-total"
                               : undefined
                           }
                         >
-                          {cellText(c, row.unit)}
+                          {cellText(c)}
                           {c.sample && <small>({c.sample})</small>}
                         </td>
                       ))}

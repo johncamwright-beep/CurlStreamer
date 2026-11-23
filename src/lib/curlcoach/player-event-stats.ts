@@ -1,19 +1,9 @@
-import {
-  difficultySummary,
-  easyShotIndex,
-  type DifficultyShot,
-} from "./difficulty";
-import { report } from "./model";
+import { difficultySummary, type DifficultyShot } from "./difficulty";
+import { adjustedReportPercentage } from "./report-presentation";
 import { missCounts } from "./report-misses";
-
-// Minimums for comparing players or events. Always expose the underlying counts.
-export function comparableRatings(observed: number, total: number) {
-  return observed >= 10 && observed >= total * 0.7;
-}
 
 export function playerEventStats(shots: DifficultyShot[]) {
   const attempts = shots.filter((s) => !s.excluded);
-  const graded = report(attempts).scored;
   const calls = attempts.filter(
     (s) => s.difficulty && !s.difficultyUnavailable,
   );
@@ -30,9 +20,10 @@ export function playerEventStats(shots: DifficultyShot[]) {
     observed: calls.length,
     bands,
     ratedGraded,
-    adjusted: comparableRatings(ratedGraded, graded)
-      ? easyShotIndex(difficulty)
-      : null,
+    adjusted:
+      difficulty.actual === null
+        ? null
+        : adjustedReportPercentage(difficulty.actual, difficulty),
     ...missCounts(attempts),
   };
 }

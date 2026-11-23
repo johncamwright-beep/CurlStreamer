@@ -66,7 +66,26 @@ export type EventPerformancePoint = BaselineMetrics &
 export type EventPerformance = {
   points: EventPerformancePoint[];
   currentEventId?: string;
+  playerTrendTotal?: PlayerPeriodStats;
 };
+type PlayerPoint = EventPerformancePoint & { playerStats: PlayerPeriodStats };
+export function playerEventWindow(data?: EventPerformance) {
+  const hasStats = (p: EventPerformancePoint): p is PlayerPoint =>
+    !!p.playerStats?.shooting;
+  const current = data?.points.find((p) => p.id === data.currentEventId);
+  if (!data || !current || !hasStats(current)) return null;
+  const prior = data.points
+    .filter(hasStats)
+    .filter(
+      (p) =>
+        p.complete &&
+        p.date &&
+        current.date &&
+        p.date < current.date &&
+        p.playerStats.attempts > 0,
+    );
+  return { current, prior, points: [...prior.slice(-4), current] };
+}
 
 /** Uses the authorized season workspace already loaded by analytics. */
 export function splitPerformanceEvents(
@@ -170,9 +189,7 @@ export function baselineMetrics(
       ? (100 * routine.filter((s) => s.grade === 5).length) / routine.length
       : null,
     ratedShots: currentRated.length,
-    estimatedShots: currentRated.filter(
-      (s) => !s.difficulty && s.difficultyEstimate,
-    ).length,
+    estimatedShots: 0,
     gradedShots: report(shots).scored,
     averageDifficulty: currentAverage,
     baselineDifficulty: pastAverage,
@@ -204,15 +221,21 @@ export function eventPerformance(
 ): EventPerformance {
   const unique = [...new Map(events.map((e) => [e.id, e])).values()];
   const ordered = unique
-    .map((event) => ({ event, date: eventDate(event) }))
+    .map((event) => ({
+      event,
+      date: eventDate(event),
+      shots: analysisEventShots(event).filter(
+        (s) => !playerId || s.playerId === playerId,
+      ),
+    }))
     .sort(
       (a, b) =>
         (a.date ?? "9999").localeCompare(b.date ?? "9999") ||
         a.event.id.localeCompare(b.event.id),
     );
-  return {
+  const data: EventPerformance = {
     currentEventId,
-    points: ordered.map(({ event, date }) => {
+    points: ordered.map(({ event, date, shots }) => {
       const previous = date
         ? ordered.filter(
             (past) =>
@@ -228,12 +251,7 @@ export function eventPerformance(
               ),
           )
         : [];
-      const select = (e: CoachEvent) =>
-        analysisEventShots(e).filter(
-          (s) => !playerId || s.playerId === playerId,
-        );
-      const shots = select(event),
-        history = previous.flatMap((past) => select(past.event));
+      const history = previous.flatMap((past) => past.shots);
       const byType = shootingByType(shots);
       const seasonDifficulty = average(
         rated(
@@ -243,7 +261,7 @@ export function eventPerformance(
                 other.organizationId === event.organizationId &&
                 other.seasonId === event.seasonId,
             )
-            .flatMap(({ event: other }) => select(other)),
+            .flatMap((other) => other.shots),
         ),
       );
       return {
@@ -287,6 +305,16 @@ export function eventPerformance(
       };
     }),
   };
+  if (includePlayerStats && playerId) {
+    const window = playerEventWindow(data);
+    if (window) {
+      const ids = new Set(window.points.map((p) => p.id));
+      data.playerTrendTotal = playerPeriodStats(
+        ordered.filter((p) => ids.has(p.event.id)).flatMap((p) => p.shots),
+      );
+    }
+  }
+  return data;
 }
 export function reportEventPerformance(
   event: CoachEvent,

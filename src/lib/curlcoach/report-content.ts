@@ -65,9 +65,18 @@ export function reportTrendPoints(games: ShootingRow[]) {
   }));
 }
 
-export function reportSummaryCards(report: SavedReport) {
+export function reportSummaryCards(
+  report: SavedReport,
+): {
+  label: string;
+  value: string;
+  basis?: string;
+  direction?: number;
+  difficulty?: number;
+}[] {
   const scorecard = playerScorecard(report);
-  if (scorecard) return playerScorecardCards(scorecard.current);
+  if (scorecard)
+    return playerScorecardCards(scorecard.current, scorecard.prior);
   const stats = reportPercentages(report);
   const current = report.eventPerformance?.points.find(
     (p) => p.id === report.eventPerformance?.currentEventId,
@@ -152,11 +161,11 @@ export function reportContent(report: SavedReport) {
   if (report.playerComparison?.length) {
     heading("Player comparison");
     table(
-      ["Player", "Shooting", "Adjusted (pts)", "Rated / graded"],
+      ["Player", "Shooting", "Adjusted shooting", "Rated / graded"],
       report.playerComparison.map((p) => [
         p.name,
         percentage(p.shooting),
-        p.adjusted?.toFixed(1) ?? "—",
+        percentage(p.adjusted),
         `${p.rated}/${p.graded}`,
       ]),
       [63, 37, 39, 39],

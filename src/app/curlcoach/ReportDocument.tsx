@@ -31,13 +31,20 @@ export default function ReportDocument({
         <h3 id={titleId}>{report.title}</h3>
         <p className="report-event-name">{eventName}</p>
         {cards.length > 0 && (
-          <dl className="report-summary" aria-label="Report summary">
+          <dl
+            className={
+              cards.every((c) => !c.basis)
+                ? "report-summary report-summary-compact"
+                : "report-summary"
+            }
+            aria-label="Report summary"
+          >
             {cards.map((card) => (
               <div key={card.label}>
                 <dt>{card.label}</dt>
                 <dd>
                   <strong>{card.value}</strong>
-                  <span>{card.basis}</span>
+                  {card.basis && <span>{card.basis}</span>}
                   {"difficulty" in card &&
                     typeof card.difficulty === "number" && (
                       <div

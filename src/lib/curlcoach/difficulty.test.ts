@@ -329,6 +329,8 @@ describe("difficulty adjusted shooting", () => {
     expect(difficultySummary(difficultyEventShots(season)).classified).toBe(
       2 * expected.classified,
     );
-    expect(REPORT_INSTRUCTIONS).toContain("overall shooting plus");
+    expect(REPORT_INSTRUCTIONS).toContain(
+      "graded shots with a coach-recorded difficulty",
+    );
   });
 });

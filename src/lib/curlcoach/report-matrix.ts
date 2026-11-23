@@ -4,7 +4,6 @@ import type {
 } from "./event-performance";
 import { difficultyLabels } from "./difficulty";
 import { shotTypes, turns } from "./model";
-import { comparableRatings } from "./player-event-stats";
 import { missTags } from "./report-misses";
 import { technicalFields } from "./technical";
 
@@ -12,7 +11,7 @@ export type MatrixCell = { value: number | null; sample?: string };
 type Row = {
   label: string;
   cells: MatrixCell[];
-  unit: "%" | "pts";
+  total: MatrixCell;
   better: "higher" | "lower" | "neutral";
 };
 export type ReportMatrix = {
@@ -30,7 +29,7 @@ export function matrixChange(row: Row) {
   const direction =
     row.better === "lower" ? -delta : row.better === "higher" ? delta : 0;
   return {
-    text: `${delta > 0 ? "+" : ""}${delta.toFixed(1)} ${row.unit === "%" ? "pp" : "pts"}`,
+    text: `${delta > 0 ? "+" : ""}${delta.toFixed(1)} pp`,
     color: direction > 0 ? "#167144" : direction < 0 ? "#AE352E" : "#526574",
   };
 }
@@ -47,10 +46,8 @@ export function matrixPoints(row: Row) {
         },
   );
 }
-export const cellText = (cell: MatrixCell, unit: Row["unit"]) =>
-  cell.value === null
-    ? "—"
-    : cell.value.toFixed(1) + (unit === "%" ? "%" : " pts");
+export const cellText = (cell: MatrixCell) =>
+  cell.value === null ? "—" : cell.value.toFixed(1) + "%";
 
 type Period = { key: string; name: string; stats: PlayerPeriodStats };
 export function matrixScope(matrix: ReportMatrix) {
@@ -79,27 +76,28 @@ function share(count: number, total: number): MatrixCell {
 export function reportMatrix(
   title: ReportMatrix["title"],
   periods: Period[],
+  pooled: PlayerPeriodStats | undefined,
 ): ReportMatrix {
   const row = (
     label: string,
     get: (s: PlayerPeriodStats) => MatrixCell,
     better: Row["better"] = "higher",
-    unit: Row["unit"] = "%",
-  ): Row => ({ label, cells: periods.map((p) => get(p.stats)), better, unit });
+  ): Row => ({
+    label,
+    cells: periods.map((p) => get(p.stats)),
+    total: pooled ? get(pooled) : missing,
+    better,
+  });
   const groups: ReportMatrix["groups"] = [];
   function group(title: string, rows: Row[]) {
     if (rows.length) groups.push({ title, rows });
   }
   group("Shooting", [
     row("Overall", (s) => shooting(s.shooting)),
-    row(
-      "Difficulty-adjusted",
-      (s) =>
-        s.adjusted == null
-          ? missing
-          : { value: s.adjusted, sample: String(s.ratedGraded) },
-      "higher",
-      "pts",
+    row("Difficulty-adjusted", (s) =>
+      s.adjusted == null
+        ? missing
+        : { value: s.adjusted, sample: String(s.ratedGraded) },
     ),
   ]);
   group(
@@ -114,12 +112,10 @@ export function reportMatrix(
     row(
       "Moderate or difficult",
       (s) =>
-        comparableRatings(s.observed, s.attempts)
-          ? share(
-              s.bands.reduce((n, b) => n + (b.level === "A" ? 0 : b.calls), 0),
-              s.observed,
-            )
-          : missing,
+        share(
+          s.bands.reduce((n, b) => n + (b.level === "A" ? 0 : b.calls), 0),
+          s.observed,
+        ),
       "neutral",
     ),
     ...levels.map((level) =>
@@ -127,9 +123,7 @@ export function reportMatrix(
         difficultyLabels[level],
         (s) => {
           const band = s.bands.find((b) => b.level === level);
-          return band && comparableRatings(s.observed, s.attempts)
-            ? share(band.calls, s.observed)
-            : missing;
+          return band ? share(band.calls, s.observed) : missing;
         },
         "neutral",
       ),

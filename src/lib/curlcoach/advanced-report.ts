@@ -151,9 +151,6 @@ export function advancedReport(
         shot: {
           ...shot,
           difficulty: difficulty?.level,
-          ...(!difficulty?.level && difficulty?.estimate
-            ? { difficultyEstimate: difficulty.estimate }
-            : {}),
           difficultyUnavailable: !game.difficultyReady,
         },
         record: game.advancedReady && valid ? candidate : undefined,

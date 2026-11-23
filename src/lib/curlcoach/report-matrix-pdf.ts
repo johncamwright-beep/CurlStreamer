@@ -17,12 +17,14 @@ export function drawReportMatrix(
 ) {
   const left = 16,
     width = 178,
-    labelWidth = 34,
-    sparkWidth = 25,
-    changeWidth = 22;
+    labelWidth = 31,
+    sparkWidth = 21,
+    changeWidth = 19,
+    totalWidth = 17;
   const sparkX = left + labelWidth,
     dataX = sparkX + sparkWidth,
-    changeX = left + width - changeWidth;
+    changeX = left + width - changeWidth,
+    totalX = changeX - totalWidth;
   let y = start;
   const font = (size: number, bold = false, color = "#172C3E") => {
     pdf.setFont("ReportSans", bold ? "bold" : "normal");
@@ -42,7 +44,7 @@ export function drawReportMatrix(
   // Wider events flow into consecutive column panels. Trends and change still span the full event.
   for (let offset = 0; offset < matrix.columns.length; offset += 6) {
     const columns = matrix.columns.slice(offset, offset + 6);
-    const colWidth = (changeX - dataX) / columns.length;
+    const colWidth = (totalX - dataX) / columns.length;
     font(7);
     const names = columns.map(
       (c) => pdf.splitTextToSize(c.name, colWidth - 2) as string[],
@@ -62,10 +64,12 @@ export function drawReportMatrix(
       pdf.text(scope, left + width, y, { align: "right" });
       y += 3;
       fill(left, y, width, headHeight, "#102432");
+      fill(totalX, y, totalWidth, headHeight, "#205778");
       font(8, true, "#FFFFFF");
       pdf.text("Measure", left + 1.6, y + 5);
       pdf.text("Trend", sparkX + sparkWidth / 2, y + 5, { align: "center" });
       pdf.text("Change", changeX + changeWidth / 2, y + 5, { align: "center" });
+      pdf.text("Total", totalX + totalWidth / 2, y + 5, { align: "center" });
       columns.forEach((c, i) =>
         pdf.text(c.key, dataX + (i + 0.5) * colWidth, y + 5, {
           align: "center",
@@ -161,18 +165,19 @@ export function drawReportMatrix(
         points.forEach((p) => {
           if (p) pdf.circle(p.x, p.y, 0.65, "FD");
         });
-        row.cells.slice(offset, offset + columns.length).forEach((c, i) => {
-          const latest = offset + i === matrix.columns.length - 1,
-            x = dataX + (i + 0.5) * colWidth;
-          if (latest)
-            fill(dataX + i * colWidth, y, colWidth, height, "#DCF1F1");
-          font(8, latest);
-          pdf.text(
-            cellText(c, row.unit),
-            x,
-            y + (c.sample ? 3.3 : height / 2 + 1),
-            { align: "center" },
-          );
+        [
+          ...row.cells.slice(offset, offset + columns.length),
+          row.total,
+        ].forEach((c, i) => {
+          const total = i === columns.length;
+          const x = total
+            ? totalX + totalWidth / 2
+            : dataX + (i + 0.5) * colWidth;
+          if (total) fill(totalX, y, totalWidth, height, "#DCEFF9");
+          font(8, total);
+          pdf.text(cellText(c), x, y + (c.sample ? 3.3 : height / 2 + 1), {
+            align: "center",
+          });
           if (c.sample) {
             font(6.6, false, "#465B69");
             pdf.text("(" + c.sample + ")", x, y + 6.4, { align: "center" });

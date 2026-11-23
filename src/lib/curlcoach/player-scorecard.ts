@@ -1,54 +1,58 @@
-import type { EventPerformancePoint } from "./event-performance";
+import {
+  playerEventWindow,
+  type EventPerformancePoint,
+} from "./event-performance";
 import type { ReportBlock } from "./report-content";
 import type { SavedReport } from "./reports";
-import { difficultyBenchmarks } from "./difficulty";
 import { reportMatrix } from "./report-matrix";
 
 type Point = EventPerformancePoint & {
   playerStats: NonNullable<EventPerformancePoint["playerStats"]>;
 };
 const pct = (n: number | null) => (n === null ? "—" : n.toFixed(1) + "%");
-const hasStats = (p: EventPerformancePoint): p is Point =>
-  !!p.playerStats?.shooting;
-
 export function playerScorecard(report: SavedReport) {
-  const data = report.eventPerformance;
-  const current = data?.points.find((p) => p.id === data.currentEventId);
-  if (!report.playerId || !current || !hasStats(current)) return null;
-  const prior = data!.points
-    .filter(hasStats)
-    .filter(
-      (p) =>
-        p.complete &&
-        p.date &&
-        current.date &&
-        p.date < current.date &&
-        p.playerStats.attempts > 0,
-    );
-  return { current, prior };
+  return report.playerId ? playerEventWindow(report.eventPerformance) : null;
 }
 
-export function playerScorecardCards(p: Point) {
+function assignmentDifficulty(current: Point, prior: Point[]) {
+  const average = (points: Point[]) => {
+    let count = 0,
+      total = 0;
+    for (const { playerStats } of points)
+      for (const b of playerStats.bands) {
+        count += b.calls;
+        total += b.calls * { A: 1, B: 2, C: 3 }[b.level];
+      }
+    return count ? total / count : null;
+  };
+  const now = average([current]),
+    usual = average(prior);
+  if (now === null) return "—";
+  const value = now.toFixed(1) + "/3";
+  if (usual === null) return value;
+  const delta = Math.round(now * 10) - Math.round(usual * 10);
+  return (
+    value + " · " + (delta > 0 ? "Harder" : delta < 0 ? "Easier" : "Average")
+  );
+}
+
+export function playerScorecardCards(p: Point, prior: Point[]) {
   const s = p.playerStats;
   return [
+    { label: "Shooting", value: pct(p.percent) },
+    { label: "Difficulty-adjusted shooting", value: pct(s.adjusted) },
+    { label: "Event difficulty", value: assignmentDifficulty(p, prior) },
     {
-      label: "Shooting",
-      value: pct(p.percent),
-      basis: `${p.graded} graded · ${s.attempts} charted`,
-    },
-    {
-      label: "Difficulty-adjusted shooting",
-      value: s.adjusted === null ? "—" : `${s.adjusted.toFixed(1)} pts`,
-      basis: `Easy-shot scale · ${s.ratedGraded} of ${p.graded} graded shots rated`,
+      label: "Routine shooting",
+      value: pct(s.bands.find((b) => b.level === "A")?.percent ?? null),
     },
   ];
 }
 
 export function playerScorecardBlocks(
   report: SavedReport,
-  { current, prior }: NonNullable<ReturnType<typeof playerScorecard>>,
+  { current, points }: NonNullable<ReturnType<typeof playerScorecard>>,
 ) {
-  const points = [...prior.slice(-4), current];
   const games = current.games.flatMap((game, index) => {
     if (!game.playerStats) return [];
     const name =
@@ -57,15 +61,8 @@ export function playerScorecardBlocks(
         : [game.name, game.opponent].filter(Boolean).join(" · ");
     return [{ key: "G" + (index + 1), name, stats: game.playerStats }];
   });
-  const bench = difficultyBenchmarks.expected;
   const blocks: ReportBlock[] = [
-    {
-      kind: "text",
-      value: `Easy-shot allowance · Easy +0 · Moderate +${bench.A - bench.B} · Difficult +${bench.A - bench.C} pts`,
-      size: 8,
-      muted: true,
-    },
-    reportMatrix("Event Stats", games),
+    reportMatrix("Event Stats", games, current.playerStats),
     reportMatrix(
       "Trends",
       points.map((p, index) => ({
@@ -73,6 +70,7 @@ export function playerScorecardBlocks(
         name: p.name,
         stats: p.playerStats,
       })),
+      report.eventPerformance?.playerTrendTotal,
     ),
   ];
   const heading = (title: string) =>

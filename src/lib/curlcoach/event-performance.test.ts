@@ -116,7 +116,7 @@ it("uses one easy-shot scale for players and keeps estimates outside observed di
       (shots) => playerEventStats(shots).adjusted,
     ),
   ).toEqual([85, 85, 85]);
-  expect(playerEventStats(copies(10, s(5, "C"))).adjusted).toBe(130);
+  expect(playerEventStats(copies(10, s(5, "C"))).adjusted).toBe(100);
   const unknown = {
     ...s(0),
     difficulty: undefined,
@@ -134,9 +134,8 @@ it("uses one easy-shot scale for players and keeps estimates outside observed di
     observed: 21,
     attempts: 22,
   });
-  expect(
-    playerEventStats([...easy, ...copies(10, unknown)]).adjusted,
-  ).toBeNull();
+  expect(playerEventStats([...easy, ...copies(10, unknown)]).adjusted).toBe(85);
+  expect(playerEventStats([unknown]).adjusted).toBeNull();
   expect(playerEventStats(copies(10, s(0))).adjusted).toBe(0);
 });
 it("compares a player's completed earlier events and prints assessed zeros and missing coverage separately", () => {
@@ -157,7 +156,13 @@ it("compares a player's completed earlier events and prints assessed zeros and m
   } as unknown as SavedReport;
   const card = playerScorecard(saved)!;
   expect(card.prior.map((p) => p.name)).toEqual(["first"]);
-  expect(playerScorecardCards(card.current)[1].value).toBe("75.0 pts");
+  expect(playerScorecardCards(card.current, card.prior)).toEqual([
+    { label: "Shooting", value: "60.0%" },
+    { label: "Difficulty-adjusted shooting", value: "75.0%" },
+    { label: "Event difficulty", value: "2.0/3 · Harder" },
+    { label: "Routine shooting", value: "—" },
+  ]);
+  expect(playerScorecardCards(card.prior[0], []).at(-1)?.value).toBe("80.0%");
   expect(card.current.playerStats).toMatchObject({
     classified: 12,
     misses: 12,
@@ -225,14 +230,53 @@ it("compares every game and the last five events with distinct counts, genuine z
   const draw = rows(events).find((r) => r.label === "Draw")!;
   expect(draw.cells[0]).toEqual({ value: 0, sample: "2" });
   expect(draw.cells.at(-1)?.value).toBeCloseTo((100 * 26) / 30);
+  expect(draw.total.sample).toBe("14");
+  expect(draw.total.value).toBeCloseTo((100 * (26 + 18)) / 70);
   expect(matrixChange(draw).text).toBe("+86.7 pp");
   const gameDraw = rows(games).find((r) => r.label === "Draw")!;
+  expect(gameDraw.total).toEqual(draw.cells.at(-1));
   expect(gameDraw.cells[5].value).toBeNull();
   expect(matrixPoints(gameDraw)[5]).toBeNull();
   expect(matrixChange(gameDraw).text).toBe("+40.0 pp");
   expect(matrixChange(rows(events).find((r) => r.label === "Peel")!).text).toBe(
     "—",
   );
+});
+it("compares this player's measured calls by shot count, including ungraded calls", () => {
+  const easy = event("easy", "2026-01-01", [s(4)]);
+  const hard = event("hard", "2026-01-03", copies(9, s(null, "C")));
+  const current = event("now", "2026-01-06", [
+    s(4, "B"),
+    ...copies(10, s(5, "A", "teammate")),
+  ]);
+  current.performanceHistory = [easy, hard];
+  const saved = {
+    playerId: "lead",
+    eventPerformance: reportEventPerformance(current, "lead", true),
+  } as SavedReport;
+  const card = playerScorecard(saved)!;
+  expect(playerScorecardCards(card.current, card.prior)[2].value).toBe(
+    "2.0/3 · Easier",
+  );
+  expect(card.current.playerStats.adjusted).toBe(95);
+});
+it("pools the measured grades and applies the percentage ceiling once to the total", () => {
+  const hard = event("hard", "2026-01-01", [s(5, "C")]);
+  const easy = event("easy", "2026-01-03", [s(0, "A")]);
+  easy.performanceHistory = [hard];
+  const saved = {
+    playerId: "lead",
+    eventPerformance: reportEventPerformance(easy, "lead", true),
+    narrative: { practice: [] },
+  } as unknown as SavedReport;
+  const charts = playerScorecardBlocks(saved, playerScorecard(saved)!).filter(
+    (b): b is ReportMatrix => b.kind === "matrix",
+  );
+  const adjusted = charts[1].groups[0].rows.find(
+    (r) => r.label === "Difficulty-adjusted",
+  )!;
+  expect(adjusted.cells.map((c) => c.value)).toEqual([100, 0]);
+  expect(adjusted.total).toEqual({ value: 65, sample: "2" });
 });
 it("pools historical routine shots without requiring subtype labels", () => {
   const history = [

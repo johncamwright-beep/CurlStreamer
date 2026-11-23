@@ -122,6 +122,7 @@ export function withReportAnalysis(
     ...reports,
     reports: reports.reports.map((saved) => ({
       ...saved,
+      difficulty: saved.difficulty?.estimated ? undefined : saved.difficulty,
       playerComparison,
       ...(event.games.every((g) => g.difficultyReady) &&
       (packet.audience !== "players" || saved.playerId)

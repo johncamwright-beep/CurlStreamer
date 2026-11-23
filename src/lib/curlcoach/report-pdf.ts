@@ -161,30 +161,36 @@ export async function buildReportPDF(report: SavedReport, eventName: string) {
   text(eventName, 12, false, muted);
   y += 3;
   const cards = reportSummaryCards(report);
-  for (let offset = 0; offset < cards.length; offset += 2) {
-    const row = cards.slice(offset, offset + 2);
-    const cardHeight = compactPlayer ? 28 : 39;
+  const cardsPerRow = compactPlayer ? 4 : 2;
+  for (let offset = 0; offset < cards.length; offset += cardsPerRow) {
+    const row = cards.slice(offset, offset + cardsPerRow);
+    const cardHeight = compactPlayer ? 21 : 39;
     ensure(cardHeight + 4);
-    const cw = (width - 5) / 2;
+    const cw = (width - 5 * (cardsPerRow - 1)) / cardsPerRow;
     row.forEach((c, i) => {
       const x = margin + i * (cw + 5);
       pdf.setFillColor(pale);
       pdf.roundedRect(x, y, cw, cardHeight, 2, 2, "F");
       pdf.setFont("ReportSans", "normal");
-      pdf.setFontSize(9);
+      pdf.setFontSize(compactPlayer ? 7.5 : 9);
       pdf.setTextColor(muted);
       pdf.text(pdf.splitTextToSize(c.label, cw - 8), x + 4, y + 7);
       pdf.setFont("ReportSans", "bold");
       pdf.setFontSize(18);
+      if (compactPlayer)
+        pdf.setFontSize(
+          Math.min(18, (18 * (cw - 8)) / pdf.getTextWidth(c.value)),
+        );
       pdf.setTextColor(ink);
       pdf.text(c.value, x + 4, y + (compactPlayer ? 16 : 21));
       pdf.setFont("ReportSans", "normal");
       pdf.setFontSize(8);
-      pdf.text(
-        pdf.splitTextToSize(c.basis, cw - 8),
-        x + 4,
-        y + (compactPlayer ? 23 : 29),
-      );
+      if (c.basis)
+        pdf.text(
+          pdf.splitTextToSize(c.basis, cw - 8),
+          x + 4,
+          y + (compactPlayer ? 23 : 29),
+        );
       if ("difficulty" in c && typeof c.difficulty === "number") {
         for (let step = 0; step < 24; step++) {
           pdf.setFillColor(
@@ -224,7 +230,7 @@ export async function buildReportPDF(report: SavedReport, eventName: string) {
         );
       }
     });
-    y += cardHeight + 4;
+    y += cardHeight + (compactPlayer ? 7 : 4);
   }
   for (const block of reportContent(report)) {
     switch (block.kind) {

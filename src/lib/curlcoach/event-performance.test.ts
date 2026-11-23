@@ -11,6 +11,13 @@ import { append, emptyState, type Shot } from "./model";
 import { difficultyIdentity } from "./difficulty";
 import { reportInputs } from "./reports";
 import { selectPromptEvidence } from "../providers/shot-tracker-ai";
+import { playerEventStats } from "./player-event-stats";
+import {
+  playerScorecard,
+  playerScorecardBlocks,
+  playerScorecardCards,
+} from "./player-scorecard";
+import type { SavedReport } from "./reports";
 
 const shot: Shot = {
   playerId: "lead",
@@ -98,6 +105,68 @@ function event(id: string, date: string, shots: AnalysisShot[]) {
   });
   return e;
 }
+it("uses one easy-shot scale for players and keeps estimates outside observed difficulty", () => {
+  const easy = [...copies(15, s(4)), ...copies(5, s(5))];
+  const moderate = [...copies(10, s(3, "B")), ...copies(10, s(4, "B"))];
+  const difficult = [...copies(15, s(3, "C")), ...copies(5, s(2, "C"))];
+  expect(
+    [easy, moderate, difficult].map(
+      (shots) => playerEventStats(shots).adjusted,
+    ),
+  ).toEqual([85, 85, 85]);
+  expect(playerEventStats(copies(10, s(5, "C"))).adjusted).toBe(130);
+  const unknown = {
+    ...s(0),
+    difficulty: undefined,
+    difficultyEstimate: { counts: { A: 0, B: 0, C: 10 } },
+  } as AnalysisShot;
+  const stats = playerEventStats([
+    ...easy,
+    unknown,
+    s(null, "C"),
+    { ...s(5, "C"), excluded: "Pick" },
+  ]);
+  expect(stats).toMatchObject({
+    adjusted: 85,
+    ratedGraded: 20,
+    observed: 21,
+    attempts: 22,
+  });
+  expect(
+    playerEventStats([...easy, ...copies(10, unknown)]).adjusted,
+  ).toBeNull();
+  expect(playerEventStats(copies(10, s(0))).adjusted).toBe(0);
+});
+it("compares a player's completed earlier events and prints assessed zeros and missing coverage separately", () => {
+  const first = event("first", "2026-01-01", copies(10, s(4)));
+  const current = event("current", "2026-03-01", copies(12, s(3, "B")));
+  const open = event("open", "2026-02-01", copies(20, s(0)));
+  open.games[0].status = "active";
+  const future = event("future", "2026-04-01", copies(20, s(5)));
+  const data = reportEventPerformance(
+    { ...current, performanceHistory: [future, first, open] },
+    "lead",
+    true,
+  );
+  const saved = {
+    playerId: "lead",
+    eventPerformance: data,
+    narrative: { practice: [] },
+  } as unknown as SavedReport;
+  const card = playerScorecard(saved)!;
+  expect(card.prior.map((p) => p.name)).toEqual(["first"]);
+  expect(playerScorecardCards(card.current)[1].value).toBe("75.0 pts");
+  expect(card.current.playerStats).toMatchObject({
+    classified: 12,
+    misses: 12,
+    tagged: 0,
+  });
+  const blocks = playerScorecardBlocks(saved, card);
+  expect(JSON.stringify(blocks)).toContain("100.0% (12/12)");
+  expect(JSON.stringify(blocks)).not.toMatch(
+    /future|routine baseline|season difficulty index/i,
+  );
+});
 it("pools historical routine shots without requiring subtype labels", () => {
   const history = [
     ...copies(5, s(5)),

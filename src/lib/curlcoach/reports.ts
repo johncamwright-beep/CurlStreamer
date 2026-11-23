@@ -85,6 +85,13 @@ export type ReportInput = {
   difficulty?: DifficultySummary;
 };
 export type SavedReport = ReportInput & {
+  playerComparison?: {
+    name: string;
+    shooting: number | null;
+    adjusted: number | null;
+    rated: number;
+    graded: number;
+  }[];
   analysis?: ReportAnalysis;
   flags?: ReportFlag[];
   narrative: Narrative;
@@ -506,7 +513,7 @@ export function audienceInstructions(audience: ReportAudience) {
   if (audience === "team")
     return "AUDIENCE: the team members together. Speak to the group as we/our team. Discuss collective execution, scoring patterns, communication and shared practice only. Never mention, identify, compare, blame or praise an individual, even indirectly by position, throwing order, stone number, captain, skip, front end or back end. No player names, aliases, player-specific advice or positional assignments. Individual analysis belongs in separate reports. In the output, avoid these words entirely (including generic or negated uses): player, athlete, individual, skip, captain, vice, lead, second, third, fourth, front end, back end, throwing order, someone, somebody, weakest, strongest. Do not describe any single team member. Say our team or we for all shared practice suggestions.";
   if (audience === "players")
-    return "AUDIENCE: one athlete. Address the athlete as you. Only their supplied shooting and coaching observations are available. Where line, release or technical observations are recorded, discuss the clearest supported pattern and connect a practical rehearsal or video-review check to it. These are observed labels, not inferred mechanical diagnoses or proof of causation. Use accompanying miss rates only for the same category and distinguish them from observation shares. Never treat Not recorded as On broom, Neutral, correct technique or absence of faults. Do not call release labels inherently good or bad without intended-release context. If no technical evidence is supplied, do not invent it. Team results provide context and cannot establish the athlete caused a win or loss. Do not discuss teammates or invent their performance.";
+    return "AUDIENCE: one athlete. Address the athlete as you. Only their supplied shooting and coaching observations are available. Where line, release or technical observations are recorded, discuss the clearest supported pattern and connect a practical rehearsal or video-review check to it. These are observed labels, not inferred mechanical diagnoses or proof of causation. Use accompanying miss rates only for the same category and distinguish them from observation shares. Never treat Not recorded as On broom, Neutral, correct technique or absence of faults. Do not call release labels inherently good or bad without intended-release context. If no technical evidence is supplied, do not invent it. Team results provide context and cannot establish the athlete caused a win or loss. Do not discuss teammates or invent their performance. The player scorecard supplies the statistics. Write the first practice item as one short, concrete rehearsal tied to a recorded shot or miss pattern. Omit historical indices and difficulty rankings from that item.";
   return "AUDIENCE: the coach privately. Use team evidence and anonymised Player aliases for individual follow-up. Keep tactical interpretation tentative; distinguish priorities for team practice from individual review.";
 }
 export function validateNarrative(

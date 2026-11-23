@@ -120,6 +120,28 @@
 .report-sheet tbody th {
   font-weight: 500;
 }
+@container (max-width: 34rem) {
+  .report-wide-table {
+    min-width: 0;
+    overflow-x: auto;
+  }
+  .report-wide-table table {
+    min-width: 32rem;
+    table-layout: auto;
+    overflow-wrap: normal;
+  }
+  .report-wide-table th:first-child {
+    position: sticky;
+    left: 0;
+    background: white;
+  }
+  .report-wide-table thead th:first-child {
+    background: #0d1b2a;
+  }
+  .report-wide-table tr:nth-child(odd) th[scope="row"] {
+    background: #f0f6f8;
+  }
+}
 .report-meter,
 .report-meter span {
   display: block;

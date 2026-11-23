@@ -3,6 +3,7 @@ import { report, shotTypes } from "./model";
 import { difficultyWeight, difficultProbability } from "./difficulty";
 import type { CoachEvent, Workspace } from "./event";
 import type { Evidence } from "./reports";
+import { playerEventStats } from "./player-event-stats";
 
 export const MIN_BASELINE_SHOTS = 1;
 /** Same shot-weighted season reference for every event/game in the comparison. */
@@ -53,6 +54,7 @@ export type EventPerformancePoint = BaselineMetrics &
     baselineEvents: number;
     byType: Record<string, PerformanceMeasure>;
     bySubtype: Record<string, PerformanceMeasure>;
+    playerStats?: ReturnType<typeof playerEventStats>;
     games: (BaselineMetrics & {
       id: string;
       name: string;
@@ -156,6 +158,7 @@ export function eventPerformance(
   events: CoachEvent[],
   playerId?: string,
   currentEventId?: string,
+  includePlayerStats = false,
 ): EventPerformance {
   const unique = [...new Map(events.map((e) => [e.id, e])).values()];
   const ordered = unique
@@ -209,6 +212,9 @@ export function eventPerformance(
           event.games.every((g) => g.status === "completed"),
         baselineEvents: previous.length,
         ...measure(shots),
+        ...(includePlayerStats && playerId
+          ? { playerStats: playerEventStats(shots) }
+          : {}),
         ...baselineMetrics(shots, history),
         seasonDifficulty,
         byType: Object.fromEntries(
@@ -238,7 +244,11 @@ export function eventPerformance(
     }),
   };
 }
-export function reportEventPerformance(event: CoachEvent, playerId?: string) {
+export function reportEventPerformance(
+  event: CoachEvent,
+  playerId?: string,
+  includePlayerStats = false,
+) {
   const date = eventDate(event);
   const history = (event.performanceHistory ?? []).filter((past) => {
     const pastDate = eventDate(past);
@@ -253,7 +263,12 @@ export function reportEventPerformance(event: CoachEvent, playerId?: string) {
       )
     );
   });
-  return eventPerformance([...history, event], playerId, event.id);
+  return eventPerformance(
+    [...history, event],
+    playerId,
+    event.id,
+    includePlayerStats,
+  );
 }
 export function performanceEvidence(performance: EventPerformance): Evidence[] {
   const points = performance.points;

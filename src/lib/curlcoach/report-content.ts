@@ -15,8 +15,13 @@ import {
 import { reportLegend } from "./report-legend";
 import { basisText, countPercent, evidenceBasis } from "./report-counts";
 import type { ShootingRow } from "./report-analysis";
+import {
+  playerScorecard,
+  playerScorecardBlocks,
+  playerScorecardCards,
+} from "./player-scorecard";
 
-type ReportBlock =
+export type ReportBlock =
   | {
       kind: "heading";
       title: string;
@@ -29,7 +34,7 @@ type ReportBlock =
       headers: string[];
       rows: string[][];
       widths: number[];
-      layout?: "paired" | "shooting";
+      layout?: "paired" | "shooting" | "rates";
     }
   | {
       kind: "trend";
@@ -37,6 +42,7 @@ type ReportBlock =
       rows?: string[][];
       secondary?: (number | null)[];
       valueLabel?: string;
+      firstColumnLabel?: string;
       reference?: number;
       firstGame: number;
       eventLabels?: string[];
@@ -58,6 +64,8 @@ export function reportTrendPoints(games: ShootingRow[]) {
 }
 
 export function reportSummaryCards(report: SavedReport) {
+  const scorecard = playerScorecard(report);
+  if (scorecard) return playerScorecardCards(scorecard.current);
   const stats = reportPercentages(report);
   const current = report.eventPerformance?.points.find(
     (p) => p.id === report.eventPerformance?.currentEventId,
@@ -120,6 +128,8 @@ export function reportSummaryCards(report: SavedReport) {
 }
 
 export function reportContent(report: SavedReport) {
+  const scorecard = playerScorecard(report);
+  if (scorecard) return playerScorecardBlocks(report, scorecard);
   const blocks: ReportBlock[] = [];
   const stats = reportPercentages(report);
   const heading = (title: string, startPage = false, keepWithChart = false) => {
@@ -137,6 +147,19 @@ export function reportContent(report: SavedReport) {
     blocks.push({ kind: "table", headers, rows, widths, layout });
   };
   const sections = reportSections(report);
+  if (report.playerComparison?.length) {
+    heading("Player comparison");
+    table(
+      ["Player", "Shooting", "Adjusted (pts)", "Rated / graded"],
+      report.playerComparison.map((p) => [
+        p.name,
+        percentage(p.shooting),
+        p.adjusted?.toFixed(1) ?? "—",
+        `${p.rated}/${p.graded}`,
+      ]),
+      [63, 37, 39, 39],
+    );
+  }
   const difficultyBlock = (d: DifficultySummary) => {
     heading("Difficulty context - secondary metric");
     text(difficultyDescription(d));

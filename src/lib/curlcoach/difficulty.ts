@@ -96,11 +96,6 @@ export function difficultyRecords(
         shotId: shot.id,
         identity: difficultyIdentity(shot),
         level,
-        ...(valid &&
-        !level &&
-        parsed.data.difficultyEstimate?.type === shot.type
-          ? { estimate: parsed.data.difficultyEstimate }
-          : {}),
         revision: doc.revision,
       },
     ];
@@ -117,36 +112,17 @@ export function withDifficulty<T extends Shot & { id: string }>(
   return {
     ...shot,
     difficulty: ready ? record?.level : undefined,
-    ...(ready && !record?.level && record?.estimate
-      ? { difficultyEstimate: record.estimate }
-      : {}),
     difficultyUnavailable: !ready,
   };
 }
-/** Estimated distributions never become observed Easy/Moderate/Difficult labels. */
+/** Historical inferred distributions are accepted in old documents but never scored. */
 export function difficultyWeight(shot: DifficultyShot): number | undefined {
-  if (shot.difficultyUnavailable) return undefined;
-  if (shot.difficulty) return { A: 1, B: 2, C: 3 }[shot.difficulty];
-  const c = shot.difficultyEstimate?.counts;
-  return c ? (c.A + 2 * c.B + 3 * c.C) / (c.A + c.B + c.C) : undefined;
+  return !shot.difficultyUnavailable && shot.difficulty
+    ? { A: 1, B: 2, C: 3 }[shot.difficulty]
+    : undefined;
 }
 export function difficultProbability(shot: DifficultyShot): number {
-  if (shot.difficulty) return shot.difficulty === "C" ? 1 : 0;
-  const c = shot.difficultyEstimate?.counts;
-  return c ? c.C / (c.A + c.B + c.C) : 0;
-}
-function expectedDifficulty(
-  shot: DifficultyShot,
-  config: DifficultyBenchmarks,
-) {
-  if (shot.difficulty) return config.expected[shot.difficulty];
-  const c = shot.difficultyEstimate!.counts;
-  return (
-    (c.A * config.expected.A +
-      c.B * config.expected.B +
-      c.C * config.expected.C) /
-    (c.A + c.B + c.C)
-  );
+  return !shot.difficultyUnavailable && shot.difficulty === "C" ? 1 : 0;
 }
 /** Aggregate points, never averages of game/player percentages. Round only for display. */
 export function difficultySummary(
@@ -168,7 +144,7 @@ export function difficultySummary(
   const n = classified.length;
   const actualPoints = classified.reduce((sum, s) => sum + s.grade!, 0);
   const expectedPoints = classified.reduce(
-    (sum, s) => sum + (5 * expectedDifficulty(s, benchmarks)) / 100,
+    (sum, s) => sum + (5 * benchmarks.expected[s.difficulty!]) / 100,
     0,
   );
   const pae = n ? ((actualPoints - expectedPoints) / (5 * n)) * 100 : null;
@@ -176,13 +152,6 @@ export function difficultySummary(
     benchmarks,
     eligible: eligible.length,
     classified: n,
-    ...(classified.some((s) => !s.difficulty && s.difficultyEstimate)
-      ? {
-          estimated: classified.filter(
-            (s) => !s.difficulty && s.difficultyEstimate,
-          ).length,
-        }
-      : {}),
     unavailable: eligible.filter((s) => s.difficultyUnavailable).length,
     coverage: eligible.length ? (n / eligible.length) * 100 : null,
     actual: n ? (actualPoints / (5 * n)) * 100 : null,
@@ -204,7 +173,9 @@ export function difficultySummary(
     }),
   };
 }
-export type DifficultySummary = ReturnType<typeof difficultySummary>;
+export type DifficultySummary = ReturnType<typeof difficultySummary> & {
+  estimated?: number;
+};
 export function easyShotIndex(s: DifficultySummary) {
   // Apply the easy reference to old saved snapshots as well as current scores.
   return s.pae === null ? null : s.benchmarks.expected.A + s.pae;

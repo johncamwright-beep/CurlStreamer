@@ -6,6 +6,7 @@ import {
   type DifficultySummary,
 } from "./difficulty";
 import type { SavedReport } from "./reports";
+import type { ReportMatrix } from "./report-matrix";
 import type { ReportFlag } from "./flagged-shots";
 import {
   reportDifficultyEvidenceText,
@@ -15,8 +16,14 @@ import {
 import { reportLegend } from "./report-legend";
 import { basisText, countPercent, evidenceBasis } from "./report-counts";
 import type { ShootingRow } from "./report-analysis";
+import {
+  playerScorecard,
+  playerScorecardBlocks,
+  playerScorecardCards,
+} from "./player-scorecard";
 
-type ReportBlock =
+export type ReportBlock =
+  | ReportMatrix
   | {
       kind: "heading";
       title: string;
@@ -29,7 +36,7 @@ type ReportBlock =
       headers: string[];
       rows: string[][];
       widths: number[];
-      layout?: "paired" | "shooting";
+      layout?: "paired" | "shooting" | "rates";
     }
   | {
       kind: "trend";
@@ -37,6 +44,7 @@ type ReportBlock =
       rows?: string[][];
       secondary?: (number | null)[];
       valueLabel?: string;
+      firstColumnLabel?: string;
       reference?: number;
       firstGame: number;
       eventLabels?: string[];
@@ -57,7 +65,16 @@ export function reportTrendPoints(games: ShootingRow[]) {
   }));
 }
 
-export function reportSummaryCards(report: SavedReport) {
+export function reportSummaryCards(report: SavedReport): {
+  label: string;
+  value: string;
+  basis?: string;
+  direction?: number;
+  difficulty?: number;
+}[] {
+  const scorecard = playerScorecard(report);
+  if (scorecard)
+    return playerScorecardCards(scorecard.current, scorecard.prior);
   const stats = reportPercentages(report);
   const current = report.eventPerformance?.points.find(
     (p) => p.id === report.eventPerformance?.currentEventId,
@@ -120,6 +137,8 @@ export function reportSummaryCards(report: SavedReport) {
 }
 
 export function reportContent(report: SavedReport) {
+  const scorecard = playerScorecard(report);
+  if (scorecard) return playerScorecardBlocks(report, scorecard);
   const blocks: ReportBlock[] = [];
   const stats = reportPercentages(report);
   const heading = (title: string, startPage = false, keepWithChart = false) => {
@@ -137,6 +156,19 @@ export function reportContent(report: SavedReport) {
     blocks.push({ kind: "table", headers, rows, widths, layout });
   };
   const sections = reportSections(report);
+  if (report.playerComparison?.length) {
+    heading("Player comparison");
+    table(
+      ["Player", "Shooting", "Adjusted shooting", "Rated / graded"],
+      report.playerComparison.map((p) => [
+        p.name,
+        percentage(p.shooting),
+        percentage(p.adjusted),
+        `${p.rated}/${p.graded}`,
+      ]),
+      [63, 37, 39, 39],
+    );
+  }
   const difficultyBlock = (d: DifficultySummary) => {
     heading("Difficulty context - secondary metric");
     text(difficultyDescription(d));
@@ -639,7 +671,9 @@ export function reportContent(report: SavedReport) {
   if (!report.highlights && report.games?.length) {
     for (const game of report.games) {
       heading(`Game-by-game review: ${game.title}`, true);
-      const summary = report.narrative.games?.find((g) => g.key === game.key);
+      const summary =
+        "games" in report.narrative &&
+        report.narrative.games?.find((g) => g.key === game.key);
       if (summary) text(summary.text);
       if (game.difficulty) text(difficultyDescription(game.difficulty));
       advancedTables(game.advanced);

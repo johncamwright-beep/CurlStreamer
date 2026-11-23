@@ -78,12 +78,24 @@ it("uses scoped charting for performance, misses, technique, and linked notes", 
   ]);
   expect(teammate.analysis?.overview[0].percent).toBe(100);
   expect(teammate.flags).toEqual([]);
+  expect(lead.playerComparison).toBeUndefined();
   expect(legacy.analysis).toBeUndefined();
   const [team] = withReportAnalysis(
     { ...packet, audience: "team" },
     event,
   ).reports;
   expect(team.analysis?.overview[0].percent).toBe(50);
+  expect(team.playerComparison).toBeUndefined();
+  const [coach] = withReportAnalysis(
+    { ...packet, audience: "coach", reports: [{}] as ReportPacket["reports"] },
+    event,
+  ).reports;
+  expect(
+    coach.playerComparison?.map((p) => [p.shooting, p.adjusted, p.graded]),
+  ).toEqual([
+    [0, null, 1],
+    [100, null, 1],
+  ]);
   expect(team.flags).toEqual([
     expect.objectContaining({
       note: "Watch the hit as a team",

@@ -1,17 +1,17 @@
-# Historical difficulty calibration
+# Measured shot difficulty
 
-An optional `difficultyEstimate` on an Enhanced supplement records a frozen reference distribution for a shot type: its method, reference event IDs and observed Easy/Moderate/Difficult counts. This is retrospective calibration using later observations, not a historical prediction. Do not refit it automatically when new shots are entered.
+Reports and analytics use the coach's recorded Easy, Moderate and Difficult calls. A retrospective coach rating is valid when its shot identity and source revision still match. Earlier historical shot-type estimates are ignored. Missing ratings stay missing.
 
-Only explicitly selected historical inferred records should receive an estimate. Append a new supplement revision through `save_shot_tracker_enhanced`, using the current source and document revisions. Preserve all other fields, and remove the inferred `values.difficulty`. Never replace a coach-entered rating or an edited record without checking its provenance. The November 16 backfill can be identified by its deterministic request IDs; it is not equivalent to all retrospective entries.
+## Player event reports
 
-Difficulty projection validates source identity and shot type. An observed difficulty always takes precedence over an estimate. Selecting or clearing difficulty in the editor removes the estimate. Editing notes alone preserves it.
+Shooting uses all eligible graded shots. Routine shooting uses only graded Easy shots. Difficulty-adjusted shooting estimates an all-Easy percentage on graded shots with a measured call. It adds the shot-weighted difference between the Easy benchmark and the measured call benchmark to the actual percentage on that same sample, capped at 100%. The current illustrative benchmark differences are 0, 15 and 30 percentage points. Player history does not enter the adjustment.
 
-For reference counts A, B, C, expected difficulty weight is `(A + 2B + 3C) / (A + B + C)`. The original raw 0–100 mix is `(weight - 1) * 50`; the displayed season index is defined below. Expected shooting uses the same distribution over the configured A/B/C benchmarks. Neither calculation rounds estimates to a categorical rating. Excluded and ungraded shots remain excluded. Unmapped shots remain unrated.
+Event difficulty averages this player's observed calls on a 1–3 scale, including ungraded calls. Harder, Easier and Average compare that value, rounded to one decimal, with the player's pooled measured calls in earlier completed events in the same season. The first measured event shows its score alone. An event with no measured calls shows a dash.
 
-Routine shooting and routine baseline comparisons use only observed Easy ratings. Estimates do not count as Easy shots, even when the reference distribution contains Easy observations. Counts of estimates accompany report and analytics summary metrics. Categorical mix rows represent observed ratings only.
+Each Total is recalculated from the complete underlying shot sample for the displayed games or events. Rates keep their own denominators. The Change column compares the first and last period.
 
-Saved report difficulty summaries are refreshed from the authorized current event projection at read time; stored AI narratives are not regenerated. If difficulty loading fails, the saved summary remains available. This change requires no database schema migration or additional AI request.
+## Historical records
 
-## Shared season difficulty index (replaces capped relative score)
+Legacy supplement documents remain readable. For data corrections use append-only supplement revisions, identify the exact backfill manifest, and preserve all other fields and coach-entered ratings.
 
-The displayed index is `100 * averageDifficulty / seasonDifficulty`, with Easy=1, Moderate=2, Difficult=3. The reference pools eligible rated shots for the same organization, season and player/team across the comparison dataset. All displayed events and games use that same reference, including Event 1. Report datasets include events through the report event; season analytics includes the loaded season. The reference updates when data is added. There is no clipping or forced ranking. Routine baselines remain strictly earlier completed events and exclude estimated ratings. Routine gap charts now show actual observed Easy-shot counts even when no prior baseline exists; estimated-only counts display a dash. Shooting and difficulty charts are separate, with explicit units.
+Season analytics use Easy=1, Moderate=2, Difficult=3 and a common measured season reference. The player report compares against earlier completed events.

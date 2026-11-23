@@ -1,4 +1,5 @@
 import { useId } from "react";
+import ReportComparison from "./ReportComparison";
 import {
   reportContent,
   reportSummaryCards,
@@ -30,13 +31,20 @@ export default function ReportDocument({
         <h3 id={titleId}>{report.title}</h3>
         <p className="report-event-name">{eventName}</p>
         {cards.length > 0 && (
-          <dl className="report-summary" aria-label="Report summary">
+          <dl
+            className={
+              cards.every((c) => !c.basis)
+                ? "report-summary report-summary-compact"
+                : "report-summary"
+            }
+            aria-label="Report summary"
+          >
             {cards.map((card) => (
               <div key={card.label}>
                 <dt>{card.label}</dt>
                 <dd>
                   <strong>{card.value}</strong>
-                  <span>{card.basis}</span>
+                  {card.basis && <span>{card.basis}</span>}
                   {"difficulty" in card &&
                     typeof card.difficulty === "number" && (
                       <div
@@ -76,6 +84,8 @@ export default function ReportDocument({
         )}
         {reportContent(report).map((block, index) => {
           switch (block.kind) {
+            case "matrix":
+              return <ReportComparison key={block.title} matrix={block} />;
             case "heading":
               return <h4 key={index}>{block.title}</h4>;
             case "text":
@@ -89,39 +99,48 @@ export default function ReportDocument({
               );
             case "table":
               return (
-                <table key={index}>
-                  <thead>
-                    <tr>
-                      {block.headers.map((header) => (
-                        <th key={header} scope="col">
-                          {header}
-                        </th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {block.rows.map(([label, ...values], row) => (
-                      <tr key={row}>
-                        <th scope="row">{label}</th>
-                        {values.map((value, column) => (
-                          <td key={column}>
-                            {value}
-                            {block.layout === "shooting" &&
-                              column === 0 &&
-                              value.endsWith("%") && (
-                                <span
-                                  className="report-meter"
-                                  aria-hidden="true"
-                                >
-                                  <span style={{ width: value }} />
-                                </span>
-                              )}
-                          </td>
+                <div
+                  key={index}
+                  className={
+                    block.headers.length >= 4 ? "report-wide-table" : undefined
+                  }
+                >
+                  <table>
+                    <thead>
+                      <tr>
+                        {block.headers.map((header, index) => (
+                          <th key={index} scope="col">
+                            {header}
+                          </th>
                         ))}
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
+                    </thead>
+                    <tbody>
+                      {block.rows.map(([label, ...values], row) => (
+                        <tr key={row}>
+                          <th scope="row">{label}</th>
+                          {values.map((value, column) => (
+                            <td key={column}>
+                              {value}
+                              {((block.layout === "shooting" && column === 0) ||
+                                block.layout === "rates") &&
+                                /^\d+(?:\.\d+)?%/.test(value) && (
+                                  <span
+                                    className="report-meter"
+                                    aria-hidden="true"
+                                  >
+                                    <span
+                                      style={{ width: parseFloat(value) + "%" }}
+                                    />
+                                  </span>
+                                )}
+                            </td>
+                          ))}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               );
             case "trend": {
               const points = reportTrendPoints(block.games);
@@ -150,7 +169,7 @@ export default function ReportDocument({
                       viewBox="0 0 600 180"
                       role="img"
                       aria-label={
-                        block.eventLabels
+                        block.eventLabels && block.firstColumnLabel !== "Game"
                           ? "Performance across events in chronological order"
                           : `Shooting percentage by game, games ${block.firstGame} to ${block.firstGame + points.length - 1}`
                       }
@@ -180,10 +199,7 @@ export default function ReportDocument({
                         />
                       )}
                       {points.map((point, index) => {
-                        const previous = points
-                          .slice(0, index)
-                          .filter((p) => p.value !== null)
-                          .at(-1);
+                        const previous = points[index - 1];
                         return (
                           <g key={index}>
                             <text x={x(point.x)} y="169" textAnchor="middle">
@@ -242,7 +258,7 @@ export default function ReportDocument({
                     <table>
                       <thead>
                         <tr>
-                          <th>Event</th>
+                          <th>{block.firstColumnLabel ?? "Event"}</th>
                           <th>
                             {block.valueLabel ??
                               (block.secondary

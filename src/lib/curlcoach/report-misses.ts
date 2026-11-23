@@ -37,12 +37,7 @@ function row(label: string, shots: Shot[]) {
     smallSample: classified.length < 10,
   };
 }
-export function reportMisses(event: CoachEvent, playerId?: string) {
-  const selected = (shots: Shot[]) =>
-    shots.filter((s) => !playerId || s.playerId === playerId);
-  const shots = selected(
-    event.games.flatMap((g) => currentShots(g.state.events)),
-  );
+function classifiedMisses(shots: Shot[]) {
   const classified = eligible(shots),
     misses = classified.filter(isMiss);
   const categories = missTags.map((tag) => ({
@@ -54,6 +49,30 @@ export function reportMisses(event: CoachEvent, playerId?: string) {
     ),
   }));
   const tagged = categories.reduce((n, c) => n + c.count, 0);
+  return {
+    classified,
+    misses,
+    tagged,
+    categories,
+  };
+}
+export function missCounts(shots: Shot[]) {
+  const { classified, misses, tagged, categories } = classifiedMisses(shots);
+  return {
+    classified: classified.length,
+    misses: misses.length,
+    tagged,
+    categories,
+    fullMisses: misses.filter((s) => s.execution === "Xmiss").length,
+  };
+}
+export function reportMisses(event: CoachEvent, playerId?: string) {
+  const selected = (shots: Shot[]) =>
+    shots.filter((s) => !playerId || s.playerId === playerId);
+  const shots = selected(
+    event.games.flatMap((g) => currentShots(g.state.events)),
+  );
+  const { classified, misses, tagged, categories } = classifiedMisses(shots);
   const ranked = categories
     .filter((c) => c.count)
     .sort((a, b) => b.count - a.count);
@@ -104,7 +123,7 @@ export function reportMisses(event: CoachEvent, playerId?: string) {
       )
       .filter((r) => r.attempts),
     byGame: event.games.map((g, i) =>
-      row(`Game ${i + 1}`, selected(currentShots(g.state.events))),
+      row(g.label || `Game ${i + 1}`, selected(currentShots(g.state.events))),
     ),
     practice,
     definition:

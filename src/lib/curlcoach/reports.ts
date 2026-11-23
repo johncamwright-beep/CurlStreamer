@@ -4,6 +4,7 @@ import {
   type EventPerformance,
 } from "./event-performance";
 import { reportTrends, type TrendHighlights } from "./report-trends";
+import { playerSectionEvidence } from "./player-section-evidence";
 import { difficultyEventShots, difficultyGameShots } from "./event";
 import {
   advancedReport,
@@ -32,7 +33,8 @@ import {
   type TechnicalSummary,
 } from "./technical";
 
-export const REPORT_POLICY = "shot-tracker-event-v11";
+export const reportPolicy = (audience: ReportAudience) =>
+  audience === "players" ? "shot-tracker-event-v12" : "shot-tracker-event-v11";
 export const audienceSchema = z.enum(["coach", "team", "players"]);
 export type ReportAudience = z.infer<typeof audienceSchema>;
 export const reportRequestSchema = z
@@ -63,6 +65,21 @@ export const narrativeSchema = z
   })
   .strict();
 export type Narrative = z.infer<typeof narrativeSchema>;
+const sectionFinding = findingSchema.extend({
+  text: z
+    .string()
+    .trim()
+    .min(1)
+    .max(360)
+    .regex(/^[^0-9<>]*$/),
+});
+export const playerNarrativeSchema = z
+  .object({
+    eventStats: z.array(sectionFinding).max(2),
+    eventTrends: z.array(sectionFinding).max(2),
+  })
+  .strict();
+export type PlayerNarrative = z.infer<typeof playerNarrativeSchema>;
 export type Evidence = {
   basis?: ReportBasis;
   id: string;
@@ -73,6 +90,7 @@ export type Evidence = {
 };
 export type ReportInput = {
   eventPerformance?: EventPerformance;
+  sectionEvidence?: Evidence[];
   highlights?: TrendHighlights;
   advanced?: AdvancedReport;
   key: string;
@@ -85,9 +103,16 @@ export type ReportInput = {
   difficulty?: DifficultySummary;
 };
 export type SavedReport = ReportInput & {
+  playerComparison?: {
+    name: string;
+    shooting: number | null;
+    adjusted: number | null;
+    rated: number;
+    graded: number;
+  }[];
   analysis?: ReportAnalysis;
   flags?: ReportFlag[];
-  narrative: Narrative;
+  narrative: Narrative | PlayerNarrative;
   playerId?: string;
 };
 export type ReportPacket = {
@@ -160,7 +185,11 @@ export function reportInputs(
   ];
   function build(key: string, title: string, playerId?: string): ReportInput {
     const highlights = reportTrends(event, playerId);
-    const eventPerformance = reportEventPerformance(event, playerId);
+    const eventPerformance = reportEventPerformance(
+      event,
+      playerId,
+      !!playerId,
+    );
     const evidence: Evidence[] = [];
     const limitations = [
       "Recorded grades use the provisional 0–5 scale, not a verified Curling Canada benchmark. Zero counts; excluded and ungraded shots do not enter the shooting percentage.",
@@ -440,6 +469,11 @@ export function reportInputs(
           ...detail.evidence,
         ],
         limitations,
+        sectionEvidence: playerSectionEvidence(
+          event,
+          playerId,
+          eventPerformance,
+        ),
         games: detail.games,
         misses,
         technical,
@@ -498,7 +532,7 @@ including the first. There is no clipping. An index of 110 means the average rat
 above the season average; it does not mean shots are objectively 10% harder. The separate
 historical relative change is (current mean / historical mean - 1)*100. This describes the recorded shot mix, not opponent quality, pressure or causation. Across-event trends use event aggregates and include sample sizes; missing events or categories are gaps. Do not infer sustained improvement from endpoints alone.
 Traditional shooting remains primary. Use sample counts and coverage to judge confidence, not as an audit narrative. Small samples are leads for review, not reliable strengths or weaknesses. Different shot mix, difficulty and observation coverage limit comparisons. Never infer causes, fatigue, pressure, ice conditions, correct technique or responsibility for the game result from grades. Never rank players. Explicit no observed miss differs from unassessed. Grade zero counts; excluded and ungraded attempts do not enter shooting percentages. Execution labels and deficiencies use their own denominators. Concessions are valid early finishes; do not invent unplayed ends.
-The report displays difficulty adjusted shooting percentage: overall shooting plus the Easy-reference benchmark uplift weighted by the share of graded shots with difficulty, capped at one hundred percent and never below overall shooting. Legacy easy-shot index evidence is not this percentage; do not conflate them. Historical estimates use a frozen observed shot-type distribution, not an observed categorical rating. Include estimates in difficulty averages and benchmark expectations only, never in routine shooting or its baseline. Explicit observations override estimates. Estimates derived from later reference events are retrospective calibration, not evidence of what was known at the earlier event. Leave shots with neither a rating nor an estimate unclassified.
+The player report estimates easy-shot shooting from graded shots with a coach-recorded difficulty. It applies the Easy-reference benchmark uplift for the measured calls and caps the resulting percentage at 100. Legacy index evidence uses a different scale. Use only coach-recorded Easy, Moderate or Difficult calls for comparisons. Leave historical estimates and unrated calls out of difficulty measures.
 Use everyday curling language and qualitative prose without digits, percentages or spelled-out event statistics: exact evidence is displayed alongside findings. No HTML, links or URLs. Practice: return an empty array; practice sections are not requested. review: brief video-review questions, not diagnoses. Return requested JSON only.` +
   "\n" +
   ADVANCED_REPORT_INSTRUCTIONS;
@@ -506,7 +540,7 @@ export function audienceInstructions(audience: ReportAudience) {
   if (audience === "team")
     return "AUDIENCE: the team members together. Speak to the group as we/our team. Discuss collective execution, scoring patterns, communication and shared practice only. Never mention, identify, compare, blame or praise an individual, even indirectly by position, throwing order, stone number, captain, skip, front end or back end. No player names, aliases, player-specific advice or positional assignments. Individual analysis belongs in separate reports. In the output, avoid these words entirely (including generic or negated uses): player, athlete, individual, skip, captain, vice, lead, second, third, fourth, front end, back end, throwing order, someone, somebody, weakest, strongest. Do not describe any single team member. Say our team or we for all shared practice suggestions.";
   if (audience === "players")
-    return "AUDIENCE: one athlete. Address the athlete as you. Only their supplied shooting and coaching observations are available. Where line, release or technical observations are recorded, discuss the clearest supported pattern and connect a practical rehearsal or video-review check to it. These are observed labels, not inferred mechanical diagnoses or proof of causation. Use accompanying miss rates only for the same category and distinguish them from observation shares. Never treat Not recorded as On broom, Neutral, correct technique or absence of faults. Do not call release labels inherently good or bad without intended-release context. If no technical evidence is supplied, do not invent it. Team results provide context and cannot establish the athlete caused a win or loss. Do not discuss teammates or invent their performance.";
+    return "AUDIENCE: one athlete. Address the athlete as you. Only their supplied shooting and coaching observations are available. Where line, release or technical observations are recorded, discuss the clearest supported pattern and connect a practical rehearsal or video-review check to it. These are observed labels, not inferred mechanical diagnoses or proof of causation. Use accompanying miss rates only for the same category and distinguish them from observation shares. Never treat Not recorded as On broom, Neutral, correct technique or absence of faults. Do not call release labels inherently good or bad without intended-release context. If no technical evidence is supplied, do not invent it. Team results provide context and cannot establish the athlete caused a win or loss. Do not discuss teammates or invent their performance. The player scorecard supplies the statistics. Write the first practice item as one short, concrete rehearsal tied to a recorded shot or miss pattern. Omit historical indices and difficulty rankings from that item.";
   return "AUDIENCE: the coach privately. Use team evidence and anonymised Player aliases for individual follow-up. Keep tactical interpretation tentative; distinguish priorities for team practice from individual review.";
 }
 export function validateNarrative(

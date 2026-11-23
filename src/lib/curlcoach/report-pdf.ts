@@ -7,6 +7,8 @@ import {
   reportTrendPoints,
 } from "./report-content";
 import { reportLogo } from "./report-logo";
+import { drawReportMatrix } from "./report-matrix-pdf";
+import { playerScorecard } from "./player-scorecard";
 import { reportFontRegular, reportFontBold } from "./report-fonts";
 const clean = (s: string) =>
   s
@@ -31,21 +33,34 @@ export async function buildReportPDF(report: SavedReport, eventName: string) {
     width = 178,
     bottom = 274;
   let y = 49;
+  const compactPlayer = !!playerScorecard(report);
   function header() {
     pdf.setFillColor(navy);
-    pdf.rect(0, 0, 210, 37, "F");
-    pdf.addImage(reportLogo, "PNG", 16, 9, 67, 16.75, undefined, "FAST");
+    const h = compactPlayer ? 22 : 37;
+    pdf.rect(0, 0, 210, h, "F");
+    pdf.addImage(
+      reportLogo,
+      "PNG",
+      16,
+      compactPlayer ? 4 : 9,
+      compactPlayer ? 50 : 67,
+      compactPlayer ? 12.5 : 16.75,
+      undefined,
+      "FAST",
+    );
     pdf.setFont("ReportSans", "bold");
     pdf.setFontSize(10);
     pdf.setTextColor("#FFFFFF");
-    pdf.text("SHOT TRACKER", 194, 18, { align: "right" });
+    pdf.text("SHOT TRACKER", 194, compactPlayer ? 10 : 18, { align: "right" });
     pdf.setFont("ReportSans", "normal");
     pdf.setFontSize(8);
     pdf.setTextColor("#B7D9E2");
-    pdf.text("EVENT PERFORMANCE REPORT", 194, 24, { align: "right" });
+    pdf.text("EVENT PERFORMANCE REPORT", 194, compactPlayer ? 16 : 24, {
+      align: "right",
+    });
     pdf.setFillColor(cyan);
-    pdf.rect(0, 37, 210, 1.5, "F");
-    y = 49;
+    pdf.rect(0, h, 210, 1.5, "F");
+    y = h + 12;
   }
   function ensure(h: number) {
     if (y + h > bottom) {
@@ -92,15 +107,15 @@ export async function buildReportPDF(report: SavedReport, eventName: string) {
     rows: string[][],
     widths: number[],
     compact = true,
-    shooting = false,
+    layout?: "shooting" | "rates",
   ) {
-    const lineHeight = compact ? 3.6 : 4.1,
+    const lineHeight = compactPlayer ? 3.4 : compact ? 3.6 : 4.1,
       size = compact ? 8 : 8.5;
     function draw(values: string[], head = false, alternate = false) {
       const wrapped = values.map((v, i) => lines(v, size, widths[i] - 6, head));
       const height =
         Math.max(...wrapped.map((v) => v.length)) * lineHeight +
-        (compact ? 4 : 6);
+        (compactPlayer ? 2.5 : compact ? 4 : 6);
       if (y + height > bottom) {
         pdf.addPage();
         header();
@@ -117,17 +132,17 @@ export async function buildReportPDF(report: SavedReport, eventName: string) {
           pdf.text(part, x + 3, y + (compact ? 4 : 5) + j * lineHeight),
         );
         const percent = Number.parseFloat(values[i]);
-        if (shooting && !head && i === 1 && Number.isFinite(percent)) {
+        if (
+          !head &&
+          Number.isFinite(percent) &&
+          ((layout === "shooting" && i === 1) ||
+            (layout === "rates" && i > 0 && /^\d+(?:\.\d+)?%/.test(values[i])))
+        ) {
           pdf.setFillColor("#CBD8DE");
-          pdf.rect(x + 3, y + height - 2, widths[i] - 6, 0.7, "F");
+          const barY = y + height - (compactPlayer ? 0.8 : 2);
+          pdf.rect(x + 3, barY, widths[i] - 6, 0.7, "F");
           pdf.setFillColor("#087D90");
-          pdf.rect(
-            x + 3,
-            y + height - 2,
-            ((widths[i] - 6) * percent) / 100,
-            0.7,
-            "F",
-          );
+          pdf.rect(x + 3, barY, ((widths[i] - 6) * percent) / 100, 0.7, "F");
         }
         x += widths[i];
       });
@@ -146,25 +161,36 @@ export async function buildReportPDF(report: SavedReport, eventName: string) {
   text(eventName, 12, false, muted);
   y += 3;
   const cards = reportSummaryCards(report);
-  for (let offset = 0; offset < cards.length; offset += 2) {
-    const row = cards.slice(offset, offset + 2);
-    ensure(43);
-    const cw = (width - 5) / 2;
+  const cardsPerRow = compactPlayer ? 4 : 2;
+  for (let offset = 0; offset < cards.length; offset += cardsPerRow) {
+    const row = cards.slice(offset, offset + cardsPerRow);
+    const cardHeight = compactPlayer ? 21 : 39;
+    ensure(cardHeight + 4);
+    const cw = (width - 5 * (cardsPerRow - 1)) / cardsPerRow;
     row.forEach((c, i) => {
       const x = margin + i * (cw + 5);
       pdf.setFillColor(pale);
-      pdf.roundedRect(x, y, cw, 39, 2, 2, "F");
+      pdf.roundedRect(x, y, cw, cardHeight, 2, 2, "F");
       pdf.setFont("ReportSans", "normal");
-      pdf.setFontSize(9);
+      pdf.setFontSize(compactPlayer ? 7.5 : 9);
       pdf.setTextColor(muted);
       pdf.text(pdf.splitTextToSize(c.label, cw - 8), x + 4, y + 7);
       pdf.setFont("ReportSans", "bold");
       pdf.setFontSize(18);
+      if (compactPlayer)
+        pdf.setFontSize(
+          Math.min(18, (18 * (cw - 8)) / pdf.getTextWidth(c.value)),
+        );
       pdf.setTextColor(ink);
-      pdf.text(c.value, x + 4, y + 21);
+      pdf.text(c.value, x + 4, y + (compactPlayer ? 16 : 21));
       pdf.setFont("ReportSans", "normal");
       pdf.setFontSize(8);
-      pdf.text(pdf.splitTextToSize(c.basis, cw - 8), x + 4, y + 29);
+      if (c.basis)
+        pdf.text(
+          pdf.splitTextToSize(c.basis, cw - 8),
+          x + 4,
+          y + (compactPlayer ? 23 : 29),
+        );
       if ("difficulty" in c && typeof c.difficulty === "number") {
         for (let step = 0; step < 24; step++) {
           pdf.setFillColor(
@@ -204,16 +230,26 @@ export async function buildReportPDF(report: SavedReport, eventName: string) {
         );
       }
     });
-    y += 43;
+    y += cardHeight + (compactPlayer ? 7 : 4);
   }
   for (const block of reportContent(report)) {
     switch (block.kind) {
+      case "matrix":
+        y = drawReportMatrix(pdf, block, y, bottom, () => {
+          pdf.addPage();
+          header();
+          return y;
+        });
+        break;
       case "heading":
         if (block.startPage) {
           pdf.addPage();
           header();
         }
-        heading(block.title, block.keepWithChart ? 75 : 55);
+        heading(
+          block.title,
+          block.keepWithChart ? 75 : compactPlayer ? 24 : 55,
+        );
         break;
       case "text":
         text(block.value, block.size, false, block.muted ? muted : ink);
@@ -229,13 +265,7 @@ export async function buildReportPDF(report: SavedReport, eventName: string) {
             ...block.widths,
           ]);
         } else {
-          table(
-            block.headers,
-            block.rows,
-            block.widths,
-            true,
-            block.layout === "shooting",
-          );
+          table(block.headers, block.rows, block.widths, true, block.layout);
         }
         break;
       case "trend": {
@@ -289,9 +319,11 @@ export async function buildReportPDF(report: SavedReport, eventName: string) {
         const points = reportTrendPoints(block.games);
         points.forEach((p, i) =>
           pdf.text(
-            compact
-              ? String(block.firstGame + i)
-              : (block.eventLabels?.[i] ?? "Game " + (block.firstGame + i)),
+            block.firstColumnLabel === "Game" && block.eventLabels
+              ? block.eventLabels[i]
+              : compact
+                ? String(block.firstGame + i)
+                : (block.eventLabels?.[i] ?? "Game " + (block.firstGame + i)),
             plotX + plotWidth * p.x,
             start + 44,
             { align: "center" },
@@ -303,7 +335,10 @@ export async function buildReportPDF(report: SavedReport, eventName: string) {
           pdf.setFillColor(color);
           pdf.setLineWidth(0.6);
           values.forEach((value, i) => {
-            if (value === null) return;
+            if (value === null) {
+              previous = null;
+              return;
+            }
             const x = plotX + plotWidth * points[i].x;
             if (previous)
               pdf.line(previous.x, at(previous.value), x, at(value));
@@ -332,7 +367,7 @@ export async function buildReportPDF(report: SavedReport, eventName: string) {
           pdf.setTextColor("#FFFFFF");
           pdf.setFontSize(7);
           [
-            "Event",
+            block.firstColumnLabel ?? "Event",
             block.valueLabel ??
               (block.secondary ? "Shot / difficulty" : "Rate"),
             "Shots",

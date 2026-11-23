@@ -12,7 +12,8 @@ import {
 } from "./model";
 import { rankAnalysis } from "./ranking";
 import { reportMisses, type MissAnalysis } from "./report-misses";
-import type { ReportPacket } from "./reports";
+import { reportPlayers, type ReportPacket } from "./reports";
+import { playerEventStats } from "./player-event-stats";
 import { technicalSummary, type TechnicalSummary } from "./technical";
 
 export type ShootingRow = {
@@ -101,10 +102,28 @@ export function withReportAnalysis(
   const reports = withReportFlags(packet, event);
   const aggregate =
     packet.audience === "players" ? undefined : reportAnalysis(event);
+  const shots = packet.audience === "coach" ? difficultyEventShots(event) : [];
+  const playerComparison =
+    packet.audience === "coach"
+      ? reportPlayers(event).map((player) => {
+          const selected = shots.filter((s) => s.playerId === player.id);
+          const stats = playerEventStats(selected);
+          const raw = report(selected);
+          return {
+            name: player.name,
+            shooting: raw.percent,
+            adjusted: stats.adjusted,
+            rated: stats.ratedGraded,
+            graded: raw.scored,
+          };
+        })
+      : undefined;
   return {
     ...reports,
     reports: reports.reports.map((saved) => ({
       ...saved,
+      difficulty: saved.difficulty?.estimated ? undefined : saved.difficulty,
+      playerComparison,
       ...(event.games.every((g) => g.difficultyReady) &&
       (packet.audience !== "players" || saved.playerId)
         ? {
@@ -117,7 +136,11 @@ export function withReportAnalysis(
         : {}),
       eventPerformance:
         packet.audience !== "players" || saved.playerId
-          ? reportEventPerformance(event, saved.playerId)
+          ? reportEventPerformance(
+              event,
+              saved.playerId,
+              packet.audience === "players",
+            )
           : undefined,
       analysis:
         packet.audience === "players"

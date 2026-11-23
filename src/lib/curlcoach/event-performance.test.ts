@@ -11,6 +11,14 @@ import { append, emptyState, type Shot } from "./model";
 import { difficultyIdentity } from "./difficulty";
 import { reportInputs } from "./reports";
 import { selectPromptEvidence } from "../providers/shot-tracker-ai";
+import { playerEventStats } from "./player-event-stats";
+import { matrixChange, matrixPoints, type ReportMatrix } from "./report-matrix";
+import {
+  playerScorecard,
+  playerScorecardBlocks,
+  playerScorecardCards,
+} from "./player-scorecard";
+import type { SavedReport } from "./reports";
 
 const shot: Shot = {
   playerId: "lead",
@@ -61,6 +69,7 @@ function event(id: string, date: string, shots: AnalysisShot[]) {
   shots.forEach((value, i) => {
     const clean: Shot = {
       ...shot,
+      type: value.type,
       end: i + 1,
       grade: value.grade,
       playerId: value.playerId,
@@ -98,6 +107,186 @@ function event(id: string, date: string, shots: AnalysisShot[]) {
   });
   return e;
 }
+it("uses one easy-shot scale for players and keeps estimates outside observed difficulty", () => {
+  const easy = [...copies(15, s(4)), ...copies(5, s(5))];
+  const moderate = [...copies(10, s(3, "B")), ...copies(10, s(4, "B"))];
+  const difficult = [...copies(15, s(3, "C")), ...copies(5, s(2, "C"))];
+  expect(
+    [easy, moderate, difficult].map(
+      (shots) => playerEventStats(shots).adjusted,
+    ),
+  ).toEqual([85, 85, 85]);
+  expect(playerEventStats(copies(10, s(5, "C"))).adjusted).toBe(100);
+  const unknown = {
+    ...s(0),
+    difficulty: undefined,
+    difficultyEstimate: { counts: { A: 0, B: 0, C: 10 } },
+  } as AnalysisShot;
+  const stats = playerEventStats([
+    ...easy,
+    unknown,
+    s(null, "C"),
+    { ...s(5, "C"), excluded: "Pick" },
+  ]);
+  expect(stats).toMatchObject({
+    adjusted: 85,
+    ratedGraded: 20,
+    observed: 21,
+    attempts: 22,
+  });
+  expect(playerEventStats([...easy, ...copies(10, unknown)]).adjusted).toBe(85);
+  expect(playerEventStats([unknown]).adjusted).toBeNull();
+  expect(playerEventStats(copies(10, s(0))).adjusted).toBe(0);
+});
+it("compares a player's completed earlier events and prints assessed zeros and missing coverage separately", () => {
+  const first = event("first", "2026-01-01", copies(10, s(4)));
+  const current = event("current", "2026-03-01", copies(12, s(3, "B")));
+  const open = event("open", "2026-02-01", copies(20, s(0)));
+  open.games[0].status = "active";
+  const future = event("future", "2026-04-01", copies(20, s(5)));
+  const data = reportEventPerformance(
+    { ...current, performanceHistory: [future, first, open] },
+    "lead",
+    true,
+  );
+  const saved = {
+    playerId: "lead",
+    eventPerformance: data,
+    narrative: { practice: [] },
+  } as unknown as SavedReport;
+  const card = playerScorecard(saved)!;
+  expect(card.prior.map((p) => p.name)).toEqual(["first"]);
+  expect(playerScorecardCards(card.current, card.prior)).toEqual([
+    { label: "Shooting", value: "60.0%" },
+    { label: "Difficulty-adjusted shooting", value: "75.0%" },
+    { label: "Event difficulty", value: "2.0/3 · Harder" },
+    { label: "Routine shooting", value: "—" },
+  ]);
+  expect(playerScorecardCards(card.prior[0], []).at(-1)?.value).toBe("80.0%");
+  expect(card.current.playerStats).toMatchObject({
+    classified: 12,
+    misses: 12,
+    tagged: 0,
+  });
+  const blocks = playerScorecardBlocks(saved, card);
+  const matrices = blocks.filter((b): b is ReportMatrix => b.kind === "matrix");
+  expect(matrices.map((m) => m.title)).toEqual([
+    "Event Stats",
+    "Trends over time (by event)",
+  ]);
+  for (const m of matrices) {
+    const untagged = m.groups
+      .flatMap((g) => g.rows)
+      .find((r) => r.label === "Untagged")!;
+    expect(untagged.cells.at(-1)).toEqual({ value: 100, sample: "12/12" });
+  }
+  expect(JSON.stringify(blocks)).not.toMatch(
+    /future|routine baseline|season difficulty index/i,
+  );
+});
+it("compares every game and the last five events with distinct counts, genuine zeroes and gaps", () => {
+  const recent = Array.from({ length: 6 }, (_, i) =>
+    event("Event " + i, `2026-01-0${i + 1}`, copies(2, s(i === 1 ? 0 : 3))),
+  );
+  const current = recent.pop()!;
+  const extra = Array.from(
+    { length: 6 },
+    (_, i) =>
+      event(
+        "Game " + (i + 2),
+        current.startDate!,
+        i === 4 ? [] : copies(1, s(5)),
+      ).games[0],
+  );
+  extra[0] = event("Peel game", current.startDate!, [
+    { ...s(4), type: "Peel" },
+  ]).games[0];
+  current.games.push(...extra);
+  current.performanceHistory = recent;
+  const saved = {
+    playerId: "lead",
+    eventPerformance: reportEventPerformance(current, "lead", true),
+    narrative: { practice: [] },
+  } as unknown as SavedReport;
+  const [games, events] = playerScorecardBlocks(
+    saved,
+    playerScorecard(saved)!,
+  ).filter((b): b is ReportMatrix => b.kind === "matrix");
+  expect(games.columns.map((c) => c.key)).toEqual([
+    "G1",
+    "G2",
+    "G3",
+    "G4",
+    "G5",
+    "G6",
+    "G7",
+  ]);
+  expect(events.columns.map((c) => c.name)).toEqual([
+    "Event 1",
+    "Event 2",
+    "Event 3",
+    "Event 4",
+    "Event 5",
+  ]);
+  const rows = (m: ReportMatrix) =>
+    m.groups.find((g) => g.title === "Shot performance")!.rows;
+  const draw = rows(events).find((r) => r.label === "Draw")!;
+  expect(draw.cells[0]).toEqual({ value: 0, sample: "2" });
+  expect(draw.cells.at(-1)?.value).toBeCloseTo((100 * 26) / 30);
+  expect(draw.total.sample).toBe("14");
+  expect(draw.total.value).toBeCloseTo((100 * (26 + 18)) / 70);
+  expect(matrixChange(draw).text).toBe("+86.7 pp");
+  const gameDraw = rows(games).find((r) => r.label === "Draw")!;
+  expect(gameDraw.total).toEqual(draw.cells.at(-1));
+  expect(gameDraw.cells[5].value).toBeNull();
+  expect(matrixPoints(gameDraw).map((point) => point.x)).toEqual([
+    0,
+    2 / 6,
+    3 / 6,
+    4 / 6,
+    1,
+  ]);
+  expect(matrixChange(gameDraw).text).toBe("+40.0 pp");
+  expect(matrixChange(rows(events).find((r) => r.label === "Peel")!).text).toBe(
+    "—",
+  );
+});
+it("compares this player's measured calls by shot count, including ungraded calls", () => {
+  const easy = event("easy", "2026-01-01", [s(4)]);
+  const hard = event("hard", "2026-01-03", copies(9, s(null, "C")));
+  const current = event("now", "2026-01-06", [
+    s(4, "B"),
+    ...copies(10, s(5, "A", "teammate")),
+  ]);
+  current.performanceHistory = [easy, hard];
+  const saved = {
+    playerId: "lead",
+    eventPerformance: reportEventPerformance(current, "lead", true),
+  } as SavedReport;
+  const card = playerScorecard(saved)!;
+  expect(playerScorecardCards(card.current, card.prior)[2].value).toBe(
+    "2.0/3 · Easier",
+  );
+  expect(card.current.playerStats.adjusted).toBe(95);
+});
+it("pools the measured grades and applies the percentage ceiling once to the total", () => {
+  const hard = event("hard", "2026-01-01", [s(5, "C")]);
+  const easy = event("easy", "2026-01-03", [s(0, "A")]);
+  easy.performanceHistory = [hard];
+  const saved = {
+    playerId: "lead",
+    eventPerformance: reportEventPerformance(easy, "lead", true),
+    narrative: { practice: [] },
+  } as unknown as SavedReport;
+  const charts = playerScorecardBlocks(saved, playerScorecard(saved)!).filter(
+    (b): b is ReportMatrix => b.kind === "matrix",
+  );
+  const adjusted = charts[1].groups[0].rows.find(
+    (r) => r.label === "Difficulty-adjusted",
+  )!;
+  expect(adjusted.cells.map((c) => c.value)).toEqual([100, 0]);
+  expect(adjusted.total).toEqual({ value: 65, sample: "2" });
+});
 it("pools historical routine shots without requiring subtype labels", () => {
   const history = [
     ...copies(5, s(5)),
@@ -207,4 +396,75 @@ it("uses the same shot-weighted season reference for first and later events with
   expect(result.points[0].routineShots).toBe(1);
   expect(result.points[0].baselineGap).toBeNull();
   expect(result.points[1].baselineDifficulty).toBe(1);
+});
+
+it("connects measured points across missing events and grounds player notes in the charted shot and miss", () => {
+  const prior = event("Private old event", "2026-01-01", copies(4, s(3)));
+  const gap = event("Private middle event", "2026-02-01", [
+    { ...s(2), type: "Peel" },
+  ]);
+  const now = event("Private current event", "2026-03-01", [
+    ...copies(3, s(4)),
+    s(0, "C", "other"),
+  ]);
+  now.games[0].state.roster = [
+    { id: "lead", name: "Private Name", position: "Lead" },
+  ];
+  for (const e of [prior, now]) {
+    const g = e.games[0];
+    g.advancedReady = true;
+    g.advancedRecords = g.state.events.flatMap((row) => {
+      if (!row.shot) return [];
+      row.shot.deficiency = "Overcurl";
+      return [
+        {
+          shotId: row.shotId,
+          identity: difficultyIdentity(row.shot),
+          revision: 1,
+          valid: true,
+          needsReview: false,
+          values: { misses: ["wreck_on_guard"] },
+          assessments: { misses: "assessed" },
+        },
+      ];
+    });
+  }
+  now.performanceHistory = [prior, gap];
+  const input = reportInputs(now, "players")[0];
+  const proof = input.sectionEvidence!;
+  expect(
+    proof.find(
+      (e) =>
+        e.id.startsWith("event-") &&
+        e.label === "Draw · Observed miss · Wreck on guard",
+    )?.value,
+  ).toBe("G1=3/3; Total=3/3");
+  expect(
+    proof.find(
+      (e) =>
+        e.id.startsWith("events-") &&
+        e.label === "Draw · Tagged miss · Overcurl",
+    )?.value,
+  ).toBe("E1=4/4; E2=—; E3=3/3; Total=7/7");
+  expect(JSON.stringify(proof)).not.toMatch(/Private|other/);
+  const saved = {
+    ...input,
+    playerId: "lead",
+    narrative: {
+      eventStats: [
+        { text: "You repeatedly caught the guard on draws.", evidence: [] },
+      ],
+      eventTrends: [],
+    },
+  };
+  const matrices = playerScorecardBlocks(saved, playerScorecard(saved)!).filter(
+    (b): b is ReportMatrix => b.kind === "matrix",
+  );
+  expect(matrices[0].narrative).toContain("guard");
+  expect(matrices[1].narrative).toBe("");
+  const draw = matrices[1].groups
+    .find((g) => g.title === "Shot performance")!
+    .rows.find((r) => r.label === "Draw")!;
+  expect(matrixPoints(draw).map((p) => p.x)).toEqual([0, 1]);
+  expect(draw.cells[1].value).toBeNull();
 });

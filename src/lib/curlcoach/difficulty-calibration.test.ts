@@ -36,27 +36,26 @@ const shot: Shot = {
   excluded: null,
   note: "",
 };
-it("uses the observed distribution continuously without inventing observed routine shots", () => {
+it("excludes historical distributions from every measured difficulty statistic", () => {
   const s = { ...shot, difficultyEstimate: estimate };
   const result = difficultySummary([
     s,
     { ...s, excluded: "Pick" },
     { ...s, grade: null },
   ]);
-  expect(result.classified).toBe(1);
-  expect(result.estimated).toBe(1);
-  expect(result.expected).toBeCloseTo((7 * 85 + 34 * 70 + 4 * 55) / 45);
+  expect(result.classified).toBe(0);
+  expect(result.expected).toBeNull();
   expect(result.mix.every((m) => m.count === 0)).toBe(true);
   const metrics = baselineMetrics(
     [s] as AnalysisShot[],
     [{ ...s, grade: 3 }] as AnalysisShot[],
   );
-  expect(metrics.averageDifficulty).toBeCloseTo((7 + 68 + 12) / 45);
+  expect(metrics.averageDifficulty).toBeNull();
   expect(metrics.routineShots).toBe(0);
   expect(metrics.baselineGap).toBeNull();
-  expect(metrics.estimatedShots).toBe(1);
+  expect(metrics.ratedShots).toBe(0);
 });
-it("projects only valid estimates tied to the current shot and lets observation win", () => {
+it("reads legacy supplements, ignores estimates and preserves coach-entered ratings", () => {
   const state = emptyState();
   state.events = [
     {
@@ -84,7 +83,7 @@ it("projects only valid estimates tied to the current shot and lets observation 
     true,
   );
   expect(projected.difficulty).toBeUndefined();
-  expect(projected.difficultyEstimate).toEqual(estimate);
+  expect(projected.difficultyEstimate).toBeUndefined();
   const event = sampleEvent("practice");
   event.games = event.games.slice(0, 1);
   event.games[0].state = state;
@@ -95,7 +94,7 @@ it("projects only valid estimates tied to the current shot and lets observation 
     reports: [{ playerId: "lead", difficulty: difficultySummary([]) }],
   } as ReportPacket;
   expect(withReportAnalysis(packet, event).reports[0].difficulty).toMatchObject(
-    { eligible: 1, classified: 1, estimated: 1 },
+    { eligible: 1, classified: 0, adjusted: null },
   );
   expect(packet.reports[0].difficulty?.classified).toBe(0);
   const observed = {

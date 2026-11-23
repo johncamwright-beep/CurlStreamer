@@ -374,6 +374,7 @@ it("writes only grounded player section findings, retries cross-section citation
   expect(fetcher).toHaveBeenCalledTimes(2);
   const body = JSON.parse(fetcher.mock.calls[0][1].body);
   expect(JSON.parse(body.input)).toEqual({ evidence: [row] });
+  expect(body.max_output_tokens).toBe(8000);
   expect(Object.keys(body.text.format.schema.properties)).toEqual([
     "eventStats",
     "eventTrends",

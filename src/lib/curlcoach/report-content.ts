@@ -1,3 +1,9 @@
+import { executions } from "./model";
+import {
+  outcomeLabel,
+  rankedMissReasons,
+  recurringMissPairs,
+} from "./report-misses";
 import { relativeDifficulty } from "./event-performance";
 import {
   difficultyCaveat,
@@ -538,16 +544,18 @@ export function reportContent(report: SavedReport) {
       (sum, outcome) => sum + outcome.count,
       0,
     );
-    const attempts = analysis.overview[0].shots;
-    text(`Execution outcomes recorded for ${recorded} of ${attempts} shots.`);
-    table(
-      ["Execution outcome", "Count"],
-      [
-        ...analysis.execution,
-        { label: "Not recorded", count: attempts - recorded },
-      ].map(({ label, count }) => [label, String(count)]),
-      [113, 65],
-    );
+    if (!analysis.shotReview) {
+      const attempts = analysis.overview[0].shots;
+      text(`Execution outcomes recorded for ${recorded} of ${attempts} shots.`);
+      table(
+        ["Execution outcome", "Count"],
+        [
+          ...analysis.execution,
+          { label: "Not recorded", count: attempts - recorded },
+        ].map(({ label, count }) => [label, String(count)]),
+        [113, 65],
+      );
+    }
     heading("Performance over time");
     for (let index = 0; index < analysis.games.length; index += 8) {
       const games = analysis.games.slice(index, index + 8);
@@ -586,7 +594,50 @@ export function reportContent(report: SavedReport) {
   }
   const m =
     analysis?.misses ?? (!report.highlights ? report.misses : undefined);
-  if (m) {
+  if (analysis?.shotReview) {
+    const { outcomes, reasons, missPatternsByShot } = analysis.shotReview;
+    const classified = Object.values(outcomes).reduce(
+      (sum, count) => sum + count,
+      0,
+    );
+    heading("Shot outcomes");
+    table(
+      ["Outcome", "Share of recorded outcomes"],
+      executions.map((outcome) => [
+        outcomeLabel(outcome),
+        countPercent(
+          classified ? (100 * outcomes[outcome]) / classified : null,
+          outcomes[outcome],
+          classified,
+        ),
+      ]),
+      [90, 88],
+    );
+    heading("Miss reasons");
+    if (reasons.tagged)
+      table(
+        ["Reason", "Share of tagged shots"],
+        rankedMissReasons(reasons.counts).map(([reason, count]) => [
+          reason,
+          countPercent((100 * count) / reasons.tagged, count, reasons.tagged),
+        ]),
+        [95, 83],
+      );
+    else text("No tagged shots.");
+    heading("Recurring misses by shot");
+    const pairs = recurringMissPairs(missPatternsByShot);
+    if (pairs.length)
+      table(
+        ["Shot", "Reason", "Share of tagged shots of this type"],
+        pairs.map(({ type, tag, count, tagged }) => [
+          type,
+          tag,
+          countPercent((100 * count) / tagged, count, tagged),
+        ]),
+        [48, 65, 65],
+      );
+    else text("No repeated shot and miss reason.");
+  } else if (m) {
     heading("Miss diagnosis");
     text(m.focus);
     text(m.definition, 8, true);
@@ -617,6 +668,8 @@ export function reportContent(report: SavedReport) {
         categoryRows,
         [113, 65],
       );
+  }
+  if (m) {
     if (m.byShot.length) {
       heading("Where misses concentrate");
       table(

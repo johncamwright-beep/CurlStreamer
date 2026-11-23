@@ -60,7 +60,16 @@
     "missed_sweeping_call": "Missed sweeping call",
     "underswept": "Underswept",
     "under_curl": "Undercurl",
-    "management": "Management"
+    "management": "Management",
+    "wreck_on_guard": "Wreck on guard",
+    "wreck_on_another_unintended_stone": "Wreck on another unintended stone",
+    "roll_wrong_direction": "Roll wrong direction",
+    "shooter_lost_when_intended_to_stay": "Shooter lost when intended to stay",
+    "intended_targets_not_removed": "Intended targets not removed",
+    "failed_to_freeze": "Failed to freeze",
+    "failed_to_bury": "Failed to bury",
+    "through_house_unintentionally": "Through house unintentionally",
+    "other_observable_miss": "Other observable miss"
   },
   "subtypes": [
     {

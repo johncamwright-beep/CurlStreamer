@@ -117,6 +117,10 @@ it("uses scoped charting for performance, misses, technique, and linked notes", 
   expect(player.shotTypes.map((shot) => shot.label)).toEqual(["Draw"]);
   expect(player.turns.map((turn) => turn.label)).toEqual(["CW S"]);
   expect(player.misses).toMatchObject({ misses: 1, classified: 1 });
+  expect(player.shotReview?.reasons).toMatchObject({
+    tagged: 1,
+    counts: { Light: 1, Overswept: 1 },
+  });
   expect(player.technical[0]).toMatchObject({ field: "line", recorded: 1 });
 
   const packet = {

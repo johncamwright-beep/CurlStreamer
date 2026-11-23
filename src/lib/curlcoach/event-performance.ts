@@ -5,7 +5,7 @@ import type { CoachEvent, Workspace } from "./event";
 import type { Evidence } from "./reports";
 import { playerEventStats } from "./player-event-stats";
 import { technicalSummary } from "./technical";
-import { missPatternsByShot } from "./report-misses";
+import { shotReviewStats } from "./report-misses";
 
 export const MIN_BASELINE_SHOTS = 1;
 /** Same shot-weighted season reference for every event/game in the comparison. */
@@ -127,7 +127,7 @@ function playerPeriodStats(
 ) {
   return {
     ...playerEventStats(shots),
-    missPatternsByShot: missPatternsByShot(shots),
+    ...shotReviewStats(shots),
     shooting: measure(shots),
     byType,
     byTurn: Object.fromEntries(

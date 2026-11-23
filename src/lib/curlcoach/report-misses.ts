@@ -1,6 +1,6 @@
-import { currentShots, shotTypes, turns, type Shot } from "./model";
+import { shotTypes, turns, type Shot } from "./model";
 import type { CoachEvent } from "./event";
-import type { AnalysisShot } from "./advanced-analysis";
+import { analysisEventShots, type AnalysisShot } from "./advanced-analysis";
 import { label, missChoices } from "./enhanced-catalog";
 import { resultLabels } from "./shot-subtypes";
 
@@ -13,18 +13,20 @@ export const missTags = [
 ] as const;
 const isMiss = (s: Shot) =>
   ["Partial", "Limited", "Xmiss"].includes(s.execution ?? "");
-const eligible = (shots: Shot[]) =>
+type MissShot = Shot &
+  Partial<
+    Pick<
+      AnalysisShot,
+      "resultObservations" | "observedMisses" | "additionalDeficiencies"
+    >
+  >;
+const eligible = <T extends Shot>(shots: T[]) =>
   shots.filter((s) => !s.excluded && s.execution !== null);
 const pct = (n: number, d: number) =>
   d ? Math.round((n / d) * 1000) / 10 : null;
-function row(label: string, shots: Shot[]) {
-  const classified = eligible(shots),
-    misses = classified.filter(isMiss);
-  const tags = missTags.map((tag) => ({
-    tag,
-    count: misses.filter((s) => s.deficiency === tag).length,
-  }));
-  const highest = Math.max(0, ...tags.map((t) => t.count));
+function row(label: string, shots: MissShot[]) {
+  const { classified, misses, categories: tags } = classifiedMisses(shots);
+  const highest = Math.max(0, ...tags.map((tag) => tag.count));
   return {
     label,
     attempts: classified.length,
@@ -41,41 +43,7 @@ function row(label: string, shots: Shot[]) {
     smallSample: classified.length < 10,
   };
 }
-// Only explicit miss observations count. A destination alone (e.g. "In-House")
-// cannot establish what went wrong. Use a shared key across entry formats.
-const missResults = new Set([
-  "light",
-  "heavy",
-  "hog",
-  "missed_score",
-  "wreck",
-  "over_curl",
-  "under_curl",
-  "missed_angle",
-  "tap_light",
-  "tap_deep",
-  "miss_wide",
-  "miss_narrow",
-  "jammed",
-  "wreck_stone",
-  "flash_wide",
-  "flash_narrow",
-  "roll_out_of_position",
-  "roll_far",
-  "roll_short",
-  "wrong_angle",
-  "missed_stick",
-  "missed_stone",
-  "too_much_contact",
-  "too_little_contact",
-  "flash",
-  "management",
-  "not_enough_broom",
-  "too_much_broom",
-  "overswept",
-  "missed_sweeping_call",
-  "underswept",
-]);
+// Only explicit selections are reasons. A weight, destination or note alone is not a tag.
 const missAliases: Record<string, string> = {
   over_curl: "overcurl",
   under_curl: "undercurl",
@@ -85,12 +53,17 @@ const missAliases: Record<string, string> = {
   roll_short: "roll_not_far_enough",
   flash_with_side_unclear: "flash",
 };
-export function taggedMissLabels(shot: AnalysisShot) {
+export function taggedMissLabels(shot: MissShot) {
   const codes = new Set<string>();
-  if (missTags.some((tag) => tag === shot.deficiency))
-    codes.add(shot.deficiency!.toLowerCase());
+  for (const reason of [
+    shot.deficiency,
+    ...(shot.additionalDeficiencies ?? []),
+  ]) {
+    if (reason && missTags.some((tag) => tag === reason))
+      codes.add(reason.toLowerCase());
+  }
   for (const code of shot.resultObservations ?? []) {
-    if (missResults.has(code)) codes.add(missAliases[code] ?? code);
+    if (Object.hasOwn(resultLabels, code)) codes.add(missAliases[code] ?? code);
   }
   for (const code of missChoices) {
     if (shot.observedMisses?.includes(code))
@@ -111,35 +84,68 @@ export function taggedMissLabels(shot: AnalysisShot) {
   ];
 }
 
-export function missPatternsByShot(shots: AnalysisShot[]) {
-  const byType: Record<
-    string,
-    { tagged: number; counts: Record<string, number> }
-  > = {};
+type ReasonCounts = { tagged: number; counts: Record<string, number> };
+function recordReasons(group: ReasonCounts, reasons: string[]) {
+  group.tagged++;
+  for (const reason of reasons)
+    group.counts[reason] = (group.counts[reason] ?? 0) + 1;
+}
+
+export function shotReviewStats(shots: MissShot[]) {
+  const outcomes = { Make: 0, Partial: 0, Limited: 0, Xmiss: 0 };
+  const reasons: ReasonCounts = { tagged: 0, counts: {} };
+  const missPatternsByShot: Record<string, ReasonCounts> = {};
   for (const shot of shots) {
-    if (!shot.type || shot.excluded || !isMiss(shot)) continue;
+    if (shot.excluded) continue;
+    if (shot.execution) outcomes[shot.execution]++;
     const labels = taggedMissLabels(shot);
     if (!labels.length) continue;
-    const group = (byType[shot.type] ??= { tagged: 0, counts: {} });
-    group.tagged++;
-    for (const name of labels) {
-      group.counts[name] = (group.counts[name] ?? 0) + 1;
-    }
+    recordReasons(reasons, labels);
+    if (shot.type)
+      recordReasons(
+        (missPatternsByShot[shot.type] ??= { tagged: 0, counts: {} }),
+        labels,
+      );
   }
-  return byType;
+  return { outcomes, reasons, missPatternsByShot };
 }
-function classifiedMisses(shots: Shot[]) {
+export function rankedMissReasons(counts: Record<string, number>) {
+  return Object.entries(counts).sort(
+    ([a, n], [b, m]) => m - n || a.localeCompare(b),
+  );
+}
+export function recurringMissPairs(byShot: Record<string, ReasonCounts>) {
+  return Object.entries(byShot)
+    .flatMap(([type, group]) =>
+      Object.entries(group.counts)
+        .filter(([, count]) => count >= 2)
+        .map(([tag, count]) => ({ type, tag, count, tagged: group.tagged })),
+    )
+    .sort(
+      (a, b) =>
+        b.count - a.count ||
+        a.type.localeCompare(b.type) ||
+        a.tag.localeCompare(b.tag),
+    )
+    .slice(0, 15);
+}
+export const outcomeLabel = (execution: NonNullable<Shot["execution"]>) =>
+  execution === "Xmiss" ? "Complete miss" : execution;
+function classifiedMisses(shots: MissShot[]) {
   const classified = eligible(shots),
     misses = classified.filter(isMiss);
-  const categories = missTags.map((tag) => ({
+  const counts: Record<string, number> = {};
+  const reasons: ReasonCounts = { tagged: 0, counts };
+  for (const shot of misses) {
+    const labels = taggedMissLabels(shot);
+    if (labels.length) recordReasons(reasons, labels);
+  }
+  const tagged = reasons.tagged;
+  const categories = rankedMissReasons(counts).map(([tag, count]) => ({
     tag,
-    count: misses.filter((s) => s.deficiency === tag).length,
-    percent: pct(
-      misses.filter((s) => s.deficiency === tag).length,
-      misses.length,
-    ),
+    count,
+    percent: pct(count, misses.length),
   }));
-  const tagged = categories.reduce((n, c) => n + c.count, 0);
   return {
     classified,
     misses,
@@ -157,11 +163,13 @@ export function missCounts(shots: Shot[]) {
     fullMisses: misses.filter((s) => s.execution === "Xmiss").length,
   };
 }
-export function reportMisses(event: CoachEvent, playerId?: string) {
-  const selected = (shots: Shot[]) =>
-    shots.filter((s) => !playerId || s.playerId === playerId);
-  const shots = selected(
-    event.games.flatMap((g) => currentShots(g.state.events)),
+export function reportMisses(
+  event: CoachEvent,
+  playerId?: string,
+  charted = analysisEventShots(event),
+) {
+  const shots = charted.filter(
+    (shot) => !playerId || shot.playerId === playerId,
   );
   const { classified, misses, tagged, categories } = classifiedMisses(shots);
   const ranked = categories
@@ -176,19 +184,25 @@ export function reportMisses(event: CoachEvent, playerId?: string) {
       : !ranked.length
         ? "Miss outcomes were recorded, but without directional tags there is not enough information to identify a weight or line pattern."
         : `${leaders.map((c) => c.tag).join(" and ")} ${leaders.length > 1 ? "tie as the most frequent recorded miss categories" : "is the most frequent recorded miss category"} (${leaders[0].percent?.toFixed(1)}% of miss outcomes${leaders.length > 1 ? " each" : ""}). ${misses.length < 10 ? "Treat this as a small-sample practice lead, not an established tendency." : "Use this as a practice priority, then check whether it repeats across games."}`;
-  const practice = ranked.slice(0, 2).map((c) => ({
-    tag: c.tag,
-    ...drills[c.tag],
-    target:
-      shotTypes
-        .map((type) => ({
-          type,
-          n: misses.filter((s) => s.type === type && s.deficiency === c.tag)
-            .length,
-        }))
-        .filter((r) => r.n > 0)
-        .sort((a, b) => b.n - a.n)[0]?.type ?? "the charted shot types",
-  }));
+  const practice = ranked
+    .filter((c): c is typeof c & { tag: keyof typeof drills } =>
+      Object.hasOwn(drills, c.tag),
+    )
+    .slice(0, 2)
+    .map((c) => ({
+      tag: c.tag,
+      ...drills[c.tag],
+      target:
+        shotTypes
+          .map((type) => ({
+            type,
+            n: misses.filter(
+              (s) => s.type === type && taggedMissLabels(s).includes(c.tag),
+            ).length,
+          }))
+          .filter((r) => r.n > 0)
+          .sort((a, b) => b.n - a.n)[0]?.type ?? "the charted shot types",
+    }));
   return {
     classified: classified.length,
     misses: misses.length,
@@ -214,7 +228,10 @@ export function reportMisses(event: CoachEvent, playerId?: string) {
       )
       .filter((r) => r.attempts),
     byGame: event.games.map((g, i) =>
-      row(g.label || `Game ${i + 1}`, selected(currentShots(g.state.events))),
+      row(
+        g.label || `Game ${i + 1}`,
+        shots.filter((shot) => shot.gameId === g.id),
+      ),
     ),
     practice,
     definition:

@@ -638,7 +638,9 @@ test("report navigation is read-only, generation is explicit, and PDFs contain o
     "Performance over time",
     "Performance by shot",
     "Performance by turn",
-    "Miss diagnosis",
+    "Shot outcomes",
+    "Miss reasons",
+    "Recurring misses by shot",
     "Technical review",
     "Your flagged shots",
   ]) {
@@ -904,7 +906,7 @@ test("report email requires recipient review and explicit send; coach reports ha
   ).toHaveCount(0);
   await page.getByRole("button", { name: "Team report", exact: true }).click();
   await expect(
-    page.getByRole("heading", { name: "Miss diagnosis", exact: true }),
+    page.getByRole("heading", { name: "Miss reasons", exact: true }),
   ).toBeVisible();
   await expect(
     page.getByRole("heading", { name: "Team flagged shots", exact: true }),

@@ -5,6 +5,7 @@ import {
   analysisEventShots,
   analysisRecords,
 } from "./advanced-analysis";
+import { taggedMissLabels, shotReviewStats } from "./report-misses";
 import { defaultShotFilters, filterAnalysisShots } from "./analysis";
 import { emptySupplement, selectMisses } from "./enhanced-catalog";
 import { sampleEvent } from "./event";
@@ -101,6 +102,52 @@ it("only projects assessed legacy miss observations from the current matching re
   ).toEqual([]);
   f.change({ ...shot, type: "Peel" });
   expect(f.project()[0].observedMisses).toBeUndefined();
+});
+
+it("unifies explicit miss selections across old and new fields without counting their mirrors", () => {
+  const f = fixture();
+  const observation = selectMisses(f.value, ["wreck_on_guard"]);
+  observation.values.additionalDeficiencies = ["Undercurl", "Light"];
+  observation.assessments.deficiency = "assessed";
+  observation.values.resultObservations = [
+    "wreck",
+    "wreck_on_guard",
+    "light",
+    "under_curl",
+    "overswept",
+    "half_shot",
+  ];
+  f.doc.value = observation;
+  const [shot] = f.project();
+  expect(taggedMissLabels(shot).sort()).toEqual([
+    "Half Shot",
+    "Light",
+    "Overswept",
+    "Undercurl",
+    "Wreck on guard",
+  ]);
+  expect(
+    shotReviewStats([
+      { ...shot, execution: null },
+      { ...shot, execution: "Make" },
+      { ...shot, excluded: "Pick" },
+    ]),
+  ).toMatchObject({
+    outcomes: { Make: 1, Partial: 0, Limited: 0, Xmiss: 0 },
+    reasons: { tagged: 2, counts: { "Wreck on guard": 2, Light: 2 } },
+    missPatternsByShot: {
+      Draw: { tagged: 2, counts: { "Wreck on guard": 2 } },
+    },
+  });
+  expect(
+    taggedMissLabels({
+      ...shot,
+      resultObservations: null,
+      additionalDeficiencies: [],
+      observedMisses: [],
+      deficiency: "Make",
+    }),
+  ).toEqual([]);
 });
 
 it("does not resurrect older values after a later clear or invalid revision", () => {

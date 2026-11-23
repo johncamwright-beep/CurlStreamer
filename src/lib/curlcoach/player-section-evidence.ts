@@ -1,19 +1,17 @@
 import { playerMatrices } from "./player-scorecard";
 import { playerEventWindow, type EventPerformance } from "./event-performance";
-import { currentShots } from "./model";
+import { analysisEventShots } from "./advanced-analysis";
 import type { CoachEvent, CoachGame } from "./event";
 import { difficultyIdentity } from "./difficulty";
-import { missTags } from "./report-misses";
-import { missChoices, label, positiveFeedbackLabels } from "./enhanced-catalog";
-import { resultLabels } from "./shot-subtypes";
+import { taggedMissLabels } from "./report-misses";
+import { positiveFeedbackLabels } from "./enhanced-catalog";
 import { cellText, type MatrixCell } from "./report-matrix";
 import type { Evidence } from "./reports";
 
 type Counts = { assessed: number; hits: Map<string, number> };
 
-// Count each observation on the shot on which it was recorded. Keep separate
-// assessment denominators for the standard and enhanced entry fields.
-function observations(games: CoachGame[], playerId: string) {
+// Use the same per-shot reasons and denominator as the charts.
+function observations(event: CoachEvent, games: CoachGame[], playerId: string) {
   const counts = new Map<string, Counts>();
   function record(type: string | null, field: string, observations: string[]) {
     for (const shot of type ? [type, "All shots"] : ["All shots"]) {
@@ -30,15 +28,10 @@ function observations(games: CoachGame[], playerId: string) {
   }
   for (const game of games) {
     const records = new Map(game.advancedRecords?.map((r) => [r.shotId, r]));
-    for (const s of currentShots(game.state.events)) {
+    for (const s of analysisEventShots({ ...event, games: [game] })) {
       if (s.excluded || s.playerId !== playerId) continue;
-      if (
-        s.execution &&
-        s.execution !== "Make" &&
-        missTags.some((tag) => tag === s.deficiency)
-      ) {
-        record(s.type, "Tagged miss", [s.deficiency!]);
-      }
+      const reasons = taggedMissLabels(s);
+      if (reasons.length) record(s.type, "Tagged miss", reasons);
       const r = records.get(s.id);
       if (
         !game.advancedReady ||
@@ -46,24 +39,7 @@ function observations(games: CoachGame[], playerId: string) {
         r.identity !== difficultyIdentity(s)
       )
         continue;
-      const { resultObservations, misses, positiveFeedback } = r.values;
-      if (
-        Array.isArray(resultObservations) &&
-        r.assessments.results === "assessed"
-      )
-        record(
-          s.type,
-          "Recorded result",
-          resultObservations.flatMap((k) =>
-            Object.hasOwn(resultLabels, k) ? [resultLabels[k]] : [],
-          ),
-        );
-      if (Array.isArray(misses) && r.assessments.misses === "assessed")
-        record(
-          s.type,
-          "Observed miss",
-          missChoices.filter((k) => misses.includes(k)).map(label),
-        );
+      const { positiveFeedback } = r.values;
       if (Array.isArray(positiveFeedback))
         record(
           s.type,
@@ -133,7 +109,7 @@ export function playerSectionEvidence(
       }
     }
     const observationsByPeriod = periods.map((games) =>
-      observations(games, playerId),
+      observations(event, games, playerId),
     );
     const keys = new Set(observationsByPeriod.flatMap((p) => [...p.keys()]));
     for (const key of keys) {

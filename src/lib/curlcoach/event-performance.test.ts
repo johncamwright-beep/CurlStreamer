@@ -110,7 +110,7 @@ function event(id: string, date: string, shots: AnalysisShot[]) {
   });
   return e;
 }
-it("shows the three most frequent same-shot pairs with pooled, observed denominators", () => {
+it("shows recurring same-shot pairs with pooled, observed denominators", () => {
   const over = {
     ...s(2),
     deficiency: "Overcurl" as const,
@@ -164,6 +164,7 @@ it("shows the three most frequent same-shot pairs with pooled, observed denomina
     "Come Around · Wreck on guard",
     "Draw · Light",
     "Draw · Overcurl",
+    "Peel · Flash Wide",
   ]);
   expect(pairs(trends)[0].cells).toEqual([
     { value: 100, sample: "2/2" },
@@ -538,4 +539,41 @@ it("connects measured points across missing events and grounds player notes in t
     .rows.find((r) => r.label === "Draw")!;
   expect(matrixPoints(draw).map((p) => p.x)).toEqual([0, 1]);
   expect(draw.cells[1].value).toBeNull();
+});
+it("ranks the five most frequent recurring shot and miss pairs in both matrices", () => {
+  const reasons = [
+    "Light",
+    "Heavy",
+    "Undercurl",
+    "Overcurl",
+    "Management",
+  ] as const;
+  const shots = reasons.flatMap((deficiency, i) =>
+    copies(i + 2, { ...s(3), deficiency }),
+  );
+  const selected = event("qualifier", "2026-11-20", shots);
+  selected.games.push(
+    ...event(
+      "second game",
+      "2026-11-21",
+      copies(2, { ...s(3), type: "Peel", deficiency: "Light" }),
+    ).games,
+  );
+  const saved = {
+    playerId: "lead",
+    eventPerformance: reportEventPerformance(selected, "lead", true),
+    narrative: { eventStats: [], eventTrends: [] },
+  } as unknown as SavedReport;
+  for (const matrix of playerScorecardBlocks(
+    saved,
+    playerScorecard(saved)!,
+  ).filter((b): b is ReportMatrix => b.kind === "matrix")) {
+    const rows = matrix.groups.find((group) =>
+      group.title.startsWith("Recurring misses by shot"),
+    )!.rows;
+    expect(rows.map((r) => r.label)).toEqual(
+      [...reasons].reverse().map((r) => "Draw · " + r),
+    );
+    expect(rows[0].total.sample).toBe("6/20");
+  }
 });

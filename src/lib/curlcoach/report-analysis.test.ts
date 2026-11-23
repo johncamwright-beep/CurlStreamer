@@ -2,6 +2,7 @@ import { expect, it } from "vitest";
 import { gameShots, sampleEvent } from "./event";
 import { reportAnalysis, withReportAnalysis } from "./report-analysis";
 import { reportContent } from "./report-content";
+import { difficultyIdentity } from "./difficulty";
 import type { ReportPacket } from "./reports";
 
 it("renders checkpoint notes without loaded matrices and serves legacy tabs on the same packet", () => {
@@ -63,6 +64,7 @@ it("uses scoped charting for performance, misses, technique, and linked notes", 
       ...sample,
       playerId: "second",
       type: "Peel",
+      deficiency: "Overcurl",
       grade: 5,
       execution: "Make",
       flagged: true,
@@ -81,6 +83,22 @@ it("uses scoped charting for performance, misses, technique, and linked notes", 
     at: "2026-10-10T12:00:00Z",
   }));
   second.state.events = [];
+  first.analysisReady = true;
+  first.analysisRecords = [
+    {
+      shotId: "shot-0",
+      identity: difficultyIdentity(shots[0]),
+      revision: 1,
+      shotSubtype: null,
+      intendedWeight: null,
+      observedDestination: null,
+      destinationAssessment: "not_assessed",
+      resultAssessment: "assessed",
+      resultObservations: ["light", "overswept"],
+      observedMisses: ["overswept"],
+      analysisStatus: "available",
+    },
+  ];
   first.reviewCorrections = [
     {
       shotId: "shot-0",
@@ -107,6 +125,17 @@ it("uses scoped charting for performance, misses, technique, and linked notes", 
   } as ReportPacket;
   const [lead, teammate, legacy] = withReportAnalysis(packet, event).reports;
   expect(lead.analysis).toEqual(player);
+  expect(lead.missesByGame?.map((g) => g.shots.length)).toEqual([1, 0]);
+  expect(lead.missesByGame?.[0].shots[0]).toMatchObject({
+    type: "Draw",
+    tags: ["Light", "Overswept"],
+    flag: { url: "https://www.youtube.com/watch?v=abcdefghijk&t=132s" },
+  });
+  expect(teammate.missesByGame?.[0].shots).toEqual([
+    expect.objectContaining({ type: "Peel", tags: ["Overcurl"] }),
+  ]);
+  expect(teammate.missesByGame?.[0].shots[0]).not.toHaveProperty("flag");
+  expect(legacy.missesByGame).toBeUndefined();
   expect(lead.flags).toEqual([
     expect.objectContaining({
       note: "Review the wide release",
@@ -123,6 +152,13 @@ it("uses scoped charting for performance, misses, technique, and linked notes", 
   ).reports;
   expect(team.analysis?.overview[0].percent).toBe(50);
   expect(team.playerComparison).toBeUndefined();
+  expect(team.missesByGame?.[0].shots).toHaveLength(2);
+  expect(
+    team.missesByGame?.[0].shots.find((s) => s.type === "Draw"),
+  ).not.toHaveProperty("flag");
+  expect(
+    team.missesByGame?.[0].shots.find((s) => s.type === "Peel"),
+  ).toHaveProperty("flag");
   const [coach] = withReportAnalysis(
     { ...packet, audience: "coach", reports: [{}] as ReportPacket["reports"] },
     event,
@@ -139,5 +175,6 @@ it("uses scoped charting for performance, misses, technique, and linked notes", 
       shooter: "Blair (Second)",
     }),
   ]);
+  expect(coach.missesByGame?.[0].shots.filter((s) => s.flag)).toHaveLength(2);
   expect(packet.reports[0].analysis).toBeUndefined();
 });

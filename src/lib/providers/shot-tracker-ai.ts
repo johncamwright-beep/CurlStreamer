@@ -70,7 +70,7 @@ async function generateOnce(
     const raw = await requestNarrative(
       config.model,
       `Write two short coaching notes for one curling player. Address the player as you. Use only the supplied aggregate evidence. eventStats covers the selected event, with G marking games. eventTrends covers up to five events, E in chronological order. Use only event- citations for eventStats and events- citations for eventTrends.
-Return at most two concrete findings and fifty-five words per section. An empty array omits a section. If the charting shows no useful pattern, leave it empty. Prefer recurring shot-specific misses or strengths. Use a shot and miss together only when the same evidence row measures both. A share of tagged misses describes the mix of recorded misses for that shot type. It cannot establish how often that miss occurs per attempt. A generic wreck does not identify the stone. Assessed observations can overlap. Do not infer a cause, blame, or change in skill from missing calls or a change in difficulty. Check each period and its sample. A one-shot category or isolated rebound does not establish a trend. Distinguish a single-event dip from a sustained direction. Missing periods are unobserved. Use plain curling language, no numbers, percentages, names, statistical recap, or generic drills. Each statement must cite the specific evidence for it.` +
+Lead with the strongest finding. Write one short sentence per finding, ideally fifteen to twenty-four words. Use at most two findings and fifty-five words in total per section. An empty array omits a section. If the charting shows no useful pattern, leave it empty. Prefer recurring shot-specific misses or strengths. Use a shot and miss together only when the same evidence row measures both. A share of tagged misses describes the mix of recorded misses for that shot type. It cannot establish how often that miss occurs per attempt. A generic wreck does not identify the stone. Assessed observations can overlap. Do not infer a cause, blame, or change in skill from missing calls or a change in difficulty. Check each period and its sample. A one-shot category or isolated rebound does not establish a trend. Distinguish a single-event dip from a sustained direction. Missing periods are unobserved. Use plain curling language, no numbers, percentages, names, statistical recap, or generic drills. Each statement must cite the specific evidence for it.` +
         correction,
       { evidence },
       playerNarrativeSchema,
@@ -83,8 +83,7 @@ Return at most two concrete findings and fifty-five words per section. An empty 
     for (const section of ["eventStats", "eventTrends"] as const) {
       const findings = parsed.data[section];
       const words = findings.map((f) => f.text).join(" ");
-      if (words.trim().split(/\s+/).length > 55 || /https?:|www\./i.test(words))
-        throw new Error("Invalid report prose");
+      if (/https?:|www\./i.test(words)) throw new Error("Invalid report prose");
       if (
         forbiddenNames.some(
           (n) => n.length > 2 && words.toLowerCase().includes(n.toLowerCase()),
@@ -101,6 +100,16 @@ Return at most two concrete findings and fifty-five words per section. An empty 
         )
       )
         throw new Error("Unknown evidence");
+      // Keep whole, validated findings in priority order when both do not fit together.
+      let remaining = 55;
+      parsed.data[section] = findings.filter((finding) => {
+        const length = finding.text.trim().split(/\s+/).length;
+        if (length > remaining) return false;
+        remaining -= length;
+        return true;
+      });
+      if (findings.length && !parsed.data[section].length)
+        throw new Error("Invalid report prose");
     }
     return parsed.data;
   }

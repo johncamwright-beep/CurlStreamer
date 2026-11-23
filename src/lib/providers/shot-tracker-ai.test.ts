@@ -346,7 +346,7 @@ it("writes only grounded player section findings, retries cross-section citation
     text: "Your draws repeatedly overcurled.",
     evidence: [row.id],
   };
-  const output = (eventTrends: (typeof finding)[]) =>
+  const output = (eventTrends: (typeof finding)[], eventStats = [finding]) =>
     Response.json({
       status: "completed",
       output: [
@@ -355,7 +355,7 @@ it("writes only grounded player section findings, retries cross-section citation
           content: [
             {
               type: "output_text",
-              text: JSON.stringify({ eventStats: [finding], eventTrends }),
+              text: JSON.stringify({ eventStats, eventTrends }),
             },
           ],
         },
@@ -387,6 +387,12 @@ it("writes only grounded player section findings, retries cross-section citation
     ),
   ).toEqual({ eventStats: [], eventTrends: [] });
   expect(fetcher).toHaveBeenCalledTimes(2);
+  const longer = { ...finding, text: "Draws ".repeat(30).trim() };
+  fetcher.mockImplementation(async () => output([], [longer, longer]));
+  expect(await generateShotTrackerNarrative(scoped, "players", [])).toEqual({
+    eventStats: [longer],
+    eventTrends: [],
+  });
   for (const invalid of ["Draw ".repeat(56).trim(), "Read www.example.com"]) {
     finding.text = invalid;
     fetcher.mockImplementation(async () => output([]));

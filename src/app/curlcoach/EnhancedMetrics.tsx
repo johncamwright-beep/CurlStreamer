@@ -1,4 +1,6 @@
 "use client";
+import { positiveFeedbackLabels } from "@/lib/curlcoach/enhanced-catalog";
+import { weightLabels } from "@/lib/curlcoach/shot-subtypes";
 
 import {
   createContext,
@@ -215,7 +217,7 @@ export function ValueField({
                   .choices!.filter((v) => v === choice || !selected.includes(v))
                   .map((v) => (
                     <option key={v} value={v}>
-                      {label(v)}
+                      {optionLabels?.[v] ?? label(v)}
                     </option>
                   ))}
               </select>
@@ -247,7 +249,7 @@ export function ValueField({
               .choices!.filter((v) => !selected.includes(v))
               .map((v) => (
                 <option key={v} value={v}>
-                  {label(v)}
+                  {optionLabels?.[v] ?? label(v)}
                 </option>
               ))}
           </select>
@@ -275,7 +277,9 @@ export function ValueField({
                   .filter((choice) => !choice.includes("takeout"))
                   .map((choice) => (
                     <option value={choice} key={choice}>
-                      {label(choice)}
+                      {name === "intendedWeight"
+                        ? (weightLabels[choice] ?? label(choice))
+                        : label(choice)}
                     </option>
                   ))}
               </optgroup>
@@ -327,6 +331,52 @@ export function ValueField({
         </>
       )}
     </label>
+  );
+}
+
+export function PositiveFeedbackEntry({
+  value,
+  onChange,
+}: {
+  value: Supplement;
+  onChange: (s: Supplement) => void;
+}) {
+  return (
+    <div className="enhanced-miss-rows">
+      <ValueField
+        name="positiveFeedback"
+        field={catalogue.positiveFeedback}
+        values={value.values}
+        optionLabels={positiveFeedbackLabels}
+        onChange={(values) =>
+          onChange(
+            changeObservation(
+              value,
+              "positiveFeedback",
+              values.positiveFeedback,
+            ),
+          )
+        }
+      />
+      <label>
+        Positive feedback note (optional)
+        <textarea
+          aria-label="Positive feedback note"
+          rows={2}
+          maxLength={1000}
+          value={String(value.values.positiveFeedbackNote ?? "")}
+          onChange={(e) =>
+            onChange(
+              changeObservation(
+                value,
+                "positiveFeedbackNote",
+                e.target.value || undefined,
+              ),
+            )
+          }
+        />
+      </label>
+    </div>
   );
 }
 
@@ -469,7 +519,13 @@ export function EnhancedFields({
       <ValueField
         name={key}
         field={reference ? { ...catalogue[key], choices } : catalogue[key]}
-        optionLabels={optionLabels}
+        optionLabels={
+          key === "positiveFeedback"
+            ? positiveFeedbackLabels
+            : key === "intendedWeight"
+              ? weightLabels
+              : optionLabels
+        }
         values={value.values}
         options={key === "namedPath" ? paths : undefined}
         onChange={(values) => valuesChanged(values, key)}
@@ -602,7 +658,12 @@ export function EnhancedFields({
 
       {
         title: "Delivery and deficiency assessments",
-        fields: ["additionalTechnical", "additionalDeficiencies"],
+        fields: [
+          "additionalTechnical",
+          "additionalDeficiencies",
+          "positiveFeedback",
+          "positiveFeedbackNote",
+        ],
         assessments: ["line", "release", "technical", "deficiency"],
       },
 

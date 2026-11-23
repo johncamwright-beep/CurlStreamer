@@ -71,9 +71,39 @@ export const missChoices = [
   "failed_to_freeze",
   "failed_to_bury",
   "through_house_unintentionally",
+  "not_enough_broom",
+  "too_much_broom",
+  "overswept",
+  "missed_sweeping_call",
+  "underswept",
   "other_observable_miss",
 ] as const;
+export const positiveFeedbackLabels: Record<string, string> = {
+  individual_good_adjustment: "Individual · Good adjustment",
+  individual_good_delivery_fix: "Individual · Good delivery fix",
+  team_great_communication: "Team · Great communication",
+  team_good_line_call: "Team · Good line call",
+  team_good_sweep: "Team · Good sweep",
+  team_good_weight_judgement: "Team · Good weight judgement",
+};
 export const catalogue: Record<string, Field> = {
+  positiveFeedback: {
+    ...field(
+      "Positive feedback",
+      Object.keys(positiveFeedbackLabels),
+      "Review",
+      "Observed individual or team positives, independent of shot grade and miss observations.",
+    ),
+    multiple: true,
+  },
+  positiveFeedbackNote: {
+    label: "Positive feedback note",
+    max: 1000,
+    location: "Review",
+    meaning:
+      "Optional coach explanation of positive feedback; not included in AI evidence.",
+    example: "Clear calls and a well-timed sweep.",
+  },
   shotSubtype: field(
     "Shot subtype",
     shotSubtypes.map((s) => s.id),

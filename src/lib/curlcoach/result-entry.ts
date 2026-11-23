@@ -84,3 +84,25 @@ export function changeObservation(
     next.assessments[group] = entry === undefined ? "not_assessed" : "assessed";
   return next;
 }
+
+export const canadaResultDeficiencies = {
+  light: "Light",
+  heavy: "Heavy",
+  under_curl: "Undercurl",
+  over_curl: "Overcurl",
+  management: "Management",
+} as const;
+
+/** The first selected standard reason is the single Curling Canada deficiency. */
+export function deficiencyForResults(
+  results: string[] | undefined,
+): import("./model").Shot["deficiency"] {
+  if (results === undefined) return null;
+  for (const result of results) {
+    if (Object.hasOwn(canadaResultDeficiencies, result))
+      return canadaResultDeficiencies[
+        result as keyof typeof canadaResultDeficiencies
+      ];
+  }
+  return "Make";
+}

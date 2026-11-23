@@ -1,6 +1,9 @@
 import { openEntryTab } from "./entry-tabs";
 import { chooseWeight, openWeight, weightField } from "./weight-roller";
-import { weightLabels } from "../../src/lib/curlcoach/shot-subtypes";
+import {
+  weightLabels,
+  resultLabels,
+} from "../../src/lib/curlcoach/shot-subtypes";
 import { expect, test, type Page } from "@playwright/test";
 
 // Shared tabbed entry regression coverage; phone and desktop layout is exercised in mobile-entry.spec.ts.
@@ -102,14 +105,7 @@ test("workbook selections, corrections, clearing, Standard mode and historical p
       .getByRole("combobox", { name: "Result observations", exact: true })
       .locator("option")
       .allTextContents(),
-  ).toEqual([
-    "Not assessed",
-    "No observed miss",
-    "Light",
-    "Heavy",
-    "Hog",
-    "In-House",
-  ]);
+  ).toEqual(["Not assessed", "Make", ...Object.values(resultLabels)]);
   await openEntryTab(page, "Shot");
   await page
     .getByRole("combobox", { name: "Shot type", exact: true })
@@ -135,7 +131,7 @@ test("workbook selections, corrections, clearing, Standard mode and historical p
   await openEntryTab(page, "Execution");
   await expect(
     page.getByRole("combobox", { name: "Result observations", exact: true }),
-  ).toHaveValue("");
+  ).toHaveValue("none");
   await openEntryTab(page, "Execution");
   await expect(weightField(page, "Observed weight")).toHaveText(
     "Control (called)",
@@ -149,6 +145,9 @@ test("workbook selections, corrections, clearing, Standard mode and historical p
   await page
     .getByRole("combobox", { name: "Add another miss", exact: true })
     .selectOption("jammed");
+  await page
+    .getByRole("combobox", { name: "Add another miss", exact: true })
+    .selectOption("under_curl");
   await openEntryTab(page, "Technical");
   await page
     .getByRole("combobox", { name: "Line", exact: true })
@@ -159,6 +158,15 @@ test("workbook selections, corrections, clearing, Standard mode and historical p
   await expect(
     page.getByRole("combobox", { name: "Guard to clear", exact: true }),
   ).toBeHidden();
+  await page
+    .getByRole("combobox", { name: "Positive feedback", exact: true })
+    .selectOption("individual_good_adjustment");
+  await page
+    .getByRole("combobox", { name: "Positive feedback", exact: true })
+    .selectOption("team_good_sweep");
+  await page
+    .getByRole("textbox", { name: "Positive feedback note", exact: true })
+    .fill("Good recovery after the previous shot");
   // Save first: historical details are available only during correction.
   let observationReloads = 0;
   const countReloads = (request: import("@playwright/test").Request) => {
@@ -223,6 +231,7 @@ test("workbook selections, corrections, clearing, Standard mode and historical p
     (e: { shot?: { end: number } }) => e.shot?.end === Number(end),
   );
   expect(saved.shot.type).toBe("Hit & Roll");
+  expect(saved.shot.deficiency).toBe("Undercurl");
   const difficultyWorkspace = await (
     await page.request.get(
       "/api/curlcoach/workspace?source=sample&eventId=practice&includeDifficulty=true",
@@ -249,7 +258,9 @@ test("workbook selections, corrections, clearing, Standard mode and historical p
     ).value;
   expect((await read()).values).toMatchObject({
     shotSubtype: "hit_and_roll_under",
-    resultObservations: ["roll_far", "jammed"],
+    resultObservations: ["roll_far", "jammed", "under_curl"],
+    positiveFeedback: ["individual_good_adjustment", "team_good_sweep"],
+    positiveFeedbackNote: "Good recovery after the previous shot",
     observedDestination: "button",
     guardToClear: "yes",
     tolerance: "tight",

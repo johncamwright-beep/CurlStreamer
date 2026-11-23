@@ -7,7 +7,11 @@ import {
   label,
   type Supplement,
 } from "@/lib/curlcoach/enhanced-catalog";
-import { changeObservation } from "@/lib/curlcoach/result-entry";
+import {
+  changeObservation,
+  canadaResultDeficiencies,
+  deficiencyForResults,
+} from "@/lib/curlcoach/result-entry";
 import {
   entryChoices,
   allWeights,
@@ -160,17 +164,42 @@ export function DifficultyEntry({
   );
 }
 
-export function ResultsEntry({ shot, value, enhanced, onChange }: Props) {
+const canadaResults: Record<string, Shot["deficiency"]> =
+  canadaResultDeficiencies;
+export function ResultsEntry({
+  shot,
+  value,
+  enhanced,
+  onChange,
+  onShot,
+}: Props & { onShot?: (shot: Shot) => void }) {
   const choices = entryChoices(
     shot.type,
     value.values.shotSubtype,
     enhanced,
   ).results;
-  const selected = (value.values.resultObservations ?? []) as string[];
+  const stored = (value.values.resultObservations ?? []) as string[];
+  const standard = onShot
+    ? Object.keys(canadaResults).find(
+        (key) => canadaResults[key] === shot.deficiency,
+      )
+    : undefined;
+  const selected =
+    standard && !stored.includes(standard) ? [standard, ...stored] : stored;
   const primary =
-    selected[0] ?? (value.assessments.results === "assessed" ? "none" : "");
-  const set = (results: string[] | undefined) =>
+    selected[0] ??
+    (value.assessments.results === "assessed" ||
+    (onShot && shot.deficiency === "Make")
+      ? "none"
+      : "");
+  const set = (results: string[] | undefined) => {
     onChange(changeObservation(value, "resultObservations", results));
+    if (onShot)
+      onShot({
+        ...shot,
+        deficiency: deficiencyForResults(results),
+      });
+  };
   return (
     <div className="enhanced-miss-rows">
       <Choice
@@ -178,7 +207,7 @@ export function ResultsEntry({ shot, value, enhanced, onChange }: Props) {
         blank="Not assessed"
         value={primary}
         choices={["none", ...choices]}
-        labels={{ ...resultLabels, none: "No observed miss" }}
+        labels={{ ...resultLabels, none: onShot ? "Make" : "No observed miss" }}
         onChange={(result) =>
           set(
             !result

@@ -42,12 +42,12 @@ describe("weight roller's initial display", () => {
   });
 
   it("keeps an out-of-list saved value visible and clearable", () => {
-    const markup = render("back_button");
+    const markup = render("legacy_weight");
 
     expect(markup).toMatch(
-      />Back button<small[^>]*> \(previous selection\)<\/small>/,
+      />Legacy weight<small[^>]*> \(previous selection\)<\/small>/,
     );
-    expect(markup).not.toContain(">Back button</div>");
+    expect(markup).not.toContain(">Legacy weight</div>");
     expect(markup).not.toMatch(/aria-label="Clear weight" disabled/);
     expect(render(undefined, "invalid")).toContain(">Not assessed</span>");
   });

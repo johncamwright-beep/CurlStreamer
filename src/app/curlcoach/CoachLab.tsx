@@ -21,7 +21,6 @@ import {
 } from "react";
 import {
   currentShots,
-  deficiencies,
   lines,
   releases,
   technicals,
@@ -63,6 +62,7 @@ import EntryOverlay from "./EntryOverlay";
 import LocalFlagCapture, { type LocalFlagHandle } from "./LocalFlagCapture";
 import {
   EnhancedFields,
+  PositiveFeedbackEntry,
   GameContext,
   useEnhancedGame,
   useMetrics,
@@ -82,7 +82,7 @@ const blank: Shot = {
   turn: null,
   execution: null,
   grade: null,
-  deficiency: null,
+  deficiency: "Make",
   review: null,
   excluded: null,
   note: "",
@@ -1279,13 +1279,13 @@ export default function CoachLab({
                                   />
                                   <ResultsEntry
                                     shot={draft}
+                                    onShot={setDraft}
                                     value={enhanced}
                                     enhanced={enhancedMode}
                                     onChange={changeEnhanced}
                                   />
                                 </>
                               )}
-                            {choose("deficiency", "Deficiency", deficiencies)}
                           </>,
                         )}
                         {entryGroup(
@@ -1294,6 +1294,14 @@ export default function CoachLab({
                             {choose("line", "Line", lines)}
                             {choose("release", "Release", releases)}
                             {choose("technical", "Technical", technicals)}
+                            {!!context &&
+                              metrics.ready &&
+                              enhancedData.ready && (
+                                <PositiveFeedbackEntry
+                                  value={enhanced}
+                                  onChange={changeEnhanced}
+                                />
+                              )}
                           </>,
                         )}
                       </div>

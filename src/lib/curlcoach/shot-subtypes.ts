@@ -11,13 +11,12 @@ export function subtypeFor(type: Shot["type"], id: unknown) {
   return shotSubtypes.find((s) => s.id === id && s.standard === type);
 }
 export function entryChoices(
-  type: Shot["type"],
-  id: unknown,
-  enhanced: boolean,
+  _type: Shot["type"],
+  _id: unknown,
+  _enhanced: boolean,
 ) {
-  const subtype = enhanced ? subtypeFor(type, id) : undefined;
   return {
     weights: allWeights,
-    results: subtype?.results ?? allResults,
+    results: allResults,
   };
 }

@@ -1,6 +1,7 @@
 import { currentShots, report, type Shot, type State } from "./model";
 import {
   catalogue,
+  positiveFeedbackLabels,
   label,
   standardConflicts,
   supplementSchema,
@@ -25,6 +26,7 @@ const fields = [
   "intendedWeight",
   "observedDestination",
   "resultObservations",
+  "positiveFeedback",
   "observedWeight",
   "contactPlan",
   "contactResult",
@@ -307,6 +309,7 @@ export function advancedReport(
     );
   }
   distribution("Result observations", "resultObservations", resultLabels);
+  distribution("Positive feedback", "positiveFeedback", positiveFeedbackLabels);
   distribution(
     "Observed weight destinations",
     "observedDestination",

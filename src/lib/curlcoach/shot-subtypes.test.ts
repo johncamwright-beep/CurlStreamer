@@ -38,10 +38,10 @@ describe("workbook shot entries", () => {
         "Hit & Roll",
       );
   });
-  it("offers every called weight while keeping the selected subtype's result choices", () => {
+  it("offers every weight and miss for every subtype", () => {
     expect(entryChoices("Guard/Front Stone", "guard", true)).toEqual({
       weights: allWeights,
-      results: ["light", "heavy", "hog", "in_house"],
+      results: allResults,
     });
     expect(
       supplementSchema.safeParse({
@@ -49,6 +49,14 @@ describe("workbook shot entries", () => {
         values: { shotSubtype: "guard", intendedWeight: "board" },
       }).success,
     ).toBe(true);
+    for (const subtype of shotSubtypes)
+      expect(
+        entryChoices(
+          subtype.standard as (typeof shotTypes)[number],
+          subtype.id,
+          true,
+        ).results,
+      ).toEqual(allResults);
     for (const args of [
       ["Draw", "", true],
       ["Draw", "guard", true],
@@ -91,4 +99,46 @@ describe("workbook shot entries", () => {
       }).success,
     ).toBe(false);
   });
+});
+
+it("validates new weights, broom/sweeping misses and positive feedback without altering legacy button IDs", () => {
+  for (const weight of [
+    "back_line",
+    "just_through",
+    "back_button",
+    "biter",
+    "button",
+  ]) {
+    const s = changeObservation(
+      changeObservation(emptySupplement(), "intendedWeight", weight),
+      "observedDestination",
+      weight,
+    );
+    expect(supplementSchema.parse(s).values.observedDestination).toBe(weight);
+  }
+  const s = changeObservation(emptySupplement(), "resultObservations", [
+    "not_enough_broom",
+    "too_much_broom",
+    "overswept",
+    "missed_sweeping_call",
+    "underswept",
+  ]);
+  s.values.positiveFeedback = [
+    "individual_good_adjustment",
+    "team_great_communication",
+  ];
+  s.values.positiveFeedbackNote = "Encouraging note";
+  expect(supplementSchema.safeParse(s).success).toBe(true);
+  expect(
+    supplementSchema.safeParse({
+      ...s,
+      values: { ...s.values, positiveFeedback: ["invented"] },
+    }).success,
+  ).toBe(false);
+  expect(
+    supplementSchema.safeParse({
+      ...s,
+      values: { ...s.values, positiveFeedbackNote: "x".repeat(1001) },
+    }).success,
+  ).toBe(false);
 });

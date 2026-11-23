@@ -239,3 +239,14 @@ describe("assessment coverage", () => {
     );
   });
 });
+
+import { deficiencyForResults } from "./result-entry";
+it("routes unified misses into the primary Canada deficiency without inventing a grade", () => {
+  expect(deficiencyForResults([])).toBe("Make");
+  expect(deficiencyForResults(undefined)).toBeNull();
+  expect(deficiencyForResults(["overswept", "under_curl", "heavy"])).toBe(
+    "Undercurl",
+  );
+  expect(deficiencyForResults(["heavy", "under_curl"])).toBe("Heavy");
+  expect(deficiencyForResults(["management"])).toBe("Management");
+});

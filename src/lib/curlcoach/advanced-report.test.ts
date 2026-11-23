@@ -255,3 +255,22 @@ describe("advanced report evidence", () => {
     ).toBe(finding.text);
   });
 });
+
+it("retains positive observations independently of misses and keeps free-text notes out of AI evidence", () => {
+  const f = fixture();
+  f.add(
+    {
+      positiveFeedback: ["individual_good_adjustment", "team_good_sweep"],
+      positiveFeedbackNote: "PRIVATE POSITIVE NOTE",
+      resultObservations: ["overswept"],
+    },
+    { results: "assessed" },
+    { execution: "Partial", grade: 3 },
+  );
+  const report = f.refresh();
+  const evidence = JSON.stringify(metrics(report));
+  expect(evidence).toContain("Individual · Good adjustment");
+  expect(evidence).toContain("Team · Good sweep");
+  expect(evidence).toContain("Overswept");
+  expect(evidence).not.toContain("PRIVATE POSITIVE NOTE");
+});

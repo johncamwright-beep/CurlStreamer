@@ -7,6 +7,7 @@ import {
   reportTrendPoints,
 } from "./report-content";
 import { reportLogo } from "./report-logo";
+import { drawReportMatrix } from "./report-matrix-pdf";
 import { playerScorecard } from "./player-scorecard";
 import { reportFontRegular, reportFontBold } from "./report-fonts";
 const clean = (s: string) =>
@@ -227,6 +228,13 @@ export async function buildReportPDF(report: SavedReport, eventName: string) {
   }
   for (const block of reportContent(report)) {
     switch (block.kind) {
+      case "matrix":
+        y = drawReportMatrix(pdf, block, y, bottom, () => {
+          pdf.addPage();
+          header();
+          return y;
+        });
+        break;
       case "heading":
         if (block.startPage) {
           pdf.addPage();

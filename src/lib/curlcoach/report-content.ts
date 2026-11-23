@@ -6,6 +6,7 @@ import {
   type DifficultySummary,
 } from "./difficulty";
 import type { SavedReport } from "./reports";
+import type { ReportMatrix } from "./report-matrix";
 import type { ReportFlag } from "./flagged-shots";
 import {
   reportDifficultyEvidenceText,
@@ -22,6 +23,7 @@ import {
 } from "./player-scorecard";
 
 export type ReportBlock =
+  | ReportMatrix
   | {
       kind: "heading";
       title: string;

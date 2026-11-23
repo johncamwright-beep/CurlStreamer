@@ -1,4 +1,5 @@
 import { useId } from "react";
+import ReportComparison from "./ReportComparison";
 import {
   reportContent,
   reportSummaryCards,
@@ -76,6 +77,8 @@ export default function ReportDocument({
         )}
         {reportContent(report).map((block, index) => {
           switch (block.kind) {
+            case "matrix":
+              return <ReportComparison key={block.title} matrix={block} />;
             case "heading":
               return <h4 key={index}>{block.title}</h4>;
             case "text":

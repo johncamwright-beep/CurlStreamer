@@ -12,6 +12,7 @@ import { difficultyIdentity } from "./difficulty";
 import { reportInputs } from "./reports";
 import { selectPromptEvidence } from "../providers/shot-tracker-ai";
 import { playerEventStats } from "./player-event-stats";
+import { matrixChange, matrixPoints, type ReportMatrix } from "./report-matrix";
 import {
   playerScorecard,
   playerScorecardBlocks,
@@ -68,6 +69,7 @@ function event(id: string, date: string, shots: AnalysisShot[]) {
   shots.forEach((value, i) => {
     const clean: Shot = {
       ...shot,
+      type: value.type,
       end: i + 1,
       grade: value.grade,
       playerId: value.playerId,
@@ -162,9 +164,74 @@ it("compares a player's completed earlier events and prints assessed zeros and m
     tagged: 0,
   });
   const blocks = playerScorecardBlocks(saved, card);
-  expect(JSON.stringify(blocks)).toContain("100.0% (12/12)");
+  const matrices = blocks.filter((b): b is ReportMatrix => b.kind === "matrix");
+  expect(matrices.map((m) => m.title)).toEqual(["Event Stats", "Trends"]);
+  for (const m of matrices) {
+    const untagged = m.groups
+      .flatMap((g) => g.rows)
+      .find((r) => r.label === "Untagged")!;
+    expect(untagged.cells.at(-1)).toEqual({ value: 100, sample: "12/12" });
+  }
   expect(JSON.stringify(blocks)).not.toMatch(
     /future|routine baseline|season difficulty index/i,
+  );
+});
+it("compares every game and the last five events with distinct counts, genuine zeroes and gaps", () => {
+  const recent = Array.from({ length: 6 }, (_, i) =>
+    event("Event " + i, `2026-01-0${i + 1}`, copies(2, s(i === 1 ? 0 : 3))),
+  );
+  const current = recent.pop()!;
+  const extra = Array.from(
+    { length: 6 },
+    (_, i) =>
+      event(
+        "Game " + (i + 2),
+        current.startDate!,
+        i === 4 ? [] : copies(1, s(5)),
+      ).games[0],
+  );
+  extra[0] = event("Peel game", current.startDate!, [
+    { ...s(4), type: "Peel" },
+  ]).games[0];
+  current.games.push(...extra);
+  current.performanceHistory = recent;
+  const saved = {
+    playerId: "lead",
+    eventPerformance: reportEventPerformance(current, "lead", true),
+    narrative: { practice: [] },
+  } as unknown as SavedReport;
+  const [games, events] = playerScorecardBlocks(
+    saved,
+    playerScorecard(saved)!,
+  ).filter((b): b is ReportMatrix => b.kind === "matrix");
+  expect(games.columns.map((c) => c.key)).toEqual([
+    "G1",
+    "G2",
+    "G3",
+    "G4",
+    "G5",
+    "G6",
+    "G7",
+  ]);
+  expect(events.columns.map((c) => c.name)).toEqual([
+    "Event 1",
+    "Event 2",
+    "Event 3",
+    "Event 4",
+    "Event 5",
+  ]);
+  const rows = (m: ReportMatrix) =>
+    m.groups.find((g) => g.title === "Shot performance")!.rows;
+  const draw = rows(events).find((r) => r.label === "Draw")!;
+  expect(draw.cells[0]).toEqual({ value: 0, sample: "2" });
+  expect(draw.cells.at(-1)?.value).toBeCloseTo((100 * 26) / 30);
+  expect(matrixChange(draw).text).toBe("+86.7 pp");
+  const gameDraw = rows(games).find((r) => r.label === "Draw")!;
+  expect(gameDraw.cells[5].value).toBeNull();
+  expect(matrixPoints(gameDraw)[5]).toBeNull();
+  expect(matrixChange(gameDraw).text).toBe("+40.0 pp");
+  expect(matrixChange(rows(events).find((r) => r.label === "Peel")!).text).toBe(
+    "—",
   );
 });
 it("pools historical routine shots without requiring subtype labels", () => {

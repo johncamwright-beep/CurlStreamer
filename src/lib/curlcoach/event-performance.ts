@@ -1,9 +1,10 @@
 import { analysisEventShots, type AnalysisShot } from "./advanced-analysis";
-import { report, shotTypes } from "./model";
+import { report, shotTypes, turns } from "./model";
 import { difficultyWeight, difficultProbability } from "./difficulty";
 import type { CoachEvent, Workspace } from "./event";
 import type { Evidence } from "./reports";
 import { playerEventStats } from "./player-event-stats";
+import { technicalSummary } from "./technical";
 
 export const MIN_BASELINE_SHOTS = 1;
 /** Same shot-weighted season reference for every event/game in the comparison. */
@@ -54,11 +55,12 @@ export type EventPerformancePoint = BaselineMetrics &
     baselineEvents: number;
     byType: Record<string, PerformanceMeasure>;
     bySubtype: Record<string, PerformanceMeasure>;
-    playerStats?: ReturnType<typeof playerEventStats>;
+    playerStats?: PlayerPeriodStats;
     games: (BaselineMetrics & {
       id: string;
       name: string;
       opponent?: string;
+      playerStats?: PlayerPeriodStats;
     })[];
   };
 export type EventPerformance = {
@@ -90,6 +92,46 @@ const measure = (shots: AnalysisShot[]): PerformanceMeasure => {
   const result = report(shots);
   return { percent: result.percent, graded: result.scored };
 };
+function shootingByType(shots: AnalysisShot[]) {
+  return Object.fromEntries(
+    shotTypes.map((type) => [
+      type,
+      measure(shots.filter((s) => s.type === type)),
+    ]),
+  );
+}
+
+function playerPeriodStats(
+  shots: AnalysisShot[],
+  byType = shootingByType(shots),
+) {
+  return {
+    ...playerEventStats(shots),
+    shooting: measure(shots),
+    byType,
+    byTurn: Object.fromEntries(
+      turns.map((turn) => [
+        turn,
+        measure(shots.filter((s) => s.turn === turn)),
+      ]),
+    ),
+    technical: technicalSummary(shots)
+      .filter((group) => group.recorded)
+      .map((group) => ({
+        title: group.title,
+        recorded: group.recorded,
+        rows: group.rows
+          .filter((row) => row.count)
+          .map(({ label, count, shooting, graded }) => ({
+            label,
+            count,
+            percent: shooting,
+            graded,
+          })),
+      })),
+  };
+}
+export type PlayerPeriodStats = ReturnType<typeof playerPeriodStats>;
 const rated = (shots: AnalysisShot[]) =>
   shots.filter((s) => eligible(s) && difficultyWeight(s) !== undefined);
 const average = (shots: AnalysisShot[]) =>
@@ -192,6 +234,7 @@ export function eventPerformance(
         );
       const shots = select(event),
         history = previous.flatMap((past) => select(past.event));
+      const byType = shootingByType(shots);
       const seasonDifficulty = average(
         rated(
           ordered
@@ -213,16 +256,11 @@ export function eventPerformance(
         baselineEvents: previous.length,
         ...measure(shots),
         ...(includePlayerStats && playerId
-          ? { playerStats: playerEventStats(shots) }
+          ? { playerStats: playerPeriodStats(shots, byType) }
           : {}),
         ...baselineMetrics(shots, history),
         seasonDifficulty,
-        byType: Object.fromEntries(
-          shotTypes.map((type) => [
-            type,
-            measure(shots.filter((s) => s.type === type)),
-          ]),
-        ),
+        byType,
         bySubtype: Object.fromEntries(
           [
             ...new Set(
@@ -233,13 +271,19 @@ export function eventPerformance(
             measure(shots.filter((s) => s.shotSubtype === subtype)),
           ]),
         ),
-        games: event.games.map((game) => ({
-          id: game.id,
-          name: game.label,
-          opponent: game.opponent,
-          ...baselineMetrics(select({ ...event, games: [game] }), history),
-          seasonDifficulty,
-        })),
+        games: event.games.map((game) => {
+          const gameShots = shots.filter((s) => s.gameId === game.id);
+          return {
+            id: game.id,
+            name: game.label,
+            opponent: game.opponent,
+            ...baselineMetrics(gameShots, history),
+            ...(includePlayerStats && playerId && event.id === currentEventId
+              ? { playerStats: playerPeriodStats(gameShots) }
+              : {}),
+            seasonDifficulty,
+          };
+        }),
       };
     }),
   };

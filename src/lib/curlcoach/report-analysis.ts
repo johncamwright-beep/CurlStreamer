@@ -1,3 +1,6 @@
+import { analysisEventShots } from "./advanced-analysis";
+import { rockNumber } from "./lineup";
+import { reviewLink } from "./review";
 import { reportEventPerformance } from "./event-performance";
 import { family, difficultyEventShots, type CoachEvent } from "./event";
 import { difficultySummary } from "./difficulty";
@@ -11,8 +14,16 @@ import {
   type Shot,
 } from "./model";
 import { rankAnalysis } from "./ranking";
-import { reportMisses, type MissAnalysis } from "./report-misses";
-import { reportPlayers, type ReportPacket } from "./reports";
+import {
+  reportMisses,
+  taggedMissLabels,
+  type MissAnalysis,
+} from "./report-misses";
+import {
+  reportPlayers,
+  type ReportAudience,
+  type ReportPacket,
+} from "./reports";
 import { playerEventStats } from "./player-event-stats";
 import { technicalSummary, type TechnicalSummary } from "./technical";
 
@@ -94,12 +105,61 @@ export function reportAnalysis(
   };
 }
 
+export type GameMissList = {
+  game: string;
+  shots: {
+    end: number;
+    rock: number;
+    type: string;
+    tags: string[];
+    flag?: { url: string | null };
+  }[];
+};
+
+function taggedGameShots(event: CoachEvent, audience: ReportAudience) {
+  return event.games.map((game, index) => {
+    const shots = analysisEventShots({ ...event, games: [game] }).flatMap(
+      (shot) => {
+        if (shot.excluded) return [];
+        const tags = taggedMissLabels(shot);
+        if (!tags.length) return [];
+        const flagAudience = shot.flagAudience === "team" ? "team" : "players";
+        const visibleFlag =
+          (shot.flagged ?? !!shot.review) &&
+          (audience === "coach" || audience === flagAudience);
+        return [
+          {
+            playerId: shot.playerId,
+            row: {
+              end: shot.end,
+              rock: rockNumber(shot),
+              type: shot.type ?? "Unspecified",
+              tags,
+              ...(visibleFlag
+                ? { flag: { url: reviewLink(shot.videoReview) } }
+                : {}),
+            },
+          },
+        ];
+      },
+    );
+    shots.sort((a, b) => a.row.end - b.row.end || a.row.rock - b.row.rock);
+    return {
+      game: [`Game ${index + 1}`, game.opponent && `vs ${game.opponent}`]
+        .filter(Boolean)
+        .join(" · "),
+      shots,
+    };
+  });
+}
+
 /** Add current charted statistics at read time, outside the saved AI narrative. */
 export function withReportAnalysis(
   packet: ReportPacket,
   event: CoachEvent,
 ): ReportPacket {
   const reports = withReportFlags(packet, event);
+  const missGames = taggedGameShots(event, packet.audience);
   const aggregate =
     packet.audience === "players" ? undefined : reportAnalysis(event);
   const shots = packet.audience === "coach" ? difficultyEventShots(event) : [];
@@ -144,6 +204,19 @@ export function withReportAnalysis(
             },
           }
         : {}),
+      missesByGame:
+        packet.audience !== "players" || saved.playerId
+          ? missGames.map(({ game, shots }) => ({
+              game,
+              shots: shots
+                .filter(
+                  (s) =>
+                    packet.audience !== "players" ||
+                    s.playerId === saved.playerId,
+                )
+                .map((s) => s.row),
+            }))
+          : undefined,
       difficulty: saved.difficulty?.estimated ? undefined : saved.difficulty,
       playerComparison,
       ...(event.games.every((g) => g.difficultyReady) &&

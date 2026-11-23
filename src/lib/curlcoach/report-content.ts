@@ -34,6 +34,8 @@ export type ReportBlock =
   | {
       kind: "table";
       headers: string[];
+      caption?: string;
+      lastColumnLinks?: (string | null)[];
       rows: string[][];
       widths: number[];
       layout?: "paired" | "shooting" | "rates";
@@ -136,9 +138,46 @@ export function reportSummaryCards(report: SavedReport): {
   ];
 }
 
+function gameMissBlocks(report: SavedReport): ReportBlock[] {
+  if (!report.missesByGame?.length) return [];
+  const blocks: ReportBlock[] = [
+    { kind: "heading", title: "Misses by game", startPage: false },
+  ];
+  for (const { game, shots } of report.missesByGame) {
+    if (!shots.length) {
+      blocks.push({
+        kind: "text",
+        value: `${game} · No tagged misses`,
+        size: 9,
+        muted: false,
+      });
+      continue;
+    }
+    const showFlags = shots.some((shot) => shot.flag);
+    blocks.push({
+      kind: "table",
+      caption: game,
+      headers: ["End", "Rock", "Shot", "Miss", ...(showFlags ? ["Flag"] : [])],
+      widths: showFlags ? [14, 14, 42, 82, 26] : [14, 14, 48, 102],
+      rows: shots.map(({ end, rock, type, tags, flag }) => [
+        String(end),
+        String(rock),
+        type,
+        tags.join(", "),
+        ...(showFlags ? [flag?.url ? "View flag" : flag ? "Flagged" : ""] : []),
+      ]),
+      lastColumnLinks: showFlags
+        ? shots.map((shot) => shot.flag?.url ?? null)
+        : undefined,
+    });
+  }
+  return blocks;
+}
+
 export function reportContent(report: SavedReport) {
   const scorecard = playerScorecard(report);
-  if (scorecard) return playerScorecardBlocks(report, scorecard);
+  const missBlocks = gameMissBlocks(report);
+  if (scorecard) return playerScorecardBlocks(report, scorecard, missBlocks);
   const blocks: ReportBlock[] = [];
   const stats = reportPercentages(report);
   const heading = (title: string, startPage = false, keepWithChart = false) => {
@@ -166,6 +205,7 @@ export function reportContent(report: SavedReport) {
         text(findings.map((finding) => finding.text).join(" "));
       }
     }
+    blocks.push(...missBlocks);
     for (const flag of report.flags ?? []) blocks.push({ kind: "flag", flag });
     return blocks;
   }
@@ -700,6 +740,7 @@ export function reportContent(report: SavedReport) {
       table(["Measurement", "Result"], metrics, [70, 19], "paired");
     }
   }
+  blocks.push(...missBlocks);
   if (report.flags?.length) {
     heading(
       report.flags.some((flag) => flag.shooter)

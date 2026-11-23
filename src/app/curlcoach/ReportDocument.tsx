@@ -106,6 +106,21 @@ export default function ReportDocument({
                   }
                 >
                   <table>
+                    {block.caption && (
+                      <caption className="pb-2 text-left font-bold">
+                        {block.caption}
+                      </caption>
+                    )}
+                    {block.caption && (
+                      <colgroup>
+                        {block.widths.map((w, i) => (
+                          <col
+                            key={i}
+                            style={{ width: (100 * w) / 178 + "%" }}
+                          />
+                        ))}
+                      </colgroup>
+                    )}
                     <thead>
                       <tr>
                         {block.headers.map((header, index) => (
@@ -121,7 +136,19 @@ export default function ReportDocument({
                           <th scope="row">{label}</th>
                           {values.map((value, column) => (
                             <td key={column}>
-                              {value}
+                              {column === values.length - 1 &&
+                              block.lastColumnLinks?.[row] ? (
+                                <a
+                                  className="inline-flex min-h-11 items-center underline"
+                                  href={block.lastColumnLinks[row]!}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                >
+                                  {value}
+                                </a>
+                              ) : (
+                                value
+                              )}
                               {((block.layout === "shooting" && column === 0) ||
                                 block.layout === "rates") &&
                                 /^\d+(?:\.\d+)?%/.test(value) && (

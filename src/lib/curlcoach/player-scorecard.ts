@@ -78,6 +78,7 @@ export function playerMatrices(
 export function playerScorecardBlocks(
   report: SavedReport,
   window: NonNullable<ReturnType<typeof playerScorecard>>,
+  missBlocks: ReportBlock[] = [],
 ) {
   const [event, trends] = playerMatrices(report.eventPerformance!, window);
   const narrative = report.narrative;
@@ -85,7 +86,7 @@ export function playerScorecardBlocks(
     event.narrative = narrative.eventStats.map((f) => f.text).join(" ");
     trends.narrative = narrative.eventTrends.map((f) => f.text).join(" ");
   }
-  const blocks: ReportBlock[] = [event, trends];
+  const blocks: ReportBlock[] = [event, ...missBlocks, trends];
   const heading = (title: string) =>
     blocks.push({ kind: "heading", title, startPage: false });
   const practice =

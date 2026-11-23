@@ -108,10 +108,20 @@ export async function buildReportPDF(report: SavedReport, eventName: string) {
     widths: number[],
     compact = true,
     layout?: "shooting" | "rates",
+    caption?: string,
+    lastColumnLinks?: (string | null)[],
   ) {
     const lineHeight = compactPlayer ? 3.4 : compact ? 3.6 : 4.1,
       size = compact ? 8 : 8.5;
-    function draw(values: string[], head = false, alternate = false) {
+    function captionText() {
+      if (caption) text(caption, 10, true);
+    }
+    function draw(
+      values: string[],
+      head = false,
+      alternate = false,
+      link?: string | null,
+    ) {
       const wrapped = values.map((v, i) => lines(v, size, widths[i] - 6, head));
       const height =
         Math.max(...wrapped.map((v) => v.length)) * lineHeight +
@@ -119,6 +129,7 @@ export async function buildReportPDF(report: SavedReport, eventName: string) {
       if (y + height > bottom) {
         pdf.addPage();
         header();
+        captionText();
         if (!head) draw(headers, true);
       }
       pdf.setFillColor(head ? navy : alternate ? pale : "#FFFFFF");
@@ -127,10 +138,13 @@ export async function buildReportPDF(report: SavedReport, eventName: string) {
       wrapped.forEach((parts, i) => {
         pdf.setFont("ReportSans", head ? "bold" : "normal");
         pdf.setFontSize(size);
-        pdf.setTextColor(head ? "#FFFFFF" : ink);
-        parts.forEach((part, j) =>
-          pdf.text(part, x + 3, y + (compact ? 4 : 5) + j * lineHeight),
-        );
+        const url = i === wrapped.length - 1 ? link : null;
+        pdf.setTextColor(head ? "#FFFFFF" : url ? "#087D90" : ink);
+        parts.forEach((part, j) => {
+          const baseline = y + (compact ? 4 : 5) + j * lineHeight;
+          if (url) pdf.textWithLink(part, x + 3, baseline, { url });
+          else pdf.text(part, x + 3, baseline);
+        });
         const percent = Number.parseFloat(values[i]);
         if (
           !head &&
@@ -148,8 +162,12 @@ export async function buildReportPDF(report: SavedReport, eventName: string) {
       });
       y += height;
     }
+    if (caption) ensure(lines(caption, 10, width, true).length * 4.6 + 24);
+    captionText();
     draw(headers, true);
-    rows.forEach((row, i) => draw(row, false, i % 2 === 0));
+    rows.forEach((row, i) =>
+      draw(row, false, i % 2 === 0, lastColumnLinks?.[i]),
+    );
     y += 5;
   }
   header();
@@ -265,7 +283,15 @@ export async function buildReportPDF(report: SavedReport, eventName: string) {
             ...block.widths,
           ]);
         } else {
-          table(block.headers, block.rows, block.widths, true, block.layout);
+          table(
+            block.headers,
+            block.rows,
+            block.widths,
+            true,
+            block.layout,
+            block.caption,
+            block.lastColumnLinks,
+          );
         }
         break;
       case "trend": {

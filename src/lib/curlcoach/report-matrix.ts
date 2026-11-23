@@ -202,7 +202,7 @@ export function reportMatrix(
   );
   group(
     "Recurring misses by shot · share of tagged misses",
-    pairs.slice(0, 3).map(({ type, tag }) =>
+    pairs.slice(0, 5).map(({ type, tag }) =>
       row(
         type + " · " + tag,
         (s) => {

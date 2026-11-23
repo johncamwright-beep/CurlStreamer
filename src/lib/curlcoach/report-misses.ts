@@ -85,6 +85,32 @@ const missAliases: Record<string, string> = {
   roll_short: "roll_not_far_enough",
   flash_with_side_unclear: "flash",
 };
+export function taggedMissLabels(shot: AnalysisShot) {
+  const codes = new Set<string>();
+  if (missTags.some((tag) => tag === shot.deficiency))
+    codes.add(shot.deficiency!.toLowerCase());
+  for (const code of shot.resultObservations ?? []) {
+    if (missResults.has(code)) codes.add(missAliases[code] ?? code);
+  }
+  for (const code of missChoices) {
+    if (shot.observedMisses?.includes(code))
+      codes.add(missAliases[code] ?? code);
+  }
+  if (
+    codes.has("wreck_on_guard") ||
+    codes.has("wreck_on_another_unintended_stone")
+  ) {
+    codes.delete("wreck");
+    codes.delete("wreck_stone");
+  }
+  if (codes.has("wreck_stone")) codes.delete("wreck");
+  if (codes.has("flash_wide") || codes.has("flash_narrow"))
+    codes.delete("flash");
+  return [
+    ...new Set([...codes].map((code) => resultLabels[code] ?? label(code))),
+  ];
+}
+
 export function missPatternsByShot(shots: AnalysisShot[]) {
   const byType: Record<
     string,
@@ -92,31 +118,11 @@ export function missPatternsByShot(shots: AnalysisShot[]) {
   > = {};
   for (const shot of shots) {
     if (!shot.type || shot.excluded || !isMiss(shot)) continue;
-    const codes = new Set<string>();
-    if (missTags.some((tag) => tag === shot.deficiency))
-      codes.add(shot.deficiency!.toLowerCase());
-    for (const code of shot.resultObservations ?? []) {
-      if (missResults.has(code)) codes.add(missAliases[code] ?? code);
-    }
-    for (const code of missChoices) {
-      if (shot.observedMisses?.includes(code))
-        codes.add(missAliases[code] ?? code);
-    }
-    if (
-      codes.has("wreck_on_guard") ||
-      codes.has("wreck_on_another_unintended_stone")
-    ) {
-      codes.delete("wreck");
-      codes.delete("wreck_stone");
-    }
-    if (codes.has("wreck_stone")) codes.delete("wreck");
-    if (codes.has("flash_wide") || codes.has("flash_narrow"))
-      codes.delete("flash");
-    if (!codes.size) continue;
+    const labels = taggedMissLabels(shot);
+    if (!labels.length) continue;
     const group = (byType[shot.type] ??= { tagged: 0, counts: {} });
     group.tagged++;
-    for (const code of codes) {
-      const name = resultLabels[code] ?? label(code);
+    for (const name of labels) {
       group.counts[name] = (group.counts[name] ?? 0) + 1;
     }
   }

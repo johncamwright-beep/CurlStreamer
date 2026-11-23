@@ -5,18 +5,12 @@ import { reportEventPerformance } from "./event-performance";
 import { family, difficultyEventShots, type CoachEvent } from "./event";
 import { difficultySummary } from "./difficulty";
 import { withReportFlags } from "./flagged-shots";
-import {
-  currentShots,
-  executions,
-  report,
-  shotTypes,
-  turns,
-  type Shot,
-} from "./model";
+import { executions, report, shotTypes, turns, type Shot } from "./model";
 import { rankAnalysis } from "./ranking";
 import {
   reportMisses,
   taggedMissLabels,
+  shotReviewStats,
   type MissAnalysis,
 } from "./report-misses";
 import {
@@ -41,6 +35,7 @@ export type ReportAnalysis = {
   shotTypes: ShootingRow[];
   turns: ShootingRow[];
   misses: MissAnalysis;
+  shotReview?: ReturnType<typeof shotReviewStats>;
   technical: TechnicalSummary;
 };
 
@@ -58,10 +53,12 @@ export function reportAnalysis(
   event: CoachEvent,
   playerId?: string,
 ): ReportAnalysis {
+  const charted = analysisEventShots(event);
   const games = event.games.map((game, index) => ({
     label: game.label || `Game ${index + 1}`,
-    shots: currentShots(game.state.events).filter(
+    shots: charted.filter(
       (shot) =>
+        shot.gameId === game.id &&
         !shot.excluded &&
         (playerId === undefined || shot.playerId === playerId),
     ),
@@ -100,7 +97,8 @@ export function reportAnalysis(
     games: games.map((game) => row(game.label, game.shots)),
     shotTypes: performance(shotTypes, "type"),
     turns: performance(turns, "turn"),
-    misses: reportMisses(event, playerId),
+    misses: reportMisses(event, playerId, charted),
+    shotReview: shotReviewStats(shots),
     technical: technicalSummary(shots),
   };
 }

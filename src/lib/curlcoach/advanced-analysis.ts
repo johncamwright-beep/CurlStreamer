@@ -15,6 +15,7 @@ type AnalysisFields = {
   /** null is unassessed; [] explicitly records no observed miss. */
   resultObservations: string[] | null;
   observedMisses?: string[];
+  additionalDeficiencies?: string[];
   destinationAssessment: AnalysisAssessment;
   resultAssessment: AnalysisAssessment;
   analysisStatus: AnalysisStatus;
@@ -132,6 +133,13 @@ export function analysisRecords(
           resultAssessment === "assessed"
             ? [...(values.resultObservations as string[])]
             : null,
+        additionalDeficiencies:
+          assessments.deficiency === "assessed" &&
+          original.deficiency === shot.deficiency &&
+          !blocked("deficiency", "additionalDeficiencies") &&
+          Array.isArray(values.additionalDeficiencies)
+            ? [...values.additionalDeficiencies]
+            : [],
         observedMisses:
           assessments.misses === "assessed" &&
           !blocked("misses", "misses") &&
@@ -169,6 +177,7 @@ export function analysisEventShots(event: CoachEvent): AnalysisShot[] {
           ? null
           : [...fields.resultObservations],
       observedMisses: fields.observedMisses?.slice(),
+      additionalDeficiencies: fields.additionalDeficiencies?.slice(),
       destinationAssessment: fields.destinationAssessment,
       resultAssessment: fields.resultAssessment,
       analysisStatus: fields.analysisStatus,

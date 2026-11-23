@@ -3,8 +3,12 @@ import type {
   PlayerPeriodStats,
 } from "./event-performance";
 import { difficultyLabels } from "./difficulty";
-import { shotTypes, turns } from "./model";
-import { missTags } from "./report-misses";
+import { executions, shotTypes, turns } from "./model";
+import {
+  outcomeLabel,
+  rankedMissReasons,
+  recurringMissPairs,
+} from "./report-misses";
 import { technicalFields } from "./technical";
 
 export type MatrixCell = { value: number | null; sample?: string };
@@ -152,57 +156,37 @@ export function reportMatrix(
       .filter((t) => periods.some((p) => p.stats.byTurn[t]?.graded))
       .map((t) => row(t, (s) => shooting(s.byTurn[t]))),
   );
-  group("Miss patterns · per recorded outcome", [
-    row(
-      "Partial / limited / miss",
-      (s) => share(s.misses, s.classified),
-      "lower",
-    ),
-    row("Complete miss", (s) => share(s.fullMisses, s.classified), "lower"),
-    ...missTags
-      .filter((tag) =>
-        periods.some((p) =>
-          p.stats.categories.some((c) => c.tag === tag && c.count),
-        ),
-      )
-      .map((tag) =>
-        row(
-          tag,
-          (s) =>
-            s.misses && !s.tagged
-              ? missing
-              : share(
-                  s.categories.find((c) => c.tag === tag)?.count ?? 0,
-                  s.classified,
-                ),
-          "lower",
-        ),
+  group(
+    "Shot outcomes · share of recorded outcomes",
+    executions.map((execution) =>
+      row(
+        outcomeLabel(execution),
+        (s) =>
+          s.outcomes ? share(s.outcomes[execution], s.classified) : missing,
+        execution === "Make"
+          ? "higher"
+          : execution === "Xmiss"
+            ? "lower"
+            : "neutral",
       ),
-    ...(periods.some((p) => p.stats.misses > p.stats.tagged)
-      ? [
-          row(
-            "Untagged",
-            (s) => share(s.misses - s.tagged, s.classified),
-            "neutral",
-          ),
-        ]
-      : []),
-  ]);
-  const pairs = Object.entries(pooled?.missPatternsByShot ?? {}).flatMap(
-    ([type, group]) =>
-      Object.entries(group.counts)
-        .filter(([, count]) => count >= 2)
-        .map(([tag, count]) => ({ type, tag, count })),
-  );
-  pairs.sort(
-    (a, b) =>
-      b.count - a.count ||
-      a.type.localeCompare(b.type) ||
-      a.tag.localeCompare(b.tag),
+    ),
   );
   group(
-    "Recurring misses by shot · share of tagged misses",
-    pairs.slice(0, 5).map(({ type, tag }) =>
+    "Miss reasons · share of tagged shots",
+    rankedMissReasons(pooled?.reasons?.counts ?? {}).map(([tag]) =>
+      row(
+        tag,
+        (s) =>
+          s.reasons
+            ? share(s.reasons.counts[tag] ?? 0, s.reasons.tagged)
+            : missing,
+        "neutral",
+      ),
+    ),
+  );
+  group(
+    "Recurring misses by shot · share of tagged shots of that type",
+    recurringMissPairs(pooled?.missPatternsByShot ?? {}).map(({ type, tag }) =>
       row(
         type + " · " + tag,
         (s) => {

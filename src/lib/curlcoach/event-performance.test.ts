@@ -125,7 +125,7 @@ it("shows recurring same-shot pairs with pooled, observed denominators", () => {
   const prior = event("previous", "2026-01-01", [
     ...copies(2, over),
     ...copies(2, wreck),
-    { ...s(2), resultObservations: ["in_house"] },
+    { ...s(2), observedDestination: "in_house" },
     { ...over, excluded: "Pick" },
     { ...over, playerId: "skip" },
   ]);
@@ -156,26 +156,38 @@ it("shows recurring same-shot pairs with pooled, observed denominators", () => {
   ) as ReportMatrix[];
   const pairs = (m: ReportMatrix) =>
     m.groups.find((g) => g.title.startsWith("Recurring misses"))!.rows;
+  const reasons = trends.groups.find((g) =>
+    g.title.startsWith("Miss reasons"),
+  )!.rows;
+  expect(reasons.find((r) => r.label === "Wreck on guard")?.total.sample).toBe(
+    "2/10",
+  );
+  expect(
+    reasons.some((r) => r.label === "Wreck" || r.label === "In-House"),
+  ).toBe(false);
+  expect(reasons.find((r) => r.label === "Overcurl")?.total.sample).toBe(
+    "3/10",
+  );
   expect(pairs(games).map((r) => r.label)).toEqual([
     "Draw · Light",
     "Peel · Flash Wide",
   ]);
   expect(pairs(trends).map((r) => r.label)).toEqual([
+    "Draw · Overcurl",
     "Come Around · Wreck on guard",
     "Draw · Light",
-    "Draw · Overcurl",
     "Peel · Flash Wide",
   ]);
-  expect(pairs(trends)[0].cells).toEqual([
+  expect(pairs(trends)[1].cells).toEqual([
     { value: 100, sample: "2/2" },
     { value: null },
   ]);
-  expect(pairs(trends)[2]).toMatchObject({
+  expect(pairs(trends)[0]).toMatchObject({
     cells: [
       { value: 100, sample: "2/2" },
-      { value: 0, sample: "0/3" },
+      { value: 25, sample: "1/4" },
     ],
-    total: { value: 40, sample: "2/5" },
+    total: { value: 50, sample: "3/6" },
     better: "neutral",
   });
 });
@@ -247,10 +259,20 @@ it("compares a player's completed earlier events and prints assessed zeros and m
     "Trends over time (by event)",
   ]);
   for (const m of matrices) {
-    const untagged = m.groups
-      .flatMap((g) => g.rows)
-      .find((r) => r.label === "Untagged")!;
-    expect(untagged.cells.at(-1)).toEqual({ value: 100, sample: "12/12" });
+    const outcomes = m.groups.find((g) =>
+      g.title.startsWith("Shot outcomes"),
+    )!.rows;
+    expect(outcomes.map((r) => r.label)).toEqual([
+      "Make",
+      "Partial",
+      "Limited",
+      "Complete miss",
+    ]);
+    expect(outcomes[1].cells.at(-1)).toEqual({ value: 100, sample: "12/12" });
+    expect(outcomes[0].cells.at(-1)).toEqual({ value: 0, sample: "0/12" });
+    expect(m.groups.some((g) => g.title.startsWith("Miss reasons"))).toBe(
+      false,
+    );
   }
   expect(JSON.stringify(blocks)).not.toMatch(
     /future|routine baseline|season difficulty index/i,
@@ -484,6 +506,8 @@ it("connects measured points across missing events and grounds player notes in t
   ];
   for (const e of [prior, now]) {
     const g = e.games[0];
+    for (const record of g.analysisRecords!)
+      record.observedMisses = ["wreck_on_guard"];
     g.advancedReady = true;
     g.advancedRecords = g.state.events.flatMap((row) => {
       if (!row.shot) return [];
@@ -508,7 +532,7 @@ it("connects measured points across missing events and grounds player notes in t
     proof.find(
       (e) =>
         e.id.startsWith("event-") &&
-        e.label === "Draw · Observed miss · Wreck on guard",
+        e.label === "Draw · Tagged miss · Wreck on guard",
     )?.value,
   ).toBe("G1=3/3; Total=3/3");
   expect(
@@ -540,25 +564,26 @@ it("connects measured points across missing events and grounds player notes in t
   expect(matrixPoints(draw).map((p) => p.x)).toEqual([0, 1]);
   expect(draw.cells[1].value).toBeNull();
 });
-it("ranks the five most frequent recurring shot and miss pairs in both matrices", () => {
-  const reasons = [
-    "Light",
-    "Heavy",
-    "Undercurl",
-    "Overcurl",
-    "Management",
-  ] as const;
-  const shots = reasons.flatMap((deficiency, i) =>
-    copies(i + 2, { ...s(3), deficiency }),
+it("ranks up to fifteen recurring pairs from the full list in each matrix", () => {
+  const tags = [
+    "light",
+    "heavy",
+    "over_curl",
+    "wreck_on_guard",
+    "overswept",
+    "half_shot",
+  ];
+  const types = ["Draw", "Peel", "Hit & Roll"] as const;
+  const shots = types.flatMap((type, t) =>
+    tags.flatMap((tag, i) =>
+      copies(t * tags.length + i + 2, {
+        ...s(3),
+        type,
+        resultObservations: [tag],
+      }),
+    ),
   );
   const selected = event("qualifier", "2026-11-20", shots);
-  selected.games.push(
-    ...event(
-      "second game",
-      "2026-11-21",
-      copies(2, { ...s(3), type: "Peel", deficiency: "Light" }),
-    ).games,
-  );
   const saved = {
     playerId: "lead",
     eventPerformance: reportEventPerformance(selected, "lead", true),
@@ -571,9 +596,11 @@ it("ranks the five most frequent recurring shot and miss pairs in both matrices"
     const rows = matrix.groups.find((group) =>
       group.title.startsWith("Recurring misses by shot"),
     )!.rows;
-    expect(rows.map((r) => r.label)).toEqual(
-      [...reasons].reverse().map((r) => "Draw · " + r),
+    expect(rows).toHaveLength(15);
+    expect(rows[0].label).toBe("Hit & Roll · Half Shot");
+    expect(rows.at(-1)?.label).toBe("Draw · Wreck on guard");
+    expect(rows.map((r) => Number(r.total.sample!.split("/")[0]))).toEqual(
+      Array.from({ length: 15 }, (_, i) => 19 - i),
     );
-    expect(rows[0].total.sample).toBe("6/20");
   }
 });

@@ -36,8 +36,12 @@ export const reportLegend = [
     "Grade points earned out of possible points (five per graded shot). This is not the percentage of fully made shots. The shot count shows the sample size.",
   ],
   [
+    "Miss reasons",
+    "Each reason counts once per tagged shot. A shot can carry several reasons. Recurring pairs use tagged shots of the same type.",
+  ],
+  [
     "Miss rate",
-    "Partial, Limited and Miss outcomes out of all classified execution outcomes. Category shares use miss outcomes only.",
+    "Partial, Limited and Complete miss out of all recorded shot outcomes.",
   ],
   [
     "Make / Partial / Limited / Miss",

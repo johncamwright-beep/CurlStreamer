@@ -1,5 +1,9 @@
 import { currentShots, shotTypes, turns, type Shot } from "./model";
 import type { CoachEvent } from "./event";
+import type { AnalysisShot } from "./advanced-analysis";
+import { label, missChoices } from "./enhanced-catalog";
+import { resultLabels } from "./shot-subtypes";
+
 export const missTags = [
   "Light",
   "Heavy",
@@ -36,6 +40,87 @@ function row(label: string, shots: Shot[]) {
     topCount: highest,
     smallSample: classified.length < 10,
   };
+}
+// Only explicit miss observations count. A destination alone (e.g. "In-House")
+// cannot establish what went wrong. Use a shared key across entry formats.
+const missResults = new Set([
+  "light",
+  "heavy",
+  "hog",
+  "missed_score",
+  "wreck",
+  "over_curl",
+  "under_curl",
+  "missed_angle",
+  "tap_light",
+  "tap_deep",
+  "miss_wide",
+  "miss_narrow",
+  "jammed",
+  "wreck_stone",
+  "flash_wide",
+  "flash_narrow",
+  "roll_out_of_position",
+  "roll_far",
+  "roll_short",
+  "wrong_angle",
+  "missed_stick",
+  "missed_stone",
+  "too_much_contact",
+  "too_little_contact",
+  "flash",
+  "management",
+  "not_enough_broom",
+  "too_much_broom",
+  "overswept",
+  "missed_sweeping_call",
+  "underswept",
+]);
+const missAliases: Record<string, string> = {
+  over_curl: "overcurl",
+  under_curl: "undercurl",
+  too_much_contact: "contact_too_thick",
+  too_little_contact: "contact_too_thin",
+  roll_far: "roll_too_far",
+  roll_short: "roll_not_far_enough",
+  flash_with_side_unclear: "flash",
+};
+export function missPatternsByShot(shots: AnalysisShot[]) {
+  const byType: Record<
+    string,
+    { tagged: number; counts: Record<string, number> }
+  > = {};
+  for (const shot of shots) {
+    if (!shot.type || shot.excluded || !isMiss(shot)) continue;
+    const codes = new Set<string>();
+    if (missTags.some((tag) => tag === shot.deficiency))
+      codes.add(shot.deficiency!.toLowerCase());
+    for (const code of shot.resultObservations ?? []) {
+      if (missResults.has(code)) codes.add(missAliases[code] ?? code);
+    }
+    for (const code of missChoices) {
+      if (shot.observedMisses?.includes(code))
+        codes.add(missAliases[code] ?? code);
+    }
+    if (
+      codes.has("wreck_on_guard") ||
+      codes.has("wreck_on_another_unintended_stone")
+    ) {
+      codes.delete("wreck");
+      codes.delete("wreck_stone");
+    }
+    if (codes.has("wreck_stone")) codes.delete("wreck");
+    if (codes.has("flash_wide") || codes.has("flash_narrow"))
+      codes.delete("flash");
+    if (!codes.size) continue;
+    const group = (byType[shot.type] ??= { tagged: 0, counts: {} });
+    group.tagged++;
+    for (const code of codes) {
+      const name = resultLabels[code] ?? label(code);
+      group.counts[name] = (group.counts[name] ?? 0) + 1;
+    }
+  }
+  return byType;
 }
 function classifiedMisses(shots: Shot[]) {
   const classified = eligible(shots),

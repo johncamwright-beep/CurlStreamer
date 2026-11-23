@@ -6,7 +6,7 @@ import {
   analysisRecords,
 } from "./advanced-analysis";
 import { defaultShotFilters, filterAnalysisShots } from "./analysis";
-import { emptySupplement } from "./enhanced-catalog";
+import { emptySupplement, selectMisses } from "./enhanced-catalog";
 import { sampleEvent } from "./event";
 import { append, currentShots, emptyState, report, type Shot } from "./model";
 
@@ -90,6 +90,17 @@ it("projects only the allowlist from the latest supplement revision, independent
   expect(filtered[0].resultObservations).toEqual(["light"]);
   rows[0].resultObservations!.push("heavy");
   expect(analysisEventShots(f.event)[0].resultObservations).toEqual(["light"]);
+});
+
+it("only projects assessed legacy miss observations from the current matching record", () => {
+  const f = fixture();
+  f.doc.value = selectMisses(f.value, ["wreck_on_guard"]);
+  expect(f.project()[0].observedMisses).toEqual(["wreck_on_guard"]);
+  expect(
+    f.project([{ ...f.doc, conflicts: ["misses"] }])[0].observedMisses,
+  ).toEqual([]);
+  f.change({ ...shot, type: "Peel" });
+  expect(f.project()[0].observedMisses).toBeUndefined();
 });
 
 it("does not resurrect older values after a later clear or invalid revision", () => {

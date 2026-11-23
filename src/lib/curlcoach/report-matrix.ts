@@ -188,6 +188,31 @@ export function reportMatrix(
         ]
       : []),
   ]);
+  const pairs = Object.entries(pooled?.missPatternsByShot ?? {}).flatMap(
+    ([type, group]) =>
+      Object.entries(group.counts)
+        .filter(([, count]) => count >= 2)
+        .map(([tag, count]) => ({ type, tag, count })),
+  );
+  pairs.sort(
+    (a, b) =>
+      b.count - a.count ||
+      a.type.localeCompare(b.type) ||
+      a.tag.localeCompare(b.tag),
+  );
+  group(
+    "Recurring misses by shot · share of tagged misses",
+    pairs.slice(0, 3).map(({ type, tag }) =>
+      row(
+        type + " · " + tag,
+        (s) => {
+          const group = s.missPatternsByShot?.[type];
+          return group ? share(group.counts[tag] ?? 0, group.tagged) : missing;
+        },
+        "neutral",
+      ),
+    ),
+  );
   for (const field of technicalFields) {
     const observation = (s: PlayerPeriodStats) =>
       s.technical.find((g) => g.title === field.title);

@@ -386,4 +386,11 @@ it("writes only grounded player section findings, retries cross-section citation
     ),
   ).toEqual({ eventStats: [], eventTrends: [] });
   expect(fetcher).toHaveBeenCalledTimes(2);
+  for (const invalid of ["Draw ".repeat(56).trim(), "Read www.example.com"]) {
+    finding.text = invalid;
+    fetcher.mockImplementation(async () => output([]));
+    await expect(
+      generateShotTrackerNarrative(scoped, "players", []),
+    ).rejects.toThrow();
+  }
 });

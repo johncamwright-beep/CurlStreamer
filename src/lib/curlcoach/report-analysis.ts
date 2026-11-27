@@ -8,6 +8,7 @@ import { withReportFlags } from "./flagged-shots";
 import { executions, report, shotTypes, turns, type Shot } from "./model";
 import { rankAnalysis } from "./ranking";
 import {
+  outcomeLabel,
   reportMisses,
   taggedMissLabels,
   shotReviewStats,
@@ -109,7 +110,9 @@ export type GameMissList = {
     end: number;
     rock: number;
     type: string;
+    outcome?: string | null;
     tags: string[];
+    technical?: string[];
     flag?: { url: string | null };
   }[];
 };
@@ -121,6 +124,12 @@ function taggedGameShots(event: CoachEvent, audience: ReportAudience) {
         if (shot.excluded) return [];
         const tags = taggedMissLabels(shot);
         if (!tags.length) return [];
+        const observations = [
+          shot.line,
+          shot.release,
+          shot.technical,
+          ...(shot.additionalTechnical ?? []),
+        ].filter((value): value is string => !!value);
         const flagAudience = shot.flagAudience === "team" ? "team" : "players";
         const visibleFlag =
           (shot.flagged ?? !!shot.review) &&
@@ -132,7 +141,11 @@ function taggedGameShots(event: CoachEvent, audience: ReportAudience) {
               end: shot.end,
               rock: rockNumber(shot),
               type: shot.type ?? "Unspecified",
+              outcome: shot.execution ? outcomeLabel(shot.execution) : null,
               tags,
+              ...(observations.length
+                ? { technical: [...new Set(observations)] }
+                : {}),
               ...(visibleFlag
                 ? { flag: { url: reviewLink(shot.videoReview) } }
                 : {}),

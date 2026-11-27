@@ -10,6 +10,7 @@ import {
   recurringMissPairs,
 } from "./report-misses";
 import { technicalFields } from "./technical";
+import { rankAnalysis } from "./ranking";
 
 export type MatrixCell = { value: number | null; sample?: string };
 type Row = {
@@ -23,8 +24,20 @@ export type ReportMatrix = {
   title: "Event Stats" | "Trends over time (by event)";
   narrative?: string;
   columns: { key: string; name: string }[];
-  groups: { title: string; rows: Row[] }[];
+  groups: { title: string; rows: Row[]; metric: "shooting" | "share" }[];
 };
+type Metric = ReportMatrix["groups"][number]["metric"];
+
+export function totalCellFill(metric: Metric, cell: MatrixCell) {
+  if (metric !== "shooting" || cell.value === null) return "#DCEFF9";
+  const percent = Number(cell.value.toFixed(1));
+  if (percent <= 50) return "#EC9DA9";
+  if (percent <= 60) return "#F6C4C2";
+  if (percent < 70) return "#F8CCA2";
+  if (percent < 80) return "#F6E3A2";
+  if (percent < 85) return "#D5E8B5";
+  return "#94D5AB";
+}
 export function matrixChange(row: Row) {
   const first = row.cells[0]?.value,
     last = row.cells.at(-1)?.value;
@@ -96,10 +109,20 @@ export function reportMatrix(
     better,
   });
   const groups: ReportMatrix["groups"] = [];
-  function group(title: string, rows: Row[]) {
-    if (rows.length) groups.push({ title, rows });
+  function group(title: string, metric: Metric, rows: Row[]) {
+    if (rows.length)
+      groups.push({
+        title,
+        metric,
+        rows: rankAnalysis(
+          rows,
+          "descending",
+          (r) => r.total.value,
+          (r) => r.label,
+        ),
+      });
   }
-  group("Shooting", [
+  group("Shooting", "shooting", [
     row("Overall", (s) => shooting(s.shooting)),
     row("Difficulty-adjusted", (s) =>
       s.adjusted == null
@@ -109,12 +132,13 @@ export function reportMatrix(
   ]);
   group(
     "Shot performance",
+    "shooting",
     shotTypes
       .filter((t) => periods.some((p) => p.stats.byType[t]?.graded))
       .map((t) => row(t, (s) => shooting(s.byType[t]))),
   );
   const levels = ["A", "B", "C"] as const;
-  group("Shot difficulty · share of rated calls", [
+  group("Shot difficulty · share of rated calls", "share", [
     row("Calls rated", (s) => share(s.observed, s.attempts), "neutral"),
     row(
       "Moderate or difficult",
@@ -138,6 +162,7 @@ export function reportMatrix(
   ]);
   group(
     "Shooting by difficulty",
+    "shooting",
     levels
       .filter((level) =>
         periods.some((p) =>
@@ -152,12 +177,14 @@ export function reportMatrix(
   );
   group(
     "Performance by turn",
+    "shooting",
     turns
       .filter((t) => periods.some((p) => p.stats.byTurn[t]?.graded))
       .map((t) => row(t, (s) => shooting(s.byTurn[t]))),
   );
   group(
     "Shot outcomes · share of recorded outcomes",
+    "share",
     executions.map((execution) =>
       row(
         outcomeLabel(execution),
@@ -173,6 +200,7 @@ export function reportMatrix(
   );
   group(
     "Miss reasons · share of tagged shots",
+    "share",
     rankedMissReasons(pooled?.reasons?.counts ?? {}).map(([tag]) =>
       row(
         tag,
@@ -186,6 +214,7 @@ export function reportMatrix(
   );
   group(
     "Recurring misses by shot · share of tagged shots of that type",
+    "share",
     recurringMissPairs(pooled?.missPatternsByShot ?? {}).map(({ type, tag }) =>
       row(
         type + " · " + tag,
@@ -207,6 +236,7 @@ export function reportMatrix(
     );
     group(
       "Technical observations · " + field.title,
+      "share",
       labels.map((label) =>
         row(
           label,
@@ -230,6 +260,7 @@ export function reportMatrix(
     );
     group(
       "Shooting by observation · " + field.title,
+      "shooting",
       gradedLabels.map((label) =>
         row(label, (s) =>
           shooting(observation(s)?.rows.find((r) => r.label === label)),

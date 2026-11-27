@@ -93,6 +93,21 @@ it("projects only the allowlist from the latest supplement revision, independent
   expect(analysisEventShots(f.event)[0].resultObservations).toEqual(["light"]);
 });
 
+it("projects assessed additional technical observations and drops stale or conflicted observations", () => {
+  const f = fixture();
+  f.value.assessments.technical = "assessed";
+  f.value.values.additionalTechnical = ["Fishtail", "Misaligned"];
+  expect(f.project()[0].additionalTechnical).toEqual([
+    "Fishtail",
+    "Misaligned",
+  ]);
+  expect(
+    f.project([{ ...f.doc, conflicts: ["technical"] }])[0].additionalTechnical,
+  ).toEqual([]);
+  f.change({ ...shot, technical: "Overstep" });
+  expect(f.project()[0].additionalTechnical).toEqual([]);
+});
+
 it("only projects assessed legacy miss observations from the current matching record", () => {
   const f = fixture();
   f.doc.value = selectMisses(f.value, ["wreck_on_guard"]);

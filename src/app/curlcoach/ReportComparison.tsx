@@ -4,6 +4,7 @@ import {
   matrixEndpoints,
   matrixPoints,
   matrixScope,
+  totalCellFill,
   type ReportMatrix,
 } from "@/lib/curlcoach/report-matrix";
 
@@ -102,6 +103,16 @@ export default function ReportComparison({ matrix }: { matrix: ReportMatrix }) {
                           className={
                             i === row.cells.length
                               ? "report-matrix-total"
+                              : undefined
+                          }
+                          style={
+                            i === row.cells.length
+                              ? {
+                                  backgroundColor: totalCellFill(
+                                    group.metric,
+                                    c,
+                                  ),
+                                }
                               : undefined
                           }
                         >

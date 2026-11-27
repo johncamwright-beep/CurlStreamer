@@ -5,6 +5,7 @@ import {
   matrixEndpoints,
   matrixPoints,
   matrixScope,
+  totalCellFill,
   type ReportMatrix,
 } from "./report-matrix";
 
@@ -190,7 +191,8 @@ export function drawReportMatrix(
           const x = total
             ? totalX + totalWidth / 2
             : dataX + (i + 0.5) * colWidth;
-          if (total) fill(totalX, y, totalWidth, height, "#DCEFF9");
+          if (total)
+            fill(totalX, y, totalWidth, height, totalCellFill(group.metric, c));
           font(8, total);
           pdf.text(cellText(c), x, y + (c.sample ? 3.3 : height / 2 + 1), {
             align: "center",

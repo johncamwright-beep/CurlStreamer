@@ -163,13 +163,25 @@ function gameMissBlocks(report: SavedReport): ReportBlock[] {
     blocks.push({
       kind: "table",
       caption: game,
-      headers: ["End", "Rock", "Shot", "Miss", ...(showFlags ? ["Flag"] : [])],
-      widths: showFlags ? [14, 14, 42, 82, 26] : [14, 14, 48, 102],
-      rows: shots.map(({ end, rock, type, tags, flag }) => [
+      headers: [
+        "End",
+        "Rock",
+        "Shot",
+        "Outcome",
+        "Miss reasons",
+        "Technical",
+        ...(showFlags ? ["Flag"] : []),
+      ],
+      widths: showFlags
+        ? [13, 14, 32, 23, 36, 40, 20]
+        : [13, 14, 31, 24, 49, 47],
+      rows: shots.map(({ end, rock, type, outcome, tags, technical, flag }) => [
         String(end),
         String(rock),
         type,
-        tags.join(", "),
+        outcome ?? "—",
+        tags.join(", ") || "—",
+        technical?.join(", ") || "—",
         ...(showFlags ? [flag?.url ? "View flag" : flag ? "Flagged" : ""] : []),
       ]),
       lastColumnLinks: showFlags

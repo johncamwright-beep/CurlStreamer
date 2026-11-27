@@ -41,7 +41,7 @@ export default function Camera({
   params: Promise<{ id: string; role: "camera-home" | "camera-away" }>;
 }) {
   const { id, role } = use(params);
-  const { lifecycle, act } = useGame(id);
+  const { lifecycle, act } = useGame(id, undefined, undefined, false, true);
   const video = useRef<HTMLVideoElement>(null);
   const room = useRef<Room | undefined>(undefined);
   const cameraTrack = useRef<LocalVideoTrack | undefined>(undefined);

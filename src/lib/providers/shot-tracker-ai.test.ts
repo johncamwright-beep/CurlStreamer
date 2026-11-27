@@ -1,0 +1,443 @@
+import { afterEach, expect, it, vi } from "vitest";
+import { generateShotTrackerNarrative } from "./shot-tracker-ai";
+vi.mock("node:timers/promises", () => ({
+  setTimeout: vi.fn().mockResolvedValue(undefined),
+}));
+import { setTimeout as delay } from "node:timers/promises";
+const input = {
+  key: "team",
+  title: "PRIVATE NAME",
+  evidence: [
+    {
+      id: "overall",
+      label: "Shooting",
+      value: "75%",
+      sample: 40,
+      confidence: "event" as const,
+    },
+  ],
+  limitations: [],
+};
+afterEach(() => {
+  vi.restoreAllMocks();
+  vi.unstubAllEnvs();
+  vi.unstubAllGlobals();
+});
+function configure() {
+  vi.stubEnv("SHOT_TRACKER_AI_ENABLED", "true");
+  vi.stubEnv("SHOT_TRACKER_AI_MODEL", "configured-test-model");
+  vi.stubEnv("OPENAI_API_KEY", "test-key");
+}
+it("sends only aggregate evidence to a fixed server provider and validates structured output", async () => {
+  configure();
+  const f = {
+    text: "Our team can repeat the target drill.",
+    evidence: ["overall"],
+  };
+  const narrative = {
+    summary: f,
+    strengths: [f],
+    priorities: [f],
+    practice: [f],
+    review: [f],
+  };
+  const fetcher = vi.fn().mockResolvedValue(
+    Response.json({
+      status: "completed",
+      output: [
+        {
+          type: "message",
+          content: [{ type: "output_text", text: JSON.stringify(narrative) }],
+        },
+      ],
+    }),
+  );
+  vi.stubGlobal("fetch", fetcher);
+  expect(await generateShotTrackerNarrative(input, "team", [])).toEqual(
+    narrative,
+  );
+  const [url, init] = fetcher.mock.calls[0];
+  expect(url).toBe("https://api.openai.com/v1/responses");
+  const body = JSON.parse(init.body);
+  expect(body.store).toBe(false);
+  expect(body.max_output_tokens).toBe(3200);
+  type SchemaNode = {
+    $ref?: string;
+    properties: Record<string, SchemaNode>;
+    items: SchemaNode;
+    pattern?: string;
+    enum?: string[];
+    maxItems?: number;
+  };
+  const schema = body.text.format.schema as SchemaNode & {
+    $defs: Record<string, SchemaNode>;
+  };
+  const resolve = (node: SchemaNode): SchemaNode =>
+    node.$ref ? resolve(schema.$defs[node.$ref.split("/").pop()!]) : node;
+  expect(resolve(schema.properties.practice).maxItems).toBe(0);
+  expect(body.text.format.strict).toBe(true);
+  expect(
+    resolve(resolve(schema.properties.summary).properties.text).pattern,
+  ).toBe("^[^0-9<>]*$");
+  expect(body.input).not.toContain("PRIVATE NAME");
+  expect(body.instructions).toContain("No player names");
+  expect(
+    resolve(
+      resolve(resolve(schema.properties.summary).properties.evidence).items,
+    ).enum,
+  ).toEqual(["overall"]);
+  expect(JSON.stringify(schema).match(/"enum":\["overall"\]/g)).toHaveLength(1);
+});
+it("limits trend findings to evidence from the matching scope and reserves room for full event reports", async () => {
+  configure();
+  const within = { ...input.evidence[0], id: "trend-game-1" };
+  const across = { ...input.evidence[0], id: "trend-shooting-overall" };
+  const fetcher = vi
+    .fn()
+    .mockResolvedValue(generated("Our team can practise shared targets."));
+  vi.stubGlobal("fetch", fetcher);
+  await generateShotTrackerNarrative(
+    {
+      ...input,
+      evidence: [...input.evidence, within, across],
+      highlights: {
+        withinGames: [within],
+        acrossGames: [across],
+        strengths: [],
+        priorities: [],
+      },
+    },
+    "coach",
+    [],
+  );
+  const body = JSON.parse(fetcher.mock.calls[0][1].body);
+  const schema = body.text.format.schema;
+  const resolve = (node: {
+    $ref?: string;
+    properties?: unknown;
+    enum?: string[];
+  }) => (node.$ref ? schema.$defs[node.$ref.split("/").pop()!] : node);
+  for (const [field, id] of [
+    ["withinGames", within.id],
+    ["acrossGames", across.id],
+  ]) {
+    expect(
+      resolve(resolve(schema.properties[field].items).properties.evidence.items)
+        .enum,
+    ).toEqual([id]);
+  }
+  expect(body.max_output_tokens).toBe(16000);
+});
+function generated(text: string, evidence = "overall") {
+  const finding = { text, evidence: [evidence] };
+  return Response.json({
+    status: "completed",
+    output: [
+      {
+        type: "message",
+        content: [
+          {
+            type: "output_text",
+            text: JSON.stringify({
+              summary: finding,
+              strengths: [finding],
+              priorities: [finding],
+              practice: [finding],
+              review: [finding],
+            }),
+          },
+        ],
+      },
+    ],
+  });
+}
+it("bounds a six-game player's prose and citations within the response budget", async () => {
+  configure();
+  const games = Array.from({ length: 6 }, (_, i) => ({
+    key: `game-${i + 1}`,
+    title: "PRIVATE GAME TITLE",
+    groups: [],
+  }));
+  const evidence = games.map((g) => ({
+    ...input.evidence[0],
+    id: `${g.key}-overall`,
+  }));
+  const f = {
+    text: "You can practise consistent draw targets.",
+    evidence: ["overall"],
+  };
+  const narrative = {
+    summary: f,
+    strengths: [f],
+    priorities: [f],
+    practice: [f],
+    review: [f],
+    games: games.map((g) => ({
+      ...f,
+      key: g.key,
+      evidence: [`${g.key}-overall`],
+    })),
+  };
+  const fetcher = vi.fn().mockResolvedValue(
+    Response.json({
+      status: "completed",
+      output: [
+        {
+          type: "message",
+          content: [{ type: "output_text", text: JSON.stringify(narrative) }],
+        },
+      ],
+    }),
+  );
+  vi.stubGlobal("fetch", fetcher);
+  await expect(
+    generateShotTrackerNarrative(
+      { ...input, games, evidence: [...input.evidence, ...evidence] },
+      "players",
+      [],
+    ),
+  ).resolves.toEqual(narrative);
+  const body = JSON.parse(fetcher.mock.calls[0][1].body);
+  const schema = JSON.stringify(body.text.format.schema);
+  expect(body.max_output_tokens).toBe(5600);
+  expect(schema).toContain('"maxLength":450');
+  expect(schema).not.toContain('"maxLength":1200');
+  expect(schema).toContain('"maxItems":3');
+  expect(schema).toContain('"minItems":6');
+  expect(schema).toContain('"maxItems":6');
+  expect(body.input).not.toContain("PRIVATE GAME TITLE");
+});
+it("repairs rejected collective prose once without resending rejected content", async () => {
+  configure();
+  const fetcher = vi
+    .fn()
+    .mockResolvedValueOnce(
+      generated("A player needs PRIVATE REJECTED COMMENTARY."),
+    )
+    .mockResolvedValueOnce(generated("Our team can practise shared targets."));
+  vi.stubGlobal("fetch", fetcher);
+  const result = await generateShotTrackerNarrative(input, "team", []);
+  expect("summary" in result && result.summary.text).toBe(
+    "Our team can practise shared targets.",
+  );
+  expect(fetcher).toHaveBeenCalledTimes(2);
+  const retry = JSON.parse(fetcher.mock.calls[1][1].body);
+  expect(retry.instructions).toContain("Individual commentary in team report");
+  expect(JSON.stringify(retry)).not.toContain("PRIVATE REJECTED COMMENTARY");
+  expect(fetcher.mock.calls[0][1].signal).toBe(fetcher.mock.calls[1][1].signal);
+});
+it("bounds validation repair and still rejects unsupported evidence", async () => {
+  configure();
+  const fetcher = vi
+    .fn()
+    .mockImplementation(() =>
+      Promise.resolve(generated("Our team can practise.", "invented")),
+    );
+  vi.stubGlobal("fetch", fetcher);
+  await expect(generateShotTrackerNarrative(input, "team", [])).rejects.toThrow(
+    "Unknown evidence",
+  );
+  expect(fetcher).toHaveBeenCalledTimes(2);
+});
+it.each([
+  "credit_balance_exhausted",
+  "organization_spend_limit_exceeded",
+  "project_spend_limit_exceeded",
+  "organization_usage_limit_exceeded",
+  "insufficient_quota",
+])("classifies %s without exposing upstream details", async (code) => {
+  configure();
+  const log = vi.spyOn(console, "error").mockImplementation(() => {});
+  vi.stubGlobal(
+    "fetch",
+    vi
+      .fn()
+      .mockResolvedValue(
+        Response.json(
+          { error: { code, message: "private account details" } },
+          { status: 429 },
+        ),
+      ),
+  );
+  await expect(generateShotTrackerNarrative(input, "team", [])).rejects.toThrow(
+    "Report provider unavailable",
+  );
+  expect(log).toHaveBeenCalledWith("Shot Tracker AI request failed", {
+    status: 429,
+    code,
+  });
+  expect(JSON.stringify(log.mock.calls)).not.toContain(
+    "private account details",
+  );
+});
+it("honors temporary throttling delays and bounds retries", async () => {
+  configure();
+  const throttled = () =>
+    Response.json(
+      { error: { code: "rate_limit_exceeded" } },
+      { status: 429, headers: { "Retry-After": "2" } },
+    );
+  const fetcher = vi
+    .fn()
+    .mockImplementationOnce(throttled)
+    .mockResolvedValueOnce(generated("Our team can practise shared targets."));
+  vi.stubGlobal("fetch", fetcher);
+  await generateShotTrackerNarrative(input, "team", []);
+  expect(fetcher).toHaveBeenCalledTimes(2);
+  expect(vi.mocked(delay).mock.calls.at(-1)?.[0]).toBeGreaterThanOrEqual(2000);
+  fetcher.mockReset().mockImplementation(throttled);
+  vi.spyOn(console, "error").mockImplementation(() => {});
+  await expect(generateShotTrackerNarrative(input, "team", [])).rejects.toThrow(
+    "Report provider unavailable",
+  );
+  expect(fetcher).toHaveBeenCalledTimes(3);
+});
+it("defers long server waits and does not retry canceled requests", async () => {
+  configure();
+  vi.spyOn(console, "error").mockImplementation(() => {});
+  const fetcher = vi
+    .fn()
+    .mockResolvedValue(
+      Response.json(
+        { error: { code: "rate_limit_exceeded" } },
+        { status: 429, headers: { "Retry-After": "120" } },
+      ),
+    );
+  vi.stubGlobal("fetch", fetcher);
+  await expect(generateShotTrackerNarrative(input, "team", [])).rejects.toThrow(
+    "Report provider unavailable",
+  );
+  expect(fetcher).toHaveBeenCalledTimes(1);
+  const aborted = AbortSignal.abort();
+  await expect(
+    generateShotTrackerNarrative(input, "team", [], aborted),
+  ).rejects.toThrow();
+  expect(fetcher).toHaveBeenCalledTimes(1);
+});
+it("does not expose upstream failures or accept truncated responses", async () => {
+  configure();
+  const log = vi.spyOn(console, "error").mockImplementation(() => {});
+  vi.stubGlobal(
+    "fetch",
+    vi
+      .fn()
+      .mockResolvedValue(
+        new Response("private credential details", { status: 500 }),
+      ),
+  );
+  await expect(generateShotTrackerNarrative(input, "team", [])).rejects.toThrow(
+    "Report provider unavailable",
+  );
+  expect(log).toHaveBeenCalledWith("Shot Tracker AI request failed", {
+    status: 500,
+    code: "unavailable",
+  });
+  expect(JSON.stringify(log.mock.calls)).not.toContain(
+    "private credential details",
+  );
+  vi.stubGlobal(
+    "fetch",
+    vi
+      .fn()
+      .mockResolvedValue(Response.json({ status: "incomplete", output: [] })),
+  );
+  await expect(generateShotTrackerNarrative(input, "team", [])).rejects.toThrow(
+    "incomplete",
+  );
+});
+it("passes advanced evidence and coaching instructions to the model without raw records", async () => {
+  configure();
+  const fetcher = vi
+    .fn()
+    .mockResolvedValue(
+      generated(
+        "Rehearse the recorded weight pattern.",
+        "advanced-results-heavy",
+      ),
+    );
+  vi.stubGlobal("fetch", fetcher);
+  const row = {
+    id: "advanced-results-heavy",
+    label: "Heavy result observations",
+    value: "50.0% (2 of 4 shots)",
+    sample: 4,
+    confidence: "small" as const,
+  };
+  await generateShotTrackerNarrative({ ...input, evidence: [row] }, "team", []);
+  const body = JSON.parse(fetcher.mock.calls[0][1].body);
+  expect(JSON.parse(body.input).evidence).toEqual([row]);
+  expect(body.instructions).toContain(
+    "Called-versus-observed weight rows are categorical",
+  );
+  expect(body.instructions).toContain(
+    "When advanced evidence supports a priority",
+  );
+});
+
+it("writes only grounded player section findings, retries cross-section citations and permits no trend", async () => {
+  configure();
+  const row = {
+    ...input.evidence[0],
+    id: "event-1",
+    label: "Draw · Tagged miss · Overcurl",
+    value: "G1=3/5; G2=2/3",
+  };
+  const finding = {
+    text: "Your draws repeatedly overcurled.",
+    evidence: [row.id],
+  };
+  const output = (eventTrends: (typeof finding)[], eventStats = [finding]) =>
+    Response.json({
+      status: "completed",
+      output: [
+        {
+          type: "message",
+          content: [
+            {
+              type: "output_text",
+              text: JSON.stringify({ eventStats, eventTrends }),
+            },
+          ],
+        },
+      ],
+    });
+  const fetcher = vi
+    .fn()
+    .mockResolvedValueOnce(output([finding]))
+    .mockResolvedValueOnce(output([]));
+  vi.stubGlobal("fetch", fetcher);
+  const scoped = { ...input, sectionEvidence: [row] };
+  expect(await generateShotTrackerNarrative(scoped, "players", [])).toEqual({
+    eventStats: [finding],
+    eventTrends: [],
+  });
+  expect(fetcher).toHaveBeenCalledTimes(2);
+  const body = JSON.parse(fetcher.mock.calls[0][1].body);
+  expect(JSON.parse(body.input)).toEqual({ evidence: [row] });
+  expect(body.max_output_tokens).toBe(8000);
+  expect(Object.keys(body.text.format.schema.properties)).toEqual([
+    "eventStats",
+    "eventTrends",
+  ]);
+  expect(
+    await generateShotTrackerNarrative(
+      { ...input, sectionEvidence: [] },
+      "players",
+      [],
+    ),
+  ).toEqual({ eventStats: [], eventTrends: [] });
+  expect(fetcher).toHaveBeenCalledTimes(2);
+  const longer = { ...finding, text: "Draws ".repeat(30).trim() };
+  fetcher.mockImplementation(async () => output([], [longer, longer]));
+  expect(await generateShotTrackerNarrative(scoped, "players", [])).toEqual({
+    eventStats: [longer],
+    eventTrends: [],
+  });
+  for (const invalid of ["Draw ".repeat(56).trim(), "Read www.example.com"]) {
+    finding.text = invalid;
+    fetcher.mockImplementation(async () => output([]));
+    await expect(
+      generateShotTrackerNarrative(scoped, "players", []),
+    ).rejects.toThrow();
+  }
+});

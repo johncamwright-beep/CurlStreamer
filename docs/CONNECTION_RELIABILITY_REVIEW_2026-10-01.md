@@ -1,0 +1,171 @@
+# Connection reliability review — October 1, 2026
+
+## Recommendation
+
+The focused connection-management redesign is implemented: each phone and native receiver camera has one connection owner, one retry policy, and explicit states. Retain the existing camera capture, portrait rendering, OBS recording, and microphone components while collecting synchronized logs from a sustained physical run. Rewriting the entire video transport would not address a server outage or a phone browser being suspended.
+
+This review does **not** certify uninterrupted physical-device broadcasting. Automated tests and an offline native check cannot establish that. A sustained two-phone test with the matching Studio package is still required.
+
+## Evidence observed
+
+At approximately 1:50 PM Toronto time on October 1, a read-only inspection of the Team Benning vs TEAM TEST game showed:
+
+- Both camera assignments still matched their current device and assignment generation.
+- Both receiver sessions were active and within their absolute expiry.
+- Studio's receiver heartbeats were about 37 minutes old. Phone heartbeats were older still.
+- The Studio launcher, Node controller, and native recorder were running. The lifecycle journal contained no corresponding controller/native exit.
+- Local output reported recording with an unknown output state; both cameras were absent, pairing was unpaired, and streaming was idle.
+
+The immediate failure was an abandoned Studio session renewal, despite a surviving process. The evidence does not establish that the router or Wi-Fi caused it. A current provider latency notice was also visible, but that is not proof of the initiating cause.
+
+## Confirmed defects and changes
+
+| Defect                                                                                                              | Effect                                                                                                | Change                                                                                                                                                                                                          |
+| ------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Whole-program authorization converted two temporary database failures into a revoked-scope response.                | The local program client permanently discarded its credential. Keeping Studio open did not repair it. | Preserve the temporary-unavailable classification and return 503; genuinely rejected scopes still fail closed.                                                                                                  |
+| A receiver heartbeat older than 30 seconds could not renew itself.                                                  | Both phones entered recovery while Studio could never resume the original session.                    | Allow only an authenticated receiver check for the exact current, active, unexpired session to renew. Fence the old negotiation and require fresh camera negotiation. No expiry extension or claim replacement. |
+| Local program reads converted exhausted network retries into a generic authority error.                             | The renderer could not distinguish a temporary server outage from revoked access.                     | Preserve a retryable transport error and return 503 through the local bridge.                                                                                                                                   |
+| A camera could stop before its asynchronous setup returned, after which the renderer saved the already-dead handle. | Later retries found a handle and did nothing.                                                         | Track early termination and never retain a stopped handle.                                                                                                                                                      |
+| The initial phone claim had no request deadline.                                                                    | Connect could remain pending during an unresponsive request.                                          | Add an eight-second deadline and record the failure without replaying a potentially completed claim automatically.                                                                                              |
+| Lifecycle logs mostly explained starts/exits, not connection failures.                                              | Screens showed generic statuses without evidence of the first failure.                                | Add bounded, structured connection diagnostics at the phone, renderer, Studio controller, and server boundaries.                                                                                                |
+
+The recovery migration preserves organization/game authorization, absolute session expiry, assignment generation, camera release, game completion, and private channel restrictions. It does not allow a phone to revive an offline receiver or reuse an old negotiation.
+
+## Connection path and remaining design risks
+
+1. A QR invitation claims one camera role for a particular device and generation.
+2. Studio holds a signed program scope and independently maintains the two receiver sessions.
+3. The phone begins a negotiation, obtains short-lived channel authority, and exchanges signaling through the cloud.
+4. WebRTC verifies the direct media path; the native renderer receives the video and microphone tracks.
+5. OBS records the program and sends a separate authorized output to YouTube.
+
+These are separate failure domains, but the current UI often compresses them into “status unavailable.” A surviving phone capture does not prove Studio is renewing; a missing live badge does not prove OBS stopped sending; a healthy LAN media path does not prove cloud authority can renew.
+
+The main architectural risk is the dependency of ongoing local media on frequent cloud authorization. Camera channel authority is limited to approximately 20 seconds and normally renewed every five seconds. This is intentional revocation protection, but a cloud outage can interrupt otherwise healthy LAN video. Removing the checks would compromise access boundaries. Any redesign needs an explicit, bounded revocation model.
+
+The phone now uses one scoped, single-flight read every two seconds for microphone intent, reconnect commands, and zoom commands, replacing two overlapping polling loops. Native media observations are single-flight with a five-second deadline, and unchanged connection phases no longer republish UI/status diagnostics. The renderer still reads the program about once per second, and each read checks both receiver roles; channel renewal and direct-path checks remain independent. These are code-derived rates, not a measured production request profile. Profile remaining server work before changing authorization timing. Do not cache authorization merely to conceal an outage.
+
+## Logs now available
+
+| Location                                                         | Captures                                                                                                                                                                                                 |
+| ---------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Phone camera page: **Download connection log**                   | Setup attempts, capture/permission failures, page visibility, wake-lock outcomes, HTTP status and duration, server trace IDs, retry scheduling, peer stop reasons, and periodic aggregate media samples. |
+| `%LOCALAPPDATA%\CurlStreamer\Studio\connection-diagnostics.json` | Program requests, recovery, private-channel status, lease expiry, renderer camera failures, aggregate received-video samples, USB audio state, and desktop/YouTube request failures and recovery.        |
+| `%LOCALAPPDATA%\CurlStreamer\Studio\controller-diagnostics.json` | Existing controller/native lifecycle and output diagnostics. Keep this alongside the new connection journal.                                                                                             |
+| Hosting logs: `CurlStreamer connection`                          | Failed or slow camera/program/YouTube control requests, safe error codes, fixed stage labels, and `x-curlstreamer-trace` correlation IDs.                                                                |
+
+Phone history persists across a page reload where browser storage is available; otherwise the current page can still export its in-memory history. Studio history persists across restart. Each journal retains at most 512 events and coalesces repeated failures within a 15-second window. This is diagnostic history, not permanent telemetry; export promptly after a failure. The logs use a strict allowlist and never record credentials, RTMP keys, raw error messages, request/response bodies, SDP, ICE addresses, camera device identifiers, or audio/video content. Media samples contain only aggregate frame/byte counters and connection state. Logging failure cannot stop capture or media.
+
+Server tracing adds a correlation ID even to successful responses, but logs only errors and slow requests. Successful ticket and output-target bodies are not inspected by the logger. The diagnostics do not upload phone journals automatically.
+
+## How to identify the initiating failure
+
+Read the first failure before repeated retries, using UTC timestamps and server trace IDs:
+
+| Sequence                                                                             | Interpretation / next action                                                                                                                 |
+| ------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| Server timeout or database 503, followed by authority expiry while media was healthy | Control-plane failure. Prioritize consolidated renewal and a carefully authorized local recovery design.                                     |
+| Cloud checks succeed, then ICE fails or received frames stop                         | Media-path failure. Inspect direct-path verification, receiver ownership, and transport behavior before replacing capture.                   |
+| `camera_released` or an actual authority rejection                                   | Check role/generation and game lifecycle. Do not silently bypass release or expiry.                                                          |
+| Page becomes hidden, wake is released/denied, then capture stops                     | Browser/OS suspension. Retry logic cannot guarantee foreground behavior for a locked or suspended phone.                                     |
+| YouTube control fails but local video/OBS delivery continues                         | Separate the status display from transport evidence. Preserve the saved broadcast; do not create another link as a status-recovery shortcut. |
+| Native/controller exits                                                              | Use the existing lifecycle journal and local output diagnostics together with the new connection history.                                    |
+
+Wake lock is best effort. Browsers can deny it or release it when a document becomes hidden, the battery is low, or power-saving restrictions apply. The camera page should continue requesting wake while it is foregrounded during recovery, but a web page cannot promise an unlocked device indefinitely. See [MDN's wake-lock request requirements](https://developer.mozilla.org/en-US/docs/Web/API/WakeLock/request) and [release behavior](https://developer.mozilla.org/en-US/docs/Web/API/WakeLockSentinel/release_event).
+
+YouTube disconnect/reconnect should retain the current saved broadcast while it remains reusable. A broadcast explicitly transitioned to complete has ended; that is distinct from pausing transport. See [Google's broadcast transition API](https://developers.google.com/youtube/v3/live/docs/liveBroadcasts/transition).
+
+## Implemented connection coordinator
+
+`CameraConnectionCoordinator` owns one reserved setup operation and one current handle per camera. Its states are idle, connecting, capturing, waiting for Studio, negotiating, streaming, retrying, blocked, and stopped. It invalidates the old attempt before aborting or releasing resources. Manual reconnect, remote reconnect, and scheduled retries coalesce; a replacement cannot start until an unfinished setup settles. Late handles are stopped, and retired callbacks cannot alter current capture, status, audio, or metrics.
+
+Recovery uses typed failure classifications rather than a shared retry flag or parsing human messages. Temporary transport, Studio availability, and verified media-path failures use capped backoff; permission denial, missing devices, release, and explicit authority rejection require operator action. A ten-second continuously verified media interval resets backoff. Phone consent and page wake-lock ownership remain separate from the connection: a disconnected foreground camera page keeps requesting wake, but page closure clears capture consent.
+
+Claims capture the invitation and attempt epoch, have an eight-second deadline covering the response body, and cannot overwrite a newer invitation. Cancel remains available while setup is pending. A cancelled permission rejection cannot start a second capture request. Delayed receiver heartbeats cannot discard a valid successor. Temporary heartbeats do not become permanent revocation. Provider renewal and ready announcements are single-flight, and their late callbacks are fenced.
+
+Native event reads now carry the exact session, negotiation, receiver generation, and assignment generation. The bridge validates all four fields with a strict schema. A retired request is rejected before queue consumption and cannot close or drain the successor subscription. This matters because aborting a browser fetch alone cannot guarantee that a request has not reached the server.
+
+Game state, camera claims, absolute authority expiry, direct-path verification limits, OBS output ownership, and the saved YouTube broadcast remain governed by their existing boundaries. Camera recovery does not dispatch a game reset, camera release, YouTube completion, or broadcast creation.
+
+Remaining design work should follow evidence: profile program projection and cloud renewal latency, distinguish status polling from actual OBS delivery, and consider authenticated local signaling only if synchronized logs show cloud renewal is still the recurring bottleneck. Any local design needs an explicit bounded revocation model.
+
+### Competing phone tabs identified in the pilot 8 test
+
+Camera 1's exported log showed repeated negotiation failures and channel closures, followed by a brief verified direct connection. Studio's matching journal showed Camera 2 continuing to receive video while Camera 1 repeatedly lost its negotiation; the controller did not exit. John confirmed that Camera 1's phone had several camera tabs open. After closing the older tabs and connecting once in the newest tab, he reported that Camera 1 stayed connected. Starting on the wrong Wi-Fi may explain the initial failure, but it does not establish the cause of the later retries.
+
+The coordinator owns attempts within one mounted page. The remaining gap was ownership between pages: they share participant credentials in browser storage, so an older consenting page could read a newer camera credential and begin a competing negotiation. Server fencing correctly rejects the replaced negotiation, but automatic recovery allowed the pages to keep replacing each other.
+
+The phone now acquires a game-and-role page marker only when the operator taps Connect. Another tab's deliberate Connect retires the old page's capture, microphone, connection, and retries, with a clear takeover message. Synchronous ownership checks fence requests, awaited setup, microphone publication, and organizer-command polling even before a delayed storage event arrives. A retired page cannot erase its successor's marker on disconnect or closure. Automatic recovery retains ownership and cannot take it back. Ownership replacement is recorded as `camera_page_replaced` without recording the marker or credentials.
+
+This browser marker coordinates local pages; it grants no server authority. Existing camera authorization, assignment generation, negotiation identity, expiry, and release checks remain authoritative. Separate browsers or devices still require the existing server checks. This change needs only the phone website update; it does not require replacing native Studio or interrupting the working cameras.
+
+Teardown only retires the page's local active state and leaves an inert marker. Browser storage has no atomic compare-and-remove operation: reading then deleting could erase another tab's intervening acquisition. The marker cannot authorize retries after local retirement, and the next deliberate Connect overwrites it.
+
+Longer physical-device endurance and the saved YouTube broadcast recovery checks remain outstanding. Closing competing tabs is a confirmed successful user intervention, not a completed endurance test of the new guard.
+
+### Intentional phone pause and Studio recovery
+
+John's next test identified a separate issue: tapping Disconnect phone permanently cleared capture consent and page ownership. That correctly stopped media, but also stopped organizer-command polling, so Studio's Reconnect camera could not reach the still-open phone page.
+
+The connected phone action is now **Pause camera**. It stops video, microphone publication, pending setup, and automatic retries while retaining the current page's prior consent and ownership. The page displays **Paused** and **Resume camera**; an authorized, unconsumed Studio command issued after the pause can resume it once. Commands issued before or at the pause are ignored. A local Resume starts fresh capture consent so a pre-pause command cannot immediately restart it again. Page closure, a replacement invitation, takeover, authority rejection, and game completion still permanently retire consent and resources. Wake lock remains best effort and independent of media.
+
+Studio's **Reconnect camera** stays in a stable position but is disabled while fresh native evidence confirms advancing received video frames. Phone-online status alone cannot disable it. The native proof expires when frame counters stop advancing; the normal two-second status cadence makes recovery available roughly five to seven seconds after the last advancing frame. If native status events stop entirely, the card's existing six-second expiry also enables recovery. The handler independently rejects reconnect while video is verified.
+
+Pause and remote resume add fixed diagnostic codes `camera_paused` and `camera_remote_resume`; neither includes credentials or page markers. This is a website update and requires refreshing the relevant web pages after the current run, with no Studio reinstall.
+
+## Validation and rollout
+
+Validation completed so far:
+
+- Full unit suite: 1,688 passed; 95 conditional database integration tests skipped. The live PostgreSQL recovery fixture below was run separately.
+- Type checking and formatting passed. The production build passed with the browser suite's explicit test configuration. An initial unconfigured build failed because the required Supabase URL was absent; no credentials were added to the repository.
+- Main browser suite: 168 passed and 92 skipped initially; four failures came from two test fixtures affected by the new diagnostic button and renderer mock. Both affected files were corrected and rerun: all 10 desktop/mobile checks passed, including early camera failure and independent camera recovery.
+- Pilot 7 native package: relocated bundle, empty profile, unarmed native check, and graceful controller exit passed. The package was staged without changing the running Studio instance.
+- Live database: migration 0069 was installed and verified. Its isolated recovery fixture passed inside a savepoint and all fixture data was rolled back. Existing games and camera assignments were not changed.
+- Separate YouTube/settings browser fixture suite: all 78 desktop/mobile checks passed, with a second successful production build.
+
+Website deployment verified at 2:34 PM Toronto time: commit `f8a2c0b`, Vercel deployment `dpl_C4pYvXvQwNP7ixtBzxjGjLERVDhw`, Ready and assigned to `www.curlstreamer.app`. Public asset verification found the phone diagnostic export and persistent-history code. Harmless invalid-game requests to the M2, M3, and M4 desktop routes each returned 400 with a valid correlation ID. Evidence is saved locally under `work/connection-diagnostics-deployment-proof.json`, `work/connection-diagnostics-vercel-ready.png`, and `work/receiver-recovery-installed.png`.
+
+Pilot 7 was installed after Studio closed, with all 2,247 manifest components verified and a rollback backup. The coordinator replaces it with a matching pilot 8 package; its final validation, installation, and deployment evidence are recorded below when confirmed. The Windows Start menu shortcut targets the installed package. The public installer download has not been republished by this change.
+
+Required physical verification: a 45–60 minute run with both phones, then controlled interruption of one phone, Studio restart/resume, scoring navigation, and YouTube disconnect/reconnect on the same saved broadcast. Collect both phone exports and both Studio journals immediately after any interruption.
+
+No real broadcast, camera release, or game reset was initiated during this review. Studio must remain closed during package replacement; reopening it can resume recording and camera connections.
+
+### Coordinator validation and rollout
+
+- Formatting and type checking passed.
+- Full unit suite: 1,709 passed, with 95 conditional database integration tests skipped. This includes 64 focused coordinator/provider/bridge checks covering cancellation, stale work, typed failures, strict event scope, and successor queue preservation.
+- Pilot 8 package: relocated bundle, empty profile, unarmed native check, and graceful controller exit passed.
+- Main desktop/mobile browser suite: 182 passed, 92 conditional fixture checks skipped. Separate YouTube/settings fixture suite: all 78 passed. Both suites built the production app successfully with explicit test configuration.
+- Installed Studio: `0.4.0-pilot.8`; all 2,247 installed component hashes match its manifest. Five files replaced; rollback backup is `work/studio-before-coordinator-20261001-151946`. The Windows Start menu shortcut was verified to target the installed executable. Studio was left closed.
+- Final native adapter regression: two more desktop/mobile checks passed, proving 403 blocks one camera without retrying while the other recovers independently from 503. An additional production build and type check passed.
+- Website code deployment verified: commit `19de2a4`, deployment `dpl_JApZD6ARvJt62PMAgZGn6E9654Hd`, Ready on `www.curlstreamer.app`. At 3:26 PM Toronto time the public camera page served that exact deployment's asset containing the new coordinator states, automatic recovery message, Cancel connection control, and diagnostic export. Asset SHA-256: `c6261ee7f6a8c2de82214acff21110ec5404eb33788aee10f1fd84009d0ffe57`. Evidence: `work/coordinator-deployment-proof.json` and the deployment screenshot in the chat's visualization directory.
+
+### Next physical check
+
+1. Open **CurlStreamer Studio** from the Windows Start menu and resume the existing game. This PC already has pilot 8; a public installer redownload is not needed for this test.
+2. Refresh both existing camera pages in their original phone browsers, then tap **Connect phone** once on each. Do not release camera assignments or create a replacement game just to test recovery.
+3. Run both cameras for ten minutes with YouTube off. If steady, connect the saved YouTube broadcast and continue for 45–60 minutes. A short successful interval is not an endurance result.
+4. Exercise one phone interruption, Studio close/resume, and remote Reconnect camera. Record whether local picture/audio and the actual YouTube feed continue, separately from badges/status.
+5. If a drop occurs, export both phone connection logs promptly and retain both Studio journals. Compare the initiating event, not only later retry messages. This rollout has not yet passed the physical-device endurance check.
+
+### Page ownership validation
+
+- Final formatting and type checks passed. Full unit suite: 1,718 passed, with 95 conditional database checks skipped; this includes nine ownership tests.
+- Full main desktop/mobile browser run: 190 passed, 92 conditional checks skipped, and two initial failures. The new microphone fixture had a clock pause race; it was corrected by freezing time before mounting. The existing synthetic DirectPeer test encountered a browser-redacted peer-reflexive endpoint and correctly failed verification. Both affected files passed all 16 checks in an isolated rerun; verification restrictions were retained.
+- Final ownership implementation: all eight desktop/mobile regression checks passed, covering deliberate takeover, independent Camera 2, late callbacks/providers, delayed storage events, old-tab cleanup, remote recovery, and late microphone setup. The final change also passed a production build.
+- Separate YouTube/settings browser suite: all 78 passed with its successful production build. These were fixture tests; no real YouTube output was initiated.
+- Passive Studio observations at 20:06 UTC showed both roles reporting verified direct connections with advancing frame/byte counters. Combined with John's report after closing old tabs, this supports the competing-page diagnosis. It does not establish an endurance result for the new code.
+
+Website deployment verified at 4:15 PM Toronto time: commit `fc8b832`, deployment `dpl_EzAiXCQUhZ4vHiYuNMBJB9PN44Cw`, Ready and assigned to `www.curlstreamer.app`. Public camera-page asset verification found the ownership marker, takeover message, diagnostic event, and log export in that exact deployment's bundle. Asset SHA-256: `29e30889d4da19742bbf58b5ee2dad9b078c7ece7ac24e4a2ce4c1248673c1e4`. Evidence: `work/camera-page-owner-deployment-proof.json` and `camera-page-ownership-deployed.png` in the chat's visualization directory.
+
+After the current camera run, reload the remaining camera page on each phone and tap Connect once to load the web guard. Keep only one camera page per phone during that transition. This update does not need another Studio installation.
+
+### Pause/resume validation
+
+- Full unit suite: 1,718 passed; 95 conditional database tests skipped. Formatting and type checking passed.
+- Full main desktop/mobile browser run: 205 passed, 92 conditional checks skipped, and five fixture failures. Two expectations still required the old cancellation text, two incorrectly required a rerender during page unload, and one frozen-clock takeover assertion needed to advance the next intent poll after a delayed routed response. The resource, permission, ownership, and stale-command assertions were retained.
+- Corrected affected files: all 44 desktop/mobile checks passed, including 26 ownership/pause cases, cancellation and stale setup, microphone/wake lifecycle, and state-aware Studio controls. The production build passed in both the main and focused browser runs.
+- Separate YouTube/settings fixture suite: all 78 desktop/mobile checks passed with another successful production build.
+- These are mocked browser tests, not a completed physical-device endurance run. No real broadcast, camera release, or game reset was initiated.

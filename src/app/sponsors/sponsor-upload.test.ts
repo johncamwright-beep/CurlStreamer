@@ -1,11 +1,21 @@
 import { describe, expect, it, vi } from "vitest";
 import {
+  isSafeSponsorWebsite,
+  normalizeSponsorWebsite,
   optimizedDimensions,
   snapshotSponsorFiles,
   uploadSponsorFiles,
 } from "./sponsor-upload";
 
 describe("multi-sponsor upload", () => {
+  it("accepts optional HTTPS sponsor websites and rejects unsafe URLs", () => {
+    expect(normalizeSponsorWebsite(" https://example.com/sponsor ")).toBe(
+      "https://example.com/sponsor",
+    );
+    expect(normalizeSponsorWebsite("")).toBeUndefined();
+    expect(isSafeSponsorWebsite("http://example.com")).toBe(false);
+    expect(isSafeSponsorWebsite("https://user@example.com")).toBe(false);
+  });
   it("never upscales and constrains wide, square, and portrait images", () => {
     expect(optimizedDimensions(800, 400)).toEqual({ width: 800, height: 400 });
     expect(optimizedDimensions(3200, 1600)).toEqual({
@@ -34,12 +44,13 @@ describe("multi-sponsor upload", () => {
       "first.png",
       "second.webp",
     ]);
+    expect(pending[0]).toMatchObject({ name: "first", altText: "first logo" });
   });
 
   it("uploads sequentially with progress", async () => {
     let concurrent = 0;
     let maximum = 0;
-    const request = vi.fn(async () => {
+    const request = vi.fn(async (_form: FormData) => {
       concurrent++;
       maximum = Math.max(maximum, concurrent);
       await Promise.resolve();
@@ -55,6 +66,10 @@ describe("multi-sponsor upload", () => {
     );
     expect(outcomes.every((item) => item.ok)).toBe(true);
     expect(request).toHaveBeenCalledTimes(2);
+    const firstMetadata = JSON.parse(
+      (request.mock.calls[0][0] as FormData).get("metadata") as string,
+    );
+    expect(firstMetadata).toEqual([expect.objectContaining({ name: "first" })]);
     expect(maximum).toBe(1);
     expect(progress).toHaveBeenLastCalledWith(2, 2, "second.webp");
   });

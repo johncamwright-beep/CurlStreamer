@@ -19,10 +19,10 @@ describe("sponsor management separation", () => {
 
   it("keeps only carousel operations on scoring control", () => {
     expect(control).toContain("Carousel settings");
-    expect(control).toContain("Start carousel");
-    expect(control).toContain("Stop carousel");
-    expect(control).toContain(">Sidebar</option>");
-    expect(control).toContain(">Overlay</option>");
+    expect(control).toContain("Start sponsors");
+    expect(control).toContain("Stop sponsors");
+    expect(control).toContain('aria-label="Sponsor placement"');
+    expect(control).toContain('"Overlay" : "Side panel"');
     expect(control).not.toContain("Add Sponsor Images");
     expect(control).not.toContain("Sponsor images</h2>");
   });

@@ -50,6 +50,7 @@ describe("LiveKit camera client", () => {
     expect(range).toEqual({ min: 0.5, max: 3, step: 0.5 });
     expect(clampZoom(10, range)).toBe(3);
     expect(clampZoom(0.1, range)).toBe(0.5);
+    expect(clampZoom(2, { min: 1, max: 1.5, step: 1 })).toBe(1.5);
   });
 
   it("only exposes reliably identified rear lens labels", () => {

@@ -1,0 +1,359 @@
+import { useId } from "react";
+import ReportComparison from "./ReportComparison";
+import {
+  reportContent,
+  reportSummaryCards,
+  reportTrendPoints,
+} from "@/lib/curlcoach/report-content";
+import { reportLogo } from "@/lib/curlcoach/report-logo";
+import type { SavedReport } from "@/lib/curlcoach/reports";
+
+export default function ReportDocument({
+  report,
+  eventName,
+}: {
+  report: SavedReport;
+  eventName: string;
+}) {
+  const titleId = useId();
+  const cards = reportSummaryCards(report);
+  return (
+    <article className="report-document" aria-labelledby={titleId}>
+      <header className="report-masthead">
+        {/* eslint-disable-next-line @next/next/no-img-element -- Same embedded logo used by the PDF. */}
+        <img src={reportLogo} width={268} height={67} alt="CurlStreamer" />
+        <div>
+          <strong>Shot Tracker</strong>
+          <span>Event performance report</span>
+        </div>
+      </header>
+      <div className="report-sheet">
+        <h3 id={titleId}>{report.title}</h3>
+        <p className="report-event-name">{eventName}</p>
+        {cards.length > 0 && (
+          <dl
+            className={
+              cards.every((c) => !c.basis)
+                ? "report-summary report-summary-compact"
+                : "report-summary"
+            }
+            aria-label="Report summary"
+          >
+            {cards.map((card) => (
+              <div key={card.label}>
+                <dt>{card.label}</dt>
+                <dd>
+                  <strong>{card.value}</strong>
+                  {card.basis && <span>{card.basis}</span>}
+                  {"difficulty" in card &&
+                    typeof card.difficulty === "number" && (
+                      <div
+                        aria-label="Relative event difficulty: 0 easier, 50 usual, 100 harder"
+                        style={{
+                          position: "relative",
+                          height: 72,
+                          width: 12,
+                          background: "linear-gradient(to top,#28af46,#ce3434)",
+                          marginLeft: "auto",
+                        }}
+                      >
+                        <span
+                          style={{
+                            position: "absolute",
+                            bottom: card.difficulty + "%",
+                            left: 14,
+                          }}
+                        >
+                          ◀
+                        </span>
+                      </div>
+                    )}
+                  {"direction" in card && !!card.direction && (
+                    <span
+                      style={{
+                        color: card.direction > 0 ? "#CE3434" : "#18824A",
+                      }}
+                    >
+                      {card.direction > 0 ? "▲" : "▼"}
+                    </span>
+                  )}
+                </dd>
+              </div>
+            ))}
+          </dl>
+        )}
+        {reportContent(report).map((block, index) => {
+          switch (block.kind) {
+            case "matrix":
+              return <ReportComparison key={block.title} matrix={block} />;
+            case "heading":
+              return <h4 key={index}>{block.title}</h4>;
+            case "text":
+              return (
+                <p
+                  key={index}
+                  className={block.muted ? "report-note" : undefined}
+                >
+                  {block.value}
+                </p>
+              );
+            case "table":
+              return (
+                <div
+                  key={index}
+                  className={
+                    block.headers.length >= 4 ? "report-wide-table" : undefined
+                  }
+                >
+                  <table>
+                    {block.caption && (
+                      <caption className="pb-2 text-left font-bold">
+                        {block.caption}
+                      </caption>
+                    )}
+                    {block.caption && (
+                      <colgroup>
+                        {block.widths.map((w, i) => (
+                          <col
+                            key={i}
+                            style={{ width: (100 * w) / 178 + "%" }}
+                          />
+                        ))}
+                      </colgroup>
+                    )}
+                    <thead>
+                      <tr>
+                        {block.headers.map((header, index) => (
+                          <th key={index} scope="col">
+                            {header}
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {block.rows.map(([label, ...values], row) => (
+                        <tr key={row}>
+                          <th scope="row">{label}</th>
+                          {values.map((value, column) => (
+                            <td key={column}>
+                              {column === values.length - 1 &&
+                              block.lastColumnLinks?.[row] ? (
+                                <a
+                                  className="inline-flex min-h-11 items-center underline"
+                                  href={block.lastColumnLinks[row]!}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                >
+                                  {value}
+                                </a>
+                              ) : (
+                                value
+                              )}
+                              {((block.layout === "shooting" && column === 0) ||
+                                block.layout === "rates") &&
+                                /^\d+(?:\.\d+)?%/.test(value) && (
+                                  <span
+                                    className="report-meter"
+                                    aria-hidden="true"
+                                  >
+                                    <span
+                                      style={{ width: parseFloat(value) + "%" }}
+                                    />
+                                  </span>
+                                )}
+                            </td>
+                          ))}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              );
+            case "trend": {
+              const points = reportTrendPoints(block.games);
+              const x = (relative: number) => 58 + 490 * relative;
+              const min = block.minimum ?? 0,
+                max = block.maximum ?? 100;
+              const y = (value: number) =>
+                144 - (118 * (value - min)) / (max - min);
+              return (
+                <div
+                  key={index}
+                  className={block.rows ? "report-chart-table" : undefined}
+                >
+                  <div>
+                    {block.secondary && (
+                      <p>
+                        <span style={{ color: "#087D90" }}>Shooting %</span> ·{" "}
+                        <span style={{ color: "#CE3434" }}>
+                          Relative difficulty (50 = usual)
+                        </span>
+                      </p>
+                    )}
+                    <svg
+                      key={index}
+                      className="report-trend"
+                      viewBox="0 0 600 180"
+                      role="img"
+                      aria-label={
+                        block.eventLabels && block.firstColumnLabel !== "Game"
+                          ? "Performance across events in chronological order"
+                          : `Shooting percentage by game, games ${block.firstGame} to ${block.firstGame + points.length - 1}`
+                      }
+                    >
+                      {[max, (min + max) / 2, min].map((value) => (
+                        <g key={value}>
+                          <line
+                            x1={x(0)}
+                            x2={x(1)}
+                            y1={y(value)}
+                            y2={y(value)}
+                          />
+                          <text x={x(0) - 7} y={y(value) + 5} textAnchor="end">
+                            {value.toFixed(0)}
+                            {block.unit ?? "%"}
+                          </text>
+                        </g>
+                      ))}
+                      {block.reference !== undefined && (
+                        <line
+                          x1={x(0)}
+                          x2={x(1)}
+                          y1={y(block.reference)}
+                          y2={y(block.reference)}
+                          stroke="#71828D"
+                          strokeDasharray="4 4"
+                        />
+                      )}
+                      {points.map((point, index) => {
+                        const previous = points[index - 1];
+                        return (
+                          <g key={index}>
+                            <text x={x(point.x)} y="169" textAnchor="middle">
+                              {block.eventLabels?.[index] ??
+                                `Game ${block.firstGame + index}`}
+                            </text>
+                            {point.value !== null && (
+                              <>
+                                {previous && previous.value !== null && (
+                                  <line
+                                    className="report-trend-line"
+                                    x1={x(previous.x)}
+                                    y1={y(previous.value)}
+                                    x2={x(point.x)}
+                                    y2={y(point.value)}
+                                  />
+                                )}
+                                <circle
+                                  cx={x(point.x)}
+                                  cy={y(point.value)}
+                                  r="5"
+                                />
+                              </>
+                            )}
+                          </g>
+                        );
+                      })}
+                      {block.secondary?.map((value, i) => {
+                        if (value === null) return null;
+                        const pi = block
+                          .secondary!.slice(0, i)
+                          .map((v, j) => (v === null ? -1 : j))
+                          .filter((j) => j >= 0)
+                          .at(-1);
+                        return (
+                          <g
+                            key={"difficulty-" + i}
+                            style={{ fill: "#CE3434", stroke: "#CE3434" }}
+                          >
+                            {pi !== undefined && (
+                              <line
+                                style={{ stroke: "#CE3434", strokeWidth: 3 }}
+                                x1={x(points[pi].x)}
+                                y1={y(block.secondary![pi]!)}
+                                x2={x(points[i].x)}
+                                y2={y(value)}
+                              />
+                            )}
+                            <circle cx={x(points[i].x)} cy={y(value)} r={4} />
+                          </g>
+                        );
+                      })}
+                    </svg>
+                  </div>
+                  {block.rows && (
+                    <table>
+                      <thead>
+                        <tr>
+                          <th>{block.firstColumnLabel ?? "Event"}</th>
+                          <th>
+                            {block.valueLabel ??
+                              (block.secondary
+                                ? "Shooting / difficulty"
+                                : "Rate")}
+                          </th>
+                          <th>Shots</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {block.rows.map((row, i) => (
+                          <tr key={i}>
+                            {row.map((v, j) => (
+                              <td key={j}>{v}</td>
+                            ))}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  )}
+                </div>
+              );
+            }
+            case "practice":
+              return (
+                <div className="report-practice" key={index}>
+                  <h5>Practice {block.number}</h5>
+                  <p>{block.text}</p>
+                </div>
+              );
+            case "flag": {
+              const { flag } = block;
+              return (
+                <div
+                  className="report-flag"
+                  key={`${flag.gameId}:${flag.shotId}`}
+                >
+                  <h5>
+                    {flag.shooter && `${flag.shooter} · `}
+                    {flag.game}
+                    {flag.end !== null && (
+                      <>
+                        {" "}
+                        · End {flag.end} · Stone {flag.stone}
+                      </>
+                    )}
+                  </h5>
+                  <p className="report-note">{flag.type}</p>
+                  <p>{flag.note || "No coach’s note added."}</p>
+                  {flag.url ? (
+                    <a
+                      href={flag.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >
+                      Review video
+                      {flag.estimated ? " (approximate timing)" : ""}
+                    </a>
+                  ) : (
+                    <p className="report-note">Recording unavailable.</p>
+                  )}
+                </div>
+              );
+            }
+          }
+        })}
+        <footer>CurlStreamer | Shot Tracker</footer>
+      </div>
+    </article>
+  );
+}

@@ -1,0 +1,601 @@
+<!doctype html>
+<html lang="en">
+  <meta charset="utf-8" /><meta
+    name="viewport"
+    content="width=device-width,initial-scale=1"
+  /><title>Phone shot review</title>
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+    body {
+      margin: 0;
+      background: #081623;
+      color: #e9f4ff;
+      font: 17px system-ui;
+    }
+    main {
+      max-width: 760px;
+      margin: auto;
+      padding: 16px;
+    }
+    h1 {
+      font-size: 24px;
+      margin: 6px 0;
+    }
+    p {
+      line-height: 1.4;
+    }
+    .muted {
+      color: #afc5d9;
+      font-size: 14px;
+    }
+    .card {
+      background: #102738;
+      border: 1px solid #345265;
+      border-radius: 14px;
+      padding: 14px;
+      margin: 14px 0;
+    }
+    button,
+    input,
+    textarea {
+      font: inherit;
+      min-height: 48px;
+      border: 1px solid #547388;
+      border-radius: 9px;
+      background: #142e42;
+      color: white;
+      padding: 10px;
+    }
+    button {
+      cursor: pointer;
+    }
+    button:disabled {
+      opacity: 0.5;
+    }
+    .row {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+    .row button {
+      flex: 1;
+    }
+    .primary {
+      background: #4bb4ff;
+      color: #04131f;
+      font-weight: 700;
+    }
+    video {
+      display: block;
+      width: 100%;
+      max-height: 34vh;
+      pointer-events: none;
+      object-fit: contain;
+      background: #000;
+      border-radius: 10px;
+    }
+    video::-webkit-media-controls {
+      display: none !important;
+    }
+    input[type="range"] {
+      width: 100%;
+      padding: 0;
+      accent-color: #4bb4ff;
+      height: 56px;
+      appearance: none;
+      -webkit-appearance: none;
+      border: 0;
+      background: transparent;
+      touch-action: pan-y;
+    }
+    input[type="range"]::-webkit-slider-runnable-track {
+      height: 8px;
+      background: #345265;
+      border-radius: 8px;
+    }
+    input[type="range"]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      width: 30px;
+      height: 30px;
+      margin-top: -11px;
+      border-radius: 50%;
+      background: #4bb4ff;
+      border: 3px solid #e9f4ff;
+    }
+    input[type="range"]::-moz-range-track {
+      height: 8px;
+      background: #345265;
+      border-radius: 8px;
+    }
+    input[type="range"]::-moz-range-thumb {
+      width: 26px;
+      height: 26px;
+      border-radius: 50%;
+      background: #4bb4ff;
+      border: 3px solid #e9f4ff;
+    }
+    #save {
+      position: sticky;
+      bottom: 8px;
+      margin: 10px 0;
+      box-shadow: 0 0 0 8px #081623;
+    }
+    details summary {
+      min-height: 44px;
+      padding: 10px 0;
+      cursor: pointer;
+    }
+    input[type="radio"] {
+      min-height: 24px;
+      width: 24px;
+      vertical-align: middle;
+    }
+    .choice {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      min-height: 48px;
+      margin-right: 16px;
+    }
+    textarea {
+      width: 100%;
+      min-height: 76px;
+    }
+    output {
+      font-variant-numeric: tabular-nums;
+    }
+    #status {
+      min-height: 24px;
+    }
+    button:focus-visible,
+    input:focus-visible,
+    textarea:focus-visible {
+      outline: 3px solid #4bb4ff;
+      outline-offset: 3px;
+    }
+    [hidden] {
+      display: none !important;
+    }
+  </style>
+  <main>
+    <h1>Local shot review</h1>
+    <p class="muted" id="mode">Test footage · Local Wi-Fi proof</p>
+    <form id="pair" class="card">
+      <label for="code">Pairing code from your laptop</label>
+      <div class="row">
+        <input
+          id="code"
+          inputmode="numeric"
+          pattern="[0-9]{6}"
+          maxlength="6"
+          required
+          autocomplete="off"
+          style="width: 150px"
+        /><button class="primary">Connect</button>
+      </div>
+    </form>
+    <section id="review" hidden>
+      <button id="capture" type="button" hidden>Capture recent video</button>
+      <video id="video" playsinline muted preload="metadata" hidden></video>
+      <p id="loading" role="status">Loading local video…</p>
+      <div class="card">
+        <div class="row">
+          <strong>Choose shot start</strong><output id="time">0:00</output>
+        </div>
+        <label for="scrub" class="muted"
+          >Drag to the beginning of the shot</label
+        ><input
+          id="scrub"
+          type="range"
+          min="0"
+          max="120"
+          step="0.1"
+          value="0"
+          disabled
+        />
+        <div class="row">
+          <button id="back" disabled>−1 second</button
+          ><button id="play" disabled>Play</button
+          ><button id="forward" disabled>+1 second</button>
+        </div>
+      </div>
+      <div class="card">
+        <strong>Who should review this?</strong>
+        <div>
+          <label class="choice"
+            ><input
+              type="radio"
+              name="audience"
+              value="player"
+              checked
+            />Player</label
+          ><label class="choice"
+            ><input type="radio" name="audience" value="team" />Team</label
+          >
+        </div>
+        <details>
+          <summary>Add notes</summary>
+          <label for="notes">Notes</label
+          ><textarea
+            id="notes"
+            maxlength="2000"
+            placeholder="What should they look at?"
+          ></textarea>
+        </details>
+      </div>
+      <button id="save" class="primary" style="width: 100%" disabled>
+        Use this start
+      </button>
+    </section>
+    <p id="status" role="status"></p>
+    <script>
+      // Top-level LAN window: keeps local HTTP out of the HTTPS page's fetch path.
+      // Only the configured coaching origin and the exact opener can receive footage.
+      function startCoachingBridge() {
+        const config = /*STUDIO_BRIDGE_CONFIG*/ null;
+        const query = new URLSearchParams(location.hash.slice(1));
+        if (query.get("mode") !== "coach-capture") return false;
+        const nonce = query.get("nonce");
+        history.replaceState(null, "", location.pathname);
+        document.querySelector("main").innerHTML =
+          '<h1>Connecting to laptop</h1><p role="status">Loading recent video into Shot Tracker…</p>';
+        if (!config || !window.opener || !/^[a-f0-9-]{36}$/.test(nonce || "")) {
+          document.querySelector('[role="status"]').textContent =
+            "Open this connection from Shot Tracker. Studio may need updating.";
+          return true;
+        }
+        const parent = window.opener;
+        const send = (type, extra = {}) =>
+          parent.postMessage({ type, nonce, ...extra }, config.appOrigin);
+        let started = false;
+        const timeout = setTimeout(() => {
+          send("coach-capture-error", {
+            message: "Laptop connection timed out. Try again.",
+          });
+        }, 45000);
+        window.addEventListener("message", async (event) => {
+          if (
+            event.source !== parent ||
+            event.origin !== config.appOrigin ||
+            event.data?.nonce !== nonce
+          )
+            return;
+          if (event.data.type === "coach-capture-received") {
+            clearTimeout(timeout);
+            window.close();
+            return;
+          }
+          if (event.data.type !== "coach-capture-connect" || started) return;
+          started = true;
+          const controller = new AbortController();
+          const deadline = setTimeout(() => controller.abort(), 40000);
+          try {
+            if (event.data.gameId !== config.gameId)
+              throw Error(
+                "This laptop is recording a different game. Open the matching game in Studio.",
+              );
+            const request = (path, body) =>
+              fetch(path, {
+                signal: controller.signal,
+                ...(body === undefined
+                  ? {}
+                  : {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify(body),
+                    }),
+              });
+            let session = await request("/session");
+            if (session.status === 401) {
+              if (!/^\d{6}$/.test(event.data.code || ""))
+                throw Error(
+                  "Enter the pairing code shown in Studio’s Phone review settings.",
+                );
+              const paired = await request("/pair", { code: event.data.code });
+              if (!paired.ok)
+                throw Error(
+                  "Pairing failed. Check the code in Studio’s Phone review settings.",
+                );
+              session = await request("/session");
+            }
+            if (!session.ok || (await session.json()).gameId !== config.gameId)
+              throw Error(
+                "The laptop session changed. Reconnect and try again.",
+              );
+            const captured = await request("/capture", {});
+            if (!captured.ok)
+              throw Error(
+                "The laptop could not capture video. Check that cameras are connected and try again.",
+              );
+            const clip = await captured.json();
+            if (
+              clip.gameId !== config.gameId ||
+              !/^\/video\?id=[a-f0-9]{32}$/.test(clip.url)
+            )
+              throw Error("Invalid laptop capture.");
+            const response = await request(clip.url);
+            const size = Number(response.headers.get("Content-Length"));
+            if (!response.ok || size <= 0 || size > 40 * 1024 * 1024)
+              throw Error("The captured clip could not load.");
+            const video = await response.blob();
+            if (video.size !== size)
+              throw Error("The clip download was incomplete. Try again.");
+            send("coach-capture-ready", {
+              gameId: config.gameId,
+              duration: clip.duration,
+              minimum: clip.minimum,
+              capturedAt: clip.capturedAt,
+              video,
+            });
+            document.querySelector('[role="status"]').textContent =
+              "Video loaded. Returning to Shot Tracker…";
+          } catch (error) {
+            send("coach-capture-error", {
+              message:
+                error instanceof Error
+                  ? error.message
+                  : "Could not connect to laptop.",
+            });
+          } finally {
+            clearTimeout(deadline);
+          }
+        });
+        send("coach-capture-window-ready");
+        return true;
+      }
+      if (!startCoachingBridge()) {
+        const $ = (id) => document.getElementById(id),
+          video = $("video"),
+          scrub = $("scrub");
+        let minimum = 0;
+        let limit = 120;
+        let dragging = false;
+        let loading = false;
+        let ready = false;
+        let saving = false;
+        let nextSeek = null;
+        let clipId = null;
+        let objectUrl = null;
+        const format = (seconds) => {
+          const tenths = Math.round(seconds * 10);
+          return (
+            Math.floor(tenths / 600) +
+            ":" +
+            String(Math.floor(tenths / 10) % 60).padStart(2, "0") +
+            "." +
+            (tenths % 10)
+          );
+        };
+        function controls() {
+          const unavailable =
+            !ready || loading || saving || Boolean(video.error);
+          const unsettled = dragging || video.seeking || nextSeek !== null;
+          scrub.disabled = unavailable;
+          $("back").disabled = unavailable;
+          $("forward").disabled = unavailable;
+          $("play").disabled = unavailable || unsettled;
+          $("save").disabled =
+            unavailable || unsettled || !video.paused || video.readyState < 2;
+          $("capture").disabled = loading || saving;
+        }
+        function render() {
+          if (dragging || video.seeking || nextSeek !== null) return;
+          scrub.value = String(video.currentTime);
+          $("time").textContent = format(video.currentTime);
+        }
+        function seekLatest() {
+          if (nextSeek !== null && !video.seeking) {
+            const target = nextSeek;
+            nextSeek = null;
+            if (Math.abs(target - video.currentTime) > 0.001)
+              video.currentTime = target;
+          }
+          controls();
+        }
+        function choose(seconds) {
+          video.pause();
+          nextSeek = Math.max(minimum, Math.min(limit, seconds));
+          scrub.value = String(nextSeek);
+          $("time").textContent = format(nextSeek);
+          seekLatest();
+        }
+        async function post(path, value) {
+          const r = await fetch(path, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(value),
+          });
+          const b = await r.json();
+          if (!r.ok) throw Error(b.error);
+          return b;
+        }
+        $("pair").onsubmit = async (e) => {
+          e.preventDefault();
+          $("status").textContent = "Connecting…";
+          try {
+            const b = await post("/pair", { code: $("code").value });
+            limit = b.duration;
+            $("code").value = "";
+            $("pair").hidden = true;
+            $("review").hidden = false;
+            if (b.shotTracker)
+              $("mode").textContent = "Studio replay over local Wi-Fi";
+            $("status").textContent = "Connected directly to the laptop.";
+            if (b.rolling) {
+              $("capture").hidden = false;
+              await captureRecent();
+            } else {
+              await loadVideo("/video");
+            }
+          } catch (e) {
+            $("status").textContent = e.message;
+          }
+        };
+        async function loadVideo(path) {
+          loading = true;
+          ready = false;
+          dragging = false;
+          nextSeek = null;
+          controls();
+          video.pause();
+          video.removeAttribute("src");
+          video.load();
+          if (objectUrl) URL.revokeObjectURL(objectUrl);
+          objectUrl = null;
+          $("loading").textContent = "Loading the clip onto your phone…";
+          const download = new AbortController();
+          const timeout = setTimeout(() => download.abort(), 8000);
+          try {
+            const response = await fetch(path, { signal: download.signal });
+            const bytes = Number(response.headers.get("Content-Length"));
+            if (!response.ok || bytes <= 0 || bytes > 40 * 1024 * 1024)
+              throw Error("Clip unavailable");
+            objectUrl = URL.createObjectURL(await response.blob());
+          } catch {
+            // Slow Wi-Fi can still use the range-streaming player.
+            download.abort();
+          } finally {
+            clearTimeout(timeout);
+          }
+          video.hidden = false;
+          video.src = objectUrl ?? path;
+          video.load();
+        }
+        async function captureRecent() {
+          if (loading || saving) return;
+          loading = true;
+          ready = false;
+          controls();
+          video.pause();
+          video.controls = false;
+          video.hidden = true;
+          $("loading").textContent = "Capturing recent video from laptop…";
+          $("status").textContent = "Capturing recent video…";
+          try {
+            const b = await post("/capture", {});
+            limit = b.duration;
+            minimum = b.minimum ?? 0;
+            scrub.min = String(minimum);
+            clipId = new URL(b.url, location.href).searchParams.get("id");
+            $("status").textContent =
+              "Scrub to the shot start. Use the one-second buttons to fine-tune.";
+            await loadVideo(b.url);
+          } catch (e) {
+            loading = false;
+            controls();
+            $("status").textContent = e.message;
+            $("loading").textContent =
+              "Capture did not finish. Tap Capture recent video to retry.";
+          }
+        }
+        $("capture").onclick = captureRecent;
+        video.onloadedmetadata = () => {
+          video.controls = false;
+          limit = Math.min(limit, video.duration);
+          scrub.max = String(limit);
+          loading = false;
+          ready = true;
+          choose(limit - 30);
+          $("loading").textContent =
+            "Ready · " + Math.round(limit) + " seconds of local footage";
+          render();
+        };
+        video.onerror = () => {
+          loading = false;
+          ready = false;
+          controls();
+          $("loading").textContent =
+            "Video could not load. Check Wi-Fi and keep the laptop running.";
+        };
+        video.onwaiting = () => {
+          $("loading").textContent = "Loading video from laptop…";
+        };
+        video.oncanplay = () => {
+          $("loading").textContent = "Ready · local recording";
+          controls();
+        };
+        video.onloadeddata = controls;
+        video.onseeking = controls;
+        video.onseeked = () => {
+          seekLatest();
+          render();
+        };
+        video.ontimeupdate = render;
+        video.onplay = () => {
+          $("play").textContent = "Pause";
+          controls();
+        };
+        video.onpause = () => {
+          $("play").textContent = "Play";
+          render();
+          controls();
+        };
+        scrub.oninput = () => {
+          dragging = true;
+          choose(Number(scrub.value));
+        };
+        function finishDrag() {
+          dragging = false;
+          seekLatest();
+        }
+        scrub.onchange = finishDrag;
+        scrub.onpointerup = finishDrag;
+        scrub.onpointercancel = finishDrag;
+        $("back").onclick = () => {
+          choose((nextSeek ?? video.currentTime) - 1);
+        };
+        $("forward").onclick = () => {
+          choose((nextSeek ?? video.currentTime) + 1);
+        };
+        $("play").onclick = async () => {
+          if (video.paused) {
+            try {
+              await video.play();
+            } catch {
+              $("status").textContent = "Tap Play again to play the clip.";
+            }
+          } else video.pause();
+        };
+        $("save").onclick = async () => {
+          controls();
+          if ($("save").disabled) return;
+          saving = true;
+          controls();
+          try {
+            const b = await post("/selection", {
+              ...(clipId ? { clipId } : {}),
+              startSeconds: Math.min(limit, video.currentTime),
+              audience: document.querySelector("input[name=audience]:checked")
+                .value,
+              notes: $("notes").value,
+            });
+            if (b.handoffUrl) {
+              const target = new URL(b.handoffUrl);
+              if (
+                target.protocol !== "https:" ||
+                target.pathname !== "/shot-tracker/review-import"
+              )
+                throw Error("Invalid Shot Tracker handoff");
+              location.assign(target.href);
+              return;
+            }
+            $("status").textContent =
+              "Selected " +
+              format(b.selection.startSeconds) +
+              " for " +
+              b.selection.audience +
+              " review. Saved on this laptop for the proof only.";
+          } catch (e) {
+            $("status").textContent = e.message;
+          } finally {
+            saving = false;
+            controls();
+          }
+        };
+      }
+    </script>
+  </main>
+</html>

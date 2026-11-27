@@ -6,3 +6,41 @@ coverage
 .env
 .env.local
 *.tsbuildinfo
+
+# Local configuration and private operator notes.
+.env.*
+!.env.example
+.vercel/
+work/
+outputs/
+docs/MORNING_HANDOFF.md
+docs/SOL_HANDOFF.md
+
+# npm/package-lock.json is canonical; preserve local pnpm experiments off Git.
+pnpm-lock.yaml
+pnpm-workspace.yaml
+
+# Native outputs and private rehearsal artifacts.
+**/CMakeFiles/
+**/CMakeCache.txt
+**/.deps/
+**/build/
+*.exe
+*.dll
+*.pdb
+*.obj
+*.lib
+*.mkv
+*.mp4
+*.log
+*.pem
+*.key
+
+.curlcoach-local/
+
+
+# Generic approved base clips ship; person previews and cutouts never do.
+!/public/celebrations/lightsaber.mp4
+!/public/celebrations/cat-dance.mp4
+/output/
+

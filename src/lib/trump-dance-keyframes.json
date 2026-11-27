@@ -1,0 +1,290 @@
+[
+  {
+    "frame": 0,
+    "cx": 183,
+    "chinY": 109,
+    "width": 66,
+    "height": 85,
+    "rotation": 0
+  },
+  {
+    "frame": 10,
+    "cx": 212,
+    "chinY": 121,
+    "width": 64,
+    "height": 84,
+    "rotation": 7
+  },
+  {
+    "frame": 20,
+    "cx": 240,
+    "chinY": 156,
+    "width": 66,
+    "height": 84,
+    "rotation": 17
+  },
+  {
+    "frame": 30,
+    "cx": 267,
+    "chinY": 162,
+    "width": 66,
+    "height": 83,
+    "rotation": 18
+  },
+  {
+    "frame": 40,
+    "cx": 286,
+    "chinY": 148,
+    "width": 66,
+    "height": 84,
+    "rotation": 15
+  },
+  {
+    "frame": 50,
+    "cx": 258,
+    "chinY": 140,
+    "width": 65,
+    "height": 85,
+    "rotation": -2
+  },
+  {
+    "frame": 60,
+    "cx": 202,
+    "chinY": 140,
+    "width": 65,
+    "height": 86,
+    "rotation": -9
+  },
+  {
+    "frame": 70,
+    "cx": 134,
+    "chinY": 142,
+    "width": 65,
+    "height": 87,
+    "rotation": -12
+  },
+  {
+    "frame": 80,
+    "cx": 133,
+    "chinY": 144,
+    "width": 66,
+    "height": 86,
+    "rotation": -5
+  },
+  {
+    "frame": 88,
+    "cx": 174,
+    "chinY": 136,
+    "width": 66,
+    "height": 86,
+    "rotation": 0
+  },
+  {
+    "frame": 89,
+    "cx": 102,
+    "chinY": 182,
+    "width": 45,
+    "height": 56,
+    "rotation": 0
+  },
+  {
+    "frame": 90,
+    "cx": 105,
+    "chinY": 183,
+    "width": 45,
+    "height": 55,
+    "rotation": 0
+  },
+  {
+    "frame": 100,
+    "cx": 126,
+    "chinY": 212,
+    "width": 45,
+    "height": 55,
+    "rotation": 0
+  },
+  {
+    "frame": 110,
+    "cx": 147,
+    "chinY": 224,
+    "width": 44,
+    "height": 53,
+    "rotation": 0
+  },
+  {
+    "frame": 120,
+    "cx": 149,
+    "chinY": 209,
+    "width": 45,
+    "height": 57,
+    "rotation": 0
+  },
+  {
+    "frame": 130,
+    "cx": 151,
+    "chinY": 192,
+    "width": 45,
+    "height": 55,
+    "rotation": 0
+  },
+  {
+    "frame": 140,
+    "cx": 171,
+    "chinY": 182,
+    "width": 45,
+    "height": 55,
+    "rotation": 0
+  },
+  {
+    "frame": 150,
+    "cx": 175,
+    "chinY": 196,
+    "width": 45,
+    "height": 56,
+    "rotation": 0
+  },
+  {
+    "frame": 160,
+    "cx": 188,
+    "chinY": 199,
+    "width": 45,
+    "height": 56,
+    "rotation": 0
+  },
+  {
+    "frame": 170,
+    "cx": 227,
+    "chinY": 176,
+    "width": 45,
+    "height": 56,
+    "rotation": 0
+  },
+  {
+    "frame": 171,
+    "cx": 225,
+    "chinY": 178,
+    "width": 45,
+    "height": 57,
+    "rotation": 0
+  },
+  {
+    "frame": 172,
+    "cx": 219,
+    "chinY": 194,
+    "width": 83,
+    "height": 124,
+    "rotation": 0
+  },
+  {
+    "frame": 180,
+    "cx": 229,
+    "chinY": 207,
+    "width": 86,
+    "height": 127,
+    "rotation": 0
+  },
+  {
+    "frame": 190,
+    "cx": 120,
+    "chinY": 219,
+    "width": 94,
+    "height": 139,
+    "rotation": -8
+  },
+  {
+    "frame": 200,
+    "cx": 155,
+    "chinY": 226,
+    "width": 80,
+    "height": 129,
+    "rotation": -7
+  },
+  {
+    "frame": 208,
+    "cx": 164,
+    "chinY": 236,
+    "width": 84,
+    "height": 114,
+    "rotation": -7
+  },
+  {
+    "frame": 209,
+    "cx": 227,
+    "chinY": 110,
+    "width": 56,
+    "height": 80,
+    "rotation": -8
+  },
+  {
+    "frame": 210,
+    "cx": 227,
+    "chinY": 112,
+    "width": 56,
+    "height": 80,
+    "rotation": -8
+  },
+  {
+    "frame": 220,
+    "cx": 248,
+    "chinY": 123,
+    "width": 56,
+    "height": 76,
+    "rotation": 0
+  },
+  {
+    "frame": 230,
+    "cx": 265,
+    "chinY": 149,
+    "width": 56,
+    "height": 77,
+    "rotation": 12
+  },
+  {
+    "frame": 240,
+    "cx": 295,
+    "chinY": 160,
+    "width": 56,
+    "height": 75,
+    "rotation": 17
+  },
+  {
+    "frame": 250,
+    "cx": 313,
+    "chinY": 155,
+    "width": 56,
+    "height": 76,
+    "rotation": 18
+  },
+  {
+    "frame": 260,
+    "cx": 300,
+    "chinY": 143,
+    "width": 57,
+    "height": 79,
+    "rotation": 0
+  },
+  {
+    "frame": 270,
+    "cx": 259,
+    "chinY": 137,
+    "width": 57,
+    "height": 77,
+    "rotation": -4
+  },
+  {
+    "frame": 280,
+    "cx": 214,
+    "chinY": 139,
+    "width": 57,
+    "height": 78,
+    "rotation": -9
+  },
+  {
+    "frame": 289,
+    "cx": 184,
+    "chinY": 154,
+    "width": 57,
+    "height": 84,
+    "rotation": -12
+  }
+]

@@ -97,8 +97,8 @@ export function broadcastControlView(
               : "Not started";
   const statusMessage = statusUnavailable
     ? lastConfirmedLive
-      ? "Last confirmed live. CurlCast could not refresh YouTube status; check the watch page or retry status."
-      : "CurlCast could not refresh YouTube status. Check your connection, then retry status."
+      ? "Last confirmed live. Curl Streamer could not refresh YouTube status; check the watch page or retry status."
+      : "Curl Streamer could not refresh YouTube status. Check your connection, then retry status."
     : live
       ? "Video is being sent to the connected team YouTube channel."
       : session.status === "failed"

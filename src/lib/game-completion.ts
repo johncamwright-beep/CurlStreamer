@@ -34,7 +34,38 @@ export type CompletionReview = {
   youtubeWatchUrl: string | null;
 };
 
+export const completionFinalScoreSchema = z
+  .object({
+    home: z.number().int().nonnegative(),
+    away: z.number().int().nonnegative(),
+  })
+  .strict()
+  .nullable();
+type CompletionFinalScore = z.infer<typeof completionFinalScoreSchema>;
+
+export const completionClosingRequestSchema = z
+  .object({
+    sessionId: z.string().uuid(),
+    generation: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
+    intentId: z.string().uuid(),
+    capability: z.literal("final-card-v1"),
+  })
+  .strict();
+export type CompletionClosingRequest = z.infer<
+  typeof completionClosingRequestSchema
+>;
+export type CompletionClosing = Omit<CompletionClosingRequest, "capability"> & {
+  deadlineAt: string;
+};
+export type CompletionResponse = {
+  completion?: SafeGameCompletion;
+  completionSaved?: true;
+  cleanup: CompletionCleanup;
+  closing: CompletionClosing | null;
+};
+
 export type GameCompletion = CompletionReview & {
+  closing?: CompletionClosing | null;
   completionId: string;
   completedAt: string;
   cleanupStatus: "pending" | "failed" | "complete";
@@ -107,7 +138,8 @@ export async function completionActorParameters(
 
 function failure(error: { code?: string }): Result<never> {
   if (error.code === "42501") return { ok: false, kind: "authorization" };
-  if (error.code === "40001") return { ok: false, kind: "conflict" };
+  if (error.code === "PT409" || error.code === "40001")
+    return { ok: false, kind: "conflict" };
   if (error.code === "55000") return { ok: false, kind: "terminal" };
   return { ok: false, kind: "service" };
 }
@@ -121,25 +153,34 @@ function reviewRow(value: Record<string, unknown>): CompletionReview {
   };
 }
 
-/** Internal foundation only. Deliberately not exported from the store or a route. */
 export async function reviewGameCompletion(
   gameId: string,
   credential: CompletionCredential,
   youtubeWatchUrl: string | null = null,
+  finalScore?: CompletionFinalScore | "scoreboard",
 ): Promise<Result<CompletionReview>> {
   try {
     const id = idSchema.parse(gameId);
     const actor = await completionActorParameters(id, credential);
     const watchUrl = youtubeWatchUrlSchema.parse(youtubeWatchUrl ?? "");
-    const { data, error } = await createAdminSupabaseClient().rpc(
-      "review_game_completion_with_link",
-      {
-        p_game_id: id,
-        p_review_id: randomUUID(),
-        p_youtube_watch_url: watchUrl,
-        ...actor,
-      },
-    );
+    const args = {
+      p_game_id: id,
+      p_review_id: randomUUID(),
+      p_youtube_watch_url: watchUrl,
+      ...actor,
+    };
+    const admin = createAdminSupabaseClient();
+    const { data, error } =
+      finalScore === "scoreboard"
+        ? await admin.rpc("review_game_completion_with_scoreboard", args)
+        : finalScore === undefined
+          ? await admin.rpc("review_game_completion_with_link", args)
+          : await admin.rpc("review_game_completion_with_final_score", {
+              ...args,
+              p_selection: {
+                finalScore: completionFinalScoreSchema.parse(finalScore),
+              },
+            });
     if (error) return failure(error);
     const row = (data as Record<string, unknown>[] | null)?.[0];
     return row
@@ -159,26 +200,45 @@ export async function completeReviewedGame(
   gameId: string,
   reviewId: string,
   credential: CompletionCredential,
+  closing?: CompletionClosingRequest,
 ): Promise<Result<GameCompletion>> {
   try {
     const id = idSchema.parse(gameId);
     const actor = await completionActorParameters(id, credential);
     const { data, error } = await createAdminSupabaseClient().rpc(
-      "complete_reviewed_game",
+      closing
+        ? "complete_reviewed_game_with_closing"
+        : "complete_reviewed_game",
       {
         p_game_id: id,
         p_review_id: idSchema.parse(reviewId),
         p_completion_id: randomUUID(),
+        ...(closing
+          ? { p_closing: completionClosingRequestSchema.parse(closing) }
+          : {}),
         ...actor,
       },
     );
     if (error) return failure(error);
-    const row = (data as Record<string, unknown>[] | null)?.[0];
+    const row = closing
+      ? (data as Record<string, unknown> | null)
+      : (data as Record<string, unknown>[] | null)?.[0];
     if (!row) return { ok: false, kind: "service" };
     return {
       ok: true,
       value: {
         ...reviewRow(row),
+        closing: closing
+          ? z
+              .object({
+                sessionId: idSchema,
+                generation: z.number().int().positive(),
+                intentId: idSchema,
+                deadlineAt: z.iso.datetime({ offset: true }),
+              })
+              .nullable()
+              .parse(row.closing)
+          : null,
         completionId: row.completion_id as string,
         completedAt: row.completed_at as string,
         cleanupStatus: row.cleanup_status as GameCompletion["cleanupStatus"],
@@ -262,6 +322,25 @@ export async function recordCompletionCleanup(
     return row
       ? { ok: true, value: cleanupRow(row) }
       : { ok: false, kind: "service" };
+  } catch (error) {
+    return failure(error as { code?: string });
+  }
+}
+
+/** Server/database guard; a browser cannot acknowledge native stop or extend a grant. */
+export async function completionCleanupReady(
+  gameId: string,
+  credential: CompletionCredential,
+): Promise<Result<boolean>> {
+  try {
+    const id = idSchema.parse(gameId);
+    const actor = await completionActorParameters(id, credential);
+    const { data, error } = await createAdminSupabaseClient().rpc(
+      "game_completion_cleanup_ready",
+      { p_game_id: id, ...actor },
+    );
+    if (error) return failure(error);
+    return { ok: true, value: z.boolean().parse(data) };
   } catch (error) {
     return failure(error as { code?: string });
   }

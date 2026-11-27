@@ -79,5 +79,12 @@ describe("device-local current game", () => {
       broadcast: true,
       editSchedule: false,
     });
+    expect(gameCapabilities("game_operator", true)).toMatchObject({
+      control: true,
+      scoring: false,
+      broadcast: true,
+      editSchedule: true,
+      assignOpponent: true,
+    });
   });
 });

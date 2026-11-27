@@ -25,6 +25,11 @@ const mocks = vi.hoisted(() => ({
   findEgress: vi.fn(),
   stopEgress: vi.fn(),
   egressStatus: vi.fn(),
+  stopM4: vi.fn(),
+}));
+
+vi.mock("@/lib/providers/m4-youtube-session", () => ({
+  stopM4Session: mocks.stopM4,
 }));
 
 vi.mock("@/lib/supabase/admin", () => ({
@@ -91,6 +96,8 @@ function recordingRpc(initial: Record<string, unknown>) {
   let current = { ...initial };
   mocks.rpc.mockImplementation(
     async (name: string, parameters: Record<string, unknown>) => {
+      if (name === "get_game_broadcast_transport")
+        return { data: "livekit", error: null };
       if (name === "claim_game_broadcast_operation")
         return { data: current, error: null };
       if (name === "record_game_broadcast_operation") {
@@ -222,6 +229,8 @@ describe("broadcast session orchestration", () => {
     let egressReadyCheckpoint = false;
     mocks.rpc.mockImplementation(
       async (name: string, parameters: Record<string, unknown>) => {
+        if (name === "get_game_broadcast_transport")
+          return { data: "livekit", error: null };
         if (name === "claim_game_broadcast_operation")
           return { data: claimCount++ === 0 ? start : stop, error: null };
         if (name === "record_game_broadcast_operation") {
@@ -349,5 +358,99 @@ describe("broadcast session orchestration", () => {
       lastErrorCode: "broadcast_provider_ended",
     });
     expect(mocks.findOrStartEgress).not.toHaveBeenCalled();
+  });
+
+  it("dispatches local journal cleanup without consulting flags or invoking LiveKit", async () => {
+    mocks.rpc.mockResolvedValue({ data: "local-obs", error: null });
+    mocks.stopM4.mockResolvedValue({
+      desiredState: "stopped",
+      status: "stopped",
+      streamKey: "must-not-leak",
+    });
+    expect(await stopGameBroadcast(gameId, credential)).toEqual({
+      desiredState: "stopped",
+      status: "stopped",
+    });
+    expect(mocks.rpc).toHaveBeenCalledExactlyOnceWith(
+      "get_game_broadcast_transport",
+      {
+        p_game_id: gameId,
+        p_actor_user_id: "verified-user",
+        p_verified_organizer: false,
+      },
+    );
+    expect(mocks.stopM4).toHaveBeenCalledWith(gameId, credential);
+    expect(mocks.findEgress).not.toHaveBeenCalled();
+    expect(mocks.stopEgress).not.toHaveBeenCalled();
+    expect(mocks.refresh).not.toHaveBeenCalled();
+  });
+
+  it("maps a local prepared wait result without claiming live or stopped", async () => {
+    mocks.rpc.mockResolvedValue({ data: "local-obs", error: null });
+    mocks.stopM4.mockResolvedValue({
+      desiredState: "stopped",
+      status: "prepared",
+    });
+    expect(await stopGameBroadcast(gameId, credential)).toEqual({
+      desiredState: "stopped",
+      status: "preparing",
+    });
+  });
+
+  it.each(["42501", "55000", "08006"])(
+    "never falls back after transport authorization/service failure %s",
+    async (code) => {
+      mocks.rpc.mockResolvedValue({
+        data: null,
+        error: { code, message: "sensitive" },
+      });
+      await expect(stopGameBroadcast(gameId, credential)).rejects.toMatchObject(
+        { code },
+      );
+      expect(mocks.rpc).toHaveBeenCalledTimes(1);
+      expect(mocks.stopM4).not.toHaveBeenCalled();
+      expect(mocks.stopEgress).not.toHaveBeenCalled();
+    },
+  );
+
+  it("does not query transport when actor validation fails", async () => {
+    mocks.actor.mockRejectedValue(
+      Object.assign(Error("denied"), { code: "42501" }),
+    );
+    await expect(stopGameBroadcast(gameId, credential)).rejects.toMatchObject({
+      code: "42501",
+    });
+    expect(mocks.rpc).not.toHaveBeenCalled();
+    expect(mocks.stopM4).not.toHaveBeenCalled();
+  });
+
+  it.each(["42883", "PGRST202"])(
+    "retains legacy cleanup when transport RPC is absent (%s)",
+    async (code) => {
+      recordingRpc(
+        session({
+          desiredState: "stopped",
+          status: "stopping",
+          livekitEgressId: "legacy-egress",
+          livekitEgressCreateState: "ready",
+        }),
+      );
+      mocks.rpc.mockResolvedValueOnce({ data: null, error: { code } });
+      expect(await stopGameBroadcast(gameId, credential)).toMatchObject({
+        status: "stopped",
+      });
+      expect(mocks.stopEgress).toHaveBeenCalledWith("legacy-egress");
+      expect(mocks.stopM4).not.toHaveBeenCalled();
+    },
+  );
+
+  it("rejects an unknown journal transport rather than guessing a cleanup provider", async () => {
+    mocks.rpc.mockResolvedValue({ data: "unknown", error: null });
+    await expect(stopGameBroadcast(gameId, credential)).rejects.toThrow(
+      "broadcast_transport_invalid",
+    );
+    expect(mocks.rpc).toHaveBeenCalledTimes(1);
+    expect(mocks.stopM4).not.toHaveBeenCalled();
+    expect(mocks.stopEgress).not.toHaveBeenCalled();
   });
 });

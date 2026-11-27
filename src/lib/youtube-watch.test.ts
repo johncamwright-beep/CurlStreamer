@@ -1,7 +1,34 @@
 import { describe, expect, it } from "vitest";
-import { youtubeWatchUrlSchema } from "./youtube-watch";
+import {
+  firstValidYoutubeWatchUrl,
+  youtubeWatchUrlSchema,
+} from "./youtube-watch";
 
 describe("YouTube watch links", () => {
+  it("uses the first valid saved watch URL and skips empty or unsafe older fields", () => {
+    const url = "https://youtu.be/abcdefghijk";
+    expect(
+      firstValidYoutubeWatchUrl(
+        undefined,
+        null,
+        " ",
+        "javascript:alert(1)",
+        url,
+      ),
+    ).toBe(url);
+    expect(
+      firstValidYoutubeWatchUrl(
+        "https://example.com/watch?v=abcdefghijk",
+        "not a URL",
+      ),
+    ).toBeNull();
+    expect(
+      firstValidYoutubeWatchUrl(
+        url,
+        "https://www.youtube.com/watch?v=other-video",
+      ),
+    ).toBe(url);
+  });
   it.each([
     "https://www.youtube.com/watch?v=abcdefghijk",
     "https://youtube.com/live/abcdefghijk",

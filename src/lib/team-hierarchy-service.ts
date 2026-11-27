@@ -1,4 +1,9 @@
 import "server-only";
+import { z } from "zod";
+import {
+  opponentSeasonInputSchema,
+  opponentSeasonSchema,
+} from "@/lib/opponent-seasons";
 import { randomUUID } from "node:crypto";
 import type { User } from "@supabase/supabase-js";
 import { createAdminSupabaseClient } from "@/lib/supabase/admin";
@@ -13,13 +18,19 @@ import {
   type SeasonInput,
 } from "@/lib/team-hierarchy";
 import type { GameConfig, GameState } from "@/lib/types";
-import { issueOrganizerToken } from "@/lib/tokens";
 
 type Result<T> =
   | { ok: true; value: T }
   | {
       ok: false;
-      kind: "authorization" | "validation" | "conflict" | "service";
+      kind:
+        | "authorization"
+        | "validation"
+        | "conflict"
+        | "gameNumberConflict"
+        | "opponentNameConflict"
+        | "youtubeVisibilityLocked"
+        | "service";
       issues?: unknown;
     };
 
@@ -39,8 +50,21 @@ function failure(
   operation: string,
 ): Result<never> {
   diagnostic(operation, error);
+  if (error.code === "22023" && error.message === "youtube_visibility_locked")
+    return { ok: false, kind: "youtubeVisibilityLocked" };
+  if (error.code === "23505" && operation === "save_opponent_details")
+    return { ok: false, kind: "opponentNameConflict" };
+  if (
+    error.code === "23505" &&
+    error.message?.includes('"games_event_game_number_unique"')
+  )
+    return { ok: false, kind: "gameNumberConflict" };
   if (error.code === "42501") return { ok: false, kind: "authorization" };
-  if (["23505", "23514", "40001", "P0001", "P0002"].includes(error.code ?? ""))
+  if (
+    ["23505", "23514", "PT409", "40001", "P0001", "P0002"].includes(
+      error.code ?? "",
+    )
+  )
     return { ok: false, kind: "conflict" };
   if (error.code === "22023" || error.code === "22P02")
     return { ok: false, kind: "validation" };
@@ -104,6 +128,9 @@ export function createEvent(user: User, input: EventInput) {
     p_end_date: value.endDate,
     p_location: value.location ?? "",
     p_timezone: value.timezone,
+    p_result: value.result ?? null,
+    p_level: value.level ?? null,
+    p_show_level: value.showLevel ?? true,
   });
 }
 
@@ -130,6 +157,9 @@ export function updateEvent(user: User, eventId: string, input: EventInput) {
     p_end_date: value.endDate,
     p_location: value.location ?? "",
     p_timezone: value.timezone,
+    ...(value.result !== undefined ? { p_result: value.result } : {}),
+    ...(value.level !== undefined ? { p_level: value.level } : {}),
+    ...(value.showLevel !== undefined ? { p_show_level: value.showLevel } : {}),
   });
 }
 export const archiveEvent = (user: User, eventId: string) =>
@@ -148,6 +178,65 @@ export function findOrCreateOpponent(user: User, input: OpponentInput) {
     p_opponent_id: randomUUID(),
     p_display_name: parsed.data.displayName,
   });
+}
+export const opponentDetailsInputSchema = opponentSeasonInputSchema
+  .omit({ opponentId: true })
+  .extend({ displayName: opponentInputSchema.shape.displayName });
+export const opponentDetailsUpdateInputSchema =
+  opponentDetailsInputSchema.extend({
+    expectedDisplayName: opponentInputSchema.shape.displayName,
+  });
+
+export async function saveOpponentDetails(
+  user: User,
+  input: z.infer<typeof opponentDetailsInputSchema>,
+  existing?: { opponentId: string; expectedDisplayName: string },
+) {
+  const parsed = (
+    existing ? opponentDetailsUpdateInputSchema : opponentDetailsInputSchema
+  ).safeParse({
+    ...input,
+    ...(existing ? { expectedDisplayName: existing.expectedDisplayName } : {}),
+  });
+  if (
+    !parsed.success ||
+    (existing && !z.uuid().safeParse(existing.opponentId).success) ||
+    (!existing && parsed.data.expectedRevision !== 0)
+  )
+    return { ok: false as const, kind: "validation" as const };
+  const result = await rpc<unknown[]>("save_opponent_details", {
+    p_user_id: user.id,
+    p_opponent_id: existing?.opponentId ?? randomUUID(),
+    p_create: !existing,
+    p_display_name: parsed.data.displayName,
+    p_expected_display_name: existing?.expectedDisplayName.trim() ?? null,
+    p_season_id: parsed.data.seasonId,
+    p_level: parsed.data.level,
+    p_roster: parsed.data.roster,
+    p_expected_revision: parsed.data.expectedRevision,
+  });
+  if (!result.ok) return result;
+  const row = z
+    .object({
+      opponent_id: z.uuid(),
+      display_name: z.string(),
+      season_id: z.uuid(),
+      level: opponentSeasonSchema.shape.level,
+      roster: opponentSeasonSchema.shape.roster,
+      revision: opponentSeasonSchema.shape.revision,
+    })
+    .safeParse(result.value?.[0]);
+  if (!row.success) return { ok: false as const, kind: "service" as const };
+  return {
+    ok: true as const,
+    value: {
+      opponent: {
+        id: row.data.opponent_id,
+        displayName: row.data.display_name,
+      },
+      profile: opponentSeasonSchema.parse(row.data),
+    },
+  };
 }
 export const listOpponents = (user: User, includeArchived = false) =>
   rpc<unknown[]>("list_opponents", {
@@ -203,7 +292,7 @@ export async function createScheduledTeamGame(
   if (!created.ok) return created;
   return {
     ok: true as const,
-    value: { game: state, organizerToken: await issueOrganizerToken(state.id) },
+    value: { game: state },
   };
 }
 
@@ -233,3 +322,6 @@ export function updateScheduledTeamGame(
     ...(configSnapshot ? { p_config_snapshot: configSnapshot } : {}),
   });
 }
+
+export const listOpponentSeasons = (user: User) =>
+  rpc<unknown[]>("list_opponent_seasons", { p_user_id: user.id });
